@@ -28,7 +28,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Twelve shards, each every twelfth test file in sorted order (.github/scripts/shard_tests.py),
+  # Seven shards, each every seventh test file in sorted order (.github/scripts/shard_tests.py),
   # so every file is in exactly one shard and a new one needs no edit here. The count is the
   # length of this list and nothing else.
   tests:
@@ -36,7 +36,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+        shard: [1, 2, 3, 4, 5, 6, 7]
     runs-on: windows-latest
     timeout-minutes: 90
     permissions:
@@ -76,12 +76,13 @@ jobs:
           uv run pytest -n auto "${files[@]}"
 
   # The per-module gates at 100%, declared once in scripts/coverage_gates.sh for this job and
-  # scripts/ci-local.sh alike, in six shards: shard K runs the gates whose place in the script's
-  # list leaves K-1 over six, so every gate is in exactly one shard and a new one needs no edit
+  # scripts/ci-local.sh alike, in ten shards: shard K runs the gates whose place in the script's
+  # list leaves K-1 over ten, so every gate is in exactly one shard and a new one needs no edit
   # here (tests/gates/test_coverage_gates_are_sharded.py holds the list and this matrix to that).
-  # Six because the gates take about four hours as one job on a hosted runner, a sixth of that sits
-  # well inside the ninety minutes the test shards are given, and each shard pays the setup once
-  # more, so more shards would buy less. The count is the length of this list, and the `/6` below says the same number.
+  # Ten, with seven test shards: the gates are nearly three hours of one runner's work and a
+  # shard's gates take about their sum however many run at once, so the longest shard sets the
+  # run's length; an account runs twenty jobs at a time, and seven, ten and the three single jobs
+  # are twenty. The count is the length of this list, and the `/10` below says the same number.
   # SIFT_CI_JOBS hands them the whole runner: the script's default holds cores back for other
   # work on a shared machine, and a runner has none.
   coverage:
@@ -89,7 +90,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
     runs-on: windows-latest
     timeout-minutes: 90
     permissions:
@@ -113,7 +114,7 @@ jobs:
 
       - name: The coverage gates hold at 100 percent
         if: ${{ !cancelled() }}
-        run: SIFT_CI_JOBS="$(nproc)" bash scripts/coverage_gates.sh --shard "${{ matrix.shard }}/6"
+        run: SIFT_CI_JOBS="$(nproc)" bash scripts/coverage_gates.sh --shard "${{ matrix.shard }}/10"
 
   # The app in a real browser, served by the real server: the one check of the assembly, where a
   # policy refusing the app's own script is a blank page behind a perfectly good 200.
