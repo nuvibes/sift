@@ -38,7 +38,7 @@ function guestRows(page: Page) {
 
 async function openUsers(page: Page) {
 	await page.goto('/settings/users');
-	await expect(page.getByRole('heading', { name: 'Users', level: 1 })).toBeVisible();
+	await expect(page.getByRole('heading', { name: 'User Management', level: 1 })).toBeVisible();
 }
 
 /** Add the one guest this file shares, through the screen, the first time it is asked for. */

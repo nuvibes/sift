@@ -369,7 +369,7 @@ test('a panel goes OVER the wall rather than pushing it down', async ({ page }) 
 	/* Cell Groups rather than Layout, because Layout is a MENU, and a menu is not what this
 	   rule is about. What has to stay out of the flow is a panel: a drawer the width of the row that
 	   is open while somebody works in it. Theater has two and this is its own. */
-	await page.getByRole('button', { name: 'Presets', exact: true }).click();
+	await page.getByRole('button', { name: 'Layout Presets', exact: true }).click();
 	const panel = page.locator('.drawer').first();
 	await expect(panel).toBeVisible();
 	// The panel animates in, and a measurement taken mid-animation is the first frame rather than

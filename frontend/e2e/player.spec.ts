@@ -983,12 +983,14 @@ test('the Audio player stands inside the page, never over the rail, at every rai
 		expect(box.x + box.width, `the bar left the page ${at}`).toBeLessThanOrEqual(
 			content.x + content.width
 		);
-		/* Centred in the page, not the window: its middle on the page's middle. */
-		expect(
-			Math.abs(box.x + box.width / 2 - (content.x + content.width / 2)),
-			`the bar is not centred in the page ${at}`
-		).toBeLessThan(2);
-		await page.locator('section.mini.bar [aria-label="Close"]').click();
+		/* Centred in the page, not the window: its middle on the page's middle, once it has settled. */
+		await expect
+			.poll(async () => {
+				const now = (await bar.boundingBox())!;
+				return Math.abs(now.x + now.width / 2 - (content.x + content.width / 2));
+			}, `the bar is not centred in the page ${at}`)
+			.toBeLessThan(2);
+		await page.locator('section.mini.bar').getByRole('button', { name: 'Close' }).click();
 	}
 });
 
@@ -1223,8 +1225,8 @@ test('moving off the drawer without reaching it closes it at once', async ({ pag
 	// The drawer's own panel. See the test above for why `.panel` alone is not a locator here.
 	await expect(page.locator('.bridge .panel')).toBeVisible();
 
-	// Onto the clock in the middle of the bar: still on the bar, nowhere near the drawer.
-	await page.locator('.player-bar .time').hover();
+	// Onto the time at the start of the scrub line: still on the bar, nowhere near the drawer.
+	await page.locator('.player-bar .time.start').hover();
 	await expect(page.locator('.bridge .panel')).toHaveCount(0);
 });
 
