@@ -131,10 +131,8 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
-      - uses: ./.github/actions/python
-      - uses: ./.github/actions/node
-        with:
-          workspace: frontend
+      # The server under test reads real files: it needs the ffmpeg that ships, as the suite does.
+      - uses: ./.github/actions/prepare-suite
 
       - name: A browser to run in
         working-directory: frontend

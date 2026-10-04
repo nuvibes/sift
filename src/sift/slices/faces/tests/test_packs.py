@@ -21,7 +21,7 @@ import pytest
 
 from sift.kernel.audience import EVERY_ADMIN
 from sift.kernel.changes import About
-from sift.kernel.db import Database
+from sift.kernel.db import Database, Row
 from sift.kernel.ids import new_id
 from sift.slices.faces import packs, recognize
 from sift.slices.faces import settings as face_settings
@@ -30,6 +30,7 @@ from sift.slices.faces.models import Origin
 from sift.slices.faces.packs import PackedFace, PackedPerson, PackError
 from sift.slices.faces.service import FaceService
 from sift.slices.faces.service_base import FacesDisabled
+from sift.slices.faces.service_references import EntryHeld
 from sift.slices.faces.store import Store
 from sift.slices.faces.tests.conftest import (
     DIMENSION,
@@ -269,6 +270,20 @@ async def test_an_import_keeps_the_confirmed_count_on_each_entry_and_the_waiting
     assert waiting["Nobody In Particular"]["confirmed"] is None
 
 
+async def test_a_waiting_entry_is_removed_by_a_service_with_no_history_to_write_to(
+    service: FaceService, store: Store
+) -> None:
+    """The recorder is optional: without one the entry still goes, with no line to say so."""
+    assert service._recorder is None
+    await service.import_pack(a_pack(people=["Ada Lovelace"]))
+    (entry,) = await service.waiting()
+
+    assert await service.remove_waiting(str(entry["entry_id"]), by="an-admin")
+
+    assert await service.waiting() == []
+    assert await store.entry_faces(str(entry["entry_id"])) == []
+
+
 async def test_a_pack_taken_in_while_recognition_is_off_is_held_without_a_model(
     service: FaceService, store: Store, temp_db: Database, preferences: FakePreferences
 ) -> None:
@@ -303,6 +318,36 @@ async def test_a_swap_holds_the_faces_of_somebody_known_until_they_are_given_ove
     assert await service.waiting_for("Ada Lovelace") == ["Ada Lovelace"]
     assert await service.claim_for(known, "Ada Lovelace") == 2
     assert len(await store.references(known)) == 2
+
+
+def overtaken(
+    service: FaceService, store: Store, monkeypatch: pytest.MonkeyPatch, *, by: str
+) -> None:
+    """Another write places each held entry for `by` between a claim's read and its write."""
+    read = service._entry_held
+
+    async def then_taken(entry: Row) -> EntryHeld:
+        held = await read(entry)
+        async with store.database.write() as connection:
+            assert await store.claim_entry_on(connection, held.entry_id, by)
+        return held
+
+    monkeypatch.setattr(service, "_entry_held", then_taken)
+
+
+async def test_a_claim_another_write_placed_first_gives_nothing(
+    service: FaceService, store: Store, temp_db: Database, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Two presses on one held entry: the one whose write lands second adds no reference."""
+    known = await make_person(temp_db, "Ada Lovelace")
+    namesake = await make_person(temp_db, "Ada Lovelace")
+    await service.take_from_swap(a_pack(people=["Ada Lovelace"]), suggest_only=True)
+    overtaken(service, store, monkeypatch, by=namesake)
+
+    assert await service.claim_for(known, "Ada Lovelace") == 0
+
+    assert await store.references(known) == []
+    assert await service.waiting_for("Ada Lovelace") == []
 
 
 async def test_what_is_held_for_somebody_is_counted_as_the_claim_would_add_it(

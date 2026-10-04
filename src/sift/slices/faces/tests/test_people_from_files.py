@@ -38,12 +38,18 @@ from sift.slices.faces.models import (
 from sift.slices.faces.models import Origin as FaceOrigin
 from sift.slices.faces.receipts import FINGERPRINTS_QUEUE
 from sift.slices.faces.service import FaceService
-from sift.slices.faces.service_fingerprints import FingerprintRecords, held_from, place
+from sift.slices.faces.service_fingerprints import (
+    FingerprintRecords,
+    Placement,
+    held_from,
+    place,
+)
 from sift.slices.faces.store import PassRecord, Store
 from sift.slices.faces.tests.conftest import (
     FakeDetector,
     FakePreferences,
     FakeRecognizer,
+    RecordingReindexer,
     draw_face,
     make_person,
     noisy_frame,
@@ -51,7 +57,7 @@ from sift.slices.faces.tests.conftest import (
     unit,
 )
 from sift.slices.faces.tests.test_edges import import_folder
-from sift.slices.faces.tests.test_packs import a_pack
+from sift.slices.faces.tests.test_packs import a_pack, overtaken
 from sift.slices.workbench.store import Decision
 from sift.slices.workbench.store import Store as WorkbenchStore
 from sift.testing.fixtures import create_user
@@ -443,6 +449,117 @@ async def test_a_claim_names_her_on_the_faces_nobody_had_and_a_second_run_names_
     assert len([one for one in receipts if one.queue == FINGERPRINTS_QUEUE]) == 1
 
 
+async def test_an_entry_another_write_placed_first_gives_her_nothing(
+    service: FaceService,
+    store: Store,
+    temp_db: Database,
+    clip: Ingested,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The pass and a press on one entry: the write that lands second writes nothing at all."""
+    written = WorkbenchStore(temp_db)
+    service._recorder = written
+    tamsin = await make_person(temp_db, "Tamsin")
+    await _her_own(store, tamsin, person_vector(0))
+    await _faces(store, clip.asset.id, [person_vector(0), person_vector(0, 1)])
+    await service.rematch()
+    await service.import_pack(a_pack(people=["Tamsin Vale"]))
+    overtaken(service, store, monkeypatch, by=await make_person(temp_db, "Tamsin Vale"))
+
+    assert (await service.recognize_from_fingerprints()).claimed == []
+
+    assert {one.origin for one in await store.references(tamsin)} == {FaceOrigin.CONFIRMED}
+    assert await store.aliases_of(tamsin) == []
+    receipts, _total = await written.recent(limit=10, offset=0)
+    assert [one for one in receipts if one.queue == FINGERPRINTS_QUEUE] == []
+
+
+async def test_a_face_answered_while_the_pass_was_placing_it_keeps_the_answer(
+    service: FaceService,
+    store: Store,
+    temp_db: Database,
+    clip: Ingested,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Read as nobody's, then confirmed as somebody before the pass wrote: it stays hers."""
+    tamsin = await make_person(temp_db, "Tamsin")
+    await service.import_pack(a_pack(people=["Liora Fenwick"]))
+    first, answered = await _faces(store, clip.asset.id, [person_vector(0), person_vector(0, 1)])
+    placements = service._placements
+
+    async def then_answered(recognizer: str) -> list[Placement]:
+        placed = await placements(recognizer)
+        await store.attribute(answered, tamsin, confidence=1.0, attribution=Attribution.CONFIRMED)
+        return placed
+
+    monkeypatch.setattr(service, "_placements", then_answered)
+
+    assert (await service.recognize_from_fingerprints()).made == ["Liora Fenwick"]
+
+    (made,) = await _people_called(temp_db, "Liora Fenwick")
+    named = await store.track(first)
+    assert named is not None and named.person_id == made["id"]
+    kept = await store.track(answered)
+    assert kept is not None and (kept.person_id, kept.attribution) == (
+        tamsin,
+        Attribution.CONFIRMED,
+    )
+
+
+async def test_a_file_already_filed_under_her_is_not_sent_to_the_search_index_again(
+    service: FaceService,
+    store: Store,
+    temp_db: Database,
+    clip: Ingested,
+    other_clip: Ingested,
+    reindexer: RecordingReindexer,
+) -> None:
+    """Somebody filed it under her by hand: naming her face there moves none of its People."""
+    tamsin = await make_person(temp_db, "Tamsin")
+    await _her_own(store, tamsin, person_vector(0))
+    await _faces(store, clip.asset.id, [person_vector(0)])
+    await service.rematch()
+    (fresh,) = await _faces(store, other_clip.asset.id, [person_vector(0, 1)])
+    async with temp_db.write() as connection:
+        await connection.execute(
+            "INSERT INTO asset_people (asset_id, person_id, decided_at) VALUES (?, ?, 0)",
+            (other_clip.asset.id, tamsin),
+        )
+    await service.import_pack(a_pack(people=["Tamsin Vale"]))
+    reindexer.touched_ids.clear()
+
+    assert (await service.recognize_from_fingerprints()).claimed == ["Tamsin Vale"]
+
+    named = await store.track(fresh)
+    assert named is not None and named.person_id == tamsin
+    assert await _filed_under(temp_db, other_clip.asset.id) == [tamsin]
+    assert other_clip.asset.id not in reindexer.touched_ids
+
+
+async def test_a_yes_makes_only_the_entry_asked_about_and_names_only_its_faces(
+    service: FaceService,
+    store: Store,
+    temp_db: Database,
+    clip: Ingested,
+    other_clip: Ingested,
+    preferences: FakePreferences,
+) -> None:
+    preferences.set(face_settings.PEOPLE_FROM_FILES_KEY, False)
+    await service.import_pack(a_pack(people=["Wren Halloway", "Neve Arbor"]))
+    (wren,) = await _faces(store, clip.asset.id, [person_vector(0)])
+    (neve,) = await _faces(store, other_clip.asset.id, [person_vector(1)])
+    held = {str(row["name"]): str(row["id"]) for row in await store.unclaimed_entries()}
+    admin = await create_user(temp_db, Role.ADMIN)
+
+    made = await service.make_person_from_entry(held["Wren Halloway"], by=admin.id)
+
+    named = await store.track(wren)
+    assert made is not None and named is not None and named.person_id == made
+    left = await store.track(neve)
+    assert left is not None and left.person_id is None
+    assert [str(row["name"]) for row in await store.unclaimed_entries()] == ["Neve Arbor"]
+
+
 # --- the record and its Undo ----------------------------------------------------------------------
 
 
@@ -518,6 +635,64 @@ async def test_undo_of_a_claim_takes_the_references_and_the_name_back_and_keeps_
     assert {one.origin for one in await store.references(tamsin)} == {FaceOrigin.CONFIRMED}
     assert await store.aliases_of(tamsin) == []
     assert (await service.recognize_from_fingerprints()).claimed == []
+
+
+async def test_undo_that_puts_every_face_back_with_somebody_groups_nothing(
+    service: FaceService,
+    store: Store,
+    temp_db: Database,
+    clip: Ingested,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Only a face back with nobody wants a group; one back as a question about her has a home."""
+    written = WorkbenchStore(temp_db)
+    service._recorder = written
+    tamsin = await make_person(temp_db, "Tamsin")
+    await service.import_pack(a_pack(people=["Liora Fenwick"]))
+    (asked,) = await _faces(store, clip.asset.id, [person_vector(0)])
+    await store.attribute(asked, tamsin, confidence=0.45, attribution=Attribution.SUGGESTED)
+    assert (await service.recognize_from_fingerprints()).made == ["Liora Fenwick"]
+    receipts, _total = await written.recent(limit=10, offset=0)
+    (receipt,) = [one for one in receipts if one.queue == FINGERPRINTS_QUEUE]
+    regrouped: list[bool] = []
+
+    async def regroup(*, full: bool = False) -> None:
+        regrouped.append(full)
+
+    monkeypatch.setattr(service, "regroup", regroup)
+    admin = await create_user(temp_db, Role.ADMIN)
+
+    await FingerprintRecords(service).reverse(admin, receipt.id, receipt.payload)
+
+    back = await store.track(asked)
+    assert back is not None and (back.person_id, back.attribution) == (
+        tamsin,
+        Attribution.SUGGESTED,
+    )
+    assert regrouped == []
+
+
+async def test_undo_skips_what_it_cannot_read_in_the_record_and_puts_back_the_rest(
+    service: FaceService, store: Store, temp_db: Database, clip: Ingested
+) -> None:
+    """A History line outlives the version that wrote it: an unreadable face costs only itself."""
+    written = WorkbenchStore(temp_db)
+    service._recorder = written
+    await service.import_pack(a_pack(people=["Liora Fenwick"]))
+    tracks = await _faces(store, clip.asset.id, [person_vector(0), person_vector(0, 1)])
+    await service.recognize_from_fingerprints()
+    receipts, _total = await written.recent(limit=10, offset=0)
+    (receipt,) = [one for one in receipts if one.queue == FINGERPRINTS_QUEUE]
+    payload = json.loads(receipt.payload)
+    payload["named"] = ["unreadable", {"track": 7}, *payload["named"]]
+    admin = await create_user(temp_db, Role.ADMIN)
+
+    undone = await FingerprintRecords(service).reverse(admin, receipt.id, json.dumps(payload))
+
+    assert not isinstance(undone, bool) and undone.put_back == 1
+    for track_id in tracks:
+        back = await store.track(track_id)
+        assert back is not None and back.person_id is None
 
 
 def _recorded(receipt: Decision) -> Recorded:

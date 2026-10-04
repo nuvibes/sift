@@ -16,6 +16,7 @@ from sift.slices.faces import folder_import
 from sift.slices.faces.folder_import import READING, STAGED_PREFIX, Tally, import_folder
 from sift.slices.faces.models import Finding
 from sift.slices.faces.references import Candidate, PersonReport
+from sift.slices.faces.weights import WeightError
 
 pytestmark = pytest.mark.unit
 
@@ -86,9 +87,12 @@ class Faces:
         on: bool = True,
         reports: dict[str, PersonReport] | None = None,
         scratch: Path | None = None,
+        unmodelled: str | None = None,
     ):
         self.on = on
         self.scratch = scratch
+        #: The folder whose reading finds the models gone, as a model removed mid-import does.
+        self.unmodelled = unmodelled
         self.read: list[str] = []
         self.reports = reports or {}
         #: The folder of people each person's entry was said to come from.
@@ -104,6 +108,8 @@ class Faces:
     async def import_person_folder(self, folder: Path, *, source: str | None) -> PersonReport:
         self.read.append(folder.name)
         self.sources.append(source)
+        if folder.name == self.unmodelled:
+            raise WeightError("the detector model has not been installed yet")
         report = self.reports.get(folder.name)
         if report is None:
             report = PersonReport(name=folder.name, added=1)
@@ -223,6 +229,22 @@ def test_a_paused_import_keeps_the_copy_it_reads_from(tmp_path: Path) -> None:
         run(Context({"staged": root.name}, pause=True), Faces(scratch=tmp_path))
 
     assert root.exists()
+
+
+def test_models_gone_part_way_end_the_import_for_good_and_keep_who_landed(tmp_path: Path) -> None:
+    """Not a pause: no later run reads faces without the models. The people held still ask for
+    the pass, and the upload's copy goes."""
+    root = gallery(tmp_path / f"{STAGED_PREFIX}one", "Ada Lumen", "Wren Halloway")
+    context = Context({"staged": root.name})
+    faces = Faces(scratch=tmp_path, unmodelled="Wren Halloway")
+    asked: list[object] = []
+
+    with pytest.raises(JobFailedPermanently, match="detector model has not been installed"):
+        run(context, faces, asked)
+
+    assert faces.read == ["Ada Lumen", "Wren Halloway"]
+    assert asked == [context.queue], "the person held before the failure is never recognized"
+    assert not root.exists(), "the copy of the upload outlived its task"
 
 
 def test_a_folder_on_the_machine_is_never_removed(tmp_path: Path) -> None:

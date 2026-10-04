@@ -776,7 +776,7 @@ def test_a_folder_import_with_no_folder_asks_an_admin_to_choose_one(client: Test
 
 
 def test_a_loose_file_at_the_top_belongs_to_nobody_and_is_not_copied(
-    client: TestClient, scene: Scene
+    no_workers: None, client: TestClient, scene: Scene
 ) -> None:
     """Skipped rather than refused: a Mac's `.DS_Store` beside the people is an ordinary folder."""
     turn_on(client)
@@ -817,7 +817,7 @@ def test_more_files_than_one_import_will_take_is_refused_before_anything_is_queu
 
 
 def test_a_folder_of_more_than_a_thousand_pictures_reaches_the_task(
-    client: TestClient, scene: Scene
+    no_workers: None, client: TestClient, scene: Scene
 ) -> None:
     """The form parser's own default refuses a thousand and one files before the route runs, which
     is every real gallery. The route's cap is the only one that applies."""
@@ -907,7 +907,7 @@ def granted_gallery(client: TestClient, tmp_path: Path) -> Path:
 
 
 def test_a_folder_inside_a_granted_folder_is_queued_by_its_path(
-    client: TestClient, scene: Scene, tmp_path: Path
+    no_workers: None, client: TestClient, scene: Scene, tmp_path: Path
 ) -> None:
     """Nothing is sent but the path, and the answer is the task: the folder is read by Sift."""
     gallery = granted_gallery(client, tmp_path)

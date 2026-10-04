@@ -104,6 +104,35 @@ def test_removing_a_waiting_entry_forgets_it_and_says_so_in_history(client: Test
     assert client.delete("/api/faces/fingerprints/waiting/e2").status_code == 404
 
 
+def test_a_removal_reads_in_history_as_who_removed_whom_and_cannot_be_undone(
+    client: TestClient,
+) -> None:
+    """Final: the faces went with the entry, and the file or folder can be imported again."""
+    sign_in(client, "admin")
+    _held(client)
+    assert client.delete("/api/faces/fingerprints/waiting/e1").status_code == 204
+    ((decision,),) = read_rows(
+        db_path(client),
+        "SELECT id FROM workbench_decisions WHERE queue = ?",
+        (FINGERPRINTS_REMOVED_QUEUE,),
+    )
+
+    def said() -> tuple[list[str], object]:
+        (line,) = client.get("/api/ledger", params={"decisions": True}).json()["items"]
+        return [one["text"] for one in line["pieces"]], line["still"]
+
+    title = "Removed the facial fingerprints of Neve Arbor from Studio Faces"
+    assert said() == (["You removed the facial fingerprints of Neve Arbor from Studio Faces"], None)
+    undo = client.post(f"/api/workbench/decisions/{decision}/undo")
+    assert (undo.status_code, undo.json()["undone"]) == (200, False)
+    # A record that no longer names its file keeps the words it was stored with.
+    write(
+        db_path(client),
+        [("UPDATE workbench_decisions SET payload = ? WHERE id = ?", ('{"entry": 1}', decision))],
+    )
+    assert said() == ([title], None)
+
+
 def test_a_guest_is_not_shown_the_waiting_list(client: TestClient) -> None:
     sign_in(client, "guest")
     assert client.get("/api/faces/fingerprints/waiting").status_code == 403

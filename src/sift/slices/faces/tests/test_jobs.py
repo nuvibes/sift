@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass, field
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
@@ -26,7 +27,9 @@ from sift.kernel.jobs.queue import JobBlocked, JobCanceled, WaitingForPassword
 from sift.kernel.paging import MAX_PAGE_SIZE
 from sift.slices.faces import jobs as face_jobs
 from sift.slices.faces import service as face_service
+from sift.slices.faces.folder_import import FACE_FOLDER_IMPORT, STAGED_PREFIX
 from sift.slices.faces.models import Depth, ScanStatus
+from sift.slices.faces.references import PersonReport
 from sift.testing.logs import uncached_log
 
 pytestmark = pytest.mark.unit
@@ -202,6 +205,8 @@ class RecordingQueue:
     """
 
     queued: list[tuple[str, str, dict[str, Any]]] = field(default_factory=list)
+    #: The wait each settled request asked for, in order; None leaves the queue's own.
+    delays: list[int | None] = field(default_factory=list)
 
     async def enqueue(
         self,
@@ -219,6 +224,7 @@ class RecordingQueue:
         **_options: Any,
     ) -> str:
         self.queued.append(("enqueue_when_settled", job_type, payload or {}))
+        self.delays.append(_options.get("delay"))
         return f"job-{len(self.queued)}"
 
     #: The job types this queue was asked to release from their park, in order.
@@ -731,6 +737,48 @@ def test_every_kind_of_work_is_registered_once_each(clean_handlers: None) -> Non
         face_jobs.FACE_REMEASURE,
     ):
         assert name in registered
+
+
+class _Importing(Context):
+    """A folder import's job: never paused, its progress kept with the rest."""
+
+    def stopping(self) -> str | None:
+        return None
+
+    async def report_progress(self, value: float) -> None:
+        await self.set_progress(value)
+
+
+class _Folders:
+    """The feature as a folder import asks it: on, keeping one face of each person read."""
+
+    def __init__(self, scratch: Path) -> None:
+        self.scratch = scratch
+
+    async def enabled(self) -> bool:
+        return True
+
+    def scratch_root(self) -> Path:
+        return self.scratch
+
+    async def import_person_folder(self, folder: Path, *, source: str | None) -> PersonReport:
+        return PersonReport(name=folder.name, added=1)
+
+
+async def test_a_folder_import_that_held_somebody_asks_for_the_fingerprints_pass_at_once(
+    clean_handlers: None, tmp_path: Path
+) -> None:
+    """Somebody pressed and is watching the waiting list: the pass waits for no batch to settle."""
+    staged = tmp_path / f"{STAGED_PREFIX}one"
+    (staged / "Ada Lumen").mkdir(parents=True)
+    (staged / "Ada Lumen" / "one.jpg").write_bytes(b"stand-in")
+    face_jobs.register_handlers(service=_Folders(tmp_path))  # type: ignore[arg-type]
+    context = _Importing(payload={"staged": staged.name})
+
+    await registered_handlers()[FACE_FOLDER_IMPORT](context)  # type: ignore[arg-type]
+
+    assert context.queue.queued == [("enqueue_when_settled", face_jobs.FACE_PEOPLE_FROM_FILES, {})]
+    assert context.queue.delays == [0]
 
 
 # --- fetching the models ------------------------------------------------------------------------
