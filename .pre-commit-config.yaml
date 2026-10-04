@@ -1,0 +1,171 @@
+# Setup, once per clone (installs the pre-commit, commit-msg and pre-push hooks):
+#     pre-commit install --install-hooks
+#
+# Run everything by hand:
+#     pre-commit run --all-files
+
+minimum_pre_commit_version: "3.2.0"
+
+default_install_hook_types: [pre-commit, commit-msg, pre-push]
+
+# A hook with no `stages` runs at commit and before a push, never on the commit message: the
+# message hook below is the only one that reads it.
+default_stages: [pre-commit, pre-push]
+
+repos:
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.21.2
+    hooks:
+      - id: gitleaks
+
+  # Pinned to the same version as the binary, and installed by the hook rather than expected on
+  # the machine: a check that does not run because a tool is absent reads as a check that passed.
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: v0.11.0.1
+    hooks:
+      - id: shellcheck
+
+  - repo: local
+    hooks:
+      - id: repo-hygiene
+        name: repo hygiene
+        entry: scripts/check_repo_hygiene.sh
+        language: script
+        pass_filenames: false
+        always_run: true
+
+      # No dash typed as two hyphens anywhere in the tree (comments, docstrings, copy, Markdown), and an
+      # em dash in text the app renders. The places two hyphens are syntax rather than a dash (a SQL
+      # comment, a command's end of options) are named in the script, each with its reason.
+      - id: display-dashes
+        name: no double-hyphen dash, em dashes in copy
+        entry: scripts/check_display_dashes.py
+        language: system
+        pass_filenames: false
+        always_run: true
+
+      # Module, function and test-file lengths and each file's prose share may only fall. A fall
+      # is recorded by the hook (the record changes, the commit is refused once, stage it and
+      # commit again); a rise or a new entry over the line is refused outright.
+      - id: code-shape
+        name: code length and prose may only fall
+        entry: python scripts/check_code_shape.py --record
+        language: system
+        types_or: [python]
+        pass_filenames: false
+        require_serial: true
+
+      # semgrep is a pinned tool outside uv.lock: scripts/venv_tool.py runs it from the locked
+      # script that names its version, the same route CI and scripts/ci-local.sh take.
+      - id: semgrep
+        name: semgrep
+        entry: python scripts/venv_tool.py semgrep scan --config semgrep/ --error --quiet --disable-version-check
+        language: system
+        types: [text]
+        pass_filenames: false
+        require_serial: true
+
+      # ruff runs from the project venv, installed from uv.lock, so the hook, CI and a person's
+      # terminal use the same version. Through scripts/venv_tool.py, because a virtual environment
+      # keeps its executables in `Scripts/` on Windows and in `bin/` elsewhere.
+      # `--force-exclude`, because pre-commit passes FILENAMES and ruff ignores its own
+      # `extend-exclude` for a path named explicitly on the command line. Without it the hook would
+      # lint, and the formatter rewrite, `binding.gyp`, a C++ addon's build file that happens to
+      # parse as Python.
+      - id: ruff
+        name: ruff
+        entry: python scripts/venv_tool.py ruff check --force-exclude --fix
+        language: system
+        types_or: [python, pyi]
+        require_serial: true
+
+      - id: ruff-format
+        name: ruff-format
+        entry: python scripts/venv_tool.py ruff format --force-exclude
+        language: system
+        types_or: [python, pyi]
+        require_serial: true
+
+      # The client's formatter, at the version in package.json rather than a pinned mirror, so the
+      # hook, a person's terminal and the gate cannot disagree about what formatted means. Through a
+      # script because it has to run from the client's own directory: frontend/scripts/format-hook.js.
+      - id: prettier-client
+        name: prettier (browser client)
+        entry: node frontend/scripts/format-hook.js
+        language: system
+        files: ^frontend/
+        types_or: [javascript, ts, svelte, css, json, yaml, markdown]
+        require_serial: true
+
+      # Every structural gate over the client, before the commit exists.
+      #
+      # `gates.js` runs every `check_*.js` that reads only the source tree, in parallel, a few
+      # seconds in all; the three that need a build, a type pass or the unit suite stay in the
+      # wide run. A ratchet whose number FELL is recorded by the hook itself (the baseline file
+      # changes, pre-commit reports it, stage it and commit again); a rise is refused outright.
+      # Only when the client is in the commit, and once per commit rather than per file. By hand it
+      # is `npm run gate:structure` from frontend/; this entry runs the same script without npm,
+      # because on Windows `npm` is a .cmd that a hook cannot spawn without a shell.
+      - id: client-gates
+        name: client structural gates
+        entry: node frontend/scripts/gates.js
+        language: system
+        files: ^frontend/
+        pass_filenames: false
+        require_serial: true
+
+      # The docs site: its generated pages against what they describe, Vale 3.24.0 (pinned in
+      # scripts/check_docs.py; found on PATH or named in DOCS_VALE), every settings path a
+      # deep link to a row the pane draws, every page linked by its heading, every rail destination
+      # and pane with a page, and the menu labels a page still owes, which may only fall. Through
+      # the project's Python, because the generated pages are read from the running registry.
+      - id: docs-site
+        name: docs site
+        entry: python scripts/venv_tool.py python scripts/check_docs.py --write
+        language: system
+        files: ^(docs-site/|src/sift/|frontend/src/lib/|frontend/openapi\.json$|CHANGELOG\.md$|scripts/(check_docs|docs_\w+)\.py$|tests/gates/data/(vocabulary|docs_ratchets)\.json$)
+        pass_filenames: false
+        require_serial: true
+
+      - id: gitleaks-full-history
+        name: gitleaks (full history)
+        entry: scripts/gitleaks_full_history.sh
+        language: script
+        pass_filenames: false
+        always_run: true
+        stages: [pre-push]
+
+      # The root holds only the entries tests/gates/data/root_entries.txt declares.
+      - id: root-entries
+        name: root entries
+        entry: scripts/check_root_entries.sh
+        language: script
+        pass_filenames: false
+        always_run: true
+        stages: [pre-commit]
+
+      # The subject's shape and length, ASCII, and the narration list (see the script).
+      - id: commit-message
+
+        name: commit message
+        entry: scripts/check_commit_message.sh
+        language: script
+        always_run: true
+        stages: [commit-msg]
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      # Not a patch file: its context line for an empty source line IS one trailing space, and a
+      # patch the build applies is pinned by digest, so a "fix" here is a file the build refuses.
+      - id: trailing-whitespace
+        exclude: '\.patch$'
+      - id: end-of-file-fixer
+        exclude: '\.patch$'
+      - id: check-yaml
+      - id: check-toml
+      - id: check-merge-conflict
+      - id: check-case-conflict
+      - id: check-added-large-files
+        args: [--maxkb=1024]
+      - id: detect-private-key

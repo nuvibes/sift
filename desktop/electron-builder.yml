@@ -1,0 +1,113 @@
+# How the installer is built. One artefact, per-user, unsigned.
+#
+# The bundle is a real CPython and a real site-packages tree, not a frozen one: freezing this
+# dependency set means chasing hidden imports across onnxruntime, numpy and sentencepiece, and a
+# missed import fails at runtime per feature rather than at build time.
+#
+# The three things beside the Electron app are produced by scripts/release.py, the only supported
+# way to build one of these:
+#
+#   runtime     the pinned interpreter itself (Lib, DLLs and all), with the backend installed
+#               into its site-packages non-editable, so the built client (src/sift/web) travels
+#               inside the package
+#   vendor/bin  ffmpeg, ffprobe and the libraries they share, plus the two libwebp tools. Pinned by
+#               SHA-256 in scripts/vendor_manifest.json and verified before they are unpacked
+#   native      the compiled drag addon, which is bound to one Electron version
+
+# The Electron fuses, flipped at pack time. The first three close ways of making Sift.exe run code
+# that is not Sift's: ELECTRON_RUN_AS_NODE, --inspect and NODE_OPTIONS.
+#
+# The last two work together. `onlyLoadAppFromAsar` makes Electron load the entry point from
+# `app.asar` only, so an `app` folder dropped beside it cannot replace the application;
+# `enableEmbeddedAsarIntegrityValidation` checks the archive against a hash compiled into Sift.exe,
+# so the archive cannot be edited in place either. Neither is worth much alone.
+#
+# They narrow the entry point search, not the module loader: `require` of a file outside the
+# archive (the drag addon in resources/native) still works, and extraResources are untouched. A
+# modified archive exits 1 with `ASAR Integrity Violation` on standard error.
+#
+# A bad build therefore does not start, which is why scripts/release.py reads the five states back
+# out of the packed executable and launches it with `--smoke` before hashing the installer.
+# `npx @electron/fuses read --app release/win-unpacked/Sift.exe` reads them by hand.
+electronFuses:
+  runAsNode: false
+  enableNodeCliInspectArguments: false
+  enableNodeOptionsEnvironmentVariable: false
+  enableEmbeddedAsarIntegrityValidation: true
+  onlyLoadAppFromAsar: true
+
+appId: com.sift.desktop
+productName: Sift
+copyright: Sift contributors. AGPL-3.0-or-later.
+
+directories:
+  # `release`, and it must not be `dist`: `dist` is what `files` below packs, so an output there
+  # would pack every earlier build into the next one. release.py refuses an app.asar that has grown
+  # past a few megabytes.
+  output: release
+  # `installer/`, not `build/`: the repository ignores every directory called `build`, so a fresh
+  # clone would build an installer without these files and nothing would fail.
+  buildResources: installer
+
+# Only the main process's own code. Everything else arrives as extraResources, below.
+files:
+  - dist/**/*
+  - package.json
+  - '!**/*.map'
+
+# Paths are relative to this folder (desktop/), so each one climbs out to the repository root. A
+# wrong `from` silently ships an empty folder: the installer builds and the application cannot find
+# Python.
+extraResources:
+  # `runtime` is a real interpreter, not a virtual environment (see build_runtime in
+  # scripts/release.py).
+  #
+  # Its compiled bytecode ships with it. Without it, the first start on every machine writes several
+  # thousand .pyc files into the installed application's own folder.
+  - from: ../build/runtime
+    to: runtime
+  - from: ../vendor/bin
+    to: vendor/bin
+  - from: native/drag/build/Release/drag.node
+    to: native/drag.node
+  # Sift's mark as a file. The window takes its icon from the executable once packaged, but
+  # `new Tray(...)` needs a picture, so without this the tray icon draws nothing in an installed
+  # copy.
+  - from: installer/icon.ico
+    to: icon.ico
+
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  # Sift's own mark, compiled into the executable and used by the installer and the uninstaller.
+  # Without this line electron-builder silently falls back to Electron's logo.
+  # The file is generated from the one source drawing by frontend/scripts/brand-icons.mjs.
+  icon: installer/icon.ico
+  # Not `signAndEditExecutable: false`: that flag turns off signing AND resource editing, and
+  # resource editing is what writes the icon and the version information into Sift.exe.
+  #
+  # There is no signing because there is no certificate; electron-builder skips it when it finds
+  # none, and SmartScreen warns on every release.
+
+nsis:
+  # Per-user, so no administrator prompt and nothing written outside the person's own profile.
+  # The stock "anyone who uses this computer, or only me" page is never shown: installer.nsh's
+  # `customInstallMode` settles it as per user, since the first answer asked for administrator
+  # rights for an installer that is per user by design.
+  perMachine: false
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  allowElevation: false
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  # The library and the database are NEVER removed by an uninstall. The custom page in
+  # build/installer.nsh says so on screen; this setting is what makes it true.
+  deleteAppDataOnUninstall: false
+  include: installer/installer.nsh
+  artifactName: Sift-${version}-x64-setup.${ext}
+  uninstallDisplayName: Sift
+
+# Nothing is published from here. A release is built locally and the artefacts are handed over by
+# whoever built them.
+publish: null

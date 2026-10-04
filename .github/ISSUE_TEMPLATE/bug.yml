@@ -1,0 +1,57 @@
+name: Report a bug
+description: Sift did something it shouldn't, or didn't do something it should.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A security problem never goes in a public issue. [SECURITY.md](https://github.com/nuvibes/sift/blob/main/SECURITY.md#report-a-vulnerability) says how to report it privately.
+
+        Search the [open issues](https://github.com/nuvibes/sift/issues) first, because someone may have reported it already.
+  - type: textarea
+    id: happened
+    attributes:
+      label: What happened
+      description: What you saw, and any message Sift showed, word for word.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to see it again
+      description: What you pressed, in order, starting from a screen anyone can reach.
+      placeholder: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Sift's version
+      description: "Shown at `Settings > Updates and Info > Version`."
+      placeholder: "0.1.222"
+    validations:
+      required: true
+  - type: input
+    id: system
+    attributes:
+      label: Operating system
+      placeholder: "Windows 11 24H2"
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: The redacted log
+      description: |
+        At `Settings > Tasks and Activity > Logs`, click **Download log** and drag the file here. The file it saves is a redacted copy: your personal details are taken out. Don't paste lines from the screen or from **Copy for a bug report**, which keep them.
+    validations:
+      required: false

@@ -1,0 +1,81 @@
+{
+  "library": [
+    "library/browse",
+    "library/people",
+    "library/sites",
+    "library/collections",
+    "library/photo-sets",
+    "library/tags",
+    "library/music",
+    "library/loops",
+    "library/favorites",
+    "library/theater",
+    "library/organize",
+    "library/downloads",
+    "library/hidden",
+    "library/insights",
+    "library/recently-viewed"
+  ],
+  "settings": [
+    {
+      "label": "Library",
+      "items": [
+        "settings/library",
+        "settings/importing",
+        "settings/tasks",
+        "settings/downloads",
+        "settings/sites",
+        "settings/editing",
+        "settings/playback"
+      ]
+    },
+    {
+      "label": "Personal",
+      "items": [
+        "settings/profile",
+        "settings/appearance",
+        "settings/get-to-know",
+        "settings/privacy",
+        "settings/users",
+        "settings/shortcuts"
+      ]
+    },
+    {
+      "label": "Recognition",
+      "items": [
+        "settings/faces",
+        "settings/semantic",
+        "settings/stash-boxes",
+        "settings/music",
+        "settings/watermarks"
+      ]
+    },
+    {
+      "label": "System",
+      "items": [
+        "settings/general",
+        "settings/performance",
+        "settings/maintenance",
+        "settings/backup",
+        "settings/updates"
+      ]
+    }
+  ],
+  "routes": {
+    "/browse": "/library/browse/",
+    "/people": "/library/people/",
+    "/sites": "/library/sites/",
+    "/collections": "/library/collections/",
+    "/photo-sets": "/library/photo-sets/",
+    "/tags": "/library/tags/",
+    "/songs": "/library/music/",
+    "/loops": "/library/loops/",
+    "/favorites": "/library/favorites/",
+    "/theater": "/library/theater/",
+    "/organize": "/library/organize/",
+    "/downloads": "/library/downloads/",
+    "/hidden": "/library/hidden/",
+    "/insights": "/library/insights/",
+    "/recent": "/library/recently-viewed/"
+  }
+}

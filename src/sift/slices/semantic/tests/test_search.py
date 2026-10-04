@@ -1,0 +1,273 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+"""What crosses the boundary between the search box and the index, and what does not.
+
+**An answer, never a question.** A list of files and how far each sat from what was asked. The read
+that decides who may see what then orders by that list, without ever knowing there is a vector
+index, which is what keeps a pre-1.0 dependency swappable and the permission rules in one place.
+
+**None and empty are different answers and the difference matters.** None means this install cannot
+answer by meaning right now (switched off, no models, no add-on), and the caller falls back to
+the ordinary order. An empty list means the question WAS asked and nothing came near, which is a
+result and orders the page by nothing.
+
+**A file is never its own lookalike.** Every file is nearest to itself, and "this is like this" is
+not an answer to anything.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+import pytest
+
+from sift.slices.semantic.search import SemanticSearch
+from sift.slices.semantic.store import Neighbour
+
+pytestmark = pytest.mark.unit
+
+
+class Service:
+    """The feature, answering whatever the test set up."""
+
+    def __init__(
+        self,
+        *,
+        query_vector: list[float] | None = None,
+        supported: bool = True,
+        describes: list[float] | None = None,
+        found: list[Neighbour] | None = None,
+        anything: bool = True,
+    ) -> None:
+        self._query_vector = query_vector
+        self._supported = supported
+        self._describes = describes if describes is not None else []
+        self._found = found if found is not None else []
+        self._anything = anything
+        self.asked_for: list[int] = []
+        self.asked_anything = 0
+        self.asked_many: list[list[str]] = []
+
+    async def describe_query(self, text: str) -> list[float] | None:
+        return self._query_vector
+
+    async def readiness(self) -> Any:
+        return type("Readiness", (), {"supported": self._supported})()
+
+    async def describes(self, asset_id: str) -> list[float]:
+        return self._describes
+
+    async def nearest(self, vector: list[float], *, limit: int) -> list[Neighbour]:
+        self.asked_for.append(limit)
+        return self._found
+
+    async def describes_anything(self) -> bool:
+        self.asked_anything += 1
+        return self._anything
+
+    async def describes_many(self, asset_ids: list[str]) -> dict[str, list[float]]:
+        self.asked_many.append(list(asset_ids))
+        return {asset_id: self._describes for asset_id in asset_ids}
+
+    async def similar_to(self, asset_id: str, *, limit: int) -> Any:
+        self.asked_for.append(limit)
+        neighbours = tuple((one.asset_id, one.distance) for one in self._found)
+        return type("Similar", (), {"neighbours": neighbours})()
+
+
+def search(**kwargs: Any) -> tuple[SemanticSearch, Service]:
+    service = Service(**kwargs)
+    return SemanticSearch(service), service  # type: ignore[arg-type]
+
+
+# --- words ---------------------------------------------------------------------------------
+
+
+async def test_only_the_last_few_queries_are_remembered() -> None:
+    """A vector per distinct query, for as long as somebody is typing; the oldest go first."""
+    from sift.slices.semantic.search import REMEMBERED
+
+    finder, _service = search(query_vector=[1.0], found=[])
+    for index in range(REMEMBERED + 3):
+        await finder.neighbours(f"query {index}")
+
+    assert len(finder._vectors) == REMEMBERED
+    assert "query 0" not in finder._vectors and "query 3" in finder._vectors
+
+
+async def test_words_come_back_as_files_and_distances() -> None:
+    finder, _service = search(
+        query_vector=[1.0],
+        found=[Neighbour("a", 0, 0.1), Neighbour("b", 2000, 0.4)],
+    )
+
+    assert await finder.neighbours("a dog on a beach") == (("a", 0.1), ("b", 0.4))
+
+
+async def test_an_install_that_cannot_answer_says_so_rather_than_nothing() -> None:
+    """None, not an empty list. The caller falls back to the ordinary order; an empty list would
+    have it order a page by nothing, which is a different and wrong answer."""
+    finder, _service = search(query_vector=None)
+
+    assert await finder.neighbours("anything") is None
+
+
+async def test_a_question_that_matched_nothing_is_an_empty_answer() -> None:
+    finder, _service = search(query_vector=[1.0], found=[])
+
+    assert await finder.neighbours("anything") == ()
+
+
+# --- a file --------------------------------------------------------------------------------
+
+
+async def test_a_file_comes_back_with_what_looks_like_it() -> None:
+    finder, _service = search(
+        describes=[1.0],
+        found=[Neighbour("mine", 0, 0.0), Neighbour("other", 0, 0.2)],
+    )
+
+    assert await finder.like_asset("mine") == (("other", 0.2),)
+
+
+async def test_a_machine_that_cannot_hold_the_index_answers_none() -> None:
+    finder, _service = search(supported=False, describes=[1.0])
+
+    assert await finder.like_asset("mine") is None
+
+
+async def test_a_file_the_pass_has_not_reached_answers_none() -> None:
+    """Not a failure: a fact about how far the background work has got. The caller falls back to
+    the tier that needs no index."""
+    finder, _service = search(describes=[])
+
+    assert await finder.like_asset("mine") is None
+
+
+async def test_more_candidates_are_asked_for_than_a_page_holds() -> None:
+    """The lookup runs before any permission rule does, so some of what it finds is filtered out
+    afterwards. Asking for exactly a page hands back less than a page."""
+    finder, service = search(query_vector=[1.0], found=[])
+
+    await finder.neighbours("anything")
+
+    assert service.asked_for == [200]
+
+
+# --- what is remembered between the grid's repeated questions ---------------------------------
+
+
+class Counting(Service):
+    """The stand-in again, counting how often the model is asked to describe words."""
+
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self.described = 0
+
+    async def describe_query(self, text: str) -> list[float] | None:
+        self.described += 1
+        return await super().describe_query(text)
+
+
+async def test_the_same_words_are_ranked_once_under_one_mark(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The grid asks the same question several times per search; the model and the index
+    answer it once while nothing has changed."""
+    from sift.slices.semantic import search as module
+
+    monkeypatch.setattr(module, "current_mark", lambda: "m1")
+    service = Counting(query_vector=[1.0], found=[Neighbour("A", 0, 0.1)])
+    searching = SemanticSearch(service)  # type: ignore[arg-type]
+    first = await searching.neighbours("red bikini", limit=200)
+    second = await searching.neighbours("red bikini", limit=200)
+    assert first == second == (("A", 0.1),)
+    assert service.described == 1
+    assert service.asked_for == [200]
+    # A deeper reach is a different ranking, but the same words: the index again, the model not.
+    await searching.neighbours("red bikini", limit=400)
+    assert service.described == 1
+    assert service.asked_for == [200, 400]
+
+
+async def test_a_moved_mark_ranks_again_but_keeps_the_vector(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from sift.slices.semantic import search as module
+
+    marks = iter(["m1", "m2"])
+    monkeypatch.setattr(module, "current_mark", lambda: next(marks))
+    service = Counting(query_vector=[1.0], found=[Neighbour("A", 0, 0.1)])
+    searching = SemanticSearch(service)  # type: ignore[arg-type]
+    await searching.neighbours("red bikini")
+    await searching.neighbours("red bikini")
+    assert service.asked_for == [200, 200], "the index moved, so it is asked again"
+    assert service.described == 1, "what the words mean did not move with it"
+
+
+async def test_nothing_is_kept_when_the_words_cannot_be_described(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A model that is not ready yet answers nothing, and the next asker gets to find out."""
+    from sift.slices.semantic import search as module
+
+    monkeypatch.setattr(module, "current_mark", lambda: "m1")
+    service = Counting(query_vector=None, found=[Neighbour("A", 0, 0.1)])
+    searching = SemanticSearch(service)  # type: ignore[arg-type]
+    assert await searching.neighbours("red bikini") is None
+    service._query_vector = [1.0]
+    assert await searching.neighbours("red bikini") == (("A", 0.1),)
+    assert service.described == 2
+
+
+# --- whether there is anything to compare against at all ------------------------------------
+
+
+async def test_an_install_with_descriptions_can_answer() -> None:
+    finder, service = search(anything=True)
+
+    assert await finder.can_answer() is True
+    assert service.asked_anything == 1, "one read, not one per file"
+
+
+async def test_an_install_that_has_described_nothing_cannot_answer() -> None:
+    """The index works and holds nothing the model in use put there: a new library, the feature
+    switched on this minute, or a model changed under the previous one's numbers."""
+    finder, _service = search(anything=False)
+
+    assert await finder.can_answer() is False
+
+
+async def test_a_machine_that_cannot_hold_the_index_cannot_answer() -> None:
+    """Asked BEFORE the index is read: on this machine there is nothing to read."""
+    finder, service = search(supported=False, anything=True)
+
+    assert await finder.can_answer() is False
+    assert service.asked_anything == 0
+
+
+# --- many files at once --------------------------------------------------------------------
+
+
+async def test_many_files_are_described_in_one_ask() -> None:
+    finder, service = search(describes=[0.6, 0.8])
+
+    assert await finder.describe_many(["a", "b"]) == {"a": [0.6, 0.8], "b": [0.6, 0.8]}
+    assert service.asked_many == [["a", "b"]]
+
+
+async def test_a_machine_that_cannot_hold_the_index_describes_none_of_them() -> None:
+    """None, not an empty map: an empty map would read as "none of these files was described",
+    and the caller would go on asking file by file for answers that can never come."""
+    finder, service = search(supported=False, describes=[0.6, 0.8])
+
+    assert await finder.describe_many(["a", "b"]) is None
+    assert service.asked_many == []
+
+
+async def test_a_files_lookalikes_are_the_strip_s_answer_at_the_wall_s_length() -> None:
+    """A wall filtered by `like:` asks the question the strip under a file asks, for more of it, so
+    the wall holds what the strip draws."""
+    finder, service = search(found=[Neighbour("b", 0, 0.2), Neighbour("c", 0, 0.3)])
+
+    assert await finder.lookalikes("a", limit=7) == (("b", 0.2), ("c", 0.3))
+    assert service.asked_for == [7]

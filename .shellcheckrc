@@ -1,0 +1,9 @@
+# Follow a sourced script instead of reporting that it was not named on the command line.
+#
+# Every `.` in this repository names a file that is really there, and each already carries a
+# `# shellcheck source=` directive saying which. Without this, shellcheck reports SC1091 for all of
+# them (an INFO that still fails the run), and the hook is red on any script that sources another.
+#
+# Following them is also the better check rather than merely the quieter one: it is what lets
+# shellcheck know which functions and variables the sourced file defines.
+external-sources=true

@@ -1,0 +1,139 @@
+import { afterEach, beforeEach, expect, it } from 'vitest';
+import { createRawSnippet, flushSync, mount, unmount } from 'svelte';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import StageBar from './StageBar.svelte';
+import stageBarSource from './StageBar.svelte?raw';
+import { applyStyles, removeStyles } from '$lib/design/testing-styles';
+
+/*
+ * The bar a filled screen rises from the bottom edge, and the three states it has.
+ *
+ * A shared primitive. What is worth pinning is not how it looks
+ * (a computed style can answer that) but the difference between the two ways it can be away.
+ * Shut, it draws nothing at all rather than an empty strip; quiet, it is still mounted and faded,
+ * and it must be UNREACHABLE while it is, or the screen has an invisible row of buttons across it
+ * that the keyboard can still get to and a screen reader still announces.
+ */
+
+const words = (text: string) => createRawSnippet(() => ({ render: () => `<span>${text}</span>` }));
+
+let host: HTMLDivElement;
+let mounted: Record<string, unknown> | null = null;
+
+function draw(props: Record<string, unknown>) {
+	mounted = mount(StageBar, {
+		target: host,
+		props: {
+			open: true,
+			label: 'Wall controls',
+			children: words('controls'),
+			...props
+		}
+	}) as Record<string, unknown>;
+	flushSync();
+}
+
+beforeEach(() => {
+	host = document.createElement('div');
+	document.body.append(host);
+});
+
+afterEach(() => {
+	if (mounted) unmount(mounted);
+	mounted = null;
+	host.remove();
+});
+
+it('is a region rather than a dialog, so nothing behind it is blocked', () => {
+	// What is on the screen is still playing. A bar that took the keyboard to announce itself would
+	// be in the way of exactly the thing somebody is watching.
+	draw({});
+
+	const bar = host.querySelector('.stage-bar');
+	expect(bar?.getAttribute('role')).toBe('region');
+	expect(bar?.getAttribute('aria-label')).toBe('Wall controls');
+});
+
+it('draws nothing at all when it is shut, rather than an empty strip', () => {
+	draw({ open: false });
+
+	expect(host.querySelector('.stage-bar')).toBeNull();
+});
+
+it('is unreachable while it is quiet, not merely invisible', () => {
+	/* Faded rather than unmounted, because unmounting would replay its arrival every time a pointer
+	   moved. That leaves it in the document, so it has to be taken out of the tab order and out of
+	   the accessibility tree at the same moment, or a screen whose chrome has gone quiet still has a
+	   row of buttons across it that both the keyboard and a screen reader can reach. */
+	draw({ quiet: true });
+
+	const bar = host.querySelector('.stage-bar');
+	expect(bar, 'quiet is not the same as shut: it stays mounted').not.toBeNull();
+	// Read as a PROPERTY. Svelte sets `inert` on the element rather than as an attribute, and jsdom
+	// reports a missing feature as `undefined`, so an attribute check here answers false whether
+	// the rule is there or not, which is the shape of a test that cannot fail.
+	expect((bar as HTMLElement).inert).toBe(true);
+	expect(bar?.getAttribute('aria-hidden')).toBe('true');
+});
+
+it('is reachable again the moment it is not quiet', () => {
+	draw({});
+
+	const bar = host.querySelector('.stage-bar');
+	/* Falsy rather than `false`: jsdom does not implement `inert` at all, so the property is only
+	   there because the component set it, and not setting it leaves `undefined`, which is the
+	   right answer here and is not the same value. The test above is the one that binds. */
+	expect((bar as HTMLElement).inert).toBeFalsy();
+	expect(bar?.getAttribute('aria-hidden')).toBe('false');
+});
+
+it('puts the picker before the controls, because they are read in that order', () => {
+	// "Do this" after "to what". A bar that put them the other way round would be answering the
+	// second question first.
+	draw({ lead: words('cell two') });
+
+	// The scope hash rides on every class here, so the names are read off the front of each.
+	const inside = [...(host.querySelector('.stage-bar')?.children ?? [])].map(
+		(one) => one.className.toString().split(' ')[0]
+	);
+	expect(inside).toEqual(['lead', 'controls']);
+});
+
+it('leaves the picker out entirely when there is nothing to pick between', () => {
+	draw({});
+
+	expect(host.querySelector('.lead')).toBeNull();
+	expect(host.querySelector('.controls')).not.toBeNull();
+});
+
+/*
+ * What it reports as its height is its border box.
+ *
+ * Read off the source, because jsdom lays nothing out and every box is zero, so no mounted test can
+ * tell the two bindings apart. The number goes to whatever must not be under the bar, and this bar
+ * has a hairline on each edge: a content height leaves both out, and a wall meeting the bar's top
+ * edge exactly would meet it two pixels late.
+ */
+it('reports the room it takes including its own hairlines', () => {
+	const source = readFileSync(resolve('src/lib/components/theater/StageBar.svelte'), 'utf8');
+	expect(source).toContain('bind:offsetHeight={tall}');
+	expect(source, 'the bar went back to reporting its content box').not.toContain(
+		'bind:clientHeight'
+	);
+});
+
+/* The picker at the leading edge stands in the row named for the transport, which the controls
+   share through a subgrid, so it stays level with Play when a row opens under the transport. */
+it('stands the picker in the transport row, which the controls share', () => {
+	draw({ lead: words('picker') });
+	const bar = host.querySelector('.stage-bar') as HTMLElement;
+	applyStyles(stageBarSource, bar);
+	expect(getComputedStyle(bar).gridTemplateRows).toContain('[transport]');
+	const lead = host.querySelector('.lead') as HTMLElement;
+	expect(getComputedStyle(lead).gridRow).toBe('transport');
+	const controls = host.querySelector('.controls') as HTMLElement;
+	expect(getComputedStyle(controls).gridTemplateRows).toBe('subgrid');
+	expect(getComputedStyle(controls).gridRow).toBe('1 / -1');
+	removeStyles();
+});

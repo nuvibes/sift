@@ -1,0 +1,135 @@
+name: release-verify
+
+# A published release, checked from the outside the way somebody downloading it would meet it:
+# the files on the release page, the desktop shell's own signature check against the key compiled
+# into it, and the backend inside the installer answering with the version the tag names. Plus the
+# bill of materials of what that release ships. Nothing here builds anything.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: The release tag to check again, such as v0.2.0.
+        required: true
+        type: string
+
+# Each job states the permissions it needs, and the workflow grants none by default.
+permissions: {}
+
+# One check of a tag at a time: a second waits, and never cancels the one that is reporting.
+concurrency:
+  group: release-verify-${{ github.event.release.tag_name || inputs.tag }}
+  cancel-in-progress: false
+
+# Bash on every runner, Windows included, so one script reads the same everywhere.
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  verify:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+      GH_TOKEN: ${{ github.token }}
+      # The shell is compiled for its verifier only; the Electron binary is never started here.
+      ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.release.tag_name || inputs.tag }}
+          persist-credentials: false
+      - uses: ./.github/actions/node
+        with:
+          workspace: desktop
+
+      - name: The shell's verifier, compiled from the tagged tree
+        working-directory: desktop
+        run: npm run build
+
+      - name: Download the release
+        run: |
+          set -euo pipefail
+          gh release download "$TAG" --dir "$RUNNER_TEMP/release" --pattern 'Sift-*-x64-setup.exe*'
+          ls -l "$RUNNER_TEMP/release"
+
+      # The tag, the installer's name, the signed manifest and pyproject.toml name one version;
+      # both signatures verify against the shipped key; the installer hashes to what both name.
+      - name: Signatures, hash and version agree
+        run: node .github/scripts/verify_release.cjs "$RUNNER_TEMP/release" "$TAG"
+
+      # The installer's own payload, unpacked rather than installed so the runner's registry and
+      # Start menu are left alone: an NSIS installer holds the application as one 7-Zip archive.
+      - name: Unpack the installer
+        run: |
+          set -euo pipefail
+          version="${TAG#v}"
+          7z x -y -bso0 -bsp0 -o"$RUNNER_TEMP/nsis" "$RUNNER_TEMP/release/Sift-$version-x64-setup.exe"
+          payload="$(find "$RUNNER_TEMP/nsis" -name 'app-64.7z' | head -1)"
+          test -n "$payload" || { echo "::error::no app-64.7z inside the installer"; exit 1; }
+          7z x -y -bso0 -bsp0 -o"$RUNNER_TEMP/app" "$payload"
+          test -x "$RUNNER_TEMP/app/resources/runtime/python.exe" \
+            || { echo "::error::the installer carries no runtime at resources/runtime"; exit 1; }
+
+      # Started the way the shell starts it (desktop/src/backend.ts), on a fresh data folder and a
+      # port of its own. The version route needs a session, so the first admin is created with a
+      # throwaway password first.
+      - name: The backend it ships starts and names the tag's version
+        run: |
+          set -euo pipefail
+          app="$RUNNER_TEMP/app/resources"
+          at="http://127.0.0.1:5398"
+          SIFT_DATA_DIR="$RUNNER_TEMP/data" SIFT_CACHE_DIR="$RUNNER_TEMP/cache" \
+          SIFT_HOST=127.0.0.1 SIFT_PORT=5398 \
+          SIFT_FFMPEG_PATH="$app/vendor/bin/ffmpeg.exe" SIFT_FFPROBE_PATH="$app/vendor/bin/ffprobe.exe" \
+          SIFT_WEBPINFO_PATH="$app/vendor/bin/webpinfo.exe" SIFT_ANIM_DUMP_PATH="$app/vendor/bin/anim_dump.exe" \
+            "$app/runtime/python.exe" -I -u -m sift.main > "$RUNNER_TEMP/backend.log" 2>&1 &
+          backend=$!
+
+          up=0
+          for _ in $(seq 1 90); do
+            if curl -sf "$at/health" | grep -q '"status":"ok"'; then up=1; break; fi
+            sleep 2
+          done
+          if [ "$up" != 1 ]; then
+            echo "::error::the backend did not answer /health"; tail -50 "$RUNNER_TEMP/backend.log"; exit 1
+          fi
+
+          password="Aa1!$(openssl rand -hex 16)"
+          curl -sf -c "$RUNNER_TEMP/jar" -H 'Content-Type: application/json' \
+            -o "$RUNNER_TEMP/setup.json" \
+            -d "{\"username\":\"verify\",\"password\":\"$password\"}" "$at/api/auth/setup"
+          answered="$(curl -sf -b "$RUNNER_TEMP/jar" "$at/api/update/version")"
+          echo "$answered"
+          running="$(printf '%s' "$answered" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(JSON.parse(s).version))')"
+          kill "$backend" || true
+          test "$running" = "${TAG#v}" \
+            || { echo "::error::the installed backend says $running, the tag ${TAG#v}"; exit 1; }
+
+  # What the release ships, resolved for Windows at the tagged tree, kept with the run.
+  sbom:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.release.tag_name || inputs.tag }}
+          persist-credentials: false
+      - uses: ./.github/actions/python
+
+      - run: uv run bash scripts/sbom.sh sbom.cdx.json
+
+      - name: Every licence is compatible
+        run: uv run python scripts/check_licenses.py sbom.cdx.json
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: sbom-${{ github.event.release.tag_name || inputs.tag }}
+          path: sbom.cdx.json

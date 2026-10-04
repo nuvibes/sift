@@ -1,0 +1,28 @@
+---
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// The site's name is the app's own lockup, the one the app draws top left (Rail.svelte's Logo),
+// linked to the site's home. The markup is the app's Wordmark.svelte, read by astro.config.mjs,
+// so a change to the mark is a change here; drawn inline, its letters take the ink and its grain
+// the accent, which an <img> could not.
+declare const __SIFT_LOCKUP__: string;
+const { siteTitle, siteTitleHref } = Astro.locals.starlightRoute;
+---
+
+<a href={siteTitleHref} class="site-title">
+	<Fragment set:html={__SIFT_LOCKUP__} />
+	<span class="sr-only" translate="no">{siteTitle}</span>
+</a>
+
+<style>
+	.site-title {
+		display: flex;
+		align-items: center;
+		color: var(--sl-color-white);
+		text-decoration: none;
+		min-width: 0;
+	}
+	.site-title :global(svg) {
+		height: calc(var(--sl-nav-height) - 2 * var(--sl-nav-pad-y));
+		width: auto;
+	}
+</style>

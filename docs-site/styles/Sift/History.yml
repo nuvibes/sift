@@ -1,0 +1,11 @@
+# No dates and no histories in the docs: a page says what Sift does, never what it did or when it
+# changed. The changelog holds what changed.
+extends: existence
+message: "'%s' tells a history or a date. Say what Sift does; the changelog says what changed."
+level: error
+ignorecase: true
+tokens:
+  - '20\d\d'
+  - '(?:January|February|March|April|June|July|August|September|October|November|December) \d{1,2}'
+  - '(?:previously|formerly|used to|no longer|in earlier versions|in older versions|as of version|since version|new in|renamed from|was renamed|is now called|now called)'
+  - 'version \d+\.\d+'

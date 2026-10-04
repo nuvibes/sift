@@ -1,0 +1,13 @@
+# Second person: the docs speak to the reader about the reader's computer and library, never "this
+# device" or "this Sift" in their own voice ("Sift keeps your library on your computer"). A screen
+# label keeps the screen's word: written in bold (**This device**) it is quoted, and the rule leaves
+# it; a settings path is never read (TokenIgnores). The generated settings pages are left out in
+# .vale.ini, because their rows are the registry's copy as the screen draws it; their openings are
+# read on their own.
+extends: existence
+message: "Say '%s' to the reader: your computer, the computer Sift runs on, your library."
+level: error
+ignorecase: true
+scope: ~strong
+tokens:
+  - 'this (?:device|Sift|computer|machine|library)'

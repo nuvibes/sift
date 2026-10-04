@@ -1,0 +1,14 @@
+{
+  "name": "sift-native-drag",
+  "private": true,
+  "version": "0.0.0",
+  "license": "AGPL-3.0-or-later",
+  "description": "A real OS file drag-out. Electron's own startDrag advertises copyLink, which Discord refuses (electron#15361, closed not planned), so the drag is driven directly through OLE with the move effect.",
+  "main": "index.js",
+  "gypfile": true,
+  "os": ["win32"],
+  "cpu": ["x64"],
+  "dependencies": {
+    "node-addon-api": "8.9.2"
+  }
+}

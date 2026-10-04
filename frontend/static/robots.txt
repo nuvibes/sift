@@ -1,0 +1,7 @@
+# Sift is a personal library. Nothing in it is meant to be indexed, and an instance reachable from
+# the internet has no reason to turn up in a search result.
+#
+# A request, not a control: a crawler chooses whether to honour it, and the login is what actually
+# keeps anyone out. It costs nothing and removes one way an instance gets found.
+User-agent: *
+Disallow: /

@@ -1,0 +1,3 @@
+<!DOCTYPE html>
+<html><head><title>hi</title></head>
+<body><script>fetch('http://example.invalid')</script></body></html>

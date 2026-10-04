@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security problem
+    url: https://github.com/nuvibes/sift/security/advisories/new
+    about: Report it privately, never as a public issue. SECURITY.md says what to include.
+  - name: Read the documentation
+    url: https://nuvibes.github.io/sift/
+    about: How to use Sift, every screen and setting, and how to add the log to a bug report.
+  - name: Ask on Discord
+    url: https://discord.gg/VjHQDA3kSw
+    about: Questions, and help from people who use Sift.

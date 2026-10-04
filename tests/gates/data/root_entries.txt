@@ -1,0 +1,41 @@
+# Every name the repository root may hold, one per line. A file at the root that is not here is
+# refused by tests/gates/test_root_closure.py and, at each commit, by scripts/check_root_entries.sh:
+
+# the root is where a scratch file lands, and it is the first thing a reader sees.
+
+# --- documents
+ARCHITECTURE.md
+CHANGELOG.md
+CONTRIBUTING.md
+LICENSE
+NOTICE
+README.md
+SECURITY.md
+
+# --- the source trees
+desktop
+docs
+docs-site
+frontend
+scripts
+semgrep
+shared
+src
+tests
+
+# --- the build, the lock and the test configuration
+conftest.py
+pyproject.toml
+uv.lock
+
+# --- tool configuration
+.env.example
+.gitattributes
+.github
+.gitignore
+.gitleaks.toml
+.nvmrc
+.pre-commit-config.yaml
+.python-version
+.semgrepignore
+.shellcheckrc

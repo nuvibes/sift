@@ -1,0 +1,25 @@
+# Excluded from the scan. Keep this list short: every entry is code nothing checks.
+
+# Rule tests: deliberately contain the violations they assert on. Exercised by
+# `semgrep --test`, which targets them directly.
+semgrep/
+
+# Dependencies and build output
+.venv/
+venv/
+node_modules/
+.svelte-kit/
+build/
+dist/
+*.egg-info/
+
+# Caches
+__pycache__/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.hypothesis/
+
+# Runtime state
+/data/
+/cache/

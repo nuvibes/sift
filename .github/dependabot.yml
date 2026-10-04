@@ -1,0 +1,97 @@
+# Monthly, one grouped pull request per ecosystem, minor and patch versions only: one review a
+# month for each, rather than a stream of single bumps. A major version is a deliberate change made
+# by hand; so is an Electron version, because the native drag addon is rebuilt against it at
+# release. A release must be a week old before it is proposed, so a compromised version is usually
+# pulled before it arrives here.
+version: 2
+# Every subject is `type(area): the change`, the shape the commit-message hook holds a person's
+# commits to: `build(deps)` or `build(deps-dev)` for a package, `ci(deps)` for an action.
+
+updates:
+  - package-ecosystem: uv
+    directory: /
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: build
+      include: scope
+    cooldown:
+      default-days: 7
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+    groups:
+      python:
+        patterns: ["*"]
+        update-types: [minor, patch]
+
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: build
+      include: scope
+    cooldown:
+      default-days: 7
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+    groups:
+      client:
+        patterns: ["*"]
+        update-types: [minor, patch]
+
+  - package-ecosystem: npm
+    directory: /desktop
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: build
+      include: scope
+    cooldown:
+      default-days: 7
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: electron
+    groups:
+      shell:
+        patterns: ["*"]
+        update-types: [minor, patch]
+
+  - package-ecosystem: npm
+    directory: /docs-site
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: build
+      include: scope
+    cooldown:
+      default-days: 7
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+    groups:
+      docs:
+        patterns: ["*"]
+        update-types: [minor, patch]
+
+  # The workflows and this repository's own composite actions, which pin actions by commit SHA;
+  # Dependabot moves the SHA and the tag comment together.
+  - package-ecosystem: github-actions
+    directories: ["/", "/.github/actions/*"]
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: ci
+      include: scope
+    cooldown:
+      default-days: 7
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+    groups:
+      actions:
+        patterns: ["*"]
+        update-types: [minor, patch]

@@ -1,0 +1,39 @@
+{
+  "name": "sift-desktop",
+  "private": true,
+  "license": "AGPL-3.0-or-later",
+  "repository": "github:nuvibes/sift",
+  "description": "The Sift desktop app.",
+  "main": "dist/main.js",
+  "type": "commonjs",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "npm run build && electron .",
+    "dev": "npm run build && electron . --dev",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json",
+    "build:native": "node-gyp rebuild --directory=native/drag",
+    "rebuild:native": "electron-rebuild -m native/drag --force",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "gate:coverage": "npm run test:coverage && node scripts/check_desktop_coverage.mjs",
+    "gate:audit": "node scripts/check_audit.mjs",
+    "pack": "electron-builder --win --x64 --config electron-builder.yml --publish never"
+  },
+  "devDependencies": {
+    "@electron/rebuild": "4.2.0",
+    "@types/node": "22.20.4",
+    "@vitest/coverage-v8": "^4.1.11",
+    "cross-env": "10.1.0",
+    "electron": "43.7.5",
+    "electron-builder": "26.15.3",
+    "node-gyp": "12.4.0",
+    "typescript": "5.9.3",
+    "vitest": "^4.1.11"
+  },
+  "dependencies": {
+    "node-addon-api": "8.9.2"
+  },
+  "overrides": {
+    "tar": "7.5.22"
+  }
+}

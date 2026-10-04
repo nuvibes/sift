@@ -1,0 +1,22 @@
+General is where you choose the confirmations Sift shows, and in the Sift app, how Sift starts and closes. To open it, go to [Settings > General](/settings/general).
+
+Come here to turn a confirmation back on, or to share your library with other devices on your network. Which browser links open in, what the close button does and starting with Windows are set in the Sift app on your computer.
+
+![The General pane in Settings](../../../assets/screens/settings-general.jpg)
+
+## On this pane
+
+The pane draws one group in a browser, and more in the Sift app:
+
+- <a id="general.confirmations"></a>**Confirmations**: whether you confirm before Sift deletes from disk, and before it removes a person, Site, collection, Photo Set or tag from a file.
+- <a id="general.links_open_in"></a>**Links**: in the Sift app, which browser Sift opens a link with.
+- <a id="general.closing_the_window"></a>**Closing the window**: in the Sift app, whether closing the window leaves Sift running in the notification area.
+- <a id="general.start_with_windows"></a>**Start Sift when Windows starts**: in the Sift app, whether Sift starts each time you sign in to Windows.
+- <a id="privacy.network_sharing"></a>**Share this library on my network**: in the Sift app, whether other devices on your network can open Sift.
+- <a id="general.library_location"></a>**Library location**: in the Sift app, whether your library is on your computer or on another computer Sift connects to. Changing it moves nothing.
+- <a id="general.server"></a>**The computer running Sift**: from another device, the settings of the computer your library is on, with **Firewall** and **Open the firewall port**.
+
+## Rows the pane draws by hand
+
+- <a id="general.run_setup"></a>**Run setup again**: the next time you open Sift, it asks how to set up, as it did the first time.
+- <a id="general.restart"></a>**Restart Sift**: Sift closes and opens again.

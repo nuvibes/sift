@@ -1,0 +1,127 @@
+<script lang="ts">
+	/* Settings > Updates: which programs do the fetching, and which version of each.
+	 *
+	 * On Updates because the question these answer is "is what Sift runs up to date" (facts
+	 * about what Sift RUNS rather than choices about downloading), and a new yt-dlp arrives with
+	 * a new Sift, so the check below and the update above it are one story.
+	 *
+	 * Sift ships its own copies of these: the downloaders go stale in weeks, and a copy the
+	 * machine happens to have can be months old and fail a public video part way. So the question
+	 * worth a row is not "is it installed" but "which one is Sift actually running", and each row
+	 * says the version and whether that copy is Sift's own or the machine's.
+	 *
+	 * The versions are asked of the tools themselves by the server, once, the first time this
+	 * pane opens. Checking for a newer yt-dlp is a BUTTON and only a button: it is the one thing
+	 * on this pane that reaches the internet, so it happens when a person presses it and at no
+	 * other time. It says what it found and changes nothing: a new yt-dlp arrives with a new
+	 * Sift.
+	 */
+	import { onMount } from 'svelte';
+	import { jobChanges, whenChanged } from '$lib/library/changes.svelte';
+	import { api } from '$lib/api/client';
+	import type { components } from '$lib/api/schema';
+	import ActionRow from './ActionRow.svelte';
+	import FactRow from './FactRow.svelte';
+	import SettingGroup from './SettingGroup.svelte';
+	import { COPY } from './DownloadTools.search';
+
+	type Tool = components['schemas']['DownloadTool'];
+	type Release = components['schemas']['DownloadToolRelease'];
+
+	/* What each one is for, in a line. Keyed by the server's key so a tool the server adds later
+	 * still draws (with no sentence) rather than not at all. */
+	const PURPOSE: Record<string, string> = COPY.purpose;
+
+	let tools = $state<Tool[] | null>(null);
+	let unreadable = $state(false);
+	let checking = $state(false);
+	let release = $state<Release | null>(null);
+	let checkFailed = $state(false);
+
+	async function readTools(): Promise<void> {
+		try {
+			tools = (await api.get<components['schemas']['DownloadTools']>('/download-tools')).tools;
+			unreadable = false;
+		} catch {
+			unreadable = true;
+		}
+	}
+
+	onMount(() => void readTools());
+	/* A tool is fetched or updated by a job, and a job that ends rings the jobs bell: the versions
+	   on this pane follow it rather than waiting for the pane to be opened again. */
+	whenChanged(jobChanges, () => void readTools());
+
+	function label(tool: Tool): string {
+		return tool.key === 'js-runtime' ? COPY.engine : tool.name;
+	}
+
+	function help(tool: Tool): string {
+		const origin = tool.shipped
+			? COPY.shipped
+			: tool.version === null
+				? COPY.missing
+				: COPY.devicesOwn;
+		return [PURPOSE[tool.key], origin].filter(Boolean).join(' ');
+	}
+
+	function fact(tool: Tool): string {
+		if (tool.key === 'js-runtime') {
+			if (tool.name === 'none') return COPY.noneFound;
+			if (tool.name === 'unknown') return COPY.notResponding;
+			return tool.version ? `${tool.name} ${tool.version}` : tool.name;
+		}
+		return tool.version ?? COPY.notResponding;
+	}
+
+	async function check(): Promise<void> {
+		checking = true;
+		checkFailed = false;
+		try {
+			release = await api.post<Release>('/download-tools/latest', { body: { tool: 'yt-dlp' } });
+		} catch {
+			release = null;
+			checkFailed = true;
+		} finally {
+			checking = false;
+		}
+	}
+
+	/* What pressing the button found, as one sentence. Null until it has been pressed. */
+	const found = $derived.by((): string | null => {
+		if (checkFailed) return COPY.cannotCheck;
+		if (release === null) return null;
+		if (release.latest === null) return COPY.unreachable;
+		if (release.newer) return COPY.newer(release.latest);
+		return COPY.newest(release.latest);
+	});
+</script>
+
+<SettingGroup id="updates.download_tools" heading={COPY.name} help={COPY.help}>
+	{#if unreadable}
+		<FactRow label={COPY.name} fact={COPY.cannotAsk} />
+	{:else if tools === null}
+		<FactRow label={COPY.name} fact={COPY.checking} />
+	{:else}
+		{#each tools as tool (tool.key)}
+			<FactRow label={label(tool)} help={help(tool)} fact={fact(tool)} />
+			{#if tool.key === 'yt-dlp'}
+				<!-- Its own row under yt-dlp's, so the version stays in the column every tool's
+				     version is in, and the press and what it found are one row and its foot line
+				     rather than two things stacked in the control column. -->
+				<ActionRow
+					id="updates.download_tools.yt-dlp"
+					label={COPY.checkLabel}
+					help={COPY.checkHelp}
+					action={COPY.check}
+					actionLabel={COPY.checkLabel}
+					icon="search"
+					busy={checking}
+					onclick={check}
+				>
+					{#if found}<span role="status">{found}</span>{/if}
+				</ActionRow>
+			{/if}
+		{/each}
+	{/if}
+</SettingGroup>

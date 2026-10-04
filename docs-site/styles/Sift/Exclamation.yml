@@ -1,0 +1,8 @@
+# Apple Style Guide, exclamation points: "occasionally in promotional text". The docs are not
+# promotional text.
+extends: existence
+message: "Leave out the exclamation point in '%s'."
+level: error
+nonword: true
+raw:
+  - '\w+!(?=\s|$)'

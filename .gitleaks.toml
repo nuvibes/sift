@@ -1,0 +1,54 @@
+title = "gitleaks config"
+
+[extend]
+useDefault = true
+
+# Sift's downloaders authenticate with exported cookie jars. A committed jar is a live
+# session. .gitignore excludes them; these rules are the backstop for `git add -f`.
+[[rules]]
+id = "sift-netscape-cookie-jar"
+description = "Netscape/Mozilla cookie jar"
+regex = '''(?i)^#\s*(Netscape\s+HTTP\s+Cookie\s+File|HTTP\s+Cookie\s+File)'''
+tags = ["cookie", "session"]
+
+[[rules]]
+id = "sift-cookie-header"
+description = "Session cookie value"
+regex = '''(?i)\b(sessionid|session_id|sess_id|auth_token|csrftoken|__Secure-\w+|__Host-\w+)\s*[:=]\s*['"]?[A-Za-z0-9._\-]{20,}'''
+tags = ["cookie", "session"]
+
+# An email address in tracked content is usually somebody's own. The shapes that legitimately
+# appear (reserved example domains, noreply addresses, licence texts) are allowlisted.
+
+[[rules]]
+id = "sift-personal-email"
+description = "Email address in tracked content"
+regex = '''[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}'''
+tags = ["pii"]
+
+  # The plural form, which 8.21 requires once a rule has more than one allowlist.
+  [[rules.allowlists]]
+  regexTarget = "match"
+  regexes = [
+    '''@users\.noreply\.github\.com''',
+    '''@example\.(com|org|net)''',
+    '''@(localhost|test|invalid)''',
+    '''@(gnu|fsf)\.org''',
+    '''noreply@''',
+    '''@sha256''',
+  ]
+  paths = [
+    '''(^|[/\\])LICENSE$''',
+    '''(^|[/\\])NOTICE$''',
+  ]
+
+
+# Either separator: a scan of a checkout on Windows reports paths with backslashes.
+[allowlist]
+description = "Paths that cannot contain secrets"
+paths = [
+  '''(^|[/\\])\.venv[/\\]''',
+  '''(^|[/\\])node_modules[/\\]''',
+  '''(^|[/\\])\.git[/\\]''',
+  '''\.lock$''',
+]

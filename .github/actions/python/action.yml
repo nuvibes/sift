@@ -1,0 +1,18 @@
+name: python
+description: uv, the declared interpreter, and the locked dependency set.
+
+# One interpreter, declared once in `.python-version`, which uv reads by itself here, in a checkout
+# and in a worktree. No version is named in this file, because a second declaration drifts;
+# tests/gates/test_ci_runs_where_sift_ships.py refuses one in any workflow or action.
+
+runs:
+  using: composite
+  steps:
+    - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
+      with:
+        enable-cache: true
+
+    - shell: bash
+      run: |
+        uv python install
+        uv sync --locked --extra dev

@@ -1,0 +1,264 @@
+{
+  "_comment": [
+    "The external binaries the Windows desktop application ships.",
+    "Every entry is pinned by SHA-256 and verified before extraction. See scripts/fetch_vendor.py.",
+    "The DLLs are extracted by pattern into bin/ rather than named one by one, because their filenames carry a soversion (avcodec-61.dll) that is not part of the ffmpeg release number.",
+    "yt-dlp, gallery-dl and the JavaScript engine are the downloaders: each is the publisher's own Windows build, pinned by the publisher's own SHA-256 where one is published, and run as a separate program, never imported. Their licence texts ship beside them, and where a licence asks for source (gallery-dl is GPL-2.0-only; yt-dlp's executable carries mutagen, GPL-2.0-or-later) the source archive ships too, under bin/sources/.",
+    "ffmpeg is GPL-3.0-or-later as built (--enable-gpl --enable-version3), so its source ships the same way: the exact commit the binary reports, the GPL encoders compiled into it, and the build recipe that names every other library in it. scripts/release.py refuses a tool whose licence is GPL and that ships no source archive named for its pinned version.",
+    "The libraries are the ones inside a Python wheel the release installs rather than programs laid out in bin/: libheif and libde265, which the HEIF door reads a photograph with. Both are LGPL-3.0, so the release archive of each ships under bin/sources/ the way ffmpeg's source does, and the same rule in scripts/release.py refuses a pack without them.",
+    "The wheels are Python packages the release installs in place of the published ones, pinned by the SHA-256 of the file this repository's recipe built. There is no address to fetch them from: scripts/fetch_vendor.py checks the file in vendor/wheels and, when it is missing or different, says to build it and pin the new digest in one commit.",
+    "The built entries are programs this repository builds from a pinned source revision with a recipe and patches kept in the repository, pinned by the SHA-256 of the program the recipe makes. The same toolchain and inputs make the same file byte for byte, so the recipe refuses to install anything else, scripts/fetch_vendor.py checks the file in vendor/bin and says how to build it when it is missing or different, and scripts/release.py refuses a pack whose copy is not the pinned one."
+  ],
+  "tools": [
+    {
+      "name": "ffmpeg",
+      "version": "n7.1.5-16-g9a4bb2c579",
+      "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-08-16-13-00/ffmpeg-n7.1.5-16-g9a4bb2c579-win64-gpl-shared-7.1.zip",
+      "sha256": "af514fae0af8565eb9125848ff61f7d7e9e878a6cf6af512434c4741fc6be488",
+      "archive": "ffmpeg-win64-gpl-shared-7.1.5.zip",
+      "extract": {
+        "bin/ffmpeg.exe": "*/bin/ffmpeg.exe",
+        "bin/ffprobe.exe": "*/bin/ffprobe.exe",
+        "bin/": "*/bin/*.dll",
+        "bin/ffmpeg-LICENSE.txt": "*/LICENSE.txt"
+      },
+      "extra_files": [
+        {
+          "dest": "bin/sources/ffmpeg-n7.1.5-16-g9a4bb2c579.tar.gz",
+          "url": "https://github.com/FFmpeg/FFmpeg/archive/9a4bb2c579a16b0469759743d6917d9e8e3cb8c6.tar.gz",
+          "sha256": "0fc3518ed595a37a507add4ecdfdf834dfceba27020b539a6b7ac1e6fd243bb0",
+          "why": "The build is ffmpeg at commit 9a4bb2c579 on the release/7.1 branch, sixteen commits past the n7.1.5 tag, so the n7.1.5 release tarball is NOT its source. The binary says so itself (ffmpeg -version: n7.1.5-16-g9a4bb2c579). GPL-3.0 asks a binary to travel with its Corresponding Source, so the source of exactly that commit ships beside it. From FFmpeg's official GitHub mirror, whose archive of a commit is the same bytes on every download (measured twice); ffmpeg's own git web snapshot sits behind a browser check a script cannot pass."
+        },
+        {
+          "dest": "bin/sources/x264-0480cb05fa18.tar.gz",
+          "url": "https://code.videolan.org/videolan/x264/-/archive/0480cb05fa188d37ae87e8f4fd8f1aea3711f7ee/x264-0480cb05fa188d37ae87e8f4fd8f1aea3711f7ee.tar.gz",
+          "sha256": "d0967a1348c85dfde363bb52610403be898171493100561efa0dd05d5fd1ae50",
+          "why": "libx264 (GPL-2.0-or-later) is compiled INTO avcodec-61.dll. The build's zip names no library versions, so the commit comes from the build recipe that made it: BtbN/FFmpeg-Builds at 590a6612d7, the commit the scheduled run of 2026-08-16 built from (scripts.d/50-x264.sh, SCRIPT_COMMIT). That the recipe is the right one is measured on the binary: the x265 it names (b81f650e) is the x265 the vendored ffmpeg reports when it encodes. The x264 it names is X264_BUILD 165, which is what the vendored ffmpeg writes into every stream."
+        },
+        {
+          "dest": "bin/sources/x265-4.2-37-b81f650e21e8.tar.gz",
+          "url": "https://bitbucket.org/multicoreware/x265_git/get/b81f650e21e8aacbe6a9ad04ce14aefc05b932c0.tar.gz",
+          "sha256": "540de59b5004274f70a4fe229e86c7602d49b5b1a96112fd95a9dcdb5c9f1dc9",
+          "why": "libx265 (GPL-2.0-or-later) is compiled into avcodec-61.dll. The vendored ffmpeg reports 'x265 (build 216) - 4.2+37-b81f650e' when it encodes, and that is the commit the build recipe names (scripts.d/50-x265.sh)."
+        },
+        {
+          "dest": "bin/sources/FFmpeg-Builds-590a6612d7d9.tar.gz",
+          "url": "https://github.com/BtbN/FFmpeg-Builds/archive/590a6612d7d961e9258429e501619e0b7d7cbedf.tar.gz",
+          "sha256": "3d59554604274dd229806133b0b67e9936687ac420975742f8a0da4e46140223",
+          "why": "The scripts that built this ffmpeg: GPL-3.0 counts the scripts used to control compilation as part of the Corresponding Source. They also name, by exact commit, every other library compiled into the eight DLLs (scripts.d/*.sh, SCRIPT_COMMIT), so this archive is how each of them is found."
+        }
+      ],
+      "must_have_config": [
+        "--enable-gpl",
+        "--enable-libx264",
+        "--enable-libx265",
+        "--enable-libwebp"
+      ],
+      "licence": "GPL-3.0-or-later (this is the gpl build; --enable-version3 is set)",
+      "note": "The SHARED build, not the static one. ffmpeg and ffprobe are 0.4 MB and 0.2 MB beside eight libraries they both use, where the static build compiles every codec into BOTH: 160 MB against 278 MB for the same capability. That is 118 MB off every install and off every update download, because an update is a whole installer. ffplay is not extracted: Sift never runs it. BtbN prunes old autobuild releases (see 'When the URL 404s' in fetch_vendor.py)."
+    },
+    {
+      "name": "libwebp",
+      "version": "1.5.0",
+      "url": "https://storage.googleapis.com/downloads.webmproject.org/releases/webp/libwebp-1.5.0-windows-x64.zip",
+      "sha256": "e8fe3bc7eb09774e69261a42bf9fa8a37ab5f3eecaab199f6420e6f9e822090c",
+      "archive": "libwebp-1.5.0-windows-x64.zip",
+      "extract": {
+        "bin/webpinfo.exe": "*/bin/webpinfo.exe",
+        "bin/anim_dump.exe": "*/bin/anim_dump.exe"
+      },
+      "extra_files": [
+        {
+          "dest": "bin/libwebp-COPYING",
+          "url": "https://raw.githubusercontent.com/webmproject/libwebp/v1.5.0/COPYING",
+          "sha256": "5aec868f669e384a22372a4e8a1a6cd7d44c64cd451f960ca69cc170d1e13acf",
+          "why": "The official Windows binary zip ships NO licence file, only a README. libwebp is BSD-3-Clause and requires the copyright notice to travel with a binary redistribution, so the text is fetched from the tagged source and shipped beside the executables."
+        }
+      ],
+      "licence": "BSD-3-Clause",
+      "note": "ffmpeg can WRITE an animated WebP and has never been able to READ one. webpinfo reports canvas size and frame count; anim_dump writes the frames out. Animated-WebP import depends on these two entirely."
+    },
+    {
+      "name": "yt-dlp",
+      "version": "2026.08.19",
+      "url": "https://github.com/yt-dlp/yt-dlp/releases/download/2026.08.19/yt-dlp_win.zip",
+      "sha256": "30b4c14aafab6082becff7881e41b76df46dc43ea7633479410a91e29da492bf",
+      "archive": "yt-dlp-2026.08.19-win.zip",
+      "extract": {
+        "bin/yt-dlp.exe": "yt-dlp.exe"
+      },
+      "extract_tree": {
+        "bin/_internal/": "_internal/"
+      },
+      "extra_files": [
+        {
+          "dest": "bin/yt-dlp-LICENSE",
+          "url": "https://raw.githubusercontent.com/yt-dlp/yt-dlp/2026.08.19/LICENSE",
+          "sha256": "7e12e5df4bae12cb21581ba157ced20e1986a0508dd10d0e8a4ab9a4cf94e85c",
+          "why": "yt-dlp itself is The Unlicense. The archive carries _internal/THIRD_PARTY_LICENSES.txt for everything bundled INTO the executable, but not yt-dlp's own licence, so that is fetched from the tag."
+        },
+        {
+          "dest": "bin/sources/mutagen-1.48.1.tar.gz",
+          "url": "https://files.pythonhosted.org/packages/df/70/1675da133ea92227da41bf5b24e1c66be597ff736a1533ade41da986852f/mutagen-1.48.1.tar.gz",
+          "sha256": "8f95637ab9f6f305cec6bd1294e197debe207998e3e068596563c74f86b0a173",
+          "why": "The executable bundles mutagen 1.48.1 (it says so under -v: 'Optional libraries: ... mutagen-1.48.1'), which is GPL-2.0-or-later. A GPL binary is redistributed WITH its source rather than with a promise of it, so the published source archive ships beside it. The hash is the one PyPI publishes for that file."
+        }
+      ],
+      "licence": "The Unlicense (public domain). The executable bundles CPython and third-party libraries under their own licences, listed in bin/_internal/THIRD_PARTY_LICENSES.txt.",
+      "note": "The ONE-FOLDER build (yt-dlp_win.zip), not the one-file yt-dlp.exe, and that is measured rather than preferred. The one-file build is a launcher that unpacks itself to %TEMP% and runs the real program as a CHILD process: Sift stops a tool by killing the process it started, and killing the one-file launcher leaves the child running and downloading, and leaves its 23 MB unpacked copy in %TEMP% for ever. The one-folder build is one process with nothing to unpack, and starts in 0.3 s instead of 0.8. Its _internal folder must sit beside yt-dlp.exe. The JavaScript engine yt-dlp runs YouTube's challenge in (qjs.exe) is found by being in the SAME folder as yt-dlp.exe, which is yt-dlp's documented Windows rule and is checked by fetch_vendor.py after every fetch."
+    },
+    {
+      "name": "gallery-dl",
+      "version": "1.32.13",
+      "url": "https://codeberg.org/mikf/gallery-dl/releases/download/v1.32.13/gallery-dl.exe",
+      "sha256": "f9a810132003701af4115a0ee07e84c3f9dd3e59d91bd4a82949f32e6c4318e7",
+      "archive": "gallery-dl-1.32.13.exe",
+      "extract": {
+        "bin/gallery-dl.exe": "gallery-dl-1.32.13.exe"
+      },
+      "extra_files": [
+        {
+          "dest": "bin/gallery-dl-LICENSE",
+          "url": "https://codeberg.org/mikf/gallery-dl/raw/tag/v1.32.13/LICENSE",
+          "sha256": "8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643",
+          "why": "The release executable is published alone. GPL-2.0 requires the licence text to travel with the binary, so it is fetched from the tagged source."
+        },
+        {
+          "dest": "bin/sources/gallery_dl-1.32.13.tar.gz",
+          "url": "https://codeberg.org/mikf/gallery-dl/releases/download/v1.32.13/gallery_dl-1.32.13.tar.gz",
+          "sha256": "08c9f66b4cba4a21960dc61140626c154502caa89696203a24be5a6969a692bd",
+          "why": "GPL-2.0-only asks a binary to be accompanied by its complete source (section 3a) or by a written offer of it. The source archive is 0.75 MB, so it simply ships: nothing to honour later, and no dependency on the publisher's server staying up. The hash is the one the publisher lists in the release's SHA256SUMS."
+        }
+      ],
+      "licence": "GPL-2.0-only. The executable also bundles CPython and third-party libraries (requests, urllib3, certifi, yt-dlp, mutagen and others) under their own licences.",
+      "note": "The publisher's own Windows build and the ONLY Windows build it publishes, which is a one-file launcher: it unpacks itself to %TEMP% and runs the program as a child process. Killing the launcher does not kill that child, so Sift has to stop the whole process tree. Development moved from GitHub to Codeberg in 2026; the GitHub releases after 1.31.10 carry no files. Pinned by the SHA-256 the publisher lists in SHA256SUMS."
+    },
+    {
+      "name": "quickjs-ng",
+      "version": "0.17.0",
+      "url": "https://github.com/quickjs-ng/quickjs/releases/download/v0.17.0/qjs-windows-x86_64.exe",
+      "sha256": "2aeabf0092c3262d6b2609824418f7dd7ed1f1df939f73b2b15645230cac0d77",
+      "archive": "quickjs-ng-0.17.0-windows-x86_64.exe",
+      "extract": {
+        "bin/qjs.exe": "quickjs-ng-0.17.0-windows-x86_64.exe"
+      },
+      "extra_files": [
+        {
+          "dest": "bin/qjs-LICENSE",
+          "url": "https://raw.githubusercontent.com/quickjs-ng/quickjs/v0.17.0/LICENSE",
+          "sha256": "96f73f9d2a16c21a36b418f06073be26e7d6d5e7c1bc99756b21a4f2c74ef171",
+          "why": "The release is the bare executable. MIT requires the notice to travel with a binary redistribution, so it is fetched from the tag."
+        }
+      ],
+      "licence": "MIT",
+      "note": "The JavaScript engine yt-dlp runs a site's challenge script in: the `--js-runtimes quickjs` the download command already asks for, which on Windows found nothing ('JS runtimes: none'). QuickJS-NG rather than the original QuickJS: this is one statically linked file whose hash GitHub publishes, where the original's Windows zip carries a 2016 MinGW threading DLL with no licence text and no published hash. yt-dlp supports every QuickJS-NG release and wants 0.12.0 or later for speed. It must be named qjs.exe and sit beside yt-dlp.exe: that is how yt-dlp finds it on Windows."
+    }
+  ],
+  "libraries": [
+    {
+      "name": "libheif",
+      "version": "1.23.4",
+      "extra_files": [
+        {
+          "dest": "bin/sources/libheif-1.23.4.tar.gz",
+          "url": "https://github.com/strukturag/libheif/releases/download/v1.23.4/libheif-1.23.4.tar.gz",
+          "sha256": "d0c02b4b0e978f34a1974b6f3eea7975a537bf7a9195ffeea38e7242ff316fdd",
+          "why": "libheif (LGPL-3.0) is the heif DLL inside the pillow-heif wheel the release installs. The DLL reports 1.23.4 (pillow_heif.libheif_info()). The LGPL asks the library's object code to travel with its source, so the publisher's release archive of that version ships beside it. The hash is the one the MSYS2 recipe pillow-heif builds from names (libheif/windows/mingw-w64-libheif/PKGBUILD in its source distribution), measured again on the download."
+        }
+      ],
+      "licence": "LGPL-3.0-or-later",
+      "note": "Built without the x265 encoder by scripts/build_pillow_heif.bat, from exactly this archive. Sift reads HEIF photographs and never writes one."
+    },
+    {
+      "name": "libde265",
+      "version": "1.1.3",
+      "extra_files": [
+        {
+          "dest": "bin/sources/libde265-1.1.3.tar.gz",
+          "url": "https://github.com/strukturag/libde265/releases/download/v1.1.3/libde265-1.1.3.tar.gz",
+          "sha256": "554228bd17788c99a7e63b37ab5634722190e6e2bf60c1dcb01cef328e133905",
+          "why": "libde265 (LGPL-3.0) is the HEVC decoder libheif decodes a photograph with, the libde265 DLL inside the pillow-heif wheel. It reports version 1.1.3 (pillow_heif.libheif_info(), decoders). The publisher's release archive of that version ships beside it; the hash is the one the MSYS2 package recipe names, measured again on the download."
+        }
+      ],
+      "licence": "LGPL-3.0-or-later",
+      "note": "The decoder only. Its sample programs are not built."
+    }
+  ],
+  "wheels": [
+    {
+      "package": "pillow-heif",
+      "version": "1.8.0",
+      "file": "wheels/pillow_heif-1.8.0-cp313-cp313-win_amd64.whl",
+      "sha256": "312ee106a332c39f978bb742cee2ddf54e39c441eb226c7bb11760241ffe7fd8",
+      "recipe": "scripts/build_pillow_heif.bat",
+      "carries": [
+        "heif",
+        "libde265"
+      ],
+      "refuses": [
+        "libx265"
+      ],
+      "licence": "BSD-3-Clause (pillow-heif itself; the libraries in it are listed under libraries)",
+      "note": "The published Windows wheel links the x265 HEVC encoder (libx265, 22.6 MB, GPL-2.0-or-later), which Sift never calls: it reads HEIF photographs and never writes one. This wheel is the same pillow-heif, libheif and libde265 built with MSVC and WITH_X265=OFF, so the encoder, its source obligation and the three MinGW runtime DLLs are gone, and the wheel is 1.0 MB. It decodes a photograph to the same pixels as the published wheel (measured on one HEIC, byte for byte). Development environments and CI keep the published wheel; only the runtime the release packs is given this one, and the release refuses a runtime whose pillow-heif carries anything named in refuses."
+    }
+  ],
+  "built": [
+    {
+      "name": "wireproxy",
+      "version": "1.1.3+sift.1",
+      "file": "bin/wireproxy.exe",
+      "sha256": "20d51a3f8532e8e1b77f2741fbc63b118111bf7689420aec563a1297befa9546",
+      "recipe": "scripts/vendor_build/wireproxy/build.py",
+      "source": {
+        "repository": "https://github.com/windtf/wireproxy",
+        "tag": "v1.1.3",
+        "commit": "31a9a34498267d7fb8aeff05aba79d929b15eb39"
+      },
+      "go": "go1.27.0",
+      "modules": {
+        "gvisor.dev/gvisor": "v0.0.0-20261001051044-03e83cf5cce1",
+        "golang.org/x/time": "v0.15.0",
+        "golang.org/x/exp": "v0.0.0-20250711185948-6ae5c78190dc",
+        "golang.org/x/crypto": "v0.56.0",
+        "golang.org/x/net": "v0.57.0",
+        "golang.org/x/sys": "v0.47.0",
+        "golang.zx2c4.com/wireguard": "v0.0.0-20250521234502-f333402bd9cb"
+      },
+      "patches": [
+        {
+          "file": "scripts/vendor_build/wireproxy/01-gomod.patch",
+          "sha256": "1dbab69d99af12da92b2113965889aa2ca5269996a076f7dd2a769457ee91e5c"
+        },
+        {
+          "file": "scripts/vendor_build/wireproxy/02-stack.patch",
+          "sha256": "0c3b21de4aea990003d673bc4225d0a49de34ba10be1555a4656696a5fc43fc9"
+        }
+      ],
+      "extra_files": [
+        {
+          "dest": "bin/wireproxy-LICENSE",
+          "url": "https://raw.githubusercontent.com/windtf/wireproxy/v1.1.3/LICENSE",
+          "sha256": "12e05cf70e2876d0cfd1c649e1c0032f82a370b365dcccd7d5a03feee17f2625",
+          "why": "wireproxy's own licence, from the tag it is built from. ISC requires the notice to travel with a binary redistribution."
+        },
+        {
+          "dest": "bin/wireproxy-gvisor-LICENSE",
+          "url": "https://raw.githubusercontent.com/google/gvisor/03e83cf5cce1aeb51192043be6a05f5ce257ce7d/LICENSE",
+          "sha256": "0fbab5c58efbdf6d31e8085214f2dd821659c03d73cff3ed2b08e98826ea1cd9",
+          "why": "gVisor's network stack is compiled into the program, and 02-stack.patch modifies two of its files (pkg/tcpip/transport/tcp/rack.go and snd.go). Apache-2.0 asks for a copy of the licence with any redistribution, so the text ships from the exact revision the module version names; it is the same file go mod vendor copies into the build."
+        },
+        {
+          "dest": "bin/wireproxy-wireguard-go-LICENSE",
+          "url": "https://raw.githubusercontent.com/WireGuard/wireguard-go/f333402bd9cbe0f3eeb02507bd14e23d7d639280/LICENSE",
+          "sha256": "91276db973f25602d1aa43491f59cbc84cb88e6f151e1d0cc82a755563ce0195",
+          "why": "wireguard-go is compiled into the program, and 02-stack.patch modifies its netstack package. MIT requires the notice to travel with a binary redistribution, so the text ships from the exact revision the module version names (GitHub's mirror of git.zx2c4.com/wireguard-go); it is the same file go mod vendor copies into the build."
+        }
+      ],
+      "known_findings": [
+        "GO-2026-5932"
+      ],
+      "licence": "ISC (wireproxy itself). Compiled into it, each under its own licence: gVisor (Apache-2.0) and wireguard-go (MIT), whose texts ship beside it, and smaller modules under MIT, BSD-3-Clause, Apache-2.0 and ISC.",
+      "note": "The userspace WireGuard client every tunnel runs as its own process. Vendored because nothing on Windows puts it on PATH, and a tunnel whose client cannot be found fails with an error that names nothing. BUILT HERE FROM SOURCE, NOT DOWNLOADED: the recipe builds wireproxy at the pinned commit with the pinned Go release and the two patches beside it, and refuses any output whose digest is not this one. The upstream release pins a gVisor whose TCP loss detection misreads Windows' coarse clock and treats every acknowledgement as a loss, which holds one upload through a tunnel to a few megabytes a second; 01-gomod.patch moves gVisor to the revision named under modules, which carries the upstream repair, with the golang.org/x/time and golang.org/x/exp it needs, and moves golang.org/x/crypto and golang.org/x/net to the releases that fix the advisories below (golang.org/x/sys moves with them). 02-stack.patch gives the stack CUBIC, a fine-grained clock on Windows and 16 MiB buffer limits, and repairs four faults in gVisor's TCP sender that cut the window under reordering. THE UPSTREAM REPOSITORY HAS CHANGED HANDS FOUR TIMES: the source is pinned by commit, and another handover means reading the diff before moving the pin rather than bumping it. The toolchain is Go 1.27.0, and `go version -m` on the built file lists every module compiled into it with its version. KNOWN FINDINGS: govulncheck v1.1.4 in binary mode, against the Go vulnerability database when this digest was pinned, reports one, GO-2026-5932: golang.org/x/crypto's openpgp package is unmaintained, and the advisory names no fixed release. The upstream release (Go 1.26.5, golang.org/x/crypto v0.52.0, golang.org/x/net v0.55.0) carries twelve; the eleven others are fixed by Go 1.27.0, golang.org/x/crypto v0.56.0 (GO-2026-6355, GO-2026-6354, GO-2026-6303) and golang.org/x/net v0.57.0 (GO-2026-5942)."
+    }
+  ]
+}

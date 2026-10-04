@@ -1,0 +1,22 @@
+# Frontend rules. Svelte has no Semgrep parser, so these run in generic (token) mode,
+# scoped by path. Paired tests in frontend.svelte.
+
+rules:
+  # Titles, descriptions and uploader names are scraped from remote sites and are treated
+  # as hostile. Svelte escapes interpolated values by default; {@html} opts out of that and
+  # injects a raw string into the DOM. Nothing in Sift needs to render remote HTML.
+  - id: sift-no-svelte-html-directive
+    languages: [generic]
+    severity: ERROR
+    paths:
+      include:
+        - "*.svelte"
+    message: >-
+      {@html} renders an unescaped string. Scraped titles and descriptions are untrusted:
+      render them as text ({value}).
+    metadata:
+      category: security
+      cwe: "CWE-79: Cross-site Scripting"
+      owasp: "A03:2021 Injection"
+      confidence: HIGH
+    pattern: "{@html ...}"
