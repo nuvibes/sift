@@ -109,7 +109,7 @@ dev = [
     # nearly linearly: `pytest -n auto` runs it in a fraction of the single-process time. Kept off by
     # default (targeted runs and the coverage gates want one process) and turned on per command.
     "pytest-xdist~=3.6",
-    "hypothesis~=6.112",
+    "hypothesis~=6.168",
     # semgrep is not here: it is a pinned tool outside this lockfile (scripts/tools/semgrep_pinned.py),
     # so its own dependencies are not part of what Sift ships or what the audit reads.
     "httpx~=0.27",
