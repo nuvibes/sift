@@ -80,20 +80,22 @@ test('the History pane reads oldest first and gains a line at once after Add to'
 			.or(sheet.getByText('Nothing has been recorded'))
 			.first()
 	).toBeVisible();
-	const before = await rows(page).count();
+	/* By what each line says, never by how many there are: a file read a moment ago is still
+	   gaining lines from the passes that follow a scan, and they arrive when they arrive. */
+	const line = (name: string) => rows(page).filter({ hasText: name });
+	const placeOf = async (name: string) =>
+		(await rows(page).allInnerTexts()).findIndex((text) => text.includes(name));
 
 	await addToCollection(page, FIRST);
-	await expect(rows(page), 'the pane did not gain a line for the first collection').toHaveCount(
-		before + 1
-	);
-	await expect(rows(page).last()).toContainText(FIRST);
+	await expect(line(FIRST), 'the pane did not gain a line for the first collection').toHaveCount(1);
 
 	await addToCollection(page, SECOND);
-	await expect(rows(page), 'the pane did not gain a line for the second collection').toHaveCount(
-		before + 2
+	await expect(line(SECOND), 'the pane did not gain a line for the second collection').toHaveCount(
+		1
 	);
-	await expect(rows(page).last(), 'the newest line is not at the bottom').toContainText(SECOND);
-	await expect(rows(page).nth(before)).toContainText(FIRST);
+	expect(await placeOf(SECOND), 'the newer line is not below the older one').toBeGreaterThan(
+		await placeOf(FIRST)
+	);
 
 	/* And the server's own order agrees with what is drawn: oldest first, by the moment. */
 	const events = (

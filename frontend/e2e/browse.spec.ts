@@ -219,6 +219,10 @@ test('the grid asks for one page and then stops', async ({ page }) => {
 		});
 	});
 	await page.route('**/api/assets/*/thumb', (route) => route.fulfill({ status: 404 }));
+	/* A connection that says nothing. The grid reads again whenever the server announces a change
+	   to the library, which is right, and the tests running beside this one change it: left
+	   connected, their announcements are counted here as the loop. */
+	await page.routeWebSocket('**/api/live/stream**', () => {});
 
 	await page.goto('/browse');
 	await expect(page.locator('.tile').first()).toBeVisible();

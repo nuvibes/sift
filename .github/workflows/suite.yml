@@ -142,6 +142,16 @@ jobs:
         working-directory: frontend
         run: npm run test:e2e
 
+      # A navigation refused for want of socket buffers is the machine's failure, not the app's:
+      # this says which of the things it could have run out of it had.
+      - name: What the machine had left
+        if: failure()
+        shell: pwsh
+        run: |
+          netsh int ipv4 show dynamicport tcp
+          Get-NetTCPConnection | Group-Object State | Select-Object Name, Count | Format-Table
+          Get-CimInstance Win32_OperatingSystem | Select-Object FreePhysicalMemory, TotalVisibleMemorySize | Format-List
+
       # What each failed test left: the page as it stood when the assertion gave up.
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: failure()

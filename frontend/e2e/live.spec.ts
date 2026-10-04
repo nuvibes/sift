@@ -16,15 +16,24 @@ import { signInAsAdmin } from './admin';
 test('the application opens exactly one connection, whatever screen is on', async ({ page }) => {
 	await signInAsAdmin(page);
 
+	/* Every connection ever opened, and the ones open now. A page loaded afresh opens its own and
+	   the page before it lets go of the one it had, so what is counted is how many are open at
+	   once, on each screen. */
 	const sockets: string[] = [];
-	page.on('websocket', (socket) => sockets.push(socket.url()));
+	const open = new Set<object>();
+	page.on('websocket', (socket) => {
+		sockets.push(socket.url());
+		if (!socket.url().includes('/api/live/stream')) return;
+		open.add(socket);
+		socket.on('close', () => open.delete(socket));
+	});
 
 	await page.goto('/settings/tasks?show=now');
 	await expect(page.getByRole('heading', { name: 'Tasks and Activity' })).toBeVisible();
+	await expect.poll(() => open.size).toBe(1);
 	await page.goto('/downloads');
 	await expect(page).toHaveURL(/\/downloads/);
-
-	expect(sockets.filter((url) => url.includes('/api/live/stream'))).toHaveLength(1);
+	await expect.poll(() => open.size).toBe(1);
 	// The jobs-only feed address. A connection here would be the second transport this deliberately
 	// does not have.
 	expect(sockets.filter((url) => url.includes('/api/jobs/stream'))).toHaveLength(0);
