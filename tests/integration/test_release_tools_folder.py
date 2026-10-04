@@ -75,6 +75,28 @@ def test_a_signed_build_moves_the_gallery_aside_and_always_puts_it_back(
     assert seen[-1] is True and not aside.exists()
 
 
+def test_a_gallery_another_program_holds_is_refused_in_a_sentence_and_nothing_is_built(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A folder somebody has open cannot be renamed on Windows. Said as what to do about it, with
+    the client not built: a release with the gallery in it is not the release that was asked for."""
+    release = _load()
+    gallery = tmp_path / "routes" / "design"
+    for name, value in (("GALLERY", gallery), ("GALLERY_ASIDE", tmp_path / "aside")):
+        monkeypatch.setattr(release, name, value)
+    gallery.mkdir(parents=True)
+    built: list[object] = []
+    monkeypatch.setattr(release, "run", lambda *_a, **_k: built.append(1))
+
+    def held(self: Path, target: Path) -> None:
+        raise PermissionError(13, "Access is denied")
+
+    monkeypatch.setattr(Path, "rename", held)
+    with pytest.raises(release.ReleaseFailed, match="is open in another program"):
+        release.build_client(with_gallery=False)
+    assert built == []
+
+
 def test_no_folder_is_searched_that_nobody_named(monkeypatch: pytest.MonkeyPatch) -> None:
     """No machine's layout is a default: with nothing named, PATH is the only place looked."""
     monkeypatch.delenv("RELEASE_TOOLS_DIR", raising=False)

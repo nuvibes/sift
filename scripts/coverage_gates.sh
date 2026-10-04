@@ -1092,22 +1092,66 @@ fi
 # ---------------------------------------------------------------------------------------------
 # One shard of the gates, for a workflow that runs them as a matrix of jobs rather than as one.
 #
-# By position, not by name or by measured time: every gate is in exactly one shard whatever N is,
-# a gate added to the list lands in a shard with no edit anywhere else, and the answer is the same
-# on every machine. Shard K of N keeps the gates at positions K-1, K-1+N, K-1+2N and so on, so the
-# long gates the list holds near each other are dealt out across shards rather than handed to one.
-# K counts from one, as a matrix is written. The arrays are narrowed in place, so everything below
-# (the fan-out, the replay, the count of what failed) reads the shard as if it were the whole list.
+# By how long each gate takes, so the shards end together: a run is as long as its longest shard,
+# and the gates run from seconds to twenty minutes. The times are in coverage_gate_seconds.tsv; a
+# gate with no line there counts as the middle one, so a gate added to the list lands in a shard
+# with no edit anywhere else. The longest gate goes first, each to whichever shard is lightest so
+# far (the lower number on a tie), which is the same answer on every machine and puts every gate
+# in exactly one shard whatever N is. K counts from one, as a matrix is written. The arrays are
+# narrowed in place and keep the list's order, so everything below (the fan-out, the replay, the
+# count of what failed) reads the shard as if it were the whole list.
 # ---------------------------------------------------------------------------------------------
+COV_SECONDS_FILE="${COV_SECONDS_FILE:-scripts/coverage_gate_seconds.tsv}"
+
 cov_take_shard() {  # cov_take_shard K N
   local k="$1" n="$2" i
   if ! [[ "$k" =~ ^[0-9]+$ && "$n" =~ ^[0-9]+$ ]] || [ "$n" -lt 1 ] || [ "$k" -lt 1 ] || [ "$k" -gt "$n" ]; then
     echo "coverage_gates.sh: --shard wants K/N with 1 <= K <= N, not $k/$n" >&2
     return 2
   fi
+
+  local -A recorded=()
+  local seconds label known=()
+  if [ -r "$COV_SECONDS_FILE" ]; then
+    while IFS=$'\t' read -r seconds label; do
+      label="${label%$'\r'}"
+      [[ "$seconds" =~ ^[0-9]+$ ]] || continue
+      recorded["$label"]="$seconds"
+      known+=("$seconds")
+    done < "$COV_SECONDS_FILE"
+  fi
+  # The middle recorded time, for a gate nobody has timed yet.
+  local middle=60
+  if [ "${#known[@]}" -gt 0 ]; then
+    local sorted=()
+    mapfile -t sorted < <(printf '%s\n' "${known[@]}" | sort -n)
+    middle="${sorted[$(( ${#sorted[@]} / 2 ))]}"
+  fi
+
+  # Longest first, the list's order between equals.
+  local order=()
+  mapfile -t order < <(
+    for (( i = 0; i < ${#COV_LABELS[@]}; i++ )); do
+      printf '%s %s\n' "${recorded[${COV_LABELS[$i]}]:-$middle}" "$i"
+    done | sort -k1,1nr -k2,2n
+  )
+
+  local load=() mine=() line at lightest s
+  for (( s = 0; s < n; s++ )); do load[s]=0; done
+  for line in "${order[@]}"; do
+    seconds="${line%% *}"
+    at="${line##* }"
+    lightest=0
+    for (( s = 1; s < n; s++ )); do
+      if [ "${load[$s]}" -lt "${load[$lightest]}" ]; then lightest=$s; fi
+    done
+    load[lightest]=$(( load[lightest] + seconds ))
+    if [ "$lightest" -eq $(( k - 1 )) ]; then mine[at]=1; fi
+  done
+
   local labels=() fns=()
   for (( i = 0; i < ${#COV_LABELS[@]}; i++ )); do
-    if [ $(( i % n )) -eq $(( k - 1 )) ]; then
+    if [ -n "${mine[$i]:-}" ]; then
       labels+=("${COV_LABELS[$i]}")
       fns+=("${COV_FNS[$i]}")
     fi

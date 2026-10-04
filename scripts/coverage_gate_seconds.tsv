@@ -1,0 +1,137 @@
+# How long each coverage gate took on a hosted Windows runner, in seconds, then its label.
+#
+# Read by scripts/coverage_gates.sh to deal the gates into shards of about equal length. A gate
+# with no line here is taken to be of the middle length, so a new gate needs none. Each line is a
+# run's own report of the gate, "PASS  coverage: <label>  (<seconds>s)", and the numbers only have
+# to be roughly right: record them again when the shards have drifted apart.
+70	coverage: destination gate
+25	coverage: naming gate
+146	coverage: stash migration gate
+17	coverage: ingress gate
+215	coverage: job queue gate
+20	coverage: hardware probe gate
+8	coverage: scan benchmarks gate
+22	coverage: logs slice gate
+85	coverage: content identity gate
+83	coverage: library store gate
+7	coverage: perceptual hash gate
+1309	coverage: access rules gate
+7	coverage: wiring and secrets gate
+14	coverage: subprocess gate
+9	coverage: public net gate
+7	coverage: port holder gate
+372	coverage: download slice gate
+22	coverage: tunnels gate
+48	coverage: capture gate
+8	coverage: conditional-request gate
+28	coverage: entity cover gate
+12	coverage: site icons gate
+20	coverage: svg raster gate
+5	coverage: name ordering gate
+21	coverage: cache stamp gate
+6	coverage: change bus gate
+7	coverage: mp4 index gate
+270	coverage: browse slice gate
+264	coverage: player slice gate
+268	coverage: library slice gate
+71	coverage: delete gate
+211	coverage: auth slice gate
+113	coverage: sharing slice gate
+198	coverage: tags/ratings gate
+737	coverage: people slice gate
+157	coverage: collections slice gate
+169	coverage: photo sets slice gate
+25	coverage: shoots slice gate
+63	coverage: music slice gate
+98	coverage: songs gate
+143	coverage: swap slice gate
+82	coverage: desktop slice gate
+10	coverage: machine acts gate
+33	coverage: watermarks slice gate
+119	coverage: loops slice gate
+25	coverage: records slice gate
+73	coverage: related slice gate
+5	coverage: archives gate
+130	coverage: dedup slice gate
+58	coverage: importing slice gate
+228	coverage: suggestions slice gate
+84	coverage: organize slice gate
+121	coverage: vault slice gate
+478	coverage: search slice gate
+142	coverage: backup slice gate
+34	coverage: update notify gate
+126	coverage: performance slice gate
+656	coverage: faces slice gate
+15	coverage: theming slice gate
+72	coverage: settings hub gate
+206	coverage: media jobs gate
+51	coverage: live slice gate
+46	coverage: tidy slice gate
+10	coverage: tidy kernel gate
+14	coverage: forgetting gate
+6	coverage: chromaprint gate
+7	coverage: landing gate
+10	coverage: model runtime gate
+89	coverage: semantic slice gate
+134	coverage: compress slice gate
+6	coverage: filename rules gate
+110	coverage: workbench slice gate
+6	coverage: workbench kernel gate
+12	coverage: ledger door gate
+119	coverage: theater slice gate
+48	coverage: remote slice gate
+68	coverage: insights slice gate
+16	coverage: view rule gate
+23	coverage: database kernel gate
+9	coverage: logging kernel gate
+13	coverage: diagnostics kernel gate
+12	coverage: folder tree gate
+7	coverage: package settings gate
+8	coverage: machine budget gate
+9	coverage: settings/config gate
+5	coverage: log settings gate
+7	coverage: http contract gate
+11	coverage: wire base gate
+7	coverage: enrichment rules gate
+32	coverage: composition gate
+9	coverage: identifiers gate
+7	coverage: path confinement gate
+7	coverage: resumable fetch gate
+9	coverage: frame sampling gate
+7	coverage: seams gate
+5	coverage: settings registry gate
+7	coverage: text folding gate
+5	coverage: thread pools gate
+7	coverage: storage lanes gate
+8	coverage: answer memo gate
+7	coverage: animated webp gate
+7	coverage: field registry gate
+6	coverage: kernel where gate
+7	coverage: mount kind gate
+9	coverage: number parsing gate
+5	coverage: folder attribution gate
+18	coverage: ffmpeg seam gate
+353	coverage: library write shapes gate
+47	coverage: browser client gate
+7	coverage: partial write gate
+6	coverage: url normaliser gate
+21	coverage: host pacing gate
+24	coverage: secret store gate
+225	coverage: stash-boxes gate
+79	coverage: application assembly gate
+5	coverage: restart lifecycle gate
+6	coverage: version gate
+6	coverage: attention gate
+6	coverage: machine clock gate
+8	coverage: location door gate
+20	coverage: heif door gate
+7	coverage: whole file gate
+8	coverage: cover frame gate
+5	coverage: sql splice gate
+60	coverage: tasks slice gate
+14	coverage: country names gate
+6	coverage: reach gate
+12	coverage: request client gate
+68	coverage: photo set floor gate
+29	coverage: pass presses gate
+34	coverage: use history gate

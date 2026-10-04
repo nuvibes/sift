@@ -76,9 +76,10 @@ jobs:
           uv run pytest -n auto "${files[@]}"
 
   # The per-module gates at 100%, declared once in scripts/coverage_gates.sh for this job and
-  # scripts/ci-local.sh alike, in ten shards: shard K runs the gates whose place in the script's
-  # list leaves K-1 over ten, so every gate is in exactly one shard and a new one needs no edit
-  # here (tests/gates/test_coverage_gates_are_sharded.py holds the list and this matrix to that).
+  # scripts/ci-local.sh alike, in ten shards dealt by how long each gate takes
+  # (scripts/coverage_gate_seconds.tsv), so the shards end together: every gate is in exactly one
+  # shard and a new one needs no edit here (tests/gates/test_coverage_gates_are_sharded.py holds
+  # the list, the times and this matrix to that).
   # Ten, with seven test shards: the gates are nearly three hours of one runner's work and a
   # shard's gates take about their sum however many run at once, so the longest shard sets the
   # run's length; an account runs twenty jobs at a time, and seven, ten and the three single jobs

@@ -13,13 +13,10 @@ ONE SCRIPT, BECAUSE A RELEASE HAS TO CONTAIN THINGS THAT ARE EASY TO FORGET.
 
 The native drag addon is bound to ONE Electron version. Moving Electron without recompiling it
 produces an installer that builds, installs, opens, and crashes the first time somebody drags a clip
-out, on their machine, not here. So the recompile is a step in this script rather than something to
-remember, and an Electron upgrade is a release event rather than a dependency bump.
-
-The same argument covers the rest of it: the client has to be built or the backend serves nothing;
-the backend has to be installed NON-EDITABLE or the built client is read out of a checkout that is
-not on the user's disk; the vendored tools have to be verified before they are packaged, not after.
-Each of those has exactly one right answer and no reason to be typed by hand.
+out, on their machine, not here. So the recompile is a step in this script, and an Electron upgrade
+is a release event. The same holds for the rest: the client has to be built or the backend serves
+nothing; the backend has to be installed NON-EDITABLE or the built client is read out of a checkout
+not on the user's disk; the vendored tools are verified before they are packaged, not after.
 
 ## The steps, in the order they have to happen
 
@@ -41,8 +38,7 @@ desktop application installs no update without a signed manifest.
 
 A signed build and a publish refuse a working tree with changes in it and a HEAD that is not on
 `origin/main` (see `check_the_tree`): what anybody else installs is exactly a commit the project
-holds, never a copy with an edit nobody committed or a commit nobody pushed. A `--no-sign` build,
-for this device only, says so and goes on.
+holds. A `--no-sign` build, for this device only, says so and goes on.
 """
 
 from __future__ import annotations
@@ -215,7 +211,11 @@ def build_client(*, with_gallery: bool) -> None:
         GALLERY_ASIDE.rename(GALLERY)  # a build that stopped half-way left it aside
     aside = GALLERY.is_dir() and not with_gallery
     if aside:
-        GALLERY.rename(GALLERY_ASIDE)
+        try:
+            GALLERY.rename(GALLERY_ASIDE)
+        except OSError as exc:
+            held = f"{GALLERY} is open in another program ({exc.strerror})"
+            raise ReleaseFailed(f"{held}: stop whatever holds it and build again.") from exc
     try:
         run(["npm", "run", "build"], where=FRONTEND)
     finally:
