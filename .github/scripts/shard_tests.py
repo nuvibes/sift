@@ -62,7 +62,9 @@ def main(argv: list[str]) -> int:
         # A shard that runs nothing passes; say so instead.
         sys.stderr.write(f"shard_tests: nothing to run, or missing files: {missing}\n")
         return 1
-    sys.stdout.write("\n".join(chosen) + "\n")
+    # Bytes, so the lines end in a bare newline on Windows too: the shell that reads them keeps a
+    # carriage return as part of the name, and pytest then finds no such file and runs nothing.
+    sys.stdout.buffer.write(("\n".join(chosen) + "\n").encode())
     return 0
 
 

@@ -26,6 +26,8 @@ from __future__ import annotations
 import ast
 import importlib.util
 import re
+import subprocess
+import sys
 from pathlib import Path
 from types import ModuleType
 from typing import Any
@@ -391,6 +393,25 @@ def test_every_test_file_is_in_exactly_one_shard() -> None:
         assert all(parts), f"an empty shard of {count}"
     for name in shards.ALONE:
         assert name in files, f"ALONE names {name}, which is not a test file here"
+
+
+def test_no_step_hands_later_steps_a_variable_sift_refuses() -> None:
+    """A variable written to the job's environment reaches every later step, and Sift refuses to
+    start beside a SIFT_ variable that is not one of its settings."""
+    for path in (*workflow_files(), *composite_actions()):
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if "GITHUB_ENV" in line:
+                assert "SIFT_" not in line, f"{path.name}: {line.strip()}"
+
+
+def test_a_shards_list_ends_each_line_with_a_bare_newline() -> None:
+    """Run as the workflow runs it: a carriage return on Windows would be read as part of each
+    file's name, and the shard would run no test."""
+    for asked in (["0", "12"], ["--alone"]):
+        said = subprocess.run(
+            [sys.executable, str(SHARDS), *asked], capture_output=True, check=True
+        ).stdout
+        assert said.endswith(b".py\n") and b"\r" not in said, asked
 
 
 def test_the_suite_hands_each_shard_its_place_and_runs_the_rest_alone() -> None:

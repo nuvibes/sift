@@ -163,7 +163,7 @@ def test_a_pruned_archive_is_taken_from_the_mirror_under_the_same_digest(
         return io.BytesIO(held[url])
 
     monkeypatch.setattr(fetcher.urllib.request, "urlopen", answer)
-    monkeypatch.delenv("SIFT_VENDOR_SEED", raising=False)
+    monkeypatch.delenv("VENDOR_SEED", raising=False)
     pinned = "https://example.invalid/builds/tool.exe"
     dest = tmp_path / "vendor" / "_cache" / "tool-1.0.exe"
     wanted = fetcher.hashlib.sha256(b"the release").hexdigest()
@@ -197,7 +197,7 @@ def test_a_seeded_archive_is_copied_and_verified_before_the_network_is_asked(
     seed = tmp_path / "seed"
     seed.mkdir()
     (seed / "tool-1.0.exe").write_bytes(b"the release")
-    monkeypatch.setenv("SIFT_VENDOR_SEED", str(seed))
+    monkeypatch.setenv("VENDOR_SEED", str(seed))
     dest = tmp_path / "vendor" / "_cache" / "tool-1.0.exe"
 
     fetcher.fetch(
@@ -561,7 +561,7 @@ def test_a_seeded_wheel_is_read_as_any_other_and_the_recipe_is_not_run(
         seed / "pillow_heif.whl",
         {f"pillow_heif-1.8.0.data/platlib/{dll}": b"MZ" for dll in _REBUILT_DLLS},
     )
-    monkeypatch.setenv("SIFT_VENDOR_SEED", str(seed))
+    monkeypatch.setenv("VENDOR_SEED", str(seed))
     recipe = _Recipe(dest, None)
     monkeypatch.setattr(fetcher, "run_recipe", recipe)
 

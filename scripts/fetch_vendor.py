@@ -75,10 +75,10 @@ def digest(path: Path) -> str:
 def fetch(url: str, dest: Path, expected: str) -> None:
     """Download unless a cached copy already matches. Verify before returning, always.
 
-    A folder of archives fetched before (`SIFT_VENDOR_SEED`) is copied from first, for a machine
+    A folder of archives fetched before (`VENDOR_SEED`) is copied from first, for a machine
     with no cache of its own once upstream has pruned a pinned build; the digest check is the same.
     """
-    seed = os.environ.get("SIFT_VENDOR_SEED")
+    seed = os.environ.get("VENDOR_SEED")
     if not dest.exists() and seed and (Path(seed) / dest.name).is_file():
         print(f"    seeded  {dest.name}")
         dest.parent.mkdir(parents=True, exist_ok=True)
@@ -385,7 +385,7 @@ def check_wheel(
     """
     path = VENDOR / str(wheel["file"])
     recipe = ROOT / str(wheel["recipe"])
-    seed = os.environ.get("SIFT_VENDOR_SEED")
+    seed = os.environ.get("VENDOR_SEED")
     if not path.is_file() and seed and (Path(seed) / path.name).is_file() and not verify_only:
         # A wheel built before, from the seed folder, held below exactly as one the recipe made.
         print(f"    seeded  {path.name}")

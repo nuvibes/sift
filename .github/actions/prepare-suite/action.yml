@@ -67,7 +67,7 @@ runs:
         seed="$RUNNER_TEMP/vendor-seed"
         if gh release download vendor-archives --repo "$GITHUB_REPOSITORY" --dir "$seed" \
           2>/dev/null; then
-          echo "SIFT_VENDOR_SEED=$seed" >> "$GITHUB_ENV"
+          echo "VENDOR_SEED=$seed" >> "$GITHUB_ENV"
         else
           echo "::notice::No vendor-archives release: each pinned archive comes from its source."
         fi
