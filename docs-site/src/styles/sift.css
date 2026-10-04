@@ -1,0 +1,113 @@
+/* SPDX-License-Identifier: AGPL-3.0-or-later */
+/* The docs site in Sift's default theme: the midnight base, the blue accent and the Archivo face.
+ *
+ * The --p-* values are the app's own primitives under the app's own names, copied from the
+ * default blocks of frontend/src/app.css (`:root, [data-base='midnight']` and
+ * `:root, [data-accent='blue']`): the docs build runs without the client, so it cannot import that
+ * file, and tests/gates/test_docs_site.py refuses a value here that differs from it. Starlight's
+ * own properties are then set from them and from nothing else.
+ *
+ * Dark only, as the app is: ThemeProvider.astro pins the page dark and ThemeSelect.astro draws no
+ * picker, so Starlight's light scheme is never used.
+ */
+
+:root,
+::backdrop {
+	--p-bg: #0a0b10;
+	--p-surface-1: #101219;
+	--p-surface-2: #171a23;
+	--p-surface-3: #1f2330;
+	--p-surface-4: #2a2f3d;
+	--p-line: #232838;
+	--p-line-strong: #333a4b;
+	--p-ink: #eef1f6;
+	--p-ink-2: #a4acbc;
+	--p-ink-3: #828c9e;
+	--p-ink-4: #5a6273;
+	--p-ok: #3ccb7f;
+	--p-ok-bg: #10261a;
+	--p-warn: #eab84d;
+	--p-warn-bg: #2a1f0a;
+	--p-bad-bg: #2a1214;
+	--p-bad-text: #eb4d51;
+	--p-progress: #87b0fe;
+	--p-progress-bg: #101e38;
+	--p-wave-2: #c58cff;
+	--p-veil: 6, 7, 10;
+	--p-accent: #2563eb;
+	--p-accent-text: #87b0fe;
+	--p-accent-bg: #101e38;
+
+	/* The lockup's grain reads the accent by this name, as it does in the app (SiteTitle.astro). */
+	--sift-accent: var(--p-accent);
+
+	/* The app's corners (app.css, the radius family). */
+	--radius-sm: 6px;
+	--radius-md: 10px;
+	--radius-lg: 14px;
+
+	/* Ink, light to dark: Starlight's "white" is a heading, gray-2 the body, gray-4 decoration. */
+	--sl-color-white: var(--p-ink);
+	--sl-color-gray-1: var(--p-ink);
+	--sl-color-gray-2: var(--p-ink-2);
+	--sl-color-gray-3: var(--p-ink-3);
+	--sl-color-gray-4: var(--p-ink-4);
+	--sl-color-gray-5: var(--p-surface-4);
+	--sl-color-gray-6: var(--p-surface-2);
+	--sl-color-black: var(--p-bg);
+
+	/* The accent's three roles: its tinted ground, its fill, and its words (links, the current page). */
+	--sl-color-accent-low: var(--p-accent-bg);
+	--sl-color-accent: var(--p-accent);
+	--sl-color-accent-high: var(--p-accent-text);
+
+	/* The page on the canvas; the top bar and the sidebar on the rail's surface, as in the app. */
+	--sl-color-bg: var(--p-bg);
+	--sl-color-bg-nav: var(--p-surface-1);
+	--sl-color-bg-sidebar: var(--p-surface-1);
+	--sl-color-bg-inline-code: var(--p-surface-3);
+	--sl-color-hairline-light: var(--p-line-strong);
+	--sl-color-hairline: var(--p-line);
+	--sl-color-hairline-shade: var(--p-bg);
+	--sl-color-backdrop-overlay: rgba(var(--p-veil), 0.74);
+
+	/* The asides in the app's status hues: a note is the progress blue, a caution the warning
+	 * yellow, a danger the failure red, a tip the second stop of Smart Search's wave. */
+	--sl-color-blue-low: var(--p-progress-bg);
+	--sl-color-blue: var(--p-progress);
+	--sl-color-blue-high: var(--p-progress);
+	--sl-color-green-low: var(--p-ok-bg);
+	--sl-color-green: var(--p-ok);
+	--sl-color-green-high: var(--p-ok);
+	--sl-color-orange-low: var(--p-warn-bg);
+	--sl-color-orange: var(--p-warn);
+	--sl-color-orange-high: var(--p-warn);
+	--sl-color-red-low: var(--p-bad-bg);
+	--sl-color-red: var(--p-bad-text);
+	--sl-color-red-high: var(--p-bad-text);
+	--sl-color-purple-low: var(--p-surface-2);
+	--sl-color-purple: var(--p-wave-2);
+	--sl-color-purple-high: var(--p-wave-2);
+
+	/* Archivo for every word, headings and body, from the same Fontsource package the app ships. */
+	--sl-font: 'Archivo Variable', system-ui, sans-serif;
+}
+
+/* The app's corners on the few things Starlight rounds. */
+site-search button[data-open-modal],
+.sl-markdown-content img {
+	border-radius: var(--radius-md);
+}
+
+.sl-markdown-content code {
+	border-radius: var(--radius-sm);
+}
+
+/* The current page in the sidebar as the app's rail draws its current place: the accent's tinted
+ * ground under primary ink. Starlight paints it in the link colour, which is the accent's words. */
+.sidebar-content a[aria-current='page'],
+.sidebar-content a[aria-current='page']:hover,
+.sidebar-content a[aria-current='page']:focus {
+	color: var(--p-ink);
+	background-color: var(--p-accent-bg);
+}

@@ -1,0 +1,150 @@
+{
+  "_comment": [
+    "The compatibility matrix, checked in. One source of truth for which of the three playback",
+    "tiers a given file gets on a given browser.",
+    "",
+    "Every row is (what the file is) x (what the browser reported) -> (the route). Changing an",
+    "answer here changes what a real person gets for a real file, so it changes in a diff that",
+    "somebody has to read, rather than inside a function nobody re-reads after it works once.",
+    "",
+    "`why` is not decoration. A row whose reason nobody can state is a row nobody understands, and",
+    "the next person to touch this file needs to know which rows are load-bearing.",
+    "",
+    "All rows are 1920x1080 at 30fps on 4 cores unless they say otherwise, which is comfortably",
+    "above realtime, so these rows test the routing decision and not the realtime gate. The gate",
+    "has its own tests in test_policy.py, where the resolutions are the interesting variable.",
+    "The remux tier is currently unreachable: policy.decide falls through to transcode where it would have remuxed. These rows keep the codec/container shapes that identify the tier so that re-enabling it is a matter of flipping the expected route back, with the cases already written."
+  ],
+  "cases": [
+    {
+      "container": "mp4",
+      "vcodec": "h264",
+      "acodec": "aac",
+      "client_video": "h264",
+      "client_audio": "aac",
+      "client_containers": "mp4",
+      "route": "direct",
+      "why": "The universal case. H.264/AAC in MP4 on any browser: served off disk, no ffmpeg."
+    },
+    {
+      "container": "mp4",
+      "vcodec": "h264",
+      "acodec": "aac",
+      "client_video": "h264 hevc av1",
+      "client_audio": "aac opus",
+      "client_containers": "mp4 webm",
+      "route": "direct",
+      "why": "A capable browser does not make the simple case any harder."
+    },
+    {
+      "container": "mp4",
+      "vcodec": "av1",
+      "acodec": "opus",
+      "client_video": "h264 av1",
+      "client_audio": "aac opus",
+      "client_containers": "mp4",
+      "route": "direct",
+      "why": "AV1 direct-play. The most valuable row in the file: AV1 is the most expensive codec to transcode and the most widely supported to decode, so it must never take the expensive path when the browser can read it."
+    },
+    {
+      "container": "mp4",
+      "vcodec": "hevc",
+      "acodec": "aac",
+      "client_video": "h264 hevc",
+      "client_audio": "aac",
+      "client_containers": "mp4",
+      "route": "direct",
+      "why": "HEVC in MP4 on Chrome 107+ or Safari, where a hardware decoder exists. Assuming otherwise is years out of date."
+    },
+    {
+      "container": "webm",
+      "vcodec": "vp9",
+      "acodec": "opus",
+      "client_video": "vp9",
+      "client_audio": "opus",
+      "client_containers": "webm",
+      "route": "direct",
+      "why": "WebM is native to Chrome and Firefox and needs nothing done to it."
+    },
+    {
+      "container": "mkv",
+      "vcodec": "hevc",
+      "acodec": "aac",
+      "client_video": "h264 hevc",
+      "client_audio": "aac",
+      "client_containers": "mp4 mov",
+      "route": "transcode",
+      "why": "A REMUX CASE, converted per segment on this viewing. A stream copy cannot cut at an arbitrary point (input seeking lands on the preceding keyframe), so on real media with multi-second GOPs copied segments overlap and do not match the durations the playlist declares; the copy is a whole-file repackage instead (see policy.decide). As a remux: the tier-2 case that must not be skipped. The browser decodes HEVC fine; it cannot demux Matroska. A stream copy fixes the container for near-zero cost with no quality loss at all: transcoding this would be a full re-encode to solve a packaging problem."
+    },
+    {
+      "container": "mkv",
+      "vcodec": "h264",
+      "acodec": "aac",
+      "client_video": "h264",
+      "client_audio": "aac",
+      "client_containers": "mp4",
+      "route": "transcode",
+      "why": "A REMUX CASE, converted per segment on this viewing. A stream copy cannot cut at an arbitrary point (input seeking lands on the preceding keyframe), so on real media with multi-second GOPs copied segments overlap and do not match the durations the playlist declares; the copy is a whole-file repackage instead (see policy.decide). As a remux: H.264 in Matroska, which is a common shape for downloaded content. Same reasoning: repackage, do not re-encode."
+    },
+    {
+      "container": "mkv",
+      "vcodec": "av1",
+      "acodec": "opus",
+      "client_video": "av1",
+      "client_audio": "opus",
+      "client_containers": "mp4",
+      "route": "transcode",
+      "why": "A REMUX CASE, converted per segment on this viewing. A stream copy cannot cut at an arbitrary point (input seeking lands on the preceding keyframe), so on real media with multi-second GOPs copied segments overlap and do not match the durations the playlist declares; the copy is a whole-file repackage instead (see policy.decide). As a remux: AV1 in Matroska. This row is why segments are fragmented MP4 rather than MPEG-TS: TS cannot carry AV1, so a TS pipeline would force this file to transcode, the single most expensive thing the machine can do, for a container swap."
+    },
+    {
+      "container": "mp4",
+      "vcodec": "hevc",
+      "acodec": "aac",
+      "client_video": "h264",
+      "client_audio": "aac",
+      "client_containers": "mp4",
+      "route": "transcode",
+      "why": "A browser with no HEVC decoder. Genuinely undecodable, so it is genuinely re-encoded."
+    },
+    {
+      "container": "mp4",
+      "vcodec": "av1",
+      "acodec": "aac",
+      "client_video": "h264",
+      "client_audio": "aac",
+      "client_containers": "mp4",
+      "route": "transcode",
+      "why": "The worst case identified: an older iPhone against an AV1 library. Expensive and unavoidable: the client genuinely cannot decode it."
+    },
+    {
+      "container": "mp4",
+      "vcodec": "h264",
+      "acodec": "opus",
+      "client_video": "h264",
+      "client_audio": "aac",
+      "client_containers": "mp4",
+      "route": "transcode",
+      "why": "Video is fine, audio is not. Sound counts: a file whose audio will not play is not playable."
+    },
+    {
+      "container": "mp4",
+      "vcodec": "vc1",
+      "acodec": "wmav2",
+      "client_video": "h264 hevc av1 vp9",
+      "client_audio": "aac opus mp3",
+      "client_containers": "mp4 webm mov",
+      "route": "transcode",
+      "why": "An exotic legacy codec no browser has ever decoded. The fallback still has to exist, and this is what it is for."
+    },
+    {
+      "container": "mp4",
+      "vcodec": "h264",
+      "acodec": null,
+      "client_video": "h264",
+      "client_audio": "",
+      "client_containers": "mp4",
+      "route": "direct",
+      "why": "A silent clip. A NULL audio codec is the absence of audio, not an unsupported codec: reading it as one would transcode every silent file in the library for nothing."
+    }
+  ]
+}

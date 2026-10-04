@@ -1,0 +1,313 @@
+# The people, studios and handles this project invented, and nobody else.
+#
+# `test_only_invented_names.py` reads this. A name-shaped string anywhere on the surface it scans
+# must be on this list or on `names_phrases.txt`, or the build fails.
+#
+# The rule runs one way: sample data uses a name declared here, and any other name-shaped string
+# is refused.
+#
+# Adding a line here is a decision, not a formality: a new name is an invented one, of the shape
+# the test needs.
+
+# --- The cast, invented for this project
+Ada Byron
+Ada Lovelace
+Another Studio
+Anouk Vestergaard
+Bryn Calloway
+Caius Delamere
+Cassia Lynn
+Countess Lovelace
+Delphine Ostrow
+Dorian Halstead
+Elina Sorrel
+Esme Wrenfield
+Fenn Marchetti
+Grace Hopper
+Halla Nordquist
+Hollis Danforth
+Imre Vasquez
+Inferred Isolde
+Jane Alone
+Jane Doe
+Jane Doe Two
+Jane Doe Videos
+Jane Doh
+Jane Else
+Jane Janet
+Jane Renamed
+Jane Roe
+Jane Somebody
+Jane Someone
+Jane Videos
+Janet Jan
+Janie Northlight
+John Smith
+Juno Pellerin
+Kate Smith Backup
+Katherine Johnson
+Linnea Fairbrook
+Lone Studio
+Linnea Kastellan
+Linnea Ross
+Luc Picard
+Mary Roe
+Nadia Vance
+Nadia Vance Priya
+Neve Arb
+Neve Arbogast
+Neve Arbor
+Northlight Med
+Northlight Media
+Northlight Media Group
+Northlight Raw
+Northlight Studio Collection
+Northlight Studio Trailers
+Odette Varga Talia
+Orla Tennant
+Pier Nine Media
+Plain Jane
+Poolside Movie
+Priya Sandoval
+Rafe Underhill
+Reya Solberg
+Sandbar Runways
+Saskia Verhoeven
+Someone Concealed
+Sonia Vance
+Talia Brandt
+Tam Brightwater
+Talia Brandt Dorian
+Tobias Ellery
+Wren Kastellan
+Yara Bellweather
+Zelda Fitzgerald
+Zev Ondrasik
+Marla Quist
+Teodor Blyth
+Marisol Vane
+Wren Halloway
+Ilsa Marrow
+Orla Venn
+Pell Arden
+Nell Quarry
+Quillmark Studio
+Ash Ellery
+Cass Ivory
+Juno Marsh
+Marlo Venn
+Robin Vale
+Dell Quay
+Ivy Sarn
+File Info
+Filed Fenella
+Recognised Rosalind
+Resolved Rhona
+Chosen Clemency
+Northlight Group
+Continue Watching
+Ines Dray
+Solo Site
+Breast Augmented
+Create Harbour
+Tobias Renn
+United States
+United Kingdom
+Marion Dell
+Odile Fenwick
+Neve Arbour
+Noa Brandt
+Someone Already Here
+Neve Alder
+Ilva Brennan
+Harlow Quin
+Marlow Vane
+Odile Marchant
+Rowan Pike
+Marisol Vance
+Ada Lumen
+Nuvella Brink
+Bramble Cutwork
+Carrow Vellum
+Delia Marchbank
+Odette Varnley
+Sable Quintrell
+Alex Vane
+Kestrel Media
+Marlow Quill
+Wrenna Sable
+Odalie Frisk
+Pell Quorley
+Sibyl Marrow
+Thessaly Rook
+Briar Vance
+Hollowgrain
+Marit Halvorsen
+quillmoss
+QuillMoss
+Rian Fennick
+# --- Replacements for names that were name-shaped and could not be vouched for: no real names
+# and no unsure ones. Each keeps the shape its fixture was about: a near-pair sharing one
+# alias, a short first name two people share, a site word in front of a surname.
+Alva Renwick
+Alvarine Renwick
+Ines Marchcroft
+Ines Marrow
+Tamsin Vellory
+Orla Fennimore
+Nerith Reyd
+Mega Ashcombe
+Lumen Vasco
+
+# --- The invented SITES the icon pack's tests are written against. Sites
+# rather than people, and invented for the same reason: the pack that ships is a list of real
+# sites, so a test written against one of them would put a real name into the assertions.
+Quillhouse
+Marrowvale Studios
+Marrowvale
+
+# --- The ledger names. The two the record's own writers and reads are written against: an
+# account a share is made to, and a studio a file is filed under.
+Wren Aldabry
+Nightjar Media
+
+# --- A second person in the wire's link list, the studio a site's record is saved with, and the
+# name a rename fixture renames FROM. All three were invented here.
+Bex Corrow
+Larkspur Studios
+Neve Alderman
+# The two invented sites the download failure lines are read back with: a one word name and a
+# two word one, because the line interpolates it and a name that wraps is a line that wraps.
+Sunsetter
+Quiet Harbour
+
+# The person a folder name filed a file under, in the tests for the row that says the one face in
+# that file is not her.
+Rasha Emberlin
+
+# The person a card on Awaiting Review is about, in the crumb-trail test for a detail opened from
+# a tab. Invented here.
+Marissa Vale
+Marrowvale Studio
+Quill House
+Ava Example
+
+# The swap: the person whose faces a received pack holds, in the composition
+# test for holding a pack once; and the person on the offer screen's rows in the swap screens'
+# tests. Both invented here, in the shape of the cast's other Example.
+Ada Example
+Bea Sample
+Anne Marie Halstead
+Marie Halstead
+Harbour Network
+Quiet Studio
+Day Outdoors
+Some Other Film
+Harbour Films
+Another Label
+Renamed Network
+Offer Quillhouse
+# --- The Stash migration's waiting scene: a person, her alias and a Site only it carries
+Jane Moe
+Jane Mow
+Moe Studio
+
+# Facial fingerprints offered in a swap with no files: the people the offer tests keep out or let
+# through. Invented here.
+Cy Fixture
+Dee Fixture
+Eve Fixture
+# The invented person a waiting file entry attaches to. Invented here.
+Tamsin Fixture
+
+# --- Handles, as Sift reads them off a filename (`username_in_filename`: a dot or an underscore
+# reads as a space). The filename fixtures that teach the naming reader are written with these.
+# Each was invented for this project; the ones that could not be vouched for were replaced.
+Brisavantle
+carrowvellum
+esmewrenfield
+cassialynn
+junopellerin
+harlowquin
+inesmarchcroft
+lunette vale
+midnight ivy
+notwrenfield
+odalie frisk
+orla
+orla fennimore
+orlafennimore
+pellquorley
+reya solberg
+talia brandt
+talibrandt
+tam brightwater
+thequietmeridian
+wendalinfrost
+wrenfiel
+wrenfield
+WRENFIELD
+Ada Example Alias
+Mira Vance
+Odette Hale
+Juno Pell
+Lanternfield
+Harbor Lane
+Tamsin Vole
+Orrin Blythe
+Ada Twin
+Wren Ashdown
+Riverbend Clips
+Riverbend Home
+Studio North
+Zephyr Coast
+Oriel Pasque
+Tobin Querrel
+Ysolde Marrick
+Cadell Brisk
+Oriel Vantry
+Tobin Aske
+Mira Solvane
+Mira Two
+Mira Shared
+Kell Oran
+Mira Folder
+Mira Known
+Mira Seed
+Mira Refused
+Mira Aside
+Mira Retired
+Mira Yes
+Mira No
+Mira Stands
+Kell Stands
+Mira Lined
+Mira Off
+Mira Counted
+Mira Scanned
+Paper Lantern
+Blue Again
+Blue Renamed
+Typed Over
+Odo Vance
+Cedar Vale
+Lantern Hum
+Quillmoor Anthem
+Quillmoor Interlude
+# A swap's songs: the ones a received file lands on by its recording, by its name, or as new,
+# and the band one of them credits. Invented here.
+Harbour Lights
+Night Drive
+Example Band
+Low Tide
+Called Otherwise
+Odo Venn
+Odo Ven
+Ilsa Moor
+Wren Hale
+Odo Venne
+Liora Fenwick
+Tamsin Vale
+Harbor Clips
+Ysolde Farrow
+Tamsin Orrell

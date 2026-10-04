@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<!--
+			`viewport-fit=cover` draws the page under a phone's rounded corners, its notch and its home
+			bar, and makes the browser report how much of each edge they take (the safe-area insets,
+			which are zero without it). The shell reads them as tokens (`--safe-*` in app.css), so every
+			bar that stands at an edge keeps its presses clear of what the phone draws over it.
+		-->
+		<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+		<meta name="text-scale" content="scale" />
+		<!--
+			The vector favicon first: it carries its own stylesheet, so it answers the browser
+			chrome's own light or dark setting, which no single bitmap can do. The PNG is there for
+			anything that will not take an SVG.
+		-->
+		<link rel="icon" href="/brand/favicon.svg" type="image/svg+xml" />
+		<link rel="icon" href="/brand/favicon-32.png" sizes="32x32" />
+		<link rel="apple-touch-icon" href="/brand/apple-touch-icon.png" />
+		<link rel="manifest" href="/manifest.webmanifest" />
+		<!--
+			The theme, before the first paint. Blocking on purpose and placed above the framework's
+			own head: it must have stamped the page before anything is drawn, or the browser paints
+			the default theme and the account's choice arrives a moment later as a flash of the wrong
+			colours. A separate file rather than a few lines here because the policy this app is
+			served under refuses an inline script that is not named by its own hash, and only the
+			framework's bootstrap is. See static/theme-boot.js.
+		-->
+		<script src="/theme-boot.js"></script>
+		%sveltekit.head%
+	</head>
+	<body data-sveltekit-preload-data="hover">
+		<!--
+			The wrapper the framework mounts into. A class rather than a style attribute: the policy
+			this app is served under forbids inline styles, so a style= here is refused by the browser
+			and silently does not apply.
+		-->
+		<div class="app-root">%sveltekit.body%</div>
+	</body>
+</html>

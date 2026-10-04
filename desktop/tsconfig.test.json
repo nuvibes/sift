@@ -1,0 +1,35 @@
+{
+  // The tests and their doubles, type-checked but never emitted.
+  //
+  // `rootDir` is cleared because these files sit outside src/: the build config keeps rootDir so
+  // dist/ mirrors src/ exactly, and that same setting refuses a file above it. Nothing is emitted
+  // here, so there is no layout to preserve.
+  //
+  // This config is the reason the electron stub can be trusted. A hand-written double that
+  // nothing type-checks drifts from the real interface silently, and then the test passes while the
+  // shipped call does not exist.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    // What vitest actually runs a test as: an ES module, transformed by Vite. The build's CommonJS
+    // refuses the top-level `await` and the `import.meta` the tests use, which is a statement about
+    // the shipped files and not about these.
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    // Off for the tests only. In shipped code an index past the end is a silent `undefined` carried
+    // onward; in a test it throws at the assertion that reads it, which fails the test by name. The
+    // check would add a `!` to every `calls[0]` and catch nothing the run does not already catch.
+    "noUncheckedIndexedAccess": false,
+    "rootDir": ".",
+    "types": ["node", "vitest/globals"]
+  },
+  // vitest.config.mts is deliberately absent: it is an ES module using `import.meta`, which
+  // this project's CommonJS `module` setting refuses. Vitest itself refuses to start if the
+  // config is wrong, which is a faster and louder check than tsc would be.
+  "include": ["src/**/*.ts", "test/**/*.ts"],
+  // Stated here, not inherited. `extends` hands a config its parent's `exclude` whenever it names
+  // none of its own, and an exclude beats an include, so an inherited `src/**/*.test.ts` would
+  // type-check no test at all while `npm run typecheck` said it passed. src/typecheck.test.ts
+  // holds this config to naming the tests.
+  "exclude": ["node_modules", "dist", "coverage"]
+}

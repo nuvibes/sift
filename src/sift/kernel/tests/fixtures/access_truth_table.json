@@ -1,0 +1,819 @@
+{
+  "comment": [
+    "The resolver's expected answers, written by hand. Every case names the grants a guest has",
+    "been given and what they should then be able to see. Changing the resolver means changing",
+    "this file, deliberately, line by line, which is the point of it existing.",
+    "",
+    "A RESTRICT IS ABSOLUTE: wherever it sits above a copy (a folder, the root,",
+    "everything), no share made nearer the file, or on the file itself, undoes it.",
+    "",
+    "The library the cases run against is in the `world` fixture:",
+    "",
+    "    root                root_two",
+    "      top                 other",
+    "        mid",
+    "          leaf",
+    "",
+    "    solo    one copy in `leaf`; tagged, has a person, in a collection, from a site",
+    "    twin    two copies: one in `leaf`, one in `other`",
+    "    loose   one copy, directly in `root`, in no folder at all",
+    "    song    carried by `solo` only in the cases that grant or hide it",
+    "",
+    "Every grant listed is made for the guest. The admin holds none of them, and is expected to",
+    "see everything regardless, which is what the `admin` column is checking."
+  ],
+  "cases": [
+    {
+      "name": "no grant at all: a guest sees nothing",
+      "asset": "solo",
+      "grants": [],
+      "guest": false,
+      "admin": true
+    },
+    {
+      "name": "no grant at all: not even a file with two copies",
+      "asset": "twin",
+      "grants": [],
+      "guest": false,
+      "admin": true
+    },
+    {
+      "name": "no grant at all: not even a file sitting loose in the root",
+      "asset": "loose",
+      "grants": [],
+      "guest": false,
+      "admin": true
+    },
+    {
+      "name": "a share on the folder the file is in",
+      "asset": "solo",
+      "grants": [
+        [
+          "folder",
+          "leaf",
+          "share"
+        ]
+      ],
+      "guest": true,
+      "admin": true
+    },
+    {
+      "name": "a restrict on the folder the file is in",
+      "asset": "solo",
+      "grants": [
+        [
+          "folder",
+          "leaf",
+          "restrict"
+        ]
+      ],
+      "guest": false,
+      "admin": true
+    },
+    {
+      "name": "a share on the parent folder is inherited",
+      "asset": "solo",
+      "grants": [
+        [
+          "folder",
+          "mid",
+          "share"
+        ]
+      ],
+      "guest": true,
+      "admin": true
+    },
+    {
+      "name": "a share on the grandparent folder is inherited",
+      "asset": "solo",
+      "grants": [
+        [
+          "folder",
+          "top",
+          "share"
+        ]
+      ],
+      "guest": true,
+      "admin": true
+    },
+    {
+      "name": "a restrict on the grandparent folder is inherited",
+      "asset": "solo",
+      "grants": [
+        [
+          "folder",
+          "top",
+          "restrict"
+        ]
+      ],
+      "guest": false,
+      "admin": true
+    },
+    {
+      "name": "a restrict is absolute: a share on a folder inside a restricted tree",
+      "asset": "solo",
+      "grants": [
+        [
+          "folder",
+          "top",
+          "restrict"
+        ],
+        [
+          "folder",
+          "leaf",
+          "share"
+        ]
+      ],
+      "guest": false,
+      "admin": true
+    },
+    {
+      "name": "the nearer folder wins: a restrict inside a shared tree",
+      "asset": "solo",
+      "grants": [
+        [
+          "folder",
+          "top",
+          "share"
+        ],
+        [
+          "folder",
+          "leaf",
+          "restrict"
+        ]
+      ],
+      "guest": false,
+      "admin": true
+    },
+    {
+      "name": "share and restrict on the same folder resolves to restrict",
+      "asset": "solo",
+      "grants": [
+        [
+          "folder",
+          "leaf",
+          "share"
+        ],
+        [
+          "folder",
+          "leaf",
+          "restrict"
+        ]
+      ],
+      "guest": false,
+      "admin": true
+    },
+    {
+      "name": "a share on the library root",
+      "asset": "solo",
+      "grants": [
+        [
+          "root",
+          "root",
+          "share"
+        ]
+      ],
+      "guest": true,
+      "admin": true
+    },
+    {
+      "name": "a restrict on the library root",
+      "asset": "solo",
+      "grants": [
+        [
+          "root",
+          "root",
+          "restrict"
+        ]
+      ],
+      "guest": false,
+      "admin": true
+    },
+    {
+      "name": "a restrict is absolute: a folder share inside a restricted root",
+      "asset": "solo",
+      "grants": [
+        [
+          "root",
+          "root",
+          "restrict"
+        ],
+        [
+          "folder",
+          "top",
+          "share"
+        ]
+      ],
+      "guest": false,
+      "admin": true
+    },
+    {
+      "name": "a restrict on the other root does not touch this file",
+      "asset": "solo",
+      "grants": [
+        [
+          "root",
+          "root_two",
+          "restrict"
+        ],
+        [
+          "folder",
+          "leaf",
+          "share"
+        ]
+      ],
+      "guest": true,
+      "admin": true
+    },
+    {
+      "name": "a global share",
+      "asset": "solo",
+      "grants": [
+        [
+          "global",
+          "global",
+          "share"
+        ]
+      ],
+      "guest": true,
+      "admin": true
+    },
+    {
+      "name": "a global restrict",
+      "asset": "solo",
+      "grants": [
+        [
+          "global",
+          "global",
+          "restrict"
+        ]
+      ],
+      "guest": false,
+      "admin": true
+    },
+    {
+      "name": "a restrict is absolute: a root share under a global restrict",
+      "asset": "solo",
+      "grants": [
+        [
+          "global",
+          "global",
+          "restrict"
+        ],
+        [
+          "root",
+          "root",
+          "share"
+        ]
+      ],
+      "guest": false,
+      "admin": true
+    },
+    {
+      "name": "a folder restrict overrides a global share",
+      "asset": "solo",
+      "grants": [
+        [
+          "global",
+          "global",
+          "share"
+        ],
+        [
+          "folder",
+          "leaf",
+          "restrict"
+        ]
+      ],
+      "guest": false,
+      "admin": true
+    },
+    {
+      "name": "a file in no folder takes the root's share",
+      "asset": "loose",
+      "grants": [
+        [
+          "root",
+          "root",
+          "share"
+        ]
+      ],
+      "guest": true,
+      "admin": true
+    },
+    {
+      "name": "a file in no folder takes the root's restrict",
+      "asset": "loose",
+      "grants": [
+        [
+          "root",
+          "root",
+          "restrict"
+        ]
+      ],
+      "guest": false,
+      "admin": true
+    },
+    {
+      "name": "a file in no folder takes the global share",
+      "asset": "loose",
+      "grants": [
+        [
+          "global",
+          "global",
+          "share"
+        ]
+      ],
+      "guest": true,
+      "admin": true
+    },
+    {
+      "name": "a folder share does not reach a file that is in no folder",
+      "asset": "loose",
+      "grants": [
+        [
+          "folder",
+          "leaf",
+          "share"
+        ]
+      ],
+      "guest": false,
+      "admin": true
+    },
+    {
+      "name": "an item share reveals a file nothing else shares",
+      "asset": "solo",
+      "grants": [
+        [
+          "item",
+          "solo",
+          "share"
+        ]
+      ],
+      "guest": true,
+      "admin": true
+    },
+    {
+      "name": "a restrict is absolute: an item share inside a restricted folder",
+      "asset": "solo",
+      "grants": [
+        [
+          "folder",
+          "leaf",
+          "restrict"
+        ],
+        [
+          "item",
+          "solo",
+          "share"
+        ]
+      ],
+      "guest": false,
+      "admin": true
+    },
+    {
+      "name": "an item restrict overrides a shared folder",
+      "asset": "solo",
+      "grants": [
+        [
+          "folder",
+          "leaf",
+          "share"
+        ],
+        [
+          "item",
+          "solo",
+          "restrict"
+        ]
+      ],
+      "guest": false,
+      "admin": true
+    },
+    {
+      "name": "an item share and an item restrict resolve to restrict",
+      "asset": "solo",
+      "grants": [
+        [
+          "item",
+          "solo",
+          "share"
+        ],
+        [
+          "item",
+          "solo",
+          "restrict"
+        ]
+      ],
+      "guest": false,
+      "admin": true
+    },
+    {
+      "name": "a tag share reveals a file in a folder nobody shared",
+      "asset": "solo",
+      "grants": [
+        [
+          "tag",
+          "tag",
+          "share"
+        ]
+      ],
+      "guest": true,
+      "admin": true
+    },
+    {
+      "name": "a tag share cannot reach into a restricted folder",
+      "asset": "solo",
+      "grants": [
+        [
+          "tag",
+          "tag",
+          "share"
+        ],
+        [
+          "folder",
+          "leaf",
+          "restrict"
+        ]
+      ],
+      "guest": false,
+      "admin": true
+    },
+    {
+      "name": "a tag restrict beats a folder share",
+      "asset": "solo",
+      "grants": [
+        [
+          "tag",
+          "tag",
+          "restrict"
+        ],
+        [
+          "folder",
+          "leaf",
+          "share"
+        ]
+      ],
+      "guest": false,
+      "admin": true
+    },
+    {
+      "name": "a tag restrict beats even a share on the file itself",
+      "asset": "solo",
+      "grants": [
+        [
+          "tag",
+          "tag",
+          "restrict"
+        ],
+        [
+          "item",
+          "solo",
+          "share"
+        ]
+      ],
+      "guest": false,
+      "admin": true
+    },
+    {
+      "name": "a tag share does not reach a file that does not carry the tag",
+      "asset": "twin",
+      "grants": [
+        [
+          "tag",
+          "tag",
+          "share"
+        ]
+      ],
+      "guest": false,
+      "admin": true
+    },
+    {
+      "name": "a person share reveals their files",
+      "asset": "solo",
+      "grants": [
+        [
+          "person",
+          "person",
+          "share"
+        ]
+      ],
+      "guest": true,
+      "admin": true
+    },
+    {
+      "name": "a person restrict beats a share on the file itself",
+      "asset": "solo",
+      "grants": [
+        [
+          "person",
+          "person",
+          "restrict"
+        ],
+        [
+          "item",
+          "solo",
+          "share"
+        ]
+      ],
+      "guest": false,
+      "admin": true
+    },
+    {
+      "name": "a collection restrict beats a share on the file itself",
+      "asset": "solo",
+      "grants": [
+        [
+          "collection",
+          "collection",
+          "restrict"
+        ],
+        [
+          "item",
+          "solo",
+          "share"
+        ]
+      ],
+      "guest": false,
+      "admin": true
+    },
+    {
+      "name": "a person restrict beats a global share",
+      "asset": "solo",
+      "grants": [
+        [
+          "person",
+          "person",
+          "restrict"
+        ],
+        [
+          "global",
+          "global",
+          "share"
+        ]
+      ],
+      "guest": false,
+      "admin": true
+    },
+    {
+      "name": "a collection share reveals what is in it",
+      "asset": "solo",
+      "grants": [
+        [
+          "collection",
+          "collection",
+          "share"
+        ]
+      ],
+      "guest": true,
+      "admin": true
+    },
+    {
+      "name": "a collection restrict beats a folder share",
+      "asset": "solo",
+      "grants": [
+        [
+          "collection",
+          "collection",
+          "restrict"
+        ],
+        [
+          "folder",
+          "leaf",
+          "share"
+        ]
+      ],
+      "guest": false,
+      "admin": true
+    },
+    {
+      "name": "a site share reveals what came from it",
+      "asset": "solo",
+      "grants": [
+        [
+          "site",
+          "site",
+          "share"
+        ]
+      ],
+      "guest": true,
+      "admin": true
+    },
+    {
+      "name": "a site restrict beats a folder share",
+      "asset": "solo",
+      "grants": [
+        [
+          "site",
+          "site",
+          "restrict"
+        ],
+        [
+          "folder",
+          "leaf",
+          "share"
+        ]
+      ],
+      "guest": false,
+      "admin": true
+    },
+    {
+      "name": "two copies: a share on one folder is enough, the other is merely private",
+      "asset": "twin",
+      "grants": [
+        [
+          "folder",
+          "leaf",
+          "share"
+        ]
+      ],
+      "guest": true,
+      "admin": true
+    },
+    {
+      "name": "two copies: a restrict on either one denies the file",
+      "asset": "twin",
+      "grants": [
+        [
+          "folder",
+          "leaf",
+          "share"
+        ],
+        [
+          "folder",
+          "other",
+          "restrict"
+        ]
+      ],
+      "guest": false,
+      "admin": true
+    },
+    {
+      "name": "two copies: a restrict on the second copy's folder alone denies the file",
+      "asset": "twin",
+      "grants": [
+        [
+          "folder",
+          "other",
+          "restrict"
+        ]
+      ],
+      "guest": false,
+      "admin": true
+    },
+    {
+      "name": "two copies: a restrict on the second copy's root denies the file",
+      "asset": "twin",
+      "grants": [
+        [
+          "folder",
+          "leaf",
+          "share"
+        ],
+        [
+          "root",
+          "root_two",
+          "restrict"
+        ]
+      ],
+      "guest": false,
+      "admin": true
+    },
+    {
+      "name": "two copies: a restricted second copy beats an item share",
+      "asset": "twin",
+      "grants": [
+        [
+          "folder",
+          "other",
+          "restrict"
+        ],
+        [
+          "item",
+          "twin",
+          "share"
+        ]
+      ],
+      "guest": false,
+      "admin": true
+    },
+    {
+      "name": "two copies: a share on the second copy's root is enough",
+      "asset": "twin",
+      "grants": [
+        [
+          "root",
+          "root_two",
+          "share"
+        ]
+      ],
+      "guest": true,
+      "admin": true
+    },
+    {
+      "name": "two copies: a global share reaches both",
+      "asset": "twin",
+      "grants": [
+        [
+          "global",
+          "global",
+          "share"
+        ]
+      ],
+      "guest": true,
+      "admin": true
+    },
+    {
+      "name": "a grant made for somebody else is not a grant",
+      "asset": "solo",
+      "grants": [],
+      "grants_for_other_user": [
+        [
+          "folder",
+          "leaf",
+          "share"
+        ],
+        [
+          "global",
+          "global",
+          "share"
+        ]
+      ],
+      "guest": false,
+      "admin": true
+    },
+    {
+      "name": "a photo set share reveals what is in it",
+      "asset": "solo",
+      "grants": [
+        [
+          "photo_set",
+          "photo_set",
+          "share"
+        ]
+      ],
+      "guest": true,
+      "admin": true
+    },
+    {
+      "name": "a song share reveals the file that carries it",
+      "asset": "solo",
+      "grants": [
+        [
+          "song",
+          "song",
+          "share"
+        ]
+      ],
+      "guest": true,
+      "admin": true
+    },
+    {
+      "name": "a song share cannot reach into a restricted folder",
+      "asset": "solo",
+      "grants": [
+        [
+          "song",
+          "song",
+          "share"
+        ],
+        [
+          "folder",
+          "leaf",
+          "restrict"
+        ]
+      ],
+      "guest": false,
+      "admin": true
+    },
+    {
+      "name": "a song restrict beats a share on the file itself",
+      "asset": "solo",
+      "grants": [
+        [
+          "song",
+          "song",
+          "restrict"
+        ],
+        [
+          "item",
+          "solo",
+          "share"
+        ]
+      ],
+      "guest": false,
+      "admin": true
+    },
+    {
+      "name": "a song share does not reach a file that does not carry the song",
+      "asset": "twin",
+      "grants": [
+        [
+          "song",
+          "song",
+          "share"
+        ]
+      ],
+      "guest": false,
+      "admin": true
+    }
+  ]
+}

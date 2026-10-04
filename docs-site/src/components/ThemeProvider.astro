@@ -1,0 +1,11 @@
+---
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Dark only, as the app is: the page always wears Sift's default theme (src/styles/sift.css), so
+// neither a saved choice nor the system's light scheme can turn it light. Inline, so the first
+// paint is already dark. updatePickers stays for Starlight's scripts that call it.
+---
+
+<script is:inline>
+	document.documentElement.dataset.theme = 'dark';
+	window.StarlightThemeProvider = { updatePickers() {} };
+</script>

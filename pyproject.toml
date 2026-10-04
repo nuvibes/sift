@@ -1,0 +1,299 @@
+[project]
+name = "sift"
+version = "0.2.0"
+description = "A self-hosted media browser and downloader"
+readme = "README.md"
+license = "AGPL-3.0-or-later"
+license-files = ["LICENSE", "NOTICE"]
+# 3.13: a swap keys TLS with a pre-shared key, and those callbacks arrived in CPython 3.13
+# (`slices/swap/lock.py`). No higher: a higher floor narrows who can run Sift from source.
+requires-python = ">=3.13"
+dependencies = [
+    "fastapi~=0.115",
+    "uvicorn[standard]~=0.32",
+    "pydantic-settings~=2.6",
+    "structlog~=24.4",
+    "aiosqlite~=0.20",
+    # Names what a rejected file actually was, for the operator's log. It does not decide what is
+    # accepted (see kernel/ingress): it misses real MP4 brands and waves polyglots through, which
+    # is fine for a diagnostic and disqualifying for a gate.
+    "filetype~=1.2",
+    # A file's identity. Every asset is keyed by the BLAKE3 of its bytes, so the digest this
+    # produces is baked into the database: a version that computed a different one would orphan
+    # every row in the library. A checked-in golden digest is the alarm on that.
+    "blake3~=1.0",
+    # Password and PIN hashing. Argon2id, not bcrypt: bcrypt silently truncates a password at 72
+    # bytes and is not memory-hard, so a stolen hash falls to a GPU far faster.
+    "argon2-cffi>=23.1",
+    # The AEAD envelope that protects saved site logins: a random key encrypts them, and that key is
+    # wrapped with one derived from the account password. A stolen backup is then a locked box beside
+    # a locked key. Vetted primitives assembled here rather than an auth framework: the frameworks
+    # assume email flows and an ORM, and never hand back the password this needs at login time.
+    # The ceiling moves one major at a time, deliberately: this library removes deprecated
+    # primitives on major bumps, and what is used here is one of them going quietly missing. Only
+    # AESGCM is used, from `hazmat.primitives.ciphers.aead`. 50.0.0 removes nothing and deprecates
+    # only finite-field Diffie-Hellman, which is not used anywhere in this project.
+    "cryptography>=44,<51",
+    "watchdog>=6.0.0",
+    # The streaming media fetcher. A resolved direct-CDN URL is streamed to disk in bounded chunks
+    # with split connect/read timeouts and a stall floor, so a long-but-live transfer is not killed
+    # while a dead socket is. Its egress is pinned to a vetted IP by the SSRF guard.
+    "aiohttp~=3.11",
+    # A browser at the TLS layer. The free middleman APIs the platform resolvers depend on (tikwm,
+    # instasave, redgifs, reddit) reject an ordinary programmatic client on a fingerprint mismatch:
+    # a plain request gets a 401/403 where an impersonated one gets JSON. Run at arm's length like
+    # aiohttp, and guarded by the same address rule, but not the same way: its request API exposes
+    # no socket pinning, so the address is vetted immediately before the call and redirects are
+    # refused rather than followed.
+    "curl-cffi~=0.7",
+    # Parses the HTML the site extractors read. The file-host pages (Bunkr, Cyberdrop, Fapello, ...)
+    # carry their media links in markup, not an API, so the extractor walks the parsed tree.
+    "beautifulsoup4~=4.12",
+    # Parses multipart/form-data. FastAPI needs it the moment a route declares an uploaded File or a
+    # Form field (the file-import endpoints do), and without it the app raises at startup while
+    # building those routes. It arrived transitively in the dev tools, so it has to be declared here
+    # or a no-dev production image ships without it and cannot boot.
+    "python-multipart~=0.0.18",
+    # Runs the face models. No model file ships with Sift (see slices/faces/weights.py and
+    # docs/model-licences.md), so this is the engine with nothing in it until somebody enables the
+    # feature and fetches one. Imported inside the function that needs it rather than at module
+    # scope: it costs a fraction of a second and a hundred megabytes to import, and the great
+    # majority of installs will never turn faces on.
+    "onnxruntime~=1.28",
+    # The arithmetic the face pass is made of: resampling a face into the square a model expects,
+    # and comparing one face against every person at once. It arrives with the runtime above in any
+    # case; declared because Sift imports it directly, and a dependency that is only ever
+    # transitive is one upgrade away from being absent.
+    "numpy~=2.5",
+    # The nearest-neighbour index behind search-by-meaning. A SQLite add-on rather than a second
+    # database process: the vectors live in the same file as everything else, so there is still one
+    # thing to back up. A hundred and sixty kilobytes and no dependencies of its own. What it
+    # weighs is nothing; what it costs is that it is pre-1.0, which is why everything specific to
+    # it is behind one narrow seam in slices/semantic/store.py.
+    "sqlite-vec~=0.1.9",
+    # Turns a typed sentence into the numbers the text model reads. Chosen over the more usual
+    # library for this, which is fine in itself but requires a model-downloading client Sift has no
+    # use for: Sift fetches and verifies its own models, deliberately. Checked rather than
+    # assumed: both produce identical tokens on every case tried, including empty, over-long and
+    # accented text.
+    "sentencepiece~=0.2.0",
+    # Draws a site logo a stash-box keeps only as an SVG into a PNG in memory, which then takes the
+    # same ffmpeg re-encode as every cover (the bundled ffmpeg has no SVG decoder). A wheel per
+    # platform around the resvg renderer, which runs no script and fetches nothing. It does read a
+    # file an image element names by path, so the document is rewritten first (kernel/svg_raster.py).
+    "resvg~=0.2.0",
+    # Reads a HEIF photograph whole. A phone codes a photograph as a grid of tiles, and ffmpeg
+    # reads one tile of it (its size, its tile, its faces); libheif assembles the grid. Run in a
+    # process of its own, never inside the server (kernel/heif.py). The wheels carry libheif and
+    # libde265 (LGPL-3.0) and x265 (GPL-2.0-or-later), listed in NOTICE.
+    "pillow-heif~=1.8",
+    # The picture library pillow-heif hands its pictures to, and the AVIF reader for an AVIF
+    # photograph (libavif, which assembles a grid the same way). Declared because Sift imports it
+    # directly; 11.2 is the first release that reads AVIF.
+    "pillow>=11.2",
+    # Not imported by Sift: uvicorn pulls it for its own command line, which Sift never runs (the
+    # server is built by hand in main.py). Declared only to hold the floor above the release a
+    # security advisory was fixed in (PYSEC-2026-2132, fixed in 8.3.3), so the lock cannot settle
+    # on an older one again.
+    "click>=8.5.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "ruff~=0.16",
+    "mypy~=1.13",
+    "pytest>=9.0.3",
+    "pytest-asyncio>=1.4",
+    "pytest-cov~=6.0",
+    # Parallel test runs across cores. The full suite is subprocess-bound (real ffmpeg), so it scales
+    # nearly linearly: `pytest -n auto` runs it in a fraction of the single-process time. Kept off by
+    # default (targeted runs and the coverage gates want one process) and turned on per command.
+    "pytest-xdist~=3.6",
+    "hypothesis~=6.112",
+    # semgrep is not here: it is a pinned tool outside this lockfile (scripts/tools/semgrep_pinned.py),
+    # so its own dependencies are not part of what Sift ships or what the audit reads.
+    "httpx~=0.27",
+    # Read by the gates that check the workflow and the compose files. Pre-commit and uvicorn's
+    # `standard` extra both pull it, but a test importing it on that basis would be a dependency
+    # nobody declared and nothing would notice losing.
+    "pyyaml~=6.0",
+    # Supply chain. Declared here rather than installed ad hoc, or CI (which installs strictly
+    # from the lockfile) would not have them and both jobs would fail on their first run.
+    "pip-audit~=2.10",
+    "cyclonedx-bom~=7.3",
+    # The commit hooks. Declared here, not left to whatever the machine happens to have: the hook
+    # `.git/hooks/pre-commit` generates hard-codes the interpreter that installed it, so one
+    # installed from a system package on one platform cannot start on another, and the failure is
+    # "pre-commit not found" at the moment somebody is trying to commit something else.
+    "pre-commit~=4.0",
+]
+
+[project.scripts]
+sift = "sift.main:main"
+sift-admin = "sift.slices.auth.admin_cli:main"
+
+[project.urls]
+Homepage = "https://github.com/nuvibes/sift"
+Repository = "https://github.com/nuvibes/sift"
+Issues = "https://github.com/nuvibes/sift/issues"
+Documentation = "https://nuvibes.github.io/sift/"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/sift"]
+# The built client, which is generated and therefore gitignored, and hatchling excludes
+# VCS-ignored files from a build by default.
+#
+# Without this the wheel carries the whole backend and NO CLIENT: the application installs, opens,
+# starts its backend, and serves a blank page. `artifacts` exists for exactly this case, "generated
+# files that must be in the distribution", and scripts/release.py refuses to package a runtime whose
+# site-packages has no index.html, so the omission is caught rather than shipped.
+artifacts = ["src/sift/web/**"]
+# The suite is not part of the product. Every slice keeps its tests beside the code they cover,
+# which is right for reading and wrong for shipping: without this the wheel carries hundreds of test
+# files into `%LOCALAPPDATA%\\Programs\\Sift`, where nothing can run them: a quarter of the installed
+# package, and the route by which fixture names reach every machine Sift is installed on. Nothing
+# outside a `tests` package imports one, and scripts/release.py proves the packed runtime has none.
+exclude = ["src/sift/**/tests", "src/sift/**/conftest.py"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+src = ["src", "tests"]
+# `.gyp` is JSON that happens to parse as Python, so ruff lints it and ruff-format REWRITES it:
+# a build file for a C++ addon, reformatted by a Python formatter. It is not Python and nothing in
+# this configuration applies to it.
+extend-exclude = [".venv", "build", "dist", "node_modules", "semgrep", "*.gyp", "*.gypi"]
+
+[tool.ruff.lint]
+select = [
+    "E",      # pycodestyle errors
+    "W",      # pycodestyle warnings
+    "F",      # pyflakes
+    "I",      # isort
+    "B",      # bugbear
+    "UP",     # pyupgrade
+    "ASYNC",  # asyncio antipatterns
+    "S",      # bandit
+    "RUF",    # ruff-specific
+    "SIM",    # simplify
+]
+ignore = [
+    "E501",   # line length is the formatter's concern
+]
+
+# `S` includes S608 (hardcoded SQL expression), and it stays on. It means no f-string may
+# appear in SQL, not even one interpolating a module constant.
+# Write the predicate out, `SELECT *` and read rows by name, or use `in_clause`. Do not
+# silence it: with no ORM in the tree, parameterization is the whole SQL-injection defence,
+# and the taint rule that backs it up (`sift-no-string-built-sql` in semgrep/python.yml) is
+# only as strong as the habit this enforces.
+
+[tool.ruff.lint.per-file-ignores]
+# Tests live beside the code they cover (kernel/tests, slices/<name>/tests), so match on the
+# directory wherever it appears rather than listing each one. They assert (S101), use dummy
+# credentials (S105/S106), and shell out to git and the linters (S603/S607).
+# ASYNC221/240: an async test blocking on a subprocess or a stat is blocking its own event loop
+# and nothing else. The rule is about a request handler stalling a server; a test has no server.
+# S311: a seeded `random` is how a test builds a synthetic library of perceptual fingerprints.
+# They stand in for pictures, nothing is being secured with them, and the seed is the point:
+# an unseeded generator would test a different library on every run, which makes a comparison
+# count meaningless and a failure impossible to reproduce.
+"**/tests/**" = ["S101", "S105", "S106", "S311", "S603", "S607", "ASYNC221", "ASYNC230", "ASYNC240"]
+"tests/**" = ["S101", "S105", "S106", "S311", "S603", "S607", "ASYNC221", "ASYNC230", "ASYNC240"]
+# `testing/` is the helpers the tests are built from, not tests: same exemptions, and named
+# separately so a package that holds no tests is not pretending to be one.
+"src/sift/testing/**" = ["S101", "S105", "S106", "S603", "S607"]
+"conftest.py" = ["S101"]
+# The gate tests exist to run the linters and scanners as subprocesses and assert on their
+# exit codes. S603/S607 (subprocess call, partial executable path) describe exactly that, on
+# fixed argv lists with no user input.
+"tests/gates/**" = ["S101", "S105", "S106", "S603", "S607"]
+# The operator scripts drive `git`, `npm` and the linters as subprocesses, on argv lists written in
+# the file itself. S603/S607 (subprocess call, partial executable path) describe exactly that, and
+# resolving each to a full path would hard-code where somebody installed it.
+"scripts/**" = ["S603", "S607"]
+# Rule fixtures are deliberately insecure; linting them defeats their purpose.
+"semgrep/**" = ["ALL"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["sift"]
+
+[tool.mypy]
+python_version = "3.13"
+strict = true
+files = ["src/sift"]
+exclude = ['^semgrep/']
+warn_unreachable = true
+disallow_any_generics = true
+warn_return_any = true
+
+# `filetype` ships no py.typed marker. Its one use is to name what a rejected file turned out to
+# be, for the operator's log; nothing is decided by its answer, so an untyped call here cannot
+# put a wrong type anywhere that matters. The return is cast to str at the call site.
+[[tool.mypy.overrides]]
+module = ["filetype.*"]
+ignore_missing_imports = true
+
+# curl_cffi ships partial type stubs and BeautifulSoup types every element attribute as
+# `str | list[str] | None`, so both are treated as untyped at the import boundary rather than
+# threading casts through every call. The wrappers around them carry Sift's own types.
+[[tool.mypy.overrides]]
+module = ["curl_cffi.*", "bs4.*"]
+ignore_missing_imports = true
+
+# The inference runtime ships no py.typed marker. It is reached through exactly one module (the
+# runner), which wraps it in Sift's own types, so an untyped call cannot spread past that boundary.
+[[tool.mypy.overrides]]
+module = ["onnxruntime.*"]
+ignore_missing_imports = true
+
+# The vector add-on and the tokenizer ship no py.typed marker. Each is reached through exactly one
+# function (loading the add-on into a connection, and turning a sentence into numbers), and both
+# wrap it in Sift's own types, so an untyped call cannot spread past that boundary.
+[[tool.mypy.overrides]]
+module = ["sqlite_vec.*", "sentencepiece.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+# Slice tests live beside the code they cover (kernel/tests, slices/<name>/tests), so the whole
+# package is a test path, not just one directory.
+testpaths = ["tests", "src/sift"]
+pythonpath = ["src"]
+addopts = "-ra --strict-markers --strict-config"
+markers = [
+    "unit: decides from the source tree alone and fast: no application, database or tool process beyond a git listing",
+    "integration: real SQLite and real ffmpeg, never a stub",
+    "e2e: full stack through a browser",
+    "gate: asserts a CI gate rejects a planted violation",
+    "regression: a bug that got out once, and the test that keeps it from getting out again",
+    "indexes_itself: needs the search index refresh a booted app starts, which is otherwise off",
+]
+
+[tool.coverage.run]
+source = ["src/sift"]
+branch = true
+# Test code and the helpers it is built from are not the thing being measured. Naming a whole
+# package to a coverage gate (a slice, rather than a single kernel module) would otherwise pull its
+# own tests into the figure and let a thin test suite hide behind well-covered test files. The broad
+# glob catches a slice's tests at any depth; the specific forms are kept for clarity.
+omit = [
+    "src/sift/testing/*",
+    "*/tests/*",
+    "src/sift/*/tests/*",
+    "src/sift/*/*/tests/*",
+]
+
+[tool.coverage.report]
+exclude_also = [
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+    "@overload",
+    # The console-entry guard on a module that is also an installed command. Nothing imports a
+    # module to run it this way, so the line is unreachable from a test by construction.
+    'if __name__ == "__main__":',
+]

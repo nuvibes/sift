@@ -1,0 +1,81 @@
+name: prepare-suite
+description: Everything the Python suite needs on a Windows runner, so no test skips for want of a tool.
+
+# A skipped test is one that does not exist, so each tool a test looks for is installed rather than
+# assumed:
+#   - the built client, because several tests are about the page the server serves; without it they
+#     read a missing client and check the other half of the branch;
+#   - gitleaks and actionlint, which the repository's gates run against planted violations;
+#   - the vendored ffmpeg, verified against scripts/vendor_manifest.json and byte for byte the build
+#     the installer ships, so the decoder under test is the one users run;
+#   - the tunnel client, built from its pinned source by scripts/vendor_build/wireproxy/build.py with
+#     the one Go release its digest holds for, so the gate that reads its parsers reads the program
+#     users run;
+#   - the HEIF wheel the release installs, built by scripts/build_pillow_heif.bat, so the fetch
+#     that checks the rest has it to check and the recipe is proved on a machine other than the
+#     one that builds the release.
+
+runs:
+  using: composite
+  steps:
+    - uses: ./.github/actions/python
+    - uses: ./.github/actions/node
+      with:
+        workspace: frontend
+    - uses: ./.github/actions/gitleaks
+    - uses: ./.github/actions/actionlint
+
+    - shell: bash
+      working-directory: frontend
+      run: npm run build
+
+    # Keyed on the manifest and the tunnel client's recipe, so a pin or a recipe that moves
+    # invalidates it and nothing else does. The wheels are left out: they have a cache of their own.
+    - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+      id: vendor
+      with:
+        path: |
+          vendor
+          !vendor/wheels
+        key: vendor-${{ runner.os }}-${{ hashFiles('scripts/vendor_manifest.json', 'scripts/vendor_build/**') }}
+
+    # The HEIF wheel, keyed on its recipe: the runner's compiler makes it, and it is rebuilt only
+    # when the recipe changes.
+    - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+      with:
+        path: vendor/wheels
+        key: wheels-${{ runner.os }}-${{ hashFiles('scripts/build_pillow_heif.bat') }}
+
+    # Needed only on a miss, when the fetch below builds the tunnel client. The Go release is the
+    # manifest's `go`, and a gate holds the two equal (tests/gates/test_vendored_tools.py).
+    - if: steps.vendor.outputs.cache-hit != 'true'
+      uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+      with:
+        go-version: "1.27.0"
+        cache: false
+
+    # A pinned build that upstream has since pruned is copied from this repository's
+    # `vendor-archives` pre-release, when there is one: the fetch below holds a copy to the same
+    # pinned digest as a download, so where the file came from changes nothing about what is
+    # trusted. Without the release every archive is fetched from its source, and one that is gone
+    # stops the fetch with what to do next.
+    - if: steps.vendor.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        seed="$RUNNER_TEMP/vendor-seed"
+        if gh release download vendor-archives --repo "$GITHUB_REPOSITORY" --dir "$seed" \
+          2>/dev/null; then
+          echo "SIFT_VENDOR_SEED=$seed" >> "$GITHUB_ENV"
+        else
+          echo "::notice::No vendor-archives release: each pinned archive comes from its source."
+        fi
+
+    # What the caches lack is built by its recipe: the tunnel client, refused unless its digest is
+    # the pinned one, and the HEIF wheel, held to the libraries it carries because a digest made
+    # by the release machine's compiler cannot be made by the runner's.
+    - shell: bash
+      run: |
+        uv run python scripts/fetch_vendor.py --build-missing --wheel-by-contents
+        vendor/bin/ffprobe.exe -version | head -1

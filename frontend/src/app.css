@@ -1,0 +1,3080 @@
+/* The token layer. Every colour, radius, duration and type size in Sift is defined here and
+ * nowhere else.
+ *
+ * TWO LAYERS, and the rule between them is absolute.
+ *
+ *   --p-*     PRIMITIVES. The raw palette a theme owns. Named for WHAT THEY ARE: a canvas, a
+ *             surface step, an ink weight, an accent role. A theme replaces these and nothing else.
+ *   --sift-*  SEMANTICS. What the interface reads. Named for WHAT THEY MEAN, and every one of them
+ *             is defined as a primitive rather than as a colour.
+ *
+ * **A component never reads a primitive.** It reads a semantic name, always, and that is what lets
+ * the whole app be re-themed by replacing one block: the split is invisible to every screen, and the
+ * token gate (`src/lib/design/tokens.test.ts`) proves nothing was lost in making it. A component may
+ * not contain a hex literal either. A build check enforces that, because a single hardcoded colour
+ * in one component is a corner no theme can ever reach.
+ *
+ * WHAT A THEME MAY CHANGE, and what it may not. A theme changes VALUES. It must never change what a
+ * token MEANS, or the app becomes two apps. Same number of surfaces, same roles, same meanings.
+ * Colour and face only: spacing, motion, radius and the size scale are the same everywhere.
+ *
+ * HOW THE VALUES WERE CHOSEN, because it is not by eye. Every colour here was picked in OKLCH, where
+ * a lightness number matches what the eye actually sees; in HSL a "50% lightness" yellow is far
+ * brighter than a 50% blue, which is exactly how a palette ends up with one accent nobody can read.
+ * The six accents are one family: the same lightness, evenly spaced hues, and each hue given as much
+ * chroma as sRGB can hold at that lightness. They ship as hex because that is what the browser wants
+ * and what the contrast gate can read without guessing.
+ *
+ * AND THEY ARE MEASURED, not asserted. `src/lib/design/contrast.test.ts` reads this file, resolves
+ * every base-by-accent combination, and refuses a pair that falls under its floor: body text
+ * 4.5:1, elements 3:1. The ratios written in the comments below are outputs of that gate, not
+ * promises made beside it.
+ *
+ * Dark only. Four dark bases, six named accents plus one derived from a colour somebody chose, and
+ * two typeface choices made separately; there is no light variant to drift out of sync with this one, and `scripts/check_dark_only.js` keeps it that way.
+ */
+
+/* The default base, under its own name as well as on the root.
+ *
+ * TWO SELECTORS, ONE LIST, and the second one is not decoration. The appearance pane draws a
+ * miniature of each base painted in that base: a swatch carrying `data-base="midnight"` while the
+ * page is wearing `chrome`. A rule matching the swatch itself beats a value inherited from the page,
+ * so both samples are honest at once. On `:root` alone the default swatch would quietly show
+ * whichever base was already in force, which is the one thing a preview must never do.
+ */
+:root,
+[data-base='midnight'] {
+	/* =========================================================================================
+	 * PRIMITIVES: the midnight base. The accent and the pairing follow in their own blocks.
+	 * A second base overrides these and nothing else. See [data-base='chrome'] further down.
+	 * ========================================================================================= */
+
+	/* --- Surfaces. Near-black, biased slightly toward the accent's hue. -------------------------
+	 * A flat grey ramp makes warm media look sickly. The blue bias puts the chrome in the same
+	 * family as the accent, and makes skin-toned content read warmer against it by contrast: the
+	 * media looks better because the frame is cooler.
+	 */
+	--p-bg: #0a0b10; /* app canvas, the grid's ground */
+	--p-surface-1: #101219; /* rail, top bar */
+	--p-surface-2: #171a23; /* cards, sheets, popovers, dropdowns */
+	--p-surface-3: #1f2330; /* hover, inputs, search field */
+	--p-surface-4: #2a2f3d; /* chips, pressed, secondary buttons */
+	--p-line: #232838; /* hairline, only where a real edge exists */
+	--p-line-strong: #333a4b; /* dashed drop zones, popover edge, dividers */
+
+	/* --- Ink. Every one of these is solved against the LIGHTEST surface it is allowed on, not
+	 * against the canvas: a ratio taken on the canvas says nothing about the same words on a card:
+	 * a caption that measures 5.2:1 on the canvas can be 3.5:1 on a badge.
+	 */
+	--p-ink: #eef1f6; /* primary text, active nav (17.36:1 on the canvas) */
+	--p-ink-2: #a4acbc; /* secondary text, inactive nav, most icons (8.62:1) */
+	--p-ink-3: #828c9e; /* captions, counts, placeholder (5.80:1). Still AA on surface-3. */
+	--p-ink-4: #5a6273; /* decoration and disabled ONLY (3.21:1). Never text, and gated. */
+
+	/* --- Semantic hues. Each means one thing and only that thing. -------------------------------
+	 * Red is failure or destruction. Nothing else. Watch-progress is the accent, not red, because
+	 * progress is not failure: if red appears on a tile, that item is in trouble.
+	 *
+	 * THE THREE ARE GIVEN, NOT DERIVED. They were chosen against the app rather than solved for,
+	 * and what is worked out here is only what each of them has to be paired with. Every number
+	 * below was measured against the ground it names, in all three bases, and `contrast.test.ts`
+	 * is what keeps them true rather than this comment.
+	 *
+	 * Red splits the same way the accent does, and for the same reason: `--p-bad` is the FILL a
+	 * destructive button is painted in and has to carry white at 4.5:1, while `--p-bad-text` is the
+	 * word "failed" on a dark tint and has to be legible there. One value cannot do
+	 * both: a red between the two carries white at only 3.91:1 and reads 4.49:1 on its own tint.
+	 *
+	 * THE FILL AND ITS LABEL ARE ONE PAIR, and they change together. A lighter red such as
+	 * `#F05B64` cannot carry white (3.29:1), so it would need the canvas colour as its label
+	 * instead: the fill that white reads on goes with white on it. A fill changed without its label
+	 * leaves the one control this pairing exists for wearing the wrong ink.
+	 */
+	--p-ok: #3ccb7f;
+	--p-ok-bg: #10261a;
+	/*
+	 * A warm yellow, and the SAME yellow in all three bases.
+	 *
+	 * Hue 41: effectively the star's own hue (`--p-star` is 42, `--p-folder` 44), at a similar
+	 * lightness.
+	 *
+	 * What matters is the separation from RED on a small mark: two warm circles standing for "this
+	 * wants a person" and "this failed" must not be confused. Hue 41 against red's 357 is 44 degrees
+	 * of separation. What is given up is the separation from the star and the
+	 * folder glyph: different marks, in different places, meaning different kinds of thing, so it
+	 * is a real cost and a small one.
+	 *
+	 * On every ground it is allowed on: 9.48:1 on midnight's card, 7.95 on chrome's, 8.90
+	 * on graphite's, and never below 7.01 on the highest surface of any of them. Dark text on it as
+	 * a fill is 8.90:1 at worst.
+	 */
+	--p-warn: #eab84d;
+	--p-warn-bg: #2a1f0a;
+	--p-bad: #d63941; /* the fill. White on it is 4.65:1 */
+	--p-bad-bg: #2a1214;
+	--p-bad-text: #eb4d51; /* the word, on a dark tint or a card */
+
+	/* --- Work in progress. A STATUS, and deliberately not the brand. --------------------------
+	 *
+	 * "In progress" does not wear `--sift-accent-bg` and `--sift-accent-text`: on those, a library
+	 * set to the gold accent would draw a running job in gold and one set to red would draw it in
+	 * red, a state changing colour because somebody chose a different brand. Every other state on
+	 * that badge reads from its own semantic name, which is why none of them move with the accent.
+	 *
+	 * So it has a name of its own, beside the three above. The VALUES are the blue accent's own text
+	 * and tint, copied here as literals rather than read through `--p-accent-*`: they are already
+	 * measured against every surface of each base, and the whole point is that they do not follow
+	 * whatever the accent is set to. A blue that is not the accent is still the right blue for this:
+	 * blue is what "working" reads as everywhere, and it is the one hue not spoken for by the
+	 * three states above.
+	 *
+	 * The cost, said out loud: a library on the blue accent draws a running chip in exactly the
+	 * accent, so there it cannot be told from the accent; the other five accents show the difference.
+	 */
+	--p-progress: #87b0fe; /* the word, on its own tint or a card */
+	--p-progress-bg: #101e38; /* the tinted ground under it */
+
+	/* --- Judgement. The heart and the stars, and nothing else. -----------------------------------
+	 * These are the one place a colour means "somebody liked this" rather than "something is
+	 * happening". They are deliberately not red and not the accent. Red already means failure, and
+	 * a red heart on a tile would read as an item in trouble; the accent already means selection
+	 * and focus, so stars in it would compete with the ring around the tile they sit on.
+	 *
+	 * Rose and amber are warm and appear in the media itself, which is why both are shown filled
+	 * over the scrim rather than against a thumbnail directly.
+	 */
+	--p-heart: #f2557f; /* the filled heart */
+	--p-star: #f0b429; /* a filled star */
+	--p-folder: #eac24f; /* the folder glyph in the picker: a warm OS-file-browser yellow */
+
+	/* The two stops the search-by-meaning control slides between, either side of the accent. */
+	--p-wave-1: #7cc4ff;
+	--p-wave-2: #c58cff;
+
+	/* --- Scrims. Near-black in every base, because they dim a PHOTOGRAPH rather than the chrome.
+	 * A scrim that followed the base would stop working the moment the base got lighter, and what
+	 * is underneath it is somebody's picture either way.
+	 */
+	--p-veil: 6, 7, 10; /* the near-black every scrim is mixed from */
+}
+
+/* --- Accent. One hue carries every interactive signal. ----------------------------------------
+ * Blue is functional here, not a preference: it is the hue least present in warm-lit media, so a
+ * selection ring never camouflages against a thumbnail, and it leaves red free to mean one thing.
+ * The brand mark and the default UI accent are the same blue on purpose.
+ *
+ * FIVE ROLES, and they are not interchangeable. The fill carries white text, so it is held down to
+ * where white passes on it; the text role has to be legible on a card, so it is held up. One value
+ * cannot do both jobs. That is why there are two.
+ *
+ * On the root and under its own name, for the reason the base above gives.
+ */
+:root,
+[data-accent='blue'] {
+	--p-accent: #2563eb; /* the fill: buttons, markers. White on it is 5.17:1 */
+	/* The chart series: this hue at three lightness steps, solved to 3:1 on the canvas and on a card. */
+	--p-series-1: #c3d8ff;
+	--p-series-2: #82adff;
+	--p-series-3: #3f7dff;
+	--p-accent-hover: #3b78f0;
+	--p-accent-text: #87b0fe; /* accent-coloured TEXT, and the focus ring's own line */
+	--p-accent-bg: #101e38; /* tinted surface: active nav, selected chip */
+	--p-accent-ring-line: #4d87fe; /* the focus ring's own line */
+}
+
+/* --- Type, half one. The two faces, and only the two faces.
+ *
+ * The size scale is further down and does not move: a pairing swaps these two values and nothing
+ * else, which is what makes a face change safe and a face change that also moved the sizes a
+ * redesign. On the root and under its own name, for the reason the base above gives: the pane
+ * sets each sample in the pairing it offers.
+ *
+ * TWO ATTRIBUTES, and one property each, each naming a FACE by its own name. `data-face-display`
+ * picks the face the headings and the numbers are set in; `data-face-body` picks the face
+ * everything else is read in. A pairing the pane offers first is one value on each, a preset of
+ * two faces and nothing more, so one display face can sit over more than one text face without
+ * appearing twice in its menu.
+ */
+:root,
+[data-face-display='archivo'] {
+	--font-display: 'Archivo Variable', system-ui, sans-serif;
+	--font-figures: 'Archivo Figures';
+}
+
+:root,
+[data-face-body='instrument-sans'] {
+	--font-sans: 'Instrument Sans Variable', system-ui, sans-serif;
+}
+
+/* Five selectors, one list, and the extra four are load-bearing.
+ *
+ * A custom property that reads another is substituted ONCE, on the element it is declared on, and
+ * what inherits down is the ANSWER rather than the question. `--sift-accent: var(--p-accent)`
+ * declared only on `:root` therefore resolves to the page's accent and inherits that colour to
+ * everything below. So putting `data-accent="green"` on a swatch changes `--p-accent` underneath a
+ * `--sift-accent` that has already stopped asking. Every accent dot, background miniature and
+ * lettering sample on the appearance pane would show the theme the page is already wearing, and
+ * nothing would fail: the swatches render, the buttons work, the choice applies. They would just
+ * all look the same, which is invisible on the default theme.
+ *
+ * Re-declaring the whole list on the theme attributes makes it ask again on any element carrying
+ * one. A swatch with only `data-accent` re-resolves the surfaces too, from the primitives it
+ * inherited, which is the page's base, and correct: an accent swatch shows this accent on the
+ * background in force.
+ */
+:root,
+[data-base],
+[data-accent],
+[data-face-display],
+[data-face-body] {
+	/* =========================================================================================
+	 * SEMANTICS: what the interface reads. Every one is a primitive, never a colour.
+	 * ========================================================================================= */
+
+	--sift-bg: var(--p-bg);
+	--sift-surface-1: var(--p-surface-1);
+	--sift-surface-2: var(--p-surface-2);
+	--sift-surface-3: var(--p-surface-3);
+	--sift-surface-4: var(--p-surface-4);
+	--sift-line: var(--p-line);
+	--sift-line-strong: var(--p-line-strong);
+
+	/* THE LIGHT ON A CARD: a card is a touch lighter at its top-left and a touch darker at its
+	 * bottom-right, as if lit from that corner, and its hairline catches the light along the top
+	 * and the left and is lost into the fill along the foot and the right.
+	 *
+	 * DERIVED FROM THE BASE'S OWN STEPS, never a colour per base: the lit end is the card tone
+	 * moved toward the next step up (the input tone), the shaded end is the card tone moved toward
+	 * the canvas, so each base's spread is a share of its own ladder and a fifth base gets its
+	 * light with nothing written for it.
+	 *
+	 * MIXED IN OKLAB, the same lightness as OKLCH without the hue: Chromium reads a grey as faint
+	 * as midnight's card (chroma under about 0.02) as having no hue at all, so a mix of two of them
+	 * in OKLCH comes out with chroma and no hue, which it paints at hue zero: a red card.
+	 *
+	 * The shares put about 0.034 of OKLCH lightness between the two ends on every base (seven or
+	 * eight levels of 255), the spread of the picture of dark cards this follows. The lift is the
+	 * smaller half (about 0.013 up, 0.020 down): the lighter end costs every word on a card a
+	 * little contrast, and chrome's error red on a card has the least to give. The middle of a card
+	 * stays within a level of the card tone, so the surface steps keep their meaning.
+	 *
+	 * ONE VALUE FOR THE WHOLE GROUND, `--sift-card`: the fill inside the border and the edge under
+	 * a transparent border, two layers of one `background`. A card that has no border shows the
+	 * fill alone. `contrast.test.ts` measures every pair it holds on the card tone against BOTH
+	 * ends of the fill, so the lighter end is held to the same floors as the flat tone.
+	 *
+	 * ONLY FOR THINGS THAT STAND ON THE PAGE. A menu, a popover, a sheet, a dialog, a field, a
+	 * chip, the rail and the top bar stay flat: a floating thing with a light of its own reads as
+	 * a second lamp in the room. `scripts/check_card_fill.js` holds the list of cards. */
+	--sift-card-lit: color-mix(in oklab, var(--sift-surface-2) 65%, var(--sift-surface-3));
+	--sift-card-shade: color-mix(in oklab, var(--sift-surface-2) 70%, var(--sift-bg));
+	--sift-card-fill: linear-gradient(to bottom right, var(--sift-card-lit), var(--sift-card-shade));
+	--sift-card-edge: linear-gradient(to bottom right, var(--sift-line), var(--sift-card-shade));
+	--sift-card: var(--sift-card-fill) padding-box, var(--sift-card-edge) border-box;
+	/* A CARD UNDER THE POINTER: the same light lifted on the base's own ladder, the lit end on the
+	 * input step and the shaded end halfway between the card step and it, laid OVER the card's
+	 * light as a picture (a `background-color` would be painted under the fill and never seen).
+	 * Laid over `--sift-card`, or over `--sift-card-fill` on a card with no edge.
+	 *
+	 * NOT THE INK MIXED IN. The state layer every flat control takes (`--layer-hover`) is the near
+	 * white ink at 8%, and over a card it washes the base's hue out: midnight's blue card goes a
+	 * neutral grey under the pointer, lighter than its own hairline, so a chip's outline on it
+	 * disappears and a caption on it falls to 3.99:1. Read from the ladder, the lift keeps each
+	 * base's own hue, and its lit end is no lighter than the input step, where every ink a card
+	 * carries is already measured.
+	 *
+	 * Under a press the light goes flat on the input step, the card pushed in.
+	 *
+	 * And the hairlines on it step up with it: a card that takes this hover also sets
+	 * `--sift-line` to `--sift-card-hover-line` for what stands on it, so a chip's outline or a
+	 * rule keeps its edge against the lifted ground. `contrast.test.ts` measures both. */
+	--sift-card-hover-layer: linear-gradient(
+		to bottom right,
+		var(--sift-surface-3),
+		color-mix(in oklab, var(--sift-surface-3) 50%, var(--sift-surface-2))
+	);
+	--sift-card-press-layer: linear-gradient(var(--sift-surface-3), var(--sift-surface-3));
+	--sift-card-hover-line: var(--sift-line-strong);
+
+	/* The same light on the page's ground, about a third as strong: the canvas moved toward the
+	 * rail's step at the top-left and toward black at the bottom-right, about 0.011 of lightness
+	 * end to end. Painted by the shell's screen, which does not scroll, so a long wall moves under
+	 * a ground that stays put. Not where an entity's blurred cover is the ground: there the
+	 * picture is. */
+	--sift-page-lit: color-mix(in oklab, var(--sift-bg) 86%, var(--sift-surface-1));
+	--sift-page-shade: color-mix(in oklab, var(--sift-bg) 96%, black);
+	--sift-page-fill: linear-gradient(to bottom right, var(--sift-page-lit), var(--sift-page-shade));
+
+	--sift-overlay: rgba(var(--p-veil), 0.74); /* modal veil */
+
+	/* The window-wide offer to take a drop, which is NOT a modal veil.
+	 *
+	 * A modal veil says "the thing behind this is not what you are doing now", so it hides. This one
+	 * is an offer made while somebody is holding something over the window, and the page behind it
+	 * is exactly what they are aiming at. At the modal's weight the card being aimed for could not
+	 * be seen and the gesture would be finished blind. Lighter than the crop veil for the same
+	 * reason it is: the picture underneath is still being read. */
+	--sift-drop-veil: rgba(var(--p-veil), 0.3);
+	--sift-shutter: rgba(var(--p-veil), 0.35); /* a screenshot's shutter, at its darkest */
+	/* Ground for a control floating ON a picture: the player's bar, a still's fullscreen chip.
+	 * Lighter than the veil above, which exists to put a whole screen behind a dialog; this only has
+	 * to keep a white glyph legible over whatever frame happens to be underneath it. At 0.55 it does
+	 * not: over a white frame the primary ink measures 3.96:1, under the floor for the words it is
+	 * there to hold up. 0.60 is the least that clears it. */
+	--sift-scrim: rgba(var(--p-veil), 0.6); /* under controls that sit over media */
+
+	/* The same ground, at the strength a control bar needs where its own text sits, and the fully
+	 * transparent end of it. A scrim with a hard top edge draws a line across the picture: a visible
+	 * boundary above the controls, the width of the frame. A
+	 * scrim that fades out has no edge to see. Two stops rather than one colour, so the gradient can
+	 * be written from tokens. */
+	--sift-scrim-strong: rgba(var(--p-veil), 0.72);
+	--sift-scrim-none: rgba(var(--p-veil), 0);
+
+	/* The far end of an entity page's cover backdrop: the blurred picture behind everything above
+	 * the body. See `PageFrame`'s `.frame-backdrop`, which fades the page's own ground into this.
+	 *
+	 * THE CANVAS AND NOT THE VEIL, unlike every scrim above it. A scrim floats a control OVER a
+	 * picture and is near-black in every base so it works whatever the frame is; this is the page's
+	 * own ground thinned until a picture shows through it, so it has to BE the ground: the band's
+	 * top edge meets the trail above it with no seam only if the two are the same colour.
+	 *
+	 * 0.84, and the number is arithmetic rather than taste. The tightest thing drawn on this band is
+	 * its caption ink and the worst picture is a white one, so the least this can be is whatever
+	 * holds that ink at 4.5:1 over `--primary-foreground`. Measured at one-percent steps
+	 * across every base and accent the app offers: 0.84 clears all of them, 0.83 does not. Chrome
+	 * with the blue accent is the pair that binds, at 4.56:1; midnight is the loosest at 5.61:1.
+	 * `contrast.test.ts` is what keeps that true rather than this comment.
+	 *
+	 * !! NO CAPTION GREY IS DRAWN ON THIS BAND, and that is what lets it be 0.84. Solved against
+	 * `--sift-ink-3` it would have to be 0.90 (4.60:1 on midnight), and at 0.90 hardly any of the
+	 * picture shows through. So `PageFrame`'s `.frame.on-a-picture` lifts `--sift-ink-3` to
+	 * `--sift-ink-2` for every row standing on the picture, and the secondary ink is what this is
+	 * solved against. Six points of scrim is a little over half as much picture again (0.10 of the
+	 * cover's light to 0.16), bought for one ink step. Removing that lift means raising this.
+	 *
+	 * A darker picture still costs nothing, because every base's ink is light and a darker ground
+	 * only raises the ratio; the white end is the only one that binds. */
+	--band-scrim: color-mix(in srgb, var(--sift-bg) 84%, transparent);
+	/* How much of the blurred cover an entity page lets through under its scrim: a tenth less than
+	   all of it. One token, read by the frame. */
+	--band-picture: 0.9;
+
+	/* Everything OUTSIDE the rectangle somebody is cropping to. Not the modal veil and not the
+	 * scrim: it dims a picture the person is still looking at and judging an edge against, so it is
+	 * lighter than either. A token, so the one overlay in the app that is genuinely about the
+	 * picture is not the one no theme can reach. */
+	--sift-crop-veil: rgba(0, 0, 0, 0.45);
+
+	--sift-ink: var(--p-ink);
+	--sift-ink-2: var(--p-ink-2);
+	--sift-ink-3: var(--p-ink-3);
+	--sift-ink-4: var(--p-ink-4);
+
+	--sift-accent: var(--p-accent);
+	--sift-accent-hover: var(--p-accent-hover);
+	--sift-accent-text: var(--p-accent-text);
+	--sift-accent-bg: var(--p-accent-bg);
+	--sift-accent-ring-line: var(--p-accent-ring-line);
+
+	/* A WASH, and not the tinted surface above it.
+	 *
+	 * `--sift-accent-bg` is an opaque SURFACE: the ground under an active nav row, a selected
+	 * chip. A card wearing it while something is held over it would go to a solid block, and the face
+	 * somebody was aiming at would disappear at exactly the moment they needed to see it. This lets the
+	 * picture through.
+	 *
+	 * `color-mix` from the accent rather than a channel triplet written out, because the accent is
+	 * CHOSEN: six of them are declared in this file, and a triplet here would be right for one and
+	 * wrong for five. */
+	--sift-accent-wash: color-mix(in srgb, var(--sift-accent) 26%, transparent);
+	/* A pick on a wall: strong enough to find at a glance over a picture, the picture still read. */
+	--sift-pick-wash: color-mix(in srgb, var(--sift-accent) 45%, transparent);
+	/* The same wash in the danger colour: in swap mode, a card or a tile that will not go. */
+	--sift-refused-wash: color-mix(in srgb, var(--sift-bad) 45%, transparent);
+
+	/* THE ACCENT'S RUN: two shades and two tints of the CHOSEN accent, never another hue. Insights
+	 * and its recaps draw their grounds and their large figures in these, so the one screen that is
+	 * a story rather than a tool has more than one step of colour while every step of it is still
+	 * the accent (content is the only colour, the chrome's one colour is the accent).
+	 *
+	 * Derived in OKLCH, as the accents themselves are solved: mixed toward black or white in that
+	 * space the hue holds and only the lightness and chroma move, where an sRGB mix drifts a red
+	 * toward brown and a blue toward grey. From the accent token, so one declaration serves all six.
+	 * `contrast.test.ts` works each one out the same way and measures the ink drawn on them.
+	 *
+	 *   shade-2  the deepest: a story card's ground at its foot, and a tile's lit ground
+	 *   shade-1  a story card's ground at its head
+	 *   tint-1   a large figure drawn on either shade
+	 *   tint-2   the lightest: the glow behind a figure, a rule on a shade */
+	--sift-accent-shade-2: color-mix(in oklch, var(--sift-accent) 24%, black);
+	--sift-accent-shade-1: color-mix(in oklch, var(--sift-accent) 46%, black);
+	--sift-accent-tint-1: color-mix(in oklch, var(--sift-accent) 42%, white);
+	--sift-accent-tint-2: color-mix(in oklch, var(--sift-accent) 18%, white);
+
+	/* THE PMV-CREATOR MARK HAS NO COLOUR OF ITS OWN. One coloured glyph in the corner of some cards
+	 * is the loudest thing on a wall whose subject is the faces, and it reads as a status granted
+	 * rather than as a craft. The mark wears the ink it inherits, so there is no token to keep. The
+	 * note stays so a badge colour is not added without reading why there is none. */
+
+	/*
+	 * THE WHOLE CIRCLE OF HUES, twice: as a ring and as a strip.
+	 *
+	 * Neither is an accent and neither follows one. They are the colour SPACE, drawn (the thing a
+	 * person chooses a colour out of), so they are the same in every theme and they read no
+	 * primitive. They are here rather than in the two components that draw them because this is the
+	 * one file allowed to know what colour anything is, and a rainbow written into a component is a
+	 * corner no theme could reach even if it wanted to.
+	 *
+	 * `--accent-rainbow` is the seventh accent chip's dot on the appearance pane: six chips show a
+	 * colour, and the seventh has no one colour to show: it stands for "whichever you like", so it
+	 * wears the lot. `--hue-spectrum` is the track of the hue slider inside the colour picker, where
+	 * the track IS the value being chosen rather than a groove a value slides along.
+	 *
+	 * Six stops and the seventh closing the ring, at one lightness and one saturation, so the
+	 * spacing is even and no hue is brighter than its neighbours. It is the same rule the six named
+	 * accents are spaced by, for the same reason.
+	 */
+	--accent-rainbow: conic-gradient(
+		from 0deg,
+		hsl(0 90% 60%),
+		hsl(60 90% 60%),
+		hsl(120 90% 60%),
+		hsl(180 90% 60%),
+		hsl(240 90% 60%),
+		hsl(300 90% 60%),
+		hsl(360 90% 60%)
+	);
+	--hue-spectrum: linear-gradient(
+		to right,
+		hsl(0 90% 60%),
+		hsl(60 90% 60%),
+		hsl(120 90% 60%),
+		hsl(180 90% 60%),
+		hsl(240 90% 60%),
+		hsl(300 90% 60%),
+		hsl(360 90% 60%)
+	);
+	/* The two washes laid over one hue to make the picker's square: white running out to the left,
+	   black running out to the bottom, so the corner a marker sits in says what saturation and what
+	   lightness it means. Listed over the hue rather than under it, which is the order `background`
+	   paints them in. They are the space again rather than a decision, and they are here for the
+	   same reason the two above are. */
+	--colour-square-wash:
+		linear-gradient(to top, #000, transparent), linear-gradient(to right, #fff, transparent);
+
+	--sift-wave-1: var(--p-wave-1);
+	--sift-wave-2: var(--p-wave-2);
+
+	/*
+	 * THE WAVE ITSELF, so there is one of it.
+	 *
+	 * Five stops and a 300% size, read by every control that wears it (the search box's spark, the
+	 * answering tab's glyph) rather than written out in each. Two copies of one gradient is two
+	 * gradients the moment either is adjusted, which is the fault this file exists to stop, so the
+	 * image is a token.
+	 *
+	 * Wider than the box it paints, deliberately: sliding a 300% background is what makes the colour
+	 * appear to travel THROUGH a glyph rather than behind it, and holding it at a fixed position is
+	 * what makes a still mark one frame of that same movement rather than a second colour scheme.
+	 * Symmetrical about the middle so the ends meet and the slide never jumps.
+	 */
+	--sift-wave: linear-gradient(
+		100deg,
+		var(--sift-accent) 0%,
+		var(--sift-wave-1) 25%,
+		var(--sift-wave-2) 50%,
+		var(--sift-wave-1) 75%,
+		var(--sift-accent) 100%
+	);
+
+	/*
+	 * !! AN ENRICHMENT MARK IS NOT PAINTED IN THE WAVE. Giving each author's mark its own offset
+	 * along it reads as right (these marks mean "not a person did this", and the spark already
+	 * means that), but it makes three marks that differ by a colour NOBODY CAN NAME: 20%, 50% and
+	 * 80% of one gradient are three shades of the same idea. The marks do not differ by shade; they
+	 * differ by AUTHOR, and two of the three authors are Sift itself. So Sift's own two wear the
+	 * app's accent (one colour, one meaning: this install did it) and a stash-box's wears THAT
+	 * BOX'S colour, below. The wave belongs to the spark on the search box, which is the control
+	 * it was written for.
+	 */
+
+	/*
+	 * A STASH-BOX'S OWN COLOUR: ONE colour per box Sift has a word for, never a gradient.
+	 *
+	 * Three services can be configured and they can disagree about who is in a scene, and a row
+	 * of identical marks makes you hover each one to find out which said so. A
+	 * colour answers that before the tooltip does.
+	 *
+	 * ONE flat colour each, the way a Site's icon carries its own: nothing in the chrome is
+	 * multicolour, so a box's own gradient (PMVStash's orange running to red, FansDB's five favicon
+	 * fills) is not used. FansDB takes OnlyFans blue, since the site it indexes is the
+	 * one its users have open in another tab; StashDB keeps its brown and PMVStash its orange.
+	 *
+	 * Each is measured against every surface a mark can be drawn on by `contrast.test.ts`, against a
+	 * floor of 3:1 for a meaningful graphic.
+	 */
+	/* Brown, chosen for StashDB rather than taken from it (it has no mark of its own). Lifted from
+	   `#8b5a2b` until it cleared 3:1 everywhere; measures 3.41:1 at its worst. */
+	--sift-box-stashdb: #bd8148;
+	/* PMVStash's orange, the head of its own two-stop mark. Measures 3.88:1 at its worst. */
+	--sift-box-pmvstash: #e08010;
+	/* OnlyFans blue, unlifted: it clears the floor as it is, 4.48:1 at its worst. */
+	--sift-box-fansdb: #00aff0;
+
+	--sift-ok: var(--p-ok);
+	--sift-ok-bg: var(--p-ok-bg);
+	--sift-warn: var(--p-warn);
+	--sift-warn-bg: var(--p-warn-bg);
+	--sift-bad: var(--p-bad);
+	--sift-bad-bg: var(--p-bad-bg);
+	--sift-bad-text: var(--p-bad-text);
+	/* The colour of work that is RUNNING. A status, never the brand. See `--p-progress`. */
+	--sift-progress: var(--p-progress);
+	--sift-progress-bg: var(--p-progress-bg);
+
+	--sift-heart: var(--p-heart);
+	--sift-star: var(--p-star);
+	--sift-rating-empty: var(--sift-ink-4); /* an unfilled star: decoration, never text */
+	--sift-folder: var(--p-folder);
+
+	/* What a chart draws its series in: the accent's own hue at three lightness steps (each accent
+	   block sets its own), plus the neutral `--sift-ink-2` for anything that is not a kind. */
+	--sift-series-1: var(--p-series-1);
+	--sift-series-2: var(--p-series-2);
+	--sift-series-3: var(--p-series-3);
+
+	/*
+	 * The stacking order, written down once.
+	 *
+	 * A number typed into whichever component needs it is only correct by accident: a tooltip at 60
+	 * inside a dialog at 71 renders BEHIND it, and a truncated filename's "hover for the whole
+	 * thing" cannot be read.
+	 *
+	 * The order is the order things sit in front of each other, and it is the whole of the rule:
+	 * a popup layer must outrank everything it can be opened from. A tooltip can appear on a control
+	 * in a menu, in a dialog, in the settings sheet and on the bare page, so it outranks all four.
+	 */
+	/* A pager pinned to the bottom of a wall it scrolls in. It only has to outrank the cards it is
+	   pinned over, so it is the lowest thing on this list. Anything opened on top of the page still
+	   covers it, which is correct. */
+	--z-sticky: 10;
+	--z-popover: 20; /* the search suggestions, the Add menu */
+	/* A bar that floats over a wall: the selection bar, Theater's stage bar. Above the page it sits
+	   on and BELOW every layer opened on top of the page: at the toast's rank, a cell menu opened
+	   near the bottom of the screen would run underneath it, its last rows hidden. A
+	   menu is opened by a press and must win over anything that merely floats. So does a panel
+	   hanging under a bar's row (the popover rank): the bar sits between sticky and popover. */
+	--z-bar: 15;
+	/* The mini player floats over the pages somebody is moving through, and under anything opened on
+	   top of one: it gives way to the full-size view rather than covering a corner of it. */
+	--z-mini-player: 40;
+	--z-asset-veil: 50;
+	--z-asset-sheet: 51;
+	--z-settings-veil: 60;
+	--z-settings-sheet: 61;
+	--z-settings-close: 62;
+	--z-dialog-veil: 70;
+	--z-dialog-sheet: 71;
+	--z-menu: 80;
+	--z-toast: 85;
+	--z-tooltip: 90;
+	--z-drop-overlay: 100; /* dragging a file over the window outranks everything */
+	--z-shutter: 105; /* a screenshot's shutter covers the whole screen for a moment, above all */
+	/* The window's own title bar, above even that: a window somebody cannot move is stuck, and a
+	   sheet covering the screen is exactly when they want to put it somewhere else. */
+	--z-window-chrome: 110;
+
+	/* --- Type, half two: the scale. -------------------------------------------------------------
+	 * TWO faces, never three. The display face carries the headings; the sans carries everything
+	 * else, including every machine fact. The families themselves are above, in their own block,
+	 * because a pairing replaces them; these sizes are here because a pairing must not.
+	 *
+	 * There is exactly one rule about which pairings may be offered: EVERY FACE MUST CARRY
+	 * TABULAR FIGURES. `font-variant-numeric: tabular-nums` on `.data` is what stops a column of
+	 * durations shifting sideways as the values tick, and on a face with no tabular figure set it
+	 * does nothing at all, silently. `src/lib/design/figures.test.ts` reads the actual font files
+	 * and refuses a face that cannot prove it. A monospace satisfies the rule by construction.
+	 *
+	 * The SIZE SCALE never moves. A face change at the same measurements is safe; a face change that
+	 * also moves the sizes is a redesign.
+	 */
+
+	/* The large figure of Insights and of a recap card, and nothing else: "41 h" read across a
+	 * room, a story card's one number. The one size above the page title, for the one screen whose
+	 * subject IS its numbers; everywhere else the page title is the largest thing drawn. */
+	--text-figure: 600 3.5rem/1.05 var(--font-display);
+	--text-display-lg: 600 2rem/1.2 var(--font-display);
+	--text-display: 600 1.4375rem/1.25 var(--font-display);
+	--text-h2: 600 1.0625rem/1.3 var(--font-display);
+	/* A subheading: the rung under a group's heading, the body's size in the display face. One
+	 * token for every heading at that rung (a subheading over a block inside a group, a form card's
+	 * title), so the rung is never drawn in two faces. */
+	--text-h3: 600 0.84375rem/1.5 var(--font-display);
+	--text-body: 450 0.84375rem/1.5 var(--font-sans);
+	--text-body-sm: 450 0.78125rem/1.5 var(--font-sans);
+	--text-label: 500 0.71875rem/1.35 var(--font-sans);
+	--text-micro: 600 0.625rem/1.3 var(--font-sans);
+	--text-data: 450 0.78125rem/1.5 var(--font-sans);
+
+	--tracking-display: -0.03em;
+	--tracking-h2: -0.02em;
+	--tracking-micro: 0.07em;
+
+	/* --- A slider's own geometry. -----------------------------------------------------------------
+	 *
+	 * Here rather than in `Slider.svelte`, and that is the whole point of them: a native range
+	 * input's HANDLE does not travel the full width of its track. Its centre goes from half a thumb
+	 * in to half a thumb from the end, so anything else drawn along the same track and placed at a
+	 * plain percentage drifts away from the handle, by nothing in the middle and by half a thumb
+	 * at each end.
+	 *
+	 * Four things are placed along one handle's track: the fill inside the slider, the loop brackets
+	 * on the player's timeline, the replay curve behind them, and the moment the hover preview reads
+	 * off the pointer. At plain percentages they agree at exactly the midpoint and nowhere else.
+	 *
+	 * So the numbers live where every one of them can read them, and `alongTrack` (below) turns a
+	 * fraction of the way along into a place on the track. See `Slider`.
+	 */
+	--slider-track: 4px;
+	--slider-thumb: 12px;
+	/* !! THE EXPRESSION THAT TURNS A FRACTION INTO A PLACE ON THE TRACK IS NOT HERE, AND CANNOT BE.
+	 *
+	 * `--slider-at: calc(var(--slider-thumb) / 2 + (100% - var(--slider-thumb)) *
+	 * var(--slider-of, 0))`, for elements to set `--slider-of` on themselves and read back, **does
+	 * not work, and it fails silently.** A custom property whose value contains `var()` is
+	 * substituted at the element that DECLARES it, so this would resolve `var(--slider-of, 0)` here,
+	 * at the root, where nothing has set it, and inherit the answer for nought down to every element
+	 * that read it: every bracket at 6px whatever moment it was for.
+	 *
+	 * `alongTrack` in `components/common/slider.ts` is where it lives instead, built per element,
+	 * where the fraction is known. These two numbers stay because they are plain values with
+	 * nothing late about them, and because that file reads the thumb off them. */
+
+	/* --- Space. 4px base. ----------------------------------------------------------------------- */
+	/* One reading measure for every paragraph of help or explanation: a length, not a count of
+	   characters, so a larger opening paragraph and a row's help wrap at the same edge. */
+	--reading-measure: 34rem;
+	--space-1: 4px;
+	--space-2: 8px;
+	--space-3: 12px;
+	--space-4: 16px;
+	--space-5: 20px;
+	--space-6: 24px;
+	--space-8: 32px;
+	--space-10: 40px;
+	--space-12: 48px;
+	--space-16: 64px;
+
+	/* The gap between tiles. Declared in TWO places because CSS cannot read TypeScript: the grid's
+	   own maths uses `GRID_GUTTER` in `lib/grid/justify.ts`, and `gutter.test.ts` refuses a mismatch
+	   between the two so the wall and the stylesheet cannot come to disagree. */
+	--grid-gutter: 8px;
+	--rail-width: 208px;
+	/* A drawer that slides in beside or over the page: its width at the right edge, its height at
+	   the bottom. Named here so a drawer is one size wherever one opens. */
+	--drawer-width: 22rem;
+	/* A field that takes a name (a library's, a person's): as wide as a name, never the column. */
+	--name-field-width: 18rem;
+	/* The most a list inside a Settings pane stands before it scrolls in place, so a list of
+	   hundreds of People is one scroll among the rows rather than the pane growing by all of them. */
+	--settings-list-cap: 22rem;
+	--drawer-height: 24rem;
+	--rail-width-collapsed: 64px;
+	--topbar-height: 56px;
+
+	/*
+	 * WHAT A PHONE DRAWS OVER THE PAGE, edge by edge: the notch or the camera, the rounded corners,
+	 * the home bar. Zero on a desktop and in any browser that reports nothing, so a rule reading one
+	 * of these costs nothing where there is no such edge.
+	 *
+	 * They are only non-zero because `app.html` asks for `viewport-fit=cover`; without that the page
+	 * is kept inside the safe area by the browser and every inset reads zero. A bar that stands at an
+	 * edge pads by the inset of THAT edge and paints its own ground under it, so its presses are clear
+	 * of the home bar while its colour still reaches the glass: the top bar reads `--safe-top`, the tab
+	 * bar and a sheet from the foot read `--safe-bottom`, and the shell's own sides read
+	 * `--safe-left` and `--safe-right` (a phone turned sideways puts its notch at one of them).
+	 *
+	 * Named once so no component writes `env()` itself: a second spelling with a different fallback
+	 * is how one bar clears the home bar and the bar beside it does not.
+	 */
+	--safe-top: env(safe-area-inset-top, 0px);
+	--safe-right: env(safe-area-inset-right, 0px);
+	--safe-bottom: env(safe-area-inset-bottom, 0px);
+	--safe-left: env(safe-area-inset-left, 0px);
+
+	/* A finger's size: the floor for anything tappable, and the phone bar's square (TOUCH, BAR).
+	   The tab row's height above the safe area, read by the tab bar and by whatever stands on it
+	   (the docked corner player, the selection bar). A phone's field text: iOS zooms the page into
+	   any field set smaller than 16px the moment it is pressed, so the phone block sets every field
+	   to this. */
+	--touch-target: 44px;
+	--tab-bar-height: 52px;
+	--field-text-phone: 16px;
+
+	/*
+	 * THE STRIP AT THE TOP OF THE DESKTOP WINDOW, and zero everywhere else.
+	 *
+	 * The desktop shell draws the window with no operating-system title bar and puts the minimise,
+	 * maximise and close over the page; `WindowBar` is what they sit on, and everything that fills
+	 * the window has to start below it. Declared here rather than in that component because three
+	 * boxes claim the whole window (the application shell, the card on an empty page, and the
+	 * not-answering screen), and each of them subtracts this.
+	 *
+	 * Zero in a browser, so every one of those `calc(100dvh - ...)` reads as the plain window height.
+	 * `data-window` is the guard rather than `env()`, because `env()` resolves to its fallback in a
+	 * browser and so cannot say whether the buttons are really there, which is the same trap
+	 * `DragStrip` carried a paragraph about.
+	 */
+	--window-chrome: 0px;
+
+	/*
+	 * How wide a person's, a site's or a tag's picture is at the top of their page.
+	 *
+	 * Named because two components have to agree about it and they are not the same file: the hero's
+	 * grid in `EntityHeader` sizes the cover column, and the recognition band under it on a person's
+	 * page (how well Sift knows them, and what is waiting to be answered) is drawn OUTSIDE that
+	 * grid and has to line up with the picture rather than run the width of the window. Written as
+	 * `200px` in both, the day the cover changes is the day they stop agreeing, and the one that
+	 * would be missed is the band, because it is in another file and looks fine on its own.
+	 *
+	 * It narrows below the hero's own breakpoint, where the grid stacks and a 200px picture is most
+	 * of a phone's width spent on a photograph. The token moves rather than each reader, so the band
+	 * follows the picture without knowing the number or the breakpoint.
+	 */
+	--entity-cover-width: 200px;
+
+	/*
+	 * How wide the mini player is before anybody has dragged it.
+	 *
+	 * Here rather than in `mini.svelte.ts` for the reason `--window-chrome` above is: it is a size on
+	 * the app's own scale, and the module that places the panel reads it at the moment it places one.
+	 * The module keeps the same number as a floor, because it has to answer where there is no
+	 * document to read: a test, a render with no browser.
+	 *
+	 * 520, chosen by eye rather than from the scale: it is
+	 * a panel over the page, not a control in a row, so what decides it is how much of a 2560-wide
+	 * window a clip may take while somebody carries on working underneath it. A narrower window gets
+	 * a share of itself instead. See `mini.svelte.ts`, which is where that threshold is.
+	 */
+	--mini-default-width: 520px;
+
+	/* --- Radius ---------------------------------------------------------------------------------
+	 *
+	 * THE RULE FOR NESTING, and it is the one that gets broken: a rounded box drawn inside another
+	 * rounded box takes the OUTER radius MINUS THE GAP between them. Two curves that are merely both
+	 * round do not look related; two concentric ones look machined, and the difference is visible
+	 * long before anybody can say what it is.
+	 *
+	 *     .inner { border-radius: calc(var(--radius-lg) - var(--space-2)); }   inset by --space-2
+	 *
+	 * If the gap is at least as big as the outer radius the curves are independent and any token
+	 * will do: a control inside a sheet padded by 24px is nowhere near the sheet's 20px corner.
+	 * The tokens below are spaced so the common insets land on one of them: 14 - 8 = 6 = --radius-sm.
+	 *
+	 * The other half of the rule is that the gap must be the SAME on all four sides. A percentage
+	 * inset (`scale: 0.94`) is not: on anything that is not square it takes more off one axis than
+	 * the other, and it changes with the element's size. Inset in pixels, always.
+	 *
+	 * `frontend/e2e/corners.spec.ts` measures this on the running app and refuses a child whose
+	 * radius is not its parent's minus the gap. */
+	--radius-sm: 6px; /* chips, filter tokens, inputs, small buttons */
+	--radius-md: 10px; /* buttons, cards, dropdowns, media tiles */
+	--radius-lg: 14px; /* panels, menus, dropdowns, the boxes inside a dialog */
+	--radius-xl: 20px; /* sheets, player shell, modals */
+	--radius-full: 999px; /* avatars, pills, badges */
+
+	/*
+	 * The corner of a MEDIA TILE, named rather than spelled out at each of the places that draw one.
+	 *
+	 * Three things have to agree about this number and only one of them is the tile: the entity card
+	 * on the People and Sites walls is the same object with a caption under it, and the furniture
+	 * ON a tile (the duration, the GIF mark, the selection tick) is inset from this corner and has
+	 * to be concentric with it. Written as `--radius-lg` in each of the three, changing the tile's
+	 * corner would mean finding all three, and the one that would be missed is the chip, whose
+	 * radius is a `calc` in a different section of this file.
+	 *
+	 * So the tile's corner is one question with one name. It is not `--radius-lg`: that rung
+	 * has twenty-five other readers (panels, menus, selects, skeletons), and none of them is a
+	 * tile, so moving the tile by changing the rung would move all of them too.
+	 */
+	--tile-radius: var(--radius-md);
+
+	/* --- Elevation. Separation comes from surface steps first, shadow second, borders last. ------ */
+	--elev-1: 0 1px 2px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.04);
+	--elev-2: 0 8px 24px -8px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(255, 255, 255, 0.05);
+	--elev-3: 0 28px 64px -16px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(255, 255, 255, 0.06);
+	/* The shadow a picture-shaped thing casts while it is lifted under the pointer. Only the
+	   shadow: a lift draws no ring, because a ring on a picture means it is selected. */
+	--elev-tile-lift: 0 18px 36px -14px rgba(0, 0, 0, 0.85);
+	/* The focus ring's own line has a role of its own, and neither of the two obvious candidates
+	 * would do.
+	 *
+	 * The FILL is held down to where white text passes on it, which leaves it too dark to be a line
+	 * on a light surface: it measures 3.05:1 on the input surface in the default theme and under
+	 * 3:1 on the grey bases. A focus ring nobody can find is the one control a keyboard user cannot
+	 * do without.
+	 *
+	 * The TEXT role is legible everywhere, and it is solved for a much harder job (9:1 on the
+	 * canvas), which at these hues means a pastel. As a 1px line hugging an input it reads as WHITE
+	 * rather than as the accent, so a focused field looks like it has picked up a second colour
+	 * from nowhere.
+	 *
+	 * So: the most saturated version of each accent that still clears 3:1 against the LIGHTEST
+	 * surface a ring can land on, which is the chrome base's chips. One value per accent, no base
+	 * variants, because solving for the lightest surface solves for all three. The margin is 3.25:1
+	 * there and better everywhere else.
+	 *
+	 * ONE layer. A solid line with a soft edge outside it is two concentric rings around every
+	 * focused control, which reads as a doubled outline rather than as one indicator. The colour is
+	 * the line's, not the fill's: the fill is 2.58:1 on a chip, under the floor above, so a single
+	 * ring in it would be the quieter of the two colours on exactly the surface where a ring is
+	 * hardest to see.
+	 *
+	 * INSET, and that word is the whole of a bug class rather than a preference.
+	 *
+	 * Drawn outside the box, a ring is painted beyond the element, so any ancestor that hides its
+	 * overflow cuts it off, and a control sitting flush against that ancestor's edge loses two
+	 * pixels of its indicator. Nothing connects those two facts: a scrolling container has no idea
+	 * its children paint outside themselves, and a control has no idea what it is inside. It reads
+	 * as a rendering fault, because a ring whole on three sides and short on one looks like a
+	 * browser fault rather than a rule.
+	 *
+	 * Inside the box it cannot escape, so no container has to know this exists and none can get it
+	 * wrong. The ring sits on the border rather than just beyond it, which is the whole visible
+	 * difference. Same colour, same width, same one layer.
+	 *
+	 * Anything that deliberately wants a ring OUTSIDE its box (a tile whose own edge is the thing
+	 * being outlined) writes its own shadow and says why. It must then make sure nothing above it
+	 * clips, which is the cost this token exists to stop everybody else paying. */
+	--focus-width: 2px;
+	--focus-ring: inset 0 0 0 var(--focus-width) var(--sift-accent-ring-line);
+	/* The same line as an OUTLINE, for a picture drawn to its own edges: a shadow is painted under
+	   the picture and hidden by it, and an outline is painted over everything the box holds. Drawn
+	   inside the edge (`outline-offset` of minus the width), so nothing around it can clip it. */
+	--focus-outline: var(--focus-width) solid var(--sift-accent-ring-line);
+
+	/* --- Motion. Every animation states a cause; none of them perform. --------------------------- */
+	--dur-instant: 90ms;
+	/* One icon reachable from CSS. Everything else draws icons through `Icon`, which reads the
+	   generated codepoint map; a stylesheet cannot read JSON, so the one glyph a global rule needs
+	   is written here and gate-checked against that same map. */
+	--icon-keyboard-arrow-right: '\e315';
+
+	--dur-fast: 140ms;
+	--dur-base: 200ms;
+	--dur-slow: 320ms;
+	--dur-ambient: 600ms;
+	/* One cycle of something that repeats for as long as work runs: a spinner's turn, a sweep, the
+	   download mark. Nothing that repeats is a state change, so it takes none of the five above. */
+	--dur-loop: 1000ms;
+	/* Color drifting through a glyph that stays on (Smart Search's mode): slow enough to be ambient,
+	   never a signal. */
+	--dur-drift: 6000ms;
+	/* The sidebar's edit-mode wiggle: its turn and its shift, two lengths that never line up. */
+	--dur-wiggle: 260ms;
+	--dur-jostle: 370ms;
+	/* A player's screen changing: full screen and back, the mini player and back to full size, the
+	   Audio player, the viewer opening and closing, a Theater wall filling the screen. One pace for
+	   every one of them, the viewer's own (`--dur-slow`), because they are one gesture seen from
+	   different players; the way down one pace quicker on the exit curve, as everything leaving
+	   is. Read by `lib/components/player/motion.ts` and nothing else, which a test holds. */
+	--dur-stage: var(--dur-slow);
+	--dur-stage-leave: var(--dur-base);
+	--ease-stage: var(--ease);
+	--ease-stage-leave: var(--ease-in);
+	/* How far anything appearing rises (`rise`). Reduced motion sets it to nothing. */
+	--rise: 4px;
+	--ease: cubic-bezier(0.2, 0, 0, 1);
+	--ease-in: cubic-bezier(0.4, 0, 1, 1);
+	/* Eased at both ends, for a motion that goes and comes back: a screenshot's shutter. */
+	--ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+	/* The spring: past the mark by a little and back, once. For something that ARRIVES, a panel
+	   dropping from the filter bar or the chips row coming in, never for something leaving or a
+	   state changing. It lives in this family and takes these durations: a motion of its own pace
+	   would be a second rhythm in the app. On a transition rather than a keyframe wherever it can. */
+	--ease-spring: cubic-bezier(0.34, 1.36, 0.44, 1);
+	--hover-intent: 180ms; /* before a tile starts its preview, so the grid does not all fire at once */
+	/* The two blurs. A veil softens what is behind a panel just enough to say it is behind; glass is
+	   a bar or a panel standing over a picture, blurred hard so words stay readable on any frame.
+	   The numbers are here and nowhere else. */
+	--blur-veil: 2px;
+	--blur-glass: 12px;
+	/* And the third, which is a different KIND of thing from the two above: they keep words readable
+	   over a picture, this one destroys a picture on purpose. It is an entity page's cover backdrop
+	   (the cover again, behind everything above the body), and the whole point is that no feature of
+	   it survives: a face, a watermark or a caption still legible back there would be a second,
+	   softer copy of the picture competing with the one drawn sharp beside the name. At 12px (glass)
+	   a face is still a face.
+
+	   32px, set together with the scrim above so the backdrop is still seen to be there. This is a
+	   STANDARD DEVIATION and not a diameter (`filter: blur(N)`
+	   carries a pixel's light out to about 3N before there is nothing left of it), so 32px is still
+	   far past an eye or a mouth at the size the wash draws them, and every feature goes. What comes
+	   back is the picture's gross light and colour, which is the whole of what the backdrop is for.
+	   !! SIZE IT AGAINST THE WASH, NOT THE COVER. 200px is the COVER beside the name, while the wash
+	   is the same picture scaled across the width of the page, where every feature is several times
+	   larger, so a blur sized to wipe out the features of a 200px cover is far more than the wash
+	   needs. `.backdrop-picture` grows the picture by twice this on every side, so a smaller blur
+	   also pushes less of the picture out of frame. See `PageFrame`'s `.frame-backdrop`. */
+	--band-blur: 32px;
+	/* The frost: how a thing that is withheld looks out of focus rather than flat. Two drawings
+	   wear it, `Covered` (text painted over: the rest of an address, a hidden profile folder) and
+	   `Withheld` (the picture area of a Hidden file or row), and a flat fill of the ground reads as
+	   a box that failed to draw where a soft one reads as something there and not in focus.
+
+	   IT IS A LOOK AND NEVER A MASK. Nothing withheld is ever under it to be blurred: `Covered`'s
+	   text is transparent on an opaque ground and `Withheld` has no picture behind it at all, so
+	   what is blurred is a made-up light, the same on every one, which no screenshot can sharpen
+	   into anything. A blur OF the text would be the opposite: legible at a glance and sharpened
+	   back out of a screenshot, which is why the text is painted over in the first place.
+
+	   The edge fades INWARD, over twice the veil, along a gaussian's curve (the stops are its
+	   integral: 2, 16, 50, 84 and 98 percent at each sixth of the way): a mask on the box, which
+	   leaves the middle opaque and throws nothing over the characters beside a cover, where a
+	   blurred shadow would dim the dot in front of an address. The light is the ink at a few
+	   percent, blurred once by the layer that draws it. */
+	--frost-fade: calc(var(--blur-veil) * 2);
+	--frost-ramp:
+		transparent, rgb(0 0 0 / 0.02) calc(var(--frost-fade) / 6),
+		rgb(0 0 0 / 0.16) calc(var(--frost-fade) / 3), rgb(0 0 0 / 0.5) calc(var(--frost-fade) / 2),
+		rgb(0 0 0 / 0.84) calc(var(--frost-fade) * 2 / 3),
+		rgb(0 0 0 / 0.98) calc(var(--frost-fade) * 5 / 6), #000 var(--frost-fade),
+		#000 calc(100% - var(--frost-fade)), rgb(0 0 0 / 0.98) calc(100% - var(--frost-fade) * 5 / 6),
+		rgb(0 0 0 / 0.84) calc(100% - var(--frost-fade) * 2 / 3),
+		rgb(0 0 0 / 0.5) calc(100% - var(--frost-fade) / 2),
+		rgb(0 0 0 / 0.16) calc(100% - var(--frost-fade) / 3),
+		rgb(0 0 0 / 0.02) calc(100% - var(--frost-fade) / 6), transparent;
+	/* Both axes, intersected (`mask-composite: intersect`), so all four sides fade. */
+	--frost-edge:
+		linear-gradient(to right, var(--frost-ramp)), linear-gradient(to bottom, var(--frost-ramp));
+	--frost-light: color-mix(in srgb, var(--sift-ink) 9%, transparent);
+	--frost-shade: color-mix(in srgb, var(--sift-bg) 45%, transparent);
+	/* A line of text seen out of focus: a band of light across the middle of the box. */
+	--frost-line: linear-gradient(
+		to bottom,
+		transparent 18%,
+		var(--frost-light) 45%,
+		var(--frost-light) 60%,
+		transparent 85%
+	);
+	/* A picture seen out of focus: patches of light and shade, blurred hard enough (glass) that
+	   none of them has an edge. */
+	--frost-picture:
+		radial-gradient(ellipse 60% 45% at 30% 28%, var(--frost-light), transparent 70%),
+		radial-gradient(ellipse 55% 40% at 72% 70%, var(--frost-light), transparent 70%),
+		radial-gradient(ellipse 50% 35% at 75% 22%, var(--frost-shade), transparent 70%),
+		radial-gradient(ellipse 45% 40% at 22% 78%, var(--frost-shade), transparent 70%);
+	/* How long a press has to be held before it counts as a hold and starts a selection. A duration
+	   rather than a number inside one component because the cue below is timed by it and the
+	   gesture is counted by it, and two thresholds for one gesture is two gestures. */
+	--press-hold: 300ms;
+
+	/* --- Interaction. The three registers, as values rather than as a paragraph re-read per file.
+	 *
+	 * Every interactive surface answers the pointer, and the failure this is here to stop is the
+	 * one that looks like nothing: a component that steps its TEXT colour and leaves the surface
+	 * alone. That is invisible unless you are looking straight at it, and it disappears entirely at the
+	 * low-contrast end.
+	 *
+	 * LIGHT is the state layer (`--layer-hover`), for anything flat: rows, menu items, buttons,
+	 * nav, chips. The ink is mixed into the thing's own ground, so one hover answers on the
+	 * canvas, on a card and inside a translucent panel alike.
+	 *
+	 * LIFT is for anything picture-shaped: tiles, cards, face cells. Transform only, so it costs
+	 * no layout and nothing beside it moves.
+	 *
+	 * REVEAL is an opacity change and needs no value here beyond a duration.
+	 */
+	--hover-ink: var(--sift-ink);
+	/* How far a pressed button gives under the finger. A button only: a row or a card pressed
+	   takes the pressed layer below and does not change size. */
+	--press-scale: 0.98;
+	--lift-y: -3px;
+	--lift-y-sm: -2px;
+	--lift-scale: 1.025;
+	/* Disabled is an opacity, never a colour: a greyed-out token would have to be legible, and the
+	   one ink dark enough to read as "off" is the one barred from carrying text at all. One
+	   strength for every control, and a disabled control takes no hover and no pressed layer. */
+	--disabled-opacity: 0.38;
+
+	/*
+	 * THE STATE LAYER: what a control's ground does under the pointer, under a press, and while
+	 * something is dragged over it. The control's own ink mixed into its ground at one strength per
+	 * state, so one rule answers on any ground (a surface, the accent, a translucent pane) and no
+	 * component chooses a hover colour of its own. A control writes
+	 *
+	 *   background-color: color-mix(in srgb, currentColor var(--layer-hover), <its ground>);
+	 *
+	 * and a control with no ground mixes with `transparent`. The strengths are the common scale for
+	 * state layers: hover 8, pressed 12, dragged 16. A focused control takes the ring, not a layer.
+	 *
+	 * Not the `.state-*` classes further down: those are the colour a piece of WORK's status is
+	 * painted in (a badge, a tally). This is how any control answers the person using it.
+	 */
+	--layer-hover: 8%;
+	--layer-pressed: 12%;
+	--layer-dragged: 16%;
+
+	/*
+	 * SELECTED, for anything picture-shaped (a tile, a card, a face): a ring in the focus line's
+	 * colour, which is solved to 3:1 against the lightest ground a ring can land on; the picture
+	 * pulled in by the ring's width so the ring frames it rather than lying across it; and a tick in
+	 * the corner (`.selected-check`) so the state never rests on colour alone. Hover draws no ring,
+	 * so the two can never be mistaken for each other.
+	 */
+	--selected-ring-width: 3px;
+	--selected-ring: inset 0 0 0 var(--selected-ring-width) var(--sift-accent-ring-line);
+	/* SELECTED, for a row: the accent's tinted surface with the full ink on it. */
+	--selected-row: var(--sift-accent-bg);
+	--selected-row-ink: var(--sift-ink);
+
+	/* --- Controls. Two heights, and no more. ----------------------------------------------------
+	 * Five heights (30, 32, 34, 36 and 38) are why a toolbar's contents never quite line up with
+	 * each other. The row a page header draws
+	 * centres on `--control-height`, so anything sitting in that row wants this one; `--sm` is for
+	 * a control inside something else: a tile, a dense row, a chip strip. */
+	--control-height: 36px;
+	--control-height-sm: 32px;
+	/* The colour picker's saturation-and-lightness square, and the ring that marks the place in it
+	   (`ColorPicker`). The square is the one control in the app whose HEIGHT is not a row height:
+	   it is a two-dimensional field, so it has to be as tall as it is wide or the two axes are not
+	   equally easy to aim at. 176 is five rows of chrome, which is as small as the square can be
+	   before a hue's darkest quarter stops being separable by eye, and it fits inside the 320px
+	   popover with the app's inset either side. The marker is a ring rather than a dot so the colour
+	   under it is what is read; 14 is the accent dot's size on the same pane. */
+	--colour-square: 176px;
+	--colour-marker: 14px;
+	/* The floor under a data row's figure cell (`DataRow.figure`): wide enough for a size like
+	   "84.2 MB" in the data face, so the column keeps its width when a row's figure is "--". */
+	--data-figure: 5.5rem;
+	/* How tall one tile in a lookalike strip is (`LooksLikeThis`). The strip hands this figure to
+	   `Tile` as an intrinsic size, in the script, where a stylesheet cannot reach.
+	   `LooksLikeThis.svelte.test.ts` holds the two equal.
+
+	   It sizes the strip alone: the record panel is not drawn beside the strip, so nothing else is
+	   held level with it. One reader, stated once here rather than written into the component. */
+	--strip-tall: 96px;
+	/* How thick the how-far-through line is, wherever one is drawn: along the bottom of a tile
+	   (`Tile`), of the full-size stage and of the corner panel (`Player`, placed by each frame).
+	   ONE figure, because the same fact drawn at two thicknesses reads as two different things.
+	   2.5px is thick enough
+	   to read across a wall at a glance (the tile lays it on a scrim track, so a busy photograph
+	   does not swallow it), thin enough never to look like a border on somebody's picture. */
+	--progress-line: 2.5px;
+
+	/* --- Floating lists. One ceiling, one row inset. --------------------------------------------
+	 * A menu, a chooser's open list, a suggestion list and a flyout are the same object: a column
+	 * of rows drawn over the page. Measured against different ceilings (the chooser against
+	 * the WINDOW, a twenty-folder list opening as a 900px column with no bar; the menus against
+	 * nothing at all; the tag suggestions against 240px), how long a list may get would depend on
+	 * which primitive drew it.
+	 *
+	 * 480 is read off the app rather than picked: the longest menu it draws today is a file's
+	 * right-click menu at eleven rows, measured 416px at 1440x900, and it still opens whole. Longer
+	 * than that scrolls, which is what the shared `Scroller` in each of those surfaces is for. Every
+	 * one of them also takes the smaller of this and the room the window actually has, so a short
+	 * window still bounds the list.
+	 *
+	 * The row inset is the other half of the same idea: a row is padded the same in every one of
+	 * those lists. Written out four times (the chooser's rows, a menu's rows, the tag
+	 * suggestions and the rating flyout), the copies drift.
+	 *
+	 * A right-click menu is the one exception: it lists one thing's verbs and opens WHOLE, taking
+	 * the window's room as its ceiling (`.ui-menu.whole`); this ceiling holds the choosers, the
+	 * flyouts and the three-dot dropdowns, which list the library's things. */
+	--menu-max-height: 480px;
+	/* The width of a list hanging from the top bar on a desk (Sort by, a screen's own menus on
+	   that row), whatever its rows say. Sized by its widest name, the Sort list comes out 208px and
+	   Similarity's note ("needs a Smart Search or a file") wraps to two lines, pushing Random under
+	   the scroll; at 240 the note is one line on every wall and every order shows. */
+	--menu-bar-width: 240px;
+	/* The COMPACT row, on every list, dressed the way the Theater's cell menu is: a closer inset,
+	   the small corner, one step of ground under the pointer. Three tokens so four row rules cannot
+	   drift apart. */
+	--menu-row-padding: var(--space-1) var(--space-2);
+	/* CONCENTRIC, and written as the subtraction rather than as a rung so it stays that way. A menu
+	   is a `--radius-lg` box inset by `--space-1`, so a row lit inside it has to be that corner less
+	   that inset: the nesting rule at the top of this file, applied once for every menu in the app
+	   instead of guessed at per surface. `--radius-sm` is the answer for an inset of
+	   `--space-2` and is 4px too tight here: the lit row's corners read as sharper than the box they
+	   sit in, on every menu, chooser and flyout at once. */
+	--menu-row-radius: calc(var(--radius-lg) - var(--space-1));
+	/* The hover layer (see `--layer-hover`) over the surface every floating list sits on. A layer
+	   rather than the next surface up, so a row lit on a translucent menu stays translucent. */
+	--menu-row-highlight: color-mix(in srgb, var(--sift-ink) var(--layer-hover), transparent);
+
+	/* --- Chip geometry. One shape, one spacing. -------------------------------------------------
+	 * A `.chip` declared per file, each with its own padding, puts a row of them beside text at a
+	 * different height on every screen. Vertical padding is deliberately absent: the height does that job,
+	 * and setting both is how two chips with the same height end up different sizes. */
+	--chip-height-sm: 22px; /* inside a tile, or a dense row */
+	--chip-height: 26px;
+	--chip-height-lg: 32px; /* a chip that is a real control */
+	--chip-pad: var(--space-2);
+	--chip-pad-lg: var(--space-3);
+	--chip-gap: var(--space-2); /* the same across and down, in a wrapping row */
+	/* One size at every chip height. The icon set's sanctioned sizes are a fixed list and each is
+	   a class; a chip does not get to add a sixth for the sake of two pixels. */
+	--chip-icon: 16px;
+
+	/* --- Furniture on a thumbnail. The same shape in every corner. ------------------------------
+	 * The clock, the rating, the sharing mark, the vault mark and the times-opened count are all a
+	 * small box on a scrim over somebody's photograph. Declared in three components that cannot see
+	 * each other, they come out as 15px, 18px and 20px tall boxes, in two weights, with four
+	 * paddings and two radii, on the same tile.
+	 *
+	 * They are not `--chip-*`: a chip is a label in a shape that you press or remove, and these are
+	 * marks on a picture. What they DO take from the chip
+	 * rules is the structure: the height does the vertical spacing so nothing sets padding-block,
+	 * the glyph is 16 at every size, and the gap between a glyph and what follows it is `space-1`.
+	 *
+	 * The height is `--chip-height-sm` because that is what the scale calls the size for something
+	 * inside a tile. A small tile steps all of this down at once. See the container query in
+	 * `Tile`, which sets these four and nothing else. */
+	--tile-chip-height: var(--chip-height-sm);
+	/*
+	 * How far in from the tile's edge the furniture sits, and the corner that follows FROM it.
+	 *
+	 * Two other answers look right and are not.
+	 *
+	 * `--space-2`, 8px in. Closer than the corner's own radius, so the eye reads the two curves
+	 * TOGETHER, and the inner one then has to be the outer minus the gap: the concentric rule. With
+	 * the tile's corner at 10, 8px of gap wants a 2px corner, very nearly square.
+	 *
+	 * Going OUT past the corner instead: at 12px, more than the tile's radius, the two curves are
+	 * independent and the chip may have a shape of its own. Sound as geometry and wrong on a tile:
+	 * at 12px in, on a big picture, the marks stop reading as being in the corner at all. They
+	 * float.
+	 *
+	 * So the gap goes the other way. 6px in, with the corner the rule then asks for: 10 - 6 = 4. The
+	 * mark is properly tucked into the corner at every tile size, and it still has a corner. Written
+	 * as the `calc` rather than as a rung, because the failure this prevents is the two numbers
+	 * drifting apart while each of them looks reasonable alone. This way the tile's radius can move
+	 * and the chips follow it.
+	 */
+	--tile-chip-inset: 6px;
+	--tile-chip-pad: 6px; /* horizontal only */
+	/* The concentric rule, said once. See the inset above. */
+	--tile-chip-radius: calc(var(--tile-radius) - var(--tile-chip-inset));
+	/*
+	 * Centring a line of text centres its LINE BOX, and the ink is not in the middle of that.
+	 *
+	 * A line box at `line-height: 1` is the em box, which holds room under the baseline for
+	 * descenders. `GIF`, `1:52` and `3` have none, so that room is empty and the letters ride two
+	 * pixels above the middle of the chip. Measured, the box is perfectly centred; looked at, the
+	 * text sits high with a gap beneath it.
+	 *
+	 * Two pixels of padding at the top moves the centre down by one, which is where the ink belongs.
+	 * A measured correction rather than a derived one, because the amount depends on the typeface's
+	 * own metrics and this application ships four faces. What keeps it honest is the check that holds
+	 * it: `e2e/page-alignment.spec.ts` screenshots a chip and counts the rows holding ink.
+	 */
+	--tile-chip-ink: 2px;
+
+	/* --- The page frame. Every screen is the same shape. ----------------------------------------
+	 * These are tokens rather than numbers typed per page because "the body's padding is the same
+	 * on every page" is not a rule anybody can keep by hand across twenty-two of them. A screen
+	 * that breathes differently from its neighbours is the commonest way an app reads as handmade. */
+	--page-pad: var(--space-6);
+	/* Under the header, before the body, and the whole of that gap: the header keeps no second gap
+	   of its own under the title row (one owner of one gap), so the two cannot stack. */
+	--page-gap: var(--space-3);
+	/* Under the band that names a page (an entity's identity, a strip of faces) and above the
+	   row that heads what is shown of it: on an entity page, between the cover and the tabs. One
+	   distance on every tab of every page, drawn by `PageAbove` alone. */
+	--above-gap: var(--space-4);
+	--page-footer-height: 48px;
+	/* A settings row's control column, where every row's control starts; and the wider one a task
+	   row takes, for its choice beside its press on one line. One named width, read by every row
+	   primitive, so no two panes can start their controls in different places. */
+	--settings-control-col: 15rem;
+	--settings-control-col-wide: min(26rem, 60%);
+	/* The widest a page of READING is allowed to get: settings, forms, prose.
+	 *
+	 * An absolute length rather than a share of the window, and that is the rule rather than a
+	 * detail. A 32-inch monitor does not get a longer line of text than a laptop.
+	 * It gets more margin. Media does not take this: a wall of tiles genuinely is better with more
+	 * tiles on it, so the grid and the entity walls fill the width. */
+	--page-measure: 960px;
+	/* Insights' charts and lists, measured once so every chart on the screen is drawn alike.
+	 *
+	 * A plot's height, which is what a bar's share is a share of; the widest a bar grows when a week
+	 * has only seven to share the width (wider reads as a block, not a mark); the strip of canvas
+	 * between two parts of a bar and between two bars, which is what keeps neighbours separate
+	 * marks rather than one shape; the square that names a kind in the key; and the picture at the
+	 * head of a row in a list of people, Sites or files. */
+	--chart-height: 160px;
+	--chart-bar-width: 28px;
+	--chart-mark-gap: 2px;
+	--chart-key-mark: 10px;
+	--list-cover: 32px;
+	/* A recap card, stood up the way a phone is held and a story is read: this wide, 9:16. And the
+	 * picture at the head of the first row of a list, the one it leads with. */
+	--story-width: 360px;
+	--lead-cover: 96px;
+	/* The narrowest column of the Organize board. The board takes the frame's whole width and lays as
+	 * many columns as fit at this width, each stretched to share what is left: three at 1280 wide, four
+	 * at 1600, five at 1920, one on a phone. At those three widths a card comes out between 318 and
+	 * 328px wide, so the stills and the chips on it keep one size wherever the board is read. */
+	--board-column-min: 288px;
+	/* No `--page-screens`. How many screenfuls of rows one page of a paged view holds is
+	 * `PAGE_SCREENS` in `lib/grid/justify.ts`, the one number, and no rule in this stylesheet reads
+	 * it: the scrolling body is a `1fr` grid track in `PageFrame` and takes its height from the
+	 * window. A copy here pinned to it by a gate could only ever fail when somebody changed the live
+	 * one. A stylesheet that comes to want it declares it again, with a reader. */
+
+	/*
+	 * How wide the search field is allowed to get, and it is ONE number in ONE place.
+	 *
+	 * Two readers: the top bar's middle grid track and the box's own `max-width`, in two files that
+	 * cannot see each other. They have to agree: the track decides where the column is and the cap
+	 * decides how much of it the field fills, so a change to either alone leaves a field sitting at
+	 * one end of a column wider than itself.
+	 *
+	 * It is a CEILING, not a width. The middle grid track is `minmax(0, ...)`, so the field takes
+	 * this much where the bar can spare it and gives way first where it cannot: the ends have
+	 * `max-content` floors, which is what makes the field rather than the controls the thing that
+	 * yields. That is the whole answer to "it eats the bar on a half-screen window".
+	 *
+	 * A smaller number is not the answer to a field that looks too wide: a smaller CEILING does
+	 * nothing at a width where the field is already below it, so the half-screen case is unchanged
+	 * and the wide case loses room it has no reason to lose. The size is not the problem; a fixed
+	 * width would be.
+	 */
+	--search-width: 560px;
+	/* One chooser in a row of choices: wide enough for its longest answer, so the column holds. */
+	--chooser-width: 12rem;
+	/* One of a pair of answer buttons in a row (Share and Restrict): wide enough for the longer
+	   word once lit, so the row does not jump when Share becomes Shared. */
+	--choice-width: 104px;
+
+	/* --- The component library's semantic layer. ------------------------------------------------
+	 * TRAP, and it is the expensive one: in this naming scheme --accent does NOT mean the brand
+	 * colour. It means "the subtle surface a thing takes on hover". The brand colour is --primary.
+	 * Wire the blue into --accent and every menu row in the app turns blue on hover.
+	 */
+	--background: var(--sift-bg);
+	--foreground: var(--sift-ink);
+	--card: var(--sift-surface-2);
+	--card-foreground: var(--sift-ink);
+	--popover: var(--sift-surface-2);
+	--popover-foreground: var(--sift-ink);
+	--primary: var(--sift-accent); /* <- the brand blue lives here */
+	--primary-foreground: #ffffff;
+	--secondary: var(--sift-surface-4);
+	--secondary-foreground: var(--sift-ink);
+	--muted: var(--sift-surface-3);
+	--muted-foreground: var(--sift-ink-3);
+	--accent: var(--sift-surface-3); /* <- a hover surface, NOT the brand */
+	--accent-foreground: var(--sift-ink);
+	--destructive: var(--sift-bad);
+	--destructive-foreground: #ffffff;
+	--border: var(--sift-line);
+	--input: var(--sift-line-strong);
+	--ring: var(--sift-accent);
+	--radius: 0.625rem;
+
+	--sidebar: var(--sift-surface-1);
+	--sidebar-foreground: var(--sift-ink-2);
+	--sidebar-primary: var(--sift-accent);
+	--sidebar-primary-foreground: #ffffff;
+	--sidebar-accent: var(--sift-accent-bg);
+	--sidebar-accent-foreground: var(--sift-ink);
+	--sidebar-border: var(--sift-line);
+	--sidebar-ring: var(--sift-accent);
+}
+
+/* The light on a card and on the page, put out where somebody has asked for less: in forced
+ * colours the system paints every ground and a picture laid over it would survive the override,
+ * and a screen asking for less transparency is asking for plainer surfaces. Both get the flat
+ * tones. The same five selectors as the block above, so a swatch re-resolves here too. */
+@media (forced-colors: active), (prefers-reduced-transparency: reduce) {
+	:root,
+	[data-base],
+	[data-accent],
+	[data-face-display],
+	[data-face-body] {
+		--sift-card-fill: linear-gradient(var(--sift-surface-2), var(--sift-surface-2));
+		--sift-card-edge: linear-gradient(var(--sift-line), var(--sift-line));
+		/* The flat tone inside, the flat hairline under the border: the card unlit. */
+		--sift-card: var(--sift-card-fill) padding-box, var(--sift-line);
+		--sift-page-fill: var(--sift-bg);
+	}
+}
+
+/*
+ * What colour a piece of WORK's state is drawn in. Named once, for the two things that paint one.
+ *
+ * `Badge` is one of them. The other is the Jobs screen's tallies, which are the same seven states as
+ * pressable filters with a count on each, and they have to be the same green and the same red or the
+ * row above the list disagrees with the list.
+ *
+ * Written as classes that set two custom properties rather than as a pair of tokens per state,
+ * because custom properties INHERIT: a caller puts `state-failed` on a wrapper and everything inside
+ * it (a badge, a chip, a count) can read `--state-bg` without being handed anything. Neither
+ * reader holds a mapping from a state to a colour, which is the thing that would drift.
+ *
+ * The groupings are deliberate and are argued in `Badge`: amber twice, because blocked and
+ * quarantined both want a person and neither has failed; grey three times, because queued, paused
+ * and canceled are all states that are not asking anything of anybody. A paused download is held
+ * on purpose, like a cancelled one: the difference between them is the word and the way back,
+ * not the severity, and colouring a deliberate act would say something went wrong.
+ */
+.state-queued,
+.state-paused,
+.state-canceled {
+	--state-bg: var(--sift-surface-4);
+	--state-ink: var(--sift-ink-2);
+}
+
+/* Its own colour, not the accent's. A job being in progress is not a brand decision, and reading
+   the accent here would make a status change colour with the appearance setting. See `--p-progress`. */
+.state-running {
+	--state-bg: var(--sift-progress-bg);
+	--state-ink: var(--sift-progress);
+}
+
+.state-done {
+	--state-bg: var(--sift-ok-bg);
+	--state-ink: var(--sift-ok);
+}
+
+.state-blocked,
+.state-quarantined {
+	--state-bg: var(--sift-warn-bg);
+	--state-ink: var(--sift-warn);
+}
+
+.state-failed {
+	--state-bg: var(--sift-bad-bg);
+	--state-ink: var(--sift-bad-text);
+}
+
+/*
+ * The entity cover narrows where its hero stacks.
+ *
+ * The breakpoint is the one `EntityHeader` narrows its hero at: below it a 200px picture beside a
+ * column of fields is most of a phone's width spent on a photograph, so the picture narrows to what
+ * still reads beside the name's column (a third of a phone's line, the facts under both).
+ *
+ * Written on the TOKEN rather than on each element, which is the whole reason the token exists. The
+ * recognition band under the picture is drawn by a different component, outside that grid, and would
+ * otherwise need its own copy of this breakpoint to follow the picture down.
+ */
+@media (max-width: 767px) {
+	:root {
+		--entity-cover-width: 112px;
+		/* One inset on a phone: the layout's gutter and a framed screen's pad as two numbers
+		   (16 and 24) would start pages and walls at different x. */
+		--page-pad: var(--space-4);
+		/* A phone's Info sheet is taller than a desktop drawer: most of the screen. */
+		--drawer-height: 32rem;
+		/* The viewer's stage on a phone: the window less its two bars and the safe areas. Written
+		   here because it is a share of the WINDOW, and only the window's own file says such a thing. */
+		--phone-stage-height: calc(
+			100dvh - 2 * var(--topbar-height) - var(--safe-top) - var(--safe-bottom)
+		);
+		/* Every box and every row's press a finger's height on a phone. The control height is what
+		   every button, chooser and field in a ROW is built from, so raising it here raises all of
+		   them at once; a component naming a pixel height of its own would miss this, which is why
+		   none does. The SMALL height stays: it is a press inside something else (a card, a strip,
+		   a dense row), where at three cards to a phone's line the glyph keeps its size and its
+		   REACH grows to a finger's instead (the ring `Pressable` and `Button` draw). */
+		--control-height: var(--touch-target);
+	}
+
+	/* Every field at the phone's field size, or iOS zooms into it on press. One rule here rather
+	   than one per field, so a new field cannot be smaller: the same list of boxes the field look
+	   below dresses, not only the ones that carry a class. It is a FLOOR, like the motion floor,
+	   so it wins over a component's own face: a number box, a date box and a search box each give
+	   their type in a scoped rule that outranks any rule written here, and those three would
+	   otherwise come out at 13.5px and 11.5px. */
+	input:where(
+		:not([type='range'], [type='checkbox'], [type='radio'], [type='file'], [type='hidden'])
+	),
+	textarea,
+	select {
+		font-size: var(--field-text-phone) !important;
+	}
+}
+
+/* =============================================================================================
+ * THE SECOND BASE: primitives only, and every value re-measured against the new canvas.
+ *
+ * The ratios in the block above were taken against near-black and DO NOT CARRY OVER: a lighter
+ * canvas takes contrast away from every light ink on it, and the muted text and the decoration-only
+ * grey are the two that fail first. So each one here is solved rather than copied: the same role,
+ * against the surface it actually sits on, to the same floor.
+ *
+ * Chrome is a neutral with a very slight cool cast. A perfectly neutral grey goes flat and muddy
+ * next to skin tones; a trace of blue in it reads as metal. The five surfaces step in EVEN
+ * perceptual increments (0.037 in OKLCH lightness, every step), so "raised" reads as raised by
+ * number rather than by eye.
+ * ============================================================================================= */
+
+[data-base='chrome'] {
+	--p-bg: #15171b;
+	--p-surface-1: #1e2024;
+	--p-surface-2: #27292d;
+	--p-surface-3: #303236;
+	--p-surface-4: #393b40;
+	--p-line: #35373b;
+	--p-line-strong: #44474b;
+
+	--p-ink: #eef1f6; /* 15.85:1 on the canvas */
+	--p-ink-2: #9fa7b6; /* 7.41:1, lighter than the midnight one, to hold 4.5:1 on surface-4 */
+	--p-ink-3: #929bae; /* 6.43:1, the one that fails first, and by the most */
+	--p-ink-4: #5c6576; /* decoration and disabled ONLY (3.06:1) */
+
+	--p-ok: #3ccb7f;
+	--p-ok-bg: #1e2e25;
+	--p-warn: #eab84d; /* the same yellow the first base sets, and it has to be */
+	--p-warn-bg: #322b24;
+	--p-bad: #d63941;
+	--p-bad-bg: #332124;
+	--p-bad-text: #fb5c5e;
+	/* The blue accent's own two values on THIS canvas. See the first base for why they are
+	   literals here rather than a read of the accent. */
+	--p-progress: #94b8fe;
+	--p-progress-bg: #1a2843;
+
+	/* Lifted off the midnight value: the rose that reads 5.97:1 on near-black reads 4.3:1 on a card
+	   in this base, which is under the floor for a glyph somebody is meant to read as a state. */
+	--p-heart: #f85a84;
+	--p-star: #f0b429;
+	--p-folder: #eac24f;
+	--p-wave-1: #7cc4ff;
+	--p-wave-2: #c58cff;
+}
+
+/* =============================================================================================
+ * THE THIRD BASE: the same grey, darker.
+ *
+ * Chrome and this differ in ONE thing: the whole ladder is 0.036 lower in OKLCH lightness. The step
+ * between surfaces is chrome's own 0.039, unchanged, so the five stay exactly as separable as they
+ * are there: a darker theme that also flattens its own steps is how a dark theme stops having
+ * layers at all.
+ *
+ * It is not a darker MIDNIGHT, which is a fair thing to expect from the canvas alone: the two
+ * canvases are close in lightness and the difference is in the surfaces above them. Midnight's carry
+ * a real blue and get bluer as they rise; these stay the neutral chrome is, all the way up. So the
+ * pair read as a dark blue room and a dark grey one rather than as two settings of the same dial.
+ *
+ * The inks and the semantic hues are chrome's, unchanged and not re-solved, and that is safe rather
+ * than lazy: every one of them is a FLOOR against the lightest surface it may sit on, and every
+ * surface here is darker than chrome's counterpart. The measured margins say so: the tightest is
+ * the caption grey at 4.59:1 on the highest surface, against chrome's 4.01:1. The tints are the one
+ * thing that had to move, because a tint is mixed INTO the canvas and there is a new canvas.
+ * ============================================================================================= */
+
+[data-base='graphite'] {
+	--p-bg: #0d0f13;
+	--p-surface-1: #16181b;
+	--p-surface-2: #1e2024;
+	--p-surface-3: #27292d;
+	--p-surface-4: #303237;
+	--p-line: #2c2e32;
+	--p-line-strong: #3b3d41;
+
+	--p-ink: #eef1f6; /* 16.94:1 on the canvas */
+	--p-ink-2: #9fa7b6; /* 5.30:1 on surface-4, the highest it is allowed on */
+	--p-ink-3: #929bae; /* 4.59:1 there, the one with the least room, and it has room */
+	--p-ink-4: #5c6576; /* decoration and disabled ONLY (3.27:1 on the canvas) */
+
+	--p-ok: #3ccb7f;
+	--p-ok-bg: #1a2f22;
+	--p-warn: #eab84d; /* the same yellow the first base sets, and it has to be */
+	--p-warn-bg: #362c21;
+	--p-bad: #d63941;
+	--p-bad-bg: #351c1e;
+	--p-bad-text: #fb5c5e;
+	/* As chrome, against this base's own canvas. See the first base. */
+	--p-progress: #94b8fe;
+	--p-progress-bg: #14213c;
+
+	--p-heart: #f85a84;
+	--p-star: #f0b429;
+	--p-folder: #eac24f;
+	--p-wave-1: #7cc4ff;
+	--p-wave-2: #c58cff;
+}
+
+/* =============================================================================================
+ * THE FOURTH BASE: true black.
+ *
+ * The canvas is as near black as a screen can be told apart from a switched-off one, and the
+ * surfaces climb off it in neutral greys with no blue in them: the rail a hair above the canvas, a
+ * card a shade above that, then the inputs and the chips. The steps are graphite's own, about 0.035
+ * in OKLCH lightness each, so the layers stay as separable as they are there, only lower. On a
+ * panel or OLED screen the canvas is close to off, which is what somebody choosing this is after.
+ *
+ * The inks and the semantic hues are chrome's, unchanged and not re-solved, for graphite's reason:
+ * every one is a FLOOR against the lightest surface it may sit on, and every surface here is darker
+ * than chrome's counterpart, so each gains contrast. The decoration grey is the one to watch the
+ * other way: it is held UNDER a reading floor on purpose and is 3.47:1 on this canvas. The tints
+ * are the things that had to move, because a tint is mixed INTO the canvas.
+ * ============================================================================================= */
+
+[data-base='obsidian'] {
+	--p-bg: #050505;
+	--p-surface-1: #0b0b0b;
+	--p-surface-2: #121212;
+	--p-surface-3: #1a1a1a;
+	--p-surface-4: #242424;
+	--p-line: #222222;
+	--p-line-strong: #333333;
+
+	--p-ink: #eef1f6; /* 18.00:1 on the canvas */
+	--p-ink-2: #9fa7b6; /* 6.41:1 on surface-4, the highest it is allowed on */
+	--p-ink-3: #929bae; /* 5.56:1 there */
+	--p-ink-4: #5c6576; /* decoration and disabled ONLY (3.47:1 on the canvas) */
+
+	--p-ok: #3ccb7f;
+	--p-ok-bg: #10261a;
+	--p-warn: #eab84d; /* the same yellow the first base sets, and it has to be */
+	--p-warn-bg: #2a1f0a;
+	--p-bad: #d63941;
+	--p-bad-bg: #2a1214;
+	--p-bad-text: #fb5c5e;
+	/* As chrome, against this base's own canvas. See the first base. */
+	--p-progress: #94b8fe;
+	--p-progress-bg: #0c172e;
+
+	--p-heart: #f85a84;
+	--p-star: #f0b429;
+	--p-folder: #eac24f;
+	--p-wave-1: #7cc4ff;
+	--p-wave-2: #c58cff;
+}
+
+/* =============================================================================================
+ * THE SIX ACCENTS.
+ *
+ * One family, not six colours: the same OKLCH lightness, hues spaced evenly 60 degrees apart, and
+ * each given as much chroma as sRGB can hold at that lightness, which is why the gold and the
+ * cyan are quieter than the blue. That is the screen's limit, not a choice, and the alternative
+ * (dropping every accent to the chroma the gold can manage) would desaturate the brand blue to
+ * match its weakest sibling.
+ *
+ * The ring is spaced FROM the blue rather than the blue being placed in a ring drawn first: the
+ * brand mark and the default accent are the same value, so accent one is exactly the shipped blue
+ * and the other five fall where the spacing puts them. They are named for what they read as, which
+ * is not quite ROYGBV: even spacing puts a magenta and a cyan in the set and no orange.
+ *
+ * The fill, the hover and the ring do not depend on the base. The TEXT role and the TINT do: both
+ * are measured against the canvas, and there are two canvases.
+ *
+ * THE NUMBERS, so a seventh accent is derived rather than guessed. Everything below came out of
+ * these five rules, written here because the values are useless without the reasoning that
+ * produced them:
+ *
+ *   fill    L 0.5461, the shipped blue's own lightness. C = min(0.2152, 0.98 x the sRGB maximum
+ *           at that lightness and hue). The cap is the blue's chroma, so blue is unchanged.
+ *   hover   the same, at L 0.5984 (the shipped hover's lightness).
+ *   text    the LOWEST lightness that clears 4.7:1 on surface-3 AND on its own tint AND 3.05:1 on
+ *           surface-4 (it is the focus ring's line); then, for every hue but the gold, lifted
+ *           further to 9.0:1 on the canvas. Chroma is 0.98 x the sRGB maximum throughout.
+ *           The gold stops at the floor. That is the whole of the "darker gold" exception.
+ *   tint    the fill mixed 22% into the canvas, in OKLab.
+ *   ring    the fill at 0.55 alpha.
+ *
+ * Add a hue, run the rules, and the contrast gate will say whether you got it right.
+ * ============================================================================================= */
+
+[data-accent='magenta'] {
+	--p-accent: #a831b7;
+	/* The chart series: this hue at three lightness steps, solved to 3:1 on the canvas and on a card. */
+	--p-series-1: #f7c2fd;
+	--p-series-2: #e185ec;
+	--p-series-3: #c04bcf;
+	--p-accent-hover: #b944c8;
+	--p-accent-text: #f088fe;
+	--p-accent-bg: #291630;
+	--p-accent-ring-line: #e821ff;
+}
+
+[data-accent='red'] {
+	--p-accent: #d10e2e;
+	/* The chart series: a CORAL run, a step lighter and warmer than this accent's own hue (OKLCH
+	   L 0.89 / 0.79 / 0.69 at hue 44, against the fill's 25). A red accent's own three shades are
+	   reds by construction, and the deepest (#ec3744) is the failure red's word (#eb4d51) to the
+	   eye: a chart would draw failure where nothing had failed. Solved to 3:1 on the canvas and on a card
+	   and to stand at least 0.08 in OKLab from every semantic colour (contrast.test.ts). */
+	--p-series-1: #fcd0be;
+	--p-series-2: #f9a27c;
+	--p-series-3: #de7e53;
+	--p-accent-hover: #e42e3d;
+	--p-accent-text: #fe918c;
+	--p-accent-bg: #311519;
+	--p-accent-ring-line: #ff444f;
+}
+
+/* The problem child. Accent-coloured TEXT is where yellow breaks: a
+ * yellow lifted far enough to read comfortably is a cream nobody would call yellow. So this one
+ * text role aims just over the floor instead of well above it and takes every scrap of chroma sRGB
+ * has there, which is what "a darker gold" means. The other four roles stay where the family
+ * puts them. */
+[data-accent='gold'] {
+	--p-accent: #906906;
+	/* The chart series: this hue at three lightness steps, solved to 3:1 on the canvas and on a card.
+	   The middle one is a little quieter than the ring would make it: at the ring's
+	   chroma (#caa96b) it stands 0.079 in OKLab from the warning amber, inside the distance every series keeps
+	   from a semantic colour (contrast.test.ts). */
+	--p-series-1: #e8d5b3;
+	--p-series-2: #c7a668;
+	--p-series-3: #a77f2c;
+	--p-accent-hover: #a37808;
+	--p-accent-text: #b5850b;
+	--p-accent-bg: #231e16;
+	--p-accent-ring-line: #b38304;
+}
+
+[data-accent='green'] {
+	--p-accent: #08890f;
+	/* The chart series: this hue at three lightness steps, solved to 3:1 on the canvas and on a card.
+	   The middle one is a sage rather than the ring's green (#73c56f, 0.038 in OKLab from the
+	   done green, the same lightness and 12 degrees of hue apart): a green accent's chart must not
+	   read as "done" (contrast.test.ts holds every series 0.08 from a semantic colour). */
+	--p-series-1: #b7e7b3;
+	--p-series-2: #91c08d;
+	--p-series-3: #31a031;
+	--p-accent-hover: #0b9b12;
+	--p-accent-text: #14cc1c;
+	--p-accent-bg: #112417;
+	--p-accent-ring-line: #00a10b;
+}
+
+[data-accent='cyan'] {
+	--p-accent: #088088;
+	/* The chart series: this hue at three lightness steps, solved to 3:1 on the canvas and on a card. */
+	--p-series-1: #b9e0e3;
+	--p-series-2: #73bcc2;
+	--p-series-3: #30969e;
+	--p-accent-hover: #0b919a;
+	--p-accent-text: #14c2cd;
+	--p-accent-bg: #122127;
+	--p-accent-ring-line: #049aa3;
+}
+
+/* The two base-dependent roles, for every accent on the grey base. The blue is here too: on this
+ * canvas even the default accent's text and tint have to move. */
+[data-base='chrome'][data-accent='blue'] {
+	--p-accent-text: #94b8fe;
+	--p-accent-bg: #1a2843;
+}
+[data-base='chrome'][data-accent='magenta'] {
+	--p-accent-text: #f296fe;
+	--p-accent-bg: #33203a;
+}
+[data-base='chrome'][data-accent='red'] {
+	--p-accent-text: #fe9e99;
+	--p-accent-bg: #3c1f21;
+}
+[data-base='chrome'][data-accent='gold'] {
+	--p-accent-text: #c8940e;
+	--p-accent-bg: #2d281f;
+}
+[data-base='chrome'][data-accent='green'] {
+	--p-accent-text: #15d51e;
+	--p-accent-bg: #1b2e20;
+}
+[data-base='chrome'][data-accent='cyan'] {
+	--p-accent-text: #16cbd7;
+	--p-accent-bg: #1b2c31;
+}
+
+/* The same two roles on the darker grey. Only the TINT is genuinely new: it is the fill mixed 22%
+   into the canvas, and the canvas moved. The text roles are chrome's, which gain contrast here
+   rather than losing it; the gold is the tightest at 4.70:1 where it draws the focus ring. */
+[data-base='graphite'][data-accent='blue'] {
+	--p-accent-text: #94b8fe;
+	--p-accent-bg: #14213c;
+}
+[data-base='graphite'][data-accent='magenta'] {
+	--p-accent-text: #f296fe;
+	--p-accent-bg: #2c1a32;
+}
+[data-base='graphite'][data-accent='red'] {
+	--p-accent-text: #fe9e99;
+	--p-accent-bg: #34181b;
+}
+[data-base='graphite'][data-accent='gold'] {
+	--p-accent-text: #c8940e;
+	--p-accent-bg: #262119;
+}
+[data-base='graphite'][data-accent='green'] {
+	--p-accent-text: #15d51e;
+	--p-accent-bg: #142719;
+}
+[data-base='graphite'][data-accent='cyan'] {
+	--p-accent-text: #16cbd7;
+	--p-accent-bg: #14252a;
+}
+
+/* The same two roles on true black. The tint is the fill mixed 22% into this canvas; the text roles
+   are chrome's, which only gain contrast on grounds this dark. */
+[data-base='obsidian'][data-accent='blue'] {
+	--p-accent-text: #94b8fe;
+	--p-accent-bg: #0c172e;
+}
+[data-base='obsidian'][data-accent='magenta'] {
+	--p-accent-text: #f296fe;
+	--p-accent-bg: #221025;
+}
+[data-base='obsidian'][data-accent='red'] {
+	--p-accent-text: #fe9e99;
+	--p-accent-bg: #2b0e0e;
+}
+[data-base='obsidian'][data-accent='gold'] {
+	--p-accent-text: #c8940e;
+	--p-accent-bg: #1e170b;
+}
+[data-base='obsidian'][data-accent='green'] {
+	--p-accent-text: #15d51e;
+	--p-accent-bg: #0d1d0c;
+}
+[data-base='obsidian'][data-accent='cyan'] {
+	--p-accent-text: #16cbd7;
+	--p-accent-bg: #0d1b1c;
+}
+
+/* =============================================================================================
+ * THE FACES. One value each, chosen on two attributes, and nothing else moves.
+ *
+ * Every one of the type styles above is written in terms of these two names, so a face
+ * changes the whole look and feel rather than one screen, which is the intent. What it must not
+ * change is the size scale, and it cannot: the sizes are not here.
+ *
+ * "The system font" is deliberately not on offer. It is a different face on every machine, so the
+ * tabular-figure guarantee cannot be made about it at all.
+ * ============================================================================================= */
+
+/* Mono as the display face, sans underneath. A monospace is tabular by construction (every glyph
+   is the same width), so it satisfies the figure rule without needing a feature at all. Two
+   families on screen, which is the standing rule; what is banned is a THIRD creeping in "for
+   hashes" while two others are already there. */
+[data-face-display='geist-mono'] {
+	--font-display: 'Geist Mono Variable', ui-monospace, monospace;
+	--font-figures: 'Geist Mono Figures';
+}
+
+[data-face-display='space-grotesk'] {
+	--font-display: 'Space Grotesk Variable', system-ui, sans-serif;
+	--font-figures: 'Space Grotesk Figures';
+}
+
+[data-face-display='manrope'] {
+	--font-display: 'Manrope Variable', system-ui, sans-serif;
+	--font-figures: 'Manrope Figures';
+}
+
+/* The second monospace for headings: wider and squarer than Geist Mono, drawn for reading code. */
+[data-face-display='jetbrains-mono'] {
+	--font-display: 'JetBrains Mono Variable', ui-monospace, monospace;
+	--font-figures: 'JetBrains Mono Figures';
+}
+
+/* The text faces, each by its own name. Every one but the last carries the `tnum` feature, which
+   is what keeps a column of machine facts still; `figures.test.ts` measures the files rather than
+   trusting this sentence. */
+[data-face-body='geist'] {
+	--font-sans: 'Geist Variable', system-ui, sans-serif;
+}
+
+[data-face-body='inter'] {
+	--font-sans: 'Inter Variable', system-ui, sans-serif;
+}
+
+[data-face-body='public-sans'] {
+	--font-sans: 'Public Sans Variable', system-ui, sans-serif;
+}
+
+/* A wide geometric sans with open counters, under the monospace headings. */
+[data-face-body='sora'] {
+	--font-sans: 'Sora Variable', system-ui, sans-serif;
+}
+
+/* The one text face with no figures that hold still: DM Sans carries no `tnum` and its digits are
+   not one width, so a column of durations set in it would jitter. Its NUMERALS come from the Main
+   face in force instead, which is the face for numbers already and has figures that hold still
+   (every display face passes `figures.test.ts`). `--font-figures` names that face again under an
+   alias covering the ten digits and nothing else, from the same file, so the letters are DM Sans,
+   the digits are the Main face's, and the page still wears two families. */
+[data-face-body='dm-sans'] {
+	--font-sans: var(--font-figures), 'DM Sans Variable', system-ui, sans-serif;
+}
+
+/* --- Base ---------------------------------------------------------------------------------- */
+
+*,
+*::before,
+*::after {
+	box-sizing: border-box;
+}
+
+html,
+body {
+	height: 100%;
+}
+
+body {
+	margin: 0;
+	background: var(--background);
+	color: var(--foreground);
+	font: var(--text-body);
+	-webkit-font-smoothing: antialiased;
+}
+
+/* The wrapper the app mounts into. `contents` makes it vanish from layout entirely, so the shell's
+ * grid is a child of body rather than of a box in between. */
+.app-root {
+	display: contents;
+}
+
+/* Machine facts: durations, sizes, counts, ids. Tabular figures so a column of them does not
+ * shift sideways every time a value updates. Every face Sift offers is checked for the figures this
+ * asks for. See `src/lib/design/figures.test.ts`. */
+.data {
+	font: var(--text-data);
+	font-variant-numeric: tabular-nums;
+}
+
+h1,
+h2,
+h3 {
+	font-family: var(--font-display);
+	font-weight: 600;
+	letter-spacing: var(--tracking-display);
+	text-wrap: balance;
+	margin: 0;
+}
+
+/* Focus is always visible. Never remove this without putting something better in its place: a
+ * keyboard user who cannot see where they are has no way to use the app at all. */
+:focus-visible {
+	outline: none;
+	box-shadow: var(--focus-ring);
+	border-radius: var(--radius-sm);
+}
+
+/* Something is being held, and the hold is being counted.
+ *
+ * A press that does nothing for a third of a second reads as a screen that has stopped, and then
+ * the selection arrives and reads as a glitch. This is the cue that says the press landed and
+ * something is on its way.
+ *
+ * It is an OPACITY and deliberately not a transform. A transform on an arbitrary element makes it a
+ * containing block, which quietly re-parents any fixed-position descendant and creates a stacking
+ * context: fine on the one element somebody tests it on, and a source of very confusing bugs when
+ * the rule is global and lands on a tile, a row and a rail item alike. Opacity touches neither
+ * layout nor stacking.
+ *
+ * Linear, because it is a progress bar wearing a different shape: it should feel like a countdown
+ * rather than like an animation. */
+[data-holding] {
+	opacity: 0.82;
+	transition: opacity var(--press-hold) linear;
+}
+
+/* Reduced motion is a real mode, not a courtesy. Every transform collapses to opacity and every
+ * duration is capped. It is also the escape hatch on weak hardware, which is why the app offers its
+ * own switch as well as honouring the system one. See the motion helper.
+ *
+ * DRIVEN BY THE ANSWER, NOT BY THE QUESTION.
+ *
+ * `@media (prefers-reduced-motion: reduce)` asks the OPERATING SYSTEM directly, so it fires
+ * whatever Sift's own switch says, and no CSS can un-apply a media query: choosing "Always
+ * animate" would leave this rule killing every transition and animation in the application with
+ * `!important`, a setting that lies.
+ *
+ * `data-motion` is the RESOLVED answer (the person's choice where they made one, the system's
+ * where they asked to follow it), stamped on the root by `motion.svelte.ts`. So the switch works in
+ * both directions, and following the system is still what a fresh install that asks for it does.
+ *
+ * The attribute is absent for one frame before the script runs, and absent is the animating state.
+ * That is the right way round: a page that starts still and then begins moving reads as broken,
+ * where one that starts moving and is then asked to stop reads as the setting taking effect. */
+:root[data-motion='reduce'] *,
+:root[data-motion='reduce'] *::before,
+:root[data-motion='reduce'] *::after {
+	animation-duration: var(--dur-instant) !important;
+	animation-iteration-count: 1 !important;
+	transition-duration: var(--dur-instant) !important;
+	scroll-behavior: auto !important;
+}
+
+/* The one travel the named motions share, taken away: `rise` becomes a fade. */
+:root[data-motion='reduce'] {
+	--rise: 0px;
+}
+
+/*
+ * INSIDE THE DESKTOP WINDOW THERE IS A STRIP AT THE TOP, AND IT IS SIFT'S OWN.
+ *
+ * `data-window="overlaid"` is stamped on the root by the layout, and only when the shell has said
+ * the window's caption buttons really are drawn over the page. That is the one honest test: `env()`
+ * resolves to its fallback in a browser, so a rule guarded on the geometry alone would apply
+ * everywhere and a browser tab would lose 36 pixels off the top of every screen.
+ *
+ * 36 rather than a token multiple: it is the height of the site's caption buttons plus enough
+ * room to take hold of, and it has to agree with `TITLE_BAR_HEIGHT` in the shell's `main.ts`,
+ * which is what the buttons are actually centred inside. The two cannot be one declaration (one is
+ * read by a stylesheet the server ships, the other by a window created before any page has loaded,
+ * and in client mode those come from two different computers), so the agreement is written down in
+ * both places instead.
+ */
+:root[data-window='overlaid'] {
+	--window-chrome: 36px;
+}
+
+/* Scrollbars, in the app's language rather than the operating system's.
+ *
+ * A scrollbar is the last piece of native chrome a web app usually leaves alone, and leaving it
+ * alone is exactly what makes a dark, quiet interface suddenly look like a web page: a wide light
+ * trough with a grey slider, in Windows' proportions, down the side of a dropdown that is otherwise
+ * entirely Sift's. The design system exists to stop the operating system drawing anything, and this
+ * is where it gets through if left alone: inside a menu, a dialog, a settings pane, anywhere
+ * content outgrows its box.
+ *
+ * Both syntaxes, because they are for different browsers rather than being alternatives:
+ * `scrollbar-color` and `scrollbar-width` are the standard and are what Firefox understands;
+ * `::-webkit-scrollbar` is what Chrome, Edge and Safari understand. Neither covers everybody.
+ *
+ * `thin` rather than `none`. A scrollbar nobody can see is a page whose length nobody can judge,
+ * and it takes away the only thing that says how much more there is.
+ */
+* {
+	scrollbar-width: thin;
+	scrollbar-color: var(--sift-surface-4) transparent;
+}
+
+*::-webkit-scrollbar {
+	width: 10px;
+	height: 10px;
+}
+
+/* Transparent, not a colour: a scrolling box sits on several different surfaces across the app
+ * (a menu, a dialog, the page), and a track painted one of them is wrong on the other two. */
+*::-webkit-scrollbar-track {
+	background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+	background: var(--sift-surface-4);
+	border-radius: var(--radius-full);
+	/* Inset with a transparent border rather than a narrower bar, so the thumb has room around it
+	   without the pointer target shrinking with it. */
+	border: 2px solid transparent;
+	background-clip: padding-box;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+	background: var(--sift-line-strong);
+	background-clip: padding-box;
+}
+
+/* Where the two bars meet. Left alone it is a small native square in the corner of every box that
+   scrolls both ways. */
+*::-webkit-scrollbar-corner {
+	background: transparent;
+}
+
+/*
+ * LINKS, dressed once for the whole app, for the same reason the text boxes below are.
+ *
+ * A bare `<a>` comes out in the browser's own blue: the 1996 hyperlink, on a dark interface, in a
+ * hue nobody here chose and that belongs to no accent this app offers. Not one link: the download
+ * address on a file's record, the update banner's sentence, the "Go back." out of an empty queue
+ * and every other link nobody thinks to dress would wear it.
+ *
+ * `--sift-accent-text` and not `--sift-accent`, which is the fill. That distinction is the palette's
+ * own and `contrast.test.ts` is where it bites: the fill is measured only against the graphics floor
+ * of 3:1, because what it is solved for is a label sitting ON it, and the text role is the version
+ * of the accent solved for 4.5:1 on every surface a word can land on. A link is a word. A link in
+ * `--sift-accent` is the accent at the wrong floor: right colour, unmeasured as text.
+ *
+ * VISITED IS THE SAME COLOUR, deliberately. A library is a place somebody walks around the same
+ * dozen files in; a link that dims once it has been followed would leave most of the app a
+ * different colour from the rest of it, saying nothing anybody wants to know.
+ *
+ * The UNDERLINE is the hover rather than the resting state, which is what every link in the app
+ * that already dressed itself does. A colour step was the alternative and there is no token for it:
+ * `--sift-accent-hover` is the fill's hover and is not held to the text floor either.
+ *
+ * A class inside a component still outranks a bare tag selector (Svelte scopes its rules with a
+ * class), so a link that genuinely is not a link-coloured word keeps its own answer and wins: the
+ * breadcrumb trail, the name of a thing in the sharing panel, a whole tile wrapped in an anchor.
+ */
+a {
+	color: var(--sift-accent-text);
+	text-decoration: none;
+}
+
+a:visited {
+	color: var(--sift-accent-text);
+}
+
+a:hover {
+	text-decoration: underline;
+}
+
+/*
+ * Text boxes, dressed once for the whole app.
+ *
+ * ## Why this is here and not in `Field`
+ *
+ * Kept in `Field`, scoped to that component's own control box, a look the app has exactly one
+ * answer to is somewhere only one component can reach, so an `<input>` written anywhere else comes
+ * out in the operating system's default: a white box, on a dark interface, with the browser's
+ * border and the browser's font. A rule that depends on remembering is invisible until somebody
+ * adds the first control that forgets.
+ *
+ * There is one answer to what a control looks like, and a control that does not give itself one
+ * should inherit that answer rather than a system default. A class inside a component still outranks
+ * a bare tag selector, so a box that genuinely needs to look different (the search box, the number
+ * box) keeps its own rules and wins. A SLIDER is not done this way and the note further down says
+ * why: a stylesheet cannot draw the filled part of one, because it does not know the value.
+ *
+ * ## What is deliberately not in the list
+ *
+ * A range is a component of its own (see the note below). A checkbox and a radio take the accent
+ * and nothing else: a box that is
+ * 36 pixels tall with a border around it is not a tick. A file input is the browser's own compound
+ * control and cannot be restyled into this shape at all; a hidden input has no box.
+ *
+ * `[type='color']` IS NOT EXCUSED, though "a colour input is the browser's own compound control"
+ * reads like a reason to. This app draws no native colour input: one opens the operating
+ * system's picker (a chooser in another typeface, dropped into the middle of this interface, that
+ * no rule here could reach), so the appearance pane uses `ColorPicker`, which is a square, a
+ * slider and a hex box made of this app's own primitives. An exclusion for a control nothing
+ * renders is a licence for the next one, which is exactly the shape of hole this whole rule exists
+ * to close.
+ */
+input:not([type='range'], [type='checkbox'], [type='radio'], [type='file'], [type='hidden']),
+textarea,
+select {
+	box-sizing: border-box;
+	/* The control row's height, so a field and the press beside it are one height everywhere, and
+	   a phone's taller row (a finger's width, in the phone block) reaches every box too. */
+	block-size: var(--control-height);
+	padding-inline: var(--space-3);
+	border: 1px solid var(--sift-line);
+	border-radius: var(--radius-md);
+	background: var(--sift-surface-3);
+	color: var(--sift-ink);
+	font: var(--text-body);
+	transition: background-color var(--dur-instant) var(--ease);
+}
+
+/* The hover layer (see `--layer-hover`) on the box's own ground, and not while it is being typed
+   in: the ring already says where the keyboard is. Inside `:where`, so it weighs no more than a
+   bare `:hover`: a box a component dresses for itself (the search box) keeps its own look. */
+:where(
+		input:not([type='range'], [type='checkbox'], [type='radio'], [type='file'], [type='hidden']),
+		textarea,
+		select
+	):hover:where(:not(:disabled, :focus)) {
+	background-color: color-mix(in srgb, currentColor var(--layer-hover), var(--sift-surface-3));
+}
+
+/* A box that grows with what is typed into it, rather than one line of a fixed height. */
+textarea {
+	block-size: auto;
+	min-block-size: 72px;
+	padding-block: var(--space-2);
+	resize: vertical;
+}
+
+/* A tick and a dot: the accent, and nothing else. */
+input[type='checkbox'],
+input[type='radio'] {
+	inline-size: 16px;
+	block-size: 16px;
+	accent-color: var(--sift-accent);
+}
+
+/* The two states a control can be in that change how it is read. Here beside the look they modify,
+   rather than in one component. */
+input[aria-invalid='true'],
+textarea[aria-invalid='true'],
+select[aria-invalid='true'] {
+	border-color: var(--sift-bad-text);
+}
+
+input:disabled,
+textarea:disabled,
+select:disabled {
+	opacity: var(--disabled-opacity);
+	cursor: not-allowed;
+}
+
+/*
+ * Sliders are NOT dressed here, and that is deliberate rather than an omission.
+ *
+ * A block of `input[type='range']` rules here, for the reason the scrollbar rules are here, could
+ * not do the half that matters. Chromium has no pseudo-element for the FILLED part of a track, so
+ * the fill has to be painted as a gradient computed from the value, and a stylesheet does not know
+ * the value: some sliders would have a fill (the ones whose own files drew it) and some would not.
+ *
+ * `components/common/Slider.svelte` is the one place, `check_handrolled.js` refuses a bare range
+ * input outside it, and this note stops a baseline being helpfully added here: two correct copies
+ * of one rule is how they come apart.
+ */
+
+/* --- The chrome every dialog shares -----------------------------------------------------------
+ *
+ * The veil, the sheet, its heading, its sentence and its two buttons. Seven components draw one of
+ * these and every one of them is portalled to the end of the document, so the rules have to be
+ * global to reach them at all. Kept in `ConfirmDialog` as a block of `:global()` rules, the sharing
+ * panel's buttons would depend on whether a confirm dialog was part of the same bundle, which is
+ * true on most screens, and quietly not on the ones where it is not.
+ */
+.veil {
+	position: fixed;
+	inset: 0;
+	z-index: var(--z-dialog-veil);
+	background: var(--sift-overlay);
+	/* The same faint blur the player's popout and the settings panel draw over what is behind them,
+	   here so the shared dialog (the one SEVEN components use) is not the only sheet in the app
+	   whose ground stays sharp. */
+	backdrop-filter: blur(var(--blur-veil));
+}
+
+/* A COLUMN with a ceiling, and the ceiling is the point.
+ *
+ * A plain box pinned at the middle of the screen with nothing saying how tall it may be grows
+ * past the top AND the bottom of the window when it is taller (centred, so both ends are equally
+ * unreachable), with no bar anywhere and nothing on screen to suggest there is more: the cover
+ * chooser on somebody with sixty files, the stash-box sheet on a person with a long record.
+ *
+ * A cap on its own would make it worse rather than better: a `max-block-size` with no
+ * overflow beside it does not scroll, it CLIPS, and the two are indistinguishable in a stylesheet.
+ * So the cap lives here and the scrolling lives in `Modal`, on the one region between the heading
+ * and the buttons. See `.sheet-scroll`.
+ *
+ * `dvh` rather than `vh`: on a phone the browser's own chrome slides in and out, and `vh` is the
+ * height WITHOUT it, so a sheet measured that way is cut off by the address bar exactly when the
+ * address bar is showing.
+ */
+/*
+ * The WIDTH is read from a custom property, and that is not a flourish: it is the only shape that
+ * cannot lose.
+ *
+ * A sheet wider than the default writing `.stash-look { inline-size: ... }` in its own component
+ * ties with `.sheet` on specificity, so which one wins is decided by which stylesheet the browser
+ * happens to have loaded LAST, and with a route-split build that is not something a component can
+ * know, let alone control: a sheet declaring 46rem can draw at 420 pixels, with the rule present
+ * and correct in the CSS and no warning anywhere.
+ *
+ * Read here with a fallback, set there. The two rules write DIFFERENT properties, so there is
+ * nothing left to compete and load order stops mattering. A sheet that says nothing gets 420.
+ */
+.sheet {
+	position: fixed;
+	z-index: var(--z-dialog-sheet);
+	/* Centred on, and capped by, the window below the desktop title strip, which is drawn over every layer. */
+	top: calc(50% + var(--window-chrome) / 2);
+	left: 50%;
+	translate: -50% -50%;
+	display: flex;
+	flex-direction: column;
+	inline-size: min(var(--sheet-inline, 420px), calc(100vw - var(--space-8)));
+	max-block-size: calc(100dvh - var(--window-chrome) - var(--space-8));
+	padding: var(--space-6);
+	border-radius: var(--radius-xl);
+	background: var(--sift-surface-2);
+	box-shadow: var(--elev-3);
+}
+
+/* The one region of a sheet that scrolls.
+ *
+ * A GRID with a single `minmax(0, 1fr)` row, not a plain flex child, and the zero minimum is the
+ * whole of it: a scrolling region has to be given a height to be 100% OF, and it has to be allowed
+ * to be SHORTER than what it holds. Without the zero, a flex item's automatic minimum size is its
+ * content, so the box grows to fit and there is nothing left to scroll.
+ *
+ * `min-block-size: 0` on the flex side for the same reason, one level up.
+ */
+.sheet-scroll {
+	flex: 1 1 auto;
+	min-block-size: 0;
+	display: grid;
+	grid-template-rows: minmax(0, 1fr);
+}
+
+/*
+ * A GLYPH PAINTED IN ONE STASH-BOX'S OWN COLOURS.
+ *
+ * ## Why a colour per box, and not the wave
+ *
+ * These marks all say one thing (something wrote to this file and it was not a person), and the
+ * spark is the app's colour for exactly that, which is why Sift's own two marks are the plain
+ * ACCENT. But what the marks have to tell apart is not "which kind of automatic thing", but
+ * WHICH SERVICE, on an install with three of them configured that disagree
+ * about who is in a scene. Three offsets along one gradient cannot answer that: they are three
+ * shades nobody can name, and you still have to hover each mark to find out.
+ *
+ * So a stash-box's mark wears that BOX's colour (`--sift-box-*` in the token layer, where the
+ * measurements are), and a box Sift has no word for keeps the accent, which is honest: there is no
+ * colour to give it.
+ *
+ * ## Where it lives
+ *
+ * Here rather than in either component, for the reason the cross below is here: the marks are
+ * drawn by `EnrichmentMarks` and the same glyphs are drawn again by the Enriched by column's own
+ * rows, in two different files, and one look written twice is two looks by the next edit.
+ *
+ * The glyph is TEXT (an `Icon` is a ligature in a span), so ONE colour is its `color`, and the rule
+ * lands on that span. The class goes on the wrapper, because `Icon` is a component and takes no
+ * class of its own, and the rule reaches one level in.
+ *
+ * NO OUTLINE, and that is measured rather than assumed: each box's colour clears the 3:1 floor for
+ * a meaningful graphic on every surface it can be drawn on, which is what the contrast gate holds
+ * them to. An outline would be the answer if one ever stopped clearing it.
+ */
+.box-mark .icon {
+	/* The FALLBACK is the accent: the class only goes on where there is a box colour to set, and
+	   a box Sift has no colour for is drawn in what an unknown box already wears. */
+	color: var(--box-colour, var(--sift-accent));
+}
+
+/*
+ * THE CROSS THAT EMPTIES A SEARCH FIELD, in one place for every field that has one.
+ *
+ * One rule, because the same 24px cross written per field is how one control ends up two sizes and
+ * two greys on two screens. What is here is a box and a colour and nothing about type: the strut
+ * that would make a lone glyph ride high is collapsed one block down, for every `Pressable` and not
+ * only for this class.
+ *
+ * The class goes on `Pressable`, never on the shared `Button` (the call site says why), so
+ * `Button`'s own collapse of the strut never reaches it.
+ *
+ * A plain class rather than a component, because there is nothing to hold: the icon, the label and
+ * what pressing it clears are all the caller's, and they differ: the library's cross clears a
+ * QUERY (chips and all) while `NarrowBox`'s empties a box.
+ *
+ * TWO WEARERS, AND ONLY TWO: the top bar's search, and `NarrowBox`, which draws the
+ * cross for every box in Sift that narrows a list (the five walls, Downloads, the facet panel, the
+ * pickers, the searchable Select, Settings), so no screen positions a cross of its own over a box
+ * from outside. `NarrowBox.svelte.test.ts` refuses a third wearer: a box that wants a
+ * cross is a box that should be `NarrowBox`.
+ */
+.field-clear {
+	flex: none;
+	/* No padding here: `Pressable`'s scoped reset outranks this rule, so the room comes from its
+	   own `pad="sm"` rung: one step a side, a 16px cross at the 24 every box leaves for it. */
+	border: 0;
+	border-radius: var(--radius-sm);
+	background: none;
+	color: var(--sift-ink-2);
+	/* The step is something somebody can see happen, not a jump between frames. */
+	transition:
+		transform var(--dur-instant) var(--ease),
+		color var(--dur-instant) var(--ease);
+}
+
+/*
+ * A GLYPH THAT IS THE WHOLE OF A PRESSABLE SITS TOO HIGH IN IT, everywhere, not only on the cross.
+ *
+ * NOT `display: grid; place-items: center`, which is the obvious thing to reach for and cannot
+ * apply: `Pressable`'s reset is `.pressable` plus Svelte's own scope class, which is two classes
+ * to a one-class rule, so `display: block` wins outright and the computed display stays `block`
+ * whatever this file says. It is the same specificity the note above about padding works around.
+ *
+ * What is actually wrong is the same thing `Button` records for a glyph with no words beside it:
+ * the icon is laid out as TEXT, and a line box reserves room under the baseline for a descender
+ * nothing in the line has. The box is centred faithfully and the glyph rides high inside it. On the
+ * library's search box the 16px cross sits 2.6px above the middle of a 36px field.
+ *
+ * `line-height: 0` collapses that strut, so the line box is exactly the glyph and the box is
+ * exactly the glyph plus its padding, 24 square, centred by the field it sits in. The `:has`
+ * carries the specificity this needs (its argument counts), and it says the condition out loud:
+ * only where the glyph is the WHOLE of the control, because a label with words in it needs its
+ * line. Same shape as `Button`'s `.label:has(> .icon:only-child)`.
+ *
+ * ## On `Pressable`, not on `.field-clear`
+ *
+ * Nothing about the fault is the cross's. It belongs to any `Pressable` whose only child is an
+ * icon, and there are three in the tree: the search box's cross, the entity header's edit pencil,
+ * and the tick and cross inside the saved-filter rename box. The last of those sits high by the
+ * SAME figure, a 16px glyph 2.63px above the middle of a 36px field. A rule scoped to one class
+ * would leave the diagnosis written down, correct, and reaching only one of the three places it
+ * describes.
+ */
+.pressable:has(> .icon:only-child) {
+	line-height: 0;
+}
+
+/*
+ * Under the pointer it GROWS and its ink comes up, as the chip's cross does, to the same figure
+ * and for the same reason: this is a mark you press, not a control sitting in the box, so nothing
+ * goes behind it and the register is scale rather than a ground. The library's box and the
+ * settings box wear the one cross.
+ *
+ * ON `Pressable`, NEVER ON `Button`. `Button`'s own scoped rules for a medium control are a class
+ * more specific than this one, so on a Button every declaration here loses and the cross comes out
+ * 50 by 36 with a ghost ground. `Pressable` is the site button with
+ * its dressing taken off and nothing else, which is exactly the element this rule wants.
+ */
+.field-clear:hover:not(:disabled) {
+	transform: scale(1.18);
+	color: var(--sift-ink);
+}
+
+:root[data-motion='reduce'] .field-clear,
+:root[data-motion='reduce'] .field-clear:hover {
+	transition: none;
+	transform: none;
+}
+
+/*
+ * The browser's own clear button, off, for every search field in the application rather than for
+ * the one that remembered to say so.
+ *
+ * It is drawn in the operating system's look, and on the library's box it empties only the TEXT
+ * field: a box holding three chips loses the words and keeps every filter. `.field-clear` is the app's,
+ * and each caller decides what "clear" means for its own box.
+ */
+input[type='search']::-webkit-search-cancel-button {
+	appearance: none;
+}
+
+/* The gutter the scrollbar stands in, and it has to be INSIDE the scrolling region.
+ *
+ * Not outside it (a negative margin on the box above plus matching padding): that moves the BAR
+ * without moving the content, because the bar is a sibling of the viewport and is positioned
+ * against the same right edge the content ends at, so the two still overlap. On the stash-box
+ * chooser that clips the last ten pixels of the Look up button and the right edge of every
+ * candidate row, which reads as a dialog drawn too narrow rather than as a bar drawn on top of one.
+ *
+ * Padding on the VIEWPORT insets the content and leaves the bar where it is, which is the whole
+ * fix. Slightly wider than the bar's ten pixels so a row stops short of it rather than touching.
+ *
+ * ## The END only, and never the start
+ *
+ * It is tempting to make this `padding-inline` and have the body sit square inside itself. That is
+ * wrong: the sheet's HEAD is not in here. The title sits directly on the sheet's
+ * own padding while everything in the scroll body sits on this one, so padding both sides indents
+ * the body twelve pixels further in than the heading above it (on the PIN dialog, title
+ * at 514 and input at 526), and the dialog reads as a field floating narrower than its own title.
+ *
+ * The end side gets away with it because nothing in a sheet is right-aligned against the heading.
+ * That asymmetry is the scrollbar's, and it is the reason this rule exists at all.
+ *
+ * A focus ring needs no room here: it is `inset` (see `--focus-ring`), so nothing a child draws
+ * leaves its own box.
+ */
+/* A PLAIN selector, not `:global(...)`. This is an ordinary stylesheet: `:global` is Svelte
+   syntax, and in here it is simply an invalid selector the browser drops in silence, so a rule
+   written with it changes nothing at all. */
+.sheet-scroll .sheet-scroll-view {
+	padding-inline-end: var(--space-3);
+}
+
+/* The buttons at the foot, outside the scroll and always in the same place: at the END of the
+   sheet, the way out first and the act last, on every sheet alike. A footer
+   that wraps its buttons in a `.buttons` row of its own gets the same answer from that rule below,
+   so the two cannot disagree. */
+.sheet-foot {
+	display: flex;
+	justify-content: flex-end;
+	gap: var(--space-2);
+	flex: none;
+	margin-block-start: var(--space-5);
+}
+
+/* A sheet that is INSTEAD of the page rather than on top of it. One thing, at the size of the
+   window, with no card around it. See `Modal`'s `bleed`. */
+.sheet.bleed {
+	inset: 0;
+	top: 0;
+	left: 0;
+	translate: none;
+	inline-size: 100%;
+	block-size: 100%;
+	max-block-size: none;
+	padding: 0;
+	border-radius: 0;
+	background: transparent;
+	box-shadow: none;
+}
+
+/* A full-bleed sheet takes no OPAQUE ground of its own. A picture opened over the page IS a thing
+   on the page (it closes and you are where you were), so it wants what everything else that opens
+   over the page has, which is the veil above and its blur. */
+
+/* Named for assistive technology and drawn nowhere: `.unseen` on any element that is read out and
+   never drawn. A full-bleed picture has no corner to put a heading in that would not be chrome
+   over the thing being looked at. */
+.unseen,
+.sheet.bleed .title,
+.sheet.bleed .consequence {
+	position: absolute;
+	inline-size: 1px;
+	block-size: 1px;
+	margin: -1px;
+	padding: 0;
+	overflow: hidden;
+	clip-path: inset(50%);
+	white-space: nowrap;
+}
+
+.sheet .title {
+	margin: 0;
+	font: var(--text-h2);
+	letter-spacing: var(--tracking-h2);
+	color: var(--sift-ink);
+}
+
+.sheet .consequence {
+	margin: var(--space-2) 0 var(--space-6);
+	font: var(--text-body);
+	color: var(--sift-ink-2);
+}
+
+/* Both buttons are one height and one radius wherever they are. A dialog whose Apply is a
+   different shape from the Apply in the dialog beside it is the kind of thing nobody reports and
+   everybody sees. So they are drawn as `Button` draws its secondary and primary at the default
+   size (its control height, its face, its border room), so a prompt's Cancel cannot be a filled
+   grey block while the dialog's beside it on the same screen is the outlined secondary; a
+   confirm's Cancel is the secondary by the confirm rule. */
+.cancel,
+.confirm {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: var(--space-2);
+	block-size: var(--control-height);
+	padding-inline: var(--space-4);
+	border: 1px solid transparent;
+	border-radius: var(--radius-md);
+	font: var(--text-body);
+	line-height: 1;
+	cursor: pointer;
+}
+
+.cancel {
+	border-color: var(--sift-line-strong);
+	background: var(--sift-surface-2);
+	color: var(--sift-ink);
+}
+
+.cancel:hover:not(:disabled) {
+	background: color-mix(in srgb, currentColor var(--layer-hover), var(--sift-surface-2));
+}
+
+.confirm {
+	background: var(--sift-accent);
+	color: var(--primary-foreground);
+}
+
+.confirm.destructive {
+	background: var(--sift-bad);
+	color: var(--destructive-foreground);
+}
+
+.cancel:focus-visible,
+.confirm:focus-visible {
+	outline: none;
+	box-shadow: var(--focus-ring);
+}
+
+/* A finger's height on a phone, where every press is one (`--touch-target`). */
+@media (max-width: 767px) {
+	.cancel,
+	.confirm {
+		block-size: var(--touch-target);
+	}
+}
+
+/* The row those two sit in, at the foot of every sheet. Five components draw one, so it lives
+   here beside the buttons themselves. Held to `.sheet`
+   rather than left bare: a dialog's button row is a specific thing, and `.buttons` is a name a
+   screen elsewhere could reasonably want for something of its own. */
+.sheet .buttons {
+	display: flex;
+	justify-content: flex-end;
+	gap: var(--space-2);
+}
+
+/* And separated from what is above it, when what is above it is a FORM.
+ *
+ * A sheet is a flex column with no gap, so every child spaces itself, which works for as long as
+ * the button row IS a child of the sheet. Put a field and the buttons inside a `<form>` and the
+ * sheet's spacing stops at the form: the row lands hard against the bottom edge of the field, with
+ * no gap at all: the input's bottom and the buttons' top on one line.
+ *
+ * Written here rather than in each sheet that has a form, because a copy per sheet is a copy
+ * somebody leaves out. The two sheets with a form in them are the only ones this reaches: a `.buttons` row that is a direct
+ * child of the sheet is spaced by its neighbour above, and none of those change.
+ */
+.sheet form .buttons {
+	margin-block-start: var(--space-6);
+}
+
+/* A button that cannot be pressed has to look like one: a disabled Apply drawn in full accent
+   is identical to the one beside it that works. Somebody presses it, nothing happens, and there is nothing on the screen to say why.
+   It shows up most on a sheet that disables its button as an ordinary state rather than an error:
+   compressing a selection where nothing needs compressing is not a mistake, it is an answer. */
+.cancel:disabled,
+.confirm:disabled {
+	cursor: default;
+	opacity: var(--disabled-opacity);
+}
+
+/* --- A date, in segments ---------------------------------------------------------------------
+ *
+ * TWO controls draw a date out of the same library and out of the same parts: `DateField` is one
+ * day, `DateRange` is two and a calendar. The box around them and the segments inside them are the
+ * same design, so they are one rule here rather than one rule each, and
+ * a second copy of a correct rule is the copy that stops being edited.
+ *
+ * `.segment` has to be global wherever it is written: the segments are the library's own elements,
+ * and a scoped rule aimed at somebody else's element matches nothing at all, silently.
+ */
+.date-field {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	max-inline-size: 100%;
+	gap: var(--space-1);
+	padding: var(--space-1) var(--space-2);
+	border: 1px solid var(--sift-line-strong);
+	border-radius: var(--radius-md);
+	background: var(--sift-surface-2);
+	color: var(--sift-ink);
+	font: var(--text-data);
+	transition: background-color var(--dur-instant) var(--ease);
+}
+
+/* The hover layer, as every text box takes it, and not while a segment is being typed in. */
+.date-field:hover:not(:focus-within, :has([data-disabled])) {
+	background-color: color-mix(in srgb, currentColor var(--layer-hover), var(--sift-surface-2));
+}
+
+/* The library marks each segment of a field that cannot be changed; the box takes the one
+   disabled strength every control takes. */
+.date-field:has([data-disabled]) {
+	opacity: var(--disabled-opacity);
+}
+
+.date-field:focus-within {
+	border-color: var(--sift-accent-text);
+}
+
+/* Each part of the date is its own focusable segment: that is what makes arrow keys step the
+   month without touching the year, and it is most of the reason these are the library's. */
+.segment {
+	padding: 0 1px;
+	border-radius: var(--radius-sm);
+	color: inherit;
+}
+
+.segment[data-placeholder] {
+	color: var(--sift-ink-3);
+}
+
+.segment:focus {
+	outline: none;
+	background: var(--sift-accent);
+	color: var(--primary-foreground);
+}
+
+/* --- Two rules every screen would otherwise retype --------------------------------------------
+ *
+ * Both are pure type: what a paragraph or a heading IS, with no behaviour and nothing to announce.
+ * Anything with meaning attached (the line shown when something failed, which carries a screen
+ * reader role) is a component instead, because a role that travels separately from its styling is
+ * a role that gets chosen differently on the next screen.
+ *
+ * Only the shared half is here. Spacing and measure stay with the screen, which is where they
+ * genuinely differ: a sentence under a settings heading and one under a page title want different
+ * room, and a screen that says so in its own stylesheet outranks this.
+ */
+
+/* The sentence under a heading, saying what a screen or a group of settings is for. One rule
+   for every screen; the handful that deliberately want the larger, lighter
+   version still say so themselves. */
+.lede {
+	font: var(--text-body-sm);
+	color: var(--sift-ink-3);
+}
+
+/* A sentence said quietly: what a control will do, a fact beside a list, the note under a picker.
+   One pair, declared once: per-file copies drift into different opinions about which ink and
+   which face. It is NOT an empty state and
+   not a failure: those are `Empty` and `Problem`, which announce themselves. Measure and spacing
+   stay with the screen. */
+.quiet {
+	margin: 0;
+	font: var(--text-body-sm);
+	color: var(--sift-ink-3);
+}
+
+/* The small upright heading over a group: settings groups, the search box's result groups, the
+   appearance columns. One rule rather than a copy per screen. */
+.section-label {
+	font: var(--text-label);
+	text-transform: uppercase;
+	letter-spacing: 0.06em;
+	color: var(--sift-ink-3);
+}
+
+/* --- The mark on every disclosure ------------------------------------------------------------
+ *
+ * GLOBAL, because a disclosure triangle is not a decision any one screen gets to make. Five
+ * components draw a `<details>` (More about this, the Site matrix, the routing list, the
+ * per-Site download cards and the preset groups), and none of them says anything about its
+ * marker, so each would show whatever triangle the browser happens to draw. Five copies of this
+ * rule would be five chances to draw a different arrow.
+ *
+ * A `::before` carrying the LIGATURE rather than an `<Icon>` in each summary, and that is the part
+ * worth keeping. Generated content is not in the DOM, so it never lands in `textContent`, and an
+ * icon ligature becoming part of a control's text breaks locators: a button's accessible name
+ * silently gains the word for its own glyph. In CSS it cannot happen,
+ * and every `<details>` written after this one gets the mark without being told.
+ *
+ * The rotation needs no reduced-motion rule of its own: the block above already reaches
+ * `*::before`.
+ */
+
+summary {
+	/* The marker in every engine that honours it... */
+	list-style: none;
+}
+
+summary::-webkit-details-marker {
+	/* ...and in the one that does not. Safari draws its own until this says otherwise. */
+	display: none;
+}
+
+summary::before {
+	/* The CODEPOINT, never the ligature name. `scripts/prepare_fonts.js` subsets the icon font by
+	   codepoint with ligature closure off, so the shipped font cannot turn a name into a glyph:
+	   `content: 'keyboard_arrow_right'` renders the word itself, letter by letter. The token is
+	   declared beside the other tokens above, and a gate checks it still matches what the font
+	   generator produced. See `tests/gates/test_icon_tokens_match_the_font.py`. */
+	content: var(--icon-keyboard-arrow-right);
+	font-family: 'Material Symbols Rounded';
+	/* Not inherited. A summary is often bold, and the weight axis of a variable icon font would
+	   take that literally and thicken the arrow against every other icon on the screen. */
+	font-weight: 400;
+	font-size: 20px;
+	line-height: 1;
+	/* Unfilled, which is `Icon`'s own resting state. These two have to agree or the arrow reads
+	   as a different family from every icon beside it. */
+	font-variation-settings: 'FILL' 0;
+	-webkit-font-smoothing: antialiased;
+	/* Inline-block so it can be rotated; in a summary laid out as a flex row it simply becomes the
+	   first item and takes the row's gap. */
+	display: inline-block;
+	vertical-align: -0.25em;
+	margin-inline-end: var(--space-1);
+	/* `rotate` rather than `transform`, so a summary that wants a transform of its own still can. */
+	transition: rotate var(--dur-fast) var(--ease);
+}
+
+details[open] > summary::before {
+	rotate: 90deg;
+}
+
+/* --- A mark on a tile that appears only while the tile is under the pointer -------------------
+ *
+ * GLOBAL BECAUSE TWO COMPONENTS DRAW A MARK. The badges along the top of a tile are `Tile`'s own
+ * markup; the heart and the score are `TileControls`, handed in as a snippet, and scoped styles
+ * never reach a class given to another component. Written in both files it would be two copies of
+ * one rule, which is how the clock and the badges end up three sizes apart.
+ *
+ * WHY IT IS NOT ONLY `opacity`. A heart at zero opacity is still a button in the same place, so a
+ * pointer crossing the tile would press a control nobody can see. Taking the pointer events away
+ * with the ink is what makes "only when I point at it" mean the same thing to the eye and to the
+ * hand.
+ *
+ * The reveal keys off `.tile-frame` rather than the tile button, because the overlay is the
+ * button's SIBLING: a rule written against the button would hide the control the moment somebody
+ * reached for it, which is the fault the frame exists to prevent.
+ */
+.tile-mark-on-hover {
+	opacity: 0;
+	pointer-events: none;
+	transition: opacity var(--dur-fast) var(--ease);
+}
+
+.tile-frame:hover .tile-mark-on-hover,
+.tile-frame:has(:focus-visible) .tile-mark-on-hover {
+	opacity: 1;
+	pointer-events: auto;
+}
+
+:root[data-motion='reduce'] .tile-mark-on-hover {
+	transition: none;
+}
+
+/* --- A badge on a thumbnail. One shape, four components. -------------------------------------
+ *
+ * The clock and the marks on a tile, the score beside the heart, the glyphs in the sharing legend,
+ * and the picture of a tile in Settings that you press to choose which of them you want. All four
+ * draw the same object, so it is declared once here.
+ *
+ * Copies agreeing only through the `--tile-chip-*` tokens cannot drift in SIZE. What they can
+ * still drift in is everything the tokens do not name (the ground, the ink, the face, the line
+ * height, whether the digits are tabular).
+ *
+ * So the shape is here and the differences stay with the component: where the badge sits, what
+ * colour a sharing glyph is, and the ink correction, which belongs only to the ones that are text
+ * all the way through. A component rule beats this one on specificity every time (Svelte scopes
+ * it), so an override is written where it belongs and works without `!important`.
+ */
+.tile-badge {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	/* The one gap between a glyph and what follows it. */
+	gap: var(--space-1);
+	block-size: var(--tile-chip-height);
+	padding-inline: var(--tile-chip-pad);
+	border-radius: var(--tile-chip-radius);
+	background: var(--sift-scrim-strong);
+	color: var(--sift-ink);
+	font: var(--text-micro);
+	/* AFTER the shorthand, which resets it. Centre the text on the badge's own box rather than on
+	   the font's line box, whose spare room sits under the baseline where `GIF`, `1:52` and `3` all
+	   have nothing, which is why text centred on it reads high with a visible gap beneath it. */
+	line-height: 1;
+	/* So a 2 and a 12 sit the same distance from the glyph, and 1:52 does not shuffle as it runs. */
+	font-variant-numeric: tabular-nums;
+}
+
+/* A badge with nothing but a glyph in it is a SQUARE, not one that happens to be narrow.
+ *
+ * Its width is its height, which is what puts the glyph dead centre and what makes a row of them
+ * read as one run of even boxes. Padding cannot do this: a glyph box and a run of digits are
+ * different widths, so a padding that centres one leaves the other off by a pixel or two on every
+ * tile. `flex: none` because several of these sit in a flex row that would otherwise squeeze them.
+ */
+.tile-badge-square {
+	inline-size: var(--tile-chip-height);
+	padding-inline: 0;
+	flex: none;
+}
+
+/*
+ * THE TICK A SELECTED PICTURE WEARS, in its top trailing corner: the third part of the selected
+ * treatment beside `--selected-ring` (see there). A tile and an entity card draw the same one.
+ *
+ * The accent fill with the accent's own label ink, because that pair is solved to carry a glyph.
+ * A disc rather than the badge's rounded square: it is a state of the whole picture, not one more
+ * fact in the corner row, and a different outline keeps it from reading as one of them.
+ */
+.selected-check {
+	position: absolute;
+	inset-block-start: var(--tile-chip-inset);
+	inset-inline-end: var(--tile-chip-inset);
+	z-index: 5;
+	display: grid;
+	place-items: center;
+	inline-size: var(--tile-chip-height);
+	block-size: var(--tile-chip-height);
+	border-radius: var(--radius-full);
+	background: var(--sift-accent);
+	color: var(--primary-foreground);
+	pointer-events: none;
+}
+
+/*
+ * THE ROW SOMEBODY WAS SENT TO.
+ *
+ * A link that names one setting ("that is switched off in Settings, under Performance" is a
+ * direction; `/settings/performance#performance.repair_playback` is a link) scrolls the row into
+ * view and marks it for a moment. See `$lib/settings-ui/settings-anchor` for why the mark has to fade.
+ *
+ * Global rather than scoped to `LabelledRow`, because the row that gets rung is not always one: a
+ * hand-built pane can give any row an id and be found by the same link. One rule, every row.
+ *
+ * ## Three choices in here, each against the obvious one
+ *
+ * An ANIMATION, not a transition. A transition needs a resting rule to return to, and the only
+ * selector both states share is `.row`, which is a class name generic enough to exist in a dozen
+ * components that have nothing to do with settings, and putting a global rule on it would dress
+ * every one of them. A keyframe needs no resting rule and touches exactly the element it is on.
+ *
+ * NOT A RING. A 2px inset ring around the whole row reads as cut off, though nothing clips it (the
+ * shadow is inset, so it cannot overflow the box). It runs along the row's own edges (the
+ * setting's NAME starts at the row's leading edge and its control ends at the trailing one), so the
+ * line passes through the text and the chooser, which is what reads as being cut.
+ *
+ * So it says it with the accent GROUND alone. Nothing can clip a background, and there is no line to
+ * run through anything.
+ *
+ * ## And not the leading bar either
+ *
+ * The 3px accent bar the settings list wears down its left edge looks like the natural mark, since
+ * a reader who has seen one has seen the other. That is what makes it wrong here: down the list,
+ * the bar means "the section you are IN" and stays for as long as you are in it. On a row it would
+ * appear for two seconds and leave, so the one mark in Settings that means a lasting place would be
+ * used for a passing one, and the two are a few hundred pixels apart on the same screen. The
+ * ground says "here" perfectly well on its own, which is what it is for.
+ */
+@keyframes sift-found {
+	/* Instant at the start: a mark that fades IN is not saying anything at the one moment it exists
+	   for, which is when the reader's eye lands on the row. */
+	0%,
+	75% {
+		background: var(--sift-accent-bg);
+	}
+	100% {
+		background: transparent;
+	}
+}
+
+/* --- The motions every screen may name -----------------------------------------------------
+ *
+ * GLOBAL, because five components need them and they mean the same thing in every one: a
+ * thing fading in (the tooltip, a theater cell, the screen bar in fullscreen) and a thing turning
+ * (the spinner, the rail's working glyph). A component that declares its own copy gets a scoped
+ * name and a second definition to keep in step; naming these gets the one. A component that
+ * needs a DIFFERENT motion declares it and names it differently (`menu-arrives`, `pop`, `sweep`),
+ * because a name shared between two shapes is the drift these exist to end. */
+@keyframes appear {
+	from {
+		opacity: 0;
+	}
+	to {
+		opacity: 1;
+	}
+}
+
+/* Anything leaving: a fade to nothing, one pace quicker than it arrived. */
+@keyframes leave {
+	to {
+		opacity: 0;
+	}
+}
+
+@keyframes turn {
+	to {
+		rotate: 360deg;
+	}
+}
+
+/* Anything appearing: a fade and a small rise. The rise is `--rise`, nothing under reduced motion.
+   Menus, the select list, tooltips, a theater cell. */
+@keyframes rise {
+	from {
+		opacity: 0;
+		translate: 0 var(--rise);
+	}
+}
+
+/* A highlight crossing a surface: a placeholder's shimmer, an amount not yet known. It travels
+   `translate` from `--sweep-from` to `--sweep-to`, which the element sets (its own width either
+   side by default). */
+@keyframes sweep {
+	from {
+		translate: var(--sweep-from, -100%) 0;
+	}
+	to {
+		translate: var(--sweep-to, 100%) 0;
+	}
+}
+
+/* A ground wider than its box sliding through it: a tile still importing, the Smart Search glyph.
+   `--pan-from` and `--pan-to` are background positions. */
+@keyframes pan {
+	from {
+		background-position: var(--pan-from, 0%) 50%;
+	}
+	to {
+		background-position: var(--pan-to, 100%) 50%;
+	}
+}
+
+/* The download mark: the arrow travelling the way it points, fading at both ends. */
+@keyframes fetching {
+	0% {
+		translate: 0 -3px;
+		opacity: 0;
+	}
+	30% {
+		translate: 0 -1px;
+		opacity: 1;
+	}
+	70% {
+		translate: 0 1px;
+		opacity: 1;
+	}
+	100% {
+		translate: 0 3px;
+		opacity: 0;
+	}
+}
+
+/* A press landing: out and back once, on the spring. */
+@keyframes pop {
+	0% {
+		scale: 1;
+	}
+	45% {
+		scale: 1.35;
+	}
+	100% {
+		scale: 1;
+	}
+}
+
+/* A bar arriving from the top edge it belongs to. */
+@keyframes descend {
+	from {
+		opacity: 0;
+		translate: 0 -100%;
+	}
+	to {
+		opacity: 1;
+		translate: 0 0;
+	}
+}
+
+/* A wash that comes up, holds and goes: the thing just chosen. */
+@keyframes flash {
+	0% {
+		opacity: 0;
+	}
+	33% {
+		opacity: 1;
+	}
+	66% {
+		opacity: 1;
+	}
+	100% {
+		opacity: 0;
+	}
+}
+
+/* The sidebar's edit-mode wiggle. Fast and slightly incoherent: a turn of a bit over a degree and a
+   shift of under a pixel on two different lengths, so no two rows are ever in the same place in the
+   cycle. Linear, because an eased curve spends its time at the extremes, where a stop looks like a
+   stop. */
+@keyframes wiggle-turn {
+	0% {
+		rotate: -1.017deg;
+	}
+	50% {
+		rotate: 1.017deg;
+	}
+	100% {
+		rotate: -1.017deg;
+	}
+}
+
+@keyframes wiggle-shift {
+	0% {
+		translate: -0.405px 0.27px;
+	}
+	50% {
+		translate: 0.405px -0.27px;
+	}
+	100% {
+		translate: -0.405px 0.27px;
+	}
+}
+
+/*
+ * A SCREENSHOT'S SHUTTER: the whole screen darkens a little and comes back, eased in and out.
+ *
+ * Declared here for the reason `pane-in` below is: a component may not declare a keyframes of its
+ * own. The veil is made by the screenshot itself (`snapshot.ts`), after the picture is taken, so it
+ * is never in it. Subtle on purpose: a camera's click, not a flash; reduced motion shortens it to
+ * the instant, as it does every animation.
+ */
+@keyframes sift-shutter {
+	0% {
+		opacity: 0;
+	}
+	45% {
+		opacity: 1;
+	}
+	100% {
+		opacity: 0;
+	}
+}
+
+.sift-shutter {
+	position: fixed;
+	inset: 0;
+	z-index: var(--z-shutter);
+	pointer-events: none;
+	background: var(--sift-shutter);
+	opacity: 0;
+	animation: sift-shutter var(--dur-ambient) var(--ease-in-out) forwards;
+}
+
+/* The player's controls step out of a screenshot of the player (`snapshot.ts` sets `shooting` on
+   the root for the moment it is taken): the bar, its drawer, the hairline and the key badges. Only
+   `visibility`, so nothing moves and the picture is of the stage exactly as it stands. */
+:root.shooting .player-bar,
+:root.shooting .player-progress,
+:root.shooting .key-echoes {
+	visibility: hidden;
+}
+
+/*
+ * A PANE ARRIVING FROM THE SIDE THE NEW TAB IS ON, for `Tabs`.
+ *
+ * The third of the motions named globally, and it is here rather than in the component for a reason
+ * that is worth writing down: the design fence counts a `@keyframes` declared in a component and the
+ * count may only FALL, so a component cannot declare a new one at all. That is the fence working
+ * ("a second copy of one that exists is what this counts"), and the sanctioned door is this one.
+ *
+ * `--pane-from` is the DIRECTION, read off the element rather than baked in, so one declaration
+ * covers both ways: a tab further along the strip arrives from the right, one further back arrives
+ * from the left. Without that it is a slide that means nothing: the movement has to say which way
+ * you went, or it is decoration.
+ *
+ * Opacity as well as the translate, because the distance is small on purpose: a pane is the whole
+ * width of a panel and a travel big enough to read on its own would be a lurch.
+ */
+@keyframes pane-in {
+	from {
+		opacity: 0;
+		translate: var(--pane-from, 0) 0;
+	}
+	to {
+		opacity: 1;
+		translate: 0 0;
+	}
+}
+
+/*
+ * A SHEET FROM THE FOOT OF A PHONE'S SCREEN, arriving by that edge and leaving by it.
+ *
+ * Every menu, chooser, picker and panel at a phone's width is a sheet standing on the foot of the
+ * screen (`.menu-sheet`), and the edge it stands on is where it comes from: the whole of its own
+ * height, so it is seen to rise out of the edge rather than to fade in over the page. It goes back
+ * the same way, one pace quicker, since what leaves has already been seen. The one kind of leaving
+ * in the app that travels, and for the reason the fade rule exists: a sheet that faded where it
+ * stood would say it was gone, where one that sinks says where it went.
+ *
+ * Keyframes and not a transition because the library mounts the sheet as it opens, so a transition
+ * has no start value to run from, and it holds the sheet on the page while a closing animation
+ * runs. Under reduced motion the sheet names `appear` and `leave` instead (`ContextMenu`): a fade,
+ * no travel.
+ */
+@keyframes sheet-in {
+	from {
+		translate: 0 100%;
+	}
+}
+
+@keyframes sheet-out {
+	to {
+		translate: 0 100%;
+	}
+}
+
+[data-sift-found] {
+	border-radius: var(--radius-sm);
+	/* Longer than the two seconds the attribute is held, so the fade is still running when it is
+	   removed and the row is already clear by then. */
+	animation: sift-found 2.3s var(--ease) forwards;
+}

@@ -1,0 +1,12 @@
+{
+	"_note": "What a font FAMILY's name meant in each role, for an answer stored before each face had a name of its own: the store (lib/theme/theme.svelte.ts) and the boot script (static/theme-boot.js, its table written from this file by scripts/write_theme_boot.js) both read it. A name a face already has needs no entry.",
+	"display": {
+		"grotesk": "space-grotesk",
+		"geist": "geist-mono"
+	},
+	"body": {
+		"archivo": "instrument-sans",
+		"grotesk": "inter",
+		"manrope": "public-sans"
+	}
+}

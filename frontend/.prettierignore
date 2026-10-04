@@ -1,0 +1,21 @@
+# Generated. Written by the font build from the icon list; nothing here is edited by hand.
+src/lib/generated/
+static/fonts/
+
+# Generated from the server's schema, by the tool that generates it.
+src/lib/api/schema.d.ts
+openapi.json
+
+.svelte-kit/
+node_modules/
+
+# Written by a Playwright run. Already untracked, so CI never sees these, but anyone who runs the
+# e2e locally has them afterwards, and a formatter that reports its own test output as a style
+# problem is a gate that gets ignored, or worse, one that gets answered by formatting the artifact.
+test-results/
+playwright-report/
+
+# Written by the coverage run the client gate reads. Same reason as the two above: it is an
+# artifact, it is regenerated on every run, and a formatter reporting it is a gate people learn to
+# ignore.
+coverage/

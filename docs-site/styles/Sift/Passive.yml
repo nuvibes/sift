@@ -1,0 +1,9 @@
+# Second person, active: say who does it. Apple's own exception (prompt: "If you select Image,
+# you're prompted to select an image file") is why this warns instead of failing.
+extends: existence
+message: "'%s' may be passive: say who does it (Sift does it, or you do)."
+level: warning
+ignorecase: true
+raw:
+  - '\b(?:am|are|were|being|is|been|was|be|isn''t|aren''t|wasn''t|weren''t)\s+'
+  - '(?:\w+ed|built|chosen|done|drawn|found|given|gone|hidden|kept|known|left|made|put|run|seen|sent|shown|taken|written)\b'

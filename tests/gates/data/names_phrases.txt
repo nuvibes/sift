@@ -1,0 +1,506 @@
+# Title-case strings that are not anybody: interface copy, technical terms, product and font
+# names, the start of a sentence, the words a filename fixture carries where a handle would sit.
+# `test_only_invented_names.py` reads this beside `names_cast.txt`. It is kept apart from the cast
+# so that list stays short enough to read. Check a phrase is not a person before adding it.
+Aaa First
+About Jane
+About Sift
+Action Allow
+Add Clips
+Add Music
+Add Title
+Add Videos
+Allow Sign
+Already Here
+Also None
+American English
+And None
+And Sift
+Another Site
+Answering False
+Answering True
+Answers None
+Anything Sift
+Apache License
+App History
+Appearances Sift
+Archivo Variable
+Asked Sift
+Aurora Feed
+Awaiting Review
+Backup Drive
+Bad Gateway
+Bad Request
+Basic Multilingual Plane
+Beside Sift
+Better Name
+Big Network
+Blacked Raw
+Block Sign
+Blond Hair
+Both None
+Bring Stash
+Buried Person
+Buried Set
+Bytes Sift
+Camera Roll
+Caps Lock
+Cell Groups
+Center Stage
+Choose Neve Arbogast
+Client Install
+Client Mode
+Close Sift
+Confirmed Sandbar
+Cookie File
+Copy Link
+Copy Stash
+Costa Rica
+Create Beach
+Create Elina Sorrel
+Create Orla Fennimore
+Create Jane
+Create Nadia Vance
+Create Neve
+Create People
+Create Photo Set
+Create Photo Sets
+Danger Zone
+Database Switcher
+Delete Holiday
+Direction Inbound
+Directories Sift
+Discord Server
+Display Matrix
+Docker Compose
+Docker Desktop
+Each Site
+Edit Beach
+Edit Concurrency
+Edit Generate
+Edit Holiday
+Edit How
+Edit Identify
+Edit Jane
+Edit Scan
+Editing File
+Editing File Info
+Enriched Neve Alder
+Every History
+Every Site
+Everybody Sift
+Everything Sift
+Everywhere Sift
+Exact Duplicates
+Example Box
+Faces Awaiting Review
+Faces Sift
+Fashion Week
+Fatal Python
+File Explorer
+Filed From Filenames
+Filed Without Asking
+Files Sift
+First Sift
+Five Ten
+Fold Jane
+Folders Needing Your
+Folders Sift
+Folding Twitter
+Follow Windows
+Following Hidden
+Following Sift
+Free Api Limit
+From Stash
+Geist Mono
+General Public License
+Google Chrome
+Handing Sift
+Handles Waiting
+Harborline Connected
+Hearts Stash
+Her Other Name
+Hidden One
+Hide Browse
+Hide Settings
+How Sift
+Identified People
+Identify When
+Idol Erotic
+Ignored Faces
+Import People
+Independent Creators
+Inside Docker
+Instrument Sans
+Instrument Sans Variable
+Integrity Violation
+Intel Mac
+Intel Quick Sync
+Its Undo
+Keep Birthdate
+Keep Pmvhaven
+Kept Aside Site
+Lets Sift
+Library One
+Linked Sites
+Live Check
+Lock Hidden
+Lock Sift
+Locking Hidden
+Locking Sift
+Made Dorothy
+Main Library
+Make Harbour
+Marisol Vane Official
+Marked Again
+Material Symbol
+Material Symbols
+Material Symbols Rounded
+Media Source
+Media Source Extensions
+Mega Pack
+Merged Ilva
+Microsoft Basic Display
+Microsoft Remote Display
+Modeling Agency
+Most Sites
+Moving Electron
+Mozilla Firefox
+Nadia Vance Collection
+Nadia Vance Wedding
+Named Ada Lumen
+Named Neve Alder
+Near Duplicates
+Needs Your
+Needs Your Input
+Never None
+Never Seen
+Never Written
+New Face
+New Person
+New Site
+New Tag
+New York
+Newer Name
+Nitro Basic
+Nobody Reachable
+Nobody Special
+Nobody Yet
+None Sift
+Not Found
+Not None
+Not Them
+Not This Song
+Not Ticked Person
+Not Yours
+Nothing Here
+Nothing Sift
+Offence What
+Official Website
+Old Name
+Old Project Vids
+One Chromium
+One History
+One Organize
+One Platform
+One Save
+One Simple Icons
+One Site
+One Yes
+Open Duplicates
+Open Graph
+Open Sift
+Opened How
+Opening Hidden
+Opening Stash
+Original Name
+Other Shoot
+Other Spelling
+Overview Overview
+Part Two
+Pass None
+Passing None
+People Sift
+Photo Set
+Photo Set Ada
+Photo Set Cassia
+Photo Set Sift
+Photo Sets
+Pictures Sift
+Pictures Stash
+Platform Connection
+Platform Discord
+Point Sift
+Pressing Auto
+Pressing Save
+Profile Any
+Profile Private
+Program Files
+Proposed People
+Proposing Photo Sets
+Public Sans
+Put Instagram
+Put Reddit
+Put Sift
+Quick Sync
+Quit Sift
+Random Clips
+Recycle Bin
+Red Sports Car
+Reddit User
+Remove Cassia Lynn
+Remove Kept
+Remove Programs
+Remove Site
+Removed Ilva Brennan
+Rename Centred
+Rename First
+Rename Half
+Renamed Ilva
+Replace Birthdate
+Restart Sift
+Returning False
+Returning None
+Returns None
+Returns True
+Rows Stash
+Rule One
+Sans Variable
+Save Music
+Saved Filter
+Saved Filters
+Saved Site
+Scene Title
+Search Sites
+Seeded Site
+Server Error
+Server Install
+Server Mode
+Service Unavailable
+Set Cassia Lynn
+Shared Person
+Shared Site
+Shared Spelling
+Shelf One
+Show Hidden
+Show Settings
+Show Tags
+Since Stash
+Sift Downloads
+Simple Icons
+Site Discord
+Site Foo
+Site Sift
+Skipped Files
+Slow Motion
+Smart Search
+Some Board
+Some Card
+Some Girl
+Some Name
+Some Processor
+Some Registry Processor
+Some Video Title
+Somebody Else
+Somebody New
+Someone A Title
+Someone Else
+Something Else
+Something Hidden
+Something Made
+Something Sift
+Space Grotesk
+Space Grotesk Variable
+Sports Car
+Stage Name
+Stars Stash
+Start Sift
+Starting Sift
+Studio Name
+Studio Profile
+Suggest People
+Sunrise Over Everything
+Swim Week
+Take Sift
+Task Manager
+Telegram Desktop
+Tell Sift
+Test Card
+That Need Sorted
+The About
+The Added
+The American
+The Automatic
+The Beach
+The Build
+The Collections
+The Countess
+The Docker
+The Downloads
+The Duration
+The Editing
+The Files
+The Filters
+The Fingerprint
+The Folders
+The Generate
+The Hidden
+The History
+The Identified
+The Identify
+The Importing
+The Insights
+The Instagram
+The Jobs
+The Linux
+The Loops
+The Maintenance
+The Monday
+The Music
+The New
+The Organize
+The Orientation
+The People
+The People Sift
+The Performance
+The Person
+The Photo
+The Photo Set
+The Pier
+The Platform
+The Reddit
+The Scheduled
+The September
+The Settings
+The Shoots
+The Sift
+The Simple Icons
+The Site
+The Sites
+The Stash
+The Studio
+The Survivor
+The Tagger
+The Tags
+The Tasks
+The Theater
+The Type
+The Undo
+The Updates
+The User
+The When
+The Windows
+Their Name
+These People
+Thessaly Street
+This Site
+This User
+Three Identify
+Through Iceland
+Ticked Person
+Tidecrest Blue
+Title Case
+Too Many Requests
+Took Northbox
+Tunneled Sites
+Tushy Raw
+Two Sites
+Type Holiday
+Type Work
+Under Docker
+Under Importing
+Under Merge
+Under People
+United Arab Emirates
+Unlock Hidden
+Update Sift
+Use Theirs
+Usernames Waiting
+Using Sweden
+Vixen Media Group
+What History
+What Partial
+What Settings
+What Sift
+What Theater
+What They Call
+What Windows
+Whatever They Called
+When Not
+Where Sift
+Where Stash
+Whether Sift
+Which People
+Which Stash
+Whichever Video
+Who Sift
+Who Sift Has
+Why Smart Search
+Wikimedia Commons
+Windows Defender
+Windows Firewall
+Windows Subsystem
+With Sites
+Your September
+Zzz Second
+axb
+cdn n
+cover of
+cropped
+day
+design
+extra
+garden
+holiday
+holiday cropped
+later
+many
+ranks
+screen
+shelf
+shot
+sitting
+sunset
+tall
+Beach Day
+Open Sites
+Each None
+Home Screen
+Open Swap
+Storing People
+What Activity
+Which Sites
+Picking Media
+Eastern Standard Time
+Kept Best
+Pier Shoot
+Build Sift
+Their Sift
+Backups Sift
+Review Folders
+Review Shoots
+The Photo Sets
+The Songs
+Site Cedar Vale
+Move Ilsa Moor
+Move Odo Venn
+Remove Odo Venn
+Two Users
+What Insights
+That Site
+# --- The packs and sections the facial fingerprints tests and the docs site name
+Studio Faces
+From Studio Faces
+Home Movies
+Remove Neve Arbor
+User Management
+The Vale
+Created Wren Halloway
+Install Sift
+Layout Preset
+Layout Presets
+Saved Layout Presets
+The Faces
+The Loop
+With Generate
+With Permissive

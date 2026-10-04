@@ -1,0 +1,45 @@
+# Line endings. Sift is developed and shipped on Windows while CI runs on Linux and the
+# published image is Debian, so the same files are read by both. Without this file git would apply
+# its per-machine default and a first commit made on Windows could rewrite every source file,
+# burying the real change in ~1,300 lines of noise and, worse, breaking the shell scripts, which a
+# CRLF turns into a "bad interpreter" error that names the wrong problem.
+#
+# `* text=auto eol=lf` means: git decides what is text, and every text file is LF in the working
+# tree AND in the repository, on every platform. Nothing is converted, so nothing drifts.
+* text=auto eol=lf
+
+# The two exceptions, and they are real. Windows batch files are read by cmd.exe, which needs CRLF
+# for multi-line constructs; PowerShell is more tolerant but is kept consistent with them.
+*.bat  text eol=crlf
+*.cmd  text eol=crlf
+*.ps1  text eol=crlf
+
+# A patch the build applies is pinned by digest: its bytes are never converted on any platform.
+*.patch  -text
+
+# Binary. Marked explicitly rather than left to detection: a heuristic that guesses wrong on one
+# file corrupts it silently, and one NUL byte is enough to make a source file read as binary.
+# Fonts, media fixtures, compiled addons and archives never get touched.
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.webp binary
+*.avif binary
+*.ico  binary
+*.mp4  binary
+*.mov  binary
+*.webm binary
+*.mkv  binary
+*.woff binary
+*.woff2 binary
+*.ttf  binary
+*.otf  binary
+*.onnx binary
+*.node binary
+*.dll  binary
+*.exe  binary
+*.pyd  binary
+*.zip  binary
+*.gz   binary
+*.7z   binary

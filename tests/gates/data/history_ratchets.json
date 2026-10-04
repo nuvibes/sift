@@ -1,0 +1,18 @@
+{
+	"_note": "History words counted per file (tests/gates/history_ratchets.py). Each number may only FALL. Record a fall with: python -m tests.gates.history_ratchets --record",
+	"history_words": {},
+	"unnamed_words": {
+		"src/sift/kernel/access/sentences_downloads.py": 5,
+		"src/sift/kernel/access/sentences_gone.py": 2,
+		"src/sift/kernel/access/sentences_ledger.py": 1,
+		"src/sift/kernel/access/sentences_lines.py": 4,
+		"src/sift/kernel/access/sentences_means.py": 4,
+		"src/sift/kernel/access/sentences_songs.py": 1,
+		"src/sift/kernel/access/sentences_who.py": 3,
+		"src/sift/kernel/access/worded.py": 1,
+		"src/sift/slices/library_roots/router.py": 1
+	},
+	"raw_figures": {
+		"src/sift/slices/dedup/service.py": 1
+	}
+}

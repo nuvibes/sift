@@ -1,0 +1,470 @@
+# Project-specific static analysis rules.
+#
+# Each rule has paired tests in python.py (`semgrep --test`) asserting it both fires on a
+# violation and stays quiet on correct code.
+
+rules:
+  # Sift uses raw aiosqlite with no ORM, so parameterization is the only thing standing
+  # between user input and the database. Taint mode rather than a plain pattern because
+  # the query is usually built in one place and executed in another.
+  #
+  # `focus-metavariable` restricts the sink to the query argument, so a computed *bound
+  # parameter*, execute("... LIKE ?", (f"%{title}%",)), is not flagged. Binding a value
+  # is the point; a rule that punished it would get suppressed and stop protecting anything.
+  #
+  # There is no sanitizer. The one legitimate case for runtime-built SQL is an `IN (?,?,?)`
+  # placeholder run, which SQLite cannot bind as an array. When that is genuinely needed,
+  # add a single named helper in kernel/db and register it here. Do not suppress findings
+  # inline and do not disable the rule per-file.
+  - id: sift-no-string-built-sql
+    mode: taint
+    languages: [python]
+    severity: ERROR
+    message: >-
+      SQL built by string formatting. Pass values as `?` placeholders with a params tuple:
+      conn.execute("SELECT ... WHERE id = ?", (asset_id,)). There is no ORM here, so this
+      is the only SQL-injection control.
+    metadata:
+      category: security
+      cwe: "CWE-89: SQL Injection"
+      owasp: "A03:2021 Injection"
+      confidence: HIGH
+    pattern-sources:
+      - pattern-either:
+          - pattern: f"..."
+          - pattern: $A % $B
+          - pattern: $A + $B
+          - pattern: $A.format(...)
+          - pattern: $SEP.join(...)
+          - pattern: $S.replace(...)
+    pattern-sinks:
+      - patterns:
+          - pattern-either:
+              - pattern: $C.execute($SQL, ...)
+              - pattern: $C.executemany($SQL, ...)
+              - pattern: $C.executescript($SQL, ...)
+              - pattern: $C.execute_fetchall($SQL, ...)
+              - pattern: $C.execute_insert($SQL, ...)
+              # The kernel's own read helpers. A slice runs its queries through these, so a query
+              # built by hand and passed to one has to be caught here too, or the read path is a
+              # hole the write path is not.
+              - pattern: $C.fetch_all($SQL, ...)
+              - pattern: $C.fetch_one($SQL, ...)
+          - focus-metavariable: $SQL
+    # The one exemption, and it is deliberately the only one. A placeholder binds a single value
+    # and never a list, so `IN (?, ?, ?)` has to know its length at runtime: there is no way to
+    # write that query out in full. `in_clause` is the single function allowed to do it, it can only
+    # ever add `?` and `,` to a query, and it is reviewed as such. Extend it and you are extending
+    # the hole: nothing derived from a value may reach the SQL text.
+    #
+    # Do not add a second entry here, and do not reach for `# nosemgrep` or a per-file ignore. With
+    # no ORM in the codebase this rule is the whole of the SQL-injection defence; the usual way it
+    # dies is one suppression at a time until it guards nothing.
+    pattern-sanitizers:
+      - pattern: in_clause(...)
+      - pattern: sift.kernel.db.in_clause(...)
+      - pattern: db.in_clause(...)
+
+  # aiosqlite is the kernel's business. Everywhere else goes through the kernel's handle, so the
+  # pragmas, the single-writer lock and the permission-scoped read path cannot be bypassed by
+  # opening a second connection to the same file.
+  - id: sift-no-database-driver-outside-kernel
+    languages: [python]
+    severity: ERROR
+    message: >-
+      Import the kernel's database handle instead of aiosqlite. A connection opened here misses
+      the pragmas (foreign keys off, so cascades silently stop working) and the single-writer
+      lock, and reads that skip the access layer skip its permission checks with it.
+    metadata:
+      category: security
+      confidence: HIGH
+    # Named files rather than a blanket exclusion for tests, so the rule keeps holding everywhere a
+    # test could open a real library by accident.
+    paths:
+      exclude:
+        - src/sift/kernel/db.py
+        # The halves `kernel/db.py` is split into: the connection, the library files, the readers.
+        - src/sift/kernel/db_base.py
+        - src/sift/kernel/db_library.py
+        - src/sift/kernel/db_readers.py
+        - src/sift/kernel/tests/test_db.py
+        - src/sift/kernel/tests/test_db_lead_and_inline_reads.py
+        - src/sift/testing/*
+        # The operator scripts, as a DIRECTORY: the same shape and the same reason the logger rule
+        # above uses. Every reason this rule gives is about the RUNNING APPLICATION: a request, a
+        # viewer, a permission layer to skip, a writer to serialise against. An operator script has
+        # none of those. It is run by hand, from a shell, by the person who owns the data, with the
+        # application stopped, and one of them exists precisely to move a database between two
+        # machines, which cannot be done through a handle that expects a migrated schema and a
+        # running event loop.
+        - "scripts/"
+        # A test that opens a database FILE to assert on what a migration wrote into it. There is no
+        # application running, so there is nothing for it to bypass, and going through the kernel's
+        # handle would migrate the fixture to today's schema, which is the one thing a migration test
+        # must not do.
+        - "tests/integration/*"
+        # The query parser's property tests. They build a scratch FTS5 table with two fabricated
+        # rows in memory and ask SQLite one question (does this match expression parse as
+        # literals?) a few hundred times per run. Every reason above is about a connection to the
+        # real library: there are no foreign keys to lose, no writer to serialise against, no
+        # permission-carrying table, and no file. Going through the kernel's handle would mean an
+        # async connection and a migrated schema per generated example, which would make the gate
+        # slow enough to be turned down, and a thorough gate is the point of it.
+        - src/sift/slices/search/tests/test_properties.py
+        # Backup, which is the one feature whose subject is a database FILE rather than the
+        # database. Every reason above is about the live library: this opens a candidate backup
+        # read-only to ask what it is before anything is done with it, and stamps a manifest into
+        # a file it has just written. Neither is a connection the kernel handle could stand in
+        # for: the handle is bound to the live database, which is the one file these must not
+        # be. Once a backup has been adopted it IS the live database, and from that moment it is
+        # reached only through the kernel like everything else.
+        - src/sift/slices/backup/service.py
+        # The tests read an export the way somebody who took the file would: a plain SQLite
+        # client, no Sift involved. Going through the kernel handle would prove the export is
+        # readable by the code that wrote it, which is not the question being asked.
+        - src/sift/slices/backup/tests/test_export.py
+        - src/sift/slices/backup/tests/test_restore.py
+        - src/sift/slices/backup/tests/test_saved_logins.py
+    pattern-either:
+      - pattern: import aiosqlite
+      - pattern: from aiosqlite import $X
+      - pattern: import sqlite3
+      - pattern: from sqlite3 import $X
+
+  # The bundled tools are invoked with user-supplied URLs. Through a shell, a URL is code.
+  # Always pass a list argv so the OS never re-parses it.
+  - id: sift-no-shell-true
+    languages: [python]
+    severity: ERROR
+    message: >-
+      Shell invocation with a user-controlled URL is command injection. Use a list argv:
+      subprocess.run(["yt-dlp", url, ...]).
+    metadata:
+      category: security
+      cwe: "CWE-78: OS Command Injection"
+      owasp: "A03:2021 Injection"
+      confidence: HIGH
+    patterns:
+      - pattern-either:
+          - pattern: subprocess.$F(..., shell=True, ...)
+          - pattern: subprocess.Popen(..., shell=True, ...)
+          - pattern: asyncio.create_subprocess_shell(...)
+          - pattern: asyncio.subprocess.create_subprocess_shell(...)
+          - pattern: os.system(...)
+          - pattern: os.popen(...)
+          - pattern: os.spawnl(...)
+          - pattern: commands.getoutput(...)
+
+  # Job payloads, settings and cached metadata all cross a trust boundary. Serialize with
+  # JSON; pickle.loads() on reachable input is arbitrary code execution.
+  - id: sift-no-unsafe-deserialization
+    languages: [python]
+    severity: ERROR
+    message: >-
+      pickle/marshal/shelve and yaml.load() without SafeLoader execute arbitrary code on
+      untrusted input. Use json.loads(), or yaml.safe_load() for config.
+    metadata:
+      category: security
+      cwe: "CWE-502: Deserialization of Untrusted Data"
+      owasp: "A08:2021 Software and Data Integrity Failures"
+      confidence: HIGH
+    patterns:
+      - pattern-either:
+          - pattern: import pickle
+          - pattern: import cPickle
+          - pattern: import marshal
+          - pattern: import shelve
+          - pattern: pickle.load(...)
+          - pattern: pickle.loads(...)
+          - pattern: marshal.loads(...)
+          - pattern: shelve.open(...)
+          - pattern: yaml.load($X)
+          - pattern: yaml.load($X, Loader=yaml.Loader)
+          - pattern: yaml.load($X, Loader=yaml.UnsafeLoader)
+          - pattern: yaml.unsafe_load(...)
+
+  # gallery-dl is GPL-2.0. Importing it into this process would make Sift a derivative work
+  # and force its licence; running it as a separate process does not. The downloaders are
+  # therefore always subprocesses, never imports. This is a licensing constraint, not style.
+  - id: sift-no-downloader-import
+    languages: [python]
+    severity: ERROR
+    message: >-
+      Downloaders are invoked as subprocesses, never imported: importing a GPL library
+      into this process would force Sift's licence. Use the downloader seam.
+    metadata:
+      category: correctness
+      confidence: HIGH
+    patterns:
+      - pattern-either:
+          - pattern: import yt_dlp
+          - pattern: import gallery_dl
+          - pattern: from yt_dlp import $X
+          - pattern: from gallery_dl import $X
+          - pattern: from yt_dlp.$M import $X
+          - pattern: from gallery_dl.$M import $X
+          - pattern: __import__("yt_dlp")
+          - pattern: __import__("gallery_dl")
+          - pattern: importlib.import_module("yt_dlp")
+          - pattern: importlib.import_module("gallery_dl")
+
+  # Logs pass through a redaction filter that scrubs credentials, cookies and local paths.
+  # print() and a raw stdlib logger bypass it.
+  - id: sift-no-print-or-raw-logger
+    languages: [python]
+    severity: ERROR
+    message: >-
+      Bypasses the logging redaction filter. Use `from sift.kernel.log import get_logger`.
+      Log the event, not the payload.
+    metadata:
+      category: security
+      owasp: "A09:2021 Security Logging and Monitoring Failures"
+      confidence: MEDIUM
+    # log.py implements the redaction, so it is the one module allowed to touch the stdlib
+    # primitives directly. Its test has to impersonate a third-party logger (a raw stdlib
+    # record, as uvicorn emits) to prove those records get scrubbed as well.
+    #
+    # Both exemptions are declared here rather than as inline suppressions, so the complete list
+    # of code this rule does not cover is one thing to read, in one place.
+    # `scripts/` is developer and CI tooling. None of it ships: the installer carries the package
+    # built from `src/`, so nothing here can print anything at runtime. A
+    # report that a human reads in a CI log is the entire output of these, and routing it through
+    # the structured logger would make it unreadable to no benefit.
+    paths:
+      exclude:
+        - "src/sift/kernel/log.py"
+        - "src/sift/kernel/tests/test_log.py"
+        # The DIRECTORY, not a list of names: the rationale covers every script in it, and a list
+        # would have to remember each new check or fail the commit for a reason unrelated to it.
+        - "scripts/"
+        # A console tool a person runs from a shell. Its whole output is a warning and a prompt for
+        # a human at a terminal; routing that through the structured JSON logger would make it
+        # unreadable, and none of it runs inside the served application.
+        - "src/sift/slices/auth/admin_cli.py"
+        # A fixture builder run by hand: it lays a Stash copy out on disk and prints where.
+        - "src/sift/slices/stash_migration/tests/stash_on_disk.py"
+    patterns:
+      - pattern-either:
+          - pattern: print(...)
+          - pattern: logging.getLogger(...)
+          - pattern: logging.basicConfig(...)
+          - pattern: sys.stdout.write(...)
+          - pattern: sys.stderr.write(...)
+
+  # The master key that protects saved site logins is wrapped with a key derived from the account
+  # password. Deriving it from the PIN instead would quietly wreck that: a PIN is four to six
+  # digits, so a key derived from one falls to an offline search in seconds, and anyone with the
+  # database file would then read every saved login. The PIN unlocks a screen; it is never handed
+  # to the key-derivation or key-wrapping functions.
+  #
+  # This is the single change a future edit is most likely to make in the name of convenience
+  # ("let the PIN unlock the vault too"), so it is caught mechanically rather than left to review.
+  - id: sift-no-pin-in-key-derivation
+    languages: [python]
+    severity: ERROR
+    message: >-
+      A PIN is being passed to key derivation or key wrapping. The master key is derived from the
+      password only. A PIN is short enough to brute-force offline, so deriving a key from one
+      would expose every saved secret to anyone holding the database. The PIN unlocks a screen; it
+      never wraps a key.
+    metadata:
+      category: security
+      cwe: "CWE-916: Use of Password Hash With Insufficient Computational Effort"
+      owasp: "A02:2021 Cryptographic Failures"
+      confidence: HIGH
+    paths:
+      exclude:
+        - "**/tests/**"
+        - src/sift/testing/*
+    # Each wrapping function is matched at its password position, and that argument is required to
+    # NOT be the PIN. The position is pinned down so the regex judges exactly the argument that
+    # becomes the key, rather than whichever argument a wildcard happened to bind. `pin`, `user_pin`,
+    # `body.pin` and `self.pin` all match; `password` does not, and neither does an unrelated word
+    # that merely contains the letters.
+    patterns:
+      - pattern-either:
+          - patterns:
+              - pattern: wrap_master_key($MK, $ARG)
+              - metavariable-regex:
+                  metavariable: $ARG
+                  regex: '(?i)(.*[._])?pin$'
+          - patterns:
+              - pattern: unwrap_master_key($W, $ARG)
+              - metavariable-regex:
+                  metavariable: $ARG
+                  regex: '(?i)(.*[._])?pin$'
+          - patterns:
+              - pattern: _wrapping_key($ARG, $SALT)
+              - metavariable-regex:
+                  metavariable: $ARG
+                  regex: '(?i)(.*[._])?pin$'
+          - patterns:
+              - pattern: rewrap_master_key($W, $ARG, $NEW)
+              - metavariable-regex:
+                  metavariable: $ARG
+                  regex: '(?i)(.*[._])?pin$'
+          - patterns:
+              - pattern: rewrap_master_key($W, $OLD, $ARG)
+              - metavariable-regex:
+                  metavariable: $ARG
+                  regex: '(?i)(.*[._])?pin$'
+
+  # Sift indexes files in place and does not write into a library. Exactly two features are allowed
+  # to break that, and this is what keeps it true after the fact. `delete` removes a file when
+  # somebody has explicitly asked it to, moving it to a recoverable bin first. `organize` renames a
+  # file, moves it to another folder, and moves a folder with everything under it.
+  #
+  # It covers renaming and moving as well as removing, and that is not padding. A rename is as
+  # destructive as a delete when it lands on top of something: `os.replace` overwrites its
+  # destination silently, and `os.rename` will too on every platform Sift ships on. A rule that
+  # fenced only `unlink` would leave the more surprising half of the problem wide open.
+  #
+  # The exclusions are files, not directories, and each one is here for a stated reason. The rule is
+  # only worth having if the list stays short and every entry has been argued for: an exclusion
+  # added to make a build go green is how a fence like this stops meaning anything. Every entry
+  # below that is not one of the two features is the same reason: the file operates on a directory
+  # Sift owns and can rebuild (a cache, a staging area, a partial download, the quarantine bin)
+  # rather than on anybody's library.
+  - id: sift-no-file-removal-outside-delete-trash
+    languages: [python]
+    severity: ERROR
+    message: >-
+      This removes, renames, or moves a file. Sift indexes in place, and only the delete and
+      organize features may change a file somebody else put there. Go through
+      `app.state.deleter` or `app.state.organizer`, which check the folder was handed over
+      read-write, refuse a non-admin, and keep enough to undo what they did.
+    metadata:
+      category: security
+      cwe: "CWE-552: Files or Directories Accessible to External Parties"
+      confidence: HIGH
+    paths:
+      exclude:
+        # The operator scripts, as a DIRECTORY: the same shape and the same reason the logger rule
+        # above uses. Every reason this rule gives is about the RUNNING APPLICATION: a request, a
+        # viewer, a permission layer to skip, a writer to serialise against. An operator script has
+        # none of those. It is run by hand, from a shell, by the person who owns the data, with the
+        # application stopped, and one of them exists precisely to move a database between two
+        # machines, which cannot be done through a handle that expects a migrated schema and a
+        # running event loop.
+        - "scripts/"
+        # The two features that own this. The whole point of the rule.
+        - src/sift/slices/delete/service.py
+        - src/sift/slices/organize/service.py
+        # A small note written whole or not at all: the rename IS the atomicity, and the kernel
+        # owns it so no slice reaches for os.replace itself.
+        - src/sift/kernel/whole_file.py
+        # Sets a refused file aside in the quarantine directory, which is Sift's own.
+        - src/sift/kernel/ingress.py
+        # Takes them back OUT of that same directory: the screen that lists what was refused, and
+        # the rule that ages the pile out. A quarantined file is one Sift itself moved there, so it
+        # is not an asset and the deleter has nothing to act on: there is no location row, no
+        # library folder and nothing to undo.
+        #
+        # What keeps it bounded is `resolve`, which every removal goes through. A name arrives in a
+        # URL, so it is refused unless it is a single path component, and the path it produces is
+        # then refused unless its parent IS the quarantine directory, which is what catches a
+        # symlink pointing out of it. Both guards are tested, and each is killed by a mutation the
+        # other survives, so neither can be dropped as redundant.
+        - src/sift/slices/library_roots/quarantine.py
+        # Clears the staging directory an import was assembled in.
+        - src/sift/slices/capture/jobs.py
+        # Discards a partial download. The file has never been part of a library.
+        - src/sift/slices/download/sources/fetcher.py
+        # Backup files, and the database itself. Three things happen there and none of them
+        # touches a library: a staged copy is dropped after the request that made it, the
+        # database is moved aside so a restore can put another one in its place, and the
+        # rotation deletes older backups. The rotation runs in a folder somebody chose, so it
+        # considers only names this feature wrote (see `is_backup_filename`, which is what
+        # keeps "keep the last few backups" from becoming "delete the oldest file in a folder").
+        - src/sift/slices/backup/service.py
+        # Renames frames within a staging directory, and swaps a finished derivative into the
+        # cache. Both are Sift's own directories and both are rebuildable.
+        - src/sift/slices/media_jobs/jobs.py
+        - src/sift/slices/media_jobs/sprites.py
+        # Face crops, under Sift's own data directory and never part of anybody's library: pictures
+        # Sift cut out of frames it decoded, deleted when the person they belong to is deleted or
+        # when somebody presses the control that clears the face data.
+        - src/sift/slices/faces/store_pictures.py
+        # The same face data, cleared whole by the press that forgets it, in batches as a job.
+        - src/sift/slices/faces/forget_all.py
+        # Model files, under Sift's own data directory and obtained by Sift itself: a partial
+        # download being discarded, or a staged copy that failed its digest check being thrown away
+        # rather than put in place. Nothing here can name a file somebody else put somewhere: the
+        # only paths it builds are under the feature's own corner of the data directory.
+        - src/sift/kernel/ml/weights.py
+        # Clearing up what earlier operations left behind, and only ever under Sift's own cache
+        # and data directories: cache files no derivative row names, and face pictures no row
+        # names. It never opens a library folder. What it removes from a library is rows, through
+        # the content store. Every one of these is rebuildable from the original file.
+        - src/sift/kernel/tidy.py
+        # Moves a finished conversion out of a temporary directory into the cache. The source is a
+        # file this process wrote seconds earlier and the destination is Sift's own; the original
+        # animation is only ever read.
+        - src/sift/kernel/webp.py
+        # The transcode cache and its scratch files: Sift's own, disposable by design, and swept
+        # to stay under a byte cap.
+        - src/sift/slices/player/cache.py
+        - src/sift/slices/player/router.py
+        - src/sift/slices/player/service.py
+        - src/sift/slices/player/transcode.py
+        - "**/tests/**"
+        - src/sift/testing/*
+    patterns:
+      - pattern-either:
+          - pattern: os.remove(...)
+          - pattern: os.unlink(...)
+          - pattern: os.rename(...)
+          - pattern: os.replace(...)
+          - pattern: os.rmdir(...)
+          - pattern: os.removedirs(...)
+          - pattern: shutil.rmtree(...)
+          - pattern: shutil.move(...)
+          - pattern: $P.unlink(...)
+          - pattern: $P.rmdir(...)
+          # Path.rename and Path.replace. Matched on the receiver being a Path-ish name so that
+          # `text.replace(...)`, a string method with the same name, used all over the codebase,
+          # does not fire. The trade is deliberate: a path held in a variable called something else
+          # slips through, and the alternative is a rule so noisy it gets switched off.
+          - patterns:
+              - pattern-either:
+                  - pattern: $P.rename($X)
+                  - pattern: $P.replace($X)
+              - metavariable-regex:
+                  metavariable: $P
+                  regex: '(?i)(.*[._])?(path|file|dest|destination|source|src|target|partial|staging|scratch|produced|frame)$'
+
+  # An archive names its own members, and a name joined to a folder is the folder only when the
+  # name says so: `../x`, `/x`, `C:x` and, on Windows, `covers//x` all land somewhere else.
+  # Every member name is joined inside `confine`, which resolves the result and refuses anything
+  # outside the folder, or not at all.
+  - id: sift-no-archive-member-joined-without-confine
+    mode: taint
+    languages: [python]
+    severity: ERROR
+    message: >-
+      An archive member's name is joined to a path outside `confine`. Join it inside
+      `confine(folder, folder.joinpath(...))`, which refuses a name that lands outside the folder.
+    metadata:
+      category: security
+      cwe: "CWE-22: Improper Limitation of a Pathname to a Restricted Directory"
+      confidence: HIGH
+    pattern-sources:
+      - pattern: $ARCHIVE.namelist()
+      - pattern: $ARCHIVE.getnames()
+      - patterns:
+          - pattern: $MEMBER.filename
+          - pattern-inside: |
+              for $MEMBER in $ARCHIVE.infolist():
+                ...
+      - patterns:
+          - pattern: $MEMBER.name
+          - pattern-inside: |
+              for $MEMBER in $ARCHIVE.getmembers():
+                ...
+    pattern-sinks:
+      - patterns:
+          - pattern-either:
+              - pattern: $BASE / $NAME
+              - pattern: $BASE.joinpath(...)
+              - pattern: os.path.join(...)
+          - pattern-not-inside: confine(...)

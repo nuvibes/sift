@@ -1,0 +1,257 @@
+Sift
+Copyright (C) 2026 Sift contributors
+
+This program is free software: you can redistribute it and/or modify it under the
+terms of the GNU Affero General Public License as published by the Free Software
+Foundation, either version 3 of the License, or (at your option) any later version.
+The full text is in LICENSE.
+
+
+DERIVED SOURCE CODE
+===================
+
+Unlike the tools bundled with the desktop application (below), the following is not run
+at arm's length: it is source code in this program, derived from another project's:
+
+  cyberdrop-dl    https://github.com/jbsparrow/CyberDropDownloader
+                  GNU General Public License v3.0
+
+                  The file-host site extractors in
+                  src/sift/slices/download/sources/sites/ (their endpoints, page
+                  selectors, signing flows, and the JPG5/Bunkr crypto) were followed
+                  from cyberdrop-dl's crawlers to read sites yt-dlp and gallery-dl do
+                  not handle. Those files carry the same attribution in their headers.
+
+                  Sift is licensed AGPL-3.0, which is compatible with GPL-3.0: AGPLv3
+                  section 13 and GPLv3 section 13 each permit linking with the other,
+                  so this derived code may ship in an AGPL-3.0 work.
+
+                  cyberdrop-dl's LICENSE file names no copyright holder; the
+                  project's pyproject.toml names its author as Jacob B.
+
+
+BUNDLED DATA
+============
+
+  Common-password list    src/sift/slices/auth/data/common_passwords.txt
+                          The ~100,000 most common passwords, derived from SecLists
+                          (https://github.com/danielmiessler/SecLists, MIT License):
+                          lower-cased, ASCII-filtered and deduplicated. Used offline to
+                          reject obviously-breached passwords at account creation.
+                            Copyright (c) 2018 Daniel Miessler
+                            Permission is hereby granted, free of charge, to any person
+                            obtaining a copy of this software and associated
+                            documentation files (the "Software"), to deal in the
+                            Software without restriction, including without limitation
+                            the rights to use, copy, modify, merge, publish,
+                            distribute, sublicense, and/or sell copies of the Software,
+                            and to permit persons to whom the Software is furnished to
+                            do so, subject to the following conditions: The above
+                            copyright notice and this permission notice shall be
+                            included in all copies or substantial portions of the
+                            Software. THE SOFTWARE IS PROVIDED "AS IS", WITHOUT
+                            WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT
+                            LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+                            PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+                            THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+                            DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF
+                            CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+                            CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+                            IN THE SOFTWARE.
+
+  Site logos              src/sift/kernel/site_icons/icons/
+                          One picture per site, so that Sift can show which site a
+                          row in a library came from without asking anybody anything
+                          when it draws it. Each was taken once, by
+                          scripts/build_site_icons.py, from the site's own icon or
+                          logo, from the site's entry on StashDB, FansDB or PMVStash,
+                          from Wikimedia Commons, or from Simple Icons (CC0). Each is
+                          scaled to at most 256 pixels; where a logo sat on a plain
+                          background plate, the plate is taken off. Nothing else is
+                          changed.
+
+                          Each is the trade mark or logo of the site it belongs to,
+                          is not covered by the licence above, and is used
+                          nominatively and for nothing else: it appears only beside
+                          the name of the site it identifies, never as a badge on
+                          Sift itself and never to suggest that a site endorses or is
+                          connected with this program.
+
+                          src/sift/kernel/site_icons/manifest.json records, for each
+                          one, the site it belongs to, the hosts it stands for and
+                          where the picture came from, and lists the sites the pack
+                          knows and deliberately ships nothing for.
+
+                          A site that would rather its logo were not shipped here
+                          should say so and it will be removed.
+
+  Fonts                   frontend/static/fonts/
+                          Not kept in this repository: written at build time by
+                          frontend/scripts/prepare_fonts.js from the packages named
+                          here, pinned in frontend/package-lock.json, and shipped in
+                          the built client.
+                          Archivo, DM Sans, Geist, Geist Mono, Instrument Sans,
+                          Inter, JetBrains Mono, Manrope, Public Sans, Sora and Space
+                          Grotesk, from the Fontsource packages: SIL Open Font
+                          License 1.1.
+                          Material Symbols Rounded, Apache-2.0, cut down by
+                          frontend/scripts/prepare_fonts.js to the icons Sift draws;
+                          nothing else in it is changed.
+                          Each font's licence text ships beside it as
+                          <font>-LICENSE.txt in the same folder, served at /fonts/,
+                          written by the same script, which refuses a font without
+                          one.
+
+BUNDLED WITH THE WINDOWS DESKTOP APPLICATION
+===========================================
+
+  The desktop application installs nothing from a package manager: it carries its
+  own copies of the external tools it runs. It runs each as a separate process and
+  does not link against them or import them as libraries, so they remain
+  independent works under their own licenses. Each is redistributed unmodified.
+  They are pinned by SHA-256 in scripts/vendor_manifest.json and fetched by
+  scripts/fetch_vendor.py, which verifies the hash before unpacking and refuses to
+  substitute a different build.
+
+  FFmpeg / FFprobe        vendor/bin/ffmpeg.exe, vendor/bin/ffprobe.exe, and the
+                          eight libraries they share: avcodec-61.dll, avdevice-61.dll,
+                          avfilter-10.dll, avformat-61.dll, avutil-59.dll,
+                          postproc-58.dll, swresample-5.dll, swscale-8.dll.
+                          n7.1.5, the win64-gpl-SHARED build. Shared rather than
+                          static because the static build compiles every codec into
+                          both executables: 278 MB against 160 MB for exactly the same
+                          capability, on every install and every update download.
+                          Built with --enable-gpl and --enable-version3, so these are
+                          GPL-3.0-or-later. The full licence text ships beside them as
+                          vendor/bin/ffmpeg-LICENSE.txt.
+                          The build is FFmpeg at commit 9a4bb2c579 on the release/7.1
+                          branch (n7.1.5-16-g9a4bb2c579, as `ffmpeg -version` reports),
+                          built by BtbN/FFmpeg-Builds. Its complete source ships as
+                          vendor/bin/sources/ffmpeg-n7.1.5-16-g9a4bb2c579.tar.gz.
+                          Compiled into the libraries with it, and shipped as source
+                          beside it:
+                            x264 at 0480cb05fa18 (GPL-2.0-or-later)
+                              vendor/bin/sources/x264-0480cb05fa18.tar.gz
+                            x265 4.2+37 at b81f650e21e8 (GPL-2.0-or-later)
+                              vendor/bin/sources/x265-4.2-37-b81f650e21e8.tar.gz
+                          The scripts that built it ship as
+                          vendor/bin/sources/FFmpeg-Builds-590a6612d7d9.tar.gz; they
+                          name, by exact commit, every other library compiled into
+                          these files (scripts.d/, SCRIPT_COMMIT), with the address
+                          each one's source is published at. Among them is
+                          Chromaprint (scripts.d/50-chromaprint.sh), which Sift reads
+                          a file's audio fingerprint with.
+
+  libwebp tools           vendor/bin/webpinfo.exe, vendor/bin/anim_dump.exe
+                          1.5.0, BSD-3-Clause. FFmpeg can write an animated WebP and
+                          has never been able to read one; these two are what makes
+                          animated-WebP import possible at all.
+                          NOTE: the official Windows binary archive ships no licence
+                          file. BSD-3-Clause requires the copyright notice to travel
+                          with a binary redistribution, so the text is fetched from the
+                          tagged source and shipped as vendor/bin/libwebp-COPYING.
+
+  yt-dlp                  vendor/bin/yt-dlp.exe and vendor/bin/_internal/
+                          2026.08.19, the publisher's one-folder Windows build. The
+                          Unlicense (vendor/bin/yt-dlp-LICENSE). The executable
+                          bundles CPython and third-party libraries under their own
+                          licences, listed in
+                          vendor/bin/_internal/THIRD_PARTY_LICENSES.txt; among them
+                          mutagen 1.48.1 (GPL-2.0-or-later), whose complete source
+                          ships as vendor/bin/sources/mutagen-1.48.1.tar.gz.
+
+  gallery-dl              vendor/bin/gallery-dl.exe
+                          1.32.13, the publisher's Windows build. GPL-2.0-only. Its
+                          licence ships as vendor/bin/gallery-dl-LICENSE and its
+                          complete source as vendor/bin/sources/gallery_dl-1.32.13.tar.gz.
+
+  QuickJS-NG              vendor/bin/qjs.exe
+                          0.17.0, MIT (vendor/bin/qjs-LICENSE). The JavaScript engine
+                          yt-dlp runs a site's challenge script in.
+
+  wireproxy               vendor/bin/wireproxy.exe
+                          1.1.3+sift.1, built by Sift from wireproxy 1.1.3 (commit
+                          31a9a34498267d7fb8aeff05aba79d929b15eb39) with gVisor at
+                          v0.0.0-20261001051044-03e83cf5cce1 and the two patches
+                          under scripts/vendor_build/wireproxy/, by the build.py
+                          beside them. wireproxy is ISC
+                          (vendor/bin/wireproxy-LICENSE). Compiled into it: gVisor,
+                          Apache-2.0 (vendor/bin/wireproxy-gvisor-LICENSE), and
+                          wireguard-go, MIT
+                          (vendor/bin/wireproxy-wireguard-go-LICENSE).
+                          MODIFIED FILES: 02-stack.patch changes gVisor's
+                          pkg/tcpip/transport/tcp/rack.go and snd.go, and
+                          wireguard-go's tun/netstack/tun.go, and adds
+                          tun/netstack/clock_windows.go and clock_other.go; the
+                          patch is the record of every change.
+
+  Electron                The desktop application's window, from the electron
+                          package pinned in desktop/package-lock.json. MIT
+                          (LICENSE.electron.txt beside Sift.exe). It carries
+                          Chromium, whose components' licences ship beside it as
+                          LICENSES.chromium.html.
+
+  node-addon-api          8.9.2, MIT. The C++ headers the desktop application's drag
+                          addon (desktop/native/drag) is compiled against, so part of
+                          them is compiled into resources/native/drag.node. Pinned in
+                          desktop/package-lock.json.
+                            Copyright (c) 2017 Node.js API collaborators
+                            (https://github.com/nodejs/node-addon-api#collaborators)
+                            Permission is hereby granted, free of charge, to any person
+                            obtaining a copy of this software and associated
+                            documentation files (the "Software"), to deal in the
+                            Software without restriction, including without limitation
+                            the rights to use, copy, modify, merge, publish,
+                            distribute, sublicense, and/or sell copies of the Software,
+                            and to permit persons to whom the Software is furnished to
+                            do so, subject to the following conditions: The above
+                            copyright notice and this permission notice shall be
+                            included in all copies or substantial portions of the
+                            Software. THE SOFTWARE IS PROVIDED "AS IS", WITHOUT
+                            WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT
+                            LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+                            PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+                            THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+                            DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF
+                            CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+                            CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+                            IN THE SOFTWARE.
+
+  CPython                 3.13, bundled. The application does not use, and is not
+                          affected by, whatever Python is installed on the machine.
+                          PSF License Agreement.
+
+PYTHON LIBRARIES THAT CARRY NATIVE LIBRARIES OF THEIR OWN
+=========================================================
+
+  Every Python package the installer carries keeps its licence in its own dist-info
+  folder. One carries libraries under licences that travel with the binary, so they are
+  named here:
+
+  pillow-heif             1.8.0, BSD-3-Clause for its own source. Reads a HEIF
+                          photograph whole (kernel/heif.py), in a process of its own.
+                          The installer carries a wheel built by
+                          scripts/build_pillow_heif.bat rather than the published one,
+                          so it has no HEVC encoder in it: Sift reads HEIF and never
+                          writes it. The wheel carries:
+                            libheif 1.23.4 (LGPL-3.0), built without x265. Its
+                              complete source ships as
+                              vendor/bin/sources/libheif-1.23.4.tar.gz.
+                            libde265 1.1.3 (LGPL-3.0). Its complete source ships as
+                              vendor/bin/sources/libde265-1.1.3.tar.gz.
+                            the Microsoft C++ runtime (msvcp140), under the Visual
+                              Studio redistribution terms.
+                          The recipe that built them ships beside the sources as
+                          vendor/bin/sources/build_pillow_heif.bat. Each library is a
+                          DLL of its own, so it can be replaced by another build of it.
+                          The published wheel (on PyPI, used for development) also
+                          carries x265 (GPL-2.0-or-later) and the MinGW-w64 runtime;
+                          the installer carries neither.
+
+The versions above are the ones the installer ships, and they are pinned: the Python
+packages in uv.lock, and the tools, the library sources and the pillow-heif wheel above by
+SHA-256 in scripts/vendor_manifest.json. A
+build's complete bill of materials is produced by scripts/sbom.sh.
+
+If you build your own installer, keep this file accurate: swapping a bundled tool for one
+with a different license changes the obligations that travel with it.

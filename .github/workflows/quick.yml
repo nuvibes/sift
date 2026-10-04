@@ -1,0 +1,242 @@
+name: quick
+
+# The checks that answer in minutes, on every pull request and on every push to main. The whole
+# suite, the coverage gates and the browser run are suite.yml; a published release is checked by
+# release-verify.yml.
+#
+# One Linux job holds everything that reads the same on any operating system, and one Windows job
+# holds only what does not. The mypy pass is the one Windows-specific check that stays on Linux,
+# because `--platform win32` makes mypy read the Windows branches exactly as a Windows run would.
+#
+# Each check after the setup runs even when an earlier one failed (`!cancelled()`), so one run
+# lists everything there is to fix. scripts/ci-local.sh runs the same checks with no argument.
+#
+# Actions are pinned to commit SHAs, not tags: a tag can be moved by whoever controls the action's
+# repository, and the action runs with this workflow's token. The comment names the tag.
+#
+# A pull request from a fork runs here with a read-only token and no secret: nothing in this file
+# names one. Each job states the permissions it needs, and the workflow grants none by default.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions: {}
+
+# Bash on every runner, Windows included, so one script reads the same everywhere.
+defaults:
+  run:
+    shell: bash
+
+concurrency:
+  group: quick-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    # Most of this job is the client's unit tests, twenty minutes on a hosted runner; the limit
+    # leaves room for the gates after them and for a slow runner.
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0 # the secret scan reads every commit
+          persist-credentials: false
+      - uses: ./.github/actions/python
+      - uses: ./.github/actions/node
+        with:
+          workspace: frontend
+      - uses: ./.github/actions/gitleaks
+      - uses: ./.github/actions/actionlint
+
+      # The script pre-push runs, so what blocks a push and what blocks a build are one command.
+      - name: No secret in any commit
+        run: bash scripts/gitleaks_full_history.sh
+
+      - name: Repository hygiene
+
+        if: ${{ !cancelled() }}
+        run: bash scripts/check_repo_hygiene.sh
+
+      - name: No double-hyphen dash anywhere, and em dashes in copy
+        if: ${{ !cancelled() }}
+        run: uv run python scripts/check_display_dashes.py
+
+      - name: Code length and prose may only fall
+        if: ${{ !cancelled() }}
+        run: uv run python scripts/check_code_shape.py
+
+      - name: The workflows say what they mean
+        if: ${{ !cancelled() }}
+        run: actionlint -color
+
+      - name: Lint
+        if: ${{ !cancelled() }}
+        run: uv run ruff check .
+
+      - name: Format
+        if: ${{ !cancelled() }}
+        run: uv run ruff format --check .
+
+      # mypy narrows `sys.platform` to the one it is told, so this checks the branches the
+      # installer runs.
+      - name: Types, as Windows runs them
+        if: ${{ !cancelled() }}
+        run: uv run mypy --platform win32
+
+      # The rules must catch their violations and stay quiet on correct code before they scan.
+      - name: The semgrep rules hold
+        if: ${{ !cancelled() }}
+        run: uv run python scripts/venv_tool.py semgrep --test --config semgrep/ semgrep/
+
+      - name: Semgrep
+        if: ${{ !cancelled() }}
+        run: uv run python scripts/venv_tool.py semgrep scan --config semgrep/ --error
+
+      # Against the LOCKED set, with Sift itself left out (an editable install has no PyPI record,
+      # which --strict would count as a failure). Nothing is ignored, and pyproject.toml holds a
+      # click floor above its advisory.
+      - name: Known vulnerabilities in the Python set
+        if: ${{ !cancelled() }}
+        run: |
+          set -euo pipefail
+          exported="$RUNNER_TEMP/requirements.txt"
+          uv export --frozen --no-emit-project --extra dev --format requirements-txt > "$exported"
+          uv run pip-audit --strict -r "$exported"
+
+      # Sift is AGPL-3.0 and bundles GPL tools, so a dependency under an incompatible licence, or
+      # one this cannot recognise, makes the distribution unshippable. Checked on the change that
+      # adds it; release-verify.yml keeps the bill of materials of what shipped.
+      - name: Every Python licence is compatible
+        if: ${{ !cancelled() }}
+        run: |
+          uv run bash scripts/sbom.sh "$RUNNER_TEMP/sbom.cdx.json"
+          uv run python scripts/check_licenses.py "$RUNNER_TEMP/sbom.cdx.json"
+
+      # A resolve proves the constraints agree, not that a Windows wheel exists: a source-only
+      # package resolves and then demands a compiler on somebody's machine. This asks PyPI.
+      - name: Every dependency has a Windows wheel
+        if: ${{ !cancelled() }}
+        run: uv run python scripts/check_windows_wheels.py --extra dev
+
+      - name: Client types
+        if: ${{ !cancelled() }}
+        working-directory: frontend
+        run: npm run check
+
+      - name: Client format
+        if: ${{ !cancelled() }}
+        working-directory: frontend
+        run: npm run format:check
+
+      # With coverage, so the ratchet below reads what this run wrote rather than a second run; it
+      # adds about a sixth. Every CPU the runner has: vitest keeps one back for itself by default,
+      # which on a two-CPU runner is one worker for the whole suite while its own process waits.
+      # The report is written when a test fails too, so the counts below are kept from every run.
+      - name: Client unit tests
+        id: client-unit
+        if: ${{ !cancelled() }}
+        working-directory: frontend
+        run: npm run test:unit:coverage -- --maxWorkers=100% --coverage.reportOnFailure
+
+      # The per-file counts behind the ratchet, kept so two runs can be compared line for line.
+      - name: Keep what the client tests reached
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: client-coverage-${{ runner.os }}
+          path: frontend/coverage/coverage-summary.json
+          if-no-files-found: warn
+          retention-days: 14
+
+      # Only over a suite that passed: a failed test stops short of what it reaches, and the ratchet
+      # would report that as a second fault.
+      - name: What the client tests reach
+        if: ${{ !cancelled() && steps.client-unit.outcome == 'success' }}
+        working-directory: frontend
+        run: node scripts/check_client_coverage.js
+
+      - name: Build the client
+        if: ${{ !cancelled() }}
+        working-directory: frontend
+        run: npm run build
+
+      # Every check_*.js that reads the source tree, in one parallel run: the case collisions, the
+      # licences, the tokens, the vocabulary, the narration list and the rest. A new check is in
+      # this step the moment it is written; frontend/scripts/gates.js lists the three it leaves
+      # out, and those three are the steps around it.
+      - name: The client's structural gates
+        if: ${{ !cancelled() }}
+        working-directory: frontend
+        run: npm run gate:structure
+
+      # Reads the build, so it follows it.
+      - name: Nothing is fetched from off the machine
+        if: ${{ !cancelled() }}
+        working-directory: frontend
+        run: npm run gate:offline
+
+      - name: No style rule matches nothing
+        if: ${{ !cancelled() }}
+        working-directory: frontend
+        run: npm run gate:dead-css
+
+      - name: Known vulnerabilities in the client
+        if: ${{ !cancelled() }}
+        working-directory: frontend
+        run: npm audit --audit-level=high
+
+      # The client's types are generated from the server's schema. A server that gained a field the
+      # client never heard about is a screen that breaks later; here it is a diff now.
+      # `.gitattributes` normalises line endings, so the comparison reads the same on any runner.
+      - name: The client's types match the server
+        if: ${{ !cancelled() }}
+        run: |
+          uv run python scripts/dump_openapi.py frontend/openapi.json
+          (cd frontend && npx openapi-typescript openapi.json -o src/lib/api/schema.d.ts)
+          git diff --exit-code -- frontend/openapi.json frontend/src/lib/api/schema.d.ts \
+            || { echo "::error::The API changed and the client's types were not regenerated. Run scripts/dump_openapi.py and openapi-typescript, and commit the result."; exit 1; }
+
+      # The repository's own rules, the tier marked `unit`: each reads the tree and decides, in a
+      # couple of minutes together. The slow rest (the application, a database, node, the scanners)
+      # run with the whole suite; tests/gates/test_ci_runs_where_sift_ships.py names each and why.
+      - name: The repository's gates
+        if: ${{ !cancelled() }}
+        run: uv run pytest tests/gates -m unit -n auto --ignore=tests/gates/test_authz_matrix.py
+
+  # The shell people install, on the only operating system it is installed on. Its code branches on
+  # `process.platform`, so the coverage ratchet reads differently anywhere else, and `npm ci` here
+  # resolves Electron and the packer for the target they build.
+  desktop:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/node
+        with:
+          workspace: desktop
+
+      - name: Types
+        run: npm run typecheck
+
+      - name: What the shell's tests reach
+        if: ${{ !cancelled() }}
+        run: npm run gate:coverage
+
+      # Not the bare `npm audit`: this tree carries one advisory no published release fixes, and
+      # the script names it and what would retire it. Anything else at or above high fails.
+      - name: Known vulnerabilities in the shell
+        if: ${{ !cancelled() }}
+        run: npm run gate:audit

@@ -1,0 +1,192 @@
+name: suite
+
+# The whole Python suite in shards, the authorization matrix, the per-module coverage gates, the
+# browser run, and the tools the installer ships, run for real. Weekly, and whenever it is
+# dispatched by hand.
+#
+# A private copy of this repository has a monthly allowance of Actions minutes that one run takes
+# a large share of, so there every job waits to be dispatched; a public one runs on the schedule.
+#
+# Windows for every job that runs Sift: the coverage gates hold every module at 100% as measured
+# where Sift ships, and the suite's platform branches are the installer's.
+
+on:
+  schedule:
+    - cron: "17 3 * * 1"
+  workflow_dispatch:
+
+# Each job states the permissions it needs, and the workflow grants none by default.
+permissions: {}
+
+# Bash on every runner, Windows included, so one script reads the same everywhere.
+defaults:
+  run:
+    shell: bash
+
+concurrency:
+  group: suite-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Twelve shards, each every twelfth test file in sorted order (.github/scripts/shard_tests.py),
+  # so every file is in exactly one shard and a new one needs no edit here. The count is the
+  # length of this list and nothing else.
+  tests:
+    if: github.event_name == 'workflow_dispatch' || !github.event.repository.private
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+    runs-on: windows-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    env:
+      CI: "true"
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/prepare-suite
+      - name: This shard
+        run: |
+          set -euo pipefail
+          mapfile -t files < <(uv run python .github/scripts/shard_tests.py \
+            "${{ strategy.job-index }}" "${{ strategy.job-total }}")
+          uv run pytest -n auto "${files[@]}"
+
+  # The one test file large enough to be a shard on its own: every route put to every role.
+  authz:
+    if: github.event_name == 'workflow_dispatch' || !github.event.repository.private
+    runs-on: windows-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    env:
+      CI: "true"
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/prepare-suite
+      - name: Every route, every role
+        run: |
+          set -euo pipefail
+          mapfile -t files < <(uv run python .github/scripts/shard_tests.py --alone)
+          uv run pytest -n auto "${files[@]}"
+
+  # The per-module gates at 100%, declared once in scripts/coverage_gates.sh for this job and
+  # scripts/ci-local.sh alike, in six shards: shard K runs the gates whose place in the script's
+  # list leaves K-1 over six, so every gate is in exactly one shard and a new one needs no edit
+  # here (tests/gates/test_coverage_gates_are_sharded.py holds the list and this matrix to that).
+  # Six because the gates take about four hours as one job on a hosted runner, a sixth of that sits
+  # well inside the ninety minutes the test shards are given, and each shard pays the setup once
+  # more, so more shards would buy less. The count is the length of this list, and the `/6` below says the same number.
+  # SIFT_CI_JOBS hands them the whole runner: the script's default holds cores back for other
+  # work on a shared machine, and a runner has none.
+  coverage:
+    if: github.event_name == 'workflow_dispatch' || !github.event.repository.private
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6]
+    runs-on: windows-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    env:
+      CI: "true"
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/prepare-suite
+
+      # The query parser against arbitrary input, with a fixed seed so a failure reproduces. It is
+      # hand-written and fed whatever is typed into a search box, and it decides what reaches an
+      # FTS5 match expression. Once, in the first shard.
+      - name: The query parser holds against arbitrary input
+        if: matrix.shard == 1
+        run: |
+          uv run pytest src/sift/slices/search/tests/test_properties.py \
+            -p no:randomly --hypothesis-seed=0
+
+      - name: The coverage gates hold at 100 percent
+        if: ${{ !cancelled() }}
+        run: SIFT_CI_JOBS="$(nproc)" bash scripts/coverage_gates.sh --shard "${{ matrix.shard }}/6"
+
+  # The app in a real browser, served by the real server: the one check of the assembly, where a
+  # policy refusing the app's own script is a blank page behind a perfectly good 200.
+  e2e:
+    if: github.event_name == 'workflow_dispatch' || !github.event.repository.private
+    runs-on: windows-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/python
+      - uses: ./.github/actions/node
+        with:
+          workspace: frontend
+
+      - name: A browser to run in
+        working-directory: frontend
+        run: npx playwright install chromium
+
+      - name: End to end
+        working-directory: frontend
+        run: npm run test:e2e
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: frontend/playwright-report/
+          retention-days: 7
+
+  # The tools the installer ships, run for real. The unit tests assert the arguments Sift hands
+  # ffmpeg; only these run the ffmpeg and libwebp builds in vendor/bin, and the face runtime, and
+  # look at what came out: an ffmpeg can accept an argument, write nothing and exit 0.
+  shipped:
+    if: github.event_name == 'workflow_dispatch' || !github.event.repository.private
+    runs-on: windows-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      CI: "true"
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/prepare-suite
+
+      - name: The ingress gate holds against the ffmpeg that ships
+        run: uv run python scripts/check_ingress_corpus.py src/sift/kernel/tests/fixtures/ingress
+
+      - name: The face runtime works, and no model ships
+        if: ${{ !cancelled() }}
+        run: uv run python scripts/check_face_runtime.py
+
+      - name: A still comes out of the ffmpeg that ships
+        if: ${{ !cancelled() }}
+        run: uv run python scripts/check_derivatives.py src/sift/kernel/tests/fixtures/ingress
+
+      - name: An animated WebP is readable with the tools that ship
+        if: ${{ !cancelled() }}
+        run: uv run python scripts/check_animated_webp.py src/sift/kernel/tests/fixtures/ingress
+
+      - name: The repair runs on the ffmpeg that ships
+        if: ${{ !cancelled() }}
+        run: uv run python scripts/check_remux.py
+
+      - name: Compressing runs on the ffmpeg that ships
+        if: ${{ !cancelled() }}
+        run: uv run python scripts/check_compress.py
+
+      - name: Measuring the machine runs on the ffmpeg that ships
+        if: ${{ !cancelled() }}
+        run: uv run python scripts/check_selftest.py

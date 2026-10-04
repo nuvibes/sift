@@ -1,0 +1,392 @@
+diff -ruN a/vendor/golang.zx2c4.com/wireguard/tun/netstack/clock_other.go b/vendor/golang.zx2c4.com/wireguard/tun/netstack/clock_other.go
+--- /dev/null
++++ b/vendor/golang.zx2c4.com/wireguard/tun/netstack/clock_other.go
+@@ -0,0 +1,14 @@
++//go:build !windows
++
++/* SPDX-License-Identifier: MIT
++ *
++ * Copyright (C) 2017-2025 WireGuard LLC. All Rights Reserved.
++ */
++
++package netstack
++
++import "gvisor.dev/gvisor/pkg/tcpip"
++
++// newStackClock returns nil: the stack then uses its standard clock, which has
++// nanosecond steps on these systems.
++func newStackClock() tcpip.Clock { return nil }
+diff -ruN a/vendor/golang.zx2c4.com/wireguard/tun/netstack/clock_windows.go b/vendor/golang.zx2c4.com/wireguard/tun/netstack/clock_windows.go
+--- /dev/null
++++ b/vendor/golang.zx2c4.com/wireguard/tun/netstack/clock_windows.go
+@@ -0,0 +1,66 @@
++/* SPDX-License-Identifier: MIT
++ *
++ * Copyright (C) 2017-2025 WireGuard LLC. All Rights Reserved.
++ */
++
++package netstack
++
++import (
++	"syscall"
++	"time"
++	"unsafe"
++
++	"golang.org/x/sys/windows"
++	"gvisor.dev/gvisor/pkg/tcpip"
++)
++
++// On Windows the Go runtime's monotonic clock is the kernel's interrupt time,
++// which only advances at a timer interrupt: in steps of 0.5 to 1 ms while some
++// program has asked for a fine timer and of 15.6 ms otherwise. TCP's loss
++// detection (RACK), its round-trip samples and CUBIC's slow-start exit all
++// compare transmit and arrival times, so the stack is given a clock read from
++// the performance counter instead (steps well under a microsecond). Timers
++// still come from the time package.
++
++var (
++	kernel32                      = windows.NewLazySystemDLL("kernel32.dll")
++	procQueryPerformanceCounter   = kernel32.NewProc("QueryPerformanceCounter")
++	procQueryPerformanceFrequency = kernel32.NewProc("QueryPerformanceFrequency")
++)
++
++type performanceClock struct {
++	counter   uintptr
++	base      int64
++	frequency int64
++}
++
++func newStackClock() tcpip.Clock {
++	if procQueryPerformanceCounter.Find() != nil || procQueryPerformanceFrequency.Find() != nil {
++		return nil
++	}
++	c := &performanceClock{counter: procQueryPerformanceCounter.Addr()}
++	syscall.SyscallN(procQueryPerformanceFrequency.Addr(), uintptr(unsafe.Pointer(&c.frequency)))
++	syscall.SyscallN(c.counter, uintptr(unsafe.Pointer(&c.base)))
++	if c.frequency <= 0 {
++		return nil
++	}
++	return c
++}
++
++// Now implements tcpip.Clock.Now.
++func (*performanceClock) Now() time.Time { return time.Now() }
++
++// NowMonotonic implements tcpip.Clock.NowMonotonic.
++func (c *performanceClock) NowMonotonic() tcpip.MonotonicTime {
++	var now int64
++	syscall.SyscallN(c.counter, uintptr(unsafe.Pointer(&now)))
++	ticks := now - c.base
++	nanoseconds := (ticks/c.frequency)*int64(time.Second) + (ticks%c.frequency)*int64(time.Second)/c.frequency
++	var zero tcpip.MonotonicTime
++	return zero.Add(time.Duration(nanoseconds))
++}
++
++// AfterFunc implements tcpip.Clock.AfterFunc.
++func (*performanceClock) AfterFunc(d time.Duration, f func()) tcpip.Timer {
++	return tcpip.NewStdTimer(time.AfterFunc(d, f))
++}
+diff -ruN a/vendor/golang.zx2c4.com/wireguard/tun/netstack/tun.go b/vendor/golang.zx2c4.com/wireguard/tun/netstack/tun.go
+--- a/vendor/golang.zx2c4.com/wireguard/tun/netstack/tun.go
++++ b/vendor/golang.zx2c4.com/wireguard/tun/netstack/tun.go
+@@ -55,8 +55,9 @@
+ func CreateNetTUN(localAddresses, dnsServers []netip.Addr, mtu int) (tun.Device, *Net, error) {
+ 	opts := stack.Options{
+ 		NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol, ipv6.NewProtocol},
+-		TransportProtocols: []stack.TransportProtocolFactory{tcp.NewProtocol, udp.NewProtocol, icmp.NewProtocol6, icmp.NewProtocol4},
++		TransportProtocols: []stack.TransportProtocolFactory{tcp.NewProtocolCUBIC, udp.NewProtocol, icmp.NewProtocol6, icmp.NewProtocol4},
+ 		HandleLocal:        true,
++		Clock:              newStackClock(),
+ 	}
+ 	dev := &netTun{
+ 		ep:             channel.New(1024, uint32(mtu), ""),
+@@ -71,6 +72,17 @@
+ 	if tcpipErr != nil {
+ 		return nil, nil, fmt.Errorf("could not enable TCP SACK: %v", tcpipErr)
+ 	}
++	// The stack's own limit of 4 MiB caps one connection at about 2 MiB per
++	// round trip; 16 MiB lets a long path (two tunnels in series) carry more.
++	// The starting size stays 1 MiB and grows only as the path's window does.
++	sndBuf := tcpip.TCPSendBufferSizeRangeOption{Min: tcp.MinBufferSize, Default: tcp.DefaultSendBufferSize, Max: 16 << 20}
++	if tcpipErr := dev.stack.SetTransportProtocolOption(tcp.ProtocolNumber, &sndBuf); tcpipErr != nil {
++		return nil, nil, fmt.Errorf("could not set the TCP send buffer range: %v", tcpipErr)
++	}
++	rcvBuf := tcpip.TCPReceiveBufferSizeRangeOption{Min: tcp.MinBufferSize, Default: tcp.DefaultReceiveBufferSize, Max: 16 << 20}
++	if tcpipErr := dev.stack.SetTransportProtocolOption(tcp.ProtocolNumber, &rcvBuf); tcpipErr != nil {
++		return nil, nil, fmt.Errorf("could not set the TCP receive buffer range: %v", tcpipErr)
++	}
+ 	dev.notifyHandle = dev.ep.AddNotify(dev)
+ 	tcpipErr = dev.stack.CreateNIC(1, dev.ep)
+ 	if tcpipErr != nil {
+diff -ruN a/vendor/gvisor.dev/gvisor/pkg/tcpip/transport/tcp/rack.go b/vendor/gvisor.dev/gvisor/pkg/tcpip/transport/tcp/rack.go
+--- a/vendor/gvisor.dev/gvisor/pkg/tcpip/transport/tcp/rack.go
++++ b/vendor/gvisor.dev/gvisor/pkg/tcpip/transport/tcp/rack.go
+@@ -275,12 +275,20 @@
+ 	}
+ 
+ 	if s.rc.tlpRxtOut && s.rc.tlpHighRxt.LessThanEq(ack) {
+-		// TLP episode is complete.
+-		s.rc.tlpRxtOut = false
+-		if !checkDSACK(rcvdSeg) {
++		// RFC 8985 section 7.4.2. A DSACK shows that both the original and
++		// the probe arrived, so nothing was lost. Without one, only an ACK
++		// beyond the probe's sequence shows that the probe repaired a loss.
++		// An ACK exactly at that sequence is the original's own ACK arriving
++		// late: the episode stays open until the DSACK for the probe, or an
++		// ACK of later data, settles it.
++		if checkDSACK(rcvdSeg) {
++			s.rc.tlpRxtOut = false
++		} else if s.rc.tlpHighRxt.LessThan(ack) {
++			s.rc.tlpRxtOut = false
+ 			// Step 2. Either the original packet or the retransmission (in the
+ 			// form of a probe) was lost. Invoke a congestion control response
+ 			// equivalent to fast recovery.
++			s.undoValid = false
+ 			s.cc.HandleLossDetected()
+ 			s.enterRecovery()
+ 			s.leaveRecovery()
+@@ -448,6 +456,7 @@
+ 
+ 	fastRetransmit := false
+ 	if !rc.snd.FastRecovery.Active {
++		rc.snd.saveUndo()
+ 		rc.snd.cc.HandleLossDetected()
+ 		rc.snd.enterRecovery()
+ 		fastRetransmit = true
+diff -ruN a/vendor/gvisor.dev/gvisor/pkg/tcpip/transport/tcp/snd.go b/vendor/gvisor.dev/gvisor/pkg/tcpip/transport/tcp/snd.go
+--- a/vendor/gvisor.dev/gvisor/pkg/tcpip/transport/tcp/snd.go
++++ b/vendor/gvisor.dev/gvisor/pkg/tcpip/transport/tcp/snd.go
+@@ -184,6 +184,24 @@
+ 	// RFC3522 Section 3.2.
+ 	retransmitTS uint32
+ 
++	// undoValid reports whether the fields below hold the congestion state
++	// from just before the most recent fast-recovery loss response, so that
++	// the response can be undone if the recovery proves spurious.
++	undoValid bool `state:"nosave"`
++
++	// undoCwnd and undoSsthresh are SndCwnd and Ssthresh before the response.
++	undoCwnd     int `state:"nosave"`
++	undoSsthresh int `state:"nosave"`
++
++	// undoCubic reports whether the undoCubic* fields hold CUBIC's epoch
++	// state from before the response.
++	undoCubic         bool                `state:"nosave"`
++	undoCubicT        tcpip.MonotonicTime `state:"nosave"`
++	undoCubicK        float64             `state:"nosave"`
++	undoCubicWMax     float64             `state:"nosave"`
++	undoCubicWLastMax float64             `state:"nosave"`
++	undoCubicEvents   int                 `state:"nosave"`
++
+ 	// startCork start corking the segments.
+ 	startCork bool
+ 
+@@ -632,6 +650,7 @@
+ 	s.recordRetransmitTS()
+ 
+ 	s.state = tcpip.RTORecovery
++	s.undoValid = false
+ 	s.cc.HandleRTOExpired()
+ 
+ 	// Mark the next segment to be sent as the first unacknowledged one and
+@@ -656,6 +675,13 @@
+ 	// information as we lack more rigorous checks to validate if the SACK
+ 	// information is usable after an RTO.
+ 	s.ep.scoreboard.Reset()
++	// The per-segment SACK marks go with the scoreboard: every segment is
++	// again unacknowledged, is counted in flight when it is resent, and is
++	// taken out of that count by the cumulative ACK.
++	s.SackedOut = 0
++	for seg := s.writeList.Front(); seg != nil && seg.xmitCount != 0; seg = seg.Next() {
++		seg.acked = false
++	}
+ 	s.updateWriteNext(s.writeList.Front())
+ 
+ 	// RFC 1122 4.2.2.17: Start sending zero window probes when we still see a
+@@ -1176,6 +1202,69 @@
+ 	s.ep.stack.Stats().TCP.FastRecovery.Increment()
+ }
+ 
++// saveUndo records the congestion state just before a fast-recovery loss
++// response, for undoRecovery.
++//
++// +checklocks:s.ep.mu
++func (s *sender) saveUndo() {
++	s.undoValid = true
++	s.undoCwnd = s.SndCwnd
++	s.undoSsthresh = s.Ssthresh
++	s.undoCubic = false
++	if c, ok := s.cc.(*cubicState); ok {
++		s.undoCubic = true
++		s.undoCubicT = c.T
++		s.undoCubicK = c.K
++		s.undoCubicWMax = c.WMax
++		s.undoCubicWLastMax = c.WLastMax
++		s.undoCubicEvents = c.numCongestionEvents
++	}
++}
++
++// undoRecovery reverts the congestion response of a recovery that the
++// RFC 3522 check has judged spurious (the response of RFC 4015; Linux does the
++// same in tcp_undo_cwnd_reduction with unmark_loss). The window and threshold
++// return to their values from before the response, the segments RACK marked
++// lost are unmarked, and RACK's reordering window is widened one step, as it
++// is for a DSACK, so that the same delay is tolerated the next time.
++//
++// +checklocks:s.ep.mu
++func (s *sender) undoRecovery() {
++	s.undoValid = false
++	outstanding := 0
++	for seg := s.writeList.Front(); seg != nil && seg.xmitCount != 0; seg = seg.Next() {
++		seg.lost = false
++		if !s.ep.scoreboard.IsSACKED(seg.sackBlock()) {
++			outstanding += s.pCount(seg, s.MaxPayloadSize)
++		}
++	}
++	s.Outstanding = outstanding
++	if s.undoSsthresh > s.Ssthresh {
++		s.Ssthresh = s.undoSsthresh
++	}
++	if s.undoCwnd > s.SndCwnd {
++		s.SndCwnd = s.undoCwnd
++	}
++	if c, ok := s.cc.(*cubicState); ok && s.undoCubic {
++		c.T = s.undoCubicT
++		c.K = s.undoCubicK
++		c.WMax = s.undoCubicWMax
++		c.WLastMax = s.undoCubicWLastMax
++		c.numCongestionEvents = s.undoCubicEvents
++	}
++	if s.FastRecovery.Active {
++		s.FastRecovery.Active = false
++		s.FastRecovery.MaxCwnd = 0
++		s.DupAckCount = 0
++	}
++	s.rc.Reord = true
++	if s.rc.ReoWndIncr < math.MaxUint8 {
++		s.rc.ReoWndIncr++
++	}
++	s.rc.ReoWndPersist = tcpRACKRecoveryThreshold
++	s.reorderTimer.disable()
++}
++
+ // +checklocks:s.ep.mu
+ func (s *sender) leaveRecovery() {
+ 	s.FastRecovery.Active = false
+@@ -1309,6 +1398,7 @@
+ 		s.DupAckCount = 0
+ 		return false
+ 	}
++	s.saveUndo()
+ 	s.cc.HandleLossDetected()
+ 	s.enterRecovery()
+ 	return true
+@@ -1379,8 +1469,10 @@
+ 	// block. The following blocks can be in arbitrary order.
+ 	sackBlocks := make([]header.SACKBlock, n)
+ 	copy(sackBlocks, rcvdSeg.parsedOptions.SACKBlocks[idx:])
++	// Ascending, so that the single forward walk of the write list below
++	// reaches every block (descending order applied only the highest one).
+ 	sort.Slice(sackBlocks, func(i, j int) bool {
+-		return sackBlocks[j].Start.LessThan(sackBlocks[i].Start)
++		return sackBlocks[i].Start.LessThan(sackBlocks[j].Start)
+ 	})
+ 
+ 	seg := s.writeList.Front()
+@@ -1391,6 +1483,16 @@
+ 				s.rc.detectReorder(seg)
+ 				seg.acked = true
+ 				s.SackedOut += s.pCount(seg, s.MaxPayloadSize)
++				if !s.FastRecovery.Active {
++					// Outside recovery SetPipe does not recompute the
++					// in-flight count, so a selectively acknowledged
++					// segment leaves it here; the cumulative ACK that
++					// later covers the segment does not subtract it again.
++					s.Outstanding -= s.pCount(seg, s.MaxPayloadSize)
++					if s.Outstanding < 0 {
++						s.Outstanding = 0
++					}
++				}
+ 			}
+ 			seg = seg.Next()
+ 		}
+@@ -1514,6 +1616,12 @@
+ 	s.spuriousRecovery = true
+ 	s.ep.stack.Stats().TCP.SpuriousRecovery.Increment()
+ 
++	// RFC 4015: a fast recovery that was spurious did not signal congestion,
++	// so its window reduction is reverted. A timeout recovery is left alone.
++	if s.undoValid && s.state != tcpip.RTORecovery {
++		s.undoRecovery()
++	}
++
+ 	// RFC 3522 will detect all kinds of spurious recoveries (fast, SACK and
+ 	// timeout). Increment the metric for RTO only as we want to track the
+ 	// number of timeout recoveries.
+@@ -1675,6 +1783,7 @@
+ 		s.SndUna = ack
+ 		ackLeft := acked
+ 		originalOutstanding := s.Outstanding
++		sackedDelivered := 0
+ 		for ackLeft > 0 {
+ 			// We use logicalLen here because we can have FIN
+ 			// segments (which are always at the end of list) that
+@@ -1709,7 +1818,18 @@
+ 			// If SACK is enabled then only reduce outstanding if
+ 			// the segment was not previously SACKED as these have
+ 			// already been accounted for in SetPipe().
+-			if !s.ep.SACKPermitted || !s.ep.scoreboard.IsSACKED(seg.sackBlock()) {
++			if s.ep.SACKPermitted && s.ep.tcpRecovery&tcpip.TCPRACKLossDetection != 0 {
++				// With RACK, walkSACK has already taken every selectively
++				// acknowledged segment out of the in-flight count (or SetPipe
++				// has, during recovery); such a segment still counts as
++				// delivered for congestion window growth.
++				if seg.acked {
++					s.SackedOut -= s.pCount(seg, s.MaxPayloadSize)
++					sackedDelivered += s.pCount(seg, s.MaxPayloadSize)
++				} else {
++					s.Outstanding -= s.pCount(seg, s.MaxPayloadSize)
++				}
++			} else if !s.ep.SACKPermitted || !s.ep.scoreboard.IsSACKED(seg.sackBlock()) {
+ 				s.Outstanding -= s.pCount(seg, s.MaxPayloadSize)
+ 			} else {
+ 				s.SackedOut -= s.pCount(seg, s.MaxPayloadSize)
+@@ -1729,16 +1849,23 @@
+ 		// If we are not in fast recovery then update the congestion
+ 		// window based on the number of acknowledged packets.
+ 		if !s.FastRecovery.Active {
+-			s.cc.Update(originalOutstanding-s.Outstanding, bestRTT, rcvdSeg.rcvdTime)
++			s.cc.Update(originalOutstanding-s.Outstanding+sackedDelivered, bestRTT, rcvdSeg.rcvdTime)
+ 			if s.FastRecovery.Last.LessThan(s.SndUna) {
++				// Only the ACK that ends a recovery is an exit from it. Telling
++				// RACK on every ACK of an open connection used up its
++				// "persist for 16 recoveries" count in 16 ACKs and reset the
++				// widened reordering window at once.
++				wasRecovering := s.state == tcpip.RTORecovery || s.state == tcpip.FastRecovery || s.state == tcpip.SACKRecovery
+ 				s.state = tcpip.Open
+-				// Update RACK when we are exiting fast or RTO
+-				// recovery as described in the RFC
+-				// draft-ietf-tcpm-rack-08 Section-7.2 Step 4.
+-				if s.ep.tcpRecovery&tcpip.TCPRACKLossDetection != 0 {
+-					s.rc.exitRecovery()
++				if wasRecovering {
++					// Update RACK when we are exiting fast or RTO
++					// recovery as described in the RFC
++					// draft-ietf-tcpm-rack-08 Section-7.2 Step 4.
++					if s.ep.tcpRecovery&tcpip.TCPRACKLossDetection != 0 {
++						s.rc.exitRecovery()
++					}
++					s.reorderTimer.disable()
+ 				}
+-				s.reorderTimer.disable()
+ 			}
+ 		}
+ 
+@@ -1776,6 +1903,7 @@
+ 		// if the time elapsed after the segments are sent is greater than the
+ 		// reorder window.
+ 		if numLost := s.rc.detectLoss(rcvdSeg.rcvdTime); numLost > 0 && !s.FastRecovery.Active {
++			s.saveUndo()
+ 			// If any segment is marked as lost by
+ 			// RACK, enter recovery and retransmit
+ 			// the lost segments.

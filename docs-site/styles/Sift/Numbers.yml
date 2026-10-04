@@ -1,0 +1,9 @@
+# Apple Style Guide, numbers: spell out one through nine, except a number used as a number or with
+# a unit of measure. A suggestion, because "the number 4 appears" is right and a regular
+# expression cannot tell.
+extends: existence
+message: "Spell out '%s' unless it is a measurement or a number as a number (Apple Style Guide, numbers)."
+level: suggestion
+nonword: true
+raw:
+  - '(?<![\w.,:/#-])[1-9] (?!(?:KB|MB|GB|TB|ms|s|sec|min|minutes?|hours?|days?|seconds?|px|fps|x|to|and|or)\b)[a-z]+'

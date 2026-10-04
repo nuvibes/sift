@@ -1,0 +1,9 @@
+# Apple Style Guide, once: "Don't use when you mean after." A warning, because once also means
+# one time ("Sift downloads the models once"), which is right.
+extends: existence
+message: "If '%s' means after, write after (Apple Style Guide, once)."
+level: warning
+ignorecase: false
+raw:
+  - '(?:^|(?<=[.!?]\s))Once\b'
+  - '|\bonce (?:you|it|the|Sift|a|an|your)\b'

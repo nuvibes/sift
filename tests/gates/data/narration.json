@@ -1,0 +1,51 @@
+{
+	"_note": "Words a comment, a docstring or a commit message in this repository does not use. One list, three readers: tests/gates/test_no_narration_in_comments.py (Python and shell comments), frontend/scripts/check_no_narration.js (the client and the desktop shell) and scripts/check_commit_message.sh (the message). Each pattern is written in the part of regular-expression syntax Python, JavaScript and PCRE read the same way, is case-insensitive unless it says \"case\": true, must match its own example and must not match its clean one. One entry per line: the shell reader depends on it.",
+	"families": [
+		{
+			"name": "date",
+			"why": "A date in a comment dates the comment: it says when something was learned, not why the code is as it is.",
+			"entries": [
+				{"pattern": "\\b20\\d\\d-[01]\\d-[0-3]\\d\\b", "example": "Measured 2026-09-16: the dialog closed early.", "clean": "an ISO week such as 2026-W39"}
+			]
+		},
+		{
+			"name": "process",
+			"why": "A person named where a role or a reason belongs. It stops being true when somebody else maintains the file, and it never says why the code is right.",
+			"entries": [
+				{"pattern": "\\bthe (?:owner|builder|developer)(?:'s)?\\b", "example": "kept as the developer prefers", "clean": "the ownership a program applies"},
+				{"pattern": "\\b(?:owner|developer)'s\\b", "example": "per a developer's note", "clean": "the ownership rules"}
+			]
+		},
+		{
+			"name": "history",
+			"why": "The story of how a rule was arrived at. Keep the rule; the story belongs in the commit that changed it.",
+			"entries": [
+				{"pattern": "\\brefuted\\b", "example": "REFUTED: the first reading", "clean": "it refutes nothing"},
+				{"pattern": "\\bwhat stood here\\b", "example": "what stood here read the whole table", "clean": "what stands here now"},
+				{"pattern": "\\bmeasured on\\b", "example": "measured on a slow disk", "clean": "measured against the budget"},
+				{"pattern": "\\bcost a cycle\\b", "example": "that cost a cycle", "clean": "that cost a second"},
+				{"pattern": "\\b(?:it|this|that|which|has|have|had) bit (?:twice|again)\\b", "example": "it bit twice", "clean": "a bit twice as wide"}
+			]
+		},
+		{
+			"name": "authority",
+			"why": "Another product or a style guide named as the reason for a design. Say the need it meets; the other product's choice is not an argument this repository can check.",
+			"entries": [
+				{"pattern": "\\bHIG\\b", "case": true, "example": "spacing per the HIG", "clean": "a HIGH priority task"},
+				{"pattern": "\\bhuman interface guidelines\\b", "example": "as the Human Interface Guidelines recommend", "clean": "a human interface for the guidelines"},
+				{"pattern": "\\bmaterial design\\b", "example": "elevation as Material Design has it", "clean": "a material and a design"},
+				{"pattern": "\\bimmich\\b", "example": "the timeline Immich draws", "clean": "an immediate check"},
+				{"pattern": "\\bjellyfin\\b", "example": "the way Jellyfin pages a library", "clean": "a jelly fin"},
+				{"pattern": "\\bplex\\b", "example": "a Plex-style poster wall", "clean": "a complex or multiplex layout"},
+				{"pattern": "\\bphoto ?prism\\b", "example": "faces as PhotoPrism groups them", "clean": "a photo of a prism"}
+			]
+		},
+		{
+			"name": "machine",
+			"why": "A path on one development machine. It means nothing on anybody else's.",
+			"entries": [
+				{"pattern": "/mnt/[a-z]/", "example": "a copy under /mnt/c/work", "clean": "a share mounted at /mnt/media"}
+			]
+		}
+	]
+}

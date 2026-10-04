@@ -1,0 +1,19 @@
+{
+	"_note": "Every runtime dependency of the client, with the reason it is here. check_dependencies.js refuses a package.json dependency that is not on this list, and a list entry package.json no longer names. Add a package by adding a sentence; a second component library, a floating-position helper or a toast kit is not a reason: bits-ui and the primitives are those.",
+	"@fontsource-variable/archivo": "one of the typefaces the Appearance pane offers; the font files, subset at build time",
+	"@fontsource-variable/dm-sans": "one of the typefaces the Appearance pane offers; the font files, subset at build time",
+	"@fontsource-variable/geist": "one of the typefaces the Appearance pane offers; the font files, subset at build time",
+	"@fontsource-variable/geist-mono": "one of the typefaces the Appearance pane offers; the font files, subset at build time",
+	"@fontsource-variable/instrument-sans": "one of the typefaces the Appearance pane offers; the font files, subset at build time",
+	"@fontsource-variable/inter": "one of the typefaces the Appearance pane offers; the font files, subset at build time",
+	"@fontsource-variable/jetbrains-mono": "one of the typefaces the Appearance pane offers; the font files, subset at build time",
+	"@fontsource-variable/manrope": "one of the typefaces the Appearance pane offers; the font files, subset at build time",
+	"@fontsource-variable/public-sans": "one of the typefaces the Appearance pane offers; the font files, subset at build time",
+	"@fontsource-variable/sora": "one of the typefaces the Appearance pane offers; the font files, subset at build time",
+	"@fontsource-variable/space-grotesk": "one of the typefaces the Appearance pane offers; the font files, subset at build time",
+	"@internationalized/date": "the calendar arithmetic bits-ui's date fields are built on; DateField and DateRange hand its values through",
+	"bits-ui": "THE headless component library: every menu, dialog, select, switch, checkbox, tooltip and date field is built on it",
+	"hls.js": "plays the streaming ladder in browsers that cannot play HLS natively; the player's only media library",
+	"material-symbols": "the one icon set; the build cuts it down to the glyphs Icon names (scripts/prepare_fonts.js)",
+	"motion": "the spring and the interrupted transition the motion module uses where CSS transitions cannot be reversed mid-flight"
+}

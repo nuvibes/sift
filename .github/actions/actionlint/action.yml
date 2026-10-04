@@ -1,0 +1,69 @@
+name: actionlint
+description: The pinned actionlint binary on PATH, verified against its published checksum before it is trusted.
+
+# Nothing else reads a workflow before it runs, and a workflow with a fault in it is a run that
+# never starts rather than one that fails. actionlint checks the schema, every `${{ }}` expression,
+# the inputs handed to each action (these composite ones included) and, through shellcheck on the
+# PATH, every `run:` block. It cannot read an `action.yml` itself; the gate in
+# tests/gates/test_ci_runs_where_sift_ships.py stands in for that.
+#
+# Installed by checksum, like .github/actions/gitleaks, so it runs on Windows too and the tool
+# checking the build is not an unverified download. The pin lives here, as the inputs' defaults.
+
+# Bump all three together, from the release's published checksums.
+inputs:
+  version:
+    description: The actionlint release to install, without the leading v.
+    default: "1.7.12"
+  sha256-linux:
+    description: SHA-256 of actionlint_<version>_linux_amd64.tar.gz, from the published checksums.
+    default: "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8"
+  sha256-windows:
+    description: SHA-256 of actionlint_<version>_windows_amd64.zip, from the published checksums.
+    default: "6e7241b51e6817ea6a047693d8e6fed13b31819c9a0dd6c5a726e1592d22f6e9"
+
+runs:
+  using: composite
+  steps:
+    - if: runner.os == 'Linux'
+      shell: bash
+      env:
+        VERSION: ${{ inputs.version }}
+        SHA256: ${{ inputs.sha256-linux }}
+      run: |
+        set -euo pipefail
+        archive="$RUNNER_TEMP/actionlint.tar.gz"
+        curl -sSL -o "$archive" \
+          "https://github.com/rhysd/actionlint/releases/download/v${VERSION}/actionlint_${VERSION}_linux_amd64.tar.gz"
+        echo "${SHA256}  ${archive}" | sha256sum -c -
+        tar -xzf "$archive" -C "$RUNNER_TEMP" actionlint
+        sudo install -m 0755 "$RUNNER_TEMP/actionlint" /usr/local/bin/actionlint
+        actionlint --version
+
+    - if: runner.os == 'Windows'
+      # Windows PowerShell with its policy named: a runner account's default policy refuses a script
+      # file, and naming it keeps the step independent of the machine's setting.
+      shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
+      env:
+        VERSION: ${{ inputs.version }}
+        SHA256: ${{ inputs.sha256-windows }}
+      run: |
+        $ErrorActionPreference = 'Stop'
+        $ProgressPreference = 'SilentlyContinue'
+        [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+        $name = "actionlint_${env:VERSION}_windows_amd64.zip"
+        $zip = Join-Path $env:RUNNER_TEMP $name
+        Invoke-WebRequest -UseBasicParsing -OutFile $zip `
+          -Uri "https://github.com/rhysd/actionlint/releases/download/v$($env:VERSION)/$name"
+
+        # Before extraction, not after. An archive is trusted the moment it is unpacked, so the
+        # comparison has to stand between the download and everything that reads it.
+        $got = (Get-FileHash -Path $zip -Algorithm SHA256).Hash.ToLower()
+        if ($got -ne $env:SHA256.ToLower()) {
+          throw "actionlint $($env:VERSION) checksum is $got, expected $($env:SHA256)"
+        }
+
+        $dir = Join-Path $env:RUNNER_TEMP 'actionlint'
+        Expand-Archive -Path $zip -DestinationPath $dir -Force
+        Add-Content -Path $env:GITHUB_PATH -Value $dir
+        & (Join-Path $dir 'actionlint.exe') --version

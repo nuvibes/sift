@@ -1,0 +1,22 @@
+name: Request a feature
+description: Something Sift could do, or do differently.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: goal
+    attributes:
+      label: What you're trying to do
+    validations:
+      required: true
+  - type: textarea
+    id: obstacle
+    attributes:
+      label: What gets in the way today
+    validations:
+      required: true
+  - type: textarea
+    id: wish
+    attributes:
+      label: What you'd like to happen
+    validations:
+      required: true

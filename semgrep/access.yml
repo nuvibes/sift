@@ -1,0 +1,115 @@
+# The access-control rule, kept in its own file because its fixtures are SQL against the very
+# tables that python.py's injection fixtures use as their example. Sharing a fixture file would
+# mean every line in one being annotated for the rules of the other.
+
+rules:
+  # Assets, folders and the roots they sit in are the tables that carry the access rules. A query
+  # written against them anywhere else is a query with no permission check in it, and the row it
+  # returns looks exactly like a row the caller was allowed to see.
+  #
+  # A lint rather than a convention, because the mistake is not malice. It is a feature needing one
+  # asset, writing the obvious SELECT, and nobody noticing that the obvious SELECT is the entire
+  # bug class. Read them through the access layer, which is the only thing that knows who is asking.
+  - id: sift-no-asset-sql-outside-kernel
+    languages: [python]
+    severity: ERROR
+    message: >-
+      SQL against a permission-carrying table (assets, asset_locations, folders, library_roots,
+      derivatives, acl_grants). Go through the kernel's access layer, which scopes every row to the
+      user asking. A query written here returns rows to anyone, and against acl_grants, writes the
+      permissions themselves.
+    metadata:
+      category: security
+      cwe: "CWE-639: Authorization Bypass Through User-Controlled Key"
+      owasp: "A01:2021 Broken Access Control"
+      confidence: HIGH
+    # The kernel modules that own these tables, and the tests. Nothing else, ever: a new entry here
+    # is a new way to read an asset without asking whether the reader is allowed to see it.
+    paths:
+      exclude:
+        - src/sift/kernel/content/*
+        - src/sift/kernel/access/*
+        - "**/tests/**"
+        - src/sift/testing/*
+        # The Stash import reads Stash's OWN tables (folders, files, galleries) in its copy of a
+        # Stash database, never Sift's; the regrade step in stash_boxes/schema.py reads its own
+        # matches with the file's length, a one-time step no kernel read serves.
+        - src/sift/slices/stash_migration/reader.py
+        - src/sift/slices/stash_migration/service.py
+        - src/sift/slices/stash_boxes/schema.py
+        # The swap's own schema step fills `swap_sessions.folder_id` from the folders a session
+        # already named by path, once, at update: a one-time step no kernel read serves.
+        - src/sift/slices/swap/schema.py
+        # The operator scripts, as a DIRECTORY: the same shape and the same reason the logger rule
+        # above uses. Every reason this rule gives is about the RUNNING APPLICATION: a request, a
+        # viewer, a permission layer to skip, a writer to serialise against. An operator script has
+        # none of those. It is run by hand, from a shell, by the person who owns the data, with the
+        # application stopped, and one of them exists precisely to move a database between two
+        # machines, which cannot be done through a handle that expects a migrated schema and a
+        # running event loop.
+        - "scripts/"
+    # Matched against the source text rather than by following a string into an execute() call.
+    # That is the less clever option and the right one: taint analysis stops at a query assembled
+    # from parts, looked up in a dict, or handed through a helper, and an access-control check
+    # that can be walked around by writing the query slightly differently is not a check. Nothing
+    # outside the kernel has any reason to type these table names, in code or in a comment.
+    patterns:
+      - pattern-regex: >-
+          (?i)\b(FROM|JOIN|INTO|UPDATE)\s+(assets|asset_locations|folders|library_roots|derivatives|acl_grants)\b
+
+  # The access layer scopes what a request may read. The content store is the layer beneath it and
+  # takes no viewer at all: it turns any asset id into metadata, a location, or the real path to
+  # the bytes, for anyone. It lives on the application object next to the access layer, so any route
+  # could reach for `request.app.state.content` and read past every permission check. Read assets
+  # through `app.state.access`; to serve a file, `access.locate(viewer, asset_id)` gives the scoped
+  # path. Nothing outside the kernel's own wiring may hold the content store.
+  - id: sift-no-content-store-outside-kernel
+    languages: [python]
+    severity: ERROR
+    message: >-
+      The content store reads any asset with no permission check. Go through app.state.access,
+      which scopes every read to the viewer; use access.locate(viewer, asset_id) for a file path.
+    metadata:
+      category: security
+      cwe: "CWE-639: Authorization Bypass Through User-Controlled Key"
+      owasp: "A01:2021 Broken Access Control"
+      confidence: HIGH
+    paths:
+      exclude:
+        - src/sift/kernel/**
+        - src/sift/main.py
+        - src/sift/wiring/**
+        - "**/tests/**"
+        - src/sift/testing/*
+        # The operator scripts, as a DIRECTORY: run by hand with the application stopped, with no
+        # viewer to scope a read to (the scale probe builds a throwaway library of its own).
+        - scripts/
+    pattern-either:
+      - pattern: $X.state.content
+      - pattern: ContentStore(...)
+
+  # The viewer is the identity a read is scoped to, and admin is one of its fields. Building one by
+  # hand is minting a capability: `Viewer(id=..., role=Role.ADMIN)` walks past the whole resolver.
+  # The only sanctioned viewer comes from `access.load_viewer(user_id)`, which reads the account
+  # from the database and refuses a disabled one, so the role is whatever the database says, not
+  # whatever the caller wrote.
+  - id: sift-no-viewer-forgery-outside-kernel
+    languages: [python]
+    severity: ERROR
+    message: >-
+      A hand-built Viewer sets its own role and bypasses the resolver. Build it from the database
+      with access.load_viewer(user_id).
+    metadata:
+      category: security
+      cwe: "CWE-284: Improper Access Control"
+      owasp: "A01:2021 Broken Access Control"
+      confidence: HIGH
+    paths:
+      exclude:
+        - src/sift/kernel/**
+        - "**/tests/**"
+        - src/sift/testing/*
+        # The operator scripts, as a DIRECTORY: run by hand with the application stopped, with no
+        # viewer to scope a read to (the scale probe builds a throwaway library of its own).
+        - scripts/
+    pattern: Viewer(...)

@@ -1,0 +1,175 @@
+/**
+ * Keeping a wall of files current while somebody looks at it: re-reading the page showing, in
+ * place, whenever files arrive, leave or gain a picture.
+ *
+ * A re-read is anchored on the file at the top of the page and never moves the reader: one file
+ * arriving at the head re-rows the whole justified wall, so the page holds its files and the server
+ * counts what is newer, and the newer files come in by themselves only while the top of the page is
+ * on screen. Constructed while the wall initialises, because it keeps effects of its own.
+ */
+
+import { untrack } from 'svelte';
+import { capture } from '$lib/capture/capture.svelte';
+import type { Grid, PageStart, RowSource } from '$lib/grid/grid.svelte';
+import { arrivals, jobChanges, whenChanged } from '$lib/library/changes.svelte';
+import { imports } from '$lib/library/imports.svelte';
+import type { WallMedia } from './wall-media.svelte';
+import type { WallOrder } from './wall-order.svelte';
+
+/** How long a few arrivals wait for more before coming in on their own. */
+const SETTLED_MS = 1500;
+/** At most one re-read a second for a moving queue. */
+const JOBS_READ_MS = 1000;
+
+/** What a wall's re-reads read and touch. */
+interface WallParts {
+	grid: Grid;
+	order: WallOrder;
+	source(): RowSource;
+	media(): WallMedia;
+	/** Write the page's first file into the address once a page lands. */
+	remember(): void;
+}
+
+export class WallCatchUp {
+	private wall: WallParts;
+	/* A re-read that could not be made when asked (a read in flight, or a hidden window), made
+	   when it can be: dropped, a hidden window would go on showing deleted files. */
+	private owed = false;
+	private settling: ReturnType<typeof setTimeout> | undefined;
+	private jobsHeld: ReturnType<typeof setTimeout> | null = null;
+	private jobsOwed = false;
+	private settledWas: number;
+
+	constructor(wall: WallParts) {
+		this.wall = wall;
+		const grid = wall.grid;
+		$effect(() => {
+			void grid.reading;
+			untrack(() => this.payWhatIsOwed());
+		});
+		/* Whenever the count of what is waiting changes, and the take itself, which returns it to
+		   nought and stands the timer down. */
+		$effect(() => {
+			void grid.newer;
+			untrack(() => this.letThemIn());
+		});
+		$effect(() => () => clearTimeout(this.settling));
+		/* Work finished, so there is something new; not on mount, which would repeat the first read. */
+		this.settledWas = untrack(() => imports.settled);
+		$effect(() => {
+			const now = imports.settled;
+			untrack(() => {
+				if (now === this.settledWas) return;
+				this.settledWas = now;
+				void this.catchUp();
+				wall.media().rearm();
+			});
+		});
+		/* While a scan runs, on every push, so a tile appears within a second of Sift reading it. */
+		$effect(() => {
+			void imports.pulse;
+			if (imports.busy > 0) void untrack(() => this.catchUp());
+		});
+		/* A placeholder hands over to the real tile the moment the row exists: re-read first and
+		   cleared after, so the tile is on screen before the placeholder leaves. */
+		$effect(() => {
+			void imports.pulse;
+			untrack(() => {
+				for (const item of capture.imports) {
+					if (!imports.landed(item.id)) continue;
+					void Promise.resolve(this.catchUp()).finally(() => capture.settled(item.id));
+				}
+			});
+		});
+		/* Files entered the library, left it or moved: a folder fills in while somebody watches. */
+		whenChanged(arrivals, () => {
+			void this.catchUp();
+			wall.media().rearm();
+		});
+		/* A task moved, so a file here may have gained a picture, which neither bell rings for. */
+		whenChanged(jobChanges, () => this.followTheQueue());
+		$effect(() => () => {
+			if (this.jobsHeld !== null) clearTimeout(this.jobsHeld);
+		});
+	}
+
+	/** Make a re-read that is owed, if one is and it can be made now. */
+	payWhatIsOwed(): void {
+		const grid = this.wall.grid;
+		if (!this.owed || grid.reading || document.visibilityState !== 'visible') return;
+		this.owed = false;
+		void this.catchUp();
+		this.wall.media().rearm();
+	}
+
+	/** Re-read the page showing, where it is. Returns the ask, for the placeholder handover. */
+	catchUp(): Promise<unknown> | undefined {
+		const { grid, order } = this.wall;
+		const source = this.wall.source();
+		if (document.visibilityState !== 'visible' || grid.reading) {
+			this.owed = true;
+			return;
+		}
+		/* Not anchored when asking by meaning (an anchor deep in the ranking is not in the set), nor
+		   where the source cannot be anchored. */
+		const anchor = order.byMeaning || !source.anchored ? undefined : grid.items[0]?.id;
+		// With where the page is, so a first file deleted since is not a jump to the top: `near`.
+		const start: PageStart =
+			anchor === undefined ? { at: grid.offset } : { from: anchor, near: grid.offset };
+		// Quiet: nobody asked for this one. See `loadAt`.
+		return untrack(() => grid.loadAt(order.fullQuery, start, { quiet: true }));
+	}
+
+	/* Take the files that arrived since this page was chosen, from where the page was ASKED to
+	   start, so a page further down catches up without jumping to the top. Not quiet: it was pressed. */
+	takeTheNewOnes(): void {
+		const { grid, order } = this.wall;
+		void grid.loadAt(order.fullQuery, { at: grid.askedAt }).then(() => this.wall.remember());
+	}
+
+	/** Whether the newest file this page holds is on screen; no before the observer has run. */
+	private atTheTop(): boolean {
+		const newest = this.wall.grid.items[0]?.id;
+		return newest !== undefined && this.wall.media().onScreen.has(newest);
+	}
+
+	/** Enough files to move the wall for: whatever fills its first row. */
+	private aRowsWorth(): number {
+		return Math.max(1, this.wall.grid.rows[0]?.tiles.length ?? 1);
+	}
+
+	/* Arrivals come in by themselves at the top of the page, a row's worth at a time or once they
+	   stop coming: re-rowing a justified wall is a strobe only by its rate. */
+	letThemIn(): void {
+		const grid = this.wall.grid;
+		clearTimeout(this.settling);
+		this.settling = undefined;
+		if (grid.newer === 0 || !this.atTheTop()) return;
+		if (grid.newer >= this.aRowsWorth()) {
+			this.takeTheNewOnes();
+			return;
+		}
+		this.settling = setTimeout(() => {
+			this.settling = undefined;
+			// Asked again: a page can be turned or scrolled in the wait.
+			if (grid.newer > 0 && this.atTheTop()) this.takeTheNewOnes();
+		}, SETTLED_MS);
+	}
+
+	/* A moving queue re-reads at once and then at most once a second, never dropping the last. */
+	private followTheQueue(): void {
+		if (this.jobsHeld !== null) {
+			this.jobsOwed = true;
+			return;
+		}
+		void this.catchUp();
+		this.wall.media().rearm();
+		this.jobsHeld = setTimeout(() => {
+			this.jobsHeld = null;
+			if (!this.jobsOwed) return;
+			this.jobsOwed = false;
+			this.followTheQueue();
+		}, JOBS_READ_MS);
+	}
+}

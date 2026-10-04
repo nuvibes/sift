@@ -1,0 +1,26 @@
+name: node
+description: Node at the one version this repository declares, with a workspace installed from its lockfile.
+
+# `.nvmrc` is the one declaration of Node's version: `actions/setup-node` reads it, `nvm use` reads
+# it, and tests/gates/test_ci_runs_where_sift_ships.py refuses a second one in a workflow or
+# an action.
+
+inputs:
+  workspace:
+    description: The directory holding package.json and package-lock.json.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      with:
+        node-version-file: .nvmrc
+        cache: npm
+        cache-dependency-path: ${{ inputs.workspace }}/package-lock.json
+
+    # ci, not install: it installs exactly what the lockfile says or it fails. `npm install` would
+    # quietly resolve something else and the lockfile would stop meaning anything.
+    - shell: bash
+      working-directory: ${{ inputs.workspace }}
+      run: npm ci --no-audit --no-fund

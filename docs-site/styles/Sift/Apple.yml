@@ -1,0 +1,69 @@
+# Apple Style Guide (June 2026 edition), the entries that say "Don't use" or "Avoid" with a word to
+# use instead. Each line names its entry. Hand-kept: the guide is a PDF, not a word list.
+extends: substitution
+message: "Write '%s', not '%s' (Apple Style Guide)."
+level: error
+ignorecase: true
+nonword: true
+swap:
+  # abbreviations and acronyms > Latin
+  '\be\.g\.': for example
+  '\bi\.e\.': that is
+  '\betc\.': and so on
+  # click on; tap (n., v.)
+  '\bclick on\b': click
+  '\btap on\b': tap
+  # click and drag; tap and hold
+  '\bclick and drag\b': drag
+  '\btap and hold\b': touch and hold
+  # activate, deactivate
+  '\bactivate\b': turn on
+  '\bdeactivate\b': turn off
+  # enable (v.), enabled (adj.); disable (v.), disabled (adj.)
+  '\benables? you to\b': you can
+  '\benable\b': turn on
+  '\bdisable\b': turn off
+  '\bdisabled\b': turned off, or unavailable
+  # toggle (v.); switch (v.)
+  '\btoggles?\b': turn on or off
+  '\bswitch(?:es|ed)? (?:on|off)\b': turn on or turn off
+  # checkbox; check
+  '\bunchecked\b': deselected
+  '\bunchecks?\b': deselect
+  '\bchecked\b': selected
+  # dialog box; dialog message
+  '\bdialog box(?:es)?\b': dialog
+  '\bdialog message\b': message
+  # popover
+  '\bpopovers?\b': say what to select
+  # tooltip
+  '\btooltips?\b': say what appears when you hold the pointer over it
+  # hit (v.)
+  '\bhit (?:the )?(?:Enter|Return|Escape|Esc|Tab|Space)\b': press
+  # kill; abort
+  '\bkill(?:s|ed|ing)?\b': stop, cancel or end
+  '\babort(?:s|ed|ing)?\b': stop or cancel
+  # in order to
+  '\bin order to\b': to
+  # via
+  '\bvia\b': through, using or with
+  # and/or
+  '\band/or\b': a rewrite without and/or
+  # user
+  '\busers can\b': you can
+  # recommend
+  '\bwe recommend\b': "it's recommended, or it's a good idea to"
+  # link (n.)
+  '\bfollow the link\b': click the link
+  # user interface
+  '\buser interface\b': interface
+  # blacklist/whitelist (n., v.); master/slave
+  '\bwhitelists?\b': allow list
+  '\bblacklists?\b': block list
+  '\bmaster/slave\b': primary and replica
+  # capability
+  '\bhas the capability to\b': can
+  # redownload
+  '\bredownload\b': download again
+  # input (n., adj.) as a verb
+  '\binput (?:your|the|a)\b': enter
