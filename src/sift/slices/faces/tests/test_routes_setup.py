@@ -16,6 +16,7 @@ from sift.kernel.db import Database
 from sift.kernel.ids import new_id
 from sift.kernel.jobs import JobQueue
 from sift.kernel.jobs.tuning import DEFAULT_PRIORITY, WAITED_ON_PRIORITY
+from sift.kernel.jobs.worker_pool import WorkerPool
 from sift.slices.faces import folder_import
 from sift.slices.faces import jobs as faces_jobs
 from sift.slices.faces.folder_import import FACE_FOLDER_IMPORT
@@ -701,8 +702,17 @@ def staged_files(client: TestClient) -> list[str]:
     return sorted(one.relative_to(root).as_posix() for one in root.rglob("*") if one.is_file())
 
 
+@pytest.fixture
+def no_workers(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An application whose workers never start, so a queued task and its files stay as queued."""
+
+    async def idle(self: WorkerPool) -> None: ...
+
+    monkeypatch.setattr(WorkerPool, "start", idle)
+
+
 def test_an_upload_answers_at_once_with_the_task_that_reads_it(
-    client: TestClient, scene: Scene, monkeypatch: pytest.MonkeyPatch
+    no_workers: None, client: TestClient, scene: Scene, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The request copies the files and queues the task; no face is read inside it."""
 

@@ -433,11 +433,6 @@ class ReferencesStore(ModelsStore):
             "SELECT * FROM pack_entry_faces WHERE entry_id = ? ORDER BY quality DESC", (entry_id,)
         )
 
-    async def mark_entry_claimed(self, entry_id: str, person_id: str) -> None:
-        await self._db.execute(
-            "UPDATE pack_entries SET claimed_person_id = ? WHERE id = ?", (person_id, entry_id)
-        )
-
     async def claim_entry_on(self, connection: Connection, entry_id: str, person_id: str) -> bool:
         """Mark an entry claimed by a person inside the caller's write, only while it is nobody's.
         False when somebody else's write placed it first."""
