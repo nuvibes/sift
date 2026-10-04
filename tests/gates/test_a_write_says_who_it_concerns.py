@@ -250,7 +250,6 @@ SILENT: dict[str, str] = {
     "faces.store_references.keep_pack_entry": "somebody a pack named, held without being a person; no screen lists the entries",
     "faces.store_references.keep_entry_face": "one face under a held pack entry; no screen lists them",
     "faces.store_references.add_references": "a pack's reference pictures, which no screen lists",
-    "faces.store_references.mark_entry_claimed": "a held pack entry marked as given to a person; no screen lists the entries",
     "faces.store_references.claim_references_in": "one file's orphaned references handed to the appearance a rescan found; no screen lists them",
     "faces.store_references.retire_starters": "starter pictures retired by an Undo; no screen lists the pictures",
     "faces.store_references.remember_starters_refused": "a note that every starter of one person was refused by a model; nothing draws it",

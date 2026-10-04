@@ -30,7 +30,7 @@ def test_it_reports_what_the_project_declares() -> None:
 
 def test_a_release_is_its_three_numbers_and_nothing_else_is_one() -> None:
     assert release_of(" 0.2.0 ") == (0, 2, 0)
-    assert release_of("1.10.3") > (1, 9, 30)
+    assert (release_of("1.10.3") or ()) > (1, 9, 30)
     for text in ("", "0.2", "v0.2.0", "0.2.0-rc.1", "0.2.0.1"):
         assert release_of(text) is None, text
 

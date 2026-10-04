@@ -15,7 +15,7 @@ import os
 import socket
 from collections.abc import Awaitable, Callable, Iterator
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 import pytest
 from fastapi.testclient import TestClient
@@ -668,6 +668,29 @@ def test_a_card_library_that_will_not_count_its_devices_is_no_card(
     monkeypatch.setattr(ctypes, "CDLL", lambda *_a, **_kw: Nvml(), raising=False)
 
     assert hardware._windows_nvidia_present() is False
+
+
+@pytest.mark.unit
+def test_a_card_library_that_counts_a_device_is_a_card(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Started, counted one, and was let go of: the answer on a machine with a working card."""
+    let_go: list[bool] = []
+
+    class Nvml:
+        def nvmlInit_v2(self) -> int:
+            return 0
+
+        def nvmlDeviceGetCount_v2(self, count: Any) -> int:
+            count._obj.value = 1
+            return 0
+
+        def nvmlShutdown(self) -> int:
+            let_go.append(True)
+            return 0
+
+    monkeypatch.setattr(ctypes, "CDLL", lambda *_a, **_kw: Nvml(), raising=False)
+
+    assert hardware._windows_nvidia_present() is True
+    assert let_go == [True]
 
 
 # --- what the machine has, against what it can address ------------------------------------------

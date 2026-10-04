@@ -67,6 +67,12 @@ def test_registering_the_same_key_twice_fails_loudly() -> None:
         _register(key="library.trash_mode")
 
 
+def test_a_default_says_which_release_changed_it_or_nothing() -> None:
+    _register(key="test.since", default_since="0.2.0")
+    with pytest.raises(SettingError, match="not a release"):
+        _register(key="test.soon", default_since="soon")
+
+
 def test_a_label_is_required() -> None:
     with pytest.raises(SettingError, match="needs a label"):
         _register(label="   ")

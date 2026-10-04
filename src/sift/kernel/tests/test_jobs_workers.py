@@ -6,8 +6,10 @@ from __future__ import annotations
 import asyncio
 import os
 import re
+import sqlite3  # nosemgrep: sift-no-database-driver-outside-kernel
 import subprocess
 import sys
+import time
 from dataclasses import replace
 from pathlib import Path
 
@@ -857,7 +859,16 @@ def test_a_job_whose_process_is_killed_runs_again_exactly_once(tmp_path: Path) -
     finally:
         doomed.kill()
 
-    seen, job = asyncio.run(_restart_and_finish(path, job_id))
+    # Windows lets go of a killed process's files in its own time, and until it has the database
+    # answers a disk error to whoever opens it: the restart is tried again for a few seconds.
+    for attempt in range(20):
+        try:
+            seen, job = asyncio.run(_restart_and_finish(path, job_id))
+            break
+        except sqlite3.OperationalError as error:
+            if "disk I/O error" not in str(error) or attempt == 19:
+                raise
+            time.sleep(0.5)
 
     assert seen == [job_id]  # exactly once: not zero, not twice
     assert job.state is JobState.DONE

@@ -631,3 +631,11 @@ async def test_the_step_picks_again_a_cover_in_hidden_where_a_file_nobody_hides_
     assert said["person"] == 1
     async with temp_db.write() as connection:
         assert set((await default_covers.out_of_hidden(connection)).values()) == {0}
+
+    # A catalog made before the stored verdict exists has nothing to read: no cover moves.
+    async def absent(_connection: object) -> bool:
+        return False
+
+    monkeypatch.setattr(default_covers, "_reads_hidden", absent)
+    async with temp_db.write() as connection:
+        assert set((await default_covers.out_of_hidden(connection)).values()) == {0}
