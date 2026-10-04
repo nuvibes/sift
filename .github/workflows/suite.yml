@@ -123,6 +123,10 @@ jobs:
     timeout-minutes: 60
     permissions:
       contents: read
+    env:
+      # Two browsers at once: the runner's four cores are shared with the server under test, and
+      # more than it can serve at once ends in timeouts that read as failures.
+      E2E_WORKERS: "2"
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:

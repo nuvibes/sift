@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from sift.kernel.version import app_version
+from sift.kernel.version import app_version, release_of
 
 REPO = Path(__file__).resolve().parents[4]
 
@@ -26,6 +26,13 @@ def test_it_reports_what_the_project_declares() -> None:
     that could have been written twice."""
     declared = tomllib.loads((REPO / "pyproject.toml").read_text(encoding="utf-8"))
     assert app_version() == declared["project"]["version"]
+
+
+def test_a_release_is_its_three_numbers_and_nothing_else_is_one() -> None:
+    assert release_of(" 0.2.0 ") == (0, 2, 0)
+    assert release_of("1.10.3") > (1, 9, 30)
+    for text in ("", "0.2", "v0.2.0", "0.2.0-rc.1", "0.2.0.1"):
+        assert release_of(text) is None, text
 
 
 def test_an_uninstalled_package_answers_with_nothing(monkeypatch: pytest.MonkeyPatch) -> None:

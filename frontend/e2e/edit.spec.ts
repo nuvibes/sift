@@ -219,7 +219,15 @@ async function openTheEditor(page: Page, verb: 'Modify' | 'Trim' = 'Modify'): Pr
 /** Drag one of the rectangle's handles to a point given as a fraction of the picture. */
 async function dragGrip(page: Page, grip: string, to: { x: number; y: number }): Promise<void> {
 	const stage = page.locator('figure.stage');
-	const box = (await stage.boundingBox())!;
+	// The editor opens with a movement: measured before it ends, the box is not where the drag lands.
+	let box = (await stage.boundingBox())!;
+	await expect
+		.poll(async () => {
+			const before = box;
+			box = (await stage.boundingBox())!;
+			return before.x === box.x && before.width === box.width && before.height === box.height;
+		})
+		.toBe(true);
 	const handle = (await page.locator(`[data-grip="${grip}"]`).boundingBox())!;
 	await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
 	await page.mouse.down();

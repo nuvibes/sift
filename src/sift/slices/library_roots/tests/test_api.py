@@ -293,8 +293,10 @@ def test_a_scan_only_rescan_says_so_in_the_payload_and_an_ordinary_one_does_not(
     assert payloads[narrowed.json()["job_id"]]["scan_only"] is True
 
 
-def test_two_rescans_of_one_root_are_one_scan(client: TestClient, library: Path) -> None:
-    """A double press is one scan: both answers carry the same job id."""
+def test_two_rescans_of_one_root_are_one_scan(idle_client: TestClient, library: Path) -> None:
+    """A double press is one scan: both answers carry the same job id. No worker runs, so the
+    first press is still waiting when the second arrives."""
+    client = idle_client
     sign_in(client, "admin")
     root = add_root(client, library)
 

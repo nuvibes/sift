@@ -728,6 +728,10 @@ def test_a_collection_is_set_beside_the_moments_it_overlapped() -> None:
     assert generation == 2
     assert watchdog.collection_during(9.0, 10.0) is None
     assert watchdog.collection_during(10.6, 12.0) is None
+    # An end with no start before it, and a phase that is neither, record nothing.
+    watchdog.collected("stop", {"generation": 1})
+    watchdog.collected("other", {})
+    assert watchdog.collection_during(10.6, 12.0) is None
 
 
 async def test_a_collection_that_overlaps_a_hold_is_said_on_its_line(
