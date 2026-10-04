@@ -70,10 +70,11 @@ jobs:
         run: npm run build
 
       # The Pages site answers only once it is published, and only a site published from a workflow
-      # takes a deployment from one; asked here, so a push never fails for want of either.
+      # takes a deployment from one; asked here, so a push never fails for want of either. A run
+      # started by hand on main deploys too; a pull request only builds.
       - name: Whether Pages takes this build
         id: pages
-        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+        if: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
         env:
           GH_TOKEN: ${{ github.token }}
           PRIVATE: ${{ github.event.repository.private }}

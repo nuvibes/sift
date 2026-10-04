@@ -635,7 +635,7 @@ def test_the_docs_deploy_only_when_pages_takes_the_build() -> None:
     jobs = workflow(WORKFLOWS / "docs.yml")["jobs"]
     asked = next(step for step in steps(jobs["build"]) if step.get("id") == "pages")
     assert "::notice::" in asked["run"] and '"workflow"' in asked["run"]
-    assert "refs/heads/main" in asked["if"] and "push" in asked["if"]
+    assert "refs/heads/main" in asked["if"] and "!= 'pull_request'" in asked["if"]
     assert jobs["deploy"]["if"] == "${{ needs.build.outputs.deploy == 'true' }}"
 
 
