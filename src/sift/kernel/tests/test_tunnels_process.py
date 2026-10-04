@@ -17,7 +17,7 @@ import socket
 import tempfile
 import time
 from base64 import b64encode
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
 from pathlib import Path
 from typing import Any
 
@@ -720,11 +720,13 @@ async def test_health_of_something_that_is_not_running(spec: TunnelSpec) -> None
 
 
 @pytest.fixture
-async def status_server() -> AsyncIterator[Callable[[int, str], Any]]:
-    """A server on the tunnel's own status port, answering with whatever body a test wants."""
+async def status_server() -> AsyncIterator[Callable[[str], Awaitable[int]]]:
+    """A server standing in for a tunnel's status port, answering with whatever body a test wants.
+    The port is one the system hands out, and is what `serve` answers: a number written here would
+    be bound twice when two of these run at once."""
     servers: list[asyncio.Server] = []
 
-    async def serve(port: int, body: str) -> None:
+    async def serve(body: str) -> int:
         async def handle(_reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
             await _reader.readuntil(b"\r\n\r\n")
             payload = body.encode()
@@ -737,7 +739,9 @@ async def status_server() -> AsyncIterator[Callable[[int, str], Any]]:
             await writer.drain()
             writer.close()
 
-        servers.append(await asyncio.start_server(handle, "127.0.0.1", port))
+        server = await asyncio.start_server(handle, "127.0.0.1", 0)
+        servers.append(server)
+        return int(server.sockets[0].getsockname()[1])
 
     yield serve
     for server in servers:
@@ -746,12 +750,12 @@ async def status_server() -> AsyncIterator[Callable[[int, str], Any]]:
 
 
 async def test_the_server_address_is_read_without_its_port(
-    status_server: Callable[[int, str], Any],
+    status_server: Callable[[str], Awaitable[int]],
 ) -> None:
     """The port is the provider's and nobody acts on it; the address is what "which server am I on"
     means. Split from the right, so an IPv6 endpoint keeps its colons and loses only the port."""
-    await status_server(45301, "endpoint=198.51.100.7:51820\nlast_handshake_time_sec=1700000000\n")
-    handshake, endpoint = await _listening_on(45300)._read_metrics()
+    port = await status_server("endpoint=198.51.100.7:51820\nlast_handshake_time_sec=1700000000\n")
+    handshake, endpoint = await _with_status_on(port)._read_metrics()
     assert (handshake, endpoint) == (1_700_000_000, "198.51.100.7")
 
 
@@ -766,15 +770,17 @@ async def test_the_server_address_is_read_without_its_port(
     ],
 )
 async def test_the_handshake_is_read_from_what_the_client_answers(
-    status_server: Callable[[int, str], Any], body: str, expected: int | None
+    status_server: Callable[[str], Awaitable[int]], body: str, expected: int | None
 ) -> None:
-    await status_server(45101, body)
-    assert await _listening_on(45100)._read_handshake() == expected
+    assert await _with_status_on(await status_server(body))._read_handshake() == expected
 
 
 async def test_a_status_endpoint_that_does_not_answer_is_not_a_handshake() -> None:
     """Nothing listening yet is the ordinary case while a tunnel is starting."""
-    assert await _listening_on(45200)._read_handshake() is None
+    with socket.socket() as held:
+        # Bound and never listening: a port nothing answers on, and nothing else can take.
+        held.bind(("127.0.0.1", 0))
+        assert await _with_status_on(held.getsockname()[1])._read_handshake() is None
 
 
 async def test_a_tunnel_with_no_client_reads_no_status_and_hands_out_no_proxy() -> None:
@@ -786,10 +792,10 @@ async def test_a_tunnel_with_no_client_reads_no_status_and_hands_out_no_proxy() 
         _ = tunnel.proxy_url
 
 
-def _listening_on(proxy: int) -> TunnelProcess:
-    """A tunnel whose client was given `proxy` and the port above it, without running one."""
+def _with_status_on(status: int) -> TunnelProcess:
+    """A tunnel whose client was given `status` as its status port, without running one."""
     tunnel = TunnelProcess(TunnelSpec(id="t", name="Test"))
-    tunnel._ports = ListenPorts(proxy=proxy, status=proxy + 1)
+    tunnel._ports = ListenPorts(proxy=status, status=status)
     return tunnel
 
 
