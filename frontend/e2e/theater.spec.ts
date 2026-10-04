@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { signInAsAdmin } from './admin';
+import { rewrite } from './routes';
 
 /* The wall, in a real browser.
  *
@@ -103,23 +104,6 @@ async function serveLibrary(page: Page) {
 			return route.fulfill({ status: 204, body: '' });
 		}
 
-		/* Reading the real answer can lose a race, and losing it must not fail the test.
-		 *
-		 * `route.fetch()` hands back a response tied to the request that made it. A page that
-		 * navigates (which every one of these tests does, and more than once) can retire that
-		 * request while the body is still being read, and what comes back then is "Response has been
-		 * disposed" rather than anything about the wall. It presents as a failure in whichever test
-		 * happened to be running, and it only happens under load, which is what makes it read as
-		 * random. This interception exists to keep a couple of settings values steady; a request it
-		 * could not stand in for is passed through, which is what it would have done anyway. */
-		let answer;
-		let body: unknown;
-		try {
-			answer = await route.fetch();
-			body = (await answer.json()) as unknown;
-		} catch {
-			return route.fallback();
-		}
 		/* Walked rather than reached into by path: the shape of this response is the settings
 		   screen's business and may change. What is stable is that a setting is an object
 		   with a `key`. */
@@ -130,8 +114,7 @@ async function serveLibrary(page: Page) {
 			if (typeof one.key === 'string' && one.key in mine) one.value = mine[one.key];
 			Object.values(one).forEach(swap);
 		};
-		swap(body);
-		await route.fulfill({ response: answer, json: body });
+		await rewrite<unknown>(route, swap);
 	});
 }
 

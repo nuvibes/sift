@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Browser, type BrowserContext, type Page } from '@playwright/test';
 import { signInAsAdmin } from './admin';
 
 /* No screen needs a reload to show a change.
@@ -34,10 +34,27 @@ async function write(
 	return answer.status() === 204 ? {} : ((await answer.json()) as Record<string, unknown>);
 }
 
+/*
+ * The windows a test opened, shut when it ends.
+ *
+ * A context made from the browser is the worker's, not the test's: left open, its page goes on
+ * following the server for the rest of the run, signed in as the account every test shares, and
+ * its session never goes back to be lent again.
+ */
+const opened: BrowserContext[] = [];
+
+test.afterEach(async () => {
+	for (const context of opened.splice(0)) await context.close();
+});
+
 /** Two pages, each in a context of its own, both signed in. */
-async function twoWindows(browser: import('@playwright/test').Browser) {
-	const one = await (await browser.newContext()).newPage();
-	const other = await (await browser.newContext()).newPage();
+async function twoWindows(browser: Browser) {
+	const first = await browser.newContext();
+	opened.push(first);
+	const second = await browser.newContext();
+	opened.push(second);
+	const one = await first.newPage();
+	const other = await second.newPage();
 	await signInAsAdmin(one);
 	await signInAsAdmin(other);
 	return { one, other };

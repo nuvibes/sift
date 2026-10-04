@@ -20,6 +20,7 @@
  */
 import { expect, test, type Page } from '@playwright/test';
 import { signInAsAdmin } from './admin';
+import { rewrite } from './routes';
 
 /** Every screen with a pager on it. Recently viewed has none and is not one of these. */
 const WALLS = ['/browse', '/favorites', '/people', '/sites', '/tags', '/collections'] as const;
@@ -285,16 +286,16 @@ test('the count is the first mark on a tile, whatever else is drawn', async ({ p
 	 */
 	await page.route('**/api/settings', async (route) => {
 		if (route.request().method() !== 'GET') return route.fallback();
-		const response = await route.fetch();
-		const body = (await response.json()) as {
-			sections: { settings?: { key: string; value: unknown }[] }[];
-		};
-		for (const section of body.sections) {
-			for (const one of section.settings ?? []) {
-				if (TOP_MARKS.includes(one.key)) one.value = 'hover';
+		await rewrite<{ sections: { settings?: { key: string; value: unknown }[] }[] }>(
+			route,
+			(body) => {
+				for (const section of body.sections) {
+					for (const one of section.settings ?? []) {
+						if (TOP_MARKS.includes(one.key)) one.value = 'hover';
+					}
+				}
 			}
-		}
-		await route.fulfill({ response, json: body });
+		);
 	});
 	await wallOfMarkedTiles(page);
 

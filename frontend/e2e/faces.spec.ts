@@ -51,6 +51,18 @@ test.beforeEach(async ({ page }) => {
 	await page.setViewportSize({ width: 1400, height: 900 });
 });
 
+/* Left as a fresh install has it. The switch is the whole server's, so left on it queues a face
+ * scan for every file any later spec adds, and with no model none of them can ever run. */
+test.afterAll(async ({ browser }) => {
+	const page = await browser.newPage();
+	try {
+		await signInAsAdmin(page);
+		await setFaces(page, false);
+	} finally {
+		await page.close();
+	}
+});
+
 test('the face queues: the board leaves an empty pile off, and one page holds them as tabs', async ({
 	page
 }) => {

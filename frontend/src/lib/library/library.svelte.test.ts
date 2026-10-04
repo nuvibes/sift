@@ -198,3 +198,32 @@ describe('what a guest asks when the library is read', () => {
 		expect(library.canManage).toBe(true);
 	});
 });
+
+describe('reading the library again', () => {
+	/*
+	 * The screen draws a skeleton while `loading` is true, and whatever stands inside the screen is
+	 * made again when it comes back. On a library with no folder yet that is the Add a folder
+	 * dialog, open, under the person adding their first one.
+	 */
+	it('is loading until the first answer and not again, even with no folder yet', async () => {
+		accepting();
+		signedInAs('admin');
+		const library = new Library();
+		expect(library.loading).toBe(true);
+		await library.load();
+		expect(library.loading).toBe(false);
+
+		const during: boolean[] = [];
+		const stop = $effect.root(() => {
+			$effect(() => {
+				during.push(library.loading);
+			});
+		});
+		flushSync();
+		await library.load();
+		flushSync();
+		stop();
+
+		expect(during).toEqual([false]);
+	});
+});

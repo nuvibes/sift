@@ -4,7 +4,6 @@
  * failure does to the screen, and what happens between asking for a move and being told it worked.
  */
 
-import { untrack } from 'svelte';
 import { UNREACHABLE } from '$lib/shell/unreachable';
 import { api, ApiError, request } from '$lib/api/client';
 import { toasts } from '$lib/shell/toasts.svelte';
@@ -39,38 +38,19 @@ export class Library {
 
 	async load(): Promise<void> {
 		/*
-		 * TRUE only while there is nothing to show yet, which is not the same as "a request is in
-		 * flight", and this screen re-reads on every library announcement.
+		 * `loading` is true until the first answer and never again, which is not the same as "a
+		 * request is in flight": this screen re-reads on every library announcement.
 		 *
-		 * Set on every read, a scan finishing would replace the whole screen with one line of text
-		 * for the length of two round trips: the folder list, whatever was expanded on it, and any
-		 * menu somebody had open all gone and back a moment later: a menu item that is never
-		 * stable and then detached, on a screen where a folder has just been added, which is
-		 * exactly when a scan is running.
+		 * Set on every read, an announcement would replace the whole screen with a skeleton for the
+		 * length of two round trips: the folder list, whatever was expanded on it, and any menu or
+		 * dialog somebody had open all gone and back a moment later. Set on every read of an EMPTY
+		 * library, that is the Add a folder dialog closing under the person adding their first one.
 		 *
 		 * The screen keeps what it has and swaps in the new rows when they arrive. `failed` is the
 		 * other half of that promise: a screen with no data and no explanation is worse than
-		 * either.
+		 * either. Nothing here reads the lists it writes, so calling it from an `$effect` cannot
+		 * make that effect depend on them and run again on its own write.
 		 */
-		/*
-		 * UNTRACKED, AND THAT IS THE WHOLE OF A REQUEST STORM.
-		 *
-		 * These two lists are read here and written a few lines below. Called from inside an
-		 * `$effect`, which is the obvious way to write "read this when the screen appears", the
-		 * synchronous read makes both of them dependencies of that effect, and the write then
-		 * invalidates it. The effect runs again, reads again, writes again, as fast as the machine
-		 * can go: hundreds of requests to `/library/folders` and `/library/roots`, each cancelling
-		 * the last. A cancelled request is not an `ApiError`, so every one of them would be
-		 * reported as "Sift could not reach the server": a storm of red toasts on a server that
-		 * answers every request it is given, and a folder-writable check that loses its race and
-		 * leaves the managed switch greyed.
-		 *
-		 * Untracking it here rather than only at the call site is deliberate. A store method that
-		 * reads its own state and then writes it is a trap laid for every future caller, and the
-		 * next one will not know to avoid it. `$effect` is still the wrong tool for a one-off read
-		 * (see `browse/+page.svelte`), but it cannot take the screen down.
-		 */
-		this.loading = untrack(() => this.roots.length === 0 && this.folders.length === 0);
 		try {
 			// The tree first: a guest may have it and may not have the roots, and the tree is the
 			// part of this screen they are here for.

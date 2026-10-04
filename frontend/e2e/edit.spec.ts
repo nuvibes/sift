@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { signInAsAdmin } from './admin';
+import { settled } from './settled';
 
 /* The editor, driven in a real browser.
  *
@@ -166,31 +167,6 @@ async function serve(
 	return { asked, started };
 }
 
-/* Wait for the sheet to finish arriving before measuring anything on it.
- *
- * It grows into place on a transition, so the first frame where it is visible is not where it ends
- * up, and a measurement taken there is of a smaller sheet in a different position. Settled means
- * two consecutive frames agreeing about the box, which is cheaper and more honest than a fixed
- * wait. Without it the drag test reads seven pixels of the sheet's own entrance as the picture
- * moving under the pointer.
- */
-async function settled(page: Page): Promise<void> {
-	await page.getByRole('alertdialog').evaluate(
-		(element) =>
-			new Promise<void>((done) => {
-				let last = '';
-				const look = () => {
-					const box = element.getBoundingClientRect();
-					const now = `${box.top}x${box.left}x${box.width}`;
-					if (now === last) return done();
-					last = now;
-					requestAnimationFrame(look);
-				};
-				requestAnimationFrame(look);
-			})
-	);
-}
-
 /**
  * Open the editor on the served file.
  *
@@ -213,13 +189,15 @@ async function openTheEditor(page: Page, verb: 'Modify' | 'Trim' = 'Modify'): Pr
 	await openTheOptions(page);
 	await page.getByRole('menuitem', { name: verb }).click();
 	await expect(page.getByRole('alertdialog')).toBeVisible();
-	await settled(page);
+	await settled(page.getByRole('alertdialog'));
 }
 
 /** Drag one of the rectangle's handles to a point given as a fraction of the picture. */
 async function dragGrip(page: Page, grip: string, to: { x: number; y: number }): Promise<void> {
-	const handle = (await page.locator(`[data-grip="${grip}"]`).boundingBox())!;
-	await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
+	/* Through Playwright's own checks, which wait until the handle is still and is what a press
+	   there lands on. A press sent by coordinates while the menu that opened this dialog is still
+	   closing lands on a page refusing clicks, and the drag never starts. */
+	await page.locator(`[data-grip="${grip}"]`).hover();
 	await page.mouse.down();
 	// Read as the drag starts, which is when the stage reads where it is and holds it for the drag.
 	const box = (await page.locator('figure.stage').boundingBox())!;
@@ -377,10 +355,8 @@ test('the sheet does not move under the pointer while a rectangle is being dragg
 	await openTheEditor(page);
 
 	const stage = page.locator('figure.stage');
+	await page.locator('[data-grip="se"]').hover();
 	const before = (await stage.boundingBox())!;
-	const handle = (await page.locator('[data-grip="se"]').boundingBox())!;
-
-	await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
 	await page.mouse.down();
 	await page.mouse.move(before.x + before.width * 0.6, before.y + before.height * 0.6, {
 		steps: 10
@@ -499,9 +475,10 @@ test('the two handles cannot be dragged past each other', async ({ page }) => {
 	const traffic = await serve(page, 'video');
 	await openTheEditor(page, 'Trim');
 
+	/* By the handle's trailing edge: as the dialog opens, the mark that looks through the clip
+	   stands over the handle's middle, and its leading half hangs past the timeline's end. */
+	await page.locator('[data-end="start"]').hover({ position: { x: 13, y: 8 } });
 	const timeline = (await page.locator('.timeline').boundingBox())!;
-	const start = (await page.locator('[data-end="start"]').boundingBox())!;
-	await page.mouse.move(start.x + start.width / 2, start.y + start.height / 2);
 	await page.mouse.down();
 	await page.mouse.move(timeline.x + timeline.width, timeline.y + timeline.height / 2, {
 		steps: 10

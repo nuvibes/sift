@@ -501,8 +501,8 @@
 <!--
 	The first folder can be added here as well as on Browse's empty wall, so the offer of where
 	downloads go is mounted on both: it shows once, when the first folder lands. Outside the
-	loading branch below, because reading the library again while it still has no folder draws the
-	skeleton, and a component inside it would be made again and forget that it saw none.
+	branches below, because a read that fails draws the problem in the list's place, and a
+	component inside them would be made again and forget that it saw none.
 -->
 <DownloadFolderOffer {library} />
 

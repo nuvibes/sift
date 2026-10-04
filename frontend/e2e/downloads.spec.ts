@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { signInAsAdmin } from './admin';
+import { rewrite } from './routes';
 
 /* The download manager, in a browser, against the real server.
  *
@@ -89,25 +90,24 @@ async function serve(page: Page, downloads: Record<string, unknown>[]): Promise<
 async function knowOneSite(page: Page): Promise<void> {
 	await page.route('**/api/supported-sites', async (route) => {
 		if (route.request().method() !== 'GET') return route.fallback();
-		const real = await route.fetch();
-		const sites = (await real.json()) as Record<string, unknown>[];
-		sites.push({
-			bulk: false,
-			cookies: 'required',
-			cookies_why: 'It shows its files only to a signed-in browser.',
-			cookies_with_a_tool: null,
-			default_naming: '{title}',
-			hosts: ['one-site.test'],
-			key: 'one-site',
-			media: ['video'],
-			name: 'One Site',
-			name_words: ['one', 'site'],
-			names_creators: false,
-			supported: true,
-			tested: false,
-			walls: []
+		await rewrite<Record<string, unknown>[]>(route, (sites) => {
+			sites.push({
+				bulk: false,
+				cookies: 'required',
+				cookies_why: 'It shows its files only to a signed-in browser.',
+				cookies_with_a_tool: null,
+				default_naming: '{title}',
+				hosts: ['one-site.test'],
+				key: 'one-site',
+				media: ['video'],
+				name: 'One Site',
+				name_words: ['one', 'site'],
+				names_creators: false,
+				supported: true,
+				tested: false,
+				walls: []
+			});
 		});
-		await route.fulfill({ response: real, json: sites });
 	});
 }
 
@@ -122,10 +122,9 @@ async function knowOneSite(page: Page): Promise<void> {
 async function aDownloadFolder(page: Page): Promise<void> {
 	await page.route('**/api/site-options', async (route) => {
 		if (route.request().method() !== 'GET') return route.fallback();
-		const real = await route.fetch();
-		const options = (await real.json()) as { default: Record<string, unknown> };
-		options.default.dest_folder_id = 'downloads-folder';
-		await route.fulfill({ response: real, json: options });
+		await rewrite<{ default: Record<string, unknown> }>(route, (options) => {
+			options.default.dest_folder_id = 'downloads-folder';
+		});
 	});
 }
 

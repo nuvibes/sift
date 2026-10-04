@@ -18,6 +18,7 @@ from typing import Any
 import pytest
 
 from sift.slices.swap import session as swap
+from sift.slices.swap.handshake import WATCHDOG_SECONDS
 from sift.slices.swap.models import Diff, Offer, OfferedFile, OfferScreen
 from sift.slices.swap.session import Chunk, Conn, Taken, hello, read_hello
 from sift.slices.swap.tests.test_session import (
@@ -83,8 +84,16 @@ async def _a_real_swap(
     hoster = _Hoster()
     proxy = _Proxy(hoster)
     await proxy.start()
-    host = _sessions(host_db, tmp_path / "h", hoster=hoster, make_offer=make_offer, path_of=path_of)
-    guest = _sessions(guest_db, tmp_path / "g", egress=_Egress(proxy.url), assess=assess, land=land)
+    # The product's own silence limit, not the session tests' short one: a stream a busy machine
+    # keeps waiting is dropped under the short one and its chunks go again, which is the swap
+    # working and not what these count.
+    patient = {"watchdog_seconds": WATCHDOG_SECONDS}
+    host = _sessions(
+        host_db, tmp_path / "h", hoster=hoster, make_offer=make_offer, path_of=path_of, **patient
+    )
+    guest = _sessions(
+        guest_db, tmp_path / "g", egress=_Egress(proxy.url), assess=assess, land=land, **patient
+    )
     try:
         started = await _start_host(host)
         joined = await guest.join(

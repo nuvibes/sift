@@ -169,7 +169,9 @@ export async function removePhotos(page: Page, seeded: SeededFolder): Promise<vo
 		headers: { 'x-csrf-token': await csrfOf(page) }
 	});
 	expect([200, 202, 204, 404], `could not remove the seeded folder`).toContain(gone.status());
-	rmSync(seeded.directory, { recursive: true, force: true });
+	/* The server lets go of a folder it watched a moment after it answers, and until it has,
+	   Windows refuses the removal. Asked again for a few seconds rather than once. */
+	rmSync(seeded.directory, { recursive: true, force: true, maxRetries: 40, retryDelay: 250 });
 }
 
 /** Put people on files, as the file menu's Person picker does. */

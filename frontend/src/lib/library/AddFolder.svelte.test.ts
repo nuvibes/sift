@@ -151,6 +151,39 @@ describe('in a browser', () => {
 		expect(warning()?.textContent).toContain('not a folder itself');
 		expect(library.addRoot).not.toHaveBeenCalled();
 	});
+
+	/* The picker stands where its last listing put it until the next one answers, so an Add
+	   pressed while a folder is opening would add the folder above it. */
+	const INSIDE = { atTopLevel: false, selected: { name: 'Holiday', path: 'D:\\media\\Holiday' } };
+
+	async function submitWith(picker: Record<string, unknown>, state: Record<string, unknown>) {
+		Object.assign(picker, INSIDE, state);
+		press('Add a folder');
+		await settle();
+		const add = [...document.querySelectorAll<HTMLButtonElement>('button[type="submit"]')][0];
+		const was = add.disabled;
+		add.form!.dispatchEvent(new SubmitEvent('submit', { cancelable: true, bubbles: true }));
+		await settle();
+		return was;
+	}
+
+	it('adds the folder the picker stands in', async () => {
+		const { library, picker } = render(false);
+
+		const off = await submitWith(picker, { loading: false });
+
+		expect(off).toBe(false);
+		expect(library.addRoot).toHaveBeenCalledWith('D:\\media\\Holiday', true);
+	});
+
+	it('and adds nothing while a pressed folder is still opening', async () => {
+		const { library, picker } = render(false);
+
+		const off = await submitWith(picker, { loading: true });
+
+		expect(off, 'Add folder is off until the folder has opened').toBe(true);
+		expect(library.addRoot).not.toHaveBeenCalled();
+	});
 });
 
 /* The empty Browse wall draws this under the glyph and the sentence `Empty` centres, so there it

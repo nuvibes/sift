@@ -111,6 +111,8 @@
 
 	async function add(event: SubmitEvent) {
 		event.preventDefault();
+		// The picker stands in a pressed folder only once it has opened: until then, the one above.
+		if (picker.loading) return;
 		addError = undefined;
 		if (picker.atTopLevel) {
 			pressedAtTop = true;
@@ -226,7 +228,9 @@
 
 		<div class="dialog-actions">
 			<Button onclick={() => (addOpen = false)}>Cancel</Button>
-			<Button type="submit" tone="primary" icon="add" disabled={library.busy}>Add folder</Button>
+			<Button type="submit" tone="primary" icon="add" disabled={library.busy || picker.loading}>
+				Add folder
+			</Button>
 		</div>
 	</form>
 </Modal>

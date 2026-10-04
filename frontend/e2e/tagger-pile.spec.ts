@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { signInAsAdmin } from './admin';
+import { rewrite } from './routes';
 
 /*
  * The recognized pile on /organize/tagger: its two states, Waiting and Answered, each paged.
@@ -59,19 +60,18 @@ function match(state: 'waiting' | 'answered', at: number) {
  * modelled on a queue the real board DID answer, so every field the route reads is the server's.
  */
 async function withTaggerQueue(page: Page): Promise<void> {
-	await page.route('**/api/workbench', async (route) => {
-		const real = await route.fetch();
-		const board = (await real.json()) as { queues: Record<string, unknown>[] };
-		if (!board.queues.some((queue) => queue.name === 'tagger') && board.queues.length > 0) {
-			board.queues.push({
-				...board.queues[0],
-				name: 'tagger',
-				title: 'Files a stash-box recognized',
-				count: WAITING
-			});
-		}
-		await route.fulfill({ response: real, json: board });
-	});
+	await page.route('**/api/workbench', (route) =>
+		rewrite<{ queues: Record<string, unknown>[] }>(route, (board) => {
+			if (!board.queues.some((queue) => queue.name === 'tagger') && board.queues.length > 0) {
+				board.queues.push({
+					...board.queues[0],
+					name: 'tagger',
+					title: 'Files a stash-box recognized',
+					count: WAITING
+				});
+			}
+		})
+	);
 }
 
 function servePile(page: Page): Ask[] {

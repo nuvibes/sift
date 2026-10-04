@@ -142,11 +142,12 @@ jobs:
         working-directory: frontend
         run: npm run test:e2e
 
+      # What each failed test left: the page as it stood when the assertion gave up.
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: failure()
         with:
-          name: playwright-report
-          path: frontend/playwright-report/
+          name: browser-test-results
+          path: frontend/test-results/
           retention-days: 7
 
   # The tools the installer ships, run for real. The unit tests assert the arguments Sift hands

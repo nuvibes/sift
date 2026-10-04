@@ -70,7 +70,10 @@ export default defineConfig({
 		 *
 		 *     npx playwright test e2e/<spec> --trace on
 		 */
-		trace: 'off'
+		trace: 'off',
+		/* One photograph of the page as a failed test left it, beside the record Playwright writes of
+		   the failure. Taken only then, so a passing test carries nothing. */
+		screenshot: 'only-on-failure'
 	},
 
 	projects: [

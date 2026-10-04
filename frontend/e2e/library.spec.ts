@@ -1,7 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { signInAsAdmin } from './admin';
 import { csrfOf, skipTheFirstFolderBenchmark } from './seed';
-import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -56,8 +56,29 @@ async function handOverTheMediaArea(page: Page): Promise<void> {
 	expect(granted.ok(), `could not hand over the media area: ${await granted.text()}`).toBeTruthy();
 }
 
+/*
+ * Every folder this file makes in the media area, by name.
+ *
+ * The media area is shared: other spec files seed folders of their own into it (`seed.ts`) and
+ * run beside this one. So what this file clears before it starts is this list and nothing else,
+ * and `aFolderWith` takes only a name on it, which is what keeps the list whole.
+ */
+const OWN = [
+	'Added',
+	'clicked',
+	'Private',
+	'Outer',
+	'Scanned',
+	'Guarded',
+	'Announced',
+	'Doomed',
+	'Kept',
+	'Fragile',
+	'Shelf'
+] as const;
+
 /** A real directory under the media area, with real media in it, that the picker will show. */
-function aFolderWith(files: string[], as = 'folder'): string {
+function aFolderWith(files: string[], as: (typeof OWN)[number]): string {
 	/* Named exactly, not `mkdtemp`-suffixed, and that is load-bearing rather than tidy.
 	 *
 	 * A folder has no name of its own: it is read off the path, so the filesystem owns it
@@ -65,7 +86,7 @@ function aFolderWith(files: string[], as = 'folder'): string {
 	 * below looks for, on the row, in the toast, and in the confirmation. A random suffix would make
 	 * every one of those a substring match, and a substring match is how a test comes to pass
 	 * against the wrong folder. Each name here is used by one test, and the first test in this file
-	 * empties the media area before anything else runs.
+	 * removes whatever an earlier run left under them.
 	 */
 	const directory = join(MEDIA, as);
 	mkdirSync(directory, { recursive: true });
@@ -145,15 +166,20 @@ async function addFolder(page: Page, path: string): Promise<void> {
 
 test('a fresh install, with nothing handed to Sift yet, explains what to do', async ({ page }) => {
 	// FIRST IN THIS FILE, AND IT HAS TO BE: every test below puts a folder in the media area, and
-	// this is the one state a brand-new install is in. Serial mode runs this file in order, and no
-	// other spec file touches that directory.
+	// this is the one state a brand-new install is in. Serial mode runs this file in order.
 	//
-	// It empties the directory itself rather than trusting the server to have started with it
-	// empty. Playwright reuses a running server between local runs, so on the second run the
-	// folders the first run added would still be sitting there, and this test would fail for a
-	// reason that has nothing to do with what it is checking.
-	for (const leftover of readdirSync(MEDIA)) {
-		rmSync(join(MEDIA, leftover), { recursive: true, force: true });
+	// It removes this file's own folders itself rather than trusting the server to have started
+	// without them. Playwright reuses a running server between local runs, so on the second run the
+	// folders the first run added would still be sitting there, and a test below would fail for a
+	// reason that has nothing to do with what it is checking. Only its own: a folder another file
+	// seeded is in use by a test running beside this one.
+	for (const leftover of OWN) {
+		rmSync(join(MEDIA, leftover), {
+			recursive: true,
+			force: true,
+			maxRetries: 40,
+			retryDelay: 250
+		});
 	}
 
 	await signInAsAdmin(page);
@@ -355,13 +381,11 @@ test('the jobs dashboard updates live while a folder is being read', async ({ pa
 	// word for a probe (nobody wants to learn what "probe" means to find out what their library is
 	// doing), so this looks for the word on the screen rather than the one in the queue.
 	//
-	// On the Done tab, under the scan that asked for it. The queue folds a family into its top row
-	// (a folder's scan is one row with its steps under it) on every tab, so a probe is a step
-	// inside the scan's row, read by opening that row once the whole family has finished.
-	await page
-		.getByRole('tablist', { name: 'Which tasks to show' })
-		.getByRole('tab', { name: /^Done/ })
-		.click();
+	// Under the scan that asked for it. The queue folds a family into its top row (a folder's scan
+	// is one row with its steps under it), so a probe is a step inside the scan's row. Read on the
+	// list of everything, not the Done tab: a family is done only when its last step is, and a
+	// file's later steps can wait on things this library does not have (recognition switched on
+	// with no models keeps one queued), which is no part of what is watched here.
 	const opener = page.getByRole('button', { name: 'Show more: the steps of Scanned' }).first();
 	await expect(opener).toBeVisible({ timeout: 20_000 });
 	await opener.click();

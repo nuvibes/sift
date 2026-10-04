@@ -5,33 +5,7 @@
  */
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { signInAsAdmin } from './admin';
-
-/*
- * Wait for the viewer to finish arriving before measuring it.
- *
- * It grows into place on a transition, so `toBeVisible` is the FIRST frame of that rather than
- * where it ends up, and every measurement taken there is of a smaller, lower dialog.
- *
- * Two frames agreeing about the box is not enough: a Svelte `css` transition compiles to a real CSS
- * animation, which the browser runs off the main thread, so two `getBoundingClientRect()` reads a
- * frame apart can agree in the MIDDLE of it and the wait ends early with no tell at all.
- *
- * The animation's own `finished` promise is the fact, so that is what is waited on. A frame first,
- * because the transition is registered on the tick after the element appears, and the loop repeats
- * so that a second animation starting behind the first is waited on too; it ends when a frame goes
- * by with nothing running.
- */
-async function settled(sheet: Locator): Promise<void> {
-	await sheet.evaluate(async (element) => {
-		for (let round = 0; round < 4; round += 1) {
-			await new Promise((resolve) => requestAnimationFrame(() => resolve(undefined)));
-			const running = element.getAnimations();
-			if (running.length === 0) return;
-			// A cancelled animation rejects; that is the element having settled, not a failure.
-			await Promise.all(running.map((one) => one.finished.catch(() => undefined)));
-		}
-	});
-}
+import { settled } from './settled';
 
 const CLIP = {
 	id: 'm1',
