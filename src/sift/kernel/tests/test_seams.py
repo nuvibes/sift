@@ -16,6 +16,7 @@ from sift.kernel.db import Database
 from sift.kernel.seams import DatabaseSeam
 
 EXPECTED_SEAMS = {
+    "RemovedMembersSeam",
     "MetadataSourceSeam",
     "DatabaseSeam",
     "DownloaderSeam",

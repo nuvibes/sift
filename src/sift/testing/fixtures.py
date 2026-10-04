@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import re
 import struct
 import subprocess
 import zlib
@@ -108,6 +109,22 @@ def _hold_zone(zone: str | None) -> None:
     else:
         os.environ["TZ"] = zone
     when.refresh()
+    _give_a_daylight_rule_its_hour(zone)
+
+
+_NAMES_DAYLIGHT = re.compile(r"[A-Za-z]{3,}[-+]?\d[\d:]*[A-Za-z]{3,}")
+
+
+def _give_a_daylight_rule_its_hour(zone: str | None) -> None:
+    """On Windows the runtime keeps the daylight shift it last read from the system (nothing, on
+    a machine in UTC), so a rule that names a daylight zone, such as "EST5EDT", is given its hour."""
+    if os.name != "nt" or zone is None or not _NAMES_DAYLIGHT.fullmatch(zone):
+        return
+    import ctypes
+
+    shift = ctypes.CDLL("ucrtbase").__dstbias
+    shift.restype = ctypes.POINTER(ctypes.c_long)
+    shift()[0] = -3600
 
 
 @pytest.fixture(scope="session", autouse=True)

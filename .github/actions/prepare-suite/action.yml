@@ -79,3 +79,5 @@ runs:
       run: |
         uv run python scripts/fetch_vendor.py --build-missing --wheel-by-contents
         vendor/bin/ffprobe.exe -version | head -1
+        # The tests draw their sample files with `ffmpeg` by its bare name: the one that ships.
+        echo "$GITHUB_WORKSPACE/vendor/bin" >> "$GITHUB_PATH"

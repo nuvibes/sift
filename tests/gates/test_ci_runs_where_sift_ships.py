@@ -395,6 +395,13 @@ def test_every_test_file_is_in_exactly_one_shard() -> None:
         assert name in files, f"ALONE names {name}, which is not a test file here"
 
 
+def test_the_suite_finds_the_tools_that_ship_by_their_bare_names() -> None:
+    """The tests draw their sample files with `ffmpeg` by name, and a hosted runner has none of
+    its own: the prepared suite puts the folder of shipped tools on the path of later steps."""
+    action = (ACTIONS / "prepare-suite" / "action.yml").read_text(encoding="utf-8")
+    assert 'echo "$GITHUB_WORKSPACE/vendor/bin" >> "$GITHUB_PATH"' in action
+
+
 def test_no_step_hands_later_steps_a_variable_sift_refuses() -> None:
     """A variable written to the job's environment reaches every later step, and Sift refuses to
     start beside a SIFT_ variable that is not one of its settings."""

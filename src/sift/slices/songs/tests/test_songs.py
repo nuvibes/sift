@@ -383,7 +383,7 @@ def test_the_wall_is_counted_along_its_facets(client: TestClient, clips: Clips) 
     sign_in(client)
     named_by_acoustid(client, clips.first, "Blue")
     created = client.get("/api/songs/facets", params={"facet": "created"}).json()
-    assert created["values"] == [{"value": "sift", "count": 1, "label": None}]
+    assert created["values"] == [{"value": "music_lookup", "count": 1, "label": None}]
     assert client.get("/api/songs/facets", params={"facet": "tags"}).status_code == 422
     assert _ids(client, created="me") == []
 

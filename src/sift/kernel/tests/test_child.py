@@ -366,6 +366,9 @@ def test_a_child_that_cannot_start_or_answer_says_so(
     starts({"ok": True}, breaks=True)
     with pytest.raises(DeviceUnavailable, match=r"stopped while Probe was using it \(gone\)"):
         runner.load(weight)
+    starts({"ok": True})  # the pipe ends where the answer should be
+    with pytest.raises(DeviceUnavailable, match=r"stopped while Probe was using it\. It is"):
+        runner.load(weight)
     starts({"ok": True}, {"error": "ValueError: bad shape", "kind": "other"})
     with pytest.raises(RuntimeError, match="bad shape"):
         runner.load(weight)

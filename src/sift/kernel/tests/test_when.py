@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import os
 import sqlite3  # nosemgrep: sift-no-database-driver-outside-kernel
 import time
 from collections.abc import Callable
@@ -51,6 +52,21 @@ def test_a_moment_at_half_past_eleven_is_on_that_evenings_day(machine_zone: SetZ
     machine_zone(TOKYO)
     assert when.day_of(LATE_EVENING) == date(2026, 9, 16)
     assert when.stamp(LATE_EVENING, "%H:%M") == "12:30"
+
+
+def test_a_daylight_rule_moves_the_clock_where_the_machines_own_zone_has_none(
+    machine_zone: SetZone,
+) -> None:
+    """On Windows the runtime keeps the length of the daylight shift it last read from the
+    system, which is nothing on a machine in UTC; the fixture gives the rule its hour."""
+    if os.name == "nt":
+        import ctypes
+
+        shift = ctypes.CDLL("ucrtbase").__dstbias
+        shift.restype = ctypes.POINTER(ctypes.c_long)
+        shift()[0] = 0
+    machine_zone(NEW_YORK)
+    assert when.stamp(LATE_EVENING, "%H:%M %z") == "23:30 -0400"
 
 
 def test_sql_groups_a_moment_under_the_same_day_python_does(machine_zone: SetZone) -> None:
