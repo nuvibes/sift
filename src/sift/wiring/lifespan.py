@@ -47,6 +47,7 @@ from sift.kernel.config import (
     retired_variables_in_use,
 )
 from sift.kernel.db import DatabaseError, keep_the_log_folded, keep_the_statistics_current
+from sift.kernel.diagnostics import boot_set_aside
 from sift.kernel.hardware import HardwareReport
 from sift.kernel.jobs import JobQueue, WorkerPool
 from sift.kernel.jobs.clock import TaskClock
@@ -242,7 +243,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """
     async with AsyncExitStack() as teardown:
         await start_up(app, teardown)
-        yield
+        with boot_set_aside():
+            yield
         log.info("boot.shutdown")
 
 

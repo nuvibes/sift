@@ -37,7 +37,7 @@ import sys
 import threading
 import time
 from collections import deque
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from contextlib import AbstractAsyncContextManager
 
 from sift.kernel.db import DatabaseError
@@ -835,6 +835,22 @@ def _read_shape(stage: str, sql: str | None) -> str:
         return stage
     flat = " ".join(sql.split())
     return flat[:110] if len(flat) <= 110 else flat[:107] + "..."
+
+
+@contextlib.contextmanager
+def boot_set_aside() -> Iterator[None]:
+    """Keep what start-up built out of every later collection, for as long as the server runs.
+
+    A full collection walks every tracked object while every request waits, and nearly all of
+    them are start-up's, which live until the process ends: seconds on a slow or busy machine.
+    Given back on the way out, so an application built again in one process keeps no earlier one.
+    """
+    gc.collect()
+    gc.freeze()
+    try:
+        yield
+    finally:
+        gc.unfreeze()
 
 
 def install_stack_dumper() -> bool:

@@ -121,12 +121,12 @@ test.beforeEach(async ({ page }) => {
 test('an ordinary wheel moves a sideways strip sideways', async ({ page }) => {
 	const strip = await openTheSheet(page);
 
-	const box = (await strip.boundingBox())!;
-	await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-	await page.mouse.wheel(0, 300);
-
-	// It answers the wheel at all, which is the whole claim. The exact distance is the browser's.
-	await expect.poll(() => strip.evaluate((el) => el.scrollLeft)).toBeGreaterThan(0);
+	// It answers the wheel at all, which is the whole claim. Turned again until the turn lands.
+	await expect(async () => {
+		await strip.hover();
+		await page.mouse.wheel(0, 300);
+		expect(await strip.evaluate((el) => el.scrollLeft)).toBeGreaterThan(0);
+	}).toPass({ timeout: 20_000 });
 });
 
 test('a strip already at its end hands the wheel back rather than swallowing it', async ({
@@ -150,8 +150,7 @@ test('a strip already at its end hands the wheel back rather than swallowing it'
 	   to have scrolled at all. */
 	await strip.evaluate((el) => el.scrollIntoView({ block: 'start' }));
 
-	const box = (await strip.boundingBox())!;
-	await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+	await strip.hover();
 
 	// At the start, which is the end an upward turn pushes it towards.
 	expect(await strip.evaluate((el) => el.scrollLeft)).toBe(0);

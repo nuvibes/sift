@@ -52,9 +52,12 @@ test('signing in through the form lands on the grid', async ({ page }) => {
 	await page.goto('/login');
 	await page.getByLabel('Username').fill(ADMIN);
 	await page.getByLabel('Password', { exact: true }).fill(PASSWORD);
-	await page.getByRole('button', { name: 'Sign in' }).click();
 
-	await expect(page).toHaveURL('/browse');
+	// Pressed again while busy: every spec signs in as this account, one sign-in at a time.
+	await expect(async () => {
+		await page.getByRole('button', { name: 'Sign in' }).click();
+		await expect(page).toHaveURL('/browse', { timeout: 4000 });
+	}).toPass({ timeout: 30_000 });
 	await expect(page.getByRole('navigation', { name: 'Main' })).toBeVisible();
 });
 

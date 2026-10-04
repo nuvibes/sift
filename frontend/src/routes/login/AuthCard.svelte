@@ -89,6 +89,12 @@
 				error = caught.detail ?? "That password isn't strong enough.";
 			} else if (caught instanceof ApiError && caught.status === 409) {
 				error = 'This instance already has an admin. Sign in instead.';
+			} else if (caught instanceof ApiError && caught.status === 429 && mode === 'login') {
+				// Not a refusal: another sign-in for this name is still being checked. Said in the
+				// server's words, which are the same whether or not the name exists.
+				error =
+					caught.detail ??
+					'A sign-in for that username is already being checked. Try again in a moment.';
 			} else if (caught instanceof ApiError && mode === 'login') {
 				/*
 				 * One sentence for every way a sign-in can fail, and it is deliberately vague.

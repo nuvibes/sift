@@ -107,6 +107,23 @@ describe('the card follows the button and error rules every form does', () => {
 });
 
 describe('a sign-in the server refuses', () => {
+	/* A sign-in turned away because another for the same name is being checked is not a wrong
+	   password, and must not be told as one to somebody who typed the right one. */
+	it('says a sign-in is already being checked, never that the password is wrong', async () => {
+		const busy = 'A sign-in for that username is already being checked. Try again in a moment.';
+		vi.spyOn(api, 'post').mockRejectedValue(new ApiError(429, 'Too many requests.', busy));
+		const where = render('login');
+		where
+			.querySelector('form')
+			?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+
+		await vi.waitFor(() => {
+			flushSync();
+			expect(where.querySelector('.problem[role="alert"]')?.textContent).toContain(busy);
+		});
+		expect(where.textContent).not.toContain('Incorrect username or password.');
+	});
+
 	/* One sentence for a wrong username and a wrong password alike, so the screen never says which
 	   half was right. */
 	it('says Incorrect username or password, whichever half was wrong', async () => {

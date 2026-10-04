@@ -624,7 +624,9 @@ async def test_waiting_on_a_watcher_that_was_never_started_returns_at_once(
 def _paced(
     walk_seconds: float, monkeypatch: pytest.MonkeyPatch
 ) -> tuple[Any, list[float], list[float]]:
-    """The real emitter, with only watchdog's walk replaced by a stopwatch."""
+    """The real emitter, with watchdog's walk replaced by one that costs exactly `walk_seconds`
+    on a clock that moves only when the walk moves it: on the real one, a busy machine's late
+    wake from a sleep is read as part of the walk, and a cheap walk as an expensive one."""
     emitter = watcher_module._PacedPollingEmitter.__new__(watcher_module._PacedPollingEmitter)
     emitter._rest_seconds = 0.0
     emitter._reported = False
@@ -633,17 +635,17 @@ def _paced(
 
     waits: list[float] = []
     costs: list[float] = []
+    now = [1_000.0]
 
     def walked(self: Any, timeout: float) -> None:
         # watchdog waits the interval and then walks inside this one call, so the code subtracts
         # the wait to find the walk's cost.
         waits.append(timeout)
-        began = time.monotonic()
-        time.sleep(timeout + walk_seconds)
-        # What the walk really cost, measured: `time.sleep` is a floor and coverage slows it.
-        costs.append(time.monotonic() - began - timeout)
+        now[0] += timeout + walk_seconds
+        costs.append(walk_seconds)
 
     monkeypatch.setattr(PollingEmitter, "queue_events", walked)
+    monkeypatch.setattr(watcher_module, "time", SimpleNamespace(monotonic=lambda: now[0]))
     return emitter, waits, costs
 
 

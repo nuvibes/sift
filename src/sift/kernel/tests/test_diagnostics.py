@@ -29,6 +29,7 @@ from sift.kernel.diagnostics import (
     SlowestWork,
     ThreadPoolWatch,
     WidestReads,
+    boot_set_aside,
     install_stack_dumper,
     where_is,
 )
@@ -1069,3 +1070,14 @@ def test_a_new_window_forgets_how_wide_the_reads_were() -> None:
     reads.reset()
 
     assert reads.widest() == []
+
+
+def test_what_start_up_built_is_set_aside_and_given_back() -> None:
+    """Inside, a full collection has nothing of the boot's to walk; outside, nothing is kept."""
+    built = [[n] for n in range(1000)]
+    with boot_set_aside():
+        aside = gc.get_freeze_count()
+        assert aside >= len(built)
+        assert not any(one is built for one in gc.get_objects())
+    assert gc.get_freeze_count() == 0
+    assert any(one is built for one in gc.get_objects())
