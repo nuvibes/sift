@@ -906,7 +906,7 @@
 			"frontend/e2e/page-alignment.spec.ts": 280,
 			"frontend/e2e/pager-and-marks.spec.ts": 171,
 			"frontend/e2e/player.spec.ts": 338,
-			"frontend/e2e/rail-arrangement.spec.ts": 229,
+			"frontend/e2e/rail-arrangement.spec.ts": 232,
 			"frontend/e2e/recent.spec.ts": 50,
 			"frontend/e2e/responsive.spec.ts": 74,
 			"frontend/e2e/saved-searches.spec.ts": 237,

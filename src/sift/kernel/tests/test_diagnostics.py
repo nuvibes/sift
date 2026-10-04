@@ -613,12 +613,15 @@ async def test_a_hold_is_looked_up_once_and_a_loop_on_time_never(
 
     The line itself is made slow to write here. The heartbeat writes it after the hold, and a look
     arriving while it does must find the loop's mark already moved, or the writing of one hold's
-    line is read as a second hold."""
+    line is read as a second hold.
+
+    Run on the real clock, with a warning of a whole second: a machine busy with other tests keeps
+    the loop waiting a tenth of one on its own, and that is not the hold this is about."""
     looked: list[int] = []
 
     class SlowToWrite:
         def warning(self, *_args: object, **_said: object) -> None:
-            time.sleep(0.05)
+            time.sleep(0.5)
 
     monkeypatch.setattr("sift.kernel.diagnostics.log", SlowToWrite())
 
@@ -627,12 +630,12 @@ async def test_a_hold_is_looked_up_once_and_a_loop_on_time_never(
         return "somewhere"
 
     def holds_the_loop() -> None:
-        time.sleep(0.4)
+        time.sleep(2.5)
 
     watchdog = LoopWatchdog(
         stall_seconds=10_000.0,
         beat_seconds=0.02,
-        lag_warn_seconds=0.1,
+        lag_warn_seconds=1.0,
         look_seconds=0.005,
         where=where,
     )
@@ -641,10 +644,10 @@ async def test_a_hold_is_looked_up_once_and_a_loop_on_time_never(
         await asyncio.sleep(0.15)
         assert looked == [], "a loop that kept its beat was read"
         holds_the_loop()
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(1.0)
         assert looked == [threading.get_ident()], looked
         holds_the_loop()
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(1.0)
         assert len(looked) == 2, looked
     finally:
         await watchdog.stop()

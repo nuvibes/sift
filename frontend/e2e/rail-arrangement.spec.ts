@@ -6,6 +6,7 @@
  */
 import { expect, test, type Page } from '@playwright/test';
 import { signInAsAdmin } from './admin';
+import { settled } from './settled';
 
 const ORDER = 'sift.rail.order';
 const HIDDEN = 'sift.rail.hidden';
@@ -682,7 +683,16 @@ test('the drop zones do not change size while a row is in the air', async ({ pag
 	await startArranging(page, label);
 
 	const band = page.locator('nav.rail .zone.between');
+	/* The room the band takes in the layout, which is what the rule is about. The lit band is
+	   drawn larger by a painted scale that moves nothing, and a box read off the screen includes
+	   that paint: it agrees with the resting one only if it is read before the growth begins. */
+	const room = () =>
+		band.evaluate((el) => ({
+			height: (el as HTMLElement).offsetHeight,
+			top: (el as HTMLElement).offsetTop
+		}));
 	const resting = (await band.boundingBox())!;
+	const before = await room();
 
 	const from = await centre(page, label);
 	await page.mouse.move(from.x, from.y);
@@ -693,12 +703,11 @@ test('the drop zones do not change size while a row is in the air', async ({ pag
 
 	// Lit up, so this is a live drag over a live zone rather than a still rail measured twice.
 	await expect(band).toHaveClass(/over/);
+	await settled(band);
 
 	// And exactly the size it was at rest. The strip may change colour however it likes; it may not
 	// take up more room, because the room it takes is where the hand is already pointing.
-	const lit = (await band.boundingBox())!;
-	expect(lit.height).toBe(resting.height);
-	expect(lit.y).toBe(resting.y);
+	expect(await room()).toEqual(before);
 
 	await page.mouse.up();
 });
