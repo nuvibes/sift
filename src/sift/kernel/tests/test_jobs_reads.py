@@ -1290,6 +1290,17 @@ async def test_a_counted_walk_still_waiting_has_all_it_counted_left(job_queue: J
     assert unread.uncounted == 0
 
 
+async def test_a_kind_a_walk_has_finished_reading_is_shared_none_of_what_is_left(
+    job_queue: JobQueue,
+) -> None:
+    await _walk(job_queue, {"root_id": "r-1"}, units=1, to_read='{"video": 0, "image": 50}')
+    await _walk(job_queue, {"root_id": "r-2"}, units=1, to_read='{"video": 0}')
+
+    unread = await job_queue.files_to_read(["walk"])
+
+    assert unread.by_kind == {"image": 50.0}
+
+
 async def test_a_walks_kinds_are_written_while_it_waits_or_by_the_worker_holding_it(
     job_queue: JobQueue,
 ) -> None:

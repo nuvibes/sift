@@ -862,14 +862,13 @@ async def measure_storage(
         return level
 
     done: list[StorageLevel] = []
-    for slot, at_once in enumerate(levels):
-        done.append(await steady(partial(take, at_once), _marked, busy))
-        wider = levels[slot + 1] if slot + 1 < len(levels) else None
+    untried: str | None = None
+    stop = False
+    while not stop:
+        done.append(await steady(partial(take, levels[len(done)]), _marked, busy))
+        wider = levels[len(done)] if len(done) < len(levels) else None
         stop, untried = _stops(done, len(sample), wider)
-        if stop:
-            curve = replace(curve, unmeasured=untried)
-            break
-    curve = replace(curve, levels=tuple(done))
+    curve = replace(curve, levels=tuple(done), unmeasured=untried)
     between = midpoint(curve.eligible, key=_mbps)
     if between is not None and between * 2 <= len(sample):
         done.append(await steady(partial(take, between), _marked, busy))

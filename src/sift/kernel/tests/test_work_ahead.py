@@ -493,3 +493,24 @@ async def test_a_split_count_says_what_stands_and_what_arrives_from_one_read_of_
     blind.register_split("face_scan", faces)
     counted = await blind.counted()
     assert counted.waiting == {"face_scan": 2727} and counted.standing == {}
+
+
+async def test_a_split_counter_that_fails_is_left_out_while_the_others_are_counted() -> None:
+    async def faces(files: Sequence[str]) -> Split:
+        return Split(waiting=40, standing=30, arriving={"video": 10})
+
+    async def broken(files: Sequence[str]) -> Split:
+        raise RuntimeError("the table is not there")
+
+    ahead = WorkAhead(live_files=_files)
+    ahead.register_split("face_scan", faces)
+    ahead.register_split("watermark_read", broken)
+    counted = await ahead.counted()
+
+    assert counted.waiting == {"face_scan": 40}
+    assert counted.standing == {"face_scan": 30}
+    assert counted.arriving == {"face_scan": {"video": 10}}
+
+
+async def _files() -> list[str]:
+    return ["f1"]

@@ -21,6 +21,7 @@ from sift.slices.performance.rates import (
     MachineRates,
     RatesStore,
     StorageRate,
+    lengths_from_json,
     measurement_to_json,
     more_from_json,
     together_from_json,
@@ -724,6 +725,23 @@ async def test_a_storage_run_keeps_the_kept_gpu_and_models(
 async def test_the_kept_gpu_and_models_survive_an_unreadable_reading() -> None:
     assert more_from_json("{not json") == (None, ())
     assert more_from_json(measurement_to_json(Measurement(cores=8))) == (None, ())
+
+
+def test_the_kept_run_lengths_survive_an_unreadable_reading() -> None:
+    kept = measurement_to_json(Measurement(cores=8), lengths={"storage": 12.5})
+    assert lengths_from_json(kept) == {"storage": 12.5}
+    for unreadable in ("{not json", "[1]", '{"lengths": [1]}', '{"lengths": {"storage": "x"}}'):
+        assert lengths_from_json(unreadable) == {}, unreadable
+
+
+async def test_a_gpu_with_no_model_passes_measures_the_previews_alone(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seen = _measured_more(monkeypatch)
+    runner = a_runner(tmp_path, await a_store(tmp_path), preview=cast(Any, object()))
+    await runner.run()
+    assert runner.card == a_card() and runner.models == ()
+    assert "model_source" not in seen
 
 
 def a_together(*, behind: bool) -> measure_together.Together:

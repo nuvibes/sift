@@ -360,6 +360,19 @@ async def test_a_products_count_on_activity_takes_in_the_files_still_to_be_read(
     assert await left(_Registry(read_only), live=[]) == Split(3, 3, {})  # type: ignore[arg-type]
 
 
+async def test_a_product_switched_off_or_unknown_waits_on_nothing() -> None:
+    async def off() -> None:
+        return None
+
+    async def five(_within: Any) -> int:
+        return 5
+
+    switched_off = SimpleNamespace(key="thumbnails", lack=off, coming=five)
+    left = partial(work_ahead._product_left, content=cast(Any, _Lacking()), live=["f1"])
+    assert await left(_Registry(switched_off), key="thumbnails") == Split(0)  # type: ignore[arg-type]
+    assert await left(_Registry(switched_off), key="previews") == Split(0)  # type: ignore[arg-type]
+
+
 # --- the small answers main gives the features that may not ask each other --------------------
 
 
@@ -746,3 +759,95 @@ async def test_the_first_benchmark_reads_the_application_only_when_it_runs(
     wiring.provide(app, wiring.ON_SETTINGS_CHANGED, react)
     await handed["notify"]({"pool.size"})
     assert told == [{"pool.size"}]
+
+
+async def test_the_self_test_reads_the_machine_only_when_it_runs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Built before the queue and the watches exist; each model pass on its own set device, with
+    its own feature's models."""
+    from sift.kernel.config import Settings
+    from sift.kernel.content.mounts import storage_of
+    from sift.kernel.hardware import HardwareReport
+    from sift.slices.faces import settings as face_settings
+    from sift.slices.faces import weights as face_weights
+    from sift.slices.performance import benchmark
+    from sift.slices.semantic import settings as search_settings
+    from sift.slices.semantic import weights as search_weights
+    from sift.slices.watermarks import settings as mark_settings
+    from sift.slices.watermarks import weights as mark_weights
+    from sift.wiring import machine
+
+    settings = Settings(data_dir=tmp_path / "data", cache_dir=tmp_path / "cache")
+    hardware = HardwareReport(
+        cpu_count=4,
+        total_ram_bytes=None,
+        worker_concurrency=4,
+        cuda=False,
+        rocm=False,
+        transcode_encoders=(),
+        warnings=(),
+    )
+    hub = _Hub(
+        **{
+            face_settings.MODEL_KEY: "permissive",
+            face_settings.DEVICE_KEY: "cuda",
+            search_settings.MODEL_KEY: "full",
+            search_settings.DEVICE_KEY: "directml",
+            mark_settings.DEVICE_KEY: "cpu",
+        }
+    )
+
+    async def get_root(root_id: str) -> Any:
+        return SimpleNamespace(name="Films", abs_path=str(tmp_path)) if root_id == "r1" else None
+
+    library = SimpleNamespace(get_root=get_root)
+    store = cast(Any, SimpleNamespace(library=library, database=None))
+    app = FastAPI()
+    machine.build_self_test(app, settings, hardware, store, cast(Any, hub))
+    runner = wiring.part_of_app(app, performance.SELF_TEST_RUNNER)
+
+    asked: list[tuple[object, str | None]] = []
+
+    async def ask_for_run(queue: object, *, requested_by: str | None) -> str:
+        asked.append((queue, requested_by))
+        return "job-1"
+
+    queue = object()
+    monkeypatch.setattr(benchmark, "ask_for_run", ask_for_run)
+    wiring.provide(app, wiring.QUEUE, cast(Any, queue))
+    wiring.provide(app, wiring.WATCHDOG, cast(Any, SimpleNamespace(held_count=2)))
+    wiring.provide(app, wiring.THREADS, cast(Any, SimpleNamespace(full_count=3)))
+    assert await runner._ask("u1") == "job-1" and asked == [(queue, "u1")]
+    assert runner._stalls() == (2, 3) and runner._fell_behind() == 5
+
+    passes = runner._passes
+    assert passes is not None
+    faces, search, marks = await passes()
+    assert [one.name for one in (faces, search, marks)] == ["Faces", "Smart Search", "Watermarks"]
+    devices = [cast(Any, one.runner()).device for one in (faces, search, marks)]
+    assert devices == ["cuda", "directml", "cpu"]
+    assert [ask.weight for ask in faces.asks] == list(face_weights.pairing("permissive"))
+    assert search.asks[0].weight == search_weights.working_set("full")[0]
+    assert {ask.weight for ask in marks.asks} == set(mark_weights.working_set())
+    detector = faces.asks[0].weight
+    face_weights.path_of(settings, detector).parent.mkdir(parents=True)
+    face_weights.path_of(settings, detector).write_bytes(b"")
+    assert faces.installed(detector) and not search.installed(detector)
+
+    class _Queue:
+        def listen_for_settled(self, _job_type: str, _listener: Any) -> None:
+            return None
+
+    class _Workbench:
+        def register_reverser(self, _reverser: object) -> None:
+            return None
+
+    machine.build_benchmark(
+        app, store, cast(Any, _Queue()), cast(Any, hub), cast(Any, _Workbench())
+    )
+    first_folder = wiring.part_of_app(app, wiring.ON_FOLDER_ADDED)
+    measured = await first_folder._storage("r1")  # type: ignore[attr-defined]
+    assert (measured.label, measured.roots) == ("Films", (tmp_path,))
+    assert measured.storage == storage_of(tmp_path).key
+    assert await first_folder._storage("gone") is None  # type: ignore[attr-defined]

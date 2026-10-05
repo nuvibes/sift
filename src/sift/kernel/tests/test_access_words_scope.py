@@ -5,6 +5,7 @@ work that follows the files they may not see."""
 from __future__ import annotations
 
 import sqlite3  # nosemgrep: sift-no-database-driver-outside-kernel
+from dataclasses import replace
 from typing import Any, cast
 
 import pytest
@@ -230,6 +231,19 @@ async def test_a_kept_list_answers_only_its_own_viewer_and_words(
         == every
     )
     assert await access.word_matches(actors.admin, _searched("zqxv")) is None
+
+
+async def test_what_a_kept_word_list_stands_on_moves_when_the_index_is_written(
+    access: Repository, actors: Actors, library: set[str], temp_db: Database
+) -> None:
+    permitted, concealed, written = await access.words_stand_on(actors.guest)
+    assert (permitted, concealed) == await access.visible_counts(actors.guest)
+    assert written is not None
+    (root,) = await temp_db.fetch_all("SELECT id FROM library_roots")
+    await index_assets(temp_db, asset_id=await _file(temp_db, str(root["id"]), "zqxy new.mp4"))
+
+    assert (await access.words_stand_on(actors.guest))[2] != written
+    assert await access.words_stand_on(replace(actors.guest, id=new_id())) == (0, 0, None)
 
 
 @pytest.mark.parametrize(

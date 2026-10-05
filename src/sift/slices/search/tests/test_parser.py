@@ -196,6 +196,14 @@ def test_the_grammar_means_what_it_says(
     assert parse_tokens(typed) == Query(text=text, where=group(Op.ALL, filters))
 
 
+def test_a_refused_presence_has_one_place_beside_the_refused_values() -> None:
+    spelled = Group(
+        Op.ALL, (Negated(Term(Field.TAGS, "beach")), Negated(Presence(Field.TAGS, False)))
+    )
+    assert parse_tokens("-tags:none,beach").where == spelled
+    assert parse_tokens("-tags:beach,none").where == spelled
+
+
 def test_a_value_keeps_the_case_it_was_typed_in() -> None:
     """The field is case-insensitive; the value is not folded, because whether `Beach` and `beach`
     are one tag is the catalog's answer."""

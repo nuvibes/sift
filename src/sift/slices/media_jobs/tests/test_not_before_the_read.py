@@ -8,6 +8,10 @@ behind the read.
 
 from __future__ import annotations
 
+import sys
+from types import SimpleNamespace
+from typing import Any
+
 import pytest
 
 from sift.kernel.jobs import register_handler
@@ -19,6 +23,7 @@ from sift.slices.media_jobs.router import (
     AFTER_THE_BENCHMARK,
     NOT_KNOWN_UNTIL_COUNTED,
     PACE_WINDOW_SECONDS,
+    PACED_BY_SHARE,
     PAUSED_FOR_THE_BENCHMARK,
     WAITING_FOR_THE_SCAN,
     FamilyOfWork,
@@ -31,6 +36,8 @@ from sift.slices.media_jobs.router import (
 )
 
 pytestmark = pytest.mark.unit
+
+ROUTER = sys.modules[not_known_yet.__module__]
 
 
 def _family(label: str, *, waiting: int, quick: int | None, slow: int | None) -> FamilyOfWork:
@@ -214,6 +221,58 @@ def test_the_running_read_names_what_sets_its_pace() -> None:
     assert not_known_yet({"scan": read}, uncounted=0, pace=said)["scan"].pace == said
     idle = read.model_copy(update={"outstanding": 0})
     assert not_known_yet({"scan": idle}, uncounted=0, pace=said)["scan"].pace is None
+
+
+def test_a_pass_with_no_row_is_left_out_while_a_folder_is_uncounted() -> None:
+    read = _family("Scan", waiting=20, quick=30, slow=60)
+    answer = not_known_yet({"scan": read}, uncounted=2)
+    assert list(answer) == ["scan"] and answer["scan"].time_unknown == NOT_KNOWN_UNTIL_COUNTED
+
+
+class _Folders:
+    def __init__(self, *where: str) -> None:
+        self.where = where
+
+    async def roots(self) -> list[SimpleNamespace]:
+        return [SimpleNamespace(name=path.rsplit("/", 1)[-1], abs_path=path) for path in self.where]
+
+
+async def test_the_share_setting_the_pace_is_named_by_its_folders(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(ROUTER.lanes, "installed", lambda: SimpleNamespace(readings=dict))
+    monkeypatch.setattr(ROUTER._SHARE_WAITS, "busiest", lambda *_: "nas")
+
+    def storage_for(path: Any) -> SimpleNamespace:
+        return SimpleNamespace(key="nas" if path.parts[1] == "nas" else "disk")
+
+    monkeypatch.setattr(ROUTER.lanes, "storage_for", storage_for)
+    films, shows, trips = "/nas/Films", "/nas/Shows", "/nas/Trips"
+    named = {
+        (films,): "Films",
+        (shows, "/disk/Local", films): "Films and Shows",
+        (trips, films, shows): "Films, Shows and Trips",
+    }
+    for where, folders in named.items():
+        said = await ROUTER._paced_by(_Folders(*where))
+        assert said == PACED_BY_SHARE.format(folders=folders)
+    assert await ROUTER._paced_by(_Folders("/disk/Local")) is None
+
+
+def test_a_pass_whose_task_is_not_registered_keeps_its_own_runs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def task(job_type: str | None) -> Any:
+        return lambda task_id: SimpleNamespace(job_type=job_type and f"{job_type}-{task_id}")
+
+    monkeypatch.setattr(ROUTER, "get_schedule", task("run"))
+    tasked = ROUTER._run_types()
+    monkeypatch.setattr(ROUTER, "get_schedule", lambda _task: None)
+    unregistered = ROUTER._run_types()
+    monkeypatch.setattr(ROUTER, "get_schedule", task(None))
+    assert ROUTER._run_types() == unregistered
+    for family, task_id in ROUTER.FAMILY_TASKS.items():
+        assert tasked[family] == [*unregistered[family], f"run-{task_id}"]
 
 
 def _readings(**waited: float) -> dict[str, dict[str, object]]:

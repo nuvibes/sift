@@ -80,6 +80,7 @@ async def test_an_older_tunnel_setting_line_is_said_by_the_tunnels_name_now(
         edited("e-3", key="t.route", before="null", after='"tun-1"', after_said="Kept"),
         edited("e-4", key="t.volume", before='"tun-1"', after='"loud"'),
         edited("e-5", verb="renamed", key="t.route", after='"tun-1"'),
+        edited("e-6", key="t.route", before="tun-1", after='"tun-1"'),
     ]
 
     said = [json.loads(one.payload) for one in await objects_named(temp_db, events)]
@@ -90,4 +91,5 @@ async def test_an_older_tunnel_setting_line_is_said_by_the_tunnels_name_now(
         (None, "Kept"),
         (None, None),
         (None, None),
+        ("Direct", "Home VPN"),
     ]

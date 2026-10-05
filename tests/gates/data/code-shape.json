@@ -234,7 +234,7 @@
 		"src/sift/kernel/access/history_events.py": 42.6,
 		"src/sift/kernel/access/history_faces.py": 34.8,
 		"src/sift/kernel/access/history_folds.py": 50.3,
-		"src/sift/kernel/access/history_ledger.py": 26.3,
+		"src/sift/kernel/access/history_ledger.py": 26.4,
 		"src/sift/kernel/access/history_line.py": 61.3,
 		"src/sift/kernel/access/history_person.py": 33.2,
 		"src/sift/kernel/access/history_receipts.py": 41.2,

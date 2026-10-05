@@ -370,7 +370,12 @@ async def test_a_file_carries_a_waiting_person_s_pictures_only_when_asked(
     )
     bare = packs.read(
         await service.export_pack(
-            name="mine", version="1", person_ids=[], entry_ids=[entry_id], include_pictures=False
+            name="mine",
+            version="1",
+            person_ids=[],
+            # One claimed since the list was read is left out.
+            entry_ids=["e-claimed", entry_id],
+            include_pictures=False,
         ),
         expect_recognizer="test-recognizer",
     )
@@ -383,4 +388,5 @@ async def test_a_file_carries_a_waiting_person_s_pictures_only_when_asked(
         40,
     )
     assert neve.faces[0].picture == b"picture"
+    assert [one.name for one in bare.people] == ["Neve Arbor"]
     assert bare.people[0].faces[0].picture is None

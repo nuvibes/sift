@@ -212,11 +212,11 @@ def card_used() -> int | None:
     """The GPU's memory in use, from NVML as the hardware probe loads it; Windows only."""
     if not _WINDOWS:  # pragma: no cover (the other system's branch)
         return None
-    try:  # pragma: no cover (needs an NVIDIA driver)
+    try:
         nvml: Any = ctypes.CDLL("nvml.dll")
     except OSError:
         return None
-    return _nvml_used(nvml)  # pragma: no cover (needs an NVIDIA driver)
+    return _nvml_used(nvml)
 
 
 def _nvml_used(nvml: Any) -> int | None:

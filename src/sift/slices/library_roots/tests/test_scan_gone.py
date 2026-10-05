@@ -211,6 +211,34 @@ async def test_one_file_gone_before_its_read_is_that_file_only(
     assert await _statuses(temp_db) == {"present": 9}
 
 
+async def test_one_file_gone_after_the_gate_is_left_for_the_next_pass_not_refused(
+    monkeypatch: pytest.MonkeyPatch,
+    context_for: Context,
+    root: Root,
+    root_path: Path,
+    settings: Settings,
+    service: LibraryService,
+    reindexer: RecordingReindexer,
+    temp_db: Database,
+    job_queue: JobQueue,
+) -> None:
+    _pictures(root_path, 10)
+    real = verify_ingress
+
+    def gate(path: Path, **options: object) -> IngressResult:
+        result = real(path, **options)  # type: ignore[arg-type]
+        if path.name == "p004.png":
+            path.unlink()
+        return result
+
+    monkeypatch.setattr(taking_in, "verify_ingress", gate)
+    context = await _scan(context_for, root, settings, service, reindexer)
+
+    assert await _note(job_queue, context) is None
+    assert await _statuses(temp_db) == {"present": 9}
+    assert await _refusals(temp_db) == 0
+
+
 async def test_an_archive_whose_folder_went_is_neither_refused_nor_swept(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

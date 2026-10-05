@@ -125,6 +125,23 @@ def test_the_walk_reads_a_folder_it_cannot_open_as_empty_rather_than_failing(
     assert found == ["fine.mp4"]
 
 
+def test_a_root_that_refuses_its_listing_is_a_walk_that_learned_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    real = os.scandir
+
+    def refused(path: Any) -> Any:
+        if Path(path) == tmp_path:
+            raise PermissionError(13, "Access is denied")
+        return real(path)
+
+    monkeypatch.setattr(os, "scandir", refused)
+    walk = walking.walk_media(tmp_path)
+
+    assert not walk.looked
+    assert (walk.directories, walk.unlisted, walk.mtimes) == ((), (), {})
+
+
 async def test_a_scan_for_a_root_that_is_gone_says_so(
     context_for: Context,
     root: Root,

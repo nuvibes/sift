@@ -5,6 +5,7 @@ memory, the share it advises and the price it gives a fresh library."""
 from __future__ import annotations
 
 import asyncio
+import ctypes
 import threading
 from collections.abc import Sequence
 from pathlib import Path
@@ -233,6 +234,56 @@ def test_memory_is_how_far_free_fell_and_the_card_rose() -> None:
     assert blind.stop() == (None, None)
 
 
+def test_a_dip_between_the_ends_is_caught_by_the_sampler() -> None:
+    sampled = threading.Event()
+    free = iter([900, 500])
+
+    def reading() -> int:
+        found = next(free, 880)
+        if found == 500:
+            sampled.set()
+        return found
+
+    watch = mm.MemoryWatch(free=reading, card=lambda: None)
+    watch.EVERY_SECONDS = 0.001
+    watch.start()
+    assert sampled.wait(5)
+    assert watch.stop() == (400, None)
+
+
+def test_a_watch_stopped_before_it_started_measured_nothing() -> None:
+    assert mm.MemoryWatch(free=lambda: 900, card=lambda: 100).stop() == (None, None)
+
+
+class Kernel32:
+    def __init__(self, answers: bool) -> None:
+        self.answers = answers
+
+    def GlobalMemoryStatusEx(self, status: Any) -> int:
+        status._obj.ullAvailPhys = 3 << 30
+        return int(self.answers)
+
+
+@pytest.mark.parametrize(("answers", "free"), [(True, 3 << 30), (False, None)])
+def test_free_memory_is_what_windows_answers_and_none_on_a_refusal(
+    monkeypatch: pytest.MonkeyPatch, answers: bool, free: int | None
+) -> None:
+    windll = type("WinDLL", (), {"kernel32": Kernel32(answers)})()
+    monkeypatch.setattr(ctypes, "windll", windll, raising=False)
+    assert mm._windows_free() == free
+
+
+def test_the_cards_memory_is_none_without_an_nvidia_driver(monkeypatch: pytest.MonkeyPatch) -> None:
+    def no_driver(_name: str) -> Any:
+        raise OSError("nvml.dll could not be found")
+
+    monkeypatch.setattr(mm, "_WINDOWS", True)
+    monkeypatch.setattr(ctypes, "CDLL", no_driver)
+    assert mm.card_used() is None
+    monkeypatch.setattr(ctypes, "CDLL", lambda _name: Nvml())
+    assert mm.card_used() == 5 << 20
+
+
 def test_free_memory_is_read_on_this_system() -> None:
     found = mm.free_memory()
     assert found is None or found > 0
@@ -367,6 +418,30 @@ async def test_a_cancel_while_the_model_loads_ends_the_process_once_it_is_up() -
     with pytest.raises(asyncio.CancelledError):
         await loading
     assert stand.unloaded, "the model process a canceled run started is ended"
+
+
+async def test_a_cancel_while_the_models_load_stops_the_loading_watch(tmp_path: Path) -> None:
+    watches: list[str] = []
+    loading, release = threading.Event(), threading.Event()
+
+    class Counting(Quiet):
+        def stop(self) -> tuple[int | None, int | None]:
+            watches.append("stopped")
+            return super().stop()
+
+    def slow(one: mm.ModelPass) -> Any:
+        loading.set()
+        release.wait(5)
+        return mm._load(one)
+
+    measuring = asyncio.create_task(_measure(tmp_path, a_pass(), watch=Counting, load=slow))
+    await asyncio.to_thread(loading.wait, 5)
+    measuring.cancel()
+    await asyncio.sleep(0.05)
+    release.set()
+    with pytest.raises(asyncio.CancelledError):
+        await measuring
+    assert watches == ["stopped"]
 
 
 async def test_a_width_canceled_mid_run_stops_its_memory_watch(tmp_path: Path) -> None:

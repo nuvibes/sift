@@ -275,6 +275,21 @@ async def test_removing_one_that_is_already_gone(store: TunnelStore) -> None:
     await store.remove("nothing")
 
 
+async def test_a_tunnel_is_said_by_its_name_and_a_removed_one_as_removed(
+    store: TunnelStore, temp_db: Database, master_key: bytes
+) -> None:
+    kept = await store.add(name="Sweden", config=_CONFIG, master_key=master_key)
+    gone = await store.add(name="Norway", config=_CONFIG, master_key=master_key)
+    await store.remove(gone)
+
+    async with temp_db.read() as connection:
+        said = await store_module.tunnels_said(connection, [kept, gone, None, "", kept])
+        nothing = await store_module.tunnels_said(connection, [None, ""])
+
+    assert said == {kept: "Sweden", gone: "a tunnel since removed"}
+    assert nothing == {}
+
+
 async def test_a_site_on_a_removed_tunnel_refuses_rather_than_going_direct(
     store: TunnelStore, master_key: bytes
 ) -> None:

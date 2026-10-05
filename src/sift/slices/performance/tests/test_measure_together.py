@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import asyncio
+import threading
 from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
@@ -83,6 +84,11 @@ def test_a_step_down_takes_a_quarter_and_squeezes_the_models_last() -> None:
     one = mt.Plan(tasks=2, previews=2, on_card=False).stepped()
     assert one is not None and (one.tasks, one.previews) == (1, 1)
     assert one.stepped() is None
+
+
+def test_a_model_left_without_a_task_is_not_run() -> None:
+    plan = mt.Plan(tasks=3, previews=2, on_card=False, widths=(("Faces", 4), ("Smart Search", 4)))
+    assert plan.models == (("Faces", 1),) and plan.encodes == 0
 
 
 class Counted:
@@ -343,6 +349,31 @@ async def test_a_run_loads_what_the_plan_runs_and_ends_it_after(
     broken = replace(a_pass(), runner=refuses)
     failed = await mt.run(plan, a_machine(tmp_path), passes=[broken], to_read=[], readings=quiet)
     assert failed.failed == "the device went away"
+
+
+async def test_a_run_canceled_while_its_models_load_ends_the_ones_already_up(
+    tmp_path: Path,
+) -> None:
+    stand, later = Stand(), Stand()
+    loading, release = threading.Event(), threading.Event()
+
+    def slow() -> Stand:
+        loading.set()
+        release.wait(5)
+        return later
+
+    plan = mt.Plan(tasks=3, previews=1, on_card=False, widths=(("Faces", 1), ("Later", 1)))
+    machine = a_machine(tmp_path)
+    passes = [a_pass(stand), replace(a_pass(), name="Later", runner=slow)]
+    quiet = mt.Readings(worst_lag=lambda: 0.0, worst_wait=lambda: 0.0)
+    running = asyncio.create_task(mt.run(plan, machine, passes=passes, to_read=[], readings=quiet))
+    await asyncio.to_thread(loading.wait, 5)
+    running.cancel()
+    await asyncio.sleep(0.05)
+    release.set()
+    with pytest.raises(asyncio.CancelledError):
+        await running
+    assert stand.unloaded and later.unloaded and machine.ready == {}
 
 
 class Endless(Counted):

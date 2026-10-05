@@ -1082,10 +1082,9 @@ async def test_runs_from_before_a_settings_change_or_that_timed_nothing_price_no
     await ledger.settle({}, settings={"jobs at once": 8})
     await ledger.settle({}, settings={"jobs at once": 12})
     ledger.finished("thumbnail", duration_ms=300, ok=True, media_type="video", units=0)
-    idle = ledger.open_run(Family.GENERATE)
-    assert idle is not None
-    idle.started_at += 100  # after the change, whichever way the machine's clock stepped
     await ledger.settle({}, settings={"jobs at once": 12})
+    # Between the two runs, whichever way the machine's clock stepped.
+    ledger._settings_changed_at = older.started_at + 1
 
     assert await ledger.pace(Family.GENERATE, []) is None
 

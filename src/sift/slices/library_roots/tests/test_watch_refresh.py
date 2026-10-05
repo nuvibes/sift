@@ -125,6 +125,26 @@ async def test_a_removed_folder_is_let_go_and_a_moved_one_watched_where_it_is_no
     assert sorted(caught_up) == sorted([root.id, second.id]), "a moved folder is read by its move"
 
 
+async def test_a_removed_folder_whose_watch_was_being_attached_again_is_given_up(
+    watcher: LibraryWatcher,
+    root: Root,
+    library_store: LibraryStore,
+    caught_up: list[str],
+) -> None:
+    await watcher.refresh()
+    _, handler = watcher._watches[root.id]
+    watcher._watch_ended(root.id, handler)
+    again = watcher._reattaching[root.id]
+    try:
+        await library_store.delete_root(root.id, actor=Actor.sift("folder"))
+        await watcher.refresh()
+        assert again.cancelled()
+        assert watcher._reattaching == {} and watcher._watches == {}
+    finally:
+        await watcher.stop()
+    assert caught_up == [root.id]
+
+
 async def test_a_folder_that_could_not_be_watched_is_tried_again_and_caught_up(
     watcher: LibraryWatcher,
     root: Root,

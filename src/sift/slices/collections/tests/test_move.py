@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 from sift.kernel.access import Role, Viewer
 from sift.kernel.ids import new_id
 from sift.slices.auth import current_viewer
+from sift.slices.collections import service
 from sift.slices.collections.tests.conftest import (
     _INSERT_ASSET,
     NEVER_EXISTED,
@@ -126,6 +127,17 @@ def test_a_neighbour_in_the_shut_vault_keeps_its_place(
     finally:
         client.app.dependency_overrides.clear()  # type: ignore[attr-defined]
     assert arranged(client, collection_id) == [library.third, library.first, library.second]
+
+
+def test_a_neighbour_is_found_past_a_whole_page_of_files_in_the_shut_vault(
+    client: TestClient, library: Library, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(service, "MAX_PAGE_SIZE", 1)
+    collection_id = filled(client, library)
+    vault_asset(client, library.second)
+
+    assert move(client, collection_id, [library.third], "earlier").json()["changed"] == 2
+    assert arranged(client, collection_id) == [library.third, library.second, library.first]
 
 
 def test_a_guest_is_refused_alike_whatever_the_move_names(

@@ -511,9 +511,6 @@ def _resolved(
         if (ledger_kind, one.id or "") in unshown:
             out.append(Piece(one.text))
             continue
-        if one.href is not None:
-            out.append(one)
-            continue
         address = present.get((ledger_kind, one.id or ""))
         if address is None:
             out.append(Piece(one.text))
