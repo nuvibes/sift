@@ -1,7 +1,8 @@
-// How long the client and the desktop shell are, and how much of them is comment: ratchets that
-// may only fall.
+// How long the client and the desktop shell are, how their functions branch, and how much of them
+// is comment: ratchets that may only fall.
 //
-// Every `.svelte` and `.ts` module over 1,000 lines, every test file over 2,000, every module or
+// Every `.svelte` and `.ts` module over 1,000 lines, every function in one whose cyclomatic
+// complexity is over 20, every test file over 2,000, every module or
 // test file of fifty or more non-blank lines whose comments are over a quarter of them, and the count of loose
 // files at the top of `src/lib`, recorded under `code-shape` in `gate-baselines.json`. A number
 // that grew is refused, so is a new entry over the line, and a fall is recorded with `--record`.
@@ -88,7 +89,7 @@ const { rose, added, fell } = compareShape(all[GATE] ?? {}, shape, libTopLevel);
 
 if (rose.length > 0 || added.length > 0) {
 	console.error(
-		'\ncode-shape: over its line and longer than recorded, or new and over the line. Shorten it,' +
+		'\ncode-shape: over its line and past what is recorded, or new and over the line. Shorten it,' +
 			' or move it into a folder:\n  ' +
 			[...rose, ...added].join('\n  ')
 	);

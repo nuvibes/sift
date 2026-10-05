@@ -174,6 +174,25 @@
 			"frontend/src/routes/downloads/DownloadRow.svelte": 1204,
 			"frontend/src/routes/people/[id]/+page.svelte": 1116
 		},
+		"function_branches": {
+			"desktop/src/shelllink.ts::act": 28,
+			"desktop/src/update.ts::applyUpdate": 21,
+			"frontend/src/lib/api/client.ts::send": 22,
+			"frontend/src/lib/components/entity/MergeEntities.svelte::moving": 23,
+			"frontend/src/lib/components/entity/verbs.ts::entityVerbs": 40,
+			"frontend/src/lib/components/record/RecordValue.svelte::text": 23,
+			"frontend/src/lib/components/shell/SearchBox.svelte::choose": 22,
+			"frontend/src/lib/components/shell/SearchBox.svelte::onKey": 28,
+			"frontend/src/lib/grid/cards.svelte.ts::CardPaging.fill": 26,
+			"frontend/src/lib/grid/grid.svelte.ts::Grid.loadAt": 45,
+			"frontend/src/lib/grid/verbs.ts::fileVerbs": 62,
+			"frontend/src/lib/settings-ui/RecognitionSection.svelte::said": 26,
+			"frontend/src/lib/shell/when.ts::sayWindow": 21,
+			"frontend/src/lib/theater/cell.svelte.ts::Cell.#nextPlayable": 27,
+			"frontend/src/lib/theater/cell.svelte.ts::Cell.advance": 22,
+			"frontend/src/lib/theater/layouts.ts::readShape": 26,
+			"frontend/src/routes/downloads/DownloadRow.svelte::verbs": 23
+		},
 		"test_file_lines": {},
 		"comment_share": {
 			"desktop/src/assets.ts": 51.2,

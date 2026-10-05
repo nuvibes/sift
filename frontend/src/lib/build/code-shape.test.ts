@@ -2,14 +2,16 @@
  * What `scripts/check_code_shape.js` refuses and records, driven with files made for it.
  *
  * The gate over the real tree runs in `gates.js`; these hold its rules: a module, a test file and
- * the loose files of `src/lib` may not grow, a new entry over its line is refused, and comments
- * grow only when their share and their count rise together.
+ * the loose files of `src/lib` may not grow, a function may not gain a branch past its line, a new
+ * entry over its line is refused, and comments grow only when their share and their count rise
+ * together.
  */
 
 import { describe, expect, it } from 'vitest';
 
 import {
 	addFile,
+	branchesIn,
 	compareShape,
 	emptyShape,
 	looseImports,
@@ -18,6 +20,8 @@ import {
 
 const code = (lines: number) => 'const x = 1;\n'.repeat(lines);
 const commented = (comments: number, lines: number) => '// why\n'.repeat(comments) + code(lines);
+const branched = (name: string, ifs: number) =>
+	`function ${name}(x: number) {\n${'\tif (x) x -= 1;\n'.repeat(ifs)}}\n`;
 
 function shapeOf(files: Record<string, string>) {
 	const shape = emptyShape();
@@ -41,6 +45,96 @@ describe('the code-shape gate', () => {
 		expect(verdict(before, { 'frontend/src/lib/a.ts': code(1201) }).rose).toEqual([
 			'module_lines frontend/src/lib/a.ts: 1201, recorded 1200'
 		]);
+	});
+
+	it('counts a branch, a loop, a catch, a case and a short-circuit, and nothing else', () => {
+		const text = [
+			'function run(x: number, list: number[], held?: { a?: number }) {',
+			'\tif (x) x -= 1;',
+			'\telse if (x > 1) x += 1;',
+			'\tfor (const y of list) x += y;',
+			'\tfor (const k in list) x += 1;',
+			'\tfor (let i = 0; i < 1; i += 1) x += 1;',
+			'\twhile (x > 9) x -= 1;',
+			'\tdo x -= 1; while (x > 5);',
+			'\ttry { x += 1; } catch { x = 0; } finally { x += 1; }',
+			'\tswitch (x) { case 1: break; case 2: break; default: break; }',
+			'\tconst a = x ? 1 : 2;',
+			'\tlet b = (a && x) || held?.a;',
+			'\tb ??= a ?? 3;',
+			'\treturn b;',
+			'}'
+		].join('\n');
+		// two ifs, five loops, one catch, two cases, one conditional, two short-circuits, `??=`
+		// and `??`; an optional chain, a `default` and a `finally` add none.
+		expect(branchesIn('a.ts', text)).toEqual({ run: 1 + 15 });
+	});
+
+	it('counts a function written inside another by itself, and names each where it is written', () => {
+		const text = [
+			'class Store {',
+			'\tconstructor(x: number) { if (x) this.put(x); }',
+			'\tput(x: number) { return [x].map((y) => (y ? 1 : 2)); }',
+			'\tget size() { return 1; }',
+			'\tkept = () => 2;',
+			'}',
+			'const read = function () { return 1; };',
+			'const table = { row: () => 1 };',
+			'const rows = derive(() => (read() ? 1 : 2));',
+			'function read() { return 2; }',
+			'declare function typed(x: number): void;'
+		].join('\n');
+		expect(branchesIn('a.ts', text)).toEqual({
+			'Store.constructor': 2,
+			'Store.put': 1,
+			'Store.put.(anonymous)': 2,
+			'Store.size': 1,
+			'Store.kept': 1,
+			read: 1,
+			row: 1,
+			rows: 2,
+			'read#2': 1
+		});
+	});
+
+	it('reads the functions of both scripts of a component and none of its markup', () => {
+		const text = [
+			'<script lang="ts" module>',
+			'\texport function shared(x: number) { return x ? 1 : 2; }',
+			'</script>',
+			'<script lang="ts">',
+			'\tfunction press(x: number) { if (x && x > 1) return; }',
+			'</script>',
+			'{#if a}<button onclick={() => (a ? b : c)}>x</button>{/if}'
+		].join('\n');
+		expect(branchesIn('A.svelte', text)).toEqual({ shared: 2, press: 3 });
+	});
+
+	it('refuses a function over its branches that gains one, and a new one over the line', () => {
+		const before = { 'frontend/src/lib/a.ts': branched('run', 21) };
+		expect(shapeOf(before).function_branches).toEqual({ 'frontend/src/lib/a.ts::run': 22 });
+		expect(shapeOf({ 'frontend/src/lib/a.ts': branched('run', 19) }).function_branches).toEqual({});
+		expect(verdict(before, { 'frontend/src/lib/a.ts': branched('run', 22) }).rose).toEqual([
+			'function_branches frontend/src/lib/a.ts::run: 23, recorded 22'
+		]);
+		expect(verdict({}, before).added).toEqual([
+			'function_branches frontend/src/lib/a.ts::run: 22, over the line and not recorded'
+		]);
+		expect(
+			shapeOf({ 'frontend/src/lib/a.test.ts': branched('run', 30) }).function_branches
+		).toEqual({});
+	});
+
+	it('lets a function move to another module with its number, and no higher', () => {
+		const before = { 'frontend/src/lib/a.ts': branched('run', 21), 'frontend/src/lib/b.ts': '' };
+		const moved = { 'frontend/src/lib/a.ts': '', 'frontend/src/lib/b.ts': branched('run', 21) };
+		const found = verdict(before, moved);
+		expect([found.rose, found.added]).toEqual([[], []]);
+		expect(found.fell).toEqual([
+			'function_branches frontend/src/lib/b.ts::run: moved from frontend/src/lib/a.ts::run'
+		]);
+		const grown = { 'frontend/src/lib/a.ts': '', 'frontend/src/lib/b.ts': branched('run', 22) };
+		expect(verdict(before, grown).added).toHaveLength(1);
 	});
 
 	it('holds a test file to its own line', () => {

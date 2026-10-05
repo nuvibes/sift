@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""How long the Python is, and how much of it is prose: ratchets that may only fall.
+"""How long the Python is, how it branches, and how much of it is prose: ratchets that may only fall.
 
 Each file or function over its line is recorded in `tests/gates/data/code-shape.json`. A recorded
 number that grew is refused, so is a new entry over the line, and a number that fell is refused
@@ -13,6 +13,11 @@ growth: deleting code raises the share without adding a word. A test file is hel
 line as a module is; only its length has a line of its own (`TEST_FILE_LINES`), and its functions
 none. The client and the desktop shell are held the same way by
 `frontend/scripts/check_code_shape.js`.
+
+Branches are a function's cyclomatic complexity, counted as the linter's C901 rule counts it:
+one, and one more for each `if` and `elif`, loop, `except`, `try` with an `else`, `match` case
+that can fail, and function defined inside it. A long function can be simple and a short one
+cannot hide a dozen paths, so the two lines are held apart.
 """
 
 from __future__ import annotations
@@ -30,6 +35,7 @@ RECORD = ROOT / "tests" / "gates" / "data" / "code-shape.json"
 
 MODULE_LINES = 1000
 FUNCTION_LINES = 80
+FUNCTION_BRANCHES = 10
 TEST_FILE_LINES = 2000
 PROSE_SHARE = 25.0
 #: Below this many non-blank lines a single line moves the share by two points or more.
@@ -47,9 +53,12 @@ GROWS_BY_ENTRY: dict[str, str] = {
 }
 PLANTED_PREFIX = "GateFixture"
 
-COUNTS = ("module_lines", "function_lines", "test_file_lines")
+COUNTS = ("module_lines", "function_lines", "function_branches", "test_file_lines")
+#: The maps keyed by function, where a move between modules is not a new entry.
+BY_FUNCTION = ("function_lines", "function_branches")
 _NOTE = (
-    "Python modules over 1000 lines, functions over 80, test files over 2000, and files of 50 or "
+    "Python modules over 1000 lines, functions over 80 lines or 10 branches, test files over 2000, "
+    "and files of 50 or "
     "more non-blank lines, test files included, whose prose is over 25%. Each may only fall: scripts/check_code_shape.py, "
     "and record a fall with python scripts/check_code_shape.py --record"
 )
@@ -96,9 +105,12 @@ def prose_of(text: str, tree: ast.Module) -> tuple[int, int]:
     return len(nonblank), len(prose & nonblank)
 
 
-def function_lengths(tree: ast.Module) -> dict[str, int]:
-    """`{qualified name: lines}` for every function, a repeated name numbered from its second."""
-    found: dict[str, int] = {}
+FunctionNode = ast.FunctionDef | ast.AsyncFunctionDef
+
+
+def functions_of(tree: ast.Module) -> dict[str, FunctionNode]:
+    """`{qualified name: node}` for every function, a repeated name numbered from its second."""
+    found: dict[str, FunctionNode] = {}
 
     def visit(node: ast.AST, prefix: str) -> None:
         for child in ast.iter_child_nodes(node):
@@ -109,13 +121,54 @@ def function_lengths(tree: ast.Module) -> dict[str, int]:
                     while key in found:
                         seen += 1
                         key = f"{name}#{seen}"
-                    found[key] = (child.end_lineno or child.lineno) - child.lineno + 1
+                    found[key] = child
                 visit(child, f"{name}.")
             else:
                 visit(child, prefix)
 
     visit(tree, "")
     return found
+
+
+def length_of(function: FunctionNode) -> int:
+    return (function.end_lineno or function.lineno) - function.lineno + 1
+
+
+_ONE_MORE_PATH = (ast.If, ast.For, ast.AsyncFor, ast.While, ast.FunctionDef, ast.AsyncFunctionDef)
+
+
+def _always_matches(case: ast.match_case) -> bool:
+    pattern = case.pattern
+    return case.guard is None and isinstance(pattern, ast.MatchAs) and pattern.pattern is None
+
+
+def _paths_added(node: ast.stmt) -> int:
+    """The paths this statement adds by itself, whatever is inside it."""
+    if isinstance(node, _ONE_MORE_PATH):
+        return 1
+    if isinstance(node, (ast.Try, ast.TryStar)):
+        return len(node.handlers) + bool(node.orelse)
+    if isinstance(node, ast.Match):
+        return sum(not _always_matches(case) for case in node.cases)
+    return 0
+
+
+def _blocks_under(node: ast.stmt) -> list[list[ast.stmt]]:
+    """Every list of statements directly under this one."""
+    held = [getattr(node, name, None) for name in ("body", "orelse", "finalbody")]
+    parts = [*getattr(node, "handlers", []), *getattr(node, "cases", [])]
+    return [block for block in held if isinstance(block, list)] + [part.body for part in parts]
+
+
+def _paths_in(body: list[ast.stmt]) -> int:
+    return sum(
+        _paths_added(node) + sum(_paths_in(block) for block in _blocks_under(node)) for node in body
+    )
+
+
+def branches_of(function: FunctionNode) -> int:
+    """The function's cyclomatic complexity; a function inside it counts toward it too."""
+    return 1 + _paths_in(function.body)
 
 
 def share(prose: int, nonblank: int) -> float:
@@ -128,6 +181,7 @@ class Shape:
 
     module_lines: dict[str, int] = field(default_factory=dict)
     function_lines: dict[str, int] = field(default_factory=dict)
+    function_branches: dict[str, int] = field(default_factory=dict)
     test_file_lines: dict[str, int] = field(default_factory=dict)
     prose_share: dict[str, float] = field(default_factory=dict)
     prose_lines: dict[str, int] = field(default_factory=dict)
@@ -136,7 +190,7 @@ class Shape:
         return {name: dict(sorted(getattr(self, name).items())) for name in _MAPS}
 
 
-_MAPS = ("module_lines", "function_lines", "test_file_lines", "prose_share", "prose_lines")
+_MAPS = (*COUNTS, "prose_share", "prose_lines")
 
 
 def add_file(shape: Shape, rel: str, text: str) -> None:
@@ -153,9 +207,11 @@ def add_file(shape: Shape, rel: str, text: str) -> None:
     else:
         if length > MODULE_LINES and rel not in GROWS_BY_ENTRY:
             shape.module_lines[rel] = length
-        for name, lines in function_lengths(tree).items():
-            if lines > FUNCTION_LINES:
-                shape.function_lines[f"{rel}::{name}"] = lines
+        for name, function in functions_of(tree).items():
+            if length_of(function) > FUNCTION_LINES:
+                shape.function_lines[f"{rel}::{name}"] = length_of(function)
+            if branches_of(function) > FUNCTION_BRANCHES:
+                shape.function_branches[f"{rel}::{name}"] = branches_of(function)
     if nonblank >= PROSE_FLOOR and share(prose, nonblank) > PROSE_SHARE:
         shape.prose_share[rel] = share(prose, nonblank)
         shape.prose_lines[rel] = prose
@@ -183,39 +239,10 @@ def _base_name(key: str) -> str:
     return key.split("::", 1)[1].split("#", 1)[0].rsplit(".", 1)[-1]
 
 
-def compare(recorded: dict[str, dict[str, float]], now: Shape) -> Verdict:
-    """What moved between the record and today.
-
-    A function that leaves one module and arrives in another no longer than it left keeps its
-    number: splitting a module moves functions, and a move is not a new long function.
-    """
-    verdict = Verdict()
-    today = now.as_record()
-    for name in COUNTS:
-        was, is_ = recorded.get(name, {}), today[name]
-        gone = [key for key in was if key not in is_]
-        for key, value in is_.items():
-            if key not in was:
-                moved = next(
-                    (
-                        old
-                        for old in gone
-                        if name == "function_lines"
-                        and _base_name(old) == _base_name(key)
-                        and was[old] >= value
-                    ),
-                    None,
-                )
-                if moved is None:
-                    verdict.added.append(f"{name} {key}: {value}, over the line and not recorded")
-                else:
-                    gone.remove(moved)
-                    verdict.fell.append(f"{name} {key}: moved from {moved}")
-            elif value > was[key]:
-                verdict.rose.append(f"{name} {key}: {value}, recorded {was[key]}")
-            elif value < was[key]:
-                verdict.fell.append(f"{name} {key}: {value}, recorded {was[key]}")
-        verdict.fell += [f"{name} {key}: under the line, recorded {was[key]}" for key in gone]
+def _compare_prose(
+    recorded: dict[str, dict[str, float]], today: dict[str, dict[str, float]], verdict: Verdict
+) -> None:
+    """The prose pair: only the share and the count rising together is growth."""
     shares, counts = recorded.get("prose_share", {}), recorded.get("prose_lines", {})
     for key, value in today["prose_share"].items():
         lines = today["prose_lines"][key]
@@ -233,6 +260,42 @@ def compare(recorded: dict[str, dict[str, float]], now: Shape) -> Verdict:
         for key in shares
         if key not in today["prose_share"]
     ]
+
+
+def compare(recorded: dict[str, dict[str, float]], now: Shape) -> Verdict:
+    """What moved between the record and today.
+
+    A function that leaves one module and arrives in another no longer and no more branched than
+    it left keeps its number: splitting a module moves functions, and a move is not a new entry.
+    """
+    verdict = Verdict()
+    today = now.as_record()
+    for name in COUNTS:
+        was, is_ = recorded.get(name, {}), today[name]
+        gone = [key for key in was if key not in is_]
+        for key, value in is_.items():
+            if key not in was:
+                moved = next(
+                    (
+                        old
+                        for old in gone
+                        if name in BY_FUNCTION
+                        and _base_name(old) == _base_name(key)
+                        and was[old] >= value
+                    ),
+                    None,
+                )
+                if moved is None:
+                    verdict.added.append(f"{name} {key}: {value}, over the line and not recorded")
+                else:
+                    gone.remove(moved)
+                    verdict.fell.append(f"{name} {key}: moved from {moved}")
+            elif value > was[key]:
+                verdict.rose.append(f"{name} {key}: {value}, recorded {was[key]}")
+            elif value < was[key]:
+                verdict.fell.append(f"{name} {key}: {value}, recorded {was[key]}")
+        verdict.fell += [f"{name} {key}: under the line, recorded {was[key]}" for key in gone]
+    _compare_prose(recorded, today, verdict)
     return verdict
 
 
@@ -255,7 +318,7 @@ def main(argv: list[str]) -> int:
         return 0
     verdict = compare(json.loads(RECORD.read_text(encoding="utf-8")), now)
     if verdict.refused:
-        print("Over its line and longer than recorded, or new and over the line. Shorten it:\n")
+        print("Over its line and past what is recorded, or new and over the line. Shorten it:\n")
         print("  " + "\n  ".join(verdict.rose + verdict.added))
         return 1
     if verdict.fell and not record:

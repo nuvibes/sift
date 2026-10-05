@@ -117,8 +117,10 @@ cd frontend && npm run test:e2e                                        # the bro
 - **A ratchet holds both.** `scripts/check_code_shape.py` (the server) and
   `frontend/scripts/check_code_shape.js` (the browser client and the desktop app) record every file
   whose comments are more than a quarter of its lines, every module over 1,000 lines, every Python
-  function over 80 and every test file over 2,000. A recorded number may only fall, and the hooks
-  record a fall for you.
+  function over 80 and every test file over 2,000. They also record every function whose
+  cyclomatic complexity is over 10 in Python (counted as ruff's C901 counts it) or over 20 in
+  TypeScript (branches, loops, catches, cases and short-circuits, each function by itself). A
+  recorded number may only fall, and the hooks record a fall for you.
 - **The source is ASCII,** and two hyphens are never a dash, in code, comments or copy. Text on
   screen writes a real em dash as `\u2014`.
 - **Every Python file starts with** `# SPDX-License-Identifier: AGPL-3.0-or-later`.
