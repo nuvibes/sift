@@ -24,9 +24,12 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import Field
 
+from sift.kernel import wiring
 from sift.kernel.access import Viewer
+from sift.kernel.content import LibraryStore
 from sift.kernel.log import get_logger
 from sift.kernel.reach import BulkWriteDone, ConcealedByVault, vault_locked
+from sift.kernel.seams import ForgetGoneSeam
 from sift.kernel.wire import Wire
 from sift.kernel.wiring import part_of
 from sift.slices.auth import csrf_protect, current_viewer, require_admin
@@ -45,11 +48,7 @@ log = get_logger(__name__)
 
 router = APIRouter(tags=["delete"])
 
-#: The most files one request may delete.
-#:
-#: Declared here rather than imported from whichever slice happened to declare it first: every
-#: slice with a bulk route carries its own, deliberately the same number, because a slice reaching
-#: into another for a constant is the coupling this codebase does not have.
+#: The most files one request may delete; each bulk slice keeps its own copy of the number.
 MAX_BULK_ASSETS = 500
 
 
@@ -224,6 +223,8 @@ class FolderDeleted(Wire):
 async def delete_folder(
     folder_id: str,
     deleter: Annotated[Deleter, Depends(_deleter)],
+    forgets: Annotated[ForgetGoneSeam, Depends(wiring.forget_gone)],
+    library: Annotated[LibraryStore, Depends(wiring.library)],
     viewer: Annotated[Viewer, Depends(current_viewer)],
 ) -> FolderDeleted:
     """Delete a folder from the disk: every file Sift indexed under it, and then the directories.
@@ -243,12 +244,23 @@ async def delete_folder(
     There is no `mode`. Forgetting a folder without touching the disk is not a thing anybody can
     want: the next walk finds the directory still there and puts the row straight back.
     """
+    under = await _subfolders(library, folder_id)
     try:
         cleared = await deleter.remove_folder(folder_id, actor=viewer)
     except DeleteRefused as refused:
         raise _refusal(refused) from refused
+    await forgets.forget_gone("folder", folder_id, name=None, by=viewer, also=under)
     return FolderDeleted(
         files=cleared.files,
         directories=cleared.directories,
         left_behind=cleared.left_behind,
     )
+
+
+async def _subfolders(library: LibraryStore, folder_id: str) -> list[str]:
+    """Every folder under this one, read before the delete takes their rows."""
+    folder = await library.get_folder(folder_id)
+    rows = (
+        [] if folder is None else await library.folders_in_subtree(folder.root_id, folder.rel_path)
+    )
+    return [row.id for row in rows if row.id != folder_id]

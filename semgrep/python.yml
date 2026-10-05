@@ -89,6 +89,7 @@ rules:
         - src/sift/kernel/db_readers.py
         - src/sift/kernel/tests/test_db.py
         - src/sift/kernel/tests/test_db_lead_and_inline_reads.py
+        - src/sift/kernel/tests/test_db_blocking.py
         - src/sift/testing/*
         # The operator scripts, as a DIRECTORY: the same shape and the same reason the logger rule
         # above uses. Every reason this rule gives is about the RUNNING APPLICATION: a request, a

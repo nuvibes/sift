@@ -1205,12 +1205,9 @@ export interface paths {
          *     **Not admin-only, unlike everything else here**, and the difference is the point: this is a way
          *     of browsing rather than a control over the install. Anybody signed in may ask it.
          *
-         *     Which is why the answer goes back through the ordinary read. The lookalikes are found without
-         *     any notion of who is asking (it is arithmetic over numbers), so what comes out of that is a
-         *     list of candidates and not a result. Handing it to the read that decides visibility narrows it
-         *     to what this user may actually see, in one statement, the same one every other screen uses.
-         *     Filtering afterwards here would be a second opinion about concealment, in the one place it must
-         *     not be.
+         *     Which is why the lookalikes are ranked among this user's own files, so a hidden one can neither
+         *     fill the strip nor shorten it, and the answer still goes back through the ordinary read, the
+         *     one opinion about concealment every other screen uses.
          *
          *     A file the viewer cannot see answers with nothing found rather than refusing, for the same
          *     reason every per-asset route does: a refusal that differs from an empty answer is a way to ask
@@ -2400,20 +2397,16 @@ export interface paths {
          *     The rows and the total come from one statement in the access layer, so the count is the number
          *     of items on the screen and never the number of rows in the table.
          *
-         *     **Narrowed by the cards picked on the collection's tabs.** `people`, `tags`, `sites`,
-         *     `collections`, `photo_sets` and `songs` (the Music tab) are the query language's own fields, each a name as the language
-         *     writes one, given once per pick and combined with AND, read by the same engine and the same
-         *     parser the grid reads them with, so a pick narrows a collection's Files tab exactly as it narrows
-         *     a person's. The narrowing goes into the same statement as the scoping and the order, so the
-         *     total counts the narrowed set and the arranged order is kept within it. Declared rather than
-         *     read off the raw address, so a name this route does not take is visibly not taken: the rest of
-         *     the query language (a rating, a date) is the grid's, and this wall offers no bar to write it.
+         *     **Filtered by the query language, read off the raw address as `/assets` reads it**: the words
+         *     in `q` and the cards picked on the tabs narrow a collection's Files tab exactly as they narrow a
+         *     person's, inside the same statement as the scoping and the order, so the total counts the
+         *     narrowed set and the arranged order is kept within it.
          */
         get: operations["collection_items_api_collections__collection_id__items_get"];
         put?: never;
         /**
          * Edit Items
-         * @description Add to, remove from, or rearrange a collection.
+         * @description Add to, remove from, or rearrange a collection, or move one file a place either way.
          *
          *     **No file is moved.** This writes rows in the join table and nothing else: every path, every
          *     byte and every location row is exactly as it was. That is the promise the storage model makes,
@@ -3751,8 +3744,8 @@ export interface paths {
         /**
          * Waiting Fingerprints
          * @description Everybody a facial fingerprints file or a folder brought whom no face here matches yet,
-         *     newest first, with how many faces and where each came from. Admin-only, as the pane is; read
-         *     with recognition off too, since what is held stays held.
+         *     newest first, with how many faces, where each came from and whether an export carries them.
+         *     Admin-only, as the pane is; read with recognition off too, since what is held stays held.
          */
         get: operations["waiting_fingerprints_api_faces_fingerprints_waiting_get"];
         put?: never;
@@ -4177,11 +4170,9 @@ export interface paths {
         put?: never;
         /**
          * Export Pack
-         * @description Build a pack from People already here, and hand it back as a file.
-         *
-         *     Pictures are optional; without them a pack is numbers alone, the right default for one going
-         *     to somebody else. **Held to the People wall**, as `known_people` is: nobody a shut Hidden holds
-         *     back leaves in a file, and an empty list is refused in words, never read as "everybody".
+         * @description Build a facial fingerprints file from People here and the people waiting for a matching
+         *     face, and hand it back. Loads no model: the numbers are stored. Held to the People wall and to
+         *     what a swap refuses (`_carried`); nobody to carry is refused in words.
          */
         post: operations["export_pack_api_faces_packs_export_post"];
         delete?: never;
@@ -4312,6 +4303,26 @@ export interface paths {
          *     could not show. Answers at once with the task; the folder is read by the task.
          */
         post: operations["import_reference_folder_by_path_api_faces_references_folder_path_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/faces/references/folder/{job_id}/left-out": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Folder Left Out
+         * @description The files behind each count of a folder import's report. Only the latest import has any.
+         */
+        get: operations["folder_left_out_api_faces_references_folder__job_id__left_out_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -4930,31 +4941,11 @@ export interface paths {
         };
         /**
          * Read Path
-         * @description Get to know Sift, judged now: every learning path with its goals, and the hints.
+         * @description Get to know Sift, judged now: every learning path with its goals.
          */
         get: operations["read_path_api_insights_path_get"];
         put?: never;
         post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/insights/path/hints/{name}/seen": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Hint Seen
-         * @description Remember a hint was shown, so it is not shown again.
-         */
-        post: operations["hint_seen_api_insights_path_hints__name__seen_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -5054,17 +5045,9 @@ export interface paths {
          * List Jobs
          * @description A page of the queue, newest first: of every row, or with `fold`, of every family.
          *
-         *     The bounds are DECLARED rather than checked in the body, which is the same enforcement and a
-         *     truthful schema. Written out by hand they would be invisible to anything reading what this
-         *     route accepts, and a client generated from the schema would have nothing to respect.
-         *
-         *     ONE ROUTE, TWO ANSWERS, chosen by the caller and never guessed: without `fold` a page is rows
-         *     (every step its own row, the file name on each); with it a page is families. A folded page
+         *     The bounds are declared rather than checked in the body, so the schema says them. A folded page
          *     filtered by state reads the state the family's row shows (`folded_state`: a family with a
-         *     failed step in it IS a failed family, so folding hides no failure), which puts every family
-         *     under exactly one state. The choice between a failed family and a family with a failed step
-         *     is `folded_state`'s, made once for the row, and a state's tab that listed steps instead would
-         *     count a universe its All does not (`_tallies`).
+         *     failed step is a failed family), so every family is under exactly one state (`_tallies`).
          */
         get: operations["list_jobs_api_jobs_get"];
         put?: never;
@@ -5086,21 +5069,11 @@ export interface paths {
         put?: never;
         /**
          * Cancel Everything
-         * @description Stop every job that has not finished.
+         * @description Stop every job that has not finished, running work included: what runs keeps queueing
+         *     more (a scan hands out a read per file).
          *
-         *     For the queue that got away: a folder that turned out to hold far more than anybody meant to
-         *     point at, a setting switched on that queued work for the whole library, an import worth hours
-         *     that is no longer wanted. Fifty thousand rows is not something anybody cancels one at a time,
-         *     and without this the only way to stop it is to close the application.
-         *
-         *     Running work is stopped along with waiting work, and it has to be. What is in the queue was put
-         *     there by something that is still running (a scan hands out a probing job per file, and each
-         *     of those hands out a thumbnail, a preview and a sprite), so calling off only the waiting rows
-         *     would leave the producer walking and the queue would refill behind the press.
-         *
-         *     Nothing is deleted. The rows stay and can be read afterwards, and a file that was taken into
-         *     the library but never looked at is picked up by the next scan of its folder. Nothing to stop is
-         *     a success with a zero, the same as retrying nothing.
+         *     Nothing is deleted, and the next scan of a folder picks up what was never read. Nothing to stop
+         *     is a success with a zero.
          */
         post: operations["cancel_everything_api_jobs_cancel_all_post"];
         delete?: never;
@@ -5120,18 +5093,9 @@ export interface paths {
         put?: never;
         /**
          * Clear Canceled Jobs
-         * @description Throw away everything that was stopped.
+         * @description Throw away everything that was stopped, the pile a stopped import leaves behind.
          *
-         *     The pile `clear-failed` does not touch, and the one that actually accumulates: a stop is one
-         *     press that cancels the whole queue, so a library-sized import leaves a library-sized heap of
-         *     stopped rows behind, often beside a handful of failures.
-         *
-         *     The rows are only ever swept a week after they were stopped, which is the right pace for
-         *     housekeeping and no answer to somebody looking at a screen made of them today.
-         *
-         *     Finished work is left alone. It is the record of what the library actually has, and `retry-
-         *     canceled` beside this is the other thing to do with a stopped job. This is for when the answer
-         *     is that the work is not wanted at all.
+         *     Finished work is left alone. Nothing to clear is a success with a zero.
          */
         post: operations["clear_canceled_jobs_api_jobs_clear_canceled_post"];
         delete?: never;
@@ -5151,15 +5115,9 @@ export interface paths {
         put?: never;
         /**
          * Clear Failed Jobs
-         * @description Throw away everything that failed.
+         * @description Throw away everything that failed, for the failures no retry can fix.
          *
-         *     The companion to retrying, and the answer to failures that cannot succeed however often they
-         *     are offered again: a graphics card that was not installed at the time, a drive that has gone,
-         *     a run made under settings nobody uses now. Without it the only way to shift them would be to
-         *     retry every one and watch it fail a second time.
-         *
-         *     Cancelled and finished work is left alone: one is somebody's decision and the other ages out by
-         *     itself. Nothing to clear is a success with a zero, the same as retrying nothing.
+         *     Canceled and finished work is left alone. Nothing to clear is a success with a zero.
          */
         post: operations["clear_failed_jobs_api_jobs_clear_failed_post"];
         delete?: never;
@@ -5181,12 +5139,7 @@ export interface paths {
          * Press Full Amount
          * @description Use the full amount of this device although it is in use, or step back again.
          *
-         *     The press behind the leaf on the sidebar. An admin's, as the queue is: the pool is the whole
-         *     installation's. Answered with the state as asked for; the pool reaches it at its next
-         *     reconfigure, a few seconds later, finishing the task in each retiring worker's hand first.
-         *
-         *     Held in memory and not stored: see `kernel.attention` for why a press is a moment and the
-         *     setting is the standing choice. Pressing what is already on is a success that changes nothing.
+         *     Held in memory, not stored; the pool reaches it at its next reconfigure, a few seconds later.
          */
         post: operations["press_full_amount_api_jobs_full_amount_post"];
         delete?: never;
@@ -5215,14 +5168,7 @@ export interface paths {
          * Rebuild Previews
          * @description Bring every hover clip in the library up to the shape that is set.
          *
-         *     One sweep job rather than one job per file from here, which is the opposite of what the
-         *     thumbnail rebuild beside it does and is deliberate: the work of finding which clips are out of
-         *     date is a query that belongs with the job, and doing it inside a request would hold the
-         *     connection open while a large library is read. The sweep queues one encode per file once it has
-         *     the list, so the dashboard still shows the real work rather than one opaque row.
-         *
-         *     `enqueue_when_settled` rather than `enqueue`, so a rebuild asked for in the middle of an import
-         *     waits for the import to stop arriving instead of competing with it for the encoders.
+         *     One sweep job that queues an encode per file, asked for once an import stops arriving.
          */
         post: operations["rebuild_previews_api_jobs_rebuild_previews_post"];
         delete?: never;
@@ -5250,22 +5196,9 @@ export interface paths {
         put?: never;
         /**
          * Rebuild Thumbnails
-         * @description Make every picture again, for the whole library.
+         * @description Make every picture again, for the whole library: a scan never revisits a made one.
          *
-         *     The answer to a change nothing else can see. A thumbnail is made once, when a file arrives, and
-         *     nothing ever revisits it, so a library that was imported before a sizing was fixed, or on a
-         *     machine whose ffmpeg was producing something wrong, keeps those pictures for ever. A rescan does
-         *     not help: a scan skips any file whose path, size and mtime are unchanged, which is exactly what
-         *     makes a rescan quick.
-         *
-         *     One sweep job, not a walk in the request: on a hundred-thousand-file library that would be a
-         *     hundred thousand enqueues on the one write connection, with every job waiting behind them to
-         *     record its progress, a browser holding the request open, and nothing stoppable until it ended.
-         *
-         *     The sweep hands out the same per-file rows, paced and cancellable, from a worker instead of
-         *     from a request: the shape `rebuild-previews` next door uses.
-         *     `enqueue_when_settled` for the reason it gives: a rebuild asked for in the middle of an import
-         *     waits for the import to stop arriving rather than competing with it for the encoders.
+         *     One sweep job that hands out the per-file rows, asked for once an import stops arriving.
          */
         post: operations["rebuild_thumbnails_api_jobs_rebuild_thumbnails_post"];
         delete?: never;
@@ -5285,19 +5218,9 @@ export interface paths {
         put?: never;
         /**
          * Retry Canceled Jobs
-         * @description Start everything that was stopped, again.
+         * @description Start everything that was stopped, again: the other half of `cancel-all`.
          *
-         *     The other half of `cancel-all`: stopping an import that got away is one press, and without
-         *     this the only route back to the same work would be to scan the folders again, which re-walks
-         *     every file to rediscover the ones it already knew about. What was stopped is still in the
-         *     table with its payload; it can simply be offered again.
-         *
-         *     Failures are left where they are, and that is not tidiness. Stopped and failed are two
-         *     different situations wearing the same "unfinished" label: one is a decision somebody made and
-         *     is taking back, the other is work that broke and will likely break again more expensively.
-         *     `retry-failed` beside this is the button for the second, and it says so.
-         *
-         *     Nothing to start is a success with a zero, the same as retrying nothing.
+         *     Failures are left alone; `retry-failed` is for them. Nothing to start is a success with a zero.
          */
         post: operations["retry_canceled_jobs_api_jobs_retry_canceled_post"];
         delete?: never;
@@ -5317,14 +5240,9 @@ export interface paths {
         put?: never;
         /**
          * Retry Failed Jobs
-         * @description Put everything that failed back in the queue.
+         * @description Put everything that failed back in the queue; canceled work is left alone.
          *
-         *     Failures come in batches (a fix to how a kind of file is read, a drive that was unplugged and
-         *     is back), and retrying them one row at a time is not something anybody does. Cancelled work is
-         *     left alone: somebody stopped it on purpose.
-         *
-         *     Nothing to retry is a success with a zero, not a 404. The button was pressed and the queue now
-         *     holds no failures, which is what was asked for.
+         *     Nothing to retry is a success with a zero, not a 404.
          */
         post: operations["retry_failed_jobs_api_jobs_retry_failed_post"];
         delete?: never;
@@ -5368,10 +5286,8 @@ export interface paths {
         put?: never;
         /**
          * Retry Job
-         * @description Put a failed job back in the queue, with its attempts reset.
-         *
-         *     404 for a job that is not there and for one that cannot be retried alike: a job that is
-         *     already running is not a thing to say "no" to twice.
+         * @description Put a failed job back in the queue, its attempts reset; 404 for one that is not there or
+         *     cannot be retried.
          */
         post: operations["retry_job_api_jobs__job_id__retry_post"];
         delete?: never;
@@ -5389,14 +5305,9 @@ export interface paths {
         };
         /**
          * List Steps
-         * @description The steps folded under one top row, a page at a time, asked for when somebody opens it.
+         * @description The steps folded under one top row, however deep, in the order they were handed out.
          *
-         *     Every job the top started, however deep, in the order they were handed out: a download's
-         *     probing, then the seven steps it started. Each is a whole row, named, so a step reads on its
-         *     own.
-         *
-         *     404 for a job that is not there AND for one that heads no family (it has a parent): its steps
-         *     are its top's, asked of the top. One answer for both, like `retry`, since neither has steps.
+         *     404 for a job that is not there and for one that heads no family: neither has steps.
          */
         get: operations["list_steps_api_jobs__job_id__steps_get"];
         put?: never;
@@ -5708,6 +5619,9 @@ export interface paths {
          *     Both are handed down together rather than one being chosen between. They are narrowings of one
          *     read, and passing them as such means a request naming a folder in a library it is not in gets
          *     the honest empty answer instead of having half of what it asked silently dropped.
+         *
+         *     `writable` asks the disk which folders Sift may write in, for a chooser of where files land;
+         *     the tree does not ask, so a share that has gone silent never slows it.
          */
         get: operations["list_folders_api_library_folders_get"];
         put?: never;
@@ -7165,18 +7079,16 @@ export interface paths {
         };
         /**
          * Result
-         * @description What the last run found, or that one is still going. Never blocks on the run.
-         *
-         *     After a restart, the last run kept for this hardware. See `SelfTestRunner.recall`.
+         * @description What the last run found, or the one kept after a restart, and the run going if one is.
          */
         get: operations["result_api_performance_self_test_get"];
         put?: never;
         /**
          * Start
-         * @description Begin measuring. Answers straight away; the result is read back below.
+         * @description Queue a run that suggests. Answers straight away; the result is read back below.
          *
-         *     A second request while one is running is not an error and does not start a second test: it
-         *     answers with the run already in flight. Two of these at once would measure each other.
+         *     A second request while one is coming is not an error and queues nothing: two runs at once
+         *     would measure each other.
          */
         post: operations["start_api_performance_self_test_post"];
         delete?: never;
@@ -13249,6 +13161,45 @@ export interface components {
             job_id: string | null;
         };
         /**
+         * CardLevelView
+         * @description Previews built on the GPU at one width, with the command previews use.
+         */
+        CardLevelView: {
+            /** At Once */
+            at_once: number;
+            /**
+             * Busy
+             * @default false
+             */
+            busy: boolean;
+            /** Card Megabytes */
+            card_megabytes: number | null;
+            /** Finished */
+            finished: number;
+            /** Per Second */
+            per_second: number;
+            /** Responsive */
+            responsive: boolean;
+            /** Seconds */
+            seconds: number;
+        };
+        /** CardView */
+        CardView: {
+            /** Best At Once */
+            best_at_once: number | null;
+            /** Decodes On Card */
+            decodes_on_card: boolean;
+            /** Encoder */
+            encoder: string;
+            /** Failed */
+            failed: string | null;
+            /**
+             * Levels
+             * @default []
+             */
+            levels: components["schemas"]["CardLevelView"][];
+        };
+        /**
          * CarryResult
          * @description What a carry did.
          *
@@ -14946,6 +14897,12 @@ export interface components {
          */
         FamilyOfWork: {
             /**
+             * At Least
+             * @description The time left is the least the work takes, priced from the benchmark before any run of this pass.
+             * @default false
+             */
+            at_least: boolean;
+            /**
              * At Once
              * @description How many workers this family can occupy, which the estimate divides by. It travels with the figure because the figure assumes it.
              * @default 0
@@ -14957,8 +14914,24 @@ export interface components {
              * @default 0
              */
             done: number;
+            /**
+             * Failed
+             * @description This pass's failed runs in the Failed list that a person can still act on: none over a folder no longer in the library, and none a later run made good.
+             * @default 0
+             */
+            failed: number;
+            /**
+             * For Task
+             * @description How many files wait for their task's own run, in one sentence said after the time left, or null: while only arriving files run, the time left is theirs alone.
+             */
+            for_task: string | null;
             /** Label */
             label: string;
+            /**
+             * Last Error
+             * @description Why the newest of them failed, in plain words, or null while none stands.
+             */
+            last_error: string | null;
             /**
              * On
              * @description Whether this pass is switched on. True for a family with no switch, which is what having no switch means. The KEY is deliberately not sent: the settings screen draws every switch from the registry it is declared in, so a copy of the key here would be a field nothing reads.
@@ -14971,6 +14944,11 @@ export interface components {
              * @default 0
              */
             outstanding: number;
+            /**
+             * Pace
+             * @description What sets the pace of the read, in one sentence, or null: the network share whose readers waited most of the last minute, named by its library folders.
+             */
+            pace: string | null;
             /**
              * Parts
              * @description Each kind of this family's work that has a count of its own, in the order the family's types are listed. `done` and `total` above are these added together; a screen drawing more than one part draws each on its own line rather than the sum.
@@ -14998,6 +14976,12 @@ export interface components {
              */
             reason: string | null;
             /**
+             * Running
+             * @description How many of this pass's tasks are running now.
+             * @default 0
+             */
+            running: number;
+            /**
              * Sample
              * @description How many finished items the estimate was priced from. Nought is no estimate, and it is the honest answer rather than a whole library priced from one file.
              * @default 0
@@ -15013,6 +14997,11 @@ export interface components {
              * @description The task this pass IS on the Tasks screen, by its id (where it is run and when it runs is chosen), or null for a pass that is more than one task (Identify is faces and watermarks) or none.
              */
             task: string | null;
+            /**
+             * Time Unknown
+             * @description The sentence the time left says instead of a time, or null: while a folder waits to be counted, nothing after the walk has a total to price.
+             */
+            time_unknown: string | null;
             /**
              * Total
              * @description Files that want this family's work at all, done or not.
@@ -15428,6 +15417,8 @@ export interface components {
             hint: string;
             /** Label */
             label: string;
+            /** Set From */
+            set_from: string | null;
         };
         /**
          * FilterProblem
@@ -15616,6 +15607,17 @@ export interface components {
             job_id: string;
         };
         /**
+         * FolderLeftOut
+         * @description Which pictures a folder import left out, most common reason first, and the near copies it
+         *     kept. Each path is inside the chosen folder.
+         */
+        FolderLeftOut: {
+            /** Left Out */
+            left_out: components["schemas"]["LeftOutFiles"][];
+            /** Near Copies */
+            near_copies: string[];
+        };
+        /**
          * FolderList
          * @description Every folder, and which switches may be answered per folder.
          *
@@ -15755,6 +15757,8 @@ export interface components {
              * @default false
              */
             shared_here: boolean;
+            /** Writable */
+            writable: boolean | null;
         };
         /**
          * FoldersFacts
@@ -16310,16 +16314,6 @@ export interface components {
             /** Title */
             title: string;
         };
-        /** Hint */
-        Hint: {
-            /**
-             * Name
-             * @enum {string}
-             */
-            name: "organize_empty" | "first_pile" | "first_insights";
-            /** Seen */
-            seen: boolean;
-        };
         /**
          * HistoryAway
          * @description A way OUT of Sift from a History line: its words and the address, opened in a new tab.
@@ -16760,6 +16754,11 @@ export interface components {
              */
             password_wanted: number;
             /**
+             * Step Back For
+             * @description Why the work steps back while `stepping_back` is true: somebody at this device (input) or other programs busy (others).
+             */
+            step_back_for: ("input" | "others") | null;
+            /**
              * Step Back Share
              * @description The share of this device, in percent, background work keeps to while it steps back (Settings > Performance). What the leaf and the Activity line say.
              * @default 25
@@ -17190,6 +17189,18 @@ export interface components {
             mark: "local" | "swap";
             /** Name */
             name: string;
+        };
+        /**
+         * LeftOutFiles
+         * @description The pictures a folder import left out for one reason.
+         */
+        LeftOutFiles: {
+            /** Files */
+            files: string[];
+            /** Reason */
+            reason: string;
+            /** Words */
+            words: string;
         };
         /**
          * LeftoversView
@@ -18216,6 +18227,49 @@ export interface components {
             /** Name */
             name: string;
         };
+        /** ModelLevelView */
+        ModelLevelView: {
+            /** At Once */
+            at_once: number;
+            /**
+             * Busy
+             * @default false
+             */
+            busy: boolean;
+            /** Card Megabytes */
+            card_megabytes: number | null;
+            /**
+             * Failed
+             * @default 0
+             */
+            failed: number;
+            /** Files Per Second */
+            files_per_second: number;
+            /** Megabytes */
+            megabytes: number | null;
+        };
+        /** ModelView */
+        ModelView: {
+            /** Best At Once */
+            best_at_once: number | null;
+            /** Card Megabytes */
+            card_megabytes: number | null;
+            /** Device */
+            device: string;
+            /** Failed */
+            failed: string | null;
+            /**
+             * Levels
+             * @default []
+             */
+            levels: components["schemas"]["ModelLevelView"][];
+            /** Megabytes */
+            megabytes: number | null;
+            /** Name */
+            name: string;
+            /** Seconds Per File */
+            seconds_per_file: number | null;
+        };
         /**
          * ModelsFetchStarted
          * @description The job now downloading the models.
@@ -18778,13 +18832,13 @@ export interface components {
         };
         /**
          * PackExportRequest
-         * @description Which People to put in a pack, and whether to include their pictures.
-         *
-         *     Pictures are opt-in rather than opt-out. Without them a pack is numbers alone: far smaller,
-         *     still able to recognize everybody in it, and carrying no photographs of anybody off this
-         *     machine, which is the right default for something being handed to somebody else.
+         * @description Which People and which people waiting for a matching face go in the file, and whether
+         *     their pictures do: both lists empty is everybody. Pictures are opt-in, so by default no
+         *     photograph of anybody leaves this machine.
          */
         PackExportRequest: {
+            /** Entry Ids */
+            entry_ids?: string[];
             /**
              * Include Pictures
              * @default false
@@ -19034,11 +19088,9 @@ export interface components {
         };
         /**
          * Path
-         * @description Get to know Sift: every path this User can walk, and the three hints.
+         * @description Get to know Sift: every path this User can walk.
          */
         Path: {
-            /** Hints */
-            hints: components["schemas"]["Hint"][];
             /** Paths */
             paths: components["schemas"]["LearningPath"][];
         };
@@ -21366,6 +21418,8 @@ export interface components {
             keep: number;
             /** Keep Days */
             keep_days: number;
+            /** Working */
+            working: string | null;
         };
         /**
          * ScreenOut
@@ -21538,14 +21592,36 @@ export interface components {
         };
         /** SelfTestView */
         SelfTestView: {
+            card: components["schemas"]["CardView"] | null;
             /** Finished */
             finished: boolean;
+            /**
+             * Full While Measuring
+             * @default 0
+             */
+            full_while_measuring: number;
+            /**
+             * Held While Measuring
+             * @default 0
+             */
+            held_while_measuring: number;
             /**
              * Measured
              * @default false
              */
             measured: boolean;
             measurement: components["schemas"]["MeasurementView"] | null;
+            /**
+             * Models
+             * @default []
+             */
+            models: components["schemas"]["ModelView"][];
+            /**
+             * Notes
+             * @default []
+             */
+            notes: string[];
+            progress: components["schemas"]["MeasurementView"] | null;
             /**
              * Recommendations
              * @default []
@@ -22733,15 +22809,18 @@ export interface components {
         };
         /**
          * StorageCurveView
-         * @description How one storage behaved as more files were read from it at once.
-         *
-         *     `best_at_once` is the widest level still worth having, or None where nothing was measured.
+         * @description One storage as more files were read at once; `best_at_once` None where nothing was.
          */
         StorageCurveView: {
             /** Best At Once */
             best_at_once: number | null;
             /** Failed */
             failed: string | null;
+            /**
+             * Folders
+             * @default
+             */
+            folders: string;
             /** Label */
             label: string;
             /**
@@ -24386,6 +24465,11 @@ export interface components {
             confirmed: number | null;
             /** Entry Id */
             entry_id: string;
+            /**
+             * Exportable
+             * @default false
+             */
+            exportable: boolean;
             /** Faces */
             faces: number;
             /** Name */
@@ -24398,6 +24482,11 @@ export interface components {
          * @description Every waiting entry, newest first.
          */
         WaitingFingerprints: {
+            /**
+             * Exportable
+             * @default 0
+             */
+            exportable: number;
             /**
              * Items
              * @default []
@@ -24528,7 +24617,7 @@ export interface components {
          * @description Adding to, removing from, or rearranging a collection.
          *
          *     One body with a named action, so add, remove and reorder cannot drift in what they accept. For
-         *     `reorder`, `asset_ids` is the new order.
+         *     `reorder`, `asset_ids` is the new order; `move` names one file and its `direction`.
          */
         sift__slices__collections__models__ItemsWrite: {
             /**
@@ -24536,9 +24625,11 @@ export interface components {
              * @default add
              * @enum {string}
              */
-            action: "add" | "remove" | "reorder";
+            action: "add" | "remove" | "reorder" | "move";
             /** Asset Ids */
             asset_ids: string[];
+            /** Direction */
+            direction?: ("earlier" | "later") | null;
         };
         /**
          * RatingWrite
@@ -27821,6 +27912,7 @@ export interface operations {
             query?: {
                 limit?: number;
                 offset?: number;
+                q?: string | null;
                 people?: string[] | null;
                 tags?: string[] | null;
                 sites?: string[] | null;
@@ -30280,6 +30372,37 @@ export interface operations {
             };
         };
     };
+    folder_left_out_api_faces_references_folder__job_id__left_out_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FolderLeftOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     reference_strengths_api_faces_references_strength_get: {
         parameters: {
             query?: never;
@@ -30988,35 +31111,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Path"];
-                };
-            };
-        };
-    };
-    hint_seen_api_insights_path_hints__name__seen_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                name: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -31858,6 +31952,7 @@ export interface operations {
             query?: {
                 root?: string | null;
                 parent?: string | null;
+                writable?: boolean;
             };
             header?: never;
             path?: never;

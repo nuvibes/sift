@@ -18,12 +18,9 @@
 	 * face", "Sift: from a folder name"), and a stash-box known only from a row carrying `source =
 	 * 'stash_box'` says "a stash-box".
 	 *
-	 * The colour says who. Sift's own two passes (a face it read, a folder name it read) wear the
-	 * app's accent, one colour for "this install did it", and a stash-box's mark wears that box's
-	 * own colours, so a row of marks tells the services apart without hovering each. A box Sift has
-	 * no colour for keeps the accent. The glyphs are not the enrichment verbs' (the wand is the
-	 * stash-box sweep's, the backlight the Enrich verb's): a state wearing a verb's glyph reads as
-	 * an offer to run it.
+	 * Every mark wears the accent's text tone. Each stash-box Sift knows wears its own glyph
+	 * (`boxIcon`), so a row of marks tells the services apart without hovering each. The glyphs are
+	 * not the enrichment verbs': a state wearing a verb's glyph reads as an offer to run it.
 	 *
 	 * One component for the hover card, the entity's own header and the file's action row, which
 	 * draw the same marks about the same question. It lives beside the header rather than in
@@ -37,7 +34,7 @@
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
 	import {
 		afterWords,
-		boxColour,
+		boxIcon,
 		boxRowLabel,
 		madeIcon,
 		madeLabel
@@ -53,15 +50,8 @@
 	type Source = components['schemas']['EnrichedBy'] & { act?: string | null };
 
 	/**
-	 * WHICH SENTENCE these marks are in.
-	 *
-	 * Two things are said with one coloured glyph, and they are not the same claim: a box has
-	 * DESCRIBED this thing, or a box INVENTED it. The colouring, the glyph table and the box's own
-	 * spelling are identical for both, and the words are the only difference, so the words are a
-	 * prop and everything else is read once.
-	 *
-	 * A WORD rather than the sentence itself, so a caller cannot invent a third reading of the same
-	 * mark. The two sentences live below, where the row they are a prefix to is built.
+	 * Which sentence these marks are in: a box DESCRIBED this thing, or INVENTED it. Only the words
+	 * differ, and a word rather than the sentence, so a caller cannot invent a third reading.
 	 */
 	type Said = 'enriched' | 'created';
 
@@ -142,22 +132,10 @@
 {#if sources.length > 0}
 	<span class="marks" class:padded role="group" aria-label={SAID[said]}>
 		{#each sources as one, at (`${at}:${one.via}:${one.name ?? ''}`)}
-			{@const glyph = madeIcon(one.via, one.act)}
-			{@const paint = boxColour(one.box)}
+			{@const glyph = boxIcon(one.box) ?? madeIcon(one.via, one.act)}
 			{#if glyph}
-				<!-- `box-mark` paints the glyph in one box's own colour; without it the mark keeps
-				     the accent the class below sets, which is what Sift's own two passes wear and
-				     what a box with no colour of its own falls back to. A `style:` directive and
-				     not an attribute: it compiles to a property, which is what the design fence
-				     allows and what a custom property has to be set through anyway. -->
 				<Tooltip label={words(one)} placement="bottom">
-					<span
-						class="mark"
-						class:box-mark={paint !== undefined}
-						role="img"
-						aria-label={words(one)}
-						style:--box-colour={paint}
-					>
+					<span class="mark" role="img" aria-label={words(one)}>
 						<Icon name={glyph} size={padded ? 20 : 18} />
 					</span>
 				</Tooltip>
@@ -173,18 +151,12 @@
 		gap: var(--space-1);
 	}
 
-	/*
-	 * No ground and no hover: the ground-and-hover register is for controls, and these are
-	 * read-only marks. Looking pressable when not is worse than no mark.
-	 *
-	 * The accent is the answer for Sift's own passes and the fallback for a box: `box-mark` in
-	 * `app.css` paints a known box's glyph in that box's own colour, and this shows through
-	 * for a box Sift has no colour for. "This install did it" is the right thing to fall back to.
-	 */
+	/* No ground and no hover: these are read-only marks, and looking pressable when not is worse.
+	   The accent's text tone, since the fill is under 3:1 on a chip. */
 	.mark {
 		display: inline-flex;
 		align-items: center;
-		color: var(--sift-accent);
+		color: var(--sift-accent-text);
 	}
 
 	/* A control's box, to the token: `Heart`'s and `RatingChip`'s padding. See `padded`. */

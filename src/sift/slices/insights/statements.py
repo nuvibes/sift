@@ -562,8 +562,8 @@ def most_viewed_people(period: Period) -> Line:
 
 
 def theater(period: Period, total_ms: int, wall: Named | None, wall_ms: int, sessions: int) -> Line:
-    """ "You spent 5 hours in Theater, mostly on your preset 'Nine up'.", or "You spent no time in
-    Theater this month.", which is as true, the way "No files arrived this month." is.
+    """ "You spent 5 hours in Theater, mostly on your Saved Layout 'Nine up'.", or "You spent no
+    time in Theater this month.", which is as true, the way "No files arrived this month." is.
 
     Theater is counted as one hour per hour of the session, whatever its cells played. "Mostly" is
     a claim, so it is made only where that wall really had more than half the time, over at least
@@ -577,7 +577,7 @@ def theater(period: Period, total_ms: int, wall: Named | None, wall_ms: int, ses
         return said(f"You spent no time in Theater {when(period)}.")
     head = f"You spent {duration(total_ms)} in Theater"
     if wall is not None and sessions >= SHARE_FLOOR and 2 * wall_ms > total_ms:
-        return said(f"{head}, mostly on your preset '", named(wall), "'.")
+        return said(f"{head}, mostly on your Saved Layout '", named(wall), "'.")
     return said(f"{head}.")
 
 

@@ -14,6 +14,7 @@ from sift.kernel.access.repository.walls import (
     _wall,
     _with_stored_counts,
     locked_tile,
+    shown,
 )
 from sift.kernel.access.sites import SITE_CONCEALED, SITE_REACH, site_address
 from sift.kernel.sql_splice import splice
@@ -76,11 +77,12 @@ lineage(site_id, ancestor_id) AS ({{SITE_REACH}}),
 -- A file reaches a Site once however many of its usernames it is filed under, so the count is of
 -- DISTINCT files, and the size is summed over the same files made distinct first: no aggregate
 -- mends a SUM the way `COUNT(DISTINCT ...)` mends a count.
-counted(site_id, asset_count, size_bytes) AS (
-  SELECT r.ancestor_id, COUNT(*), COALESCE(SUM(r.size_bytes), 0)
+counted(site_id, asset_count, size_bytes, duration_ms) AS (
+  SELECT r.ancestor_id, COUNT(*), COALESCE(SUM(r.size_bytes), 0), COALESCE(SUM(r.duration_ms), 0)
     FROM (
   SELECT DISTINCT li.ancestor_id, aa.asset_id,
-         CASE WHEN :reveal_named = 1 OR v.concealed = 0 THEN a.size_bytes END AS size_bytes
+         CASE WHEN :reveal_named = 1 OR v.concealed = 0 THEN a.size_bytes END AS size_bytes,
+         CASE WHEN :reveal_named = 1 OR v.concealed = 0 THEN a.duration_ms END AS duration_ms
     FROM asset_usernames aa
     JOIN usernames ac ON ac.id = aa.username_id
     CROSS JOIN viewer_assets v ON v.asset_id = aa.asset_id AND v.user_id = :viewer
@@ -111,9 +113,10 @@ counted(site_id, asset_count, size_bytes) AS (
 -- share unless `:reveal`), and which carries the SIZE of those files beside it. Summed live, the
 -- size would walk every membership of every row on the wall. Read here it costs one range of the
 -- stored rows, and the number and the size come off one row, so they cannot describe different files.
-whole(site_id, asset_count, size_bytes) AS (
+whole(site_id, asset_count, size_bytes, duration_ms) AS (
   SELECT c.object_id, c.permitted - CASE WHEN :reveal = 1 THEN 0 ELSE c.concealed END,
-         c.permitted_bytes - CASE WHEN :reveal_named = 1 THEN 0 ELSE c.concealed_bytes END
+         c.permitted_bytes - CASE WHEN :reveal_named = 1 THEN 0 ELSE c.concealed_bytes END,
+         c.permitted_ms - CASE WHEN :reveal_named = 1 THEN 0 ELSE c.concealed_ms END
     FROM viewer_entity_counts c
    WHERE c.user_id = :viewer AND c.kind = 'site'
 )
@@ -210,9 +213,9 @@ SELECT pl.id, CASE WHEN {{LOCKED}} THEN '' ELSE pl.name END AS name,
    -- The name OR one of its other names, exactly as a person and a tag are matched: a site filed
    -- as one spelling is found under another, as its FILES are, which is what the site's own record
    -- promises ("any of them finds it").
-   AND (:prefix = '' OR pl.name LIKE :like ESCAPE '\\'
+   AND (:prefix = '' OR ({{SHOWN}} AND (pl.name LIKE :like ESCAPE '\\'
         OR EXISTS (SELECT 1 FROM site_aliases pa
-                    WHERE pa.site_id = pl.id AND pa.alias LIKE :like ESCAPE '\\'))
+                    WHERE pa.site_id = pl.id AND pa.alias LIKE :like ESCAPE '\\'))))
    -- CONCEALED BY ITSELF **OR BY ANY SITE ABOVE IT**. Stopping at the row's own flag would take a
    -- hidden network's labels' FILES off every screen and leave the labels themselves on this wall:
    -- named, counted, and with pages that still answer 200: the disclosure concealment exists to
@@ -259,18 +262,25 @@ SELECT pl.id, CASE WHEN {{LOCKED}} THEN '' ELSE pl.name END AS name,
           CASE :entity_sort WHEN 'edited' THEN CASE WHEN {{LOCKED}} THEN NULL ELSE pl.edited_at END END DESC NULLS LAST,
           CASE :entity_sort WHEN 'edited' THEN pl.id END DESC,
           CASE :entity_sort WHEN 'oldest' THEN pl.id END ASC,
-          -- How much of the library this one covers. `largest` is the same expression the
-          -- ordinary order already ends on, so it is the default said out loud; `smallest` is the
-          -- only new direction, and it needs its own arm because a term carries one direction.
-          -- The SAME expression the card prints, `:count_narrowed` and all. A wall ordered by
-          -- size that orders on the other tally puts its cards out of the order their own numbers
-          -- read in, which looks like a broken sort and is a second answer to one question.
+          -- The number and the size the card prints, so the cards read in the order asked.
           CASE :entity_sort WHEN 'largest' THEN
             COALESCE(CASE WHEN :count_narrowed = 1 THEN c.asset_count ELSE w.asset_count END, 0)
           END DESC,
           CASE :entity_sort WHEN 'smallest' THEN
             COALESCE(CASE WHEN :count_narrowed = 1 THEN c.asset_count ELSE w.asset_count END, 0)
           END ASC,
+          CASE :entity_sort WHEN 'largest_total' THEN
+            COALESCE(CASE WHEN :count_narrowed = 1 THEN c.size_bytes ELSE w.size_bytes END, 0)
+          END DESC,
+          CASE :entity_sort WHEN 'smallest_total' THEN
+            COALESCE(CASE WHEN :count_narrowed = 1 THEN c.size_bytes ELSE w.size_bytes END, 0)
+          END ASC,
+          CASE :entity_sort WHEN 'longest_total' THEN
+            NULLIF(CASE WHEN :count_narrowed = 1 THEN c.duration_ms ELSE w.duration_ms END, 0)
+          END DESC NULLS LAST,
+          CASE :entity_sort WHEN 'shortest_total' THEN
+            NULLIF(CASE WHEN :count_narrowed = 1 THEN c.duration_ms ELSE w.duration_ms END, 0)
+          END ASC NULLS LAST,
           COALESCE(c.asset_count, 0) DESC, CASE WHEN {{LOCKED}} THEN NULL ELSE COALESCE(pl.name_sort, pl.name) END ASC NULLS LAST, pl.id ASC
  LIMIT :limit OFFSET :offset
 """,
@@ -278,6 +288,7 @@ SELECT pl.id, CASE WHEN {{LOCKED}} THEN '' ELSE pl.name END AS name,
     SITE_CONCEALED_SITE=SITE_CONCEALED.format(site="pl.id"),
     SITE_ADDRESS=site_address("pl"),
     LOCKED=locked_tile("site", "pl"),
+    SHOWN=shown("site", "pl"),
 )
 _SITES_HEAD, _SITES_ACCESS = _cut(_VISIBLE_SITES, "_VISIBLE_SITES")
 #: The sites wall in pieces.

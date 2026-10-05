@@ -48,6 +48,7 @@ const PAGE: JobsPage = {
 	housekeeping: [],
 	stepping_back: false,
 	step_back_share: 25,
+	step_back_for: null,
 	full_amount: false,
 	password_wanted: 1
 };

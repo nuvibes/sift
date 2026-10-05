@@ -316,6 +316,31 @@ def test_two_rescans_of_one_root_are_one_scan(idle_client: TestClient, library: 
     assert len(queued) == 1, f"the same root was queued {len(queued)} times"
 
 
+def test_an_added_folder_is_counted_ahead_of_its_walk_and_a_press_joins_that_count(
+    idle_client: TestClient, library: Path
+) -> None:
+    client = idle_client
+    sign_in(client, "admin")
+    root = add_root(client, library)
+    added = _counts(client)
+    assert len(added) == 1, "adding a folder queued no count"
+
+    pressed = client.post(f"{ROOTS}/{root['id']}/rescan")
+
+    assert _counts(client) == added == [(pressed.json()["job_id"], WAITED_ON_PRIORITY)]
+
+
+def _counts(client: TestClient) -> list[tuple[str, int]]:
+    db = client.app.state.database.path  # type: ignore[attr-defined]
+    with sqlite3.connect(db) as connection:  # nosemgrep: sift-no-database-driver-outside-kernel
+        return [
+            (json.loads(str(payload))["scan_id"], int(priority))
+            for payload, priority in connection.execute(
+                "SELECT payload, priority FROM jobs WHERE type = 'scan_count'"
+            )
+        ]
+
+
 def test_a_press_of_rescan_is_waited_on(client: TestClient, library: Path) -> None:
     """A press of Scan (Run now or one folder's) is queued at the waited-on priority, since a cap
     cannot help while a long pass holds every worker; priority is read at claiming."""

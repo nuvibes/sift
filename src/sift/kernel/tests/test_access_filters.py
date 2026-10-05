@@ -5,6 +5,7 @@ nobody has named, and the writes made on a caller's connection.
 
 from __future__ import annotations
 
+import re
 from dataclasses import replace
 from typing import Any
 
@@ -178,7 +179,7 @@ def test_nothing_but_the_written_conditions_and_the_connectors_reaches_the_state
     residue, bound = crafted.predicate()
     residue = PARAMETER.sub("{}", residue)
     for template in sorted(PREDICATES.values(), key=len, reverse=True):
-        residue = residue.replace(template, "")
+        residue = residue.replace(re.sub(r"\{\d+\}", "{}", template), "")
     for connector in CONNECTORS:
         residue = residue.replace(connector, "")
     assert residue == ""
@@ -475,6 +476,34 @@ async def test_an_unknown_sort_falls_back_to_the_default_rather_than_erroring(
 
     assert got == await _order(access, actors.admin, "newest")
     assert set(got) == set(ids.values())
+
+
+async def _opinion(
+    temp_db: Database, viewer: Viewer, asset_id: str, favorite: int, rating: int | None
+) -> None:
+    """One viewer's heart and stars on one file."""
+    await temp_db.execute(
+        "INSERT INTO asset_user_state (asset_id, user_id, favorite, rating, updated_at)"
+        " VALUES (?, ?, ?, ?, ?)",
+        (asset_id, viewer.id, favorite, rating, _EPOCH),
+    )
+
+
+async def test_the_heart_then_the_stars_order_a_page_by_this_viewers_own(
+    access: Repository, actors: Actors, temp_db: Database
+) -> None:
+    """Hearted first, then most stars with the unrated last, each then newest; another's are not."""
+    ids = await _sortable(temp_db)
+    await _opinion(temp_db, actors.admin, ids["gamma"], 1, None)
+    await _opinion(temp_db, actors.admin, ids["beta"], 0, 5)
+    await _opinion(temp_db, actors.admin, ids["alpha"], 0, 2)
+    await _opinion(temp_db, actors.guest, ids["alpha"], 1, 9)
+
+    favorite = await _order(access, actors.admin, "favorite")
+    rating = await _order(access, actors.admin, "rating")
+
+    assert favorite == [ids["gamma"], ids["alpha"], ids["beta"]]
+    assert rating == [ids["beta"], ids["alpha"], ids["gamma"]]
 
 
 async def test_a_file_with_no_duration_sinks_rather_than_leading_longest(

@@ -36,7 +36,7 @@ import aiosqlite
 
 from sift.kernel.access import Viewer
 from sift.kernel.audience import EVERY_ADMIN
-from sift.kernel.changes import About, announce
+from sift.kernel.changes import About, announce, announce_now
 from sift.kernel.config import Settings
 from sift.kernel.content import LibraryStore
 from sift.kernel.db import Connection, Database, registered_components, too_old_to_bring_forward
@@ -704,11 +704,8 @@ class BackupService:
         # The application's own store where it is handed one; otherwise one over the same database,
         # which is the same answer: the store keeps nothing but the handle and the settings.
         self._library = library if library is not None else LibraryStore(database, settings)
-        # ONE PIECE OF WORK ON THE LIBRARY AS A WHOLE AT A TIME. A restore swaps the database and
-        # its folders; a duplicate copies them for minutes; a switch stops the process; a backup
-        # snapshots them. Any two of those at once is a copy of a half-swapped library or a
-        # restart in the middle of a copy. Held for the life of the process, and one process has
-        # one event loop, so checking and taking it cannot interleave.
+        # One piece of whole-library work at a time: any two at once copy a half-swapped library.
+        # One event loop, so checking and taking it cannot interleave.
         self._exclusive = asyncio.Lock()
         self._working: str | None = None
         # Read once: the data folder cannot change under a running process.
@@ -720,27 +717,30 @@ class BackupService:
             self._mark = await asyncio.to_thread(mark_of_library, self._settings.data_dir)
         return self._mark
 
+    @property
+    def working(self) -> str | None:
+        """The whole-library work running now, by its word (`BACKING_UP` and the rest), or None."""
+        return self._working
+
     def refusal_while_busy(self) -> str | None:
         """The sentence a request would be refused with right now, or None when nothing runs."""
         return None if self._working is None else _BUSY[self._working]
 
     @asynccontextmanager
     async def exclusively(self, what: str) -> AsyncIterator[None]:
-        """Run one piece of work on the library as a whole, refusing if another is running.
-
-        REFUSED, NEVER WAITED FOR. Every caller is either a request, where somebody is waiting for
-        an answer, or a job, which can be tried again later, and a waiter here could be waiting
-        on a restore that is itself waiting for the workers to stop, which is a deadlock with a
-        timeout for a way out. Raises `Busy` with the sentence for whatever is running.
-        """
+        """Run one piece of whole-library work, refused with `Busy` while another runs. Never
+        waited for: a waiter could wait on a restore that waits for the workers to stop."""
         if self._exclusive.locked():
             raise Busy(_BUSY.get(self._working or "", _BUSY[BACKING_UP]))
         async with self._exclusive:
+            # Its start and end are a settings change, so every admin's open Backup pane re-reads.
             self._working = what
+            announce_now(EVERY_ADMIN, About.SETTINGS)
             try:
                 yield
             finally:
                 self._working = None
+                announce_now(EVERY_ADMIN, About.SETTINGS)
 
     def now(self) -> float:
         """The clock this feature runs on. Taken from here so a test can move time."""

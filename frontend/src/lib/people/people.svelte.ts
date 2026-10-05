@@ -73,39 +73,7 @@ type PeoplePage = components['schemas']['PeopleList'];
  */
 export const PEOPLE_PER_PAGE = 60;
 
-/**
- * What a wall of People or Sites offers BEYOND the orders every kind of thing shares.
- *
- * The values are the server's own keys (it refuses one it does not know rather than quietly
- * ordering some other way), and the labels are what the control says. Declared here, once, so the
- * two walls cannot come to offer different orders of the same two.
- *
- * There is no "Most seen" here. The server's ordinary order is by `asset_count`, which has nothing
- * to do with how often anybody was looked at; it is `largest`, in `UNIVERSAL_SORTS`, and every wall
- * in the application offers it under one word rather than one idea under three names.
- *
- * Ordering only. There is no screen of favourited people and no search word for a rating on one:
- * this control changes where a row appears, never whether it appears.
- */
-export const ENTITY_SORTS = [
-	{ value: 'favorite', label: 'Favorites first' },
-	{ value: 'rating', label: 'Highest rated' }
-] as const;
-
-/*
- * The order a wall is in, as the server's key.
- *
- * A plain string rather than a union of the three above, and the widening is deliberate. These walls
- * offer the four orders EVERY kind of thing in the library shares (newest, oldest and the two name
- * directions, spelled exactly as the file grid spells them) on top of their own three. A union of
- * the three would make every call site cast to it (`next as EntitySort`) on a value that is one of
- * seven. A cast that is wrong is worse than no type at all, because it reads
- * as having been checked.
- *
- * Nothing is lost by widening it here. The server holds the real list (`ENTITY_SORT_KEYS`) and
- * refuses a key it does not know with a 422 rather than quietly ordering some other way, which is
- * the check that actually matters and the only one that cannot be bypassed by a hand-typed address.
- */
+/* The order a wall is in, as the server's key; the server refuses one it does not know. */
 export type EntitySort = string;
 
 /**
@@ -589,20 +557,17 @@ export class People {
 		return this.items.filter((person) => person.name.toLowerCase().startsWith(needle));
 	}
 
-	/* People whose name contains this term, asked of the server, without touching the cached list.
-	 *
-	 * Asked rather than filtered, for two reasons that are both about the answer being wrong
-	 * otherwise. The cached list is capped, so filtering it hides anybody past the cap, and with
-	 * hundreds of people that is most of them. And the server is what knows how many files somebody
-	 * is on and whether this account may be shown their cover picture, so a card built any other
-	 * way would read "0 items" over a blank monogram for a person who has five.
-	 *
-	 * Left out of `items` deliberately: that list is shared with every other screen, and filtering
-	 * it here would filter the suggestions on screens that never asked to be filtered.
+	/* People whose name contains this term, among those the wall's filters allow, asked of the server
+	 * because the cached list is capped and only the server counts files and knows the covers.
+	 * Left out of `items`, which every other screen shares.
 	 */
-	async matchingAnywhere(term: string, limit = 200): Promise<Person[]> {
+	async matchingAnywhere(
+		term: string,
+		narrowing: Record<string, string[]> = {},
+		limit = 200
+	): Promise<Person[]> {
 		const page = await api.get<PeoplePage>('/people', {
-			query: { prefix: term, anywhere: 'true', limit: String(limit) }
+			query: { ...narrowing, prefix: term, anywhere: 'true', limit: String(limit) }
 		});
 		return page.items;
 	}

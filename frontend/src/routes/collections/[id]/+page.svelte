@@ -8,17 +8,14 @@
 	 * can see in their new order and the server writes the positions; anything concealed is absent
 	 * from this screen and keeps its place behind what was arranged.
 	 *
-	 * One qualification, worth reading before touching `nudge`: the wall is DRAWN with what this
-	 * account has pinned first (the server's order, as on every wall with a pin), so the order on
-	 * screen is not the arrangement, and a rearrange computed from what is drawn would save the
-	 * pinned-first order as the collection's own. Every item carries its stored `position` for
-	 * that reason, and `arrangement` is what Move earlier and Move later act on.
+	 * The wall is DRAWN pinned first and paged like every wall of files, so Move earlier and Move
+	 * later act on the stored `position`, never on what is drawn (see `collections.move`).
 	 *
 	 * Dropping a clip here adds it, as on the list screen, and no file moves.
 	 */
 	import type { Crumb } from '$lib/components/common';
 	import type { Frame } from '$lib/entity/cover-frame';
-	import { onDestroy } from 'svelte';
+	import { onDestroy, untrack } from 'svelte';
 	import { page } from '$app/state';
 	import {
 		ActionBar,
@@ -26,6 +23,7 @@
 		ContextMenu,
 		Empty,
 		FileVerbs,
+		Pager,
 		Problem,
 		VerbButtons,
 		VerbMenuItems,
@@ -50,25 +48,30 @@
 		iconOf,
 		tabsFor,
 		TabCounts,
+		TabWords,
 		type RelatedKind
 	} from '$lib/entity/related.svelte';
+	import WallControls from '$lib/components/entity/WallControls.svelte';
+	import { clearWallSays, emptyWallSays } from '$lib/components/shell/wall-words';
 	import { dropTarget, startAssign } from '$lib/components/common/drag-assign.svelte';
 	import { dragOut } from '$lib/capture/copy-out';
 	import Icon from '$lib/components/Icon.svelte';
 	import {
 		collections,
+		contentsAsked,
+		contentsSource,
 		type Collection,
 		type CollectionItem
 	} from '$lib/library/collections.svelte';
 	import { reloadOnLibraryChange } from '$lib/library/changes.svelte';
 	import Tile from '$lib/components/Tile.svelte';
-	import { GRID_GUTTER, justify, targetRowHeight } from '$lib/grid/justify';
-	import { gridSize } from '$lib/grid/grid.svelte';
+	import { Grid, type PageStart } from '$lib/grid/grid.svelte';
+	import { WalkBack } from '$lib/grid/walk-back';
 	import { screenBar } from '$lib/components/shell/screen-bar.svelte';
 	// The hover clip, shared with the search wall. See the module for why this is not the library
 	// grid's whole slot-pool machine.
 	import { HoverPreviews, canPreview } from '$lib/grid/hover-preview.svelte';
-	import { openAsset } from '$lib/player/asset-view';
+	import { openAsset, type Continues } from '$lib/player/asset-view';
 	import { session } from '$lib/shell/session.svelte';
 	import { announceSkipped } from '$lib/library/bulk';
 	import { toasts } from '$lib/shell/toasts.svelte';
@@ -83,29 +86,15 @@
 
 	const id = $derived(page.params.id ?? '');
 
-	/*
-	 * Which wall this page is showing, read off the address so every tab is a real place: the back
-	 * button steps between them and a link somebody sends opens on the one they were looking at.
-	 *
-	 * A collection's Files wall is a bespoke drag-to-rearrange grid rather than the shared
-	 * `AssetGrid`, so the strip cannot simply be handed to a component the way it is on the other
-	 * four entity pages. It is handed
-	 * to the frame's own header here instead, in the same slot and the same order `EntityGrid` uses,
-	 * so the two shapes cannot drift apart on screen.
-	 */
-	/*
-	 * WHAT HAPPENED TO IT is a tab and not a wall, which is why it is kept out of `tabsFor`.
-	 *
-	 * Every other tab here is one question (an entity wall filtered to this page's files),
-	 * answered by one shared table that a gate holds against the server's. A history is none of
-	 * that: no wall, no count, no filter and no page. Putting it in that table to save four
-	 * lines here would give a tab with no endpoint to every page that reads the same table.
-	 */
+	/* The tab is read off the address, so every tab is a real place. Files is this page's own wall,
+	   so the strip goes to the frame's header in the slot `EntityGrid` uses. */
+	/* History has no wall behind it, so it is kept out of `tabsFor`. */
 	const HISTORY = 'history';
 
 	const asked = $derived(page.url.searchParams.get('show'));
 	const showingHistory = $derived(asked === HISTORY);
 	const shown = $derived<RelatedKind>(chosenTab('collection', asked));
+	const fileWords = new TabWords();
 
 	/* The numbers beside the tab words: all of them in one request, and whatever the wall on
 	   screen found beating the map for its own tab. See `TabCounts`. */
@@ -137,30 +126,34 @@
 	   grid. */
 	const previews = new HoverPreviews();
 	onDestroy(() => previews.dispose());
-	let items = $state<CollectionItem[]>([]);
+	/* The arrangement a page at a time, as every wall of files pages; its rows are the route's own. */
+	const grid = $derived(new Grid(contentsSource(id)));
+	const items = $derived(grid.items as unknown as CollectionItem[]);
+	/* The picks' own total while words or a bar filter narrow them further. */
+	let pickedTotal = $state<number | null>(null);
 
-	/*
-	 * WHAT THE CARDS PICKED ON THIS PAGE'S TABS FILTER THE FILES TO, read off the address the way a
-	 * person's Files tab reads it (see `picks.ts`). The contents route takes these five fields and
-	 * applies them inside the collection's own arranged order, so a pick on Seen with or Tags filters
-	 * this wall exactly as it filters a person's, and the number that comes back is the filtered
-	 * one, from the same statement as the rows.
-	 *
-	 * Held as its spelling too, so the re-read below follows a change in the FILTERING and not every
-	 * change of the address: moving between tabs rewrites `show=` and must not fetch the wall again.
-	 */
+	/* The address's filters, keyed so only a change of them re-reads; `narrowing` is the picks. */
+	const filters = $derived(contentsAsked(page.url));
+	const filtersKey = $derived(JSON.stringify(filters));
 	const narrowing = $derived(narrowingOf(page.url));
-	const narrowingKey = $derived(JSON.stringify(narrowing));
 	const narrowed = $derived(Object.keys(narrowing).length > 0);
+	const searched = $derived(Object.keys(filters).some((name) => !(name in narrowing)));
+	const filtered = $derived(Object.keys(filters).some((one) => one !== 'q' && !(one in narrowing)));
+	/* The route pins first; saying so keeps the grid from continuing after a row it cannot find. */
+	const query = $derived({ ...filters, pinned_first: '1' });
+	/* The tab's number: the whole, or what the picks left, never what the words found. */
+	const wholeFiles = $derived(
+		searched
+			? ((narrowed ? pickedTotal : collection?.item_count) ?? undefined)
+			: grid.loaded > 0 || !grid.loading
+				? grid.total
+				: undefined
+	);
 
-	/* Declared after `items` because it reads it. The Files tab's number is what is on this screen:
-	   for a hand-arranged sequence all of it, and while picks filter it, what they left. The wall
-	   is this page's own fetch, filtered on every tab, so its rows ARE the tab's number and no second
-	   request is made for it (see `narrowedFilesTotal` for why the other pages ask one). */
 	const tabs = $derived([
 		...tabsFor('collection', id, `/collections/${id}`, {
 			...counts.current,
-			files: items.length
+			files: wholeFiles
 		}),
 		/* And it wears its number: the strip is a MAP of what this page can show, and one bare
 		   word on a row of numbered ones reads as a tab nobody has looked at yet. It is the
@@ -174,8 +167,8 @@
 			count: counts.current.history
 		}
 	]);
-	let loading = $state(false);
-	let failed = $state(false);
+	let rowFailed = $state(false);
+	const failed = $derived(rowFailed || grid.failed !== null);
 	/* The server said there is no such collection for this account (a 404 means "no such id" and
 	   "not yours" alike). Only that answer draws the page saying so: any other failure is Sift's. */
 	let missing = $state(false);
@@ -224,56 +217,19 @@
 				]
 	);
 
-	/* The layout, worked out here rather than fetched.
-	 *
-	 * `justify` is the same function Browse lays its rows out with, so a clip is the same shape on
-	 * both screens. What is deliberately NOT shared is the paging and the virtualisation: a
-	 * collection is a sequence somebody arranged by hand, which is dozens of items, and the machinery
-	 * that makes ten thousand tiles affordable would only be a way for the arranged order to end up
-	 * re-derived somewhere.
-	 */
-	const GUTTER = GRID_GUTTER;
+	let scroller = $state<HTMLElement | null>(null);
+	let contentBox = $state<HTMLElement | null>(null);
 
-	let wall = $state<HTMLElement | null>(null);
-	let wallWidth = $state(0);
-
-	/*
-	 * How tall a row is here, which is the same question Browse asks.
-	 *
-	 * `targetRowHeight` is the one place that rule lives (the notch somebody chose on the bar
-	 * above this screen, and the window's own responsive answer) rather than a constant that
-	 * ignores both; see it for why the notch is passed in rather than read there.
-	 *
-	 * Declared AFTER the width it reads, which a derived needs: the getter is lazy, so a reference
-	 * to a `let` further down the file only fails when it is actually read, which is a temporal
-	 * dead zone error at whatever moment the wall first lays out rather than at build time.
-	 */
-	const ROW_HEIGHT = $derived(targetRowHeight(gridSize.step, wallWidth));
-
-	/*
-	 * What the bar above this screen can do, while the FILES tab is the one showing.
-	 *
-	 * The other tabs are `RelatedWall`'s and it publishes for itself, so this is guarded on the tab
-	 * rather than left to whichever effect ran last: two publishers for one screen is a bar that
-	 * says something different depending on the order things mounted. The wall lays its rows out
-	 * from the size notch, so the slider is live here as on every other entity page.
-	 *
-	 * No orders. A collection is a sequence somebody arranged BY HAND, and that arrangement is the
-	 * point of the screen; an order control over it would be a second opinion about what the
-	 * sequence is. The reason is on the control rather than left to the general wording.
-	 */
+	/* The bar while Files shows (`RelatedWall` publishes for the rest): no orders, since the
+	   arrangement made by hand is the point of the screen. */
 	const mine = Symbol('collection-files');
 
 	$effect(() => {
 		if (shown !== 'files') return;
-		/* The Filter panel stays off. The picks on this page's tabs DO filter this wall, and
-		   their chips draw on the bar whatever this says (a chip draws wherever the address
-		   carries a filter). What stays off is the rest of the query language (a rating, a
-		   date), which the contents route does not take, and a panel offering a filter the wall
-		   ignores would be a filter in force on the bar and nowhere else. */
+		/* The query language filters this wall as it does a person's Files tab. */
 		screenBar.publish(mine, {
-			filterable:
-				'A collection is the arrangement you made. Pick cards on its other tabs to filter it',
+			query: collection ? { collections: collection.name } : undefined,
+			filterable: true,
 			resizable: true,
 			playable: true,
 			sorts: []
@@ -283,37 +239,77 @@
 	$effect(() => () => screenBar.release(mine));
 
 	const byId = $derived(new Map(items.map((item) => [item.id, item])));
-	const order = $derived(items.map((item) => item.id));
-	const rows = $derived(
-		justify(items, { containerWidth: wallWidth, targetHeight: ROW_HEIGHT, gutter: GUTTER })
-	);
+	/* What the page draws: the grid holds the next page's first row beyond it. */
+	const order = $derived(grid.rows.flatMap((row) => row.tiles.map((tile) => tile.id)));
 
-	/* The content box, not the padding box: `clientWidth` includes padding, so laying rows out to
-	 * it makes every row wider than the space it sits in. The same measurement the grid makes, and
-	 * for the same reason. */
+	/* Measured as the walls of files measure, so a page holds the same whole screens. */
 	function measure() {
-		if (!wall) return;
-		const style = getComputedStyle(wall);
+		if (!scroller || !contentBox) return;
+		if (scroller.clientHeight === 0 || contentBox.clientWidth === 0) return;
+		const style = getComputedStyle(contentBox);
 		const padding = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
-		wallWidth = Math.max(0, wall.clientWidth - padding);
+		const vertical = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom);
+		grid.containerWidth = Math.max(0, contentBox.clientWidth - padding);
+		grid.screenHeight = Math.max(0, scroller.clientHeight - vertical);
 	}
 
-	function watchWidth(element: HTMLElement): () => void {
+	function watchSize(parts: { scroller: HTMLElement; content: HTMLElement }): () => void {
+		scroller = parts.scroller;
+		contentBox = parts.content;
 		measure();
 		if (typeof ResizeObserver === 'undefined') return () => {};
 		const observer = new ResizeObserver(() => measure());
-		observer.observe(element);
+		observer.observe(parts.scroller);
+		observer.observe(parts.content);
 		return () => observer.disconnect();
 	}
 
-	/* What the viewer opens into, so Next and Previous walk the collection in ITS order rather than
-	 * the grid's. `runs` is what play-through may advance to on its own: a still has no end to reach
-	 * and a run that stepped onto one would sit there. */
-	function neighbours() {
-		return items.map((item) => ({
-			id: item.id,
-			runs: item.media_type === 'video' || item.media_type === 'gif'
-		}));
+	// A new collection is a new grid, measured before it asks.
+	$effect(() => {
+		void grid;
+		untrack(measure);
+	});
+
+	/* Where the page begins, for the question it was turned on; a new question starts at the top.
+	   Previous returns to the page Next left, as on every wall of files. */
+	const question = $derived(`${id}\n${filtersKey}`);
+	let start = $state<{ for: string; at: PageStart }>({ for: '', at: { at: 0 } });
+	const from = $derived<PageStart>(start.for === question ? start.at : { at: 0 });
+	const walk = new WalkBack();
+
+	function turnTo(next: PageStart) {
+		walk.forget();
+		start = { for: question, at: next };
+	}
+
+	function walkTo(next: () => PageStart) {
+		if (start.for !== question) walk.forget();
+		start = { for: question, at: next() };
+	}
+
+	$effect(() => {
+		const asked = query;
+		const at = from;
+		void grid.pageRows;
+		untrack(() => {
+			void grid.loadAt(asked, at);
+			if (scroller) scroller.scrollTop = 0;
+		});
+	});
+
+	/* Next and Previous walk the collection in ITS order, past the page through the same question. */
+	function asNeighbour(item: { id: string; media_type: string }) {
+		return { id: item.id, runs: item.media_type === 'video' || item.media_type === 'gif' };
+	}
+
+	function openHere(opened: string) {
+		const more: Continues = {
+			from: grid.offset,
+			total: grid.total,
+			shuffles: false,
+			fetch: async (offset, limit) => (await grid.blockAt(query, offset, limit)).map(asNeighbour)
+		};
+		openAsset(opened, items.map(asNeighbour), undefined, undefined, more);
 	}
 
 	/* Reordering is `nudge`, from the tile's own menu: a tile's drag means "take this file
@@ -321,101 +317,60 @@
 	   a mouse. */
 
 	$effect(() => {
-		// Read here so the re-read follows the picks as well as the collection. See `narrowingKey`.
-		void narrowingKey;
+		// Read here so the picks' total follows the filters as well as the collection.
+		void filtersKey;
 		void refresh(id);
 	});
 
-	/* The one entity detail page that keeps its own loader rather than taking `EntitySubject`,
-	 * and that is a decision rather than an omission: this page fetches TWO things (the row and
-	 * the ordered list of what is in it), and its screen is built around the second. It never
-	 * blanks on a re-read either: the header stays up and only the empty state reads `loading`.
-	 *
-	 * It re-reads when what this account may see moves: a share taken back, a rename, a cover, a
-	 * heart.
-	 */
-	reloadOnLibraryChange(() => void refresh(id));
+	/* Its own loader rather than `EntitySubject`: the row and the arrangement are two reads, and a
+	   re-read never blanks the header. It follows what this account may see. */
+	reloadOnLibraryChange(() => void reread());
 
 	/* Which re-read is the latest. A pick moves the filtering while an earlier read is in flight, and
 	   the slower answer for picks already taken off must not land over the current one. */
 	let asking = 0;
 
+	/* The row and the picks' total; the files are the grid's. */
 	async function refresh(collectionId: string) {
 		if (!collectionId) return;
 		const ask = (asking += 1);
-		const narrowTo = narrowing;
-		loading = true;
-		failed = false;
+		const picksOnly = searched && narrowed ? narrowing : null;
+		rowFailed = false;
 		try {
 			const row = await collections.one(collectionId);
-			const contents = await collections.contents(collectionId, 200, 0, narrowTo);
+			const picked = picksOnly && (await collections.contents(collectionId, 1, 0, picksOnly));
 			if (ask !== asking) return;
 			collection = row;
-			items = contents.items;
+			pickedTotal = picked ? picked.total : null;
 			missing = false;
 		} catch (error) {
 			if (ask !== asking) return;
 			missing = isMissing(error);
-			failed = !missing;
-		} finally {
-			if (ask === asking) loading = false;
+			rowFailed = !missing;
 		}
 	}
 
-	/*
-	 * Move one item one place in the ARRANGEMENT, and write the arrangement back.
-	 *
-	 * Not the visible order, and that distinction is the whole of this function. The wall is drawn
-	 * with pinned items first (the pin does on this wall what it does on every other), so the
-	 * order on screen is not the order in the collection. Sending what is drawn would have saved
-	 * that pinned-first order as the collection's own the first time anybody moved anything, and
-	 * a pin is one account's private opinion while the arrangement is everybody's and was built by
-	 * hand. A private opinion must never be able to overwrite shared work.
-	 *
-	 * So the sequence is rebuilt from each item's stored `position`, which the server sends for
-	 * exactly this. `index` is a position in the ARRANGEMENT too: see where it is computed.
-	 */
-	const arrangement = $derived(
-		[...items].sort((one, two) => (one.position ?? 0) - (two.position ?? 0))
-	);
+	/* Both, the page held where it is. */
+	async function reread() {
+		await Promise.all([refresh(id), grid.loadAt(query, { at: grid.offset }, { quiet: true })]);
+	}
 
-	async function nudge(index: number, by: number) {
-		// Never over a filtered wall: the rows drawn are part of the arrangement, and writing an order
-		// of part of it would move every file the filtering left out behind the ones it kept. The
-		// verbs say so and are dimmed (see `ownVerbs`); this is the same rule where the write is made.
-		if (narrowed) return;
-		const to = index + by;
-		if (to < 0 || to >= arrangement.length) return;
-		const next = [...arrangement];
-		const [moved] = next.splice(index, 1);
-		next.splice(to, 0, moved);
-		// The new positions, applied to what is on screen so the change is visible at once. The
-		// wall re-sorts itself: `arrangement` reads these, and the drawn order reads the pin.
-		const at = new Map(next.map((item, place) => [item.id, place]));
-		items = items.map((item) => ({ ...item, position: at.get(item.id) ?? item.position }));
+	/*
+	 * Move one file one place in the ARRANGEMENT, never in the drawn order: the pin is one account's
+	 * opinion and the arrangement is everybody's. Never over a filtered wall either, where the files
+	 * left out would be moved behind the ones kept; the verbs are dimmed for the same reason.
+	 */
+	async function nudge(assetId: string, by: -1 | 1) {
+		if (partWhy !== null) return;
 		try {
-			await collections.reorder(
-				id,
-				next.map((item) => item.id)
-			);
+			await collections.move(id, assetId, by);
 		} catch {
 			toasts.show("That couldn't be rearranged", { tone: 'error' });
-			await refresh(id);
 		}
+		await reread();
 	}
 
-	/*
-	 * The pin is written by the shared verb, through `setFilesPinned`, not by this screen.
-	 *
-	 * It MOVES the tile, exactly as it does on every other wall that offers one. What must not be
-	 * overwritten is the STORED arrangement, and that is protected where it is actually written:
-	 * see `nudge`, which rebuilds from each item's own position rather than from what is on screen.
-	 * Ordering the display by the pin never threatens it.
-	 *
-	 * The shared verb re-reads afterwards because the server owns the order, and a second opinion
-	 * about it on the client is the thing that comes to disagree. One copy of the rule, and a
-	 * selection of forty is one request rather than forty.
-	 */
+	/* The pin is the shared verb's (`setFilesPinned`): it moves the tile, never the arrangement. */
 
 	/** Whether the picture chooser is open. Opened by the pencil on the cover. */
 	let pickingPicture = $state(false);
@@ -444,46 +399,46 @@
 		if (confirming.length > 0) confirmOpen = true;
 	}
 
-	/** What a menu opened on one tile acts on: everything picked when this tile is part of it, and
-	 *  otherwise just this one. The same rule every other wall's menu follows. */
+	/** Everything picked when this tile is part of it, otherwise this one, as on every wall. */
 	function targetIds(one: string): string[] {
 		return selection.has(one) ? selection.ordered(order) : [one];
 	}
 
 	/*
-	 * The verbs that are THIS WALL's own, declared rather than written out as rows.
-	 *
-	 * Everything a file can have done to it comes from `FileVerbs`: the same host the library
-	 * grid and the recently-viewed wall draw from. What stays here is the handful only a collection
-	 * has: a place in an arrangement, the cover, and membership.
-	 *
-	 * Appended to the shared list rather than drawn beside it, so both surfaces go on rendering ONE
-	 * declaration: the menu's separator still falls in front of the first row that destroys
-	 * something, and nothing can be added to one surface without the other.
-	 *
-	 * The three that move or choose are `singleOnly` (moving forty tiles one place is not a thing,
-	 * and neither is forty covers), so the bar leaves exactly those out and keeps Remove.
+	 * The verbs only a collection has (a place in the arrangement, the cover, membership), appended
+	 * to `FileVerbs`' list so the menu and the bar render one declaration. The three that move or
+	 * choose are `singleOnly`, so the bar keeps only Remove. The moves are offered where the server
+	 * sent a position, which is only to whoever may rearrange.
 	 */
-	function ownVerbs(item: CollectionItem, index: number): Verb[] {
+	function ownVerbs(item: CollectionItem): Verb[] {
+		const at = item.position;
+		const moves: Verb[] =
+			at === null
+				? []
+				: [
+						{
+							id: 'move-earlier',
+							label: 'Move earlier',
+							icon: 'arrow_upward',
+							singleOnly: true,
+							disabled: partWhy !== null || at <= 0,
+							why: partWhy ?? "It's already first",
+							run: () => void nudge(item.id, -1)
+						},
+						{
+							id: 'move-later',
+							label: 'Move later',
+							icon: 'arrow_downward',
+							singleOnly: true,
+							disabled: partWhy !== null || at >= grid.total - 1,
+							why: partWhy ?? "It's already last",
+							run: () => void nudge(item.id, 1)
+						}
+					];
+		/* The cover and membership are an admin's, as the routes behind them are. */
+		if (!session.isAdmin) return moves;
 		return [
-			{
-				id: 'move-earlier',
-				label: 'Move earlier',
-				icon: 'arrow_upward',
-				singleOnly: true,
-				disabled: narrowed || index <= 0,
-				why: narrowed ? NARROWED_WHY : "It's already first",
-				run: () => void nudge(index, -1)
-			},
-			{
-				id: 'move-later',
-				label: 'Move later',
-				icon: 'arrow_downward',
-				singleOnly: true,
-				disabled: narrowed || index === arrangement.length - 1,
-				why: narrowed ? NARROWED_WHY : "It's already last",
-				run: () => void nudge(index, 1)
-			},
+			...moves,
 			{
 				id: 'cover',
 				label: collection?.cover_asset_id === item.id ? 'This is the cover' : 'Use as the cover',
@@ -499,6 +454,11 @@
 
 	/** Why the arrangement cannot be changed while picks filter the wall. See `nudge`. */
 	const NARROWED_WHY = 'Only part of the collection is showing. Clear the picks to rearrange it';
+	const SEARCHED_WHY = 'Only part of the collection is showing. Clear the search to rearrange it';
+	const FILTERED_WHY = 'Only part of the collection is showing. Clear the filters to rearrange it';
+	const partWhy = $derived(
+		fileWords.asked ? SEARCHED_WHY : narrowed ? NARROWED_WHY : searched ? FILTERED_WHY : null
+	);
 
 	/** Out of this collection, and out of nothing else. Offered on both surfaces, worded once. */
 	const removeVerb: Verb = {
@@ -512,12 +472,14 @@
 		const taken = confirming;
 		if (taken.length === 0) return;
 		try {
-			await collections.removeItems(
+			const done = await collections.removeItems(
 				id,
 				taken.map((one) => one.id)
 			);
-			selection.clear();
-			await refresh(id);
+			if (done.skipped === 0) selection.clear();
+			await reread();
+			/* A refused write comes back counted as skipped, not thrown. */
+			if (done.skipped > 0) toasts.show("Couldn't remove that", { tone: 'error' });
 		} catch {
 			toasts.show("Couldn't remove that", { tone: 'error' });
 		} finally {
@@ -535,7 +497,7 @@
 				{ tone: 'success' }
 			);
 			announceSkipped(done);
-			await refresh(id);
+			await reread();
 		} catch {
 			toasts.show("Those couldn't be added", { tone: 'error' });
 		}
@@ -550,16 +512,6 @@
 		toasts.show('Deleted. The files in it are still here.', { tone: 'success' });
 		await leaveFor('/collections');
 	}
-
-	/* Putting a collection in the vault, and taking it back out.
-	 *
-	 * Hiding one hides everything in it, which is what makes this worth a confirmation while adding
-	 * an item is not: one press changes what is on the grid for every item the collection holds.
-	 *
-	 * Taking it back out has no confirmation and needs none. It is only reachable with the vault
-	 * already open (with it shut this page answers 404 for a concealed collection), so the
-	 * deliberate step has already been taken, at the PIN box.
-	 */
 
 	/* What the two below are about, in one place: the noun the sentence uses, its plural being the
 	   obvious one, and the write itself. The same lines the Collections wall passes. */
@@ -646,23 +598,19 @@
 		}
 	}
 
-	/* The same write pointed the other way, and nothing to navigate.
-	 *
-	 * The re-read is kept here rather than left to the library bell, which is what the person's page
-	 * relies on. The difference is what draws the verb: there it is a wall that the bell re-reads,
-	 * and here it is this page's own header, which offers Hide or Stop hiding off the row it is
-	 * holding. A reveal that only waited would leave the wrong verb under the pointer for as long as
-	 * the connection took to say so, and for ever where there is no connection up. */
+	/* Re-read at once: the header's own Hide or Stop hiding is drawn off the row it holds. */
 	async function reveal() {
 		const moved = await setHidden([id], false, hiddenAs);
-		if (moved.length > 0) await refresh(id);
+		if (moved.length > 0) await reread();
 	}
 
 	/* How big the WHOLE collection is, for the line under its name: that line is about the
 	   collection, not about what the picks left on the wall. The record's own count while filtered
 	   (scoped to this viewer the same way), and what is on the wall otherwise, which is the same
 	   number and follows an add or a removal the moment it lands. */
-	const wholeCount = $derived(narrowed ? (collection?.item_count ?? items.length) : items.length);
+	const wholeCount = $derived(
+		narrowed || searched ? (collection?.item_count ?? grid.total) : grid.total
+	);
 	/* How big those files are, off the record, and only while the line's number IS the record's:
 	   an add or a removal moves the wall's count before the record is read again, and a size of the
 	   files before it beside a count of the files after it would describe neither. */
@@ -670,7 +618,9 @@
 		collection && wholeCount === collection.item_count ? sizeOf(collection) : null
 	);
 
-	const target = $derived(dropTarget({ kind: 'asset', targetId: id, onassign: addDropped }));
+	const target = $derived(
+		dropTarget({ kind: 'asset', targetId: id, onassign: session.isAdmin ? addDropped : undefined })
+	);
 	/* The trail, drawn by the frame's band above the identity band. */
 	const crumbs = $derived<Crumb[]>([
 		{ label: 'Collections', href: '/collections' },
@@ -739,13 +689,6 @@
 {/snippet}
 
 <!--
-	The drop handlers sit on the page rather than on a chip, because the target here is the whole
-	collection: there is one of it, and a strip to aim at would be a second, smaller place to
-	miss. It carries an explicit role and a name so the region is announced rather than being a
-	silent element that happens to accept a gesture. A named section is already a region, so it
-	needs the name and not the role.
--->
-<!--
 	The drop handlers sit on the frame rather than on a chip, because the target here is the whole
 	collection: there is one of it, and a strip to aim at would be a second, smaller place to miss.
 	It carries a name so the region is announced rather than being a silent element that happens to
@@ -791,7 +734,7 @@
 				<div
 					{@attach () => {
 						// The files are the page's own read, so they have arrived once it is not reading.
-						if (!loading) arrived();
+						if (!grid.loading) arrived();
 					}}
 					class="drop"
 					class:dropping={target.over}
@@ -821,7 +764,7 @@
 								/* The pin is carried with the heart and the stars, which the grid's own version does
 							   not do (it re-reads instead). A collection's row HAS the field, so moving it here
 							   is what makes the mark appear on the press rather than a round trip later. */
-								items = items.map((each) =>
+								grid.items = grid.items.map((each) =>
 									each.id === one
 										? {
 												...each,
@@ -832,14 +775,16 @@
 										: each
 								);
 							},
-							forget: (one) => {
-								items = items.filter((each) => each.id !== one);
-							},
-							refresh: () => void refresh(id)
+							forget: (one) => grid.forget(one),
+							refresh: () => void reread()
 						}}
 					>
 						{#snippet children(verbs)}
-							<PageFrame bleed {crumbs}>
+							<PageFrame
+								{crumbs}
+								footer={grid.total > 0 || grid.loading ? pagerFooter : undefined}
+								onbody={watchSize}
+							>
 								{#snippet floating()}
 									<!-- The bar every wall raises over a selection, drawing the declared verbs and nothing
 								     hand-written: there is no markup here for a button to be added to, which is what
@@ -850,12 +795,15 @@
 								     second copy of either would be a second answer. `barShape` decides which verb
 								     goes where; nothing on this page does. -->
 									{@const on = selection.ordered(order)}
-									{@const shape = barShape([...verbs.bar(on), removeVerb])}
+									{@const shape = barShape([
+										...verbs.bar(on),
+										...(session.isAdmin ? [removeVerb] : [])
+									])}
 
 									<ActionBar
 										count={selection.count}
 										noun="file"
-										total={items.length}
+										total={order.length}
 										onselectall={async () => selection.toggleAll(order)}
 										onclear={() => selection.clear()}
 									>
@@ -877,45 +825,45 @@
 										icon="browse"
 										level={2}
 										titleHidden
-										count={items.length}
+										count={grid.total}
 										beside={tabStrip}
-									/>
+									>
+										{#snippet controls()}
+											<WallControls
+												noun="file"
+												plural="files"
+												bind:term={fileWords.term}
+												onsettled={(typed) => fileWords.write(typed)}
+											/>
+										{/snippet}
+									</PageHeader>
 								{/snippet}
 
 								{#if failed}
 									<Problem message="This collection couldn't be loaded." />
-								{:else if !loading && items.length === 0 && narrowed}
+								{:else if !grid.loading && items.length === 0 && searched}
+									<Empty
+										scope="page"
+										icon="box"
+										title={emptyWallSays('files', fileWords.asked, filtered, '')}
+										>{clearWallSays(fileWords.asked, filtered)} to see the whole collection.</Empty
+									>
+								{:else if !grid.loading && items.length === 0 && narrowed}
 									<Empty scope="page" icon="box" title="Nothing here has every pick"
 										>Take a pick off to see more of this collection.</Empty
 									>
-								{:else if !loading && items.length === 0}
+								{:else if !grid.loading && items.length === 0}
 									<Empty scope="page" icon="box" title="Nothing in here yet"
 										>Drag files from the library onto this page to add them.</Empty
 									>
 								{:else}
-									<!--
-						The same justified rows Browse uses, and the same tile.
-
-						Not the same COMPONENT, though, and the difference is the whole reason this is written out
-						here. `AssetGrid` fetches a page at a time from the server and virtualises what it draws,
-						because a library is tens of thousands of items in an order the server decides. A
-						collection is a sequence somebody arranged by hand (dozens of items, in an order that is
-						the point of the screen), so there is nothing to page and nothing to virtualise, and the
-						order must never be re-sorted here or the client would hold a second opinion about what
-						the sequence is.
-
-						What IS shared is everything a person can see: `justify` lays the rows out, and `Tile`
-						draws each item, so a clip looks and behaves the same here as it does in Browse.
-					-->
-									<div class="wall" bind:this={wall} {@attach watchWidth}>
-										{#each rows as row, rowIndex (rowIndex)}
-											<div class="row" style:height="{row.height}px" style:gap="{GUTTER}px">
+									<!-- Browse's paging, rows and tile, drawn here because the moves and the drop are this
+									     screen's own; the order is the server's and never re-sorted. -->
+									<div class="wall">
+										{#each grid.rows as row, rowIndex (rowIndex)}
+											<div class="row" style:height="{row.height}px" style:gap="{grid.gutter}px">
 												{#each row.tiles as placed (placed.id)}
 													{@const item = byId.get(placed.id)}
-													<!-- Where it sits in the ARRANGEMENT, which is what Move earlier and Move later
-										     act on. Not where it is drawn: the wall puts pinned items first, and a
-										     move computed from the drawn order would move the wrong neighbour. -->
-													{@const index = arrangement.findIndex((one) => one.id === placed.id)}
 													{#if item}
 														<!-- Draggable out of Sift as everywhere; reordering is Move earlier and Move later
 														     in the menu, which the keyboard reaches too. No buttons on a tile as narrow as 110. -->
@@ -960,7 +908,7 @@
 																	ids={targetIds(item.id)}
 																	subjectId={item.id}
 																	verbs={[
-																		...ownVerbs(item, index),
+																		...ownVerbs(item),
 																		...verbs.menu(targetIds(item.id), item.id)
 																	]}
 																/>
@@ -976,7 +924,7 @@
 																	playing={previews.playing(item.id)}
 																	importing={!item.thumb}
 																	pinnable
-																	onopen={(opened) => openAsset(opened, neighbours())}
+																	onopen={openHere}
 																	onhover={(id, hovering) =>
 																		previews.enter(item, hovering, canPreview(item))}
 																/>
@@ -1003,8 +951,8 @@
 					beside={tabStrip}
 					titleHidden
 					above={identity}
-					oncount={(total) => {
-						counts.saw(tab, total);
+					oncount={(total, searched) => {
+						if (!searched) counts.saw(tab, total);
 						arrived();
 					}}
 				/>
@@ -1012,6 +960,20 @@
 		{/snippet}
 	</TabHold>
 {/if}
+
+{#snippet pagerFooter()}
+	<Pager
+		offset={grid.offset}
+		shown={grid.wall.tiles.length}
+		total={grid.total}
+		loading={grid.loading && grid.loaded === 0}
+		onfirst={() => turnTo({ at: 0 })}
+		onprevious={() => walkTo(() => walk.previous(grid, grid.source.anchored))}
+		onnext={() => walkTo(() => walk.next(grid))}
+		onlast={() => turnTo({ last: true })}
+		onjump={(position) => turnTo({ at: Math.max(0, position - 1) })}
+	/>
+{/snippet}
 
 <ConfirmDialog
 	bind:open={confirmVault}
@@ -1068,16 +1030,9 @@
 		outline-color: var(--sift-accent);
 	}
 
-	/* The wall, and the rows in it. The same shape Browse draws, without the paging.
-	 *
-	 * The frame is `bleed`, so the inset is carried here: the wall reaches the same two margins the
-	 * grid's does on Browse, and the heading above it starts at the same place. */
+	/* Room for the top row's ring and hover lift, as the grid's scroller keeps. */
 	.wall {
-		padding-inline: var(--page-pad);
-		/* The same room the grid's scroller keeps: a tile's ring sits 2px outside it and the hover
-		   lift scales it a few pixels past that, and the top row needs room to grow into. */
 		padding-block-start: var(--space-2);
-		padding-block-end: var(--space-6);
 	}
 
 	.row {

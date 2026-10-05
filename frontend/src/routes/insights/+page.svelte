@@ -57,7 +57,6 @@
 	import { api } from '$lib/api/client';
 	import { Button, Problem, SectionHeading, Skeleton, Tooltip } from '$lib/components/common';
 	import Tabs from '$lib/components/common/Tabs.svelte';
-	import Hint from '$lib/components/insights/Hint.svelte';
 	import InsightsBlock from '$lib/components/insights/InsightsBlock.svelte';
 	import RecapAnnouncement from '$lib/components/insights/RecapAnnouncement.svelte';
 	import RecapHeads from '$lib/components/insights/RecapHeads.svelte';
@@ -223,7 +222,6 @@
 	{/snippet}
 
 	<div class="insights">
-		<Hint name="first_insights" />
 		<RecapAnnouncement />
 
 		{#if failed}

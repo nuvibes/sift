@@ -168,12 +168,19 @@ it('stands at the page-header height, beside the Add', () => {
 	expect(host.querySelector('input')?.classList.contains('medium')).toBe(true);
 });
 
+it('may narrow to ten letters on a short row, so a row of tabs beside it keeps one line', () => {
+	draw({});
+	applyStyles(wallControlsSource, host.querySelector('.wall-controls'));
+	expect(getComputedStyle(host.querySelector('.find') as HTMLElement).minInlineSize).toBe(
+		'var(--tab-box-floor)'
+	);
+});
+
 /*
  * At a phone's width the Add keeps its place on the line and the box gives way.
  *
- * With the box's twenty-letter floor the two come to more than a phone has, and `Add collection`
- * would run past the edge and be cut. The unit environment answers only a plain `screen` rule, so
- * the phone rule is read with its condition swapped for it.
+ * The unit environment answers only a plain `screen` rule, so the phone rule is read with its
+ * condition swapped for it.
  */
 it('keeps the Add whole on a phone, the box taking what it leaves', () => {
 	draw({ onadd: () => {} });

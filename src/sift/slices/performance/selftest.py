@@ -1,25 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Working out what this machine can actually do, instead of guessing from its core count.
-
-The core count is only a guess: cores are not equal, a machine may be busy with something else,
-and how fast a library is indexed depends on how fast the machine encodes video, which can differ
-by a factor of five between machines with the same core count.
-
-What this measures: it encodes the same short clip one at a time and then several at once, and
-watches how much total work got done and whether the application stayed responsive. Past the point
-where the machine is saturated, another encode makes every encode slower and finishes no more
-work; that turning point has to be watched, not derived.
-
-It also reads each network share the library sits on the way probing does (several files at
-once, several seeks into each) and takes the width at which the share stops delivering more.
-The encoding curve says nothing about a share. See `StorageCurve`.
-
-Not measured: a local disk, the graphics card, a library's own mix of resolutions and codecs, and
-the recognition or description models, whose cost per file the ledger records from real runs.
-
-Nothing here writes a setting. It produces recommendations (the setting, its value now, what it
-should be and why) that an admin applies with the ordinary controls, and can undo.
-"""
+"""Working out what this device can do: encodes, the decoder and each storage's readers, every
+curve judged by `near_best`. Nothing here writes a setting: an admin applies the advice."""
 
 from __future__ import annotations
 
@@ -27,54 +8,63 @@ import asyncio
 import os
 import time
 from collections.abc import Awaitable, Callable, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
+from functools import partial
 from pathlib import Path
+from typing import Protocol
 
-from sift.kernel import media
+from sift.kernel import device_load, media
 from sift.kernel.config import Settings
+from sift.kernel.lanes import MAX_READS_AT_ONCE
 from sift.kernel.log import get_logger
 from sift.kernel.subprocess import Priority
 from sift.kernel.wiring import Part
+from sift.slices.performance import uncached
 
 log = get_logger(__name__)
 
-#: How long each clip the test builds is, in seconds.
-#:
-#: Shorter clips make each level mostly process start-up, and the differences between levels are
-#: noise. Twenty seconds gives each encode a few seconds of real work and keeps the whole run near
-#: half a minute on a workstation; a small machine takes longer, and its answer matters most.
+#: How long each clip is, in seconds: long enough that a level is work rather than start-up.
 CLIP_SECONDS = 20
 
-#: The size the clips are built at. 720p because it is the commonest thing in a library and
-#: because measuring at 4K on a slow machine would make the test itself the slow part.
+#: 720p, the commonest size in a library, and quick enough to build on a slow machine.
 CLIP_WIDTH = 1280
 CLIP_HEIGHT = 720
 CLIP_RATE = 30
 
-#: A run at each of these many-at-once levels, in order. Stops early once adding more stops helping,
-#: so a small machine does not sit through the wide levels it was never going to reach.
+#: The encodes-at-once levels, in order. A small machine stops before the wide ones.
 LEVELS = (1, 2, 4, 8, 16)
 
-#: How much better a level has to be than the one before it to count as worth having. Below this the
-#: extra parallelism is buying noise, and the honest answer is the smaller number, which also
-#: leaves the machine with something left for whoever is using it.
-WORTH_HAVING = 1.15
+#: The answer is the smallest level within this share of the best: wider buys only noise.
+NEAR_BEST = 0.95
 
-#: Above this, the application was not keeping up while the test ran, and the level that produced it
-#: is not one to recommend however much work it finished. The same quarter second the running server
-#: warns at and the same one the Performance screen calls noticeable.
+#: Above this the application was not keeping up: the quarter second the server warns at.
 TOO_BUSY_SECONDS = 0.25
 
-#: How many times each measurement is taken, keeping the middle one.
-#:
-#: One run of a level is a minute of one machine, and a minute is exactly long enough for an update
-#: check, a browser tab or the share's other user to land in it, and set every number on the
-#: Performance screen from that noise. Three runs, the middle kept, rather than an average: an
-#: average lets one bad run pull the answer a third of the way towards it, and the middle run does
-#: not care how bad the bad one was. The test takes three times as long, which is the price of a
-#: number that can be relied on; the machines it matters most on are the ones with the least to
-#: spare, and they are also the ones where one noisy run would have misled furthest.
+#: Runs of each level: the middle one is kept, and the lowest and highest say how sure it is.
 REPEATS = 3
+
+BUSY = "measured while other programs were busy"
+
+
+def others_busy() -> bool:
+    """Whether the last reading of the device found other programs busy."""
+    latest = device_load.READER.latest
+    return latest is not None and bool(latest.busy())
+
+
+async def steady[T](
+    take: Callable[[], Awaitable[T]], mark: Callable[[T], T], busy: Callable[[], bool]
+) -> T:
+    """A level, taken again where other programs were busy, and marked if they still were."""
+    level = await take()
+    if not busy():
+        return level
+    level = await take()
+    return mark(level) if busy() else level
+
+
+def _marked[T: (Level, StorageLevel)](level: T) -> T:
+    return replace(level, busy=True)
 
 
 def middle(values: Sequence[float]) -> float:
@@ -84,10 +74,46 @@ def middle(values: Sequence[float]) -> float:
 
 
 def middle_by[T](runs: Sequence[T], *, key: Callable[[T], float]) -> T:
-    """The run in the middle when the runs are put in order by `key`. The whole run, not a
-    middle made from pieces of several: its other readings belong with the number that chose it."""
+    """The whole run in the middle by `key`, so its other readings stay with the number."""
     ordered = sorted(runs, key=key)
     return ordered[(len(ordered) - 1) // 2]
+
+
+class _Rung(Protocol):
+    @property
+    def at_once(self) -> int: ...
+
+
+def near_best[T: _Rung](levels: Sequence[T], *, key: Callable[[T], float]) -> T | None:
+    """The smallest level within `NEAR_BEST` of the best one; `levels` are in order of width."""
+    if not levels:
+        return None
+    top = max(key(one) for one in levels)
+    return next(one for one in levels if key(one) >= top * NEAR_BEST)
+
+
+def midpoint[T: _Rung](levels: Sequence[T], *, key: Callable[[T], float]) -> int | None:
+    """The whole width halfway between the best level and its better neighbour, if not yet tried."""
+    if len(levels) < 2:
+        return None
+    best = max(range(len(levels)), key=lambda at: key(levels[at]))
+    other = max((levels[at] for at in (best - 1, best + 1) if 0 <= at < len(levels)), key=key)
+    total = levels[best].at_once + other.at_once
+    if total % 2 or total // 2 in {one.at_once for one in levels}:
+        return None
+    return total // 2
+
+
+def sureness(low: float | None, high: float | None, figure: float, unit: str) -> str:
+    """How far apart a level's runs were, as how sure its number is; empty where not kept."""
+    if low is None or high is None or figure <= 0:
+        return ""
+    apart = round((high - low) / figure * 100)
+    margin = round((1 - NEAR_BEST) * 100)
+    said = f" Its runs ranged from {low:.3g} to {high:.3g} {unit}, {apart}% apart"
+    if apart > margin:
+        return f"{said}: wider than the {margin}% the choice rests on, so another run may differ."
+    return f"{said}, inside the {margin}% the choice rests on."
 
 
 @dataclass(frozen=True)
@@ -103,10 +129,15 @@ class Level:
     """The worst the event loop was held while this level ran."""
     worst_wait_seconds: float
     """The longest anything waited for a free thread while this level ran."""
+    low: float | None = None
+    high: float | None = None
+    """The slowest and quickest of the level's runs, in encodes a second; None on an older reading."""
+    busy: bool = False
+    fell_behind: int = 0
 
     @property
     def throughput(self) -> float:
-        """Encodes per second. The whole point of the level, and what levels are compared on."""
+        """Encodes per second: what levels are compared on."""
         if self.seconds <= 0:
             return 0.0
         return self.finished / self.seconds
@@ -114,9 +145,8 @@ class Level:
     @property
     def responsive(self) -> bool:
         """Whether the application stayed usable at this level."""
-        return (
-            self.worst_lag_seconds < TOO_BUSY_SECONDS and self.worst_wait_seconds < TOO_BUSY_SECONDS
-        )
+        worst = max(self.worst_lag_seconds, self.worst_wait_seconds)
+        return worst < TOO_BUSY_SECONDS and not self.fell_behind
 
     def as_dict(self) -> dict[str, object]:
         return {
@@ -124,8 +154,17 @@ class Level:
             "seconds": round(self.seconds, 2),
             "finished": self.finished,
             "per_second": round(self.throughput, 3),
+            "low": self.low,
+            "high": self.high,
             "responsive": self.responsive,
+            "fell_behind": self.fell_behind,
+            "busy": self.busy,
         }
+
+
+#: A storage level where one reader waits this long a seek is not recommended: anybody else
+#: reading that storage waits about as long, the quarter second a person notices.
+SEEK_BOUND_SECONDS = TOO_BUSY_SECONDS
 
 
 @dataclass(frozen=True)
@@ -137,6 +176,10 @@ class StorageLevel:
     bytes_read: int
     seeks: int = 0
     """How many seeks the readers made between them, so the cost of one can be read off."""
+    low: float | None = None
+    high: float | None = None
+    """The slowest and quickest of the level's runs, in MB/s; None on an older reading."""
+    busy: bool = False
 
     @property
     def megabytes_per_second(self) -> float:
@@ -146,11 +189,14 @@ class StorageLevel:
 
     @property
     def seconds_per_seek(self) -> float:
-        """What one reader paid per seek. The readers ran side by side, so the run's seconds are
-        one reader's, and one reader made a `1/at_once` share of the seeks."""
+        """What one reader paid per seek: the readers ran side by side, each with a share."""
         if self.seeks <= 0 or self.at_once <= 0:
             return 0.0
         return self.seconds * self.at_once / self.seeks
+
+    @property
+    def quick_enough(self) -> bool:
+        return self.seconds_per_seek < SEEK_BOUND_SECONDS
 
     def as_dict(self) -> dict[str, object]:
         return {
@@ -158,58 +204,69 @@ class StorageLevel:
             "seconds": round(self.seconds, 2),
             "megabytes": round(self.bytes_read / 1_000_000, 1),
             "megabytes_per_second": round(self.megabytes_per_second, 1),
+            "low": self.low,
+            "high": self.high,
             "seconds_per_seek": round(self.seconds_per_seek, 4),
+            "busy": self.busy,
         }
+
+
+def _mbps(level: StorageLevel) -> float:
+    return level.megabytes_per_second
+
+
+def storage_name(storage: str) -> str:
+    """A storage named once and shortly: a share by its path, a drive by its letter."""
+    bare = storage.rstrip("\\/")
+    if len(bare) == 2 and bare[1] == ":":
+        return f"drive {bare}"
+    return bare or "the system disk"
 
 
 @dataclass(frozen=True)
 class StorageCurve:
-    """How one storage behaved as more files were read from it at once.
-
-    The encoding curve cannot answer this: many concurrent seeking readers turn a network share
-    into random I/O, and a share that serves two readers well can deliver half as much to twelve.
-    So each network storage is read the way probing reads it, seeking into several files at once,
-    and the point where more at once stops delivering more is how many readers it can serve.
-    """
+    """How one storage behaved as more files were read from it at once."""
 
     storage: str
-    """The storage as the operating system names it: `\\\\server\\share\\`."""
+    """The storage as the operating system names it: `\\\\server\\share\\` or `C:\\`."""
     label: str
-    """The library folders on it, for a person."""
+    """The library folders on it, listed where a person asks which they are."""
     remote: bool
     levels: tuple[StorageLevel, ...] = ()
     failed: str | None = None
-    """Why nothing was measured here, when nothing was (too few large files to seek into, most
-    often), so a storage that could not be measured does not read as a slow one."""
+    """Why nothing was measured here, so a storage that could not be measured is not a slow one."""
+    unmeasured: str | None = None
+    """What the ladder did not try and why, where it stopped short of the widest level."""
+
+    @property
+    def name(self) -> str:
+        return storage_name(self.storage)
+
+    @property
+    def eligible(self) -> tuple[StorageLevel, ...]:
+        """The levels that may be the answer: the first, and each whose seeks stayed quick."""
+        return tuple(one for at, one in enumerate(self.levels) if at == 0 or one.quick_enough)
 
     @property
     def best(self) -> StorageLevel | None:
-        """The widest level still worth having, walked the way `Measurement.best` walks.
+        return near_best(self.eligible, key=_mbps)
 
-        Stopped at the first level that is not an improvement on the one before, rather than at
-        the maximum: a share that has begun to collapse can still show a high reading on a level
-        that happened to catch its cache, and the level after the knee is the one that made every
-        job slow.
-        """
-        if not self.levels:
-            return None
-        best = self.levels[0]
-        for level in self.levels[1:]:
-            if level.megabytes_per_second < best.megabytes_per_second * WORTH_HAVING:
-                break
-            best = level
-        return best
+    @property
+    def too_slow(self) -> StorageLevel | None:
+        """The first level wider than the answer whose seeks passed the bound, if one did."""
+        best = self.best
+        return next(
+            (
+                one
+                for one in self.levels
+                if best and one.at_once > best.at_once and not one.quick_enough
+            ),
+            None,
+        )
 
     @property
     def collapsed(self) -> bool:
-        """Whether reading WIDER actually delivered less, rather than merely not enough more.
-
-        Two shapes stop the walk in `best` and only one is a share falling over. A curve such as
-        22, 22, 23, 26 MB/s at one, two, four and eight readers did not collapse: no step earned the
-        margin a step has to earn (`WORTH_HAVING`), so one reader is the answer for another reason.
-
-        The level after the chosen one decides it, because that is the level that stopped the walk.
-        """
+        """Whether the level after the answer delivered less, rather than merely not enough more."""
         best = self.best
         if best is None:
             return False
@@ -219,22 +276,12 @@ class StorageCurve:
 
 @dataclass(frozen=True)
 class Decode:
-    """How fast this machine turns video into frames, measured with the test clip.
-
-    The numbers the Build's reader is shaped by. A file's pictures can be taken by seeking to each
-    wanted moment (a process, a seek and a keyframe decode each) or by decoding the file once
-    from end to end and keeping the frames as they pass. Which is cheaper depends on how many
-    moments are wanted, how long the file is, and two rates of THIS machine that nothing else
-    measures: how many frames a second it decodes, and what one seek costs it. Both at the clip's
-    720p; a file at another size is scaled by its pixels.
-    """
+    """How fast this machine decodes and seeks the clip at 720p, which a Build reads by."""
 
     frames_per_second: float
     """Frames of 720p decoded per second by one task with a background job's thread share."""
     seek_seconds: float
-    """What one more moment costs when taken by seeking, within a process that seeks many: the
-    seek and the decode from the keyframe before it, on the local disk. A share's seek adds the
-    share's own cost, which the storage curve measures."""
+    """What one more moment costs when taken by seeking on the local disk; a share adds its own."""
 
     def as_dict(self) -> dict[str, object]:
         return {
@@ -250,44 +297,45 @@ class Measurement:
     cores: int
     levels: tuple[Level, ...] = ()
     failed: str | None = None
-    """Why nothing was measured, when nothing was, so a test that could not run does not read as
-    a slow machine."""
+    """Why nothing was measured, so a test that could not run does not read as a slow machine."""
     storages: tuple[StorageCurve, ...] = ()
-    """Every storage the library sits on, measured for how many readers it can serve at once.
-    Empty when the library is local: a local disk does not collapse under several readers."""
+    """Every storage the library sits on, local disks too, each read for how many it serves."""
     decode: Decode | None = None
     """How fast this machine decodes and seeks, or None where the decoder could not be run."""
 
     @property
     def best(self) -> Level | None:
-        """The widest level still worth having: more work than the one before it, and responsive.
-
-        Walked in order and stopped at the first level that is not an improvement, rather than
-        taking whichever scored highest. Throughput wobbles, and picking the maximum of a wobbly
-        curve reliably picks the peak of the noise, which on a saturated machine is the level
-        that made everything else unusable.
-        """
+        """The smallest responsive level within `NEAR_BEST` of the most work done."""
         usable = [level for level in self.levels if level.responsive and level.finished]
-        if not usable:
-            return None
-        best = usable[0]
-        for level in usable[1:]:
-            if level.throughput < best.throughput * WORTH_HAVING:
-                break
-            best = level
-        return best
+        return near_best(usable, key=lambda level: level.throughput)
 
     @property
     def at_ceiling(self) -> bool:
-        """Whether the level chosen is the widest one that was TRIED.
-
-        A peak or a floor. The ladder stops at one encode per thread, so a machine that keeps
-        improving all the way up ends on the widest rung offered, and nothing above it was run.
-        "More than that finished no more work" would then be a claim about levels never measured,
-        so the words on the screen follow this.
-        """
+        """Whether the level chosen is the widest one tried, so nothing above it was measured."""
         best = self.best
         return best is not None and bool(self.levels) and best.at_once == self.levels[-1].at_once
+
+    def not_measured(self) -> list[str]:
+        """What each curve did not try and why, in sentences for under the result."""
+        said = []
+        last = self.levels[-1] if self.levels else None
+        if last is not None and not last.responsive:
+            said.append(
+                f"Encoding more than {last.at_once} at once was not tried: at {last.at_once} "
+                f"Sift stopped keeping up."
+            )
+        said += [f"On {one.name}, {one.unmeasured}" for one in self.storages if one.unmeasured]
+        said += _busy("Encoding", self.levels)
+        for one in self.storages:
+            said += _busy(f"On {one.name}, reading", one.levels)
+        return said
+
+
+def _busy(what: str, levels: Sequence[Level] | Sequence[StorageLevel]) -> list[str]:
+    widths = [str(one.at_once) for one in levels if one.busy]
+    if not widths:
+        return []
+    return [f"{what} {', '.join(widths)} at the same time was {BUSY}."]
 
 
 @dataclass(frozen=True)
@@ -305,34 +353,17 @@ class Recommendation:
         return self.current != self.suggested
 
 
-#: What the recommendations may touch. Named here rather than assembled inline so it is one list a
-#: reader can check against the screen, and so nothing can recommend a key that is not a setting.
+#: What the recommendations may touch, one list to check against the screen.
 WORKER_COUNT_KEY = "performance.worker_count"
 GENERATION_LIMIT_KEY = "performance.generation_limit"
 SHARE_READS_KEY = "performance.share_reads_at_once"
 
-# Recognition's share of the machine is not recommended. This test measures video encoding, and a
-# face pass runs a model over a picture on a different hardware path; a number derived from the
-# encoding curve would look as trustworthy as the real readings without being one. Measuring it
-# properly needs the model present, which a default install does not have.
+#: The share setting's "as measured for each storage".
+AS_MEASURED = 0
 
 
 def recommend(measurement: Measurement, *, current: dict[str, int]) -> list[Recommendation]:
-    """Turn what was measured into what to change. Pure, so a test can check it.
-
-    Two settings, and both come from the measurement rather than from the core count:
-
-    - **How many jobs run at once**: above the measured level, because a job is not always
-      encoding, and never above the cores.
-    - **How many previews are built at once**: the measured level itself. Encoding is what was
-      measured and building previews is the encoding, so there is no derivation in between.
-
-    Two settings and not three: see the note above the keys about why recognition's share is not
-    recommended from an encoding measurement.
-
-    A measurement that failed recommends nothing: half an answer from a test that did not run
-    would look like a whole one.
-    """
+    """What to change: tasks a margin above the measured level, previews at it, or nothing."""
     best = measurement.best
     if measurement.failed is not None or best is None:
         return []
@@ -340,38 +371,26 @@ def recommend(measurement: Measurement, *, current: dict[str, int]) -> list[Reco
     measured = best.at_once
     threads = measurement.cores
 
-    # A margin over the measured level, not a multiple of it: a job is not always encoding, so a
-    # modest margin is right, but a multiple would recommend a level the test never ran. One
-    # processor is left over, as the automatic answer leaves one.
+    # A margin rather than a multiple, so nothing is recommended that the test never ran.
     jobs = min(max(1, threads - 1), measured + max(2, measured // 2))
 
-    # The preview cap never exceeds the job count. Building a preview is a job and the cap is a
-    # per-type limit inside the worker pool (`limits[PREVIEW]` in `sift/wiring/workers.py`), so a cap above the
-    # worker count could never take effect while still reading as a measurement.
+    # A cap above the task count could never take effect while still reading as a measurement.
     generation = min(measured, jobs)
 
     if measurement.at_ceiling:
-        # A floor, not a peak. See `Measurement.at_ceiling`.
         found = (
             f"Measured: this device was still finishing more work at {measured} encodes at once, "
-            f"which is as wide as the test goes \u2014 one for every thread it reports. Nothing wider "
-            f"was tried, so {measured} is the most this run can show rather than the point where "
-            f"it stopped helping."
+            f"which is as wide as the test goes \u2014 nothing wider was tried, so {measured} is "
+            f"the most this run can show rather than the point where it stopped helping."
         )
     else:
         found = (
-            f"Measured: this device encoded {measured} clips at once without falling behind, and "
-            f"running more than that made every encode slower and finished no more work."
+            f"Measured: this device encoded {measured} clips at the same time without falling "
+            f"behind{_why_not_wider(measurement.levels, best)}."
         )
+    found += sureness(best.low, best.high, best.throughput, "encodes a second")
 
-    kept_back = f"one of the {threads} threads this device reports is kept for everything that is not a task"
-    if jobs > measured:
-        margin = (
-            f"Tasks are not all encoding, so this is set a little above that \u2014 that margin is a "
-            f"judgment rather than something the test measured \u2014 and {kept_back}."
-        )
-    else:
-        margin = f"This is lower than that on purpose: {kept_back}."
+    margin = _tasks_said(jobs, measured, threads)
 
     if generation < measured:
         preview_reason = (
@@ -407,54 +426,79 @@ def recommend(measurement: Measurement, *, current: dict[str, int]) -> list[Reco
     return recommendations
 
 
+def _why_not_wider(levels: Sequence[Level], best: Level) -> str:
+    """What stopped the ladder past the answer, said of clips: the task count is another number."""
+    margin = round((1 - NEAR_BEST) * 100)
+    wider = [one for one in levels if one.at_once > best.at_once]
+    said = ""
+    if any(one.responsive and one.finished for one in wider):
+        said = f", and running more than that finished no more work, within {margin}%"
+    stalled = next((one for one in wider if not one.responsive), None)
+    if stalled is not None:
+        more = round((stalled.throughput / best.throughput - 1) * 100) if best.throughput else 0
+        did = f" it finished {more}% more work, but" if more > margin else ""
+        said += f". At {stalled.at_once} clips at the same time{did} Sift fell behind"
+    return said
+
+
+def _tasks_said(jobs: int, measured: int, threads: int) -> str:
+    """Why the task count is what it is, beside the clips measured."""
+    kept = (
+        f"one of the {threads} threads this device reports is kept for everything that isn't a task"
+    )
+    if jobs < measured:
+        return f"{jobs} is lower than that on purpose: {kept}."
+    if jobs == measured:
+        return f"{jobs} adds nothing for the tasks that aren't encoding, because {kept}."
+    said = (
+        f"Tasks aren't all encoding, so {jobs} is the {measured} clips measured plus "
+        f"{jobs - measured} for the tasks that aren't \u2014 a judgment rather than something the "
+        f"test measured"
+    )
+    if jobs == threads - 1:
+        return f"{said}, and no more, because {kept}."
+    return f"{said}."
+
+
+def _share_said(curve: StorageCurve, best: StorageLevel) -> str:
+    """One share's number, the readings it came from, and why wider was not chosen."""
+    readings = ", ".join(
+        f"{level.at_once} at once {level.megabytes_per_second:.0f} MB/s" for level in curve.levels
+    )
+    slow = curve.too_slow
+    if slow is not None:
+        why = (
+            f"at {slow.at_once} one reader waited {slow.seconds_per_seek:.2f} s for each seek, "
+            f"past the quarter second a person notices"
+        )
+    elif best.at_once == curve.levels[-1].at_once:
+        why = "nothing wider was tried"
+    elif curve.collapsed:
+        why = "reading more at once delivered less, not more"
+    else:
+        why = f"reading more at once delivered under {round((1 - NEAR_BEST) * 100)}% more"
+    files = "file" if best.at_once == 1 else "files"
+    sure = sureness(best.low, best.high, best.megabytes_per_second, "MB/s")
+    return f"Measured on {curve.name}: {best.at_once} {files} at once ({readings}); {why}.{sure}"
+
+
 def recommend_share_reads(
     storages: Sequence[StorageCurve], *, current: dict[str, int]
 ) -> Recommendation | None:
-    """How many files to read at once from a network share, from the shares that were measured.
-
-    Only the storages that were measured and are on another machine, and the smallest knee among
-    them: one setting governs every share, and a number safe for the weakest is safe for all. A
-    storage that could not be measured recommends nothing (`StorageCurve.failed`); if none could,
-    there is no recommendation.
-    """
-    measured = [one for one in storages if one.remote and one.best is not None]
+    """The setting's "as measured", since each share reads at its own number; None if none was."""
+    measured = [(one, one.best) for one in storages if one.remote and one.best is not None]
     if not measured:
         return None
-    knee = min(measured, key=lambda one: one.best.at_once if one.best else 0)
-    best = knee.best
-    if best is None:  # pragma: no cover (cannot happen past the filter above; said, not assumed)
-        return None
-    readings = ", ".join(
-        f"{level.at_once} at once {level.megabytes_per_second:.0f} MB/s" for level in knee.levels
-    )
-    # "more than 1 file", never "more than 1 files". The readings beside it are a person's first
-    # reason to trust or distrust the number, and a sentence that cannot count reads as neither.
-    files = "file" if best.at_once == 1 else "files"
-    if len(knee.levels) > 1 and best.at_once == knee.levels[-1].at_once:
-        found = (
-            f"Measured on {knee.label}: reading {best.at_once} {files} at once was still the "
-            f"fastest level tried ({readings}). Nothing wider was tried."
-        )
-    elif knee.collapsed:
-        found = (
-            f"Measured on {knee.label}: reading more than {best.at_once} {files} at once delivered "
-            f"less, not more ({readings})."
-        )
-    else:
-        # A curve that climbs a little and is still not worth it: no step gained the margin a step
-        # has to gain, so the extra readers bought run-to-run noise, not a collapse.
-        found = (
-            f"Measured on {knee.label}: reading more than {best.at_once} {files} at once delivered "
-            f"no more than the noise between runs ({readings})."
-        )
-    if len(measured) > 1:
-        found += f" The lowest of {len(measured)} shares, so every share is kept safe."
+    found = " ".join(_share_said(curve, best) for curve, best in measured if best is not None)
     return Recommendation(
         key=SHARE_READS_KEY,
         label="How many files are read at the same time from a network share",
-        current=current.get(SHARE_READS_KEY, 0),
-        suggested=best.at_once,
-        reason=found,
+        current=current.get(SHARE_READS_KEY, AS_MEASURED),
+        suggested=AS_MEASURED,
+        reason=(
+            f"{found} Automatic reads each share at its own measured number; a number here is "
+            f"used for every share instead."
+        ),
     )
 
 
@@ -463,36 +507,34 @@ def recommend_share_reads(
 
 @dataclass
 class _Readings:
-    """The two live readings, sampled around a level rather than for the whole run.
-
-    Read as deltas so a machine that was already struggling before the test began does not have
-    every level blamed for it: what each level is judged on is what IT did.
-    """
+    """The two live readings, as deltas around a level, so each level is judged on what it did."""
 
     worst_lag: Callable[[], float]
     worst_wait: Callable[[], float]
+    fell_behind: Callable[[], int]
     lag_before: float = 0.0
     wait_before: float = 0.0
+    behind_before: int = 0
 
     def start(self) -> None:
         self.lag_before = self.worst_lag()
         self.wait_before = self.worst_wait()
+        self.behind_before = self.fell_behind()
 
-    def since(self) -> tuple[float, float]:
+    def since(self) -> tuple[float, float, int]:
         return (
             max(0.0, self.worst_lag() - self.lag_before),
             max(0.0, self.worst_wait() - self.wait_before),
+            self.fell_behind() - self.behind_before,
         )
 
 
-async def build_clip(into: Path, settings: Settings) -> Path:
-    """Write the one clip every level encodes, and hand back where it is.
+CLIP_NAME = "self-test-source.mp4"
 
-    Built rather than shipped: a file small enough to put in the repository is one the encoder
-    finishes with before anything could be measured, and a library's files are not in the
-    repository either.
-    """
-    target = into / "self-test-source.mp4"
+
+async def build_clip(into: Path, settings: Settings) -> Path:
+    """Write the one clip every level encodes, and hand back where it is."""
+    target = into / CLIP_NAME
     await media.run(
         [
             settings.ffmpeg_path,
@@ -518,40 +560,18 @@ async def build_clip(into: Path, settings: Settings) -> Path:
     return target
 
 
-#: Threads one encode in the test is allowed. **Fixed, and that is the whole design of the
-#: measurement.**
-#:
-#: What is being chosen is how many encodes to run at once, so that has to be the only thing that
-#: varies. Either of the obvious alternatives produces a number that looks authoritative and is not:
-#:
-#: - **No cap at all.** ffmpeg helps itself to roughly two-thirds of the machine, so one encode
-#:   already fills a large machine, running four finishes barely more than one, and the curve
-#:   flattens at once into a recommendation far below what the machine can do.
-#: - **A cap of cores over the level.** That holds the whole machine busy at every level, so total
-#:   throughput is near flat by construction and the only differences left are noise, which
-#:   recommends 1.
-#:
-#: Fixed instead. Level N uses about 2N cores, so throughput climbs while the machine has room and
-#: stops when it runs out, and where it stops is the number being looked for. Two rather than one
-#: because a single-threaded encode is not what a job gets in practice, and not more because a large
-#: share per encode puts the ceiling below the smallest level worth testing.
+#: Threads one encode is allowed, fixed so the encodes at once are the only thing that varies:
+#: uncapped, one encode fills a large machine and the curve is flat from the start.
 THREADS_PER_ENCODE = 2
 
 
 def cores_in_use(at_once: int) -> int:
-    """Roughly how much of the machine a level occupies. What makes the curve mean anything."""
+    """Roughly how much of the machine a level occupies."""
     return at_once * THREADS_PER_ENCODE
 
 
 def planned_levels(cores: int, levels: Sequence[int] = LEVELS) -> tuple[int, ...]:
-    """The rungs THIS machine can reach, so a screen can say how far through a run is.
-
-    An upper bound, and said as one on the screen: a run stops early when a level stops helping or
-    when the application stops keeping up. It is never a total that moves.
-
-    The first rung is always reachable, however small the machine: `measure` only breaks out once
-    something has been done, so a one-thread box still runs the level of one.
-    """
+    """The doubling rungs this machine can reach, an upper bound for the screen; never none."""
     reachable = tuple(one for one in levels if cores_in_use(one) <= cores * 2)
     return reachable or (levels[0],)
 
@@ -559,13 +579,7 @@ def planned_levels(cores: int, levels: Sequence[int] = LEVELS) -> tuple[int, ...
 async def _encode_once(
     source: Path, into: Path, index: int, settings: Settings, threads: int = 0
 ) -> bool:
-    """One unit of the work being measured: re-encode the clip. True when it finished.
-
-    `threads` caps this one encode. The same flag twice, because ffmpeg has more than one thread
-    pool and one flag does not reach them all: before the input it caps decoding and
-    the filter graph, and in the output position it caps the encoder, which is the one doing the
-    work here. Capping only the first would leave the encoder taking the machine anyway.
-    """
+    """Re-encode the clip once; True when it finished. `threads` caps the decoder and encoder."""
     cap = [] if threads <= 0 else ["-threads", str(threads), "-filter_threads", str(threads)]
     output_cap = [] if threads <= 0 else ["-threads", str(threads)]
     try:
@@ -582,9 +596,7 @@ async def _encode_once(
                 str(source),
                 "-c:v",
                 "libx264",
-                # Slower than the preset a preview is really built with, deliberately. What is being
-                # measured is how the machine behaves when several encodes compete, and a preset fast
-                # enough to finish before they overlap measures nothing.
+                # Slower than a preview's preset, so the encodes of a level overlap.
                 "-preset",
                 "medium",
                 "-pix_fmt",
@@ -601,25 +613,13 @@ async def _encode_once(
 
 
 # --- measuring the decoder ------------------------------------------------------------------------
-#
-# The encoding curve says how many previews to build at once. It says nothing about the choice a
-# Build makes for every video: seek to the moments it wants, or decode the file once and keep the
-# frames as they pass. That choice is a sum of two rates of this machine (frames decoded a
-# second, and what one seek costs) against the share's own numbers, and neither rate can be
-# derived from the core count any more than the encoding curve could.
 
-#: Where the seek half of the measurement takes its moments from, as fractions of the clip. Spread
-#: rather than bunched, the way a fingerprint's or a scrubber strip's moments are, and enough of
-#: them that the one launch they share is a small part of the run.
+#: Where the seek half takes its moments, as fractions of the clip: spread, as a strip's are.
 SEEK_MOMENTS = tuple((index + 0.5) / 10 for index in range(10))
 
 
 async def _decode_once(source: Path, settings: Settings) -> float:
-    """Decode the whole clip and throw the frames away. Seconds it took.
-
-    With the thread share a background job's ffmpeg gets (`background_flags`) rather than the
-    whole machine, because the number is for one task of a Build, which runs beside others.
-    """
+    """Decode the whole clip with one background task's thread share. Seconds it took."""
     started = time.monotonic()
     await media.run(
         [
@@ -638,13 +638,7 @@ async def _decode_once(source: Path, settings: Settings) -> float:
 
 
 async def _seek_run(source: Path, ats: Sequence[float], settings: Settings) -> float:
-    """Take one frame at each of `ats` by seeking, from ONE process. Seconds for the run.
-
-    One process with a seeked input per moment (`-ss T1 -i clip -ss T2 -i clip ...`), because
-    that is the shape everything in Sift seeks with (`media.moments_to_files`), and a launch per
-    seek would charge every moment for the process rather than for the seek. What is wanted is
-    what one more moment costs, and that is this run's seconds over its moments.
-    """
+    """Seconds to take a frame at each of `ats` by seeking, as `media.moments_to_files` does."""
     argv = [settings.ffmpeg_path, *media.background_flags(settings)]
     for at in ats:
         argv += ["-ss", f"{at:.3f}", "-i", str(source)]
@@ -663,11 +657,7 @@ async def measure_decode(
     decode: Callable[[Path, Settings], Awaitable[float]] | None = None,
     seek: Callable[[Path, Sequence[float], Settings], Awaitable[float]] | None = None,
 ) -> Decode | None:
-    """The two rates the Build's reader is shaped by, each the middle of `repeats` runs.
-
-    None when the decoder could not run, which is an answer: a machine that cannot decode is not
-    a slow one, and a reader with no rate to go on seeks, the shape that needs none.
-    """
+    """The Build's two rates, each the middle of `repeats` runs; None if the decoder can't run."""
     run_decode = decode or _decode_once
     run_seek = seek or _seek_run
     ats = [CLIP_SECONDS * at for at in SEEK_MOMENTS]
@@ -686,36 +676,31 @@ async def measure_decode(
     return found
 
 
-# --- measuring the storage ------------------------------------------------------------------------
-#
-# A probe reads a file by seeking into it: fifty-five places in a video, a megabyte or so decoded
-# at each. A share that serves that pattern well for two readers can collapse for twelve, and the
-# collapse is invisible to the encoding test above, which never touches the library. So each
-# storage the library sits on is read the same way (several files at once, several seeks into
-# each) and the number of readers it can serve at once is read off the curve.
+# --- measuring the storage: read as a probe reads, the readers it serves read off the curve ------
 
-#: How many places in a file one reader seeks to, and how much it reads at each. A megabyte is
-#: about what a decoder pulls to reconstruct one frame from the keyframe before it.
+#: How many places in a file one reader seeks to, and how much it reads at each: about what a
+#: decoder pulls to rebuild one frame from the keyframe before it.
 SEEKS_PER_FILE = 6
 BYTES_PER_SEEK = 1 << 20
 
 #: The smallest file worth seeking into. Below this the six reads overlap and measure the cache.
 SAMPLE_FLOOR_BYTES = 16 << 20
 
-#: How many entries a walk of a library folder looks at to find files to sample, and how many it
-#: keeps. A walk over a share is a round trip per folder, and a benchmark that took minutes to
-#: choose its files would be the slow thing it was measuring.
+#: How many entries a walk of a library folder looks at, and how many files it keeps: two for each
+#: reader of the widest level, so no two readers of one run share a file.
 SAMPLE_WALK_LIMIT = 4000
-SAMPLE_FILES = 40
+SAMPLE_FILES = 2 * MAX_READS_AT_ONCE
 
-#: The readers-at-once levels a storage is tried at. The first rung is the measured safe value
-#: for a home share and the last is past anything a share has been seen to serve.
-STORAGE_LEVELS = (1, 2, 4, 8)
+#: The readers-at-once levels, doubling up to the most the lanes allow one storage.
+STORAGE_LEVELS = tuple(1 << step for step in range(MAX_READS_AT_ONCE.bit_length()))
 
-#: How many distinct salts one run hands out: one per level per repeat. `_seek_and_read` spaces
-#: its places by this, so no run of the walk re-reads what an earlier one left in the operating
-#: system's cache and measures the memory in front of the share instead of the share.
-_SALTS = len(STORAGE_LEVELS) * REPEATS
+#: One salt per level per repeat, the midpoint and a busy level's second take included, so no run
+#: re-reads a place another left in the system's cache.
+_SALTS = 2 * (len(STORAGE_LEVELS) + 1) * REPEATS
+
+#: Why a local disk is not measured where the system cannot read past its cache: a read from
+#: memory is not a read from the disk.
+NO_UNCACHED = "this system offers no way to read a disk past its own cache"
 
 
 @dataclass(frozen=True)
@@ -729,12 +714,7 @@ class StorageToMeasure:
 
 
 def sample_files(roots: Sequence[Path], *, wanted: int = SAMPLE_FILES) -> list[Path]:
-    """Large files under these folders, spread across them, found within a bounded walk.
-
-    Blocking, for a thread. Bounded on entries rather than on files so a folder of a million
-    small files does not walk for ever finding none big enough; the biggest of what was seen are
-    kept so the sample seeks into real video rather than into thumbnails somebody copied in.
-    """
+    """The largest files under these folders, within a walk bounded on entries. Blocking."""
     seen: list[tuple[int, Path]] = []
     looked = 0
     for root in roots:
@@ -762,27 +742,36 @@ def sample_files(roots: Sequence[Path], *, wanted: int = SAMPLE_FILES) -> list[P
     return [path for _, path in seen[:wanted]]
 
 
-def _seek_and_read(path: Path, *, salt: int) -> int:
-    """Read `SEEKS_PER_FILE` pieces of a file at places spread across it. How many bytes came back.
+def _places(size: int, salt: int) -> list[int]:
+    """Where in a file of `size` bytes one reader seeks, moved by `salt` so runs never overlap."""
+    span = max(1, size - BYTES_PER_SEEK)
+    within = (salt % _SALTS + 0.5) / _SALTS
+    places = (
+        int(((at + within) % SEEKS_PER_FILE) / SEEKS_PER_FILE * span)
+        for at in range(SEEKS_PER_FILE)
+    )
+    return [place - place % uncached.ALIGN for place in places]
 
-    `salt` moves the places by run, so a run never re-reads what the run before it left in the
-    operating system's cache and measures the share rather than the memory in front of it. Each
-    salt lands a distinct fraction of the way into the seek's span (see `_SALTS`), so the
-    places of two runs are as far apart as the file allows.
-    """
+
+def _seek_and_read(path: Path, *, salt: int, uncached: bool = False) -> int:
+    """Read `BYTES_PER_SEEK` at each of a file's places. How many bytes came back."""
+    if uncached:
+        return _read_uncached(path, salt)
     read = 0
     with open(path, "rb", buffering=0) as handle:
-        size = os.fstat(handle.fileno()).st_size
-        span = max(1, size - BYTES_PER_SEEK)
-        within = (salt % _SALTS + 0.5) / _SALTS
-        for index in range(SEEKS_PER_FILE):
-            place = int(((index + within) % SEEKS_PER_FILE) / SEEKS_PER_FILE * span)
+        for place in _places(os.fstat(handle.fileno()).st_size, salt):
             handle.seek(place)
             read += len(handle.read(BYTES_PER_SEEK))
     return read
 
 
-async def _read_level(files: Sequence[Path], *, at_once: int, salt: int) -> StorageLevel:
+def _read_uncached(path: Path, salt: int) -> int:
+    return uncached.read(path, _places(path.stat().st_size, salt), BYTES_PER_SEEK)
+
+
+async def _read_level(
+    files: Sequence[Path], *, at_once: int, salt: int, uncached: bool = False
+) -> StorageLevel:
     """Read `files` with `at_once` readers going at the same time, the way a probe does."""
     pending = list(files)
     total = 0
@@ -793,10 +782,10 @@ async def _read_level(files: Sequence[Path], *, at_once: int, salt: int) -> Stor
         while pending:
             path = pending.pop()
             try:
-                # Read into a local first: `total += await ...` takes the old total before the
-                # await and writes it back after, so two readers finishing together would keep
-                # one file's bytes and lose the other's.
-                came_back = await asyncio.to_thread(_seek_and_read, path, salt=salt)
+                # Into a local first: `total += await ...` would lose a reader finishing alongside.
+                came_back = await asyncio.to_thread(
+                    _seek_and_read, path, salt=salt, uncached=uncached
+                )
                 total += came_back
                 seeks += SEEKS_PER_FILE
             except OSError as error:
@@ -809,6 +798,35 @@ async def _read_level(files: Sequence[Path], *, at_once: int, salt: int) -> Stor
     )
 
 
+def _kept[T: (Level, StorageLevel)](runs: Sequence[T], *, key: Callable[[T], float]) -> T:
+    """The middle run, carrying the slowest and quickest of all of them."""
+    figures = [key(run) for run in runs]
+    return replace(middle_by(runs, key=key), low=min(figures), high=max(figures))
+
+
+def _stops(done: Sequence[StorageLevel], sample: int, wider: int | None) -> tuple[bool, str | None]:
+    """Whether the storage ladder goes no wider, and what that leaves untried, if anything."""
+    last = done[-1]
+    if not last.quick_enough:
+        return True, (
+            f"nothing wider than {last.at_once} at once was tried: one reader waited "
+            f"{last.seconds_per_seek:.2f} s for each seek, past the quarter second a person notices."
+        )
+    if len(done) > 1 and max(map(_mbps, done[:-1])) >= _mbps(last) * NEAR_BEST:
+        return True, None
+    if wider is None:
+        return True, (
+            f"nothing wider than {last.at_once} at once was tried, the most Sift reads from one "
+            f"storage, and it was still getting quicker."
+        )
+    if wider * 2 > sample:
+        return True, (
+            f"nothing wider than {last.at_once} at once was tried: only {sample} files large "
+            f"enough to seek into were found."
+        )
+    return False, None
+
+
 async def measure_storage(
     one: StorageToMeasure,
     *,
@@ -816,40 +834,85 @@ async def measure_storage(
     read_level: Callable[..., Awaitable[StorageLevel]] | None = None,
     files: Sequence[Path] | None = None,
     repeats: int = REPEATS,
+    busy: Callable[[], bool] = others_busy,
 ) -> StorageCurve:
-    """How many files this storage can serve at once. Never raises; a failure is part of the answer.
-
-    Each run reads its own files, cycling through the sample, so two runs never read the same
-    bytes; a run reads twice its readers' worth of files so every reader is busy for the whole of
-    it. Each level is run `repeats` times and the middle run is what the level records. See
-    `REPEATS`. The walk stops as soon as a level delivers less than the one before: that is the
-    collapse being looked for, and running wider would only make the share slower for longer.
-    """
+    """How many files this storage serves at once, a local disk read past the cache; never raises.
+    The ladder doubles until a level gains nothing, a seek passes `SEEK_BOUND_SECONDS` or the sample
+    runs out, then tries the midpoint."""
+    curve = StorageCurve(storage=one.storage, label=one.label, remote=one.remote)
+    if not one.remote and not uncached.AVAILABLE:
+        return replace(curve, failed=NO_UNCACHED)
     sample = files if files is not None else await asyncio.to_thread(sample_files, list(one.roots))
     if len(sample) < 2:
-        return StorageCurve(
-            storage=one.storage,
-            label=one.label,
-            remote=one.remote,
-            failed="too few large files to seek into",
-        )
-    run_level = read_level or _read_level
-    done: list[StorageLevel] = []
+        return replace(curve, failed="too few large files to seek into")
+    run_level = read_level or partial(_read_level, uncached=not one.remote)
     offset = 0
-    for index, at_once in enumerate(levels):
-        if at_once > len(sample):
-            break
-        runs: list[StorageLevel] = []
+    turn = 0
+
+    async def take(at_once: int) -> StorageLevel:
+        nonlocal offset, turn
+        runs = []
         for attempt in range(repeats):
             chosen = [sample[(offset + i) % len(sample)] for i in range(at_once * 2)]
             offset += at_once * 2
-            runs.append(await run_level(chosen, at_once=at_once, salt=index * repeats + attempt))
-        level = middle_by(runs, key=lambda run: run.megabytes_per_second)
-        done.append(level)
+            runs.append(await run_level(chosen, at_once=at_once, salt=turn * repeats + attempt))
+        turn += 1
+        level = _kept(runs, key=_mbps)
         log.info("performance.selftest.storage_level", storage=one.storage, **level.as_dict())
-        if len(done) > 1 and level.megabytes_per_second < done[-2].megabytes_per_second:
+        return level
+
+    done: list[StorageLevel] = []
+    for slot, at_once in enumerate(levels):
+        done.append(await steady(partial(take, at_once), _marked, busy))
+        wider = levels[slot + 1] if slot + 1 < len(levels) else None
+        stop, untried = _stops(done, len(sample), wider)
+        if stop:
+            curve = replace(curve, unmeasured=untried)
             break
-    return StorageCurve(storage=one.storage, label=one.label, remote=one.remote, levels=tuple(done))
+    curve = replace(curve, levels=tuple(done))
+    between = midpoint(curve.eligible, key=_mbps)
+    if between is not None and between * 2 <= len(sample):
+        done.append(await steady(partial(take, between), _marked, busy))
+        curve = replace(curve, levels=tuple(sorted(done, key=lambda level: level.at_once)))
+    return curve
+
+
+async def _encode_level(
+    at_once: int,
+    *,
+    encode: Callable[..., Awaitable[bool]],
+    source: Path,
+    workspace: Path,
+    settings: Settings,
+    readings: _Readings,
+    repeats: int,
+) -> Level:
+    """Run `at_once` encodes together `repeats` times; the middle run, with the spread."""
+    runs: list[Level] = []
+    for _ in range(repeats):
+        readings.start()
+        started = time.monotonic()
+        finished = await asyncio.gather(
+            *(
+                encode(source, workspace, index, settings, THREADS_PER_ENCODE)
+                for index in range(at_once)
+            )
+        )
+        elapsed = time.monotonic() - started
+        lag, wait, behind = readings.since()
+        runs.append(
+            Level(
+                at_once=at_once,
+                seconds=elapsed,
+                finished=sum(1 for ok in finished if ok),
+                worst_lag_seconds=lag,
+                worst_wait_seconds=wait,
+                fell_behind=behind,
+            )
+        )
+    level = _kept(runs, key=lambda run: run.throughput)
+    log.info("performance.selftest.level", runs=len(runs), **level.as_dict())
+    return level
 
 
 async def measure(
@@ -866,83 +929,48 @@ async def measure(
     measure_one_storage: Callable[..., Awaitable[StorageCurve]] | None = None,
     repeats: int = REPEATS,
     measure_decoder: Callable[..., Awaitable[Decode | None]] | None = None,
+    busy: Callable[[], bool] = others_busy,
+    fell_behind: Callable[[], int] = lambda: 0,
 ) -> Measurement:
-    """Run the test and hand back what happened. Never raises: a failure is part of the answer.
-
-    `encode` is the unit of work, injectable so a test can measure something instant and
-    deterministic instead of really running a video encoder: what is being checked in that case is
-    the shape of the walk between levels, which is where the decisions are.
-
-    `report` is handed the measurement so far after each level, so the screen showing a run in
-    flight can say what has actually happened rather than a sentence that never changes. It is the
-    same object this returns at the end, one rung short, not a second progress shape to keep in
-    step with the first.
-
-    Each level is run `repeats` times and the middle run is what the level records. See
-    `REPEATS`. Levels above the core count are skipped: encoding more at once than there are
-    cores has never once been the right answer, and running them only makes the test longer on
-    the machines least able to afford it.
-    """
-    run_one = encode or _encode_once
+    """Run the test and hand back what happened; never raises. `report` is handed each level as it
+    lands. After the doublings the midpoint is tried, then the decoder, then each storage."""
     try:
         source = await build_clip(workspace, settings)
     except (media.FFmpegError, OSError) as error:
-        # A machine with no working encoder is a real thing, and it is not a slow machine. Saying
-        # so is the whole difference between "leave the settings alone" and "turn everything down".
+        # No working encoder is not a slow machine: the difference between leaving and lowering.
         log.warning("performance.selftest.no_encoder", error=str(error))
         return Measurement(cores=cores, failed="the video encoder couldn't be run")
 
-    readings = _Readings(worst_lag=worst_lag, worst_wait=worst_wait)
+    take = partial(
+        _encode_level,
+        encode=encode or _encode_once,
+        source=source,
+        workspace=workspace,
+        settings=settings,
+        readings=_Readings(worst_lag, worst_wait, fell_behind),
+        repeats=repeats,
+    )
     done: list[Level] = []
     for at_once in levels:
-        # Past roughly twice the machine there is nothing left to learn: the curve has already
-        # flattened and every further level is slower for the same answer. This is also what keeps
-        # the run short on a small machine, which is the one least able to spare the time.
         if cores_in_use(at_once) > cores * 2 and done:
             break
-        runs: list[Level] = []
-        for _ in range(repeats):
-            readings.start()
-            started = time.monotonic()
-            finished = await asyncio.gather(
-                *(
-                    run_one(source, workspace, index, settings, THREADS_PER_ENCODE)
-                    for index in range(at_once)
-                )
-            )
-            elapsed = time.monotonic() - started
-            lag, wait = readings.since()
-            runs.append(
-                Level(
-                    at_once=at_once,
-                    seconds=elapsed,
-                    finished=sum(1 for ok in finished if ok),
-                    worst_lag_seconds=lag,
-                    worst_wait_seconds=wait,
-                )
-            )
-        level = middle_by(runs, key=lambda run: run.throughput)
-        done.append(level)
-        log.info("performance.selftest.level", runs=len(runs), **level.as_dict())
+        done.append(await steady(partial(take, at_once), _marked, busy))
         if report is not None:
             report(Measurement(cores=cores, levels=tuple(done)))
-        if not level.responsive:
-            # Past here the machine is already struggling; wider levels would only struggle more and
-            # would keep somebody waiting to be told something already known.
+        if not done[-1].responsive:
             break
-    # Then the decoder, on the same clip, once the encodes have let go of the machine.
+    between = midpoint([one for one in done if one.responsive and one.finished], key=_per_second)
+    if between is not None and cores_in_use(between) <= cores * 2:
+        done = sorted(
+            [*done, await steady(partial(take, between), _marked, busy)],
+            key=lambda level: level.at_once,
+        )
     decode = await (measure_decoder or measure_decode)(source, settings, repeats=repeats)
     if report is not None:
         report(Measurement(cores=cores, levels=tuple(done), decode=decode))
-    # Then each storage the library sits on, after the encoder rather than beside it, so neither
-    # measurement is taken while the other has the machine. Only the ones on another machine: a
-    # local disk was never the thing that collapsed, and reading it would only lengthen the test.
     curves: list[StorageCurve] = []
     for one in storages:
-        if not one.remote:
-            continue
-        curve = await (measure_one_storage or measure_storage)(one, repeats=repeats)
-        curves.append(curve)
+        curves.append(await (measure_one_storage or measure_storage)(one, repeats=repeats))
         if report is not None:
             report(
                 Measurement(cores=cores, levels=tuple(done), storages=tuple(curves), decode=decode)
@@ -950,14 +978,13 @@ async def measure(
     return Measurement(cores=cores, levels=tuple(done), storages=tuple(curves), decode=decode)
 
 
+def _per_second(level: Level) -> float:
+    return level.throughput
+
+
 @dataclass
 class SelfTest:
-    """The one run there may be at a time, and what it found.
-
-    The finished reading is kept per hardware profile beside the rates (`rates` v2) and put back
-    by `SelfTestRunner.recall`. What is held here is this process's view: the run in flight, or
-    the last one.
-    """
+    """This process's run in flight, or its last one; `SelfTestRunner.recall` puts a kept one back."""
 
     running: bool = False
     measurement: Measurement | None = None
@@ -965,7 +992,5 @@ class SelfTest:
     finished_at: float | None = None
 
 
-#: The one self-test run there may be at a time. On the application rather than in the module, so
-#: it goes away with the application and a second one does not inherit the first one's answer.
-#: Held by the runner (`runner.SelfTestRunner`), which is what the screen and the Build share.
+#: The one self-test run there may be at a time, on the application so it goes with it.
 SELF_TEST: Part[SelfTest] = Part("self_test")

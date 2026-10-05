@@ -9,7 +9,15 @@
 	 * face scan's row does: its bar, its count, Cancel, and its report when it ends.
 	 */
 	import { onMount } from 'svelte';
-	import { Button, ChooseFile, Modal, Problem, ProgressBar } from '$lib/components/common';
+	import {
+		Button,
+		ChooseFile,
+		Fold,
+		Modal,
+		Problem,
+		ProgressBar,
+		Scroller
+	} from '$lib/components/common';
 	import FolderPicker from '$lib/library/FolderPicker.svelte';
 	import { Picker } from '$lib/library/picker.svelte';
 	import { Grants } from '$lib/library/grants-state.svelte';
@@ -193,6 +201,19 @@
 		<p class="small">{COPY.leave}</p>
 	{:else if folderImport.outcome}
 		<p class="status" class:ready={folderImport.succeeded}>{folderImport.outcome}</p>
+		{#each folderImport.folds as fold (fold.summary)}
+			<Fold summary={fold.summary}>
+				<div class="files">
+					<Scroller>
+						<ul>
+							{#each fold.files as file (file)}
+								<li>{file}</li>
+							{/each}
+						</ul>
+					</Scroller>
+				</div>
+			</Fold>
+		{/each}
 	{/if}
 	<Problem message={problem} />
 </ActionRow>
@@ -213,7 +234,13 @@
 		<div class="device">
 			<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
 			<span onclickcapture={armReading}>
-				<ChooseFile directory label={COPY.device} busy={reading} onchooseAll={fromDevice}>
+				<ChooseFile
+					directory
+					label={COPY.device}
+					icon="upload"
+					busy={reading}
+					onchooseAll={fromDevice}
+				>
 					{COPY.device}
 				</ChooseFile>
 			</span>
@@ -240,6 +267,21 @@
 
 	.status.ready {
 		color: var(--sift-ink);
+	}
+
+	/* The files under one count of the report, one to a line, held to the list's height. */
+	.files :global(.scroll-root) {
+		max-block-size: var(--settings-list-cap);
+	}
+
+	.files ul {
+		margin: 0;
+		padding: 0;
+		list-style: none;
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-1);
+		font: var(--text-body-sm);
 	}
 
 	.folder-import {

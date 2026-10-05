@@ -64,7 +64,7 @@
 		 */
 		icon?: IconName;
 		/**
-		 * The one line in the display face, on a page: "No results for 'beach'". A block draws no
+		 * The one line in the display face, on a page: 'No files match "beach".'. A block draws no
 		 * heading; its sentence is the whole of it.
 		 */
 		title?: string;

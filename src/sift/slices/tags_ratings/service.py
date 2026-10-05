@@ -34,6 +34,7 @@ from sift.kernel.access import (
     bump_stamps_for_object,
     by_user,
 )
+from sift.kernel.access.repository.walls import shown
 from sift.kernel.access.tag_tree import TAGS_ABOVE
 from sift.kernel.audience import EVERY_ADMIN, NOBODY, Audience
 from sift.kernel.cache_stamp import bump_cache_stamp
@@ -47,6 +48,7 @@ from sift.kernel.ids import new_id
 from sift.kernel.ledger import ACTOR_USER, Actor, Object, record_event
 from sift.kernel.log import get_logger
 from sift.kernel.sorting import sort_key
+from sift.kernel.sql_splice import splice
 from sift.kernel.vocabulary import Subject
 from sift.kernel.wiring import Part
 
@@ -229,11 +231,14 @@ _TAG_RECORD = "SELECT description, category FROM tags WHERE id = ?"
 
 #: The tag this one is filed under, with its name, for the record's "Part of". The same pair a
 #: site's parent is read as: the value is the name, and the id rides beside it (`links_to`).
-_TAG_PARENT = """
+_TAG_PARENT = splice(
+    """
 SELECT parent.id AS id, parent.name AS name
   FROM tags child JOIN tags parent ON parent.id = child.parent_id
- WHERE child.id = ?
-"""
+ WHERE child.id = :tag AND {{SHOWN}}
+""",
+    SHOWN=shown("tag", "parent"),
+)
 _SET_TAG_PARENT = "UPDATE tags SET parent_id = ? WHERE id = ?"
 #: A tag by its name, which the column compares without case.
 _TAG_ID_NAMED = "SELECT id FROM tags WHERE name = ?"
@@ -440,7 +445,7 @@ class TagService:
             return None
         raise DuplicateTag(name)
 
-    async def record_of(self, tag_id: str) -> dict[str, object]:
+    async def record_of(self, tag_id: str, viewer: Viewer | None = None) -> dict[str, object]:
         """A tag's record fields, by field key. Empty for a tag nobody has described.
 
         A field with nothing in it is left OUT rather than carried as null: absent and null read
@@ -458,7 +463,15 @@ class TagService:
         aliases = [str(one["alias"]) for one in await self._db.fetch_all(_TAG_ALIASES, (tag_id,))]
         if aliases:
             record["aliases"] = aliases
-        parent = await self._db.fetch_one(_TAG_PARENT, (tag_id,))
+        admin = viewer is None or viewer.is_admin
+        parent = await self._db.fetch_one(
+            _TAG_PARENT,
+            {
+                "tag": tag_id,
+                "is_admin": int(admin),
+                "viewer": None if viewer is None else viewer.id,
+            },
+        )
         if parent is not None:
             record["parent"] = str(parent["name"])
             record["parent_id"] = str(parent["id"])

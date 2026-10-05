@@ -145,7 +145,7 @@ describe('the movement', () => {
 		aboutToChange();
 	});
 
-	it('grows an arriving player out of the place it was handed, and fades a leaving one', () => {
+	it('grows an arriving player out of the place it was handed, and fades or shrinks a leaving one', () => {
 		const { node } = stageAt(box(0, 0, 1000, 500));
 		const arriving = stageTransition(node, { from: () => box(250, 125, 500, 250) })({
 			direction: 'in'
@@ -155,6 +155,14 @@ describe('the movement', () => {
 		const leaving = stageTransition(node)({ direction: 'out' });
 		expect(leaving.duration).toBe(211);
 		expect(leaving.css(0.5, 0.5)).toBe('opacity: 0.5');
+		const shrinking = stageTransition(node, {
+			from: () => box(0, 0, 10, 10),
+			leave: () => 'shrink'
+		})({
+			direction: 'out'
+		});
+		expect(shrinking.duration).toBe(211);
+		expect(shrinking.css(0, 1)).toBe('opacity: 0; transform: translate(0px, 0px) scale(0.88)');
 	});
 
 	it('measures about the centre, one scale for both sides', () => {
@@ -172,9 +180,9 @@ describe('every player moves through this module', () => {
 	   and a Theater wall handing their picture to the corner. */
 	const players: Record<string, RegExp> = {
 		'lib/components/player/MediaStage.svelte': /use:screenChanges=\{\{ key: filling \}\}/,
-		'lib/components/AssetModal.svelte': /stageTransition\(node, \{ from: takePlace \}\)/,
+		'lib/components/AssetModal.svelte': /stageTransition\(node, \{\s*from: takePlace,/,
 		'lib/components/player/MiniPlayer.svelte': /use:screenChanges=\{\{ key: mini\.bar \|\| docked/,
-		'lib/components/theater/TheaterWall.svelte': /bind:this=\{frame\}\s+use:screenChanges/,
+		'lib/components/theater/TheaterWall.svelte': /<div class="stages" use:screenChanges>/,
 		'lib/components/player/Player.svelte': /handPlace\(frame\?\.element/,
 		'lib/theater/corner.ts': /handPlace\(document\.querySelector\('\[data-theater-wall\]'\)/
 	};

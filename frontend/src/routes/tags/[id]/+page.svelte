@@ -38,8 +38,11 @@
 		iconOf,
 		tabsFor,
 		type RelatedKind,
-		TabCounts
+		TabCounts,
+		TabWords
 	} from '$lib/entity/related.svelte';
+	import WallControls from '$lib/components/entity/WallControls.svelte';
+	import { emptyWallSays } from '$lib/components/shell/wall-words';
 	import { tags, type Tag } from '$lib/entity/tags.svelte';
 	import { Button, ContextMenuItem, Empty, Problem, Skeleton } from '$lib/components/common';
 	import PageFrame from '$lib/components/shell/PageFrame.svelte';
@@ -59,19 +62,13 @@
 	import EntityDropZone from '$lib/components/entity/EntityDropZone.svelte';
 
 	const tagId = $derived(page.params.id ?? '');
-	/*
-	 * WHAT HAPPENED TO IT is a tab and not a wall, which is why it is kept out of `tabsFor`.
-	 *
-	 * Every other tab here is one question (an entity wall filtered to this page's files),
-	 * answered by one shared table that a gate holds against the server's. A history is none of
-	 * that: no wall, no count, no filter and no page. Putting it in that table to save four
-	 * lines here would give a tab with no endpoint to every page that reads the same table.
-	 */
+	/* History has no wall behind it, so it is kept out of `tabsFor`. */
 	const HISTORY = 'history';
 
 	const asked = $derived(page.url.searchParams.get('show'));
 	const showingHistory = $derived(asked === HISTORY);
 	const shown = $derived<RelatedKind>(chosenTab('tag', asked));
+	const fileWords = new TabWords();
 
 	/*
 	 * The numbers beside the tab words.
@@ -546,9 +543,17 @@
 						titleHidden
 						above={identity}
 						{crumbs}
-						empty="Nothing carries this tag yet."
+						empty={emptyWallSays('files', fileWords.asked, false, 'Nothing carries this tag yet.')}
 						pinnable
 					>
+						{#snippet tools()}
+							<WallControls
+								noun="file"
+								plural="files"
+								bind:term={fileWords.term}
+								onsettled={(typed) => fileWords.write(typed)}
+							/>
+						{/snippet}
 						{#snippet menuExtra(item)}
 							{#if session.isAdmin}
 								<!-- The same verb, in the same place, as a person's and a site's. A tag has a
@@ -575,8 +580,8 @@
 						titleHidden
 						above={identity}
 						{crumbs}
-						oncount={(total) => {
-							counts.saw(tab, total);
+						oncount={(total, searched) => {
+							if (!searched) counts.saw(tab, total);
 							arrived();
 						}}
 					/>

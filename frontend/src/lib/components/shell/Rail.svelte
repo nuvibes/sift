@@ -276,18 +276,15 @@
 		return decidedAt === null || Math.abs(y - decidedAt) >= TRAVEL;
 	}
 
-	/*
-	 * A link dragged in from another tab and dropped on a destination row. `carriesALink` refuses
-	 * anything begun inside the app, so the reorder drag is never mistaken for one.
-	 */
+	/* A link from another tab held over a destination row; never the rail's own reorder drag. */
 	let takingALink = $state<string | null>(null);
 
-	/* The two rail rows that are DESTINATIONS rather than places: Favorites files the fetch under
-	   the heart; Downloads is the window's plain fetch, aimed at the row anybody would aim at. */
+	/* The two rail rows that are DESTINATIONS for an admin: Favorites files the fetch under the
+	   heart; Downloads is the window's plain fetch. A guest's drop is the window's, which says so. */
 	const TAKES_A_LINK: ReadonlySet<string> = new Set(['favorites', 'downloads']);
 
 	function takesALink(item: NavItem, event: DragEvent): boolean {
-		return TAKES_A_LINK.has(item.id) && carriesALink(event);
+		return session.isAdmin && TAKES_A_LINK.has(item.id) && carriesALink(event);
 	}
 
 	/*
@@ -492,7 +489,7 @@
 		class="row"
 		class:carrying={carrying === item.id}
 		class:taking={takingALink === item.id}
-		data-drop-zone={TAKES_A_LINK.has(item.id) ? 'link' : undefined}
+		data-drop-zone={session.isAdmin && TAKES_A_LINK.has(item.id) ? 'link' : undefined}
 		ondragover={(event) => dragOverRow(event, item)}
 		ondragenter={(event) => void linkOver(event, item)}
 		ondragleave={(event) => linkOut(event, item)}
@@ -622,7 +619,7 @@
 								tone="ghost"
 								shape="circle"
 								class="rail-full-amount"
-								icon={fullAmount === 'full' ? 'bolt' : 'energy_savings_leaf'}
+								icon={fullAmount === 'full' ? 'bolt_boost' : 'energy_savings_leaf'}
 								iconSize={20}
 								iconFilled
 								aria-label={FULL_AMOUNT_COPY.name}
@@ -687,10 +684,7 @@
 		background: var(--sift-bad);
 	}
 
-	/*
-	 * The leaf and the bolt, in the glyphs' column, in `--sift-ok`, not the accent a person may have
-	 * recoloured: considerate, or flat out because somebody asked. Held on hover too.
-	 */
+	/* Fixed colours, not the accent a person may have recoloured: the leaf green, the bolt yellow. */
 	.full-amount {
 		display: flex;
 		/* No inline padding: the button is a row's glyph cell wide, so the centres line up. */
@@ -706,9 +700,11 @@
 		color: var(--sift-ok);
 	}
 
-	.full-amount :global(.btn.ghost.rail-full-amount[aria-pressed='true']) {
-		--btn-ground: var(--sift-ok-bg);
-		background-color: var(--btn-ground);
+	/* Pressed keeps the ghost's bare ground, so the circle shows only under the pointer. */
+	.full-amount :global(.btn.ghost.rail-full-amount[aria-pressed='true']),
+	.full-amount :global(.btn.ghost.rail-full-amount[aria-pressed='true']:hover:not(:disabled)) {
+		--btn-ground: transparent;
+		color: var(--sift-warn);
 	}
 
 	.glyph.working {

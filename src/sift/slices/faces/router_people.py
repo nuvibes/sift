@@ -224,7 +224,7 @@ async def recognition_strength(
         raise _missing()
     if not await service.enabled():
         return RecognitionStrength()
-    strength = await service.recognition_of(person_id)
+    strength = await service.recognition_of(person_id, viewer)
     return RecognitionStrength(
         references=strength.references,
         target=strength.target,

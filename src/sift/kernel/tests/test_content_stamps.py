@@ -383,7 +383,7 @@ def test_the_landing_is_registered_so_a_file_arriving_reaches_it() -> None:
 
 
 async def test_the_files_with_sound_are_counted_apart_from_the_library(
-    store: ContentStore, temp_db: Database
+    store: ContentStore, temp_db: Database, library_root: LibraryRoot
 ) -> None:
     """The music fingerprint's denominator is the files with a sound track, not every file."""
     async with temp_db.write() as connection:
@@ -392,5 +392,7 @@ async def test_the_files_with_sound_are_counted_apart_from_the_library(
         await connection.execute(
             "UPDATE assets SET acodec = 'aac' WHERE id = ?", ("01HX00000000000000000000A1",)
         )
+    for asset_id in ("01HX00000000000000000000A1", "01HX00000000000000000000A2"):
+        await store.add_location(asset_id=asset_id, root_id=library_root.id, rel_path=asset_id)
     assert await store.with_audio_count() == 1
     assert await store.asset_count() == 2

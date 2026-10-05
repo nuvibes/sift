@@ -412,30 +412,29 @@ test('the player bar rounds its bottom corners to the frame rather than reading 
 	page
 }) => {
 	/*
-	 * The bar carries a backdrop-filter, and a backdrop-filter element is not clipped by an ancestor's
-	 * rounded `overflow: hidden` in Chromium, so its square bottom corners would poke past the frame's
-	 * radius and read as sharp the moment the bar appeared. It has to round itself to the same curve.
-	 * Only a browser resolves a computed radius; the unit environment has none.
+	 * The bar carries a backdrop-filter, which escapes an ancestor's rounded `overflow: hidden` in
+	 * Chromium, so the frame rounds the bar with a clip-path on the same curve as its own corners.
+	 * Only a browser resolves a computed clip; the unit environment has none.
 	 */
 	await serveDirect(page);
 
 	await page.goto('/asset/p1');
 	await page.locator('.stage').hover({ position: { x: 40, y: 40 } });
 
-	const radii = await page.locator('.player-bar').evaluate((el) => {
-		const bar = getComputedStyle(el);
-		const frame = getComputedStyle(el.closest('.stage') as HTMLElement);
+	const frame = await page.locator('.player-bar').evaluate((el) => {
+		const style = getComputedStyle(el.closest('.stage') as HTMLElement);
 		return {
-			barLeft: bar.borderBottomLeftRadius,
-			barRight: bar.borderBottomRightRadius,
-			frameLeft: frame.borderBottomLeftRadius,
-			frameRight: frame.borderBottomRightRadius
+			clip: style.clipPath,
+			left: style.borderBottomLeftRadius,
+			right: style.borderBottomRightRadius
 		};
 	});
 
-	expect(radii.barLeft, 'the bar bottom-left corner is still sharp').not.toBe('0px');
-	expect(radii.barLeft, 'the bar bottom-left does not match the frame').toBe(radii.frameLeft);
-	expect(radii.barRight, 'the bar bottom-right does not match the frame').toBe(radii.frameRight);
+	expect(frame.left, 'the frame has no rounded corner for the bar to follow').not.toBe('0px');
+	expect(frame.right, 'the frame rounds its two bottom corners differently').toBe(frame.left);
+	expect(frame.clip, 'the frame does not clip the bar to its curve').toBe(
+		`inset(0px round ${frame.left})`
+	);
 });
 
 test('in a window the bar and cursor fade when the pointer goes idle, and return on a move', async ({
@@ -872,7 +871,11 @@ test('a run holds a photograph and then carries on, when the account asked for t
 	await page.locator('.tile').first().click();
 	await expect(page).toHaveURL(/\/asset\/i1/);
 
-	// Held for a few seconds, and then the run carries on by itself.
+	// A picture opened by a press waits for Play, and Play starts its rest before the run carries on.
+	await page.waitForTimeout(3000);
+	await expect(page).toHaveURL(/\/asset\/i1/);
+	await page.locator('.stage').hover();
+	await page.locator('.stage').getByRole('button', { name: 'Play', exact: true }).click();
 	await expect(page).toHaveURL(/\/asset\/i2/, { timeout: 10_000 });
 });
 

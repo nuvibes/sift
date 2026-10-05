@@ -192,7 +192,7 @@ test('a name too long for its card is cut off inside it, and readable in full', 
 	await person(page, long);
 
 	await page.goto('/people');
-	const card = page.locator('.card', { hasText: long.slice(0, 20) });
+	const card = page.locator('.card', { hasText: long });
 	await expect(card).toBeVisible();
 
 	const name = card.locator('.name');
@@ -272,9 +272,13 @@ test('and the actions that were on it really do open on the right button', async
 						duration_ms: 5000,
 						favorite: false,
 						rating: null,
-						concealed: false
+						concealed: false,
+						position: 0
 					}
-				]
+				],
+				total: 1,
+				limit: 39,
+				offset: 0
 			})
 		})
 	);

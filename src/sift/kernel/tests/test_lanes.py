@@ -377,7 +377,7 @@ async def test_the_setting_is_held_inside_its_bounds() -> None:
     assert lanes.network_reads_at_once == lanes_module.MAX_READS_AT_ONCE
     await lanes.configure(network_reads_at_once=-4)
     assert lanes.network_reads_at_once == 0
-    assert not lanes.lane_for(Path("/nas/x")).capped
+    assert lanes.lane_for(Path("/nas/x")).limit == lanes_module.NETWORK_READS_AT_ONCE
 
 
 async def test_a_reader_that_raises_gives_its_place_back() -> None:
@@ -404,6 +404,31 @@ async def test_the_readings_say_what_a_share_has_been_waiting() -> None:
     worst = readings[NAS.key]["worst_wait_seconds"]
     assert isinstance(worst, float) and worst > 0
     assert round(lanes.worst_wait_seconds, 3) == worst
+
+
+async def test_the_readings_split_the_wait_between_readers_that_went_first_and_the_rest() -> None:
+    lanes = StorageLanes(network_reads_at_once=1)
+    held = asyncio.Event()
+
+    async def hold() -> None:
+        async with lanes.reading(Path("/nas/held")):
+            await held.wait()
+
+    async def scan() -> None:
+        async with lanes_module.first(), lanes.reading(Path("/nas/scan")):
+            await asyncio.sleep(0.05)
+
+    holder = asyncio.create_task(hold())
+    await asyncio.sleep(0)
+    waiting = [asyncio.create_task(scan()), asyncio.create_task(_read(lanes, Path("/nas/p"), []))]
+    await asyncio.sleep(0.1)
+    held.set()
+    await asyncio.gather(holder, *waiting)
+
+    lane = lanes.readings()[NAS.key]
+    urgent, ordinary = lane["urgent_wait_seconds"], lane["ordinary_wait_seconds"]
+    assert isinstance(urgent, float) and isinstance(ordinary, float)
+    assert 0.05 <= urgent < ordinary, "the ordinary read also waited out the scan's"
 
 
 async def test_with_nothing_installed_every_read_goes_straight_through() -> None:
@@ -497,3 +522,37 @@ async def test_a_reader_that_may_not_be_opening_a_file_at_all() -> None:
     async with reading_if(Path("/nas/x")):
         assert lane.active == 1
     assert lane.active == 0
+
+
+async def test_each_share_reads_its_own_measured_number_unless_one_is_set_for_all() -> None:
+    other = Storage(key="\\\\other\\share\\", remote=True)
+    lanes_module.storage_for = lambda path: (
+        other if "other" in path.parts else NAS if "nas" in path.parts else DISK
+    )
+    lanes = StorageLanes()
+    nas, unmeasured = lanes.lane_for(Path("/nas/a")), lanes.lane_for(Path("/other/a"))
+    assert (nas.limit, unmeasured.limit) == (2, 2), "two until a share is measured"
+
+    assert await lanes.configure(network_reads_at_once=0, measured={NAS.key: 6, DISK.key: 16})
+    assert (nas.limit, unmeasured.limit) == (6, lanes_module.NETWORK_READS_AT_ONCE)
+    assert not lanes.lane_for(Path("/disk/a")).capped, "a measured disk is still not capped"
+    assert (
+        await lanes.configure(network_reads_at_once=0, measured={NAS.key: 6, DISK.key: 16}) is False
+    )
+
+    assert await lanes.configure(network_reads_at_once=3)
+    assert (nas.limit, unmeasured.limit) == (3, 3), "a number set overrides every share"
+    assert await lanes.configure(network_reads_at_once=0)
+    assert nas.limit == 6, "the measured numbers are kept when only the setting moves"
+
+
+def test_a_reader_keeps_its_storages_measured_number_of_files_open() -> None:
+    lanes = StorageLanes()
+    lanes_module.install(lanes)
+    try:
+        assert lanes_module.reads_at_once(Path("/disk/x")) == lanes_module.LOCAL_READS_AT_ONCE
+        asyncio.run(lanes.configure(network_reads_at_once=0, measured={DISK.key: 16, NAS.key: 5}))
+        assert lanes_module.reads_at_once(Path("/disk/x")) == 16
+        assert lanes_module.reads_at_once(Path("/nas/x")) == 5
+    finally:
+        lanes_module.install(None)

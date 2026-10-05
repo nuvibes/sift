@@ -245,12 +245,9 @@ async def find_similar(
     **Not admin-only, unlike everything else here**, and the difference is the point: this is a way
     of browsing rather than a control over the install. Anybody signed in may ask it.
 
-    Which is why the answer goes back through the ordinary read. The lookalikes are found without
-    any notion of who is asking (it is arithmetic over numbers), so what comes out of that is a
-    list of candidates and not a result. Handing it to the read that decides visibility narrows it
-    to what this user may actually see, in one statement, the same one every other screen uses.
-    Filtering afterwards here would be a second opinion about concealment, in the one place it must
-    not be.
+    Which is why the lookalikes are ranked among this user's own files, so a hidden one can neither
+    fill the strip nor shorten it, and the answer still goes back through the ordinary read, the
+    one opinion about concealment every other screen uses.
 
     A file the viewer cannot see answers with nothing found rather than refusing, for the same
     reason every per-asset route does: a refusal that differs from an empty answer is a way to ask
@@ -271,7 +268,7 @@ async def find_similar(
     if not await access.can_view(viewer, asset_id):
         return _nothing_found()
 
-    found = await service.similar_to(asset_id)
+    found = await service.similar_to(asset_id, asker=viewer)
     if not found.neighbours:
         return SimilarPage(tier=found.tier.value)
 

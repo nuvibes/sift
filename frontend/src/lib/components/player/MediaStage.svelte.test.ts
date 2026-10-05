@@ -132,55 +132,44 @@ describe('fullscreen, which is the whole reason the frame is shared', () => {
 	});
 });
 
-describe('the frame and its bar go square together', () => {
-	/*
-	 * The frame is rounded and its bar rounds its own bottom corners to match, because a
-	 * backdrop-filter escapes an ancestor's rounded clip. Fullscreen takes both square, and the
-	 * rules for the frame and for the bar must name the same states (the browser's `:fullscreen` as
-	 * well as this component's class), or a line of the frame's ground shows under the timeline.
-	 *
-	 * Read out of the source, deliberately: there is no real fullscreen in jsdom, so a rendered
-	 * test asserting the class path would pass with the pseudo-class missing. What can be checked
-	 * is that the two rules still name the same states.
-	 *
-	 * A path rather than `import.meta.url`: the test runs through the bundler, which rewrites that
-	 * to an http URL, and `readFileSync` wants a file.
-	 *
-	 * Comments are taken out first: the prose above these rules explains the fullscreen
-	 * pseudo-class, so a match reading the text before a brace would pick the word out of the
-	 * explanation and pass with the rule missing.
-	 */
+describe('one clip for the frame and its bar', () => {
+	/* Read out of the source: jsdom draws nothing and has no real fullscreen. Comments go first, so
+	   a word in the prose cannot stand in for a missing rule. */
 	const source = stageSource.replace(/\/\*[\s\S]*?\*\//g, '');
+	const rules = [...source.matchAll(/([^{}]*)\{([^}]*)\}/g)].map(([, selector, body]) => ({
+		selector: selector.trim(),
+		body
+	}));
 
-	/** The selectors of every rule in this component that takes the bar's radius off. */
-	function squaringSelectors(): string {
-		const rules = source.matchAll(/([^{}]*player-bar[^{}]*)\{([^}]*)\}/g);
-		return [...rules]
-			.filter(([, , body]) => /border-radius:\s*0/.test(body))
-			.map(([, selector]) => selector)
-			.join(' ');
-	}
-
-	it('so the bar is squared by the browser-s fullscreen as well as by the class', () => {
-		const selectors = squaringSelectors();
-
-		expect(selectors, 'the bar is not squared by the browser-s own fullscreen').toContain(
-			':fullscreen'
-		);
-		expect(selectors, 'the bar is not squared by the class').toContain('.fullscreen ');
+	it('clips the frame once, cutting the picture and the frost on one edge', () => {
+		const frame = rules.find(({ selector }) => /(^|\n)\s*\.stage$/.test(selector));
+		expect(frame?.body).toMatch(/clip-path:\s*inset\(0 round var\(--frame-corner\)\)/);
+		expect(
+			rules.filter(({ selector, body }) => selector.includes('player-bar') && /radius/.test(body)),
+			'the bar rounds or squares itself again'
+		).toEqual([]);
 	});
 
-	it('and the frame is squared by both, which is what the bar has to match', () => {
-		/* The frame's own rule, not one of the rules about what is drawn INSIDE a fullscreen frame.
-		 * Several of those name the same pseudo-class (the bar, the progress line) and taking
-		 * the first match would find whichever happened to be written highest in the file. */
-		const frame = [...source.matchAll(/([^{}]*\.stage:fullscreen[^{}]*)\{([^}]*)\}/g)].find(
-			([, selector]) => !selector.includes(':global(')
-		);
+	it('takes the clip off wherever the frame goes square', () => {
+		const square = rules.filter(({ body }) => /clip-path:\s*none/.test(body));
+		const selectors = square.map(({ selector }) => selector).join(' ');
+		expect(selectors).toContain('.stage:fullscreen');
+		expect(selectors).toContain('.stage.fullscreen');
+		expect(selectors).toContain('.stage.filling');
+	});
 
-		expect(frame?.[1], 'the frame no longer answers the browser-s fullscreen').toBeTruthy();
-		expect(frame?.[1]).toContain('.stage.fullscreen');
-		expect(frame?.[2]).toMatch(/border-radius:\s*0/);
+	it('stills the bar only for reduced motion, so it fades for everyone else', () => {
+		const stilled = rules.filter(
+			({ selector, body }) => /transition:\s*none/.test(body) && selector.includes('player-')
+		);
+		expect(stilled.length).toBeGreaterThan(0);
+		for (const { selector } of stilled) {
+			for (const one of selector.split(',')) {
+				expect(one, 'a stilled bar without the reduced-motion prefix').toContain(
+					"data-motion='reduce'"
+				);
+			}
+		}
 	});
 });
 

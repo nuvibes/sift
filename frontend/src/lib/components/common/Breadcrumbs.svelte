@@ -16,26 +16,25 @@
 	}
 
 	/**
-	 * How far a trail is folded: every step shown; the middle folded behind one press (the first
-	 * and the last two stay); the front folded (the last two stay); or everything but where you are.
+	 * How far a trail is folded: every step shown; the middle behind one press (the first and the
+	 * last two stay); the front (the last two stay); all but where you are; or every step, the
+	 * press alone.
 	 */
-	export type Fold = 'none' | 'middle' | 'front' | 'all';
+	export type Fold = 'none' | 'middle' | 'front' | 'all' | 'every';
 
 	/** A trail of this many steps or more has its middle folded, whatever the room. */
 	export const FOLDS_AT = 4;
 
-	/**
-	 * Which steps a fold leaves standing and which it puts behind the press, by position.
-	 *
-	 * `before` is drawn ahead of the press, `folded` is listed behind it, `after` follows it. With
-	 * nothing folded there is no press at all, and every step is `before`.
-	 */
+	/** Which steps a fold leaves standing ahead of the press, behind it, and after it. */
 	export function folding(
 		crumbs: Crumb[],
 		fold: Fold
 	): { before: Crumb[]; folded: Crumb[]; after: Crumb[] } {
 		if (fold === 'front' && crumbs.length > 2) {
 			return { before: [], folded: crumbs.slice(0, -2), after: crumbs.slice(-2) };
+		}
+		if (fold === 'every' && crumbs.length > 1) {
+			return { before: [], folded: crumbs, after: [] };
 		}
 		if (fold === 'all' && crumbs.length > 1) {
 			return { before: [], folded: crumbs.slice(0, -1), after: crumbs.slice(-1) };
@@ -54,22 +53,12 @@
 	   the app's own menu (`MenuButton`), which is the library's. */
 
 	/*
-	 * Where this screen sits, and one click back to each step above it.
+	 * Where this screen sits, and one click back to each step above it. The last step is where you
+	 * are, never a link (`aria-current="page"`); the chevrons are hidden from a screen reader.
 	 *
-	 * The last crumb is not a link: it is the page you are on, and an inert link among real ones is
-	 * a small lie. It is drawn in the ordinary ink with `aria-current="page"`.
-	 *
-	 * The separator is not text: a typed chevron is read aloud ("People greater than Ada greater
-	 * than Appearances"), so it is hidden and the ordered list carries the nesting.
-	 *
-	 * A LONG TRAIL FOLDS ITS MIDDLE. From `FOLDS_AT` steps on, the steps between the first and the
-	 * last two go behind one press drawn where they stood, which opens them as a list of links, the
-	 * outermost first. Where the trail is told to `fit` its box (the top bar, which has one line and
-	 * a share of it), it folds further when that line is still too short: everything but where you
-	 * are goes behind the press, the last two steps standing first and then the last alone, and that
-	 * step gives way to an ellipsis. The fold is measured
-	 * against the box, never against the window, and the box's width does not depend on what is
-	 * drawn in it, so folding cannot change the room it was decided on.
+	 * From `FOLDS_AT` steps the middle folds behind one press listing them, outermost first. Told
+	 * to `fit` its box, it folds further while the line runs past it, at last to the press alone,
+	 * whose list is the whole path with where you are last and not a link.
 	 *
 	 * A plain click on the step above steps back to it. A crumb names a bare address (`/people`),
 	 * and a wall writes which rows it shows into the address it is left at, so following the link
@@ -98,16 +87,18 @@
 		 * bar's trail. Without it the trail wraps, as the first line of a page does on a phone.
 		 */
 		fit?: boolean;
+		/** The press alone, whatever the room. */
+		pressAlone?: boolean;
 	}
 
-	let { crumbs, fit = false }: Props = $props();
+	let { crumbs, fit = false, pressAlone = false }: Props = $props();
 
 	/** The least a trail of this length is folded, before any measuring. */
 	const least = $derived<Fold>(crumbs.length >= FOLDS_AT ? 'middle' : 'none');
 
 	/* What the measuring settled on; `least` until the box has been read. */
 	let measured = $state<Fold | null>(null);
-	const fold = $derived<Fold>(fit ? (measured ?? least) : least);
+	const fold = $derived<Fold>(fit ? (pressAlone ? 'every' : (measured ?? least)) : least);
 	const parts = $derived(folding(crumbs, fold));
 
 	let nav = $state<HTMLElement | null>(null);
@@ -117,19 +108,17 @@
 		none: 'middle',
 		middle: 'front',
 		front: 'all',
-		all: null
+		all: 'every',
+		every: null
 	};
 
-	/** Whether what is drawn runs past the box. The steps never shrink until the last fold, so a
-	    trail too long for its box shows as an overflow rather than as squeezed words. */
+	/** Whether what is drawn runs past the box. A step never shrinks, so too long shows as overflow. */
 	function overflows(box: HTMLElement): boolean {
 		const list = box.firstElementChild as HTMLElement | null;
 		return list !== null && list.scrollWidth > box.clientWidth + 0.5;
 	}
 
-	/* Start from the least fold and go further while the line is too short. Each step redraws and
-	   reads again; four steps at most. A fold that leaves a short trail as it was (the middle of
-	   three steps) changes nothing and is passed straight through. */
+	/* From the least fold, further while the line is too short; each step redraws and reads again. */
 	async function settle(): Promise<void> {
 		if (!fit || !nav) return;
 		measured = least;
@@ -175,13 +164,7 @@
 {/snippet}
 
 {#if crumbs.length > 1}
-	<nav
-		class="crumbs"
-		class:fit
-		class:squeezed={fit && fold === 'all'}
-		aria-label="Breadcrumb"
-		bind:this={nav}
-	>
+	<nav class="crumbs" class:fit aria-label="Breadcrumb" bind:this={nav}>
 		<ol>
 			{#each parts.before as crumb, at (`b-${at}-${crumb.label}`)}
 				<li>
@@ -207,6 +190,9 @@
 									href={crumb.href}
 									onfollow={(event) => returnTo(event, crumb.href ?? '')}
 								/>
+							{:else if parts.after.length === 0 && at === parts.folded.length - 1}
+								<!-- Where you are, last and not a link. -->
+								<ContextMenuItem label={crumb.label} disabled onselect={() => {}} />
 							{/if}
 						{/each}
 					</MenuButton>
@@ -261,21 +247,13 @@
 		display: flex;
 		align-items: center;
 		gap: var(--space-1);
-		/* A step keeps its whole word until the last fold: an overflow is what tells the trail to
-		   fold further, and a step that shrank would hide it. */
+		/* A step keeps its whole word: an overflow is what tells the trail to fold further. */
 		flex: none;
 		font: var(--text-body-sm);
 		/* The separator, and only the separator: the labels set their own below.
 		   NOT the decoration ink: that one is below the contrast floor and is reserved for things
 		   that are not read at all, and a chevron between two words is read as punctuation. */
 		color: var(--sift-ink-3);
-	}
-
-	/* At the last fold the step where you are is the one thing standing, and it gives way to an
-	   ellipsis rather than running past the box. */
-	.squeezed li:last-child {
-		flex: 0 1 auto;
-		min-inline-size: 0;
 	}
 
 	.chevron {

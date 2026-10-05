@@ -9,21 +9,14 @@ that survives a restart. Nothing about a job lives in memory that is not first w
 from __future__ import annotations
 
 from sift.kernel.db import Connection, register_schema_initializer
+from sift.kernel.migrations import column_exists
 
 COMPONENT = "jobs"
-VERSION = 14
+VERSION = 15
 
-# The state list is repeated in `JobState`. It has to be: SQLite will not take a placeholder in a
-# CHECK constraint, and building this string from the enum would mean assembling SQL at runtime,
-# which is the one thing the injection rule forbids. So the two are kept in step by a test that
-# reads this constraint and compares it to the enum: a drift caught in the suite rather than by a
-# write failing in production months later.
-#
-# `paused` is work somebody has stopped and means to start again: a state of its own rather than a
-# flag beside `queued`, because every question the queue asks is asked of the state, and the first
-# place that forgot a flag would claim a job somebody had paused. It is not terminal and not a
-# failure: a paused job keeps its payload, its attempts, its priority and whatever its handler had
-# already written into its workspace.
+# The state list is repeated in `JobState`, since a CHECK takes no placeholder; a test holds the two
+# in step. `paused` is a state, not a flag, so nothing that asks of the state can claim it.
+# `to_read` is a walk's files still to read by media kind, as JSON; NULL until it is counted.
 _CREATE_TABLE = """
 CREATE TABLE IF NOT EXISTS jobs (
   id           TEXT PRIMARY KEY,
@@ -72,7 +65,8 @@ CREATE TABLE IF NOT EXISTS jobs (
   -- The top of the family this row belongs to, or its own id when it IS the top. Written once at
   -- the insert (`JobQueue.enqueue` copies the parent's) and never moved, so a family's steps are
   -- read through `ix_jobs_family` rather than a recursive walk of the tree.
-  root_id      TEXT
+  root_id      TEXT,
+  to_read      TEXT
 )
 """
 
@@ -141,6 +135,8 @@ async def initialize(connection: Connection, on_disk: int) -> None:
     if 0 < on_disk < 14:
         await connection.execute("DROP INDEX IF EXISTS ix_jobs_claim_by_id")
         await connection.execute(_CLAIM_INDEX)
+    if 0 < on_disk < 15 and not await column_exists(connection, "jobs", "to_read"):
+        await connection.execute("ALTER TABLE jobs ADD COLUMN to_read TEXT")
 
 
 register_schema_initializer(COMPONENT, VERSION, initialize, baseline=12)

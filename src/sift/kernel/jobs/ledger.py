@@ -1,31 +1,16 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """What each pass over the library cost, written down so it can be read back and passed on.
 
-## What a run is
+A run is one family's work from the moment it has something to do until it has nothing left: not a
+job (a scan of a library is thousands of them) and not a press, which the queue cannot see. It
+keeps how long it took, the files of each kind and their bytes, each stage's worker time, the
+machine and the settings: enough to say how long a library this size takes on a machine like this
+one, and for the time left to start from this machine's own history.
 
-One family's work from the moment it has something to do until the moment it has nothing left:
-the Scan that took a folder in, the Generate that built its pictures, the Identify that looked for
-faces. Not a job (a scan of a library is thousands of jobs, and the one that walked the folder
-finishes seconds into hours of work), and not a press of a button, which is not a thing the queue
-can see. A family that has drained and starts again has started a new run.
-
-## What is written down
-
-How long it took, how many files of each kind and how many bytes, how much worker time each stage
-cost, the machine it ran on and the settings in force. Enough to answer "how long will a library
-this size take on a machine like mine", which is a question people ask each other, and enough for
-the estimate of time left to start from this machine's own history rather than from nothing.
-
-## Where the numbers come from
-
-The pool says when a job started and how it ended; the handler that read a file says what kind of
-file and how big; the timing hook says how long each stage of the work took. None of them knows
-about the others and none of them has to: the family a stage belongs to is the family of the job
-running it, carried in the task's own context.
-
-The counts live in memory while a run is going and are written through every minute and at the
-end, so a crash costs at most a minute of a run rather than the run. A run still open at the next
-start was interrupted, and says so.
+The pool says how a job ended, the handler what file it was about, and the timing hook how long
+each stage took, filed under the family of the job running it. The counts are written through
+every minute and at the end, so a crash costs at most a minute; a run still open at the next start
+was interrupted, and says so.
 """
 
 from __future__ import annotations
@@ -34,7 +19,7 @@ import json
 import math
 import time
 from collections import deque
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Iterable, Mapping, Sequence
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 
@@ -42,17 +27,19 @@ from sift.kernel.audience import EVERY_ADMIN
 from sift.kernel.changes import About, telling
 from sift.kernel.db import Connection, Database, Row, in_clause, register_schema_initializer
 from sift.kernel.ids import new_id
+from sift.kernel.jobs.failure_words import KINDS, OTHERWISE, in_plain_words, kind_of
 from sift.kernel.jobs.families import FAMILY_LABELS, LONG_PASSES, Family
 from sift.kernel.jobs.schedules import get_schedule
 from sift.kernel.ledger import Actor, record_event
 from sift.kernel.log import get_logger
+from sift.kernel.migrations import column_exists
 from sift.kernel.vocabulary import Subject
 from sift.kernel.when import stamp as machine_stamp
 
 log = get_logger(__name__)
 
 COMPONENT = "ledger"
-VERSION = 5
+VERSION = 6
 
 # `files` and `stages` are JSON rather than rows of their own: a run is read whole or not at all,
 # nothing ever asks for one stage across runs, and a row per stage per run would be a table an
@@ -93,7 +80,9 @@ CREATE TABLE IF NOT EXISTS work_runs (
   -- run is a FAMILY draining and a family is not a task: Faces and Watermarks are both Identify. A
   -- job says what it is for and the run keeps the union. NULL is a run that is readable by family
   -- alone (`LAST_RUN_FOR_PRODUCTS`); an empty list is a run known to have been for no product.
-  made_for     TEXT
+  made_for     TEXT,
+  -- Why its jobs failed, in plain words, with how many: {"words": n}. NULL when none did.
+  ended_with   TEXT
 )
 """
 
@@ -109,6 +98,8 @@ async def initialize(connection: Connection, on_disk: int) -> None:
         await connection.execute(_CREATE_TABLE)
         for index in _INDEXES:
             await connection.execute(index)
+    if 0 < on_disk < 6 and not await column_exists(connection, "work_runs", "ended_with"):
+        await connection.execute("ALTER TABLE work_runs ADD COLUMN ended_with TEXT")
 
 
 register_schema_initializer(COMPONENT, VERSION, initialize, baseline=5)
@@ -117,8 +108,8 @@ _UPSERT = """
 INSERT INTO work_runs
   (id, family, started_at, updated_at, finished_at, stopped, jobs_done, jobs_failed, worker_ms,
    files, stages, machine, profile, settings, version, products, accelerator, requested_by,
-   made_for)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+   made_for, ended_with)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(id) DO UPDATE SET
   updated_at = excluded.updated_at,
   finished_at = excluded.finished_at,
@@ -132,7 +123,8 @@ ON CONFLICT(id) DO UPDATE SET
   products = excluded.products,
   accelerator = excluded.accelerator,
   requested_by = excluded.requested_by,
-  made_for = excluded.made_for
+  made_for = excluded.made_for,
+  ended_with = excluded.ended_with
 """
 
 #: A run left open by a process that stopped is closed at the moment it was last written.
@@ -142,20 +134,9 @@ UPDATE work_runs
  WHERE finished_at IS NULL
 """
 
-#: WHAT ONE ITEM OF THIS KIND OF WORK COST, over the last few hundred finished jobs.
-#:
-#: The `jobs` table rather than `work_runs`, and it is the only table that can answer this: a run
-#: is a whole family's stretch of work and holds one mean, while the question is what the middle
-#: half of the items cost. `started_at` is when a worker picked a row up, and a finished row is
-#: kept for a week, so this is a week of pace at most,
-#: which is the right window for "how long will the rest take on this machine as it is now".
-#:
-#: Divided by `units` because a job is not always one file: a scan's walk carries thousands, and
-#: its seconds divided by one would price every file in the library at the cost of a whole walk.
-#:
-#: The clock is whole SECONDS, so an item that cost less than one reads as nought. That is true to
-#: within a second and it errs low, and `Ledger.pace` refuses a sample it cannot resolve rather
-#: than quoting a library of thumbnails at no time at all.
+#: WHAT ONE ITEM OF THIS KIND OF WORK COST, over the last few hundred finished jobs (kept a week):
+#: only job rows hold each item's cost, where a run holds one mean. Divided by `units`, as a walk
+#: carries thousands of files; in whole seconds, so `Ledger.pace` refuses what it cannot resolve.
 _PER_ITEM_SECONDS = """
 SELECT (updated_at - started_at) * 1.0 / MAX(units, 1) AS each, MAX(units, 1) AS weight
   FROM jobs
@@ -164,6 +145,10 @@ SELECT (updated_at - started_at) * 1.0 / MAX(units, 1) AS each, MAX(units, 1) AS
    AND started_at IS NOT NULL
    AND updated_at >= started_at
    AND started_at >= ?
+   AND NOT EXISTS (
+     SELECT 1 FROM json_each(?) AS span
+      WHERE jobs.started_at < json_extract(span.value, '$[1]')
+        AND jobs.updated_at > json_extract(span.value, '$[0]'))
  ORDER BY started_at DESC, id DESC
  LIMIT ?
 """
@@ -172,6 +157,8 @@ SELECT (updated_at - started_at) * 1.0 / MAX(units, 1) AS each, MAX(units, 1) AS
 _LAST_RUNS_OF_FAMILY = """
 SELECT * FROM work_runs
  WHERE family = ? AND profile = ? AND finished_at IS NOT NULL AND stopped = 0 AND jobs_done > 0
+   AND COALESCE(json_extract(settings, '$."seconds stepped back"'), 0)
+       <= ? * (finished_at - started_at)
  ORDER BY started_at DESC
  LIMIT ?
 """
@@ -181,6 +168,21 @@ SELECT * FROM work_runs
 _RUNS_FOR_KINDS = """
 SELECT * FROM work_runs
  WHERE family = ? AND profile = ? AND finished_at IS NOT NULL AND jobs_done > 0
+   AND COALESCE(json_extract(settings, '$."seconds stepped back"'), 0)
+       <= ? * (finished_at - started_at)
+ ORDER BY started_at DESC, id DESC
+ LIMIT ?
+"""
+#: The same, of the runs that did one kind since the settings last moved: other kinds' runs never
+#: push a kind's price out.
+_RUNS_FOR_KIND = """
+SELECT * FROM work_runs
+ WHERE family = ? AND profile = ? AND finished_at IS NOT NULL AND jobs_done > 0
+   AND COALESCE(json_extract(settings, '$."seconds stepped back"'), 0)
+       <= ? * (finished_at - started_at)
+   AND started_at >= ?
+   AND EXISTS (SELECT 1 FROM json_each(work_runs.files) one
+                WHERE one.key = ? AND json_extract(one.value, '$.n') > 0)
  ORDER BY started_at DESC, id DESC
  LIMIT ?
 """
@@ -204,6 +206,8 @@ SELECT * FROM work_runs
 _LAST_OF_FAMILY = """
 SELECT * FROM work_runs
  WHERE family = ? AND profile = ? AND finished_at IS NOT NULL AND stopped = 0 AND jobs_done > 0
+   AND COALESCE(json_extract(settings, '$."seconds stepped back"'), 0)
+       <= ? * (finished_at - started_at)
  ORDER BY started_at DESC
  LIMIT 1
 """
@@ -258,6 +262,13 @@ SETTLED_AFTER_SECONDS = 120.0
 #: file. Two hundred sampled, because the cost of a pass moves with the files it is reading: a
 #: sample longer than that is history rather than pace.
 PACE_OVER_ITEMS = 200
+
+#: A run stepped back for more of its time than this is not priced from: its pace was a share's.
+STEPPED_BACK_PRICED = 0.05
+#: The key a run's stepped-back seconds are kept under, beside its settings; absent means none.
+STEPPED_BACK = "seconds stepped back"
+#: How many stepped-back stretches of this process are kept, to leave their jobs out of a price.
+STEPPED_SPANS_KEPT = 256
 FEWEST_ITEMS = 20
 
 #: The fewest finished items a run under way needs before its OWN pace is quoted, once it has gone
@@ -273,9 +284,9 @@ FEWEST_LIVE_ITEMS = 5
 #: contributes its own mean, so several runs are a spread and one run is a single figure.
 PACE_OVER_RUNS = 5
 
-#: How many of a family's newest runs the price of each kind of file is looked for in. A kind is
-#: priced from the newest runs that did it, up to `PACE_OVER_ITEMS` of its files; one that none of
-#: these did has no price, and the estimate says so rather than borrowing another kind's.
+#: How many of the newest runs that did a kind its price is looked for in, per kind. A kind is
+#: priced from those, up to `PACE_OVER_ITEMS` of its files; one that none did has no price, and the
+#: estimate says so rather than borrowing another kind's.
 KIND_OVER_RUNS = 50
 
 #: How many items one stretch of the sample holds. The range is quoted between the cheapest and
@@ -290,18 +301,8 @@ STRETCH_ITEMS = 10
 #: precision that the files still ahead do not support.
 LIVE_MARGIN = 0.15
 
-#: How long a run has to have been going before it has a rate of its own AT ALL.
-#:
-#: Not the age of the oldest completion still held, floored at one second: that is not a window but
-#: however long ago the first thing happened to land, so a pass that finishes anything in its first
-#: moments would divide by about a second and publish a pace fifty times too high.
-#:
-#: A minute, because the figure is per minute: quoted from less than a minute of history it is an
-#: extrapolation from a handful of arrivals rather than a pace. Below this the run has no rate of
-#: its own and the last finished run of the same family stands in, which is what `rate_per_minute`
-#: already does for the first two minutes, so a burst cannot shout over it. The same rule the
-#: effort words on the Organize board follow: an estimate the measurement cannot support is not
-#: shown at all.
+#: How long a run has to have been going before it has a rate of its own AT ALL: less than a minute
+#: is a handful of arrivals, not a pace, and the last run of the family stands in until then.
 RATE_AFTER_SECONDS = 60.0
 
 #: Stages that are not the work: every database statement is timed, and every request.
@@ -352,8 +353,12 @@ class Run:
     accelerator: str = ""
     #: The user whose press this run is carrying out, or None while nobody's is. See `started`.
     requested_by: str | None = None
+    #: Seconds of this run spent with the work stepped back, for either cause.
+    stepped_seconds: float = 0.0
     #: Which products this run's jobs were for. See `started` and `_ADD_MADE_FOR`.
     made_for: set[str] = field(default_factory=set)
+    #: Why its jobs failed, in plain words, with how many of each.
+    ended_with: dict[str, int] = field(default_factory=dict)
     #: Files its jobs brought into the library for the first time (`JobContext.arrived`). Said on
     #: a scan's line in History and not kept on the row: the line is where it is read.
     arrived: int = 0
@@ -403,12 +408,17 @@ class Run:
             json.dumps({k: {"n": v.n, "ms": int(v.ms)} for k, v in self.stages.items()}),
             self.machine,
             self.profile,
-            json.dumps(self.settings),
+            json.dumps(
+                {**self.settings, STEPPED_BACK: int(self.stepped_seconds)}
+                if self.stepped_seconds >= 1
+                else self.settings
+            ),
             self.version,
             json.dumps({k: {"n": v.n, "ms": int(v.ms)} for k, v in self.products.items()}),
             self.accelerator,
             self.requested_by,
             json.dumps(sorted(self.made_for)),
+            json.dumps(self.ended_with) if self.ended_with else None,
         )
 
 
@@ -442,6 +452,8 @@ class RunRecord:
     made_for: tuple[str, ...] | None = None
     """The products this run's work was for, or None for a run recorded before this was kept,
     which is not the claim that it was for none."""
+    ended_with: dict[str, int] = field(default_factory=dict)
+    """Why its jobs failed, in plain words, with how many of each."""
 
     @property
     def seconds(self) -> int | None:
@@ -503,6 +515,8 @@ class Estimate:
     """The number of workers this family can occupy, which the estimate divides by. The same
     library on the same machine with this halved takes about twice as long, so it travels with
     the figure rather than being assumed by whoever reads it."""
+    floor: bool = False
+    """The least it takes: the benchmark's price, which counts only the models and the frames."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -612,6 +626,7 @@ def _record(row: Row) -> RunRecord:
         accelerator=str(row["accelerator"]),
         requested_by=None if row["requested_by"] is None else str(row["requested_by"]),
         made_for=None if row["made_for"] is None else tuple(json.loads(str(row["made_for"]))),
+        ended_with=json.loads(str(row["ended_with"] or "{}")),
     )
 
 
@@ -635,22 +650,16 @@ class Ledger:
         products_of: Mapping[str, Iterable[str]] | None = None,
     ) -> None:
         self._db = database
-        # WHICH PRODUCTS A JOB OF EACH TYPE IS THE MAKER OF, for a job whose payload does not say:
-        # `face_scan` makes `faces` for an arriving file. Handed in by the composition root, which
-        # holds the products; this module knows only their keys. See `started`.
+        # Which products each job type makes where its payload does not say (`face_scan` makes
+        # `faces`); this module knows only their keys. See `started`.
         self._products_of: dict[str, tuple[str, ...]] = {
             job_type: tuple(keys) for job_type, keys in (products_of or {}).items()
         }
-        # WHICH TASK EACH PRODUCT BELONGS TO, taught once the tasks are built (`learn_tasks`): what
-        # a run's line in History is named after. Empty until then, which names every run by its
-        # family.
+        # Which task each product belongs to (`learn_tasks`), naming a run's line in History;
+        # until then every run is named by its family.
         self._task_of: dict[str, str] = {}
-        # A callable rather than the accelerator itself, and that is a layering point rather than a
-        # style: this module is about what a run cost and knows nothing about ffmpeg, encoders or
-        # graphics cards. What it needs is one word at the moment a row is written, and the
-        # composition root is the one place that holds both. None is a process with nothing to ask
-        # (a test, or a build with no media at all) and writes an empty string, which is not the
-        # same claim as "off".
+        # One word when a row is written, so this module knows nothing of encoders; None writes
+        # an empty string, which is not the same claim as "off".
         self._accelerator = accelerator
         self._machine = machine
         self._profile = profile
@@ -659,12 +668,15 @@ class Ledger:
         self._open: dict[Family, Run] = {}
         self._settings: dict[str, object] = {}
         self._history: dict[Family, RunRecord | None] = {}
-        # WHEN THE NUMBERS THAT DECIDE THE PACE LAST MOVED, so a pace measured under the old ones
-        # is not quoted as this machine's. None means nothing has been seen to change, in which
-        # case the whole of the kept history is eligible, which is the honest state of a process
-        # that has just started. A change made while a previous process was running is not known
-        # here and is not guessed at: the sample would simply be the pace as it was measured.
+        # When the numbers that decide the pace last moved, so an older pace is not quoted. None
+        # (nothing seen to change in this process) leaves the whole kept history eligible.
         self._settings_changed_at: int | None = None
+        # Whether the last tick was stepped back, when it was, and this process's stepped stretches
+        # as [start, end] in wall seconds, end None while one is open.
+        self._stepped = False
+        self._ticked: float | None = None
+        self._spans: deque[list[int | None]] = deque(maxlen=STEPPED_SPANS_KEPT)
+        self.first_prices: Callable[[], Awaitable[Mapping[str, float]]] | None = None
 
     # --- what the pool tells it ------------------------------------------------------------
 
@@ -708,29 +720,9 @@ class Ledger:
     ) -> Run:
         """A job of this type has begun. Opens the family's run if none is going.
 
-        `requested_by` is the job's own `requested_by`: the user whose press queued it, or None.
-        The run takes the FIRST one it sees, not only the one on the job that opened it. A run is a
-        family draining, and a press can land while the family is already draining for another
-        reason: a file arrived, and a minute later somebody pressed Identify over the whole
-        library. Naming the run from its opening job alone would then write "Sift ran Identify" for
-        the hours of work somebody asked for. The first press wins because it is the one that asked
-        first; a second person pressing the same pass joins a run already carrying out a press.
-        A child job never carries one (see `jobs.requested_by`), so a Scan somebody pressed does not
-        name them on the Generate run its thumbnails belong to.
-
-        `OTHER` has a run too, so a job that is not one of the five long passes (a backup, a
-        download, a transcode, a dedup scan, a search reindex) is not missing from the machine's
-        own record of what it has been doing.
-
-        NOT by giving every job type one of the five families. That would put a backup's minutes
-        into Scan's pace and a transcode's into Generate's, and the pace is what the time-left
-        estimate divides by, so the record would gain a row by making a number people read wrong.
-        `OTHER` is not a family and is not drawn as one; `LONG_PASSES` is what the Jobs screen
-        iterates, and it does not name it.
-
-        What an `other` run says is deliberately coarse: "this install spent four minutes on
-        thirty-seven jobs that are not a pass over the library", and coarse is not wrong. The
-        alternative is a run per job type, which is a fourth grouping for one table to hold.
+        The run takes the FIRST `requested_by` it sees, not only its opening job's: a press can land
+        while the family drains for an arriving file, and the run is then that press's. A job
+        outside the five long passes runs under `OTHER`, out of every pass's pace.
         """
         family = self.family_of(job_type)
         run = self._open.get(family)
@@ -767,24 +759,19 @@ class Ledger:
         size_bytes: int | None = None,
         units: int = 1,
         arrived: int = 0,
+        failed_with: str | None = None,
+        noted: str | None = None,
     ) -> None:
         """A job ended. What kind of file it was about is whatever the handler said, or unknown.
 
         `arrived` is how many files it brought into the library that were not there before
-        (`JobContext.arrived`), added up for the run's line.
+        (`JobContext.arrived`), added up for the run's line. `failed_with` is the error a job that
+        will not be tried again ended with; `noted`, a done job's note, kept when it names a
+        failure kind (a folder left unread).
 
-        `units` is how many files the job FINISHED: one for the ordinary job, and for a job that
-        fans out, what it was about minus what it handed to other jobs of the same family (see
-        `JobContext.units_done`). It is what the run counts as files and what the rate is worked
-        out in. A rate in jobs would count one scan of eight thousand files as one.
-
-        NOT WHAT THE JOB WAS ABOUT, WHOLE. A scan's walk says it is about the files it is going to
-        read, and every one of those then gets a probe of its own in the same family, so one file
-        would be counted twice, the first count landing at the instant the walk ended. The walk's
-        count is worse than a duplicate: taking a file in does not reduce what the family has left,
-        it INCREASES it, because "left" for a scan is files nothing has read yet and taking one in
-        is what puts it there. Counting the creation of work as the completion of work reads the
-        pace fifty times over.
+        `units` is how many files the job FINISHED (`JobContext.units_done`), not what it was about:
+        a walk's files each get a probe of their own, and counted twice they read the pace fifty
+        times over.
         """
         run = self.started(job_type)
         if ok:
@@ -793,6 +780,11 @@ class Ledger:
             run.jobs_failed += 1
         run.worker_ms += duration_ms
         run.arrived += max(0, arrived)
+        said = in_plain_words(failed_with) if failed_with is not None else None
+        if said is None and ok and noted and kind_of(noted) is not None:
+            said = noted
+        if said is not None:
+            run.ended_with[said] = run.ended_with.get(said, 0) + 1
         kind = media_type or "unknown"
         counted = run.files.setdefault(kind, FileCount())
         counted.n += max(0, units)
@@ -861,12 +853,8 @@ class Ledger:
     def stopped_by_hand(self, job_types: Iterable[str] | None = None) -> None:
         """Somebody stopped work. The open runs it belonged to end as stopped when they next settle.
 
-        With no types, everything was stopped (the Activity screen's stop-all), so every open run
-        is. With types, only the runs of their families: cancelling one Identify pass says nothing
-        about a Generate run beside it. That second form is what a single cancel tells. Without it a
-        pass somebody cancelled would close as finished: Faces would read "Last scan ended" rather
-        than "was canceled", History's line would not say it was stopped, and its short run would go
-        into the pace the next estimate is priced from.
+        With no types every open run is; with types only their families', so one cancelled pass is
+        not a Generate run beside it, and its short run stays out of the next price.
         """
         families = None if job_types is None else {self.family_of(one) for one in job_types}
         for family, run in self._open.items():
@@ -876,14 +864,20 @@ class Ledger:
     # --- the timer ------------------------------------------------------------------------
 
     async def settle(
-        self, unfinished: Mapping[str, int], *, settings: Mapping[str, object]
+        self,
+        unfinished: Mapping[str, int],
+        *,
+        settings: Mapping[str, object],
+        stepped_back: bool = False,
     ) -> None:
         """Close the runs whose family has nothing left, and write the rest through.
 
         Called on the pool's own timer with the queue's per-type unfinished counts, which the pool
-        has already read for the machine budget: one read, two readers.
+        has already read for the machine budget: one read, two readers. `stepped_back` is whether
+        the work runs on a share now.
         """
         now = int(time.time())
+        self._count_stepped(now, stepped_back)
         # A settings change invalidates the pace, so the moment is noted here: this is the one
         # place the live settings arrive, on the pool's own timer. Not on the first tick, which is
         # this process learning what the settings are rather than somebody changing them.
@@ -912,52 +906,30 @@ class Ledger:
                 files=run.files_total,
                 stopped=run.stopped,
             )
-            # A whole-library pass has just ended, which is the moment what the query planner
-            # believes about the tables is furthest from the truth: a scan writes a row per
-            # file, the recognition passes write one per face, and none of it is reflected in
-            # the counts SQLite chooses plans from until something asks.
-            #
-            # Here rather than in each pass because this is the one place that knows a pass has
-            # ENDED. Every family's work drains through this line, so a pass added later is
-            # covered without anybody remembering to cover it, and the database turns away a
-            # second ask inside the minute, so several families settling in one tick cost one
-            # refresh rather than three.
-            #
-            # NOT FOR `OTHER`, which has a run of its own and is not a pass over the library: a
-            # backup and a transcode leave the table counts where they found them, and an analyze
-            # bought for them is work for nothing.
+            # A pass over the library just ended, so the planner's counts are furthest from the
+            # truth; every pass drains through here, and `OTHER` moves no table's counts.
             if family in LONG_PASSES:
                 await self._db.refresh_statistics(reason=f"pass:{family.value}")
+
+    def _count_stepped(self, now: int, stepped: bool) -> None:
+        """Add the stretch since the last tick to each open run, if it was stepped back."""
+        ticked, self._ticked = self._ticked, time.monotonic()
+        if self._stepped and ticked is not None:
+            for run in self._open.values():
+                run.stepped_seconds += self._ticked - max(ticked, run.began)
+        if stepped and not self._stepped:
+            self._spans.append([now, None])
+        elif self._stepped and not stepped and self._spans:
+            self._spans[-1][1] = now
+        self._stepped = stepped
 
     async def _finish(self, run: Run, now: int) -> None:
         """Write a run's last row and, for a long pass, the `ran` event, in ONE transaction.
 
-        One transaction for the reason every writer puts its event beside its row: a run whose row
-        says it finished and whose event is missing (or the other way round) is a record that is
-        only usually right. The event's subject is the run itself, named with the family's own
-        word; the counts a reader wants are in the payload, the row's own figures at the moment it
-        closed.
-
-        ONLY THE FIVE LONG PASSES. `OTHER` has a run of its own (see `started`) and it is not a pass
-        over the library: every play of a file a browser cannot play queues a transcode, so an
-        `other` event per drain would put a line in the feed for each video somebody opened. The
-        same line `settle` draws for the statistics refresh, for the same reason.
-
-        WHO: the user whose press the run carried out, or Sift when nobody pressed anything.
-
-        A pass somebody pressed names them: `jobs` carries who asked (`requested_by`, jobs v9), the
-        run takes it from the jobs of its family as they start (`started`), and the row keeps it
-        (work_runs v4). A run fed only by schedules and arriving files is Sift's, and says so.
-
-        A USER REMOVED WHILE ITS PASS WAS RUNNING. A pass can take hours, and the event's
-        user is a foreign key (`workbench_decisions.user_id`), so naming a user that has
-        gone since the press would fail the whole transaction (the run's last row with it) and
-        fail again on every tick after, because the run stays open. So the user is looked up in
-        the same transaction, and a run whose presser is gone says Sift ran it, logs that it did,
-        and keeps the id on its own row, which is not a key and says who pressed it regardless.
-
-        Told on the jobs bell, as the queue's own writes are: a run closing is Activity's line
-        moving from running to done, and the job that ended it may have rung a moment before this.
+        Only the five long passes get an event (`OTHER` would put a line per transcode in the feed).
+        The event names the user whose press the run carried out, or Sift; a presser removed since
+        is a foreign key that would fail the transaction on every tick, so it is looked up here and
+        a gone one reads as Sift, the row keeping the id. Told on the jobs bell.
         """
         async with telling(self._db, EVERY_ADMIN, About.JOBS) as connection:
             await connection.execute(_UPSERT, self._row(run, now))
@@ -1019,23 +991,9 @@ class Ledger:
     async def rate_per_minute(self, family: Family) -> float | None:
         """How many files of this family's work are finishing per minute, with memory.
 
-        Two windows over the run (the last two minutes and the last ten), blended, so a burst
-        does not read as the new pace and a quiet minute does not read as a stall. Until the run
-        is two minutes old its own windows hold too little to trust, and the pace of the last
-        finished run of this family on this machine stands in. None when neither knows anything,
-        which a screen shows as no estimate rather than as an infinite one.
-
-        ## Both windows are divided by HOW LONG THE RUN HAS BEEN GOING
-
-        NOT BY THE AGE OF THE OLDEST COMPLETION STILL HELD. That reads a burst as a pace:
-        everything that landed in the first moments of a run would be divided by the moment it
-        landed in. See `RATE_AFTER_SECONDS` for the measurement.
-
-        Dividing by the elapsed run instead means an early reading errs LOW and climbs to the truth:
-        a pass that has done twenty files in its first minute is going at twenty a minute or
-        slower, and never at a thousand. A rate that starts under and converges up is worth having;
-        one that starts fifty times over is worse than no rate at all, because a time remaining
-        computed from it is the number somebody plans their evening around.
+        The last two minutes and the last ten blended, each divided by how long the run has been
+        going (never by the age of its oldest completion, which reads a burst as a pace), so an
+        early reading errs low. Until the run has settled, the last finished run stands in.
         """
         run = self._open.get(family)
         now = time.monotonic()
@@ -1057,7 +1015,9 @@ class Ledger:
 
     async def _remembered_rate(self, family: Family) -> float | None:
         if family not in self._history:
-            row = await self._db.fetch_one(_LAST_OF_FAMILY, (family.value, self._profile))
+            row = await self._db.fetch_one(
+                _LAST_OF_FAMILY, (family.value, self._profile, STEPPED_BACK_PRICED)
+            )
             self._history[family] = None if row is None else _record(row)
         last = self._history[family]
         return None if last is None else last.files_per_minute
@@ -1065,20 +1025,9 @@ class Ledger:
     async def pace(self, family: Family, job_types: Sequence[str]) -> Pace | None:
         """What one item of this family's work costs on this machine, or None when nothing can say.
 
-        Two sources, in order, and the order is about what each can resolve.
-
-        The **items** themselves are the better answer, because the question is a spread and only
-        the job rows hold one per item. Their clock is whole seconds, so a sample whose median is
-        under a second is one this source cannot price at all: a hundred thousand thumbnails at
-        a measured nought is no time whatever, which is worse than saying nothing.
-
-        The **runs** stand in for exactly that case: `worker_ms` over the files a run covered is a
-        mean to the millisecond. It is a mean and not a spread, so several runs give a range and
-        one run gives a single figure, which `Pace.from_items` says out loud rather than dressing
-        one measurement as a middle half.
-
-        Either way the sample has to cover `FEWEST_ITEMS`, and either way it stops at the last
-        settings change, for the reasons given over `PACE_OVER_ITEMS`.
+        From the job rows when their whole-second clock can resolve the median item; otherwise from
+        the runs' `worker_ms`, a mean per run, so one run is one figure (`Pace.from_items` False).
+        Either sample needs `FEWEST_ITEMS` and stops at the last settings change.
         """
         if job_types:
             sample = await self._item_costs(job_types)
@@ -1098,15 +1047,22 @@ class Ledger:
     async def _item_costs(self, job_types: Sequence[str]) -> list[tuple[float, int]]:
         """The per-item seconds of the last few hundred finished jobs of these types, with the
         number of items each row covered."""
+        spans = [[start, _OPEN_SPAN if end is None else end] for start, end in self._spans]
         rows = await self._db.fetch_all(
             _PER_ITEM_SECONDS,
-            (json.dumps(sorted(job_types)), self._settings_changed_at or 0, PACE_OVER_ITEMS),
+            (
+                json.dumps(sorted(job_types)),
+                self._settings_changed_at or 0,
+                json.dumps(spans),
+                PACE_OVER_ITEMS,
+            ),
         )
         return [(float(row["each"]), int(row["weight"])) for row in rows]
 
     async def _pace_from_runs(self, family: Family) -> Pace | None:
         rows = await self._db.fetch_all(
-            _LAST_RUNS_OF_FAMILY, (family.value, self._profile, PACE_OVER_RUNS)
+            _LAST_RUNS_OF_FAMILY,
+            (family.value, self._profile, STEPPED_BACK_PRICED, PACE_OVER_RUNS),
         )
         sample: list[tuple[float, int]] = []
         for row in rows:
@@ -1128,38 +1084,53 @@ class Ledger:
             from_items=False,
         )
 
-    async def kind_prices(self, family: Family, *, at_once: int) -> KindPrices:
-        """What one file of each media kind costs this family, from its runs' `files` counts.
-
-        Each run holds worker time and a count per kind, so a run over videos prices videos and a
-        run over photographs prices photographs. A kind takes the newest runs that did it until it
-        has `PACE_OVER_ITEMS` files; the spread is its cheapest and dearest stretch, as for items.
-        """
-        samples: dict[str, list[tuple[float, int]]] = {}
+    async def kind_prices(
+        self, family: Family, *, at_once: int, kinds: Iterable[str] | None = None
+    ) -> KindPrices:
+        """What one file of each media kind (`kinds`, else those of the newest runs) costs this
+        family: each from the newest runs that did it, up to `PACE_OVER_ITEMS` of its files."""
         busy_ms = 0
         wall_ms = 0
-        for run in await self.recent_runs(family):
+        recent = await self.recent_runs(family)
+        for run in recent:
             took = run.seconds
             # A run too small to fill the pool says how many files it had, not how many workers
             # the work can keep busy.
             if took and run.files_total >= 2 * max(1, at_once):
                 busy_ms += run.worker_ms
                 wall_ms += took * 1000
-            for kind, one in run.files.items():
-                n = int(one.get("n", 0))
-                if n <= 0:
-                    continue
-                sample = samples.setdefault(kind, [])
+        paces: dict[str, Pace] = {}
+        for kind in sorted(
+            set(kinds) if kinds is not None else {k for r in recent for k in r.files}
+        ):
+            sample: list[tuple[float, int]] = []
+            for run in await self._runs_for_kind(family, kind):
+                n = int(run.files[kind].get("n", 0))
                 if sum(weight for _cost, weight in sample) < PACE_OVER_ITEMS:
-                    sample.append((int(one.get("ms", 0)) / 1000 / n, n))
-        paces = {kind: found for kind, sample in samples.items() if (found := priced(sample))}
+                    sample.append((int(run.files[kind].get("ms", 0)) / 1000 / n, n))
+            if found := priced(sample):
+                paces[kind] = found
         return KindPrices(paces=paces, busy=busy_ms / wall_ms if wall_ms > 0 else None)
+
+    async def _runs_for_kind(self, family: Family, kind: str) -> list[RunRecord]:
+        rows = await self._db.fetch_all(
+            _RUNS_FOR_KIND,
+            (
+                family.value,
+                self._profile,
+                STEPPED_BACK_PRICED,
+                self._settings_changed_at or 0,
+                kind,
+                KIND_OVER_RUNS,
+            ),
+        )
+        return [_record(row) for row in rows]
 
     async def recent_runs(self, family: Family) -> list[RunRecord]:
         """The newest finished runs of a family on this machine since the settings last moved,
         stopped ones included, newest first: the sample every price by kind or product reads."""
         rows = await self._db.fetch_all(
-            _RUNS_FOR_KINDS, (family.value, self._profile, KIND_OVER_RUNS)
+            _RUNS_FOR_KINDS, (family.value, self._profile, STEPPED_BACK_PRICED, KIND_OVER_RUNS)
         )
         runs = [_record(row) for row in rows]
         changed = self._settings_changed_at
@@ -1176,21 +1147,8 @@ class Ledger:
     ) -> Estimate | None:
         """How long the family's remaining work will take, between two bounds, or None.
 
-        THE ONE ESTIMATE every screen draws, and it has two sources.
-
-        While a run of this family is going and has a pace of its own, the range is that pace:
-        what is left over the fastest and the slowest of its recent windows, widened by
-        `LIVE_MARGIN`.
-
-        Before that, the history: busy cost per item over the cheapest and the dearest stretch of
-        the sample, divided by the number of workers this family can occupy. None where neither
-        can say, which a screen says as "Not enough to say yet".
-
-        `kinds` is what is left by media kind, in any unit (only the mix is read). Given, both
-        sources are priced by kind: a run's pace is scaled by how much dearer the files ahead are
-        than the ones it has done, and the history prices each kind from the runs that read it.
-        A kind nothing has priced makes the whole estimate None, not a guess at another kind's
-        price: a video and a photograph differ by a hundred times.
+        The run's own pace (widened by `LIVE_MARGIN`), else the history's, by kind where `kinds`
+        is given; with neither, a floor from the benchmark's `first_prices` for the videos left.
         """
         if left <= 0:
             return None
@@ -1200,7 +1158,7 @@ class Ledger:
         if live is not None:
             quick, slow, seen = live
             if shares:
-                prices = await self.kind_prices(family, at_once=workers)
+                prices = await self.kind_prices(family, at_once=workers, kinds=shares)
                 dearer = _dearer_ahead(self._open[family], shares, prices.paces)
                 if dearer is None:
                     return None
@@ -1209,10 +1167,13 @@ class Ledger:
                 quick_seconds=int(quick), slow_seconds=int(slow), items=seen, at_once=workers
             )
         if shares:
-            return await self._estimate_by_kind(family, left, shares, workers)
+            by_kind = await self._estimate_by_kind(family, left, shares, workers)
+            return by_kind or await self._first_price(
+                family, left * shares.get("video", 0.0), workers
+            )
         found = await self.pace(family, job_types)
         if found is None or found.slow <= 0:
-            return None
+            return await self._first_price(family, left, workers)
         quick = left * found.quick / workers
         slow = left * found.slow / workers
         return Estimate(
@@ -1230,7 +1191,7 @@ class Ledger:
         The quick end divides by every worker the family can occupy; the slow end by the workers
         its big runs actually kept busy, where that is fewer.
         """
-        prices = await self.kind_prices(family, at_once=workers)
+        prices = await self.kind_prices(family, at_once=workers, kinds=shares)
         quick = 0.0
         slow = 0.0
         items = 0
@@ -1248,6 +1209,11 @@ class Ledger:
             items=items,
             at_once=workers,
         )
+
+    async def _first_price(self, family: Family, files: float, workers: int) -> Estimate | None:
+        each = (await self.first_prices()).get(family.value) if self.first_prices else None
+        least = int(files * (each or 0) / workers)
+        return Estimate(least, least, 0, workers, floor=True) if least > 0 else None
 
     def _live_range(self, family: Family, left: float) -> tuple[float, float, int] | None:
         """What is left over the run's own fastest and slowest window, with the items they saw.
@@ -1303,6 +1269,10 @@ class Ledger:
             return set()
         asked, values = in_clause(_RECORDED_AMONG, wanted)
         return {str(row["id"]) for row in await self._db.fetch_all(asked, values)}
+
+
+#: The end given a stretch still open: later than any job.
+_OPEN_SPAN = 1 << 62
 
 
 def _live_margin(seen: int) -> float:
@@ -1372,39 +1342,49 @@ def _size(count: int) -> str:
     return f"{count} bytes"
 
 
-def report_text(run: RunRecord) -> str:
-    """A run as a block of plain text somebody pastes to somebody else.
+_FAILED = {one.words for one in KINDS} | {OTHERWISE}
 
-    Every line is a fact the table holds and nothing is derived that a reader could not check
-    against the lines above it. ASCII, so it survives every place it will be pasted.
-    """
-    # A row outlives the code that wrote it: a family retired from the enum is still a run that
-    # happened, and its report carries the name the row does rather than refusing.
+
+def _label(family: str) -> str:
+    """A family retired from the enum still reports, under the name its row has."""
     try:
-        label = FAMILY_LABELS[Family(run.family)]
+        return FAMILY_LABELS[Family(family)]
     except ValueError:
-        label = run.family
+        return family
+
+
+def report_text(run: RunRecord) -> str:
+    """A run as plain text to paste: every line a fact the table holds, in ASCII."""
     when = machine_stamp(run.started_at, "%Y-%m-%d %H:%M")
     lines = [
-        f"Sift {run.version}, {label} run, {when}, took {_took(run.seconds)}"
+        f"Sift {run.version}, {_label(run.family)} run, {when}, took {_took(run.seconds)}"
         + (" (stopped by hand)" if run.stopped else ""),
         f"Machine: {run.machine or 'unknown'}",
     ]
     if run.settings:
         said = ", ".join(f"{key} {value}" for key, value in sorted(run.settings.items()))
         lines.append(f"Settings: {said}")
+    # A kind nobody named with no bytes is a job about no file (a walk): nothing to say of it.
+    known = {k: one for k, one in run.files.items() if k != "unknown" or one.get("bytes")}
     kinds = ", ".join(
         f"{int(one.get('n', 0)):,} {kind} ({_size(int(one.get('bytes', 0)))})"
-        for kind, one in sorted(run.files.items())
+        for kind, one in sorted(known.items())
     )
-    lines.append(f"Files: {kinds or 'none recorded'}")
+    if kinds or not run.files:
+        lines.append(f"Files: {kinds or 'none recorded'}")
     lines.append(f"Jobs: {run.jobs_done:,} done, {run.jobs_failed:,} failed")
+    ended = sorted(run.ended_with.items(), key=lambda one: (-one[1], one[0]))
+    lines += [
+        f"Why {n:,} failed: {words}"
+        if words in _FAILED
+        else f"{'Ended' if n == 1 else f'{n:,} ended'} with: {words}"
+        for words, n in ended
+    ]
     took = run.seconds
     if took and took > 0 and run.jobs_done:
-        lines.append(
-            f"Pace: {run.jobs_done * 60 / took:.1f} jobs/min, {_size(int(run.bytes_total * 60 / took))}/min"
-        )
-    for kind, one in sorted(run.files.items()):
+        moved = f", {_size(int(run.bytes_total * 60 / took))}/min" if run.bytes_total else ""
+        lines.append(f"Pace: {run.jobs_done * 60 / took:.1f} jobs/min{moved}")
+    for kind, one in sorted(known.items()):
         n = int(one.get("n", 0))
         if n:
             lines.append(

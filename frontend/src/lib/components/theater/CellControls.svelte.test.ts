@@ -17,6 +17,7 @@ vi.mock('$lib/api/client', () => ({
 	api: { get: vi.fn(async () => ({ items: [], total: 0 })), post: vi.fn(async () => ({})) }
 }));
 
+import { api } from '$lib/api/client';
 import CellControls from './CellControls.svelte';
 import cellControlsSource from './CellControls.svelte?raw';
 import { applyStyles, removeStyles } from '$lib/design/testing-styles';
@@ -24,14 +25,18 @@ import { Wall } from '$lib/theater/wall.svelte';
 
 let host: HTMLElement;
 let running: Record<string, unknown>;
+/* Whether every cell has a file before the one it shows, so Previous has somewhere to go. */
+let behind = true;
 
 /*
  * The bar as `StallBar` draws it: `index` is the CHOSEN cell, which is what that caller always
  * hands in. Passing one number and choosing another would be testing an arrangement the app never
  * makes.
  */
-function draw(at = 0, everyCell = false) {
+function draw(at = 0, everyCell = false, real = false) {
 	const wall = new Wall();
+	if (!real)
+		for (const one of wall.all) Object.defineProperty(one, 'hasBack', { get: () => behind });
 	wall.focused = at;
 	if (everyCell) wall.focusEvery();
 	const cell = wall.all[at];
@@ -71,6 +76,7 @@ function away(from: HTMLElement) {
 }
 
 beforeEach(() => {
+	behind = true;
 	vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
 });
 
@@ -145,7 +151,7 @@ describe('pointing at a verb on the wall bar', () => {
 		control('More controls').click();
 		flushSync();
 		const mode = host.querySelector(
-			'button[aria-label="A preview comes up when you press it"]'
+			'button[aria-label="A preview comes up when you double-click it"]'
 		) as HTMLElement | null;
 		if (!mode) throw new Error('the mode control was not drawn');
 
@@ -394,7 +400,9 @@ describe('the drawer keeps one shape', () => {
 		wall.addPreview();
 		flushSync();
 		expect(host.querySelectorAll('.tray .panel button')).toHaveLength(12);
-		expect(control('A preview comes up when you press it').hasAttribute('disabled')).toBe(false);
+		expect(control('A preview comes up when you double-click it').hasAttribute('disabled')).toBe(
+			false
+		);
 	});
 });
 
@@ -461,5 +469,45 @@ describe("the cell's timer", () => {
 		const source = (await import('./CellControls.svelte?raw')).default;
 		expect(source).toMatch(/unit="sec"\s+automatic="No timer"/);
 		expect(source).not.toMatch(/zero waits for the file to end/);
+	});
+});
+
+describe('Previous on the wall bar', () => {
+	function tile(id: string, media_type = 'video') {
+		return { id, media_type, duration_ms: 1000, thumb: false, art: null, width: 9, height: 16 };
+	}
+
+	beforeEach(() => {
+		vi.mocked(api.get).mockImplementation((async (path: string) =>
+			path === '/assets' ? { items: [tile('clip')], total: 1 } : { sprite: null }) as never);
+		vi.mocked(api.post).mockResolvedValue({ route: 'direct', streamable: true, url: '/s' });
+	});
+
+	it('is dimmed until a cell that opened on a picture steps on, then lit', async () => {
+		const wall = draw(0, false, true);
+		await wall.all[0].startOn(tile('picture', 'image') as never);
+		flushSync();
+		expect(control('Nothing before this')).toHaveProperty('disabled', true);
+
+		await wall.all[0].advance();
+		flushSync();
+		expect(wall.all[0].playing?.id).toBe('clip');
+		expect(control('Previous in cell 1')).toHaveProperty('disabled', false);
+	});
+
+	it("follows the cell's own history, not the file it shows", async () => {
+		const cell = new Wall().all[0];
+		await cell.startOn(tile('picture', 'image') as never);
+		const seen: boolean[] = [];
+		const stop = $effect.root(() => {
+			$effect(() => {
+				seen.push(cell.hasBack);
+			});
+		});
+		flushSync();
+		await cell.advance();
+		flushSync();
+		stop();
+		expect(seen, 'a step went unseen by what asks for Previous').toEqual([false, true]);
 	});
 });

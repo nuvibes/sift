@@ -8,6 +8,7 @@ nothing about what they may not see: the results, the count and the dropdown.
 from __future__ import annotations
 
 import asyncio
+import re
 
 import pytest
 from fastapi.testclient import TestClient
@@ -495,6 +496,10 @@ def test_an_empty_box_offers_every_filter_there_is(client: TestClient, world: Wo
     # Each carries a label, a hint and an example.
     tags = next(row for row in body["filters"] if row["field"] == "tags")
     assert tags["label"] and tags["hint"] and tags["example"]
+    # A filter written by a click shows where, never an id nobody types.
+    network = next(row for row in body["filters"] if row["field"] == "network")
+    assert (network["example"], network["set_from"]) == ("network:", "from the Network column")
+    assert not any(re.search(r"[0-9A-Z]{8,}", row["example"]) for row in body["filters"])
     # Inserted at the start: no half-typed word to replace.
     assert body["replace_from"] == 0
 

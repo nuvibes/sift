@@ -19,18 +19,18 @@ export async function importPack(file: File): Promise<PackImported> {
 	return api.post<PackImported>('/faces/packs/import', { body: form });
 }
 
-/* Build a pack from People already here and hand back the file to save.
- *
- * Pictures are opt-in. Without them a pack is numbers alone: far smaller, still able to recognize
- * everybody in it, and carrying no photographs of anybody off this machine.
+/* Build the file from People here and people waiting for a matching face; neither list is
+ * everybody. `name` is the library's: the other side keys a file by it, so two libraries' files
+ * never replace each other. Pictures are opt-in.
  */
 export async function exportPack(
 	name: string,
-	options: { personIds?: string[]; includePictures?: boolean } = {}
+	options: { personIds?: string[]; entryIds?: string[]; includePictures?: boolean } = {}
 ): Promise<Blob> {
 	return api.postForFile('/faces/packs/export', {
 		name,
 		person_ids: options.personIds ?? [],
+		entry_ids: options.entryIds ?? [],
 		include_pictures: options.includePictures ?? false
 	});
 }

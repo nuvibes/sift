@@ -3,6 +3,9 @@ import { page } from '$app/state';
 import { screenBar } from '$lib/components/shell/screen-bar.svelte';
 import type { OpenedFrom, SittingPlace } from '$lib/player/sitting.svelte';
 import { run, Walk, type WalkSource } from '$lib/player/run.svelte';
+import { api } from '$lib/api/client';
+import { planFor, type PlaybackPlan } from '$lib/player/playback';
+import type { components } from '$lib/api/schema';
 import { noteSearchOpen } from '$lib/shell/visits';
 
 /* Opening an asset, and the one rule about how.
@@ -144,6 +147,7 @@ export function openAsset(
 ): void {
 	sequence = among;
 	continues = more;
+	ahead = null;
 	// A new list, so whatever shuffled order was being walked was an order of another one.
 	run.reset();
 	openedLoop = loop === null ? null : { file: id, loop };
@@ -388,6 +392,7 @@ export function forgetAsset(id: string): void {
 	const at = indexOf(id);
 	if (at >= 0) sequence.splice(at, 1);
 	run.walk?.forget(id);
+	ahead = null;
 }
 
 export function showAsset(id: string): void {
@@ -500,17 +505,8 @@ export function neighboursOf(id: string): { previous: string | null; next: strin
 	};
 }
 
-/**
- * The next thing that will actually play, for a run that is advancing on its own.
- *
- * Different from `neighboursOf().next` only when there are stills in the way, and that difference
- * is the whole point: a video ending hands over to the next video, rather than to a photograph that
- * will sit there until somebody comes back to the machine. Null when there is nothing left that
- * plays, which correctly stops.
- *
- * SYNCHRONOUS, and it answers only from what is already held. `playOnAfter` below is the one that
- * may go and get more, because that one happens at the end of a clip with a moment to spare.
- */
+/** The next held file that plays, stepping over stills; null when none is held. `playOnAfter`
+ *  is the one that reads more. */
 export function nextPlayableAfter(id: string): string | null {
 	const at = indexOf(id);
 	if (at < 0) return null;
@@ -616,9 +612,8 @@ function walkSource(): WalkSource {
 }
 
 /**
- * The walk this file is part of, starting one from it when there is none. For a STEP, never for
- * a question (a question is asked while drawing, and must not change what it is asking about).
- * Null with Shuffle off, and for a file that is in no list at all.
+ * The walk this file is part of, started from it when there is none. Never for a question asked
+ * while drawing. Null with Shuffle off, and for a file in no list.
  */
 function walkFrom(id: string): Walk | null {
 	if (!run.shuffle) return null;
@@ -726,13 +721,88 @@ export function stepBack(id: string): string | null {
  * rather than going round again (`run.movesOnAfter`). In order a run under Stop at the end never
  * asks, because it stops at the file's end.
  */
-export async function playOn(
+export async function playOn(id: string, rule: EndRule = {}): Promise<string | null> {
+	const held = ahead;
+	// A shuffled walk only peeked, so the end still steps it.
+	if (held !== null && held.key === aheadKey(id, rule) && !run.shuffle) return held.to;
+	return findNext(id, rule);
+}
+
+async function findNext(
 	id: string,
-	{ pictures = false, wraps = true }: { pictures?: boolean; wraps?: boolean } = {}
+	{ pictures = false, wraps = true }: EndRule
 ): Promise<string | null> {
 	const walk = walkFrom(id);
 	if (walk) return walk.next(id, { pictures, wraps });
 	return (pictures ? neighboursOf(id).next : null) ?? (await playOnAfter(id));
+}
+
+/** What the end of a file asks of `playOn`: whether a run holds photographs, and whether it wraps. */
+interface EndRule {
+	pictures?: boolean;
+	wraps?: boolean;
+}
+
+/* --- THE NEXT FILE, FOUND WHILE THIS ONE PLAYS: its record and plan, so the end waits only on
+ * the media. A plan names an address and reserves nothing, so an early one is safe. */
+type AssetDetail = components['schemas']['AssetDetail'];
+
+interface Ahead {
+	key: string;
+	to: Promise<string | null>;
+	next: string | null;
+	record: AssetDetail | null;
+	plan: PlaybackPlan | null;
+}
+
+let ahead: Ahead | null = null;
+
+function aheadKey(id: string, { pictures = false, wraps = true }: EndRule): string {
+	return [id, pictures, wraps, run.shuffle, run.relisted].join(' ');
+}
+
+/** Find where the end of `id` goes, and fetch what showing it needs. Once per file and rule. */
+export function lookAhead(id: string, rule: EndRule = {}): void {
+	const key = aheadKey(id, rule);
+	if (ahead?.key === key) return;
+	const walk = walkFrom(id);
+	const { pictures = false, wraps = true } = rule;
+	const where = walk ? walk.peek(id, { pictures, wraps }) : findNext(id, rule);
+	const held: Ahead = { key, to: where, next: null, record: null, plan: null };
+	ahead = held;
+	void held.to
+		.then(async (to) => {
+			if (to === null || to === id || ahead !== held) return;
+			held.next = to;
+			const record = await api.get<AssetDetail>(`/assets/${to}`);
+			if (ahead !== held) return;
+			held.record = record;
+			if (record.media_type === 'video' && !record.concealed) held.plan = await planFor(to);
+		})
+		.catch(() => {
+			// The end asks for itself; a failed early look changes nothing.
+		});
+}
+
+/** The record found ahead for this file, once. */
+export function takeRecord(id: string): AssetDetail | null {
+	if (ahead === null || ahead.next !== id || ahead.record === null) return null;
+	const record = ahead.record;
+	ahead.record = null;
+	return record;
+}
+
+/** The playback plan found ahead for this file, once. */
+export function takePlan(id: string): PlaybackPlan | null {
+	if (ahead === null || ahead.next !== id || ahead.plan === null) return null;
+	const plan = ahead.plan;
+	ahead.plan = null;
+	return plan;
+}
+
+/** Forget what was found ahead: the player looking is closing. */
+export function dropAhead(): void {
+	ahead = null;
 }
 
 /**

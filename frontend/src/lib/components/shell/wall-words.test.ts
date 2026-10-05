@@ -4,7 +4,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('$app/navigation', () => ({ goto: vi.fn(async () => undefined) }));
 
 const { goto } = await import('$app/navigation');
-const { WallWords, addressWith, emptyWallSays, wordsIn } = await import('./wall-words');
+const { WallWords, addressWith, clearWallSays, emptyWallSays, wordsIn } =
+	await import('./wall-words');
 
 const at = (where: string) => new URL(`http://x${where}`);
 
@@ -59,8 +60,17 @@ describe('a wall whose words go under a name of their own', () => {
 describe('an empty wall', () => {
 	it('names the words it was searched by, then the filters, before its first-run sentence', () => {
 		const first = 'No Sites yet.';
-		expect(emptyWallSays('Sites', 'zzq', true, first)).toBe('No Sites match "zzq".');
+		expect(emptyWallSays('Sites', 'zzq', true, first)).toBe(
+			'No Sites match "zzq" with these filters.'
+		);
+		expect(emptyWallSays('Sites', 'zzq', false, first)).toBe('No Sites match "zzq".');
 		expect(emptyWallSays('Sites', '', true, first)).toBe('No Sites match these filters.');
 		expect(emptyWallSays('Sites', '', false, first)).toBe(first);
+	});
+
+	it('offers to clear only what is in force', () => {
+		expect(clearWallSays('zzq', true)).toBe('Clear the search and filters');
+		expect(clearWallSays('zzq', false)).toBe('Clear the search');
+		expect(clearWallSays('', true)).toBe('Clear the filters');
 	});
 });

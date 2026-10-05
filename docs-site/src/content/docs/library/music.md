@@ -26,7 +26,7 @@ AcoustID learns new songs over weeks, so a file it didn't know can be asked agai
 
 Each card shows the song's cover, or a music note, and how many files carry it. Under the song's name are the artists it credits; click an artist to filter the wall to that artist's songs. **Search songs** finds a song by its name.
 
-**Sort by** offers **Newest first**, **Oldest first**, **Recently edited**, **Name A-Z**, **Name Z-A**, **Most files**, **Fewest files**, **Favorites first**, **Highest rated** and **Artist A-Z**. **Artist A-Z** orders the songs by their first artist, with songs that credit nobody last.
+**Sort by** offers **Newest first**, **Oldest first**, **Recently edited**, **Name A-Z**, **Name Z-A**, **Most files**, **Fewest files**, **Favorites first**, **Highest rated** and **Artist A-Z**. Four more orders add up every file under each song. **Largest in total** and **Smallest in total** go by size, and **Longest in total** and **Shortest in total** by length. **Artist A-Z** orders the songs by their first artist, with songs that credit nobody last.
 
 **Filter** opens these columns:
 

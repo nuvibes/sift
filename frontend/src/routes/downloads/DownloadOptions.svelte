@@ -29,20 +29,18 @@
 	 * from: two wordings of one question would be two questions to a reader.
 	 *
 	 * A switch nobody has touched FOLLOWS its default: a change made in Settings while this page is
-	 * open is picked up on the next read. One somebody flipped is theirs until they leave the page,
-	 * exactly as the folder chosen under Download folder is.
+	 * open is picked up on the next read. One somebody flipped is theirs until they leave the page.
 	 *
 	 * ## Download folder opens onto the Add button's list
 	 *
 	 * The same folders from `$lib/library/destinations.svelte` that Add offers, the default named at
-	 * the top, as rows out to the side with the chosen one ticked. The row's own small line names
-	 * the folder the next download goes to, so it is read without opening anything.
+	 * the top. A folder picked here becomes the default, as it does in Add.
 	 */
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { ContextMenuGroup, ContextMenuItem, MenuButton } from '$lib/components/common';
 	import { Destinations } from '$lib/library/destinations.svelte';
-	import { recallInterfaceState } from '$lib/shell/interface-state.svelte';
+	import { noteFolderUse, recallInterfaceState } from '$lib/shell/interface-state.svelte';
 	import { settingChanges, whenChanged } from '$lib/library/changes.svelte';
 	import { session } from '$lib/shell/session.svelte';
 	import { fetchSettings, type SettingEntry } from '$lib/settings-ui/settings';
@@ -52,8 +50,7 @@
 	const REMEMBER = 'download.remember';
 
 	interface Props {
-		/** Where the next download goes: '' for the default folder, else a folder id. Bound, because
-		 *  the page sends it with the submit; nothing here is written anywhere. */
+		/** The folder being made the default while that save is out, else '' (the default). */
 		dest?: string;
 		/** Whether the next paste skips a link already downloaded. Null until the default is read,
 		 *  which sends nothing and leaves the answer to the setting. Bound, for the same reason. */
@@ -83,6 +80,16 @@
 
 	/** The folders a download can go to: the Add button's list, from the one module both read. */
 	const destinations = new Destinations();
+	destinations.follow();
+
+	/* Held on the folder until its save answers, so the paste box stops asking at once. */
+	async function chooseFolder(folderId: string) {
+		if (!folderId) return;
+		dest = folderId;
+		noteFolderUse(folderId);
+		await destinations.makeDefault(folderId);
+		dest = '';
+	}
 
 	whenChanged(settingChanges, () => void readSettings());
 
@@ -168,7 +175,7 @@
 						label={option.label}
 						checked={dest === option.value}
 						oneOf
-						onselect={() => (dest = option.value)}
+						onselect={() => void chooseFolder(option.value)}
 					/>
 				{/each}
 			</ContextMenuItem>

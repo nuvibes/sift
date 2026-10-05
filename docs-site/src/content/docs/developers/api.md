@@ -204,6 +204,7 @@ This reference lists every route Sift answers, grouped by what it's about. The f
 - `POST /api/faces/people/{person_id}/reject-matches`: Reject Matches
 - `POST /api/faces/references/folder`: Import Reference Folder
 - `POST /api/faces/references/folder/path`: Import Reference Folder By Path
+- `GET /api/faces/references/folder/{job_id}/left-out`: Folder Left Out
 - `GET /api/faces/references/strength`: Reference Strengths
 - `POST /api/faces/regroup`: Regroup Faces
 - `POST /api/faces/remove`: Remove Faces
@@ -236,7 +237,6 @@ This reference lists every route Sift answers, grouped by what it's about. The f
 - `GET /api/insights`: Insights Page
 - `DELETE /api/insights/history`: Clear History
 - `GET /api/insights/path`: Read Path
-- `POST /api/insights/path/hints/{name}/seen`: Hint Seen
 - `GET /api/insights/recaps`: List Recaps
 - `GET /api/insights/recaps/{recap_id}`: Open Recap
 - `POST /api/insights/recaps/{recap_id}/dismiss`: Dismiss Recap

@@ -83,21 +83,39 @@ def _presence(condition: str) -> EntityFacet:
     return EntityFacet(value=value, narrow=value + " IN (SELECT value FROM json_each({}))")  # noqa: S608
 
 
+def _tag_shown(tag: str, held: str) -> str:
+    """Whether this viewer is shown the tag `tag`; `held` names the lookup's alias."""
+    return (
+        f"(:reveal_named = 1 OR NOT EXISTS (SELECT 1 FROM tag_user_state {held}"  # noqa: S608
+        f" WHERE {held}.tag_id = {tag} AND {held}.user_id = :viewer AND {held}.hidden = 1))"
+    )
+
+
 def _own_tags(table: str, key: str, alias: str) -> EntityFacet:
-    """The tags on the thing itself, by ID. A tag hidden from this viewer is not counted: a name
-    with a count is what concealment withholds."""
+    """The tags on the thing itself by ID, led by `any` and `none`. A tag hidden from this viewer
+    neither counts nor makes the thing tagged: a name with a count is what concealment withholds."""
+
+    def tagged(link: str) -> str:
+        return (
+            f"EXISTS (SELECT 1 FROM {table} {link} WHERE {link}.{key} = {alias}.id"  # noqa: S608
+            f" AND {_tag_shown(link + '.tag_id', link + 'h')})"
+        )
+
     return EntityFacet(
-        value="fxt.id",
+        # Each thing twice: once per tag, and once more as `any` or `none`.
+        value=f"CASE WHEN fxk.k = 1 THEN fxt.id WHEN {tagged('fxa')} THEN 'any' ELSE 'none' END",
         label="fxt.name",
         joins=(
-            f"\n  JOIN {table} fxjt ON fxjt.{key} = {alias}.id"  # noqa: S608
-            "\n  JOIN tags fxt ON fxt.id = fxjt.tag_id"
-            " AND (:reveal_named = 1 OR NOT EXISTS (SELECT 1 FROM tag_user_state fxth"
-            " WHERE fxth.tag_id = fxt.id AND fxth.user_id = :viewer AND fxth.hidden = 1))"
+            "\n  JOIN (SELECT 1 AS k UNION ALL SELECT 0) fxk"
+            f"\n  LEFT JOIN {table} fxjt ON fxk.k = 1 AND fxjt.{key} = {alias}.id"
+            "\n  LEFT JOIN tags fxt ON fxt.id = fxjt.tag_id AND " + _tag_shown("fxt.id", "fxth")
         ),
         narrow=(
-            f"EXISTS (SELECT 1 FROM {table} nt WHERE nt.{key} = {alias}.id"  # noqa: S608
-            " AND nt.tag_id IN (SELECT value FROM json_each({})))"
+            "EXISTS (SELECT 1 FROM json_each({}) nv WHERE"  # noqa: S608
+            f" (nv.value = 'any' AND {tagged('nta')})"
+            f" OR (nv.value = 'none' AND NOT {tagged('ntn')})"
+            f" OR EXISTS (SELECT 1 FROM {table} nt WHERE nt.{key} = {alias}.id"
+            " AND nt.tag_id = nv.value))"
         ),
     )
 
@@ -149,15 +167,9 @@ def _enriched_by_box(table: str, key: str, alias: str) -> EntityFacet:
 
 
 def _created_by(alias: str, *, boxes: bool = True) -> EntityFacet:
-    """Who made this row: a stash-box by slug, Sift by the task that made it, or the user asking
-    (`me`).
-
-    Sift's rows are split by `created_by_via` (`folder`, `filename`, `facial_fingerprints`,
-    `stash`...), the words the row's own page says it with, and `sift` is the row Sift made before
-    the task was recorded. `sift` still narrows to every row Sift made, so an older address keeps
-    its answer. The slug, so `created:fansdb` means the same on every install. Another user's rows
-    read NULL and drop out: naming them would publish who made what.
-    """
+    """Who made this row: a stash-box by slug, Sift by the task that made it (`sift` before tasks
+    were recorded, and still every row Sift made), or the user asking (`me`). Another user's rows
+    read NULL and drop out: naming them would publish who made what."""
     by_box = " ELSE fxcb.slug END" if boxes else " END"
     box_join = f"\n  LEFT JOIN stash_boxes fxcb ON fxcb.id = {alias}.created_by_box_id"
     box_match = (

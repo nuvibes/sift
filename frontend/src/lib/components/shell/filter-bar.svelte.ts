@@ -1,10 +1,6 @@
 /**
- * What the filter bar works out without drawing anything: the address as a counting query, which
- * of the three states one value of a column is in, how a pick is written back, how a kept filter
- * sits on the screen it is pressed on, and the names a chip shows for the ids an address carries.
- *
- * Nothing here understands the query language: a value is taken apart and written back by the one
- * reader in `query-parts`, and a typed query is the server's to parse.
+ * What the filter bar works out without drawing anything. It never parses the query language: a
+ * value goes through `query-parts`, and a typed query is the server's.
  */
 
 import { api, type ApiPath } from '$lib/api/client';
@@ -13,6 +9,7 @@ import type { CheckState } from '$lib/components/common/Checkbox.svelte';
 import { SAME_MUSIC_FIELD } from '$lib/player/music';
 import { LIKE_FIELD, fileNameOf } from '$lib/search/like';
 import { taken, written, type Named } from '$lib/search/query-parts';
+import { goneLabel } from '$lib/search/saved-searches.svelte';
 import type { ParsedClause } from '$lib/search/search.svelte';
 import {
 	FILING_PARAMETERS,
@@ -30,10 +27,7 @@ import {
 import type { Narrowing } from './screen-bar.svelte';
 import { WORDS } from './wall-words';
 
-/**
- * Every parameter, keeping a repeat as a repeat: a column with two values in it writes the name
- * twice, and keeping only the last would count every other column against half the pick.
- */
+/** Every parameter, a repeat kept as a repeat: a column of two values writes the name twice. */
 export function asQuery(params: URLSearchParams): Record<string, string | string[]> {
 	const out: Record<string, string | string[]> = {};
 	for (const name of new Set(params.keys())) {
@@ -58,9 +52,8 @@ export function asCounted(
 }
 
 /**
- * What one facet holds, split by sign. The server reads a repeated parameter as AND, so
- * `?person=ada&person=-grace` is "Ada, and not Grace". Merged rather than last-wins, because a
- * hand-written link may spell one sign across several parameters.
+ * What one facet holds, split by sign: `?person=ada&person=-grace` is "Ada, and not Grace", merged
+ * rather than last-wins, since a hand-written link may spell one sign across several parameters.
  */
 export function sides(facet: string, where: Narrowing): { included: Named; excluded: Named } {
 	const included: Named = { excluded: false, all: false, values: [] };
@@ -110,19 +103,122 @@ export function pick(
 	if (going === 'on') included.values.push(value);
 	if (going === 'out') excluded.values.push(value);
 
-	const wanted = where.read();
-	wanted.delete(facet);
+	where.write(placed(where.read(), facet, spelled(subject, included, excluded)));
+}
+
+/** One facet's parameters as the noun spells them. */
+function spelled(subject: Subject, included: Named, excluded: Named): string[] {
 	if (picksAreRepeated(subject)) {
 		/* One parameter per value, the grammar the entity routes read: a repeat is "either of
 		   these", and a refused value is its own parameter with the minus in front. */
-		for (const one of included.values) wanted.append(facet, one);
-		for (const one of excluded.values) wanted.append(facet, `-${one}`);
-		where.write(wanted);
+		return [...included.values, ...excluded.values.map((one) => `-${one}`)];
+	}
+	return [included, excluded].filter((one) => one.values.length > 0).map(written);
+}
+
+/**
+ * The address with one facet's parameters replaced where its first one stood, so a chip keeps its
+ * place; a facet not there yet goes at the end.
+ */
+export function placed(
+	params: URLSearchParams,
+	facet: string,
+	values: readonly string[]
+): URLSearchParams {
+	const next = new URLSearchParams();
+	let done = false;
+	for (const [name, value] of params) {
+		if (name !== facet) next.append(name, value);
+		else if (!done) for (const one of values) next.append(facet, one);
+		done ||= name === facet;
+	}
+	if (!done) for (const one of values) next.append(facet, one);
+	return next;
+}
+
+/** The named-thing columns whose "Has" and "No" rows the server counts at the head. */
+export const PRESENCE_COLUMNS: readonly string[] = [
+	'tags',
+	'people',
+	'sites',
+	'collections',
+	'photo_sets',
+	'songs'
+];
+
+/** The facets whose `any` and `none` ask whether a file has one at all. */
+const PRESENCE: readonly string[] = [...PRESENCE_COLUMNS, 'loops'];
+
+const OPPOSITE: Record<string, string> = { any: 'none', none: 'any' };
+
+/** A presence value's swap ("Has tags" for "No tags"), or undefined. */
+export function opposite(subject: Subject, facet: string, value: string): string | undefined {
+	// A wall of things asks presence of its Tags column alone.
+	return (subject === 'asset' ? PRESENCE.includes(facet) : facet === 'tags')
+		? OPPOSITE[value]
+		: undefined;
+}
+
+/** A press on a chip: a presence value swaps; any other is refused or taken back. */
+export function flip(subject: Subject, facet: string, value: string, where: Narrowing): void {
+	const other = opposite(subject, facet, value);
+	if (other === undefined) {
+		pick(subject, facet, value, stanceOf(facet, value, where) === 'out' ? 'on' : 'out', where);
 		return;
 	}
-	if (included.values.length > 0) wanted.append(facet, written(included));
-	if (excluded.values.length > 0) wanted.append(facet, written(excluded));
-	where.write(wanted);
+	const { included, excluded } = sides(facet, where);
+	for (const held of [included, excluded]) {
+		held.values = held.values.map((one) => (one === value ? other : one));
+	}
+	where.write(placed(where.read(), facet, spelled(subject, included, excluded)));
+}
+
+/** One chip: a value of a facet, the parameter it came from, and a key that outlives a flip. */
+export interface Placed<T> {
+	field: string;
+	value: string;
+	key: string;
+	from: T;
+}
+
+/**
+ * Each facet's chips in the order the bar first saw them, so a refused value (a parameter of its
+ * own) or a swapped one (`same`) is drawn where it stood, under its key.
+ */
+export class ChipOrder {
+	private seen = new Map<string, string[]>();
+
+	lay<T>(
+		held: readonly T[],
+		read: (one: T) => { field: string; values: readonly string[] },
+		same: (field: string, value: string) => string = (_field, value) => value
+	) {
+		const byField = new Map<string, Omit<Placed<T>, 'key'>[]>();
+		for (const one of held) {
+			const { field, values } = read(one);
+			const row = byField.get(field) ?? [];
+			byField.set(field, row);
+			for (const value of values) row.push({ field, value, from: one });
+		}
+		for (const field of [...this.seen.keys()]) if (!byField.has(field)) this.seen.delete(field);
+		const out: Placed<T>[] = [];
+		for (const [field, row] of byField) {
+			const now = row.map((chip) => same(field, chip.value));
+			const order = (this.seen.get(field) ?? []).filter((one) => now.includes(one));
+			for (const one of now) if (!order.includes(one)) order.push(one);
+			this.seen.set(field, order);
+			const times = new Map<string, number>();
+			const at = (chip: { value: string }) => order.indexOf(same(field, chip.value));
+			const sorted = [...row].sort((a, b) => at(a) - at(b));
+			for (const chip of sorted) {
+				const slot = same(field, chip.value);
+				const n = times.get(slot) ?? 0;
+				times.set(slot, n + 1);
+				out.push({ ...chip, key: `${field}=${slot}#${n}` });
+			}
+		}
+		return out;
+	}
 }
 
 /** The parameters that ask the question beside a wall's filters, and how they are read. */
@@ -164,6 +260,26 @@ const FILE_FIELDS: readonly string[] = [LIKE_FIELD, SAME_MUSIC_FIELD];
 /** The parameters that take one person's id. */
 const PERSON_FIELDS: readonly string[] = ['unnamed_face'];
 
+/** Where a wall of files reads the name of a thing its address keeps by id. */
+const FILE_WALL_READS: Record<string, string> = {
+	people: '/people/',
+	tags: '/tags/',
+	sites: '/sites/',
+	collections: '/collections/',
+	photo_sets: '/photo-sets/',
+	songs: '/songs/'
+};
+
+type NamedThing =
+	| components['schemas']['PersonView']
+	| components['schemas']['TagView']
+	| components['schemas']['SiteView']
+	| components['schemas']['CollectionSummary']
+	| components['schemas']['PhotoSetSummary']
+	| components['schemas']['SongSummary'];
+
+const GONE_AS: Record<'site' | 'tag', string> = { site: 'sites', tag: 'tags' };
+
 /** The page one History line's thing is read from, scoped to the viewer like the wall. */
 function filingPage(parameter: FilingParameter, id: string): ApiPath {
 	const at = encodeURIComponent(id);
@@ -190,15 +306,9 @@ interface ChipSources {
 }
 
 /**
- * The names a chip shows for the ids an address carries: a folder `?in=` filters to, a network or a
- * tag on a wall of things, one file `like` and `same_music` are about, one person `unnamed_face`
- * is about, and one History line's thing (`?filed=`, `?tagged=`, `?named=`).
- *
- * Each is asked of the thing's own scoped read, once per id while the bar lives, which is the one
- * answer to "may this viewer be told what this is called". One they may not see answers as an id
- * nobody minted does: the chip draws the id or a plain word for it, its wall is empty for the same
- * reason, and its cross is still the way out. Constructed while a component initialises, because it
- * keeps effects of its own.
+ * The names a chip shows for the ids an address carries, each asked of the thing's own scoped
+ * read once per id, so an id this viewer may not see stays an id. Built during component init, for
+ * its effects.
  */
 export class ChipNames {
 	private from: ChipSources;
@@ -262,22 +372,27 @@ export class ChipNames {
 		}
 	}
 
-	/** A network or a tag on a wall of things, into the one memory the panel's counts fill. */
+	/** A thing kept by id on any wall, into the one memory the panel's counts fill. */
 	private askFacetNames(): void {
 		const subject = this.from.subject();
 		for (const [name, value] of this.from.named()) {
 			const kind = facetNames(subject, name);
-			if (kind === undefined) continue;
+			const read =
+				subject === 'asset'
+					? FILE_WALL_READS[name]
+					: kind && (kind === 'site' ? '/sites/' : '/tags/');
+			if (!read) continue;
+			const field = kind ? GONE_AS[kind] : name;
 			for (const one of taken(value).values) {
 				if (!AN_ID.test(one) || facetNameKnown(name, one)) continue;
-				if (!this.first(`${kind} ${name} ${one}`)) continue;
-				const path = kind === 'site' ? `/sites/${one}` : `/tags/${one}`;
+				if (!this.first(`${read} ${name} ${one}`)) continue;
 				api
-					.get<Pick<components['schemas']['SiteView'] | components['schemas']['TagView'], 'name'>>(
-						path as ApiPath
-					)
+					.get<Pick<NamedThing, 'name'>>(`${read}${encodeURIComponent(one)}` as ApiPath)
 					.then((found) => rememberFacetNames(name, [{ value: one, count: 0, label: found.name }]))
-					.catch(() => undefined);
+					.catch((error: { status?: number } | undefined) => {
+						if (error?.status === 404)
+							rememberFacetNames(name, [{ value: one, count: 0, label: goneLabel(field, one) }]);
+					});
 			}
 		}
 	}

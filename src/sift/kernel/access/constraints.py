@@ -1,11 +1,10 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """What a query filtered to, in the only form the scoped read will accept.
 
-The filter is applied INSIDE the statement that decides visibility, so totals describe the right set
-and enforcement stays in one statement. A filter is a bounded tree (ALL, ANY, NOT) of fixed
-templates whose values all bind, wrapped as one conjunct of a fixed AND chain, so it can only narrow
-what the permission rule allowed. A group that resolved to nothing matches nothing: dropping it
-would widen the search past a name the viewer may not be told about.
+Applied INSIDE the statement that decides visibility, so totals describe the right set. A filter is
+a bounded tree (ALL, ANY, NOT) of fixed templates whose values all bind, so it can only narrow what
+the permission rule allowed. A group that resolved to nothing
+matches nothing: dropping it would widen the search past a name the viewer may not be told about.
 """
 
 from __future__ import annotations
@@ -36,7 +35,7 @@ from sift.kernel.access.filter_parts import KEPT_FROM_SWAPS_HERE as KEPT_FROM_SW
 from sift.kernel.access.filter_parts import KEPT_LOCAL_FILES as KEPT_LOCAL_FILES
 from sift.kernel.access.filter_parts import KEPT_LOCAL_HERE as KEPT_LOCAL_HERE
 from sift.kernel.access.filter_parts import ConstraintError as ConstraintError
-from sift.kernel.access.sites import FILES_SITES_REACH
+from sift.kernel.access.sites import SITE_CONCEALED, SITE_REACH
 from sift.kernel.access.tag_tree import TAGS_UNDER
 from sift.kernel.content.user_state import RESUMING
 from sift.kernel.ids import is_id
@@ -58,18 +57,15 @@ Groups = tuple[Group, ...]
 
 
 class FolderDepth(StrEnum):
-    """How far below a named folder `in:` reaches: a parameter a control sends, because a typed
-    `in:` means the whole subtree. `DIRECT` is narrower, so naming a depth can only ask for less."""
+    """How far below a named folder `in:` reaches; `DIRECT`, sent by a control, only asks less."""
 
-    #: The named folder and everything beneath it. What `in:` has always meant.
+    #: The named folder and everything beneath it.
     SUBTREE = "subtree"
     #: The named folder itself, and nothing below it.
     DIRECT = "direct"
 
 
-#: WHICH STASH-BOX MADE ONE FILING, the History's own expression (`history.BOX_OF_A_ROW`) written
-#: out again because this module may not import it; `test_the_filing_box_is_the_history_box` holds
-#: the copies equal.
+#: `history.BOX_OF_A_ROW`, not importable here; `test_the_filing_box_is_the_history_box` holds it.
 _BOX_OF_THE_ROW = (
     "CASE WHEN link.source = 'stash_box' THEN ("
     " CASE WHEN link.box_id IS NOT NULL THEN ("
@@ -82,92 +78,146 @@ _BOX_OF_THE_ROW = (
     " ) END"
     " ) END"
 )
+_DAY = " AND unixepoch(link.decided_at, 'unixepoch', 'localtime') / 86400 IS {}"
+_ON_DAY = " AND link.source IS {}" + _DAY
+_BY_BOX = " AND link.source = 'stash_box'" + _DAY + " AND " + _BOX_OF_THE_ROW + " IS {}"
+_FILED = "usernames ac ON ac.id = link.username_id"
 
 
 # --- the leaves -------------------------------------------------------------------------------
-#
-# Every condition a filter can express, written once; `{}` is the only substitution. Set-valued
-# leaves bind one JSON array. Membership is `a.id IN (SELECT ...)` so the planner drives the read
-# from the members. Every `noqa: S608` splices a constant, never a value.
+
+#: Who may see every file, so the word index may answer them over the whole library.
+SEES_EVERY_FILE = "u.id = :viewer AND u.role = 'admin'"
+
+_WORD_COLUMNS = (
+    "title",
+    "filename",
+    "path",
+    "tags",
+    "people",
+    "usernames",
+    "collections",
+    "sites",
+    "music",
+)
+_LIKE_TERM = "LIKE '%' || trm.value || '%' ESCAPE '\\'"
+
+
+def _no_column(test: str) -> str:
+    """No column of `f` passes `test` for `trm`; NULL reads as empty, or it would pass."""
+    return " AND ".join(f"COALESCE(f.{column}, '') NOT {test}" for column in _WORD_COLUMNS)
+
+
+def _words_in(admin_arm: str, asked: str, *tests: tuple[str, str]) -> str:
+    """Files holding every term, read from the viewer's own rows unless they see every file."""
+    each = "".join(
+        f" AND NOT EXISTS (SELECT 1 FROM json_each({terms}) trm WHERE {_no_column(test)})"  # noqa: S608
+        for terms, test in tests
+    )
+    return (
+        "a.id IN (SELECT f.asset_id FROM users u CROSS JOIN assets_fts f"  # noqa: S608
+        f" WHERE {SEES_EVERY_FILE} AND {admin_arm}"
+        " UNION ALL SELECT sv.asset_id FROM users u CROSS JOIN viewer_assets sv"
+        " JOIN assets_fts_rows r ON r.asset_id = sv.asset_id"
+        " JOIN assets_fts f ON f.rowid = r.fts_rowid"
+        f" WHERE u.id = :viewer AND NOT ({SEES_EVERY_FILE}) AND sv.user_id = :viewer"
+        f" AND {asked} IS NOT NULL{each})"
+    )
+
+
+def _seen(link: str, test: str, *joins: str) -> str:
+    """Files whose `link` row passes `test`: any for an admin, else only the viewer's own, the test
+    tied to each row so no list is built from it over hidden files."""
+    alias = link.split()[-1]
+    numbers = iter(range(test.count("{}")))
+    test = re.sub(r"\{\}", lambda _: f"{{{next(numbers)}}}", test)
+    plain = "".join(f" JOIN {join}" for join in joins)
+    pinned = "".join(f" CROSS JOIN {join}" for join in joins)
+    return (
+        f"a.id IN (SELECT {alias}.asset_id FROM users u CROSS JOIN {link}{plain}"  # noqa: S608
+        f" WHERE {SEES_EVERY_FILE} AND {test} UNION ALL SELECT sv.asset_id FROM users u"
+        f" CROSS JOIN viewer_assets sv CROSS JOIN {link} ON {alias}.asset_id = sv.asset_id{pinned}"
+        f" WHERE u.id = :viewer AND NOT ({SEES_EVERY_FILE}) AND sv.user_id = :viewer"
+        f" AND CASE WHEN {alias}.asset_id = sv.asset_id THEN {test} END)"
+    )
+
+
+def _bridged(near: str, far: str) -> str:
+    """A visible file paired with this row and the named one."""
+    return (
+        " OR EXISTS (SELECT 1 FROM music_pairs h CROSS JOIN viewer_assets vb"  # noqa: S608
+        f" ON vb.user_id = :viewer AND vb.asset_id = h.{far} AND vb.concealed = 0"
+        f" CROSS JOIN music_pairs hx ON hx.a_id = MIN(h.{far}, {{2}})"
+        f" AND hx.b_id = MAX(h.{far}, {{2}}) WHERE h.{near} = sv.asset_id)"
+    )
+
+
+def _person(test: str) -> str:
+    return _seen("asset_people ap", test, "people p ON p.id = ap.person_id")
+
+
+#: Each presence dimension's link to a file, aliased `pl`, and the kind of thing it names.
+PRESENCE_LINKS = {
+    "tags": ("asset_tags pl", "tag"),
+    "people": ("asset_people pl", "person"),
+    "sites": ("asset_usernames pl JOIN usernames pu ON pu.id = pl.username_id", "site"),
+    "collections": ("collection_items pl", "collection"),
+    "photo_sets": ("photo_set_items pl", "photo_set"),
+    "songs": ("song_files pl", "song"),
+}
+
+
+def only_shown(dimension: str) -> str:
+    """Not a file whose every `dimension` this viewer hides; only a concealed file can be one."""
+    link, kind = PRESENCE_LINKS[dimension]
+    hidden = (
+        SITE_CONCEALED.format(site="pu.site_id")
+        if kind == "site"
+        else f"EXISTS (SELECT 1 FROM {kind}_user_state h WHERE h.{kind}_id = pl.{kind}_id"  # noqa: S608
+        " AND h.user_id = :viewer AND h.hidden = 1)"
+    )
+    return (
+        "(:reveal_named = 1 OR :reveal = 0 OR a.id NOT IN (SELECT pc.asset_id FROM viewer_assets"  # noqa: S608
+        " pc WHERE pc.user_id = :viewer AND pc.concealed = 1 AND NOT EXISTS (SELECT 1 FROM"
+        f" {link} WHERE pl.asset_id = pc.asset_id AND NOT {hidden})))"
+    )
+
+
+# Every condition a filter can express, written once; `{}` (or `{0}`, read twice) is the only
+# substitution. Membership is `a.id IN (SELECT ...)` so the planner drives the read from the
+# members. Every `noqa: S608` splices a constant, never a value.
 PREDICATES: dict[str, str] = {
     # A TAG TAKES IN ITS BRANCH: the files carrying it or any tag filed under it (`tag_tree.py`).
-    "tags": (
-        "a.id IN (SELECT t.asset_id FROM asset_tags t"  # noqa: S608
-        " WHERE t.tag_id IN (" + TAGS_UNDER + "))"
-    ),
-    "people": (
-        "a.id IN (SELECT ap.asset_id FROM asset_people ap"
-        " WHERE ap.person_id IN (SELECT value FROM json_each({})))"
-    ),
+    "tags": _seen("asset_tags t", "t.tag_id IN (" + TAGS_UNDER + ")"),
+    "people": _seen("asset_people ap", "ap.person_id IN (SELECT value FROM json_each({}))"),
     # One username by id, for the Files wall's `?username=`; never a query word.
-    "usernames": (
-        "a.id IN (SELECT aa.asset_id FROM asset_usernames aa"
-        " WHERE aa.username_id IN (SELECT value FROM json_each({})))"
+    "usernames": _seen("asset_usernames aa", "aa.username_id IN (SELECT value FROM json_each({}))"),
+    # A network reaches its labels' files, by the visibility rules' fragment (`sites.py`).
+    "sites": _seen(
+        "asset_usernames aa",
+        "reach.ancestor_id IN (SELECT value FROM json_each({}))",
+        "usernames ac ON ac.id = aa.username_id",
+        "(" + SITE_REACH + ") reach ON reach.site_id = ac.site_id",
     ),
-    # A network reaches its labels' files, by the fragment the two visibility rules read
-    # (`sites.py`).
-    "sites": "a.id IN ("  # noqa: S608
-    + FILES_SITES_REACH.format(ancestors="IN (SELECT value FROM json_each({}))")
-    + ")",
-    "collections": (
-        "a.id IN (SELECT ci.asset_id FROM collection_items ci"
-        " WHERE ci.collection_id IN (SELECT value FROM json_each({})))"
+    "collections": _seen(
+        "collection_items ci", "ci.collection_id IN (SELECT value FROM json_each({}))"
     ),
-    "photo_sets": (
-        "a.id IN (SELECT psi.asset_id FROM photo_set_items psi"
-        " WHERE psi.photo_set_id IN (SELECT value FROM json_each({})))"
+    "photo_sets": _seen(
+        "photo_set_items psi", "psi.photo_set_id IN (SELECT value FROM json_each({}))"
     ),
-    # The files that carry one song (`kernel/content/songs.py`).
-    "songs": (
-        "a.id IN (SELECT sf.asset_id FROM song_files sf"
-        " WHERE sf.song_id IN (SELECT value FROM json_each({})))"
-    ),
-    # A set of ids a caller holds with no question to ask instead (a group of unnamed faces).
-    # Filtering inside the resolve keeps the visibility rule in one place.
+    "songs": _seen("song_files sf", "sf.song_id IN (SELECT value FROM json_each({}))"),
+    # Ids a caller holds with no question to ask instead, filtered inside the resolve.
     "assets": "a.id IN (SELECT value FROM json_each({}))",
-    # ONE FILING, as a History line counts it (`history_entity._SITE_FILES` and its siblings): the
-    # subject by equality, the source and the local day with `IS` because NULL is a real value of
-    # each. The `_box` arms add which box.
-    "filed_under": (
-        "a.id IN (SELECT link.asset_id FROM usernames ac"
-        " JOIN asset_usernames link ON link.username_id = ac.id"
-        " WHERE ac.site_id = {} AND link.source IS {}"
-        " AND unixepoch(link.decided_at, 'unixepoch', 'localtime') / 86400 IS {})"
-    ),
-    "filed_under_box": (
-        "a.id IN (SELECT link.asset_id FROM usernames ac"  # noqa: S608
-        " JOIN asset_usernames link ON link.username_id = ac.id"
-        " WHERE ac.site_id = {} AND link.source = 'stash_box'"
-        " AND unixepoch(link.decided_at, 'unixepoch', 'localtime') / 86400 IS {}"
-        " AND " + _BOX_OF_THE_ROW + " IS {})"
-    ),
-    "tagged_with": (
-        "a.id IN (SELECT link.asset_id FROM asset_tags link"
-        " WHERE link.tag_id = {} AND link.source IS {}"
-        " AND unixepoch(link.decided_at, 'unixepoch', 'localtime') / 86400 IS {})"
-    ),
-    "tagged_with_box": (
-        "a.id IN (SELECT link.asset_id FROM asset_tags link"  # noqa: S608
-        " WHERE link.tag_id = {} AND link.source = 'stash_box'"
-        " AND unixepoch(link.decided_at, 'unixepoch', 'localtime') / 86400 IS {}"
-        " AND " + _BOX_OF_THE_ROW + " IS {})"
-    ),
-    "named_as": (
-        "a.id IN (SELECT link.asset_id FROM asset_people link"
-        " WHERE link.person_id = {} AND link.source IS {}"
-        " AND unixepoch(link.decided_at, 'unixepoch', 'localtime') / 86400 IS {})"
-    ),
-    "named_as_box": (
-        "a.id IN (SELECT link.asset_id FROM asset_people link"  # noqa: S608
-        " WHERE link.person_id = {} AND link.source = 'stash_box'"
-        " AND unixepoch(link.decided_at, 'unixepoch', 'localtime') / 86400 IS {}"
-        " AND " + _BOX_OF_THE_ROW + " IS {})"
-    ),
+    # ONE FILING, as a History line counts it (`history_entity._SITE_FILES`): the source and the
+    # local day by `IS`, as NULL is a real value of each. The `_box` arms add which box.
+    "filed_under": _seen("asset_usernames link", "ac.site_id = {}" + _ON_DAY, _FILED),
+    "filed_under_box": _seen("asset_usernames link", "ac.site_id = {}" + _BY_BOX, _FILED),
+    "tagged_with": _seen("asset_tags link", "link.tag_id = {}" + _ON_DAY),
+    "tagged_with_box": _seen("asset_tags link", "link.tag_id = {}" + _BY_BOX),
+    "named_as": _seen("asset_people link", "link.person_id = {}" + _ON_DAY),
+    "named_as_box": _seen("asset_people link", "link.person_id = {}" + _BY_BOX),
     # Matched against the expanded subtree (`in_scope`); any copy inside matches.
-    "folder": (
-        "a.id IN (SELECT l.asset_id FROM asset_locations l"
-        " JOIN in_scope s ON s.folder_id = l.folder_id AND s.grp = {})"
-    ),
+    "folder": _seen("asset_locations l", "s.grp = {}", "in_scope s ON s.folder_id = l.folder_id"),
     # Not a bare IN, which is NULL over a NULL column and stops applying under a NOT.
     "media_type": "EXISTS (SELECT 1 FROM json_each({}) kind WHERE kind.value = a.media_type)",
     # Per user. An unrated file is in no rating range.
@@ -193,13 +243,11 @@ PREDICATES: dict[str, str] = {
         "EXISTS (SELECT 1 FROM asset_user_state s WHERE s.asset_id = a.id"
         " AND s.user_id = :viewer AND s.rating IS NOT NULL)"
     ),
-    # Per user. The column rather than the row, which a heart alone also writes.
     "viewed": (
         "EXISTS (SELECT 1 FROM asset_user_state s WHERE s.asset_id = a.id"
         " AND s.user_id = :viewer AND s.last_viewed_at IS NOT NULL)"
     ),
-    # Viewed, or holding a place to go back to: a short sitting writes a place without a view
-    # (`user_state.record_watch_time`). What `viewed:none` negates.
+    # Viewed, or holding a place, which a short sitting writes alone. What `viewed:none` negates.
     "opened": (
         "EXISTS (SELECT 1 FROM asset_user_state s WHERE s.asset_id = a.id"  # noqa: S608
         " AND s.user_id = :viewer AND (s.last_viewed_at IS NOT NULL OR "
@@ -208,19 +256,16 @@ PREDICATES: dict[str, str] = {
         )
         + "))"
     ),
-    # Seen through once. `completed_at`, because watch time counts a minute watched sixty times as
-    # an hour.
+    # Seen through once: watch time counts a minute watched sixty times as an hour.
     "finished": (
         "EXISTS (SELECT 1 FROM asset_user_state s WHERE s.asset_id = a.id"
         " AND s.user_id = :viewer AND s.completed_at IS NOT NULL)"
     ),
-    # Opened and not seen through.
     "started": (
         "EXISTS (SELECT 1 FROM asset_user_state s WHERE s.asset_id = a.id"
         " AND s.user_id = :viewer AND s.last_viewed_at IS NOT NULL AND s.completed_at IS NULL)"
     ),
-    # Part-way through, by `RESUMING`, the rule the player and the grid's bar use. `:resume_min_ms`
-    # is NULL when resuming is off, which makes this false for every row.
+    # Part-way through, by the player's `RESUMING`; false for every row while resuming is off.
     "resuming": (
         "EXISTS (SELECT 1 FROM asset_user_state s WHERE s.asset_id = a.id"  # noqa: S608
         " AND s.user_id = :viewer AND "
@@ -238,8 +283,7 @@ PREDICATES: dict[str, str] = {
         "EXISTS (SELECT 1 FROM asset_user_state s WHERE s.asset_id = a.id"
         " AND s.user_id = :viewer AND s.pinned = 1)"
     ),
-    # A decision made on THIS FILE, not one that reaches it: a restricted root would otherwise put
-    # the whole library under `sharing:restricted`.
+    # Made on THIS FILE: a restricted root would put the whole library under `sharing:restricted`.
     "shared_here": (
         "EXISTS (SELECT 1 FROM acl_grants g WHERE g.object_type = 'item'"
         " AND g.object_id = a.id AND g.effect = 'share')"
@@ -248,16 +292,12 @@ PREDICATES: dict[str, str] = {
         "EXISTS (SELECT 1 FROM acl_grants g WHERE g.object_type = 'item'"
         " AND g.object_id = a.id AND g.effect = 'restrict')"
     ),
-    # Presence on a dimension. The negations are the curation queues.
-    "has_tags": "EXISTS (SELECT 1 FROM asset_tags t WHERE t.asset_id = a.id)",
-    "has_people": "EXISTS (SELECT 1 FROM asset_people ap WHERE ap.asset_id = a.id)",
-    "has_sites": (
-        "EXISTS (SELECT 1 FROM asset_usernames aa JOIN usernames ac ON ac.id = aa.username_id"
-        " WHERE aa.asset_id = a.id)"
-    ),
-    "has_collections": "EXISTS (SELECT 1 FROM collection_items ci WHERE ci.asset_id = a.id)",
-    "has_photo_sets": "EXISTS (SELECT 1 FROM photo_set_items psi WHERE psi.asset_id = a.id)",
-    "has_songs": "EXISTS (SELECT 1 FROM song_files hs WHERE hs.asset_id = a.id)",
+    # Presence of a thing this viewer is shown. The negations are the curation queues.
+    **{
+        f"has_{name}": f"(EXISTS (SELECT 1 FROM {link} WHERE pl.asset_id = a.id)"  # noqa: S608
+        f" AND {only_shown(name)})"
+        for name, (link, _) in PRESENCE_LINKS.items()
+    },
     # No `loops:` value filter: a loop is a piece of the file, not a thing it is in.
     "has_loops": "EXISTS (SELECT 1 FROM loops lp WHERE lp.asset_id = a.id)",
     # A face nobody named, outside a group somebody set aside: dismissed work must not come back.
@@ -266,21 +306,15 @@ PREDICATES: dict[str, str] = {
         " JOIN face_piles fp ON fp.id = ft.pile_id AND fp.status = 'open'"
         " WHERE ft.asset_id = a.id AND ft.person_id IS NULL)"
     ),
-    # Filed under one person from a folder, with a face in it nobody named yet: the folder's name
-    # gave the file her name and the face waits in an unnamed group, so it never reaches her faces.
-    # The same unnamed face `has_unnamed_face` means.
-    "unnamed_face": (
-        "a.id IN (SELECT ufp.asset_id FROM asset_people ufp"
-        " WHERE ufp.person_id = {} AND ufp.source = 'folder')"
+    # A folder's name filed it under one person, with a face nobody named (`has_unnamed_face`).
+    "unnamed_face": _seen("asset_people ufp", "ufp.person_id = {} AND ufp.source = 'folder'")  # noqa: S608
+    + (
         " AND EXISTS (SELECT 1 FROM face_tracks ft"
         " JOIN face_piles fp ON fp.id = ft.pile_id AND fp.status = 'open'"
         " WHERE ft.asset_id = a.id AND ft.person_id IS NULL)"
     ),
     # What the Importing pane counts as given up on, standing verdicts only.
-    "left_out": (
-        "a.id IN (SELECT lv.asset_id FROM file_verdicts lv"
-        " WHERE lv.product = {} AND lv.transient = 0)"
-    ),
+    "left_out": _seen("file_verdicts lv", "lv.product = {} AND lv.transient = 0"),
     "added_from": "a.added_at >= {}",
     "added_to": "a.added_at <= {}",
     "duration_min": "a.duration_ms >= {}",
@@ -321,8 +355,7 @@ PREDICATES: dict[str, str] = {
         " JOIN stash_boxes sbb ON sbb.id = sbm.box_id"
         " WHERE sbm.asset_id = a.id AND sbm.state = 'applied' AND sbb.slug = {})"
     ),
-    # A person or a filing a FOLDER NAME gave; a confirmed filing keeps the word. Bracketed because
-    # `OR` binds looser than `AND`.
+    # A person or a filing a FOLDER NAME gave, confirmed or not; bracketed, as `OR` binds loosely.
     "enriched_folder": (
         "(EXISTS (SELECT 1 FROM asset_people ep WHERE ep.asset_id = a.id AND ep.source = 'folder')"
         " OR EXISTS (SELECT 1 FROM asset_usernames ea WHERE ea.asset_id = a.id"
@@ -343,14 +376,12 @@ PREDICATES: dict[str, str] = {
         "EXISTS (SELECT 1 FROM asset_usernames ea WHERE ea.asset_id = a.id"
         " AND ea.source = 'metadata')"
     ),
-    # AcoustID named the file's song.
     "enriched_acoustid": (
         "EXISTS (SELECT 1 FROM song_files ea WHERE ea.asset_id = a.id AND ea.source = 'acoustid')"
     ),
     # A FILE MARKED "DO NOT SWAP"; a swap's offer is the one reader.
     "kept_from_swaps": KEPT_FROM_SWAPS_HERE,
-    # One CASE over one column, a file under exactly one value: the facet column's expression
-    # (`repository/assets.py`), which reads every ask in `stash_box_scans`.
+    # The facet column's CASE, a file under exactly one value, over every ask in `stash_box_scans`.
     "enrichment": (
         "(CASE WHEN " + KEPT_LOCAL_HERE + " THEN 'local'"  # noqa: S608
         " WHEN (SELECT MAX(sbs.scanned_at) FROM stash_box_scans sbs"
@@ -366,53 +397,20 @@ PREDICATES: dict[str, str] = {
         " >= CAST(strftime('%s', 'now') AS INTEGER) - 2592000 THEN 'month'"
         " ELSE 'older' END) = {}"
     ),
-    # WHO MADE THE FILE, the facet column's `FILE_MADE_BY`.
     "created": "(" + FILE_MADE_BY + ") = {}",
-    # WHAT THE PEOPLE ON A FILE ARE LIKE, one entry per column because a column cannot be bound.
-    # UPPER on both sides: the library holds `BLONDE` and somebody types `blonde`.
-    "gender": (
-        "a.id IN (SELECT ap.asset_id FROM asset_people ap"
-        " JOIN people p ON p.id = ap.person_id WHERE UPPER(p.gender) = UPPER({}))"
-    ),
-    "hair": (
-        "a.id IN (SELECT ap.asset_id FROM asset_people ap"
-        " JOIN people p ON p.id = ap.person_id WHERE UPPER(p.hair_color) = UPPER({}))"
-    ),
-    "eyes": (
-        "a.id IN (SELECT ap.asset_id FROM asset_people ap"
-        " JOIN people p ON p.id = ap.person_id WHERE UPPER(p.eye_color) = UPPER({}))"
-    ),
-    "ethnicity": (
-        "a.id IN (SELECT ap.asset_id FROM asset_people ap"
-        " JOIN people p ON p.id = ap.person_id WHERE UPPER(p.ethnicity) = UPPER({}))"
-    ),
-    "nationality": (
-        "a.id IN (SELECT ap.asset_id FROM asset_people ap"
-        " JOIN people p ON p.id = ap.person_id WHERE UPPER(p.country) = UPPER({}))"
-    ),
-    "breasts": (
-        "a.id IN (SELECT ap.asset_id FROM asset_people ap"
-        " JOIN people p ON p.id = ap.person_id WHERE UPPER(p.breast_type) = UPPER({}))"
-    ),
+    # WHAT THE PEOPLE ON A FILE ARE LIKE: an entry per column, as none binds; UPPER on both sides.
+    "gender": _person("UPPER(p.gender) = UPPER({})"),
+    "hair": _person("UPPER(p.hair_color) = UPPER({})"),
+    "eyes": _person("UPPER(p.eye_color) = UPPER({})"),
+    "ethnicity": _person("UPPER(p.ethnicity) = UPPER({})"),
+    "nationality": _person("UPPER(p.country) = UPPER({})"),
+    "breasts": _person("UPPER(p.breast_type) = UPPER({})"),
     # A flag, so it binds nothing and `pmv:no` is its negation.
-    "pmv_creator": (
-        "a.id IN (SELECT ap.asset_id FROM asset_people ap"
-        " JOIN people p ON p.id = ap.person_id WHERE p.pmv_creator = 1)"
-    ),
+    "pmv_creator": _person("p.pmv_creator = 1"),
     # The text the facet column groups by, so a row and its filter describe one set.
-    "height": (
-        "a.id IN (SELECT ap.asset_id FROM asset_people ap"  # noqa: S608
-        " JOIN people p ON p.id = ap.person_id WHERE "
-        + HEIGHT_BAND.format(col="p.height_cm")
-        + " = {})"
-    ),
+    "height": _person(HEIGHT_BAND.format(col="p.height_cm") + " = {}"),
     # Two values: the ends of the span the parser read (`AGE_WITHIN`).
-    "age": (
-        "a.id IN (SELECT ap.asset_id FROM asset_people ap"  # noqa: S608
-        " JOIN people p ON p.id = ap.person_id WHERE "
-        + AGE_WITHIN.format(age=AGE_YEARS.format(col="p.birth_date"))
-        + ")"
-    ),
+    "age": _person(AGE_WITHIN.format(age=AGE_YEARS.format(col="p.birth_date"))),
     # The year, because a facet over exact dates is a column of ones; no date compares false.
     "released": "substr(COALESCE(a.release_date, ''), 1, 4) = {}",
     "container": "LOWER(COALESCE(a.container, '')) = LOWER({})",
@@ -426,43 +424,49 @@ PREDICATES: dict[str, str] = {
     "title": "LOWER(COALESCE(a.title, '')) LIKE LOWER({}) ESCAPE '\\'",
     # Anywhere, since sites write artist and title in either order.
     "music": "LOWER(COALESCE(a.music, '')) LIKE LOWER({}) ESCAPE '\\'",
-    # THE FILES SHARING A SONG WITH ONE FILE, one hop, the group the Same music strip draws. The
-    # file bridged through must be visible to this viewer, or a hidden file would be described out
-    # of visible ones.
+    # THE FILES SHARING A SONG WITH ONE FILE, one hop, as the Same music strip draws them; the file
+    # bridged through must be visible, or a hidden file would be described out of visible ones.
     "same_music": (
-        "a.id IN (WITH d(id) AS (SELECT b_id FROM music_pairs WHERE a_id = {}"
-        " UNION SELECT a_id FROM music_pairs WHERE b_id = {}),"
+        "a.id IN (WITH d(id) AS (SELECT b_id FROM music_pairs WHERE a_id = {0}"  # noqa: S608
+        " UNION SELECT a_id FROM music_pairs WHERE b_id = {1}),"
         " bridge(id) AS (SELECT d.id FROM d WHERE EXISTS (SELECT 1 FROM viewer_assets va"
         " WHERE va.user_id = :viewer AND va.asset_id = d.id AND va.concealed = 0)),"
         " g(id) AS (SELECT id FROM d"
         " UNION SELECT p.b_id FROM music_pairs p JOIN bridge b ON p.a_id = b.id"
         " UNION SELECT p.a_id FROM music_pairs p JOIN bridge b ON p.b_id = b.id)"
-        " SELECT id FROM g WHERE id <> {})"
+        f" SELECT g.id FROM users u CROSS JOIN g WHERE {SEES_EVERY_FILE} AND g.id <> {{2}}"
+        " UNION ALL SELECT sv.asset_id FROM users u CROSS JOIN viewer_assets sv WHERE u.id = :viewer"
+        f" AND NOT ({SEES_EVERY_FILE}) AND sv.user_id = :viewer AND sv.asset_id <> {{2}}"
+        " AND (EXISTS (SELECT 1 FROM music_pairs mx WHERE mx.a_id = MIN(sv.asset_id, {2})"
+        " AND mx.b_id = MAX(sv.asset_id, {2}))"
+        + _bridged("a_id", "b_id")
+        + _bridged("b_id", "a_id")
+        + "))"
     ),
-    # Uncorrelated, so the index runs once. Named because the relevance ordering binds the same
-    # text.
-    "text_match": "a.id IN (SELECT asset_id FROM assets_fts WHERE assets_fts MATCH :text_match)",
-    # Terms too short for the trigram index, scanned once. COALESCE, or a NULL column would satisfy
-    # the term.
-    "text_contains": (
-        "a.id IN (SELECT f.asset_id FROM assets_fts f WHERE NOT EXISTS ("
-        "SELECT 1 FROM json_each(:text_contains) trm"
-        " WHERE COALESCE(f.title, '')       NOT LIKE '%' || trm.value || '%' ESCAPE '\\'"
-        " AND COALESCE(f.filename, '')    NOT LIKE '%' || trm.value || '%' ESCAPE '\\'"
-        " AND COALESCE(f.path, '')        NOT LIKE '%' || trm.value || '%' ESCAPE '\\'"
-        " AND COALESCE(f.tags, '')        NOT LIKE '%' || trm.value || '%' ESCAPE '\\'"
-        " AND COALESCE(f.people, '')      NOT LIKE '%' || trm.value || '%' ESCAPE '\\'"
-        " AND COALESCE(f.usernames, '')    NOT LIKE '%' || trm.value || '%' ESCAPE '\\'"
-        " AND COALESCE(f.collections, '') NOT LIKE '%' || trm.value || '%' ESCAPE '\\'"
-        " AND COALESCE(f.sites, '')   NOT LIKE '%' || trm.value || '%' ESCAPE '\\'))"
+    # Named because the relevance ordering binds the same text.
+    "text_match": _words_in(
+        "f.assets_fts MATCH :text_match",
+        ":text_match",
+        (":text_likes", _LIKE_TERM),
+        (":text_globs", "GLOB trm.value"),
+    ),
+    # Terms too short for the trigram index, scanned.
+    "text_contains": _words_in(
+        f"NOT EXISTS (SELECT 1 FROM json_each(:text_contains) trm WHERE {_no_column(_LIKE_TERM)})",  # noqa: S608
+        ":text_contains",
+        (":text_contains", _LIKE_TERM),
     ),
 }
 
 #: How many parameters each template binds, derived so the two cannot disagree.
-_ARITY = {key: template.count("{}") for key, template in PREDICATES.items()}
+_ARITY = {
+    key: len(set(re.findall(r"\{(\d+)\}", t))) or t.count("{}") for key, t in PREDICATES.items()
+}
 
 #: The set-valued leaves, derived so a new one cannot bind a bare string into `json_each`.
-_SET_VALUED = frozenset(key for key, template in PREDICATES.items() if "json_each({})" in template)
+_SET_VALUED = frozenset(
+    key for key, t in PREDICATES.items() if re.search(r"json_each\(\{0?\}\)", t)
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -476,7 +480,7 @@ class Where:
         if self.key not in PREDICATES:
             raise ConstraintError(f"{self.key!r} is not a condition")
         expected = _ARITY[self.key]
-        # A set-valued leaf binds ONE parameter (the array), however many ids are in it.
+        # A set-valued leaf binds ONE parameter, the array.
         given = 1 if self.key in _SET_VALUED else len(self.values)
         if given != expected:
             raise ConstraintError(f"{self.key!r} binds {expected} values, not {given}")
@@ -496,14 +500,14 @@ class Where:
 
 @dataclass(frozen=True, slots=True)
 class AllOf:
-    """Every one of these holds. Empty means "no constraint", which is the plain grid."""
+    """Every one of these holds; empty constrains nothing."""
 
     parts: tuple[Node, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
 class AnyOf:
-    """At least one of these holds. Empty means NOTHING holds (see the module docstring)."""
+    """At least one of these holds; empty, NOTHING does (see the module docstring)."""
 
     parts: tuple[Node, ...] = ()
 
@@ -518,12 +522,8 @@ class Not:
 Node = Where | AllOf | AnyOf | Not
 
 
-# --- one filing, as an address ----------------------------------------------------------------
-#
-# What a History line's count writes into the Files wall's address; here because the History and the
-# search may not import each other.
+# --- one filing, a History line's count, as an address (History and search import neither) ---
 
-#: The three parameters and the leaves answering each, plain and with a box.
 FILING_PARAMETERS: dict[str, tuple[str, str]] = {
     "filed": ("filed_under", "filed_under_box"),
     "tagged": ("tagged_with", "tagged_with_box"),
@@ -543,10 +543,7 @@ _EPOCH = date(1970, 1, 1)
 @dataclass(frozen=True, slots=True)
 class Filing:
     """One History line's group: `<id>~<source>~<day>`, with `~<box>` where a stash-box did it.
-
-    An empty source, day or box is a real line with its own count. The day is the History's local
-    day.
-    """
+    An empty source, day or box is a real line with its own count; the day is the local one."""
 
     parameter: str
     subject: str
@@ -625,8 +622,7 @@ class AssetFilter:
     #: Nearest files to a search by meaning, closest first; ordering only, handed in as data.
     neighbours: tuple[tuple[str, float], ...] = ()
 
-    #: The shortest video this user keeps a place in, or None. On the filter because the access
-    #: layer must not read settings.
+    #: The shortest video this user keeps a place in, or None; the access layer reads none.
     resume_min_ms: int | None = None
 
     def __post_init__(self) -> None:
@@ -648,19 +644,18 @@ class AssetFilter:
             raise ConstraintError("that text contains nothing anything could be matched by")
 
     def also(self, extra: Node) -> AssetFilter:
-        """This filter with one more condition every row has to meet. Everything else (the
-        words, the folder scope, the neighbours) is carried as it was."""
+        """This filter with one more condition every row has to meet."""
         return replace(self, where=AllOf((self.where, extra)))
 
     def predicate(self) -> tuple[str, dict[str, object]]:
-        """The filter as one SQL expression and its parameters, for one conjunct of a fixed AND
-        chain."""
+        """The filter as one SQL expression and its parameters, one conjunct of a fixed AND chain."""
         emitter = _Emitter()
         sql = emitter.emit(self.where)
         bound: dict[str, object] = dict(emitter.bound)
         match = fts_match(self.text)
         bound["text_match"] = match
         bound["text_contains"] = fts_contains(self.text)
+        bound["text_likes"], bound["text_globs"] = fts_patterns(self.text)
         bound["folder_ids_groups"] = _json(self.folder_scope)
         # Always bound: the recursive arm of `in_scope` reads it.
         bound["folder_depth_direct"] = 1 if self.folder_depth is FolderDepth.DIRECT else 0
@@ -724,7 +719,6 @@ def _json(groups: Groups) -> str | None:
     return json.dumps([list(group) for group in groups])
 
 
-#: The empty filter, one object everywhere.
 NO_FILTER = AssetFilter()
 
 #: The filter nothing satisfies: a query that could not mean anything must never widen.
@@ -732,12 +726,8 @@ MATCHES_NOTHING = AssetFilter(where=AnyOf())
 
 
 def fts_match(text: str | None) -> str | None:
-    """Free text as an FTS5 match expression with nothing FTS5 reads as syntax.
-
-    Each term is a quoted literal; short terms go to `fts_contains`, since dropping one would widen
-    the search. Control characters go first: FTS5 reads a C string, so a NUL ends it whatever the
-    quoting.
-    """
+    """Free text as an FTS5 match of quoted literals; short terms go to `fts_contains`, as dropping
+    one would widen the search, and control characters go, as a NUL ends FTS5's string."""
     if text is None:
         return None
     terms = [term for term in _terms(text) if len(term) >= MIN_TEXT_TERM]
@@ -747,14 +737,48 @@ def fts_match(text: str | None) -> str | None:
 
 
 def fts_contains(text: str | None) -> str | None:
-    """The terms too short for the index, as the array the LIKE scan binds, with `%` and `_`
-    escaped."""
+    """The terms too short for the index, as LIKE bodies with their wildcards escaped."""
     if text is None:
         return None
     terms = [_like(term) for term in _terms(text) if len(term) < MIN_TEXT_TERM]
     if not terms:
         return None
     return json.dumps(terms)
+
+
+def fts_patterns(text: str | None) -> tuple[str | None, str | None]:
+    """`fts_match`'s terms folded as the index folds: LIKE where every case is ASCII, else GLOB."""
+    terms = [term for term in _terms(text or "") if len(term) >= MIN_TEXT_TERM]
+    likes = [_like(term) for term in terms if all(_cases(one).isascii() for one in term)]
+    globs = [
+        "*" + "".join(_glob_char(one) for one in term) + "*"
+        for term in terms
+        if not all(_cases(one).isascii() for one in term)
+    ]
+    return (json.dumps(likes) if likes else None, json.dumps(globs) if globs else None)
+
+
+#: Capitals whose lowercase is a common letter but which `upper()` never gives back.
+_OTHER_CAPITALS = {
+    "k": "\u212a",
+    "\u00e5": "\u212b",
+    "\u03c9": "\u2126",
+    "\u03b8": "\u03f4",
+    "\u00df": "\u1e9e",
+}
+
+
+def _cases(char: str) -> str:
+    """Every case of a character."""
+    lower = char.lower() if len(char.lower()) == 1 else char
+    cases = {lower, lower.upper(), lower.title(), _OTHER_CAPITALS.get(lower, lower)}
+    return "".join(sorted(one for one in cases if len(one) == 1 and one.lower() == lower)) or char
+
+
+def _glob_char(char: str) -> str:
+    """A character as GLOB reads it, every case of it allowed."""
+    cases = _cases(char)
+    return f"[{cases}]" if len(cases) > 1 or char in "*?[" else char
 
 
 def _terms(text: str) -> list[str]:
@@ -782,7 +806,7 @@ def music_filter(word: str) -> AssetFilter:
 
 
 def same_music_where(asset_id: str) -> Where:
-    """The files sharing a song with this one (`same_music:<id>`), the id bound once per mention."""
+    """The files sharing a song with this one (`same_music:<id>`)."""
     return Where("same_music", (asset_id.strip(),) * _ARITY["same_music"])
 
 

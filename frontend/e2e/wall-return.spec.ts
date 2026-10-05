@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { signInAsAdmin } from './admin';
 import { removePeople, seedPeople } from './seed';
+import { pressCrumb } from './trail';
 
 /*
  * Leaving a wall and coming back to it, and turning its page.
@@ -136,24 +137,6 @@ async function openVisiblePerson(page: Page): Promise<void> {
 	await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
 	await expect(page).toHaveURL(new RegExp(`${href}(\\?|$)`));
 	await expect(page.getByRole('navigation', { name: 'Breadcrumb' })).toBeVisible();
-}
-
-/**
- * Press a step of the trail, standing or folded.
- *
- * The trail in the top bar folds what does not fit its line behind one press, down to the step
- * you are on, so at this width a long name leaves the wall's crumb behind that press. Either way
- * it is the same step and the same rule.
- */
-async function pressCrumb(page: Page, label: string): Promise<void> {
-	const trail = page.getByRole('navigation', { name: 'Breadcrumb' });
-	const standing = trail.getByRole('link', { name: label, exact: true });
-	if ((await standing.count()) > 0) {
-		await standing.click();
-		return;
-	}
-	await trail.getByRole('button', { name: 'Show the folded steps' }).click();
-	await page.getByRole('menuitem', { name: label, exact: true }).click();
 }
 
 test("a wall's crumb brings back the page and the scroll, exactly as the browser's Back does", async ({

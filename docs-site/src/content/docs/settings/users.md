@@ -20,4 +20,4 @@ Nothing on this pane is a stored setting. It draws these groups, in this order:
 - <a id="users.guests"></a>**Guests**: one row for each guest, with a switch for whether they can sign in. Turning it off also signs them out of every browser.
 - The last group shows your own username. Change your password in [Settings > Profile](/settings/profile#profile.password).
 
-Nothing on this pane is a stored setting: everything on it acts when you press it.
+Nothing on this pane is a stored setting.

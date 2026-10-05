@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Get to know Sift as it crosses the wire: the learning paths, their goals, and the hints.
+"""Get to know Sift as it crosses the wire: the learning paths and their goals.
 
 Every sentence is pieces (`HistoryPiece`), built on the server and drawn by the client's
 `HistorySentence`, which composes nothing. A title is a short label and crosses as a string.
@@ -7,12 +7,7 @@ Every sentence is pieces (`HistoryPiece`), built on the server and drawn by the 
 
 from __future__ import annotations
 
-from typing import Literal
-
 from sift.kernel.wire import HistoryPiece, Wire
-
-#: The three hints, each shown once per User. `path.HINTS` names them; the client holds the words.
-HintName = Literal["organize_empty", "first_pile", "first_insights"]
 
 
 class Goal(Wire):
@@ -38,13 +33,7 @@ class LearningPath(Wire):
     goals: list[Goal]
 
 
-class Hint(Wire):
-    name: HintName
-    seen: bool
-
-
 class Path(Wire):
-    """Get to know Sift: every path this User can walk, and the three hints."""
+    """Get to know Sift: every path this User can walk."""
 
     paths: list[LearningPath]
-    hints: list[Hint]

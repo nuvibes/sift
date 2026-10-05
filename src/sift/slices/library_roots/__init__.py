@@ -28,8 +28,10 @@ from sift.slices.library_roots.jobs import (
     QUARANTINE_PRUNE,
     RECONCILE,
     SCAN,
+    SCAN_COUNT,
     ArchiveSettled,
     FolderSettled,
+    queue_scan,
     register_handlers,
 )
 from sift.slices.library_roots.queue import QuarantineQueue, SkippedQueue
@@ -105,6 +107,7 @@ __all__ = [
     "QUARANTINE_PRUNE",
     "RECONCILE",
     "SCAN",
+    "SCAN_COUNT",
     "SERVICE",
     "WATCHER",
     "ArchiveSettled",
@@ -114,6 +117,7 @@ __all__ = [
     "QuarantineQueue",
     "SkippedQueue",
     "quarantine",
+    "queue_scan",
     "register_handlers",
     "router",
     "schema",

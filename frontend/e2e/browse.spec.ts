@@ -390,20 +390,20 @@ test('a tile carries a heart and a rating, and neither leaves the tile', async (
 	 * chrome-free on purpose: no heart to press and no rating chip. The picture is what somebody is
 	 * skimming, and a control too small to hit is worse than one that is not there.
 	 *
-	 * 660 is chosen by measurement across twelve window heights, with the room the grid gets
-	 * recorded beside each (`main` is the window less 65 at every height here):
+	 * 700 is chosen by measurement across twelve window heights, 1280 wide, where Filter and Sort
+	 * sit on the screen's row (`main` is the window less 127 at every height here):
 	 *
-	 *   600 -> 181   620 -> 160   640 -> 160   660 -> 138   680 -> 145   700 -> 151
-	 *   720 -> 158   740 -> 165   760 -> 171   800 -> 160   840 -> 146   880 -> 156
+	 *   600 -> 160   620 -> 170   640 -> 180   660 -> 160   680 -> 160   700 -> 137
+	 *   720 -> 144   740 -> 151   760 -> 157   800 -> 171   840 -> 160   880 -> 146
 	 *
-	 * The heart is gone at 138, 145 and 146 and present at every other one. It is not monotonic,
+	 * The heart is gone at 137, 144 and 146 and present at every other one. It is not monotonic,
 	 * because a justified row's height is one screenful divided by however many whole rows fit,
 	 * so losing a little height can drop a row and make every remaining row TALLER.
 	 *
 	 * PICK THIS NUMBER BY MEASURING, NEVER BY REASONING ABOUT IT. The three assertions under it are
 	 * what this test is for; the height is only how it gets into the band where they mean anything.
 	 */
-	await page.setViewportSize({ width: 1280, height: 660 });
+	await page.setViewportSize({ width: 1280, height: 700 });
 	await expect(page.locator('.tile')).toHaveCount(SHAPES.length);
 	const small = page.locator('.tile-frame').first();
 	await small.hover();

@@ -115,11 +115,26 @@ export const COPY = {
 		waiting: WAITING_FOR_A_FACE
 	},
 	pack: {
-		/** The line under the export: how many people the file would carry. */
-		known: (people: number) =>
-			people === 0
-				? "Sift can recognize nobody yet, so there's nothing to export."
-				: `Sift can recognize ${people.toLocaleString()} ${people === 1 ? 'person' : 'people'}.`,
+		/** The line under the export: who the file would carry, recognized and waiting. */
+		known: (people: number, waiting = 0) => {
+			const more = `${waiting.toLocaleString()} ${waiting === 1 ? 'person' : 'people'}`;
+			if (people === 0) {
+				return waiting === 0
+					? "Sift can recognize nobody yet and nobody is waiting for a matching face, so there's nothing to export."
+					: `Sift can recognize nobody yet. The file will carry the ${more} waiting for a matching face.`;
+			}
+			const known = `Sift can recognize ${people.toLocaleString()} ${people === 1 ? 'person' : 'people'}`;
+			if (waiting === 0) return `${known}.`;
+			return `${known}, and ${waiting.toLocaleString()} more ${waiting === 1 ? 'is' : 'are'} waiting for a matching face.`;
+		},
+		/* Said while recognition is off: the switch's registered name goes between, as a link. */
+		exportNeedsSwitch: ['Export works while ', ' is on.'] as const,
+		couldNotRead: "Couldn't read who Sift can recognize. Reload the page to try again.",
+		/** Why a person in the Choose people sheet stays out: the marks a swap refuses too. */
+		keptOut: (mark: 'local' | 'swap') =>
+			mark === 'local'
+				? "Kept local, so they aren't exported"
+				: "Kept out of swaps, so they aren't exported",
 		/* One row: choosing the file is the press, as with any import. */
 		import: 'Add people Sift can recognize from a facial fingerprints file to your library',
 		importHelp:
@@ -153,7 +168,7 @@ export const COPY = {
 		fileName: (library: string, day: string) => `${library} facial fingerprints ${day}.zip`,
 		notOne: "That file isn't a file of facial fingerprints.",
 		couldNotAdd: "Couldn't add the people from that file.",
-		couldNotSave: "Couldn't save the file. Download the models first.",
+		couldNotSave: "Couldn't save the file.",
 		nobodyLeft: "Everyone was left out, so there's nothing to export.",
 		/* Said after a file taken in while recognition is off: the People are kept and wait. The
 		   switch's own registered name goes between the two halves, as a link to it. */

@@ -13,6 +13,7 @@ from sift.kernel.access.repository.walls import (
     _wall,
     _with_stored_counts,
     locked_tile,
+    shown,
 )
 from sift.kernel.sql_splice import splice
 
@@ -56,9 +57,10 @@ in_scope(grp, folder_id) AS (
 -- that have already been through every rule and closed as their own CTE, so no arrangement of ORs
 -- inside it can reach a permission rule at all.
 --
-counted(collection_id, item_count, size_bytes) AS (
+counted(collection_id, item_count, size_bytes, duration_ms) AS (
   SELECT ci.collection_id, COUNT(*),
-         COALESCE(SUM(CASE WHEN :reveal_named = 1 OR v.concealed = 0 THEN a.size_bytes END), 0)
+         COALESCE(SUM(CASE WHEN :reveal_named = 1 OR v.concealed = 0 THEN a.size_bytes END), 0),
+         COALESCE(SUM(CASE WHEN :reveal_named = 1 OR v.concealed = 0 THEN a.duration_ms END), 0)
     FROM collection_items ci
     CROSS JOIN viewer_assets v ON v.asset_id = ci.asset_id AND v.user_id = :viewer
     JOIN assets a ON a.id = ci.asset_id
@@ -85,9 +87,10 @@ counted(collection_id, item_count, size_bytes) AS (
 -- share unless `:reveal`), and which carries the SIZE of those files beside it. Summed live, the
 -- size would walk every membership of every row on the wall. Read here it costs one range of the
 -- stored rows, and the number and the size come off one row, so they cannot describe different files.
-whole(collection_id, item_count, size_bytes) AS (
+whole(collection_id, item_count, size_bytes, duration_ms) AS (
   SELECT c.object_id, c.permitted - CASE WHEN :reveal = 1 THEN 0 ELSE c.concealed END,
-         c.permitted_bytes - CASE WHEN :reveal_named = 1 THEN 0 ELSE c.concealed_bytes END
+         c.permitted_bytes - CASE WHEN :reveal_named = 1 THEN 0 ELSE c.concealed_bytes END,
+         c.permitted_ms - CASE WHEN :reveal_named = 1 THEN 0 ELSE c.concealed_ms END
     FROM viewer_entity_counts c
    WHERE c.user_id = :viewer AND c.kind = 'collection'
 )
@@ -148,7 +151,7 @@ SELECT c.id, CASE WHEN {{LOCKED}} THEN '' ELSE c.name END AS name,
    -- The name, where a picker or a box is narrowing the list to what somebody is typing.
    -- Plain prefix matching on the name alone: these two carry no other names to match against,
    -- unlike a tag or a person, so there is nothing here to report having matched INSTEAD.
-   AND (:prefix = '' OR c.name LIKE :like ESCAPE '\\')
+   AND (:prefix = '' OR ({{SHOWN}} AND c.name LIKE :like ESCAPE '\\'))
    AND (:reveal_named = 1 OR COALESCE(h.hidden, 0) = 0)
    AND (:list_empty = 1 OR COALESCE(n.item_count, 0) > 0)
    -- A LOCKED TILE matches no typed word: a box that finds a padlock has said the name. See
@@ -156,9 +159,7 @@ SELECT c.id, CASE WHEN {{LOCKED}} THEN '' ELSE c.name END AS name,
    AND NOT ({{LOCKED}} AND :prefix <> '')
    AND 1 = 1
    -- The wall's own ROW narrowing is spliced in here. See `_row_narrowed`.
- -- The wall's chosen order. Written out rather than shared: see the tag query above, which also
- -- says why a wall that pages cannot order itself in the browser. `n.item_count` is this wall's
- -- size, standing where the others read an asset count.
+ -- The wall's chosen order. Written out rather than shared: see the tag query above.
  -- PINNED FIRST, ahead of everything below including the order somebody chose.
  --
  -- That is what a pin means: it is not one more way of sorting a wall, it is a statement that these
@@ -183,10 +184,15 @@ SELECT c.id, CASE WHEN {{LOCKED}} THEN '' ELSE c.name END AS name,
           CASE :entity_sort WHEN 'oldest' THEN c.id END ASC,
           CASE :entity_sort WHEN 'largest' THEN COALESCE(w.item_count, 0) END DESC,
           CASE :entity_sort WHEN 'smallest' THEN COALESCE(w.item_count, 0) END ASC,
+          CASE :entity_sort WHEN 'largest_total' THEN COALESCE(w.size_bytes, 0) END DESC,
+          CASE :entity_sort WHEN 'smallest_total' THEN COALESCE(w.size_bytes, 0) END ASC,
+          CASE :entity_sort WHEN 'longest_total' THEN NULLIF(w.duration_ms, 0) END DESC NULLS LAST,
+          CASE :entity_sort WHEN 'shortest_total' THEN NULLIF(w.duration_ms, 0) END ASC NULLS LAST,
           CASE WHEN {{LOCKED}} THEN NULL ELSE COALESCE(c.name_sort, c.name) END ASC NULLS LAST, c.id ASC
  LIMIT :limit OFFSET :offset
 """,
     LOCKED=locked_tile("collection", "c"),
+    SHOWN=shown("collection", "c"),
 )
 _COLLECTIONS_HEAD, _COLLECTIONS_ACCESS = _cut(_VISIBLE_COLLECTIONS, "_VISIBLE_COLLECTIONS")
 #: The collections wall in pieces.

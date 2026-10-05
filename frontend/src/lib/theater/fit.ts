@@ -1,23 +1,6 @@
 /*
- * How tall a row of feeds is, so that every feed is the shape of its own picture.
- *
- * A wall should have no empty ground between the feeds and should not cut anything off. Those two
- * together leave exactly one answer: each feed is the shape of what it is playing, and the wall
- * arranges them. The other answers each fail one of the two: fitting a picture inside a fixed
- * cell leaves bars down the sides of it, filling that cell instead crops the sides off the picture.
- *
- * ## Why this is arithmetic rather than CSS
- *
- * A grid can size a column from its content, and a cell with an aspect ratio and a definite height
- * has a definite width, so `1fr` rows and `auto` columns very nearly do this on their own. What
- * they cannot do is the case where the result is too WIDE for the wall: the row height would have
- * to come down so the columns fit, and the row height is what the column widths were derived from.
- * CSS refuses to close that loop, and what it does instead is cap the columns and leave the cells
- * the wrong shape, which is the padding this exists to remove, arriving by another route.
- *
- * So the height is worked out here and handed to the grid as a number. Every feed then keeps its
- * shape at any wall size, and what is left over is at the outside edges of the wall rather than
- * inside any feed.
+ * How tall a row of feeds is, so that every feed is the shape of its own picture. Arithmetic, since
+ * CSS cannot bring a row down when its columns, derived from that height, come out too wide.
  */
 
 import type { Shape } from './layouts';
@@ -81,11 +64,7 @@ export function feedHeight(
 	aspects: readonly Aspect[],
 	gap: number
 ): number | null {
-	/* Belt and braces, and checked to be exactly that: with a zero width the room left over below
-	   comes out negative and with a zero height the row height does, so both already return null by
-	   another route. It stays because "an unmeasured wall lays out nothing" is a decision, and a
-	   decision that holds only because of where two subtractions happen to land is one nobody can
-	   find later. */
+	// An unmeasured wall lays out nothing, stated rather than left to the subtractions below.
 	if (box.width <= 0 || box.height <= 0) return null;
 
 	// The height a row gets if width is no constraint: the wall, less the gaps between rows.
@@ -132,4 +111,33 @@ export function feedHeight(
 	 */
 	const room = box.width - gaps;
 	return room <= 0 ? null : tall * (room / pictures);
+}
+
+/** The strip's least height: 16% of the window, never under 72px or over 148px. */
+const STRIP_LEAST = { share: 0.16, floor: 72, ceiling: 148 };
+
+/**
+ * How tall the strip's previews are: the height the stage leaves unused, from the least height up
+ * to a feed in focus, and no taller than lets every preview fit across.
+ */
+export function stripHeight(
+	shape: Shape,
+	wall: { width: number; height: number },
+	stage: readonly Aspect[],
+	previews: readonly Aspect[],
+	{ viewport, under, gap }: { viewport: number; under: number; gap: number }
+): number {
+	const least = Math.floor(
+		Math.min(STRIP_LEAST.ceiling, Math.max(STRIP_LEAST.floor, viewport * STRIP_LEAST.share))
+	);
+	// Worked from the wall's box with the strip at its least, so the two heights never chase.
+	const grid = wall.height - gap - least - under;
+	const tall = feedHeight(shape, { width: wall.width, height: grid }, stage, gap);
+	if (tall === null) return least;
+	const rows = Math.max(1, shape.rows);
+	const spare = grid - (tall * rows + gap * (rows - 1));
+	const across = previews.reduce<number>((sum, one) => sum + (one ?? ASSUMED), 0);
+	const fits =
+		across > 0 ? (wall.width - gap * (previews.length - 1)) / across : Number.POSITIVE_INFINITY;
+	return Math.floor(Math.max(least, Math.min(least + spare, tall, fits)));
 }

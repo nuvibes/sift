@@ -4,7 +4,7 @@
  * What is guarded is that the menu holds exactly those five rows in the screen's own words, that
  * each row opens what it names, that a switch is a row holding its
  * value (flipped as the paste's answer, never written as a setting), and that Download folder
- * opens onto the Add button's list and names the folder the next download goes to.
+ * opens onto the Add button's list and a pick there becomes the default.
  */
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { flushSync, mount, unmount } from 'svelte';
@@ -61,7 +61,10 @@ beforeEach(() => {
 	mocks.get.mockImplementation((path: string) => {
 		if (path === '/settings') return Promise.resolve(SETTINGS);
 		if (path === '/site-options')
-			return Promise.resolve({ default: { dest_folder_id: 'f-1' }, sites: [] });
+			return Promise.resolve({
+				default: { naming: '{site}', dest_folder_id: 'f-1', downloader: 'ytdlp' },
+				sites: []
+			});
 		if (path === '/library/folders') return Promise.resolve({ folders: FOLDERS });
 		if (path.startsWith('/interface-state')) return Promise.resolve({ values: {} });
 		return Promise.reject(new Error(`unexpected ${path}`));
@@ -111,7 +114,9 @@ async function draw(start: Chosen = { dest: '', remember: null }) {
 	flushSync();
 	// The switch starts from the setting, and the folder row waits for the folders.
 	await vi.waitFor(() => expect(chosen.remember).toBe(true));
-	await vi.waitFor(() => expect(mocks.get).toHaveBeenCalledWith('/library/folders'));
+	await vi.waitFor(() =>
+		expect(mocks.get).toHaveBeenCalledWith('/library/folders', expect.anything())
+	);
 	await new Promise((settle) => setTimeout(settle, 0));
 	flushSync();
 	return { oncookies, chosen };
@@ -202,7 +207,7 @@ it('names the folder the next download goes to on the Download folder row', asyn
 	expect(words(rowNamed(rows, 'Download folder'))).toContain('Clips');
 });
 
-it('opens Download folder onto the Add list, the default named first, and a pick is the next download', async () => {
+it('opens Download folder onto the Add list, the default named first, and a pick becomes the default', async () => {
 	const { chosen } = await draw();
 	const rows = await open();
 	expect(words(rowNamed(rows, 'Download folder'))).toContain('Sift Downloads (default)');
@@ -228,7 +233,13 @@ it('opens Download folder onto the Add list, the default named first, and a pick
 	folders[1].click();
 	flushSync();
 	expect(chosen.dest).toBe('f-2');
-	expect(mocks.put).not.toHaveBeenCalled();
+	// The default row is written whole, with only the folder replaced.
+	await vi.waitFor(() =>
+		expect(mocks.put).toHaveBeenCalledWith('/site-options/*default*', {
+			body: { naming: '{site}', dest_folder_id: 'f-2', downloader: 'ytdlp' }
+		})
+	);
+	await vi.waitFor(() => expect(chosen.dest).toBe(''));
 	/* A folder is one choice of several, so the pick finishes the menu: it closes, rather than
 	   resting open until somebody presses elsewhere. */
 	await vi.waitFor(() => expect(document.querySelectorAll('[role="menu"]').length).toBe(0), {

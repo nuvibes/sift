@@ -5,6 +5,9 @@ suggestions passes are built on, and the by-id reads.
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
+from typing import Any
+
 import pytest
 
 # Imported for their tables: the unnamed-face condition, `same_music`, the `enriched:` predicates
@@ -42,6 +45,7 @@ from sift.kernel.access.constraints import (
     DISAGREEING,
     DISAGREES,
     ENTITY_FACETS,
+    Not,
 )
 from sift.kernel.db import Database
 from sift.kernel.ids import new_id
@@ -376,7 +380,8 @@ async def test_entity_facets_label_a_value_that_is_an_id(
 
     counted = await access.people_facets(actors.admin, "tags")
 
-    assert [(one.value, one.label, one.count) for one in counted] == [(world.tag, "tag", 1)]
+    named = [one for one in counted if one.value not in ("any", "none")]
+    assert [(one.value, one.label, one.count) for one in named] == [(world.tag, "tag", 1)]
 
 
 async def test_the_created_by_facet_counts_the_box_that_made_a_row_and_narrows_to_it(
@@ -933,3 +938,142 @@ async def test_names_on_disk_is_the_present_copys_name_for_a_whole_list(
     )
     assert world.solo not in await access.names_on_disk(actors.admin, [world.solo])
     assert await access.names_on_disk(actors.guest, [world.twin]) == {}
+
+
+# --- the walls ordered by the bytes under each row
+
+
+async def _a_second_of_each(temp_db: Database, world: World) -> dict[str, tuple[str, str]]:
+    """Beside each of the world's things, holding `solo`, a second holding `twin` and `loose`: more
+    files and fewer bytes. Answers each wall's (the world's, the second) pair."""
+    for asset_id, size in ((world.solo, 9_000), (world.twin, 10), (world.loose, 10)):
+        await temp_db.execute("UPDATE assets SET size_bytes = ? WHERE id = ?", (size, asset_id))
+    second = {kind: new_id() for kind in ("tag", "person", "collection", "photo_set", "song")}
+    second_site, second_username = new_id(), new_id()
+    await temp_db.execute(
+        "INSERT INTO songs (id, name, name_sort, created_at) VALUES (?, 'tune', 'tune', 0)",
+        (world.song,),
+    )
+    await temp_db.execute(
+        "INSERT INTO song_files (asset_id, song_id) VALUES (?, ?)", (world.solo, world.song)
+    )
+    rows = [
+        ("INSERT INTO tags (id, name, name_sort, created_at) VALUES (?, 'b', 'b', 0)", "tag"),
+        ("INSERT INTO people (id, name, name_sort, created_at) VALUES (?, 'b', 'b', 0)", "person"),
+        (
+            "INSERT INTO collections (id, name, name_sort, created_at) VALUES (?, 'b', 'b', 0)",
+            "collection",
+        ),
+        (
+            "INSERT INTO photo_sets (id, name, name_sort, created_at) VALUES (?, 'b', 'b', 0)",
+            "photo_set",
+        ),
+        ("INSERT INTO songs (id, name, name_sort, created_at) VALUES (?, 'b', 'b', 0)", "song"),
+    ]
+    for statement, kind in rows:
+        await temp_db.execute(statement, (second[kind],))
+    await temp_db.execute(
+        "INSERT INTO sites (id, name, name_sort, created_at) VALUES (?, 'b', 'b', 0)",
+        (second_site,),
+    )
+    await temp_db.execute(
+        "INSERT INTO usernames (id, site_id, name, name_sort, created_at) VALUES (?, ?, 'b', 'b', 0)",
+        (second_username, second_site),
+    )
+    for position, asset_id in enumerate((world.twin, world.loose)):
+        for statement, values in (
+            ("INSERT INTO asset_tags (asset_id, tag_id) VALUES (?, ?)", (second["tag"],)),
+            ("INSERT INTO asset_people (asset_id, person_id) VALUES (?, ?)", (second["person"],)),
+            (
+                "INSERT INTO collection_items (asset_id, collection_id, position, added_at)"
+                " VALUES (?, ?, ?, 0)",
+                (second["collection"], position),
+            ),
+            (
+                "INSERT INTO photo_set_items (asset_id, photo_set_id, position, added_at)"
+                " VALUES (?, ?, ?, 0)",
+                (second["photo_set"], position),
+            ),
+            ("INSERT INTO song_files (asset_id, song_id) VALUES (?, ?)", (second["song"],)),
+            (
+                "INSERT INTO asset_usernames (asset_id, username_id) VALUES (?, ?)",
+                (second_username,),
+            ),
+        ):
+            await temp_db.execute(statement, (asset_id, *values))
+    pairs = {kind: (str(getattr(world, kind)), second[kind]) for kind in second}
+    return pairs | {
+        "site": (world.site, second_site),
+        "username": (world.username, second_username),
+    }
+
+
+async def _wall_of(
+    access: Repository, viewer: Viewer, kind: str, sort: str, *, narrowed: bool = False
+) -> list[str]:
+    """The ids on one wall, in the order asked for; `narrowed` counts live through a filter."""
+    more: dict[str, Any] = {}
+    if narrowed:
+        more = {"asset_filter": AssetFilter(where=Not(Where("favorite"))), "count_narrowed": True}
+    reads: dict[str, Callable[[], Awaitable[Any]]] = {
+        "person": lambda: access.suggest_people(viewer, limit=50, sort=sort, **more),
+        "site": lambda: access.list_sites(viewer, limit=50, sort=sort, **more),
+        "tag": lambda: access.list_tags(viewer, limit=50, sort=sort, **more),
+        "collection": lambda: access.list_collections(viewer, limit=50, sort=sort),
+        "photo_set": lambda: access.list_photo_sets(viewer, limit=50, sort=sort, **more),
+        "song": lambda: access.list_songs(viewer, limit=50, sort=sort, **more),
+        "username": lambda: access.list_usernames(viewer, limit=50, sort=sort),
+    }
+    page = await reads[kind]()
+    return [one.id for one in page.items]
+
+
+@pytest.mark.parametrize(
+    "kind", ["person", "site", "tag", "collection", "photo_set", "song", "username"]
+)
+async def test_every_wall_orders_by_the_bytes_under_a_row_apart_from_its_count(
+    access: Repository, actors: Actors, world: World, temp_db: Database, kind: str
+) -> None:
+    """The second row holds more files and fewer bytes, so the two size pairs disagree."""
+    world_row, second_row = (await _a_second_of_each(temp_db, world))[kind]
+
+    def pair(ids: list[str]) -> list[str]:
+        return [one for one in ids if one in (world_row, second_row)]
+
+    assert pair(await _wall_of(access, actors.admin, kind, "largest")) == [second_row, world_row]
+    assert pair(await _wall_of(access, actors.admin, kind, "largest_total")) == [
+        world_row,
+        second_row,
+    ]
+    assert pair(await _wall_of(access, actors.admin, kind, "smallest_total")) == [
+        second_row,
+        world_row,
+    ]
+
+
+_WALL_KINDS = ["person", "site", "tag", "collection", "photo_set", "song", "username"]
+_NARROWED_KINDS = ["person", "site", "tag", "photo_set", "song"]
+
+
+@pytest.mark.parametrize(
+    ("kind", "narrowed"),
+    [(kind, False) for kind in _WALL_KINDS] + [(kind, True) for kind in _NARROWED_KINDS],
+)
+async def test_every_wall_orders_by_the_running_time_under_a_row_and_puts_none_last(
+    access: Repository, actors: Actors, world: World, temp_db: Database, kind: str, narrowed: bool
+) -> None:
+    """The world's row holds one long file and the second two short ones; once the long one's
+    time is gone, the world's row has none and is last under both orders."""
+    world_row, second_row = (await _a_second_of_each(temp_db, world))[kind]
+
+    async def pair(sort: str) -> list[str]:
+        ids = await _wall_of(access, actors.admin, kind, sort, narrowed=narrowed)
+        return [one for one in ids if one in (world_row, second_row)]
+
+    for asset_id, ms in ((world.solo, 5_000), (world.twin, 1_000), (world.loose, 1_000)):
+        await temp_db.execute("UPDATE assets SET duration_ms = ? WHERE id = ?", (ms, asset_id))
+    assert await pair("longest_total") == [world_row, second_row]
+    assert await pair("shortest_total") == [second_row, world_row]
+    await temp_db.execute("UPDATE assets SET duration_ms = NULL WHERE id = ?", (world.solo,))
+    assert await pair("longest_total") == [second_row, world_row]
+    assert await pair("shortest_total") == [second_row, world_row]

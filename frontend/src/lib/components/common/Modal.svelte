@@ -86,24 +86,8 @@
 		 */
 		scrolls?: boolean;
 		/**
-		 * The sheet fills the screen, with nothing else on it.
-		 *
-		 * For one thing being looked at rather than something being asked: a picture, at the size
-		 * of the window. It is a flavour of this component rather than a component of its own
-		 * because everything under the surface is identical: the portal, the focus trap, Escape,
-		 * the return of focus, the rest of the page being hidden from a screen reader. A hand-built
-		 * overlay looks the same and has none of that, and this file exists so that nobody
-		 * hand-builds one.
-		 *
-		 * Two things change: the sheet has no card around it, and the heading is present for
-		 * assistive technology and drawn nowhere, since a full-bleed picture has no corner to put a
-		 * title in that would not be chrome over the thing being looked at.
-		 *
-		 * The veil is the ordinary one, tint and blur and all, not an opaque ground: a picture
-		 * opened closes and leaves you where you were, so it wants the same ground every other
-		 * sheet has. See the note beside the veil in `app.css`.
-		 *
-		 * The body does not scroll by default here. What fills the screen is fitted to it.
+		 * The sheet fills the screen, for a picture being looked at: no card, a heading for assistive
+		 * technology only, the ordinary veil, and a body fitted rather than scrolled.
 		 */
 		bleed?: boolean;
 		/**
@@ -151,6 +135,8 @@
 		 * its own ordinary buttons, so it simply does not take these.
 		 */
 		children: Snippet<[{ Cancel: Answer; Act: Answer }]>;
+		/** Where the sheet is drawn: the filled box while a screen fills the window, as `ContextMenu`. */
+		portalTo?: Element | null;
 	}
 
 	let {
@@ -167,7 +153,8 @@
 		onOpenChange,
 		onback,
 		onOpenAutoFocus,
-		children
+		children,
+		portalTo
 	}: Props = $props();
 
 	/* The two flavours resolved to one set of parts. Everything below is written once against
@@ -194,7 +181,7 @@
 </script>
 
 <Parts.Root bind:open {onOpenChange}>
-	<Parts.Portal>
+	<Parts.Portal to={portalTo ?? undefined}>
 		<Parts.Overlay forceMount>
 			{#snippet child({ props, open: showing })}
 				{#if showing}<div {...props} class="veil" transition:veil></div>{/if}

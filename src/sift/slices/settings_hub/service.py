@@ -22,6 +22,7 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 from sift.kernel.access import Viewer
+from sift.kernel.access.history_names import tunnel_ids, tunnels_said_in
 from sift.kernel.audience import EVERY_ADMIN, NOBODY, Audience
 from sift.kernel.changes import About, announce_now, telling
 from sift.kernel.db import Database, point_read
@@ -37,6 +38,7 @@ from sift.kernel.settings_registry import (
     registered_settings,
     retired_settings,
 )
+from sift.kernel.tunnels.store import tunnels_said
 from sift.kernel.vocabulary import Subject
 from sift.kernel.wiring import Part
 from sift.slices.settings_hub.defaults import tell_changed_defaults
@@ -143,16 +145,6 @@ def _except_or_only(value: str) -> bool:
     return value in {"except", "only"}
 
 
-def _seen(value: str) -> bool:
-    """A hint this user has been shown once: the word `seen`, and nothing else.
-
-    One word for the reason `_skipped` has one: "never shown" is no row at all, so the only state
-    worth a word is the other one. A separate validator rather than `_skipped` with a second word
-    allowed, because a value read back as "skip" about a hint would be a sentence about a guard.
-    """
-    return value == "seen"
-
-
 def _picked_list(value: str) -> bool:
     """What this user picked recently: `[{"id": ..., "name": ..., "used": n}]`, newest-used first.
 
@@ -235,15 +227,11 @@ INTERFACE_KEYS: dict[str, Callable[[str], bool]] = {
     "faces.export_way": _except_or_only,
     #: Withdrawn keys are not in this list, so an old client writing them meets the closed list's
     #: ordinary refusal rather than a row that quietly stays: `organize.history_open` (the band it
-    #: folded is gone; every act is in Settings > History) and `popout.record_tab` (a popout always
+    #: folded is gone; every act is in Settings > History), `popout.record_tab` (a popout always
     #: opens on About; which pane holds while stepping between files is the client's own state),
-    #: and `path.quest.declined` (the weekly quests left when Get to know Sift became learning paths).
+    #: `path.quest.declined` (the weekly quests left when Get to know Sift became learning paths),
+    #: and the three `path.hint.<name>.seen` (Get to know Sift shows no hints).
     **{f"frequent.{kind}": _picked_list for kind in FREQUENT_KINDS},
-    #: The three hints Get to know Sift shows once each, where somebody is stuck. Written by the
-    #: server when the client says a hint was shown (`POST /api/insights/path/hints/{name}/seen`).
-    "path.hint.organize_empty.seen": _seen,
-    "path.hint.first_pile.seen": _seen,
-    "path.hint.first_insights.seen": _seen,
 }
 
 # Read on every request that resolves a viewer, and answered from a two-column primary key, so
@@ -341,20 +329,13 @@ class SettingsService:
         """
         planned = await self._planned(viewer, updates)
 
-        # Who is told follows the scope, which is the same distinction the check above enforces. A
-        # personal preference reaches that user's own screens and nobody else's; one the whole
-        # installation shares reaches every admin, because they are who may change it and so who may
-        # be looking at it. A batch holding both says both, once.
+        # Who is told follows the scope: a personal preference its user, a shared one every admin.
         told = NOBODY
         if any(setting.scope is Scope.USER for setting, _ in planned):
             told |= Audience.of_user(viewer.id)
         if any(setting.scope is Scope.APP for setting, _ in planned):
             told = told.widened_to_admins()
-        # What each of them said BEFORE, read in one pass and outside the write. A setting is a
-        # key and a value and nothing else (no timestamp, no author, no previous value), so the
-        # event is the whole of what can ever answer "when did this change, and from what". Read
-        # here rather than inside the transaction because it is a read, and because the value that
-        # matters is the one the person was looking at when they pressed Save.
+        # What each said BEFORE, read outside the write: the event is the only record of it.
         was = {
             setting.key: json.dumps(
                 await (
@@ -376,6 +357,16 @@ class SettingsService:
                 # Save, and a record where most rows say nothing happened is a record nobody reads.
                 if was.get(setting.key) == encoded:
                     continue
+                payload: dict[str, object] = {
+                    "key": setting.key,
+                    "before": was.get(setting.key),
+                    "after": encoded,
+                }
+                if setting.names_a_tunnel:
+                    # Named as it was then: a tunnel renamed or removed later does not change it.
+                    payload = tunnels_said_in(
+                        payload, await tunnels_said(connection, tunnel_ids(payload))
+                    )
                 await record_event(
                     connection,
                     actor=Actor.user(viewer.id),
@@ -385,30 +376,11 @@ class SettingsService:
                     # thing; the label is what the person pressed. An older row may carry the key,
                     # and the feed's reader puts the current label over any setting it still knows.
                     subject=Subject(kind="setting", id=setting.key, name=setting.label),
-                    payload=json.dumps(
-                        {
-                            "key": setting.key,
-                            "before": was.get(setting.key),
-                            "after": encoded,
-                        }
-                    ),
+                    payload=json.dumps(payload),
                 )
 
-        # A SETTING THAT CHANGES WHAT THE USER MAY SEE RINGS THE BELL THAT MEANS THAT.
-        #
-        # `settings` is the right bell for a preference and the wrong one for this. The screens
-        # holding a scoped list (the grid, the walls of people and tags, the review queues)
-        # listen for `library`, which is defined as "something shared, unshared, hidden, revealed";
-        # they deliberately do not listen for `settings`, or nudging any slider in the application
-        # would re-read every list in it.
-        #
-        # `vault.concealment` is that change exactly. The server re-reads the mode on every
-        # request, but without this bell the browser is not told, and turning "Show a locked tile"
-        # off would leave the placeholders sitting on the screen until somebody navigated.
-        #
-        # Announced after the block rather than inside it, because `telling` carries one subject and
-        # the two are genuinely different messages: a screen may want to re-read its LIST without
-        # re-reading its preferences, and every other screen wants the opposite.
+        # A setting that changes what the user may see rings `library` too, which the scoped lists
+        # listen for (`vault.concealment`); after the block, as `telling` carries one subject.
         if any(setting.changes_visibility for setting, _ in planned):
             announce_now(Audience.of_user(viewer.id), About.LIBRARY)
 

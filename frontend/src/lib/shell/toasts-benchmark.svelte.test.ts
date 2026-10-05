@@ -16,7 +16,8 @@ import {
 import { jobChanges } from '$lib/library/changes.svelte';
 import { toasts } from '$lib/shell/toasts.svelte';
 
-const RUNNING = 'Benchmarking this device so Sift can make the best use of it. A few minutes.';
+const RUNNING =
+	'Benchmarking this device so Sift can make the best use of it. It takes several minutes.';
 const SET = 'Sift set 2 settings from the benchmark.';
 const FAILED =
 	"Sift couldn't benchmark this device because the video encoder couldn't be run. You can run it from Settings > Performance.";

@@ -15,6 +15,7 @@ import contextMenuItem from '$lib/components/common/ContextMenuItem.svelte?raw';
 import Rail from './Rail.svelte';
 import source from './Rail.svelte?raw';
 import { imports } from '$lib/library/imports.svelte';
+import codepoints from '$lib/generated/icon-codepoints.json';
 import { rail } from './rail-state.svelte';
 import { noServerAt } from '../../../test-setup';
 
@@ -205,11 +206,25 @@ describe('the leaf and the bolt above the rule', () => {
 		flushSync();
 
 		expect(fullAmountButton()?.getAttribute('aria-pressed')).toBe('true');
-		// A different glyph from the leaf.
 		const bolt = fullAmountButton()?.textContent;
+		expect(bolt?.trim()).toBe(String.fromCodePoint(parseInt(codepoints.bolt_boost, 16)));
 		imports.page = queuePage({ running: 8, stepping_back: true, full_amount: false });
 		flushSync();
 		expect(fullAmountButton()?.textContent).not.toBe(bolt);
+	});
+
+	/* Read from the stylesheet: a pressed ghost would otherwise sit in a filled circle at rest. */
+	it('draws the bolt yellow on the bare ground, its circle only under the pointer', () => {
+		const at = source.indexOf(
+			".full-amount :global(.btn.ghost.rail-full-amount[aria-pressed='true']:hover:not(:disabled)) {"
+		);
+		expect(at, 'the pressed rule moved').toBeGreaterThan(-1);
+		const body = source.slice(at, source.indexOf('}', at));
+		expect(body).toContain('--btn-ground: transparent;');
+		expect(body).toContain('color: var(--sift-warn);');
+		expect(source).not.toMatch(
+			/rail-full-amount\[aria-pressed='true'\]\)\s*\{[^}]*background-color/
+		);
 	});
 
 	it('presses for the full amount from the leaf and steps back from the bolt', async () => {
@@ -378,6 +393,18 @@ describe('the rail a guest is shown', () => {
 		render();
 
 		expect(host.querySelector('a[href="/organize"]')).toBeNull();
+	});
+
+	it("leaves a link dropped on Favorites to the window, which says it is an admin's", () => {
+		const zone = () => host.querySelector('a[href="/favorites"]')?.closest('[data-drop-zone]');
+		render();
+		expect(zone(), 'an admin drops a link on Favorites').toBeTruthy();
+		host.remove();
+
+		mocks.session.isAdmin = false;
+		render();
+
+		expect(zone()).toBeFalsy();
 	});
 });
 

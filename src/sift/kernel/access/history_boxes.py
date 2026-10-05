@@ -15,13 +15,16 @@ from urllib.parse import quote, urlparse
 from sift.kernel.access import sentences as say
 from sift.kernel.access.constraints import BOX_SOURCE, Filing
 from sift.kernel.access.history_line import Actor, Detail, Event, Link
-from sift.kernel.access.sentences import SIFT, FilledField, Line
+from sift.kernel.access.sentences import A_THING, SIFT, FilledField, Line
+from sift.kernel.access.viewer import Viewer
 from sift.kernel.db import Database, Row, in_clause, point_read
 from sift.kernel.records import Subject, fields_filled, fields_of, said_plainly, value_said
 from sift.kernel.sql_splice import splice
+from sift.kernel.where import folder_said
 
 if TYPE_CHECKING:  # pragma: no cover
-    from sift.kernel.access.history_events import LedgerEvent
+    from sift.kernel.access.history_events import LedgerEvent, Thing
+    from sift.kernel.access.repository import Repository
 
 
 def kept_line(row: Row, subject: str) -> Line:
@@ -87,19 +90,15 @@ def field_word(subject: str, key: str) -> str:
         whose = Subject(subject)
     except ValueError:
         return key.replace("_", " ")
-    # One key in, one phrase out: `said_plainly` answers for every key it is handed, declared or
-    # not.
+    # `said_plainly` answers for every key it is handed, declared or not.
     return said_plainly(whose, (key,))[0]
 
 
 # --- what a box filled in, NAMED --------------------------------------------------------------------
 #
-# A run records WHICH fields a box filled and how many rows each list gained (`enrichment_runs.
-# applied`), never the values. The values are still there to be read: the box's own answer is kept
-# on the link (`*_stash_box_links.payload`, the same record the page's "From <box>" hover reads),
-# and every row a list gained carries the moment it was added. So a run's values are the box's
-# answer where the record holds it, and a list's rows are the ones added in the run's own moment that
-# the box's answer lists: as many of each as the run counted, where none was removed since.
+# A run records which fields a box filled (`enrichment_runs.applied`), never the values. The values
+# are the box's answer kept on the link (`*_stash_box_links.payload`), and a list's are the rows
+# added in the run's own moment that the answer lists, as many as the run counted.
 
 #: How far from a run's moment the rows it wrote can carry their time. The run is written after
 #: the rows, in the same press, a second or less after them.
@@ -147,6 +146,23 @@ SELECT s.subject_id AS id, COALESCE(u.name, s.name) AS name, u.person_id AS pers
  ORDER BY d.decided_at, s.name
 """
 _SITE_NAMED = "SELECT id, name FROM sites WHERE name = ? COLLATE NOCASE"
+_SHOWN_OF = (
+    "SELECT object_id FROM viewer_entity_counts"
+    " WHERE user_id = ? AND kind = ? AND permitted > 0 AND object_id IN (?*)"
+)
+
+
+async def shown_of(
+    database: Database, viewer: Viewer | None, kind: str, ids: Sequence[str]
+) -> set[str]:
+    """Which of these things the viewer may be shown: every one for an admin, or with no viewer."""
+    wanted = sorted(set(ids))
+    if viewer is None or viewer.is_admin or not wanted:
+        return set(wanted)
+    statement, values = in_clause(_SHOWN_OF, wanted)
+    rows = await database.fetch_all(statement, [viewer.id, kind, *values])
+    return {str(row["object_id"]) for row in rows}
+
 
 #: The record's column for a field key where the two differ; every other key is its own column.
 _COLUMN: Mapping[str, str] = {"details": "notes", "parent": "parent_id"}
@@ -181,11 +197,134 @@ def _host(url: str) -> str:
     return host.removeprefix("www.")
 
 
+_COUNTED_KINDS = ("person", "tag", "site", "username", "collection", "photo_set", "song")
+
+
+async def unshown_unnamed(
+    database: Database, viewer: Viewer, drawn: list[LedgerEvent]
+) -> tuple[list[LedgerEvent], frozenset[tuple[str, str]]]:
+    """The events with each thing this viewer may not be shown left nameless, and those things."""
+    wanted: dict[str, set[str]] = {}
+    for one in drawn if not viewer.is_admin else ():
+        for thing in (one.object, *one.subjects):
+            if thing is not None and thing.kind in _COUNTED_KINDS and thing.id:
+                wanted.setdefault(thing.kind, set()).add(thing.id)
+    unshown: set[tuple[str, str]] = set()
+    for kind, ids in wanted.items():
+        seen = await shown_of(database, viewer, kind, sorted(ids))
+        unshown |= {(kind, one) for one in ids - seen}
+    if not unshown:
+        return drawn, frozenset()
+
+    def nameless(thing: Thing) -> Thing:
+        return replace(thing, name=None) if (thing.kind, thing.id) in unshown else thing
+
+    return [
+        replace(
+            one,
+            object=None if one.object is None else nameless(one.object),
+            subjects=tuple(map(nameless, one.subjects)),
+        )
+        for one in drawn
+    ], frozenset(unshown)
+
+
+_FOLDER_PLACES = "SELECT id, root_id, rel_path FROM folders WHERE id IN (?*)"
+#: Kinds whose page is an admin's screen (the Downloads queue, Organize); a count keeps its words.
+_AN_ADMINS_PAGE = ("download", "face_pile", "faces")
+
+
+async def _unshown_of(
+    database: Database, access: Repository | None, viewer: Viewer, wanted: Mapping[str, set[str]]
+) -> set[tuple[str, str]]:
+    """Which of these things the viewer may not be shown; a folder by `kernel.where`'s rule."""
+    from sift.kernel.access.history_sources import _folders_seen  # it imports this module
+
+    unshown: set[tuple[str, str]] = set()
+    for kind, ids in wanted.items():
+        if kind in _AN_ADMINS_PAGE:
+            unshown |= {(kind, one) for one in ids}
+            continue
+        if kind != "folder":
+            shown = await shown_of(database, viewer, kind, list(ids))
+            unshown |= {(kind, one) for one in ids - shown}
+            continue
+        statement, values = in_clause(_FOLDER_PLACES, sorted(ids))
+        places = {str(row["id"]): row for row in await database.fetch_all(statement, values)}
+        seen = {} if access is None else await _folders_seen(access, viewer)
+        for one in ids:
+            row = places.get(one)
+            path = "" if row is None else str(row["rel_path"])
+            if row is None or folder_said(path, seen=seen.get(str(row["root_id"]), ())) != path:
+                unshown.add((kind, one))
+    return unshown
+
+
+def _nameless(line: Line, unshown: set[tuple[str, str]]) -> Line:
+    """The line with each unshown thing in a stranger's words, its kind said once."""
+    out: list[say.Piece] = []
+    for one in line:
+        if one.rest:
+            out.append(replace(one, rest=_nameless(one.rest, unshown)))
+        elif one.kind is not None and (one.kind, one.id or "") in unshown:
+            words = A_THING.get(one.kind, one.text)
+            before = f"the {words.split(' ', 1)[-1]} ".casefold()
+            if (
+                one.kind in A_THING
+                and out
+                and out[-1].kind is None
+                and out[-1].text.casefold().endswith(before)
+            ):
+                out[-1] = say.Piece(out[-1].text[: -len(before)])
+            out.append(say.Piece(words))
+        else:
+            out.append(one)
+    return say.said(*out)
+
+
+async def unshown_said(
+    database: Database, access: Repository | None, viewer: Viewer, events: list[Event]
+) -> list[Event]:
+    """A thread's lines as they leave, each thing the viewer may not be shown said nameless."""
+    wanted: dict[str, set[str]] = {}
+    for event in events if not viewer.is_admin else ():
+        named = [(one.kind or "", one.id or "") for one in say.things_in(event.pieces)]
+        named += [(link.kind, link.id) for group in event.detail for link in group.links]
+        for kind, one in named:
+            if kind in (*_COUNTED_KINDS, "folder", *_AN_ADMINS_PAGE) and one:
+                wanted.setdefault(kind, set()).add(one)
+    unshown = await _unshown_of(database, access, viewer, wanted) if wanted else set()
+    if not unshown:
+        return events
+    return [
+        replace(
+            event,
+            pieces=_nameless(event.pieces, unshown),
+            detail=tuple(
+                replace(
+                    group,
+                    links=tuple(
+                        Link(kind="", id="", name=A_THING.get(one.kind, one.name))
+                        if (one.kind, one.id) in unshown
+                        else one
+                        for one in group.links
+                    ),
+                )
+                for group in event.detail
+            ),
+        )
+        for event in events
+    ]
+
+
 class _Held:
     """What one record holds now, read once for every field a line names."""
 
-    def __init__(self, database: Database, subject: str, local_id: str) -> None:
+    def __init__(
+        self, database: Database, subject: str, local_id: str, viewer: Viewer | None = None
+    ) -> None:
         self.database = database
+        self.viewer = viewer
         self.subject = subject
         self.local_id = local_id
         self.row: Row | None = None
@@ -220,7 +359,10 @@ async def _single(
         return None if agreeing else FilledField(label)
     if key == "parent":
         found = await held.database.fetch_all(_SITE_NAMED, (str(theirs),))
-        site = found[0] if found else None
+        shown = await shown_of(
+            held.database, held.viewer, "site", [str(one["id"]) for one in found]
+        )
+        site = next((one for one in found if str(one["id"]) in shown), None)
         same = site is not None and held.value("parent") == site["id"]
         value: Line = (
             say.said(say.thing("site", str(site["id"]), str(site["name"])))
@@ -258,6 +400,48 @@ def _added_rows(rows: Sequence[Row], offered: set[str], at: int | None) -> list[
     ]
 
 
+async def _joined_usernames(held: _Held, at: int, box_id: str) -> tuple[list[Line], int]:
+    """The usernames a box's run joined to a person, and how many it joined."""
+    rows = await held.database.fetch_all(
+        _USERNAMES_JOINED, (held.local_id, at - RUN_SPAN, at + RUN_SPAN, box_id)
+    )
+    seen = await shown_of(held.database, held.viewer, "username", [str(one["id"]) for one in rows])
+    values: list[Line] = []
+    for one in rows:
+        # A username removed since has no Site to say it on: counted, and said as "N since
+        # removed" (`filled_field`), as every list says a removed row.
+        if one["gone"]:
+            continue
+        if str(one["id"]) not in seen:
+            values.append(say.said(A_THING["username"]))
+            continue
+        owner = None if one["person_id"] is None else str(one["person_id"])
+        name = say.thing(
+            "username",
+            str(one["id"]),
+            str(one["name"]),
+            href=say.username_opens(str(one["id"]), owner),
+        )
+        where = (
+            say.said(" on ", say.thing("site", str(one["site_id"]), str(one["site"])))
+            if one["site_id"] is not None
+            else None
+        )
+        values.append(say.said(name, where))
+    return values, len(rows)
+
+
+async def _tags_said(held: _Held, added: Sequence[Row]) -> list[Line]:
+    """A record's tags a box's run added, each by name only where the viewer may be shown it."""
+    seen = await shown_of(held.database, held.viewer, "tag", [str(one["id"]) for one in added])
+    return [
+        say.said(say.thing("tag", str(one["id"]), str(one["name"])))
+        if str(one["id"]) in seen
+        else say.said(A_THING["tag"])
+        for one in added
+    ]
+
+
 async def _listed_field(
     held: _Held,
     subject: Subject,
@@ -272,29 +456,7 @@ async def _listed_field(
     values: list[Line] = []
     joined = 0
     if key == "accounts" and subject is Subject.PERSON and at is not None:
-        rows = await held.database.fetch_all(
-            _USERNAMES_JOINED, (held.local_id, at - RUN_SPAN, at + RUN_SPAN, box_id)
-        )
-        joined = len(rows)
-        for one in rows:
-            # A username removed since has no Site left to say it on, and its bare name beside
-            # another of the same spelling reads as the same row twice. It is counted, and said
-            # last as "N since removed" (`filled_field`), the way every list says a removed row.
-            if one["gone"]:
-                continue
-            owner = None if one["person_id"] is None else str(one["person_id"])
-            name = say.thing(
-                "username",
-                str(one["id"]),
-                str(one["name"]),
-                href=say.username_opens(str(one["id"]), owner),
-            )
-            where = (
-                say.said(" on ", say.thing("site", str(one["site_id"]), str(one["site"])))
-                if one["site_id"] is not None
-                else None
-            )
-            values.append(say.said(name, where))
+        values, joined = await _joined_usernames(held, at, box_id)
     elif key == "links":
         accounts = theirs.get("accounts")
         offered = _folded(theirs.get("links")) | {
@@ -310,13 +472,12 @@ async def _listed_field(
         offered = _folded(theirs.get(key))
         # A tag's aliases are written whole, so a tag's run has no moment of its own to read by.
         moment = None if subject is Subject.TAG else at
-        for one in _added_rows(held.lists.get(key, []), offered, moment):
-            words = str(one["name"])
-            values.append(
-                say.said(say.thing("tag", str(one["id"]), words))
-                if key == "tags"
-                else say.said(words)
-            )
+        added = _added_rows(held.lists.get(key, []), offered, moment)
+        values = (
+            await _tags_said(held, added)
+            if key == "tags"
+            else [say.said(str(one["name"])) for one in added]
+        )
         if subject is Subject.TAG:
             count = len(values)
     else:
@@ -340,6 +501,7 @@ async def filled_named(
     *,
     at: int | None,
     stored: object,
+    viewer: Viewer | None = None,
 ) -> tuple[FilledField, ...] | None:
     """What one box's run filled in on this record, every field with the values it put there.
 
@@ -367,7 +529,7 @@ async def filled_named(
         return None
     kept = await database.fetch_all(_KEPT_ANSWER[subject], (local_id, box_id))
     theirs = _kept_fields(kept[0]["payload"]) if kept else {}
-    held = _Held(database, subject, local_id)
+    held = _Held(database, subject, local_id, viewer)
     await held.load()
     out: list[FilledField] = []
     for key in _in_record_order(kind, counts):
@@ -384,7 +546,7 @@ async def filled_named(
 
 
 async def agreeing_with_box(
-    database: Database, subject: str, local_id: str, box_id: str
+    database: Database, subject: str, local_id: str, box_id: str, viewer: Viewer | None = None
 ) -> tuple[FilledField, ...]:
     """What the record holds today that is the box's own answer: for a link made before Sift
     recorded what a box fills in, the most that can truthfully be said about what it gave.
@@ -399,7 +561,7 @@ async def agreeing_with_box(
     theirs = _kept_fields(kept[0]["payload"]) if kept else {}
     if not theirs:
         return ()
-    held = _Held(database, subject, local_id)
+    held = _Held(database, subject, local_id, viewer)
     await held.load()
     out: list[FilledField] = []
     for key in _in_record_order(kind, dict.fromkeys(theirs)):
@@ -487,8 +649,7 @@ def box_filled_in(
         detail=detail,
         by_hand=pressed,
         box_id=box_id,
-        # A stash-box has a row and an id and no page, so it is named in words and not linked,
-        # and `via` is what puts the filter's own stash-box mark on the row.
+        # A stash-box has no page, so it is named in words; `via` draws its mark on the row.
         via="stash",
     )
 
@@ -526,14 +687,18 @@ def enriched_by_box(
 
 
 async def named_of_event(
-    database: Database, event: LedgerEvent, kind: str, subject_id: str
+    database: Database,
+    event: LedgerEvent,
+    kind: str,
+    subject_id: str,
+    viewer: Viewer | None = None,
 ) -> tuple[FilledField, ...] | None:
     """What one `enriched` event's press filled in, each field with its values (`filled_named`)."""
     box = event.object
     if box is None or not box.id:
         return None
     return await filled_named(
-        database, kind, subject_id, box.id, at=event.at, stored=event.payload or None
+        database, kind, subject_id, box.id, at=event.at, stored=event.payload or None, viewer=viewer
     )
 
 
@@ -557,7 +722,12 @@ async def named_of_events(
 
 
 async def linked_line(
-    database: Database, subject: Subject, local_id: str, row: Row, whose: str
+    database: Database,
+    subject: Subject,
+    local_id: str,
+    row: Row,
+    whose: str,
+    viewer: Viewer | None = None,
 ) -> Event:
     """A link table's line for one box: its latest run, every field named with its values.
 
@@ -579,12 +749,18 @@ async def linked_line(
         named=None
         if run_at is None
         else await filled_named(
-            database, subject.value, local_id, box_id, at=int(run_at), stored=row["applied"]
+            database,
+            subject.value,
+            local_id,
+            box_id,
+            at=int(run_at),
+            stored=row["applied"],
+            viewer=viewer,
         ),
     )
     if run_at is not None:
         return event
-    matching = await agreeing_with_box(database, subject.value, local_id, box_id)
+    matching = await agreeing_with_box(database, subject.value, local_id, box_id, viewer)
     return replace(event, pieces=say.linked_before_recorded(box, matching))
 
 
@@ -632,7 +808,9 @@ SELECT b.name AS box, l.box_id AS box_id, l.fetched_at AS at,
 _LINKED: Mapping[Subject, str] = {Subject.TAG: _TAG_LINKED, Subject.SITE: _SITE_LINKED}
 
 
-async def thing_linked(database: Database, subject: Subject, local_id: str) -> list[Event]:
+async def thing_linked(
+    database: Database, subject: Subject, local_id: str, viewer: Viewer | None = None
+) -> list[Event]:
     """A stash-box that knows this tag or Site, and what it filled in. Named in words: a box has
     no page.
 
@@ -644,7 +822,7 @@ async def thing_linked(database: Database, subject: Subject, local_id: str) -> l
     says "their" for the same sentence, which is the one word the two threads differ by.
     """
     rows = await database.fetch_all(_LINKED[subject], (local_id,))
-    return [await linked_line(database, subject, local_id, row, "its") for row in rows]
+    return [await linked_line(database, subject, local_id, row, "its", viewer) for row in rows]
 
 
 def runs_not_drawn(linked: Sequence[Event], drawn: Sequence[Event]) -> list[Event]:

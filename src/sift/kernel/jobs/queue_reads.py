@@ -10,11 +10,13 @@ from typing import Any
 from sift.kernel.db import in_clause
 from sift.kernel.ids import floor_at
 from sift.kernel.jobs.families import AGAIN
+from sift.kernel.jobs.queue_claim import _EXCLUSIVE_HELD
 from sift.kernel.jobs.queue_core import QueueCore
 from sift.kernel.jobs.queue_rows import (
     _UNFINISHED,
     MAX_PAGE_SIZE,
     UNLOCK_WAIT,
+    FilesToRead,
     Job,
     JobState,
     LiveProducts,
@@ -23,6 +25,7 @@ from sift.kernel.jobs.queue_rows import (
     WorkKind,
     WorkSummary,
     _check_payload,
+    _fetch,
     _products_named,
     _to_job,
 )
@@ -58,9 +61,8 @@ SELECT type,
  GROUP BY type, state
 """
 
-# Is this work happening AT ALL (waiting, under way, held or paused)? For deciding whether work is
-# NEEDED. Live rows are few, but the statistics are taken on an empty queue, so every statement
-# about them says `unlikely(...)`, and `test_queue_plans` holds each to a plan that is no walk.
+# Is this work happening AT ALL (waiting, under way, held or paused)? Statistics taken on an empty
+# queue make a walk look cheap, so live statements say `unlikely(...)` (held by `test_queue_plans`).
 _LIVE_LIKE = (
     "SELECT id FROM jobs WHERE type = ? AND payload = ? "
     "AND unlikely(state IN ('queued', 'running', 'blocked', 'paused')) LIMIT 1"
@@ -86,6 +88,13 @@ SELECT type, state, COALESCE(timing, '') = 'quiet' AS quiet,
 _LIVE_ASSET_IDS = """
 SELECT json_extract(payload, '$.asset_id') AS asset_id FROM jobs
  WHERE type = ? AND unlikely(state IN ('queued', 'running', 'blocked', 'paused'))
+   AND json_type(payload, '$.asset_id') = 'text'
+"""
+
+# The file every live row of any type is about: what is on its way by itself.
+_LIVE_FILES = """
+SELECT DISTINCT json_extract(payload, '$.asset_id') AS asset_id FROM jobs
+ WHERE unlikely(state IN ('queued', 'running', 'blocked', 'paused'))
    AND json_type(payload, '$.asset_id') = 'text'
 """
 
@@ -119,9 +128,8 @@ SELECT payload FROM jobs
  )
 """
 
-# Every file's row of some types, of the runs over some files made from one id on, live or finished,
-# so a run's bar reads done of total; cancelled rows and rows about no file are left out. The first
-# placeholder is the path of "again"; the last two are the same id.
+# Every file's row of some types of the runs over some files from one id on, live or finished, less
+# cancelled rows and rows about no file. The first placeholder is "again"'s path; the last two, the id.
 _PRESSED_SINCE = """
 SELECT j.type AS type, j.state AS state,
        json_extract(j.payload, '$.products') AS products,
@@ -154,12 +162,13 @@ _UNFINISHED_BY_TYPE = (
     "WHERE unlikely(state IN ('queued', 'running', 'blocked')) GROUP BY type"
 )
 
-# The same, less the rows waiting for a later moment: what decides that a pass has ENDED
-# (`Ledger.settle`), since a row put off to later begins the next run rather than ending this one.
+# What ends a pass (`Ledger.settle`): the same, less rows put off to later, which begin the next
+# run, and while a job has the queue to itself, all but what runs and its own kind.
 _DUE_BY_TYPE = (
     "SELECT type, COUNT(*) AS pending FROM jobs"
     " WHERE unlikely(state IN ('queued', 'running', 'blocked'))"
-    " AND NOT (state = 'queued' AND run_after IS NOT NULL AND run_after > ?) GROUP BY type"
+    " AND NOT (state = 'queued' AND run_after IS NOT NULL AND run_after > ?)"
+    " AND (? OR state = 'running' OR type IN (SELECT value FROM json_each(?))) GROUP BY type"
 )
 
 # Every live row by type AND state: what the Tasks rows say of each kind of work.
@@ -173,6 +182,26 @@ _LIVE_BY_TYPE = (
 _PARKED_UNTIL_UNLOCKED = (
     "SELECT type, COUNT(*) AS n FROM jobs "
     "WHERE state = 'blocked' AND substr(error, 1, ?) = ? GROUP BY type"
+)
+
+# The walks waiting or under way, due now: a walk names a root and no file; one naming `paths` is a
+# few files nobody counts ahead. What is left of one under way is its units times what it has not
+# read; one still waiting has no units yet, and all it counted is left.
+_TO_READ = """
+SELECT CASE WHEN state = 'running' THEN units * (1 - progress) END AS left, to_read,
+       to_read IS NULL AND json_type(payload, '$.paths') IS NULL AS uncounted
+  FROM jobs
+ WHERE type IN (SELECT value FROM json_each(?))
+   AND unlikely(state IN ('queued', 'running'))
+   AND NOT (state = 'queued' AND run_after IS NOT NULL AND run_after > ?)
+   AND json_type(payload, '$.root_id') = 'text'
+   AND json_type(payload, '$.asset_id') IS NULL
+"""
+
+# A walk's files still to read by kind: while it waits, or while this worker holds it.
+_SET_TO_READ = (
+    "UPDATE jobs SET to_read = ? WHERE id = ?"
+    " AND (state = 'queued' OR (state = 'running' AND claimed_by = ?)) RETURNING id"
 )
 
 #: Which of a named handful of jobs are still going to be worked on. See `unfinished_among`.
@@ -210,9 +239,7 @@ class Reads(QueueCore):
         return [json.loads(row["payload"]) for row in rows]
 
     async def live_products(self, job_types: Sequence[str]) -> list[LiveProducts]:
-        """The live rows of these types, counted by type, state, quiet hours and the products their
-        payload names (`_LIVE_PRODUCTS`): grouped in SQL, so the answer is a few lines however long
-        the run."""
+        """The live rows of these types, counted in SQL by type, state, quiet hours and products."""
         if not job_types:
             return []
         rows = await self._db.fetch_all(_LIVE_PRODUCTS, (json.dumps(sorted(set(job_types))),))
@@ -249,9 +276,8 @@ class Reads(QueueCore):
         ]
 
     async def pressed_since(self, job_types: Sequence[str], since: int) -> list[PressedWork]:
-        """Every file's row of these types, of the runs over some files made since this second, live
-        or finished, counted by type, state, products and "again" (`_PRESSED_SINCE`). `since` is in
-        seconds; the read is a range of ids from `ids.floor_at`."""
+        """Every file's row of these types, of the runs over some files made since `since` (seconds),
+        counted by type, state, products and "again" (`_PRESSED_SINCE`)."""
         if not job_types:
             return []
         floor = floor_at(since * 1000)
@@ -285,6 +311,10 @@ class Reads(QueueCore):
         rows = await self._db.fetch_all(_LIVE_ASSET_IDS, (job_type,))
         return [str(row["asset_id"]) for row in rows]
 
+    async def live_files(self) -> list[str]:
+        """Every file a waiting or running job of any type is about. See `_LIVE_FILES`."""
+        return [str(row["asset_id"]) for row in await self._db.fetch_all(_LIVE_FILES, ())]
+
     async def newest_of(self, job_type: str, *, limit: int) -> list[Job]:
         """The newest rows of a type that is always a few, in any state (`_NEWEST_OF_TYPE`)."""
         rows = await self._db.fetch_all(_NEWEST_OF_TYPE, (job_type, min(limit, MAX_PAGE_SIZE)))
@@ -308,11 +338,8 @@ class Reads(QueueCore):
         return {str(row["type"]): int(row["n"]) for row in rows}
 
     async def work_summary(self, *, window_seconds: int = RECENT_WORK_SECONDS) -> WorkSummary:
-        """The shape of the work: what each kind has left, how much of the run it has done, how fast.
-
-        One pass over the table (`_WORK_SUMMARY`), held for a few seconds: the scan reads every row,
-        the screen asks on every job during an import, and a report on work must not slow it.
-        """
+        """What each kind has left, how much of the run it has done and how fast, from one pass
+        over the table (`_WORK_SUMMARY`) held for a few seconds."""
         now = int(self._now())
         held = self._work_summary
         if held is not None and now - held[0] < self._summary_fresh_for:
@@ -335,8 +362,7 @@ class Reads(QueueCore):
                 here.left_units += float(row["left_units"] or 0)
             elif state == JobState.DONE.value:
                 here.done += in_run
-                # Per MINUTE rather than per second, because a rate under one a second reads as
-                # 0.0 and an import of large files is exactly that.
+                # Per minute: a rate under one a second would read as 0.0.
                 here.per_minute = round(int(row["lately"] or 0) * 60 / window_seconds, 2)
             elif state == JobState.FAILED.value:
                 here.failed += in_run
@@ -354,16 +380,30 @@ class Reads(QueueCore):
         return tally
 
     async def unfinished_by_type(self) -> dict[str, int]:
-        """How much unfinished work each kind of job has: what the machine's budget divides on, read
-        on a timer, so one query however many kinds of work exist."""
+        """Unfinished work by kind, in one query: what the machine's budget divides on."""
         rows = await self._db.fetch_all(_UNFINISHED_BY_TYPE)
         return {row["type"]: row["pending"] for row in rows}
 
     async def due_by_type(self) -> dict[str, int]:
-        """How much unfinished work each kind has that is due now (`_DUE_BY_TYPE`): read on the pool's
-        timer for the work ledger, which closes the run of every family with none."""
-        rows = await self._db.fetch_all(_DUE_BY_TYPE, (int(self._now()),))
+        """Unfinished work due now by kind (`_DUE_BY_TYPE`), for the ledger on the pool's timer."""
+        from sift.kernel.jobs.worker_pool import exclusive_job_types
+
+        alone = await self.held_by_exclusive()
+        rows = await self._db.fetch_all(
+            _DUE_BY_TYPE,
+            (int(self._now()), not alone, json.dumps(sorted(exclusive_job_types()))),
+        )
         return {row["type"]: row["pending"] for row in rows}
+
+    async def held_by_exclusive(self) -> bool:
+        """Whether a job that has the queue to itself runs or waits to (`_EXCLUSIVE_HELD`)."""
+        from sift.kernel.jobs.worker_pool import exclusive_job_types
+
+        exclusive = sorted(exclusive_job_types())
+        if not exclusive:
+            return False
+        sql, params = in_clause(_EXCLUSIVE_HELD, exclusive)
+        return bool(await self._db.fetch_all(sql, (*params, int(self._now()))))
 
     async def live_by_type(self) -> dict[str, dict[str, int]]:
         """How many rows of each kind are in each live state: what the Tasks rows say, where waiting
@@ -383,6 +423,34 @@ class Reads(QueueCore):
         (row,) = await self._db.fetch_all(_OUTSTANDING, (json.dumps(list(job_types)),))
         return int(row["n"])
 
+    async def files_to_read(self, job_types: Sequence[str]) -> FilesToRead:
+        """What the live walks of these types still have to read, their files left shared out by
+        their kinds (`_TO_READ`)."""
+        rows = await self._db.fetch_all(
+            _TO_READ, (json.dumps(sorted(set(job_types))), int(self._now()))
+        )
+        answer = FilesToRead()
+        for row in rows:
+            answer.uncounted += int(row["uncounted"])
+            kinds = json.loads(row["to_read"]) if row["to_read"] else {}
+            whole = sum(kinds.values())
+            for kind, files in kinds.items():
+                if files > 0:
+                    left = whole if row["left"] is None else float(row["left"])
+                    share = left * files / whole
+                    answer.by_kind[kind] = answer.by_kind.get(kind, 0.0) + share
+        return answer
+
+    async def set_to_read(
+        self, job_id: str, kinds: Mapping[str, int], *, worker_id: str | None = None
+    ) -> bool:
+        """Write a walk's files still to read by kind, while it waits or while `worker_id` holds it."""
+        async with self._writing() as connection:
+            rows = await _fetch(
+                connection, _SET_TO_READ, (json.dumps(dict(kinds)), job_id, worker_id)
+            )
+        return bool(rows)
+
     async def unfinished_among(self, job_ids: Sequence[str]) -> set[str]:
         """Which of these jobs are still going to be worked on: the boot sweep of the job
         workspaces asks about a handful, in chunks under SQLite's parameter cap."""
@@ -395,9 +463,8 @@ class Reads(QueueCore):
         return living
 
     async def next_scheduled(self, job_type: str) -> int | None:
-        """The earliest moment a WAITING job of this type may run, or None: what Scheduled tasks
-        calls "next". Rows with no time are skipped, since NULL means as soon as a worker is free (Run
-        now); its own statement, because the minimum of a page is wrong past the page."""
+        """The earliest moment a WAITING job of this type may run, or None; rows with no time are
+        skipped, since NULL means as soon as a worker is free."""
         (row,) = await self._db.fetch_all(_NEXT_SCHEDULED, (job_type,))
         due = row["due"]
         return None if due is None else int(due)

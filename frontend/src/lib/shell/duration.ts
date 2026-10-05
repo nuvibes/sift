@@ -90,11 +90,12 @@ export function sayDuration(seconds: number): string | null {
 /**
  * A length somebody CHOOSES, in whole words: "30 seconds", "1 minute", "5 minutes". A choice on a
  * menu is read as a sentence ("After 5 minutes"), so it is spelled out where a length that was
- * measured is abbreviated (`sayDuration`). Whole minutes from a minute up; seconds under one.
+ * measured is abbreviated (`sayDuration`). Seconds unless it is a whole number of minutes.
  */
 export function sayLength(seconds: number): string {
-	if (seconds < MINUTE) return seconds === 1 ? '1 second' : `${seconds} seconds`;
-	const minutes = Math.round(seconds / MINUTE);
+	if (seconds < MINUTE || seconds % MINUTE !== 0)
+		return seconds === 1 ? '1 second' : `${seconds} seconds`;
+	const minutes = seconds / MINUTE;
 	return minutes === 1 ? '1 minute' : `${minutes} minutes`;
 }
 

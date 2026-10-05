@@ -14,6 +14,7 @@ import pytest
 import sift.slices.workbench.schema  # noqa: F401
 from sift.kernel.access import Repository, edited, schema
 from sift.kernel.access.edited import ASSET_RECORD_COLUMNS, NOT_AN_EDIT, TRIGGERS, keep_true
+from sift.kernel.content import songs
 from sift.kernel.db import Database
 from sift.kernel.ids import new_id
 from sift.kernel.sorting import sort_key
@@ -410,8 +411,8 @@ async def test_a_library_with_nothing_recorded_and_no_trigger_tables_is_left_alo
 async def test_a_files_song_is_an_edit_of_the_file_even_where_its_music_field_stays(
     temp_db: Database, world: World
 ) -> None:
-    """Put on a song, moved to another of the same name (the Music field reads the same), and taken
-    off: each moves the file's moment, as its people and tags do."""
+    """Put on a song, moved by hand to another of the same name (the Music field reads the same),
+    and taken off: each moves the file's moment, as its people and tags do."""
     first, second = new_id(), new_id()
     for song_id in (first, second):
         await temp_db.execute(
@@ -425,10 +426,54 @@ async def test_a_files_song_is_an_edit_of_the_file_even_where_its_music_field_st
     )
     assert await _file_moment(temp_db, world.loose) is not None
     await temp_db.execute("DELETE FROM asset_edits")
-    await temp_db.execute(
-        "UPDATE song_files SET song_id = ? WHERE asset_id = ?", (second, world.loose)
-    )
+    async with temp_db.write() as connection:
+        assert await songs.put_on_by_hand(connection, world.loose, second)
     assert await _file_moment(temp_db, world.loose) is not None
     await temp_db.execute("DELETE FROM asset_edits")
     await temp_db.execute("DELETE FROM song_files WHERE asset_id = ?", (world.loose,))
     assert await _file_moment(temp_db, world.loose) is not None
+
+
+async def test_a_songs_rename_merge_or_delete_marks_none_of_its_files(
+    temp_db: Database, world: World
+) -> None:
+    """The Music field follows the song, so renaming, merging or deleting a song on 50 files is the
+    song's edit and moves none of theirs, while a person choosing a file's song still moves it."""
+    kept, going = new_id(), new_id()
+    for song_id, name in ((kept, "Blue"), (going, "Blew")):
+        await temp_db.execute(
+            "INSERT INTO songs (id, name, name_sort, created_at) VALUES (?, ?, ?, 0)",
+            (song_id, name, sort_key(name)),
+        )
+    files = [new_id() for _ in range(50)]
+    for asset_id in files:
+        await temp_db.execute(
+            "INSERT INTO assets (id, identity, identity_version, media_type, added_at)"
+            " VALUES (?, ?, 1, 'video', 0)",
+            (asset_id, f"digest-{asset_id}"),
+        )
+        await temp_db.execute(
+            "INSERT INTO song_files (asset_id, song_id, added_at) VALUES (?, ?, 0)",
+            (asset_id, going),
+        )
+
+    async def marked() -> int:
+        row = await temp_db.fetch_one("SELECT COUNT(*) AS n FROM asset_edits")
+        await temp_db.execute("DELETE FROM asset_edits")
+        return 0 if row is None else int(row["n"])
+
+    await marked()
+    await temp_db.execute("UPDATE songs SET name = 'Blew out' WHERE id = ?", (going,))
+    renamed = await marked()
+    # A merge as the Songs page writes it: the files move, then the song going is deleted.
+    await temp_db.execute("UPDATE song_files SET song_id = ? WHERE song_id = ?", (kept, going))
+    await temp_db.execute("DELETE FROM songs WHERE id = ?", (going,))
+    merged = await marked()
+    music = await temp_db.fetch_one("SELECT music FROM assets WHERE id = ?", (files[0],))
+    assert music is not None and music["music"] == "Blue"
+    await temp_db.execute("DELETE FROM songs WHERE id = ?", (kept,))
+    deleted = await marked()
+    async with temp_db.write() as connection:
+        await songs.choose(connection, world.loose, "Green", made=songs.UNSAID)
+    chosen = await marked()
+    assert (renamed, merged, deleted, chosen) == (0, 0, 0, 1)

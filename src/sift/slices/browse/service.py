@@ -17,10 +17,12 @@ The only tables this owns are its own: the save log.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import secrets
 import time
-from collections.abc import Callable, Mapping, Sequence
+from collections import OrderedDict
+from collections.abc import Awaitable, Callable, Hashable, Mapping, Sequence
 from pathlib import Path
 
 from sift.kernel.access import (
@@ -34,6 +36,7 @@ from sift.kernel.access import (
     ServedDerivative,
     Viewer,
 )
+from sift.kernel.access.repository.read_files import WordMatches, words_of
 from sift.kernel.audience import Audience
 from sift.kernel.changes import About, announce, current_mark, telling, who_may_see_a_file
 from sift.kernel.content import (
@@ -81,9 +84,7 @@ _RANDOM_TRIES = 8
 
 _INSERT_SAVE = "INSERT INTO save_log (id, user_id, asset_id, saved_at) VALUES (?, ?, ?, ?)"
 
-# The page and its total in one statement, for the same reason the asset grid does it: two
-# statements can be separated by a write, and then the count describes a set the page is not a page
-# of. A window function costs nothing here and removes the question.
+# The page and its total in one statement, so no write can fall between them.
 _RECENT_SAVES = """
 SELECT *, COUNT(*) OVER () AS total_count
   FROM save_log
@@ -91,13 +92,65 @@ SELECT *, COUNT(*) OVER () AS total_count
  LIMIT ? OFFSET ?
 """
 
-# Only reached when the page came back empty: an offset past the end returns no rows, and the
-# window count rides on a row, so without this an empty last page would report a total of zero and
-# contradict the pages before it.
+# Only for an empty page: an offset past the end has no row to carry the window count.
 _COUNT_SAVES = "SELECT COUNT(*) AS total FROM save_log"
 
 # The most rows the save log will hand back at once. It is an audit view, read a page at a time.
 MAX_SAVE_LOG_PAGE = 200
+
+#: Users whose answers are kept; only this many other Users asking since can push mine out.
+VIEWERS_KEPT = 16
+#: Per User: facet answers, word lists, and the ids all their lists hold (about 28 bytes each).
+FACETS_KEPT = 64
+WORD_LISTS_KEPT = 8
+WORD_IDS_KEPT = 100_000
+
+
+class _WordLists:
+    """One User's word lists under one mark; a list over the budget is used once, never kept."""
+
+    def __init__(self) -> None:
+        self._mark: str | None = None
+        self._lists: OrderedDict[Hashable, WordMatches] = OrderedDict()
+        self._asking: dict[Hashable, asyncio.Task[WordMatches | None]] = {}
+
+    async def get(
+        self,
+        key: Hashable | None,
+        mark: str | None,
+        compute: Callable[[], Awaitable[WordMatches | None]],
+    ) -> WordMatches | None:
+        if key is None or mark is None:
+            return await compute()
+        if mark != self._mark:
+            self._mark = mark
+            self._lists.clear()
+        held = self._lists.get(key)
+        if held is not None:
+            self._lists.move_to_end(key)
+            return held
+        # The panel's columns ask at once, so they wait on one match.
+        asking = self._asking.get((key, mark))
+        if asking is None:
+            asking = self._asking[(key, mark)] = asyncio.ensure_future(compute())
+            asking.add_done_callback(lambda _: self._asking.pop((key, mark), None))
+        found = await asyncio.shield(asking)
+        if found is not None and found.count <= WORD_IDS_KEPT and self._mark == mark:
+            self._lists[key] = found
+            while (
+                len(self._lists) > WORD_LISTS_KEPT
+                or sum(one.count for one in self._lists.values()) > WORD_IDS_KEPT
+            ):
+                self._lists.popitem(last=False)
+        return found
+
+
+class _Kept:
+    """One User's kept answers, apart from every other User's (`VIEWERS_KEPT`)."""
+
+    def __init__(self) -> None:
+        self.facets: MarkedMemo[list[FacetCount]] = MarkedMemo(kept=FACETS_KEPT)
+        self.words = _WordLists()
 
 
 class BrowseService:
@@ -117,11 +170,31 @@ class BrowseService:
         self._state = state
         self._content = content
         self._clock = clock
-        # The counts under the filter panel, kept until the library moves. See `facets`.
-        self._facets: MarkedMemo[list[FacetCount]] = MarkedMemo()
+        self._kept: OrderedDict[str, _Kept] = OrderedDict()
 
     def _now(self) -> int:
         return int(self._clock())
+
+    def _kept_for(self, viewer: Viewer) -> _Kept:
+        kept = self._kept.pop(viewer.id, None) or _Kept()
+        self._kept[viewer.id] = kept
+        while len(self._kept) > VIEWERS_KEPT:
+            self._kept.popitem(last=False)
+        return kept
+
+    async def _words(self, viewer: Viewer, asset_filter: AssetFilter) -> WordMatches | None:
+        """The files among this viewer's own that hold the filter's words, matched once for the
+        page, its total and every count; None for an admin, whose words the index answers."""
+        words = words_of(asset_filter)
+        if viewer.is_admin or words is None:
+            return None
+        stands_on = await self._access.words_stand_on(viewer)
+
+        async def matched() -> WordMatches | None:
+            return await self._access.word_matches(viewer, asset_filter)
+
+        key = None if stands_on[2] is None else (words, viewer.cache_stamp, stands_on)
+        return await self._kept_for(viewer).words.get(key, current_mark(), matched)
 
     async def facets(
         self,
@@ -134,24 +207,18 @@ class BrowseService:
     ) -> list[FacetCount]:
         """How many of the files this query reaches carry each value of one dimension.
 
-        Kept under the change bus's mark. A facet is a count over everything the query reaches,
-        which for an un-narrowed wall is the whole visible library, and the panel asks for five
-        dimensions on every change of the query, so the same numbers would be counted again
-        and again for a library that had not moved. The mark moves on every announcement, so a
-        kept answer is exactly as current as the last change anybody made.
-
-        The key carries everything the answer depends on: who is asking and how much they may see,
-        the dimension, the filter as its own text and bindings, and the hidden-only switch.
+        Kept under the change bus's mark, as the panel asks five dimensions on every change of the
+        query. The key carries everything the answer depends on.
         """
         where, bound = asset_filter.predicate()
-        # The user's stored counts are in the key beside the mark. The mark moves on every
-        # announced change; the counts move on every change to what this user may see, whether
-        # anything announced it or not, so a row written straight into the database still misses.
+        # Beside the mark, which moves on every announcement: what this user may see and the word
+        # index, which move with or without one (a word index is written after its announcement).
         key = (
             viewer.id,
+            viewer.cache_stamp,
             viewer.show_hidden,
             viewer.concealment,
-            await self._access.visible_counts(viewer),
+            await self._access.words_stand_on(viewer),
             facet,
             hidden_only,
             limit,
@@ -161,10 +228,15 @@ class BrowseService:
 
         async def count() -> list[FacetCount]:
             return await self._access.facet_counts(
-                viewer, facet, asset_filter=asset_filter, hidden_only=hidden_only, limit=limit
+                viewer,
+                facet,
+                asset_filter=asset_filter,
+                hidden_only=hidden_only,
+                limit=limit,
+                words=await self._words(viewer, asset_filter),
             )
 
-        return await self._facets.get(key, current_mark(), count)
+        return await self._kept_for(viewer).facets.get(key, current_mark(), count)
 
     async def page(
         self,
@@ -209,6 +281,7 @@ class BrowseService:
             sort=sort,
             seed=seed,
             after=after,
+            words=await self._words(viewer, asset_filter),
         )
 
     async def something_else(
@@ -256,8 +329,9 @@ class BrowseService:
         large one is unaffected. The cost is a faint bias towards the row after a skipped one, which
         is not a property anybody is relying on: this is a way of finding something to watch.
         """
+        words = await self._words(viewer, asset_filter)
         counted = await self._access.visible_assets(
-            viewer, limit=1, offset=0, asset_filter=asset_filter
+            viewer, limit=1, offset=0, asset_filter=asset_filter, words=words
         )
         if counted.total == 0:
             return None
@@ -270,7 +344,7 @@ class BrowseService:
             offset = (landed + step) % counted.total
             # The same filter the count was taken under. See the note above.
             page = await self._access.visible_assets(
-                viewer, limit=1, offset=offset, asset_filter=asset_filter
+                viewer, limit=1, offset=offset, asset_filter=asset_filter, words=words
             )
             # Nothing there, or a placeholder: the same answer, which is to move along. An offset
             # inside the count is a row unless something was deleted between the two reads, and a

@@ -342,7 +342,10 @@ async def service(
     # described by another model and matching and grouping would see nothing at all.
     real_pairing = weights.pairing
     accurate_detector, accurate_recognizer = real_pairing("accurate")
-    as_the_fake = (accurate_detector, replace(accurate_recognizer, revision=recognizer.revision))
+    as_the_fake = (
+        accurate_detector,
+        replace(accurate_recognizer, revision=recognizer.revision, dimension=recognizer.dimension),
+    )
     monkeypatch.setattr(
         weights,
         "pairing",

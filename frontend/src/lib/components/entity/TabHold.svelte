@@ -11,13 +11,13 @@
 	 * An entity page's tabs across walls (Files and Loops are media grids, the rest a wall of
 	 * cards), so a press never shows an empty screen between two full ones. The wall being left
 	 * stays over the new one, quieter and out of reach, until the new one has its answer and has
-	 * finished arriving. The new wall is drawn at once underneath, so it asks the server at once; a
-	 * press on the tab strip meanwhile falls through to its strip. Within the wall of cards,
-	 * `RelatedWall` keeps its own last answer.
+	 * finished arriving; it leaves the top bar to the new one (`TabLayer`). The new wall is drawn at
+	 * once underneath, so it asks the server at once.
 	 *
 	 * NOT ON THE GALLERY: it draws whatever walls a page hands it, and those walls fetch.
 	 */
 	import { onDestroy, untrack, type Snippet } from 'svelte';
+	import TabLayer from './TabLayer.svelte';
 
 	interface Props {
 		/** The tab chosen. */
@@ -139,7 +139,7 @@
 			aria-hidden={held || undefined}
 			{@attach (element: HTMLElement) => holding(element, layer.wall)}
 		>
-			{@render surface(layer.tab, () => arrivedOn(layer.wall))}
+			<TabLayer {held}>{@render surface(layer.tab, () => arrivedOn(layer.wall))}</TabLayer>
 		</div>
 	{/each}
 </div>

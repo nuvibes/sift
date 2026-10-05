@@ -1,14 +1,8 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """The shapes the face endpoints send and accept.
 
-Kept apart from `models.py`, which is the vocabulary of the pass itself. That module describes
-faces to the code that finds them; this one describes them to a browser, and the two answer to
-different pressures: one changes when the arithmetic changes, the other when a screen does.
-
-**Nothing here carries an embedding.** A face's numbers are the measurement of somebody's face,
-they never leave the machine, and the way to keep that true is for the shape that goes over the
-wire not to have anywhere to put them. A crop is served as an image by a route that asks
-permission; the numbers behind it are not served at all.
+Nothing here carries an embedding: a face's numbers never leave the machine, so the wire has
+nowhere to put them.
 """
 
 from __future__ import annotations
@@ -22,41 +16,20 @@ from sift.kernel.reach import BulkWriteDone
 from sift.kernel.wire import HistoryLink, Wire
 from sift.slices.faces.models import Attribution, PileStatus, ToCheckKind
 
-#: How many faces of one pile a listing carries. A pile is a question ("who is this?"), and the
-#: answer needs a handful of views of the same face, not all forty. The rest are still counted.
+#: How many faces of one pile a listing carries; the rest are still counted.
 MAX_PILE_FACES = 12
 
-#: How many piles one page of the groups screen holds.
-#:
-#: Each pile costs a query for its faces and a visibility question to the resolver, so this is a
-#: cost per row rather than a rendering convenience. A swept library has a pile for every face that
-#: joined nothing (hundreds on a modest one), and asking for all of them at once is a screen nobody
-#: waits for.
+#: How many piles one page of the groups screen holds: each pile costs its own queries.
 PILES_PER_PAGE = 24
 
-#: How many appearances one page of a person's own screen carries, before the screen is measured.
-#:
-#: A starting size and not a ceiling: the client measures the screen and asks for as many rows as
-#: fit, so as a ceiling it would refuse every request from a monitor wanting more than a hundred.
-#: What a route will accept is `MAX_PAGE_SIZE`, the same on
-#: every paged route. See the gate that holds them to it.
+#: A person's screen's first page, before it is measured: a starting size, not a ceiling
+#: (what a route accepts is `MAX_PAGE_SIZE`).
 MAX_APPEARANCES = 100
 
-#: The most faces one decision may name.
-#:
-#: A backstop rather than a screen limit: the page above sends at most a page of faces, and this is
-#: what stops a hand-written call asking for a hundred thousand writes in one request.
+#: The most faces one decision may name: a backstop against a hand-written call.
 MAX_FACES_PER_DECISION = 500
 
-#: How many faces one page of a single pile's own screen carries, before the screen is measured.
-#:
-#: Larger than the handful a card previews, because this screen exists to show the whole pile,
-#: and smaller than "all of it", because a pile of a thousand faces is a thousand pictures the
-#: browser has to fetch before anything is answerable.
-#:
-#: A starting size and not a ceiling, for the reason `MAX_APPEARANCES` gives. As a
-#: ceiling, a screen with room for more than sixty faces would have every request for a group
-#: refused, and would say the group was not there.
+#: A pile's own screen's first page, before it is measured; a starting size, as above.
 FACES_PER_PAGE = 60
 
 
@@ -706,16 +679,16 @@ class KnownPeople(Wire):
 
 
 class PackExportRequest(Wire):
-    """Which People to put in a pack, and whether to include their pictures.
-
-    Pictures are opt-in rather than opt-out. Without them a pack is numbers alone: far smaller,
-    still able to recognize everybody in it, and carrying no photographs of anybody off this
-    machine, which is the right default for something being handed to somebody else.
+    """Which People and which people waiting for a matching face go in the file, and whether
+    their pictures do: both lists empty is everybody. Pictures are opt-in, so by default no
+    photograph of anybody leaves this machine.
     """
 
+    #: The file's own name, which the other library keys it by: this library's name.
     name: str = Field(min_length=1, max_length=120)
     version: str = Field(default="1", max_length=40)
     person_ids: list[str] = Field(default_factory=list)
+    entry_ids: list[str] = Field(default_factory=list)
     include_pictures: bool = False
 
 
@@ -768,12 +741,16 @@ class WaitingEntry(Wire):
     source: str
     #: When they were taken in, in milliseconds.
     added_at: int
+    #: Whether a facial fingerprints file exported now would carry them.
+    exportable: bool = False
 
 
 class WaitingFingerprints(Wire):
     """Every waiting entry, newest first."""
 
     items: list[WaitingEntry] = Field(default=[])
+    #: How many of them an export of everybody carries as people of their own.
+    exportable: int = 0
 
 
 class MadeFromFingerprints(Wire):

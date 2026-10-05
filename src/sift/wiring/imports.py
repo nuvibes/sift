@@ -297,6 +297,7 @@ def _declare_switches(queue: JobQueue, hub: settings_hub.SettingsService) -> Non
         library_roots.SCAN,
         library_roots.LIBRARY_SCAN,
         library_roots.RECONCILE,
+        library_roots.SCAN_COUNT,
     )
     queue.switchboard.declare(
         Switch(

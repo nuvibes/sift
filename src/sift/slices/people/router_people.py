@@ -31,7 +31,7 @@ from sift.kernel.access import (
 )
 from sift.kernel.ledger import Actor
 from sift.kernel.paging import MAX_PAGE_SIZE, resume_at
-from sift.kernel.seams import DisagreementSeam, RecognitionSeam, ReindexSeam
+from sift.kernel.seams import DisagreementSeam, ForgetGoneSeam, RecognitionSeam, ReindexSeam
 from sift.kernel.serving import face_version
 from sift.kernel.wire import FacetCounts, FacetValue
 from sift.slices.auth import csrf_protect, current_viewer, require_admin, require_vault_pin
@@ -393,10 +393,11 @@ async def delete_person(
     service: Annotated[PeopleService, Depends(_service)],
     reindexer: Annotated[ReindexSeam, Depends(wiring.reindexer)],
     recognition: Annotated[RecognitionSeam, Depends(_recognition)],
+    forgets: Annotated[ForgetGoneSeam, Depends(wiring.forget_gone)],
     viewer: Annotated[Viewer, Depends(require_admin)],
 ) -> Response:
     """Delete a person, their aliases, their assignments, and every grant naming them."""
-    await _require_person(service, viewer, person_id)
+    person = await _require_person(service, viewer, person_id)
     # BEFORE the delete, and that is the whole of the difference between this and the rename above:
     # the cascade takes the `asset_people` rows with the person, so asking afterwards which files
     # they were on answers nothing at all and the index would keep their name for ever.
@@ -411,6 +412,7 @@ async def delete_person(
     # the key but left in no pile, which is a state no screen shows (neither identified nor
     # waiting) until somebody happened to rebuild the piles by hand.
     await recognition.released()
+    await forgets.forget_gone("person", person_id, name=person.name, by=viewer)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 

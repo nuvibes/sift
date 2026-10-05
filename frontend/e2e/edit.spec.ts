@@ -122,14 +122,25 @@ async function serve(
 			body: JSON.stringify({ roots: [{ id: 'r1', name: 'Library' }] })
 		})
 	);
-	await page.route('**/api/library/folders', (route) =>
-		route.fulfill({
-			status: 200,
-			contentType: 'application/json',
-			body: JSON.stringify({
-				folders: [{ id: 'f1', root_id: 'r1', parent_id: null, name: 'Photos', rel_path: 'Photos' }]
+	await page.route(
+		(url) => url.pathname === '/api/library/folders',
+		(route) =>
+			route.fulfill({
+				status: 200,
+				contentType: 'application/json',
+				body: JSON.stringify({
+					folders: [
+						{
+							id: 'f1',
+							root_id: 'r1',
+							parent_id: null,
+							name: 'Photos',
+							rel_path: 'Photos',
+							writable: true
+						}
+					]
+				})
 			})
-		})
 	);
 
 	await page.route('**/api/assets/e1/edit/frame', (route) =>
@@ -475,9 +486,7 @@ test('the two handles cannot be dragged past each other', async ({ page }) => {
 	const traffic = await serve(page, 'video');
 	await openTheEditor(page, 'Trim');
 
-	/* By the handle's trailing edge: as the dialog opens, the mark that looks through the clip
-	   stands over the handle's middle, and its leading half hangs past the timeline's end. */
-	await page.locator('[data-end="start"]').hover({ position: { x: 13, y: 8 } });
+	await page.locator('[data-end="start"]').hover({ position: { x: 10, y: 22 } });
 	const timeline = (await page.locator('.timeline').boundingBox())!;
 	await page.mouse.down();
 	await page.mouse.move(timeline.x + timeline.width, timeline.y + timeline.height / 2, {
@@ -486,6 +495,27 @@ test('the two handles cannot be dragged past each other', async ({ page }) => {
 	await page.mouse.up();
 
 	await expect.poll(() => Number(lastSteps(traffic.asked)[0]?.duration_ms ?? 0)).toBeGreaterThan(0);
+});
+
+test('a plain press on the kept part looks there, and a drag slides the piece', async ({
+	page
+}) => {
+	await serve(page, 'video');
+	await openTheEditor(page, 'Trim');
+	await page.getByRole('button', { name: '15s' }).click();
+	const look = page.locator('button.head');
+	const start = page.locator('[data-end="start"]');
+	const opened = await start.getAttribute('aria-label');
+	const kept = (await page.locator('.kept').boundingBox())!;
+	await page.mouse.click(kept.x + kept.width - 4, kept.y + kept.height / 2);
+	await expect(look).not.toHaveAttribute('aria-label', /0:00$/);
+	await expect(start).toHaveAttribute('aria-label', opened!);
+	const x = kept.x + kept.width / 2;
+	await page.mouse.move(x, kept.y + 6);
+	await page.mouse.down();
+	await page.mouse.move(x + 80, kept.y + 6, { steps: 10 });
+	await page.mouse.up();
+	await expect(start).not.toHaveAttribute('aria-label', opened!);
 });
 
 test('a video that has never had a strip built still edits, and asks for none', async ({

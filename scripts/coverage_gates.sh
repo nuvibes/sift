@@ -279,6 +279,7 @@ _cov_access() {
     src/sift/slices/download/tests/test_filed_by_id.py \
     src/sift/slices/watermarks/tests/test_filing.py src/sift/slices/stash_migration/tests/test_run.py \
     src/sift/slices/suggestions/tests/test_suggestions.py \
+    src/sift/slices/search/tests/test_forget_gone.py \
     --cov=sift.kernel.access
 }
 # The one place any external tool is started. Everything heavy Sift does happens on the far side of
@@ -614,7 +615,7 @@ _cov_workbench() { _cov src/sift/slices/workbench/tests --cov=sift.slices.workbe
 # of them as dead code.
 _cov_db() {
   _cov src/sift/kernel/tests/test_db.py src/sift/kernel/tests/test_db_lead_and_inline_reads.py \
-    src/sift/kernel/tests/test_library_preflight.py \
+    src/sift/kernel/tests/test_library_preflight.py src/sift/kernel/tests/test_db_blocking.py \
     src/sift/kernel/tests/test_baseline_refusal.py src/sift/kernel/tests/test_db_inline_schema.py \
     --cov=sift.kernel.db --cov=sift.kernel.db_base --cov=sift.kernel.db_library \
     --cov=sift.kernel.db_readers --cov=sift.kernel.db_schema
@@ -632,6 +633,8 @@ _cov_version() { _cov src/sift/kernel/tests/test_version.py --cov=sift.kernel.ve
 # Whether somebody is at the keyboard, read from the last input time on Windows: the lever that
 # halves the pool while the computer is in use.
 _cov_attention() { _cov src/sift/kernel/tests/test_attention.py --cov=sift.kernel.attention; }
+# What other programs take of the processor on Windows, with Sift's own work taken out.
+_cov_device_load() { _cov src/sift/kernel/tests/test_device_load.py --cov=sift.kernel.device_load; }
 # The machine's clock: every day and time of day Sift shows or groups by, in Python and in SQL.
 _cov_when() { _cov src/sift/kernel/tests/test_when.py --cov=sift.kernel.when; }
 # The location door: a copy of a file with its GPS taken out, for everything Sift writes or sends.
@@ -934,6 +937,7 @@ COV_LABELS=(
   "coverage: restart lifecycle gate"
   "coverage: version gate"
   "coverage: attention gate"
+  "coverage: device load gate"
   "coverage: machine clock gate"
   "coverage: location door gate"
   "coverage: heif door gate"
@@ -1067,6 +1071,7 @@ COV_FNS=(
   _cov_lifecycle
   _cov_version
   _cov_attention
+  _cov_device_load
   _cov_when
   _cov_places
   _cov_heif

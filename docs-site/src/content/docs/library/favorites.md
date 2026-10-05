@@ -17,7 +17,7 @@ Your hearts are yours. Each User has their own Favorites, and nobody else sees w
 
 The search box at the top of Favorites searches only the files with a heart. **Filter** filters the wall the same way it does on Browse.
 
-**Sort by** offers every order a file wall has, and two that only Favorites has:
+**Sort by** offers every order a file wall has except **Favorites first**, and two that only Favorites has:
 
 - **Newest first** and **Oldest first**: by when the file was added to your library.
 - **Recently edited**: the most recently changed first.
@@ -26,6 +26,7 @@ The search box at the top of Favorites searches only the files with a heart. **F
 - **Largest file** and **Smallest file**: by size on disk.
 - **Recently viewed** and **Most viewed**: by your own viewing.
 - **Highest O count**: by the O count you gave each file.
+- **Highest rated**: the most stars first, and the unrated last.
 - **Recently favorited**: the file you put a heart on last comes first.
 - **Oldest favorited**: the file you put a heart on first comes first.
 - **Random**: a shuffle that holds while you page. Choose **Shuffle again** for a new one.

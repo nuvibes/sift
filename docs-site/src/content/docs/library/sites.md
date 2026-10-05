@@ -17,7 +17,7 @@ The logos come from a pack that ships with Sift, with one for each of hundreds o
 
 **Search Sites** finds a Site by its name or any of its aliases. **Add Site** makes a Site with a name and, if you like, a picture.
 
-**Sort by** offers **Newest first**, **Oldest first**, **Recently edited**, **Name A-Z**, **Name Z-A**, **Most files**, **Fewest files**, **Favorites first** and **Highest rated**.
+**Sort by** offers **Newest first**, **Oldest first**, **Recently edited**, **Name A-Z**, **Name Z-A**, **Most files**, **Fewest files**, **Favorites first** and **Highest rated**. Four more orders add up every file under each one. **Largest in total** and **Smallest in total** go by size, and **Longest in total** and **Shortest in total** by length.
 
 **Filter** opens columns about the Sites:
 

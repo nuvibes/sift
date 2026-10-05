@@ -27,6 +27,7 @@ import { continuable } from '$lib/grid/grid.svelte';
 import { DEFAULT_ASPECT, isAspect, ratioOf, type AspectId } from './aspects';
 import { anotherRound, showingOrder } from './orders';
 import type { SpriteSheet } from '$lib/player/trickplay';
+import { keptFile } from './kept';
 import type { components } from '$lib/api/schema';
 
 /* LIVE: followed by routes/theater/+page.svelte (the wall opened again on the settings bell) */
@@ -96,29 +97,13 @@ const REFILL_AT = 8;
 /** How far back a cell remembers, for the control that steps back through what it has shown. */
 const HISTORY = 40;
 
-/**
- * How long the wall waits for a PAGE of files before it gives up on the ask.
- *
- * Fifteen seconds, as `PLAN_TIMEOUT_MS`: a wall of up to nine media elements runs short of the
- * browser's six connections to one origin, and a page that never answers would leave a cell
- * stopped on a last frame with nothing saying why. Exported for the wall's opening draw.
- */
+/** How long a page of files may take before the ask is given up, as `PLAN_TIMEOUT_MS`. */
 export const PAGE_TIMEOUT_MS = 15_000;
 
-/**
- * How many candidates a cell asks the playback route about before giving up on finding a direct one.
- *
- * The install shares one transcoder, so asking first keeps shuffles out of its queue; only a few
- * deep, because a library with nothing directly playable must still play something.
- */
+/** How many files are asked about before a converted one is taken: the install has one converter. */
 const DIRECT_TRIES = 4;
 
-/**
- * How many files in a row may fail to play before the cell stops trying.
- *
- * Three: two in a row is bad luck, three is a fact about the library. Stopping early costs a
- * press; never stopping is a cell flickering through unplayable files.
- */
+/** How many files in a row may fail before the cell stops: three is a fact about the library. */
 const GIVE_UP_AFTER = 3;
 
 /** What a cell is doing, in the one word its overlay needs. */
@@ -190,11 +175,8 @@ export class Cell {
 	/* --- where the playhead is ---------------------------------------------------------------- */
 
 	/*
-	 * The playhead and the length, in seconds, and the one thing that can move it.
-	 *
-	 * The element's facts, kept here because the cell's own bar and the wall's bottom bar both draw
-	 * them. `seek` is installed by the view while it is mounted, so a stale seek never reaches an
-	 * element that has been let go of.
+	 * The playhead and the length, in seconds, kept here because both bars draw them. `seek` is
+	 * installed by the view while mounted, so a stale seek never reaches a released element.
 	 */
 	position = $state(0);
 
@@ -281,27 +263,15 @@ export class Cell {
 	/** What is lined up, and what has already been shown. */
 	#queue: Playable[] = [];
 	#history: Playable[] = [];
+	#historyLength = $state(0);
 	/**
-	 * THE NEXT FILE AND HOW TO PLAY IT, FOUND WHILE THE CURRENT ONE IS STILL PLAYING.
-	 *
-	 * Every request an advance makes (the page, the plan) needs nothing from the file having ended,
-	 * so it is found when a file reaches the screen and handed over at its end, leaving only the
-	 * element's own loading in the gap. The era is kept so a source changed meanwhile cannot have
-	 * the old source's file attach itself. A plan names an address and reserves nothing, so an old
-	 * one plays as well as a new one (`plan_playback`).
+	 * The next file and its plan, found while the current one plays so only the element loads in the
+	 * gap. Keyed by era, so a source changed meanwhile cannot attach the old source's file.
 	 */
 	#ahead: { era: number; file: Playable; plan: PlaybackPlan } | null = null;
-	/**
-	 * The lookahead that is out, if one is: which era it belongs to, and when it is done.
-	 *
-	 * A file can end while its lookahead is on the wire; the advance then waits for it, because a
-	 * second search would be refused by `#fill` and the cell would say it stopped at the end.
-	 */
+	/** The lookahead on the wire, which an advance waits for rather than searching twice. */
 	#looking: { era: number; done: Promise<void> } | null = null;
-	/**
-	 * Which era's fill is in flight, so a drain and a refill do not both ask. The era, not a flag,
-	 * because a flag left set by an old source would make the new source's first fill ask nothing.
-	 */
+	/** Which era's fill is in flight: an era, since a stale flag would stop the next source's fill. */
 	#filling: number | null = null;
 	/** The sitting this cell is in with the file it is showing. See `sittingWith`. */
 	#sitting: CellSitting | null = null;
@@ -347,30 +317,18 @@ export class Cell {
 	#failures = 0;
 
 	/**
-	 * WHAT ORDER this cell draws in, or null for the ordinary answer.
-	 *
-	 * Set by a SMART saved search (a different pile, not a different order, so dropping it would
-	 * match nothing) or by the bar's Sort on the selected cell. It travels with the saved cell as the
-	 * server's `sort`. A fresh cell is Random with its own seed, so two cells walk different runs.
+	 * WHAT ORDER this cell draws in, or null for the ordinary answer; saved as the server's `sort`.
+	 * A fresh cell is Random with its own seed, so two cells walk different runs.
 	 */
 	sort = $state<string | null>(RANDOM);
 
 	/**
-	 * WHICH shuffle, while the order is Random, and null for every other order.
-	 *
-	 * `ORDER BY random()` re-draws per request, so the seed holds one permutation across a run's
-	 * pages, minted as the wall's `seed` is. Not saved: a wall put away in Random asks to be shuffled
-	 * afresh, which `#take` does.
+	 * WHICH shuffle while the order is Random, else null: one permutation across a run's pages.
+	 * Not saved, so a wall put away in Random is shuffled afresh (`#take`).
 	 */
 	seed = $state<number | null>(mintSeed());
 
-	/**
-	 * Put this cell in an order, minting a shuffle when the order IS one.
-	 *
-	 * One door for the bar's Sort, its Shuffle again and the filter panel, because the seed is minted
-	 * and retired with the order. Random again mints again (see `RESHUFFLE`). The run is the caller's
-	 * to rebuild; see `reorder`.
-	 */
+	/** Put this cell in an order, minting a shuffle when it is one. The caller rebuilds the run. */
 	orderBy(next: string | null): void {
 		this.sort = next;
 		this.seed = next === RANDOM ? mintSeed() : null;
@@ -389,12 +347,8 @@ export class Cell {
 	}
 
 	/**
-	 * What the wall asks the random route for, so the draw lands inside this cell's own filter,
-	 * or null when this cell is to find its own.
-	 *
-	 * Built from `query` because the draw and the run must filter identically or the cell opens on
-	 * something it never reaches again. Null under any order but Random: a draw ignores an order,
-	 * and a smart search's depth is sized against a page.
+	 * What the wall asks the random route for, filtered as this cell's run is, or null under any
+	 * order but Random (a draw ignores an order).
 	 */
 	get drawQuery(): Record<string, string> | null {
 		if (this.sort !== null && this.sort !== RANDOM) return null;
@@ -407,35 +361,58 @@ export class Cell {
 
 	/** Whether there is anything behind this one to step back to. */
 	get hasBack(): boolean {
-		return this.#history.length > 1;
+		return this.#historyLength > 1;
 	}
 
 	/**
-	 * The sitting this cell is in with a file: the one already running when it is the same file, a
-	 * new one when it is not.
-	 *
-	 * One file on screen in one cell is one view however often it repeats or the cell is redrawn (the
-	 * wall handed between Theater and the corner panel), and pieces with one id are one row. Held on
-	 * the cell because the view is made and unmade by the handover. Only the last file is kept.
+	 * The sitting this cell is in with a file: the running one for the same file, else a new one.
+	 * One file on screen in one cell is one view however often it repeats or is redrawn.
 	 */
 	sittingWith(file: string): CellSitting {
 		if (this.#sitting?.file !== file) this.#sitting = { file, id: newSittingId(), reported: null };
 		return this.#sitting;
 	}
 
+	/** The size the player drew a file at, which beats the stored one (non-square pixels, no probe). */
+	measured = $state<{ file: string; width: number; height: number } | null>(null);
+
+	/** Read under `nothing_here`: whether every file this run stepped over was out of Sift's reach. */
+	unreachable = $state(false);
+	#missed: 'none' | 'unreached' | 'other' = 'none';
+
+	/** The poster's own size, for a file with no stored size that the player has not measured yet. */
+	posterSize = $state<{ file: string; width: number; height: number } | null>(null);
+
 	/**
-	 * The shape this cell should be DRAWN at, or null while there is no answer yet.
-	 *
-	 * One answer for both the wall's row height and the cell's own `aspect-ratio`, which must agree
-	 * or a picture is cropped or overflows. The chosen shape wins; null is Dynamic with nothing
-	 * playing, and the caller assumes the commonest shape until the file says.
+	 * The shape the cell, the wall and the corner panel all draw this cell at, or null: the chosen
+	 * shape, the measured size, the stored size, then the poster's, kept through its even rounding.
 	 */
 	get shape(): number | null {
 		const asked = ratioOf(this.aspect);
 		if (asked !== null) return asked;
 		const file = this.playing;
-		if (!file?.width || !file?.height) return null;
-		return file.width / file.height;
+		if (file === null) return null;
+		const seen = this.measured?.file === file.id ? this.measured : null;
+		if (file.width && file.height)
+			return seen ? seen.width / seen.height : file.width / file.height;
+		const poster = this.posterSize?.file === file.id ? this.posterSize : null;
+		if (
+			poster &&
+			(!seen || Math.abs((seen.width / seen.height) * poster.height - poster.width) <= 2)
+		)
+			return poster.width / poster.height;
+		return seen ? seen.width / seen.height : null;
+	}
+
+	/** Note the size the player drew this file at; a zero size is no answer. */
+	measure(file: string, width: number, height: number): void {
+		if (width > 0 && height > 0) this.measured = { file, width, height };
+	}
+
+	/** Note the poster's size, unless the player has already measured the file. */
+	measurePoster(file: string, width: number, height: number): void {
+		if (width > 0 && height > 0 && this.measured?.file !== file)
+			this.posterSize = { file, width, height };
 	}
 
 	/*
@@ -532,11 +509,8 @@ export class Cell {
 	}
 
 	/**
-	 * Take over another cell's source AND the file it had up.
-	 *
-	 * For a promotion out of the strip: adopting would pick a different clip, and a preview means
-	 * that thing. The era is bumped so nothing in flight lands on it, and the file goes into the
-	 * history so a step back returns to it. It starts from `at` because the element is rebuilt.
+	 * Take over another cell's source AND the file it had up, from `at`: a promotion out of the
+	 * strip, where adopting would pick a different clip and a preview means that thing.
 	 */
 	async takeOver(saved: SavedCell, file: Playable | null, at = 0): Promise<void> {
 		this.#take(saved);
@@ -548,18 +522,16 @@ export class Cell {
 	}
 
 	/**
-	 * OPEN ON ONE PARTICULAR FILE, and find the rest for itself from there.
-	 *
-	 * The file half of `takeOver`, also used by a wall opening from nothing (`Wall.open`). The run is
-	 * emptied and the era bumped so nothing in flight lands on it; the file goes into the history so
-	 * a step back returns to it; nothing is queued behind it, so the next advance fills from the top
-	 * of the source.
+	 * OPEN ON ONE PARTICULAR FILE, and find the rest from the top of the source. The run is emptied
+	 * and the era bumped so nothing in flight lands on it; the file goes into the history.
 	 */
 	async startOn(file: Playable, at = 0): Promise<void> {
 		const era = ++this.#era;
 		this.#queue = [];
 		this.#ahead = null;
 		this.#history = [];
+		this.#historyLength = 0;
+		this.#missed = 'none';
 		this.#passed.clear();
 		this.#direct.clear();
 		this.#shownRound = [];
@@ -587,9 +559,24 @@ export class Cell {
 			return;
 		}
 		this.#history.push(file);
+		this.#historyLength = this.#history.length;
 		// Set unconditionally, so a clip that had only just begun is not a special case.
 		this.resumeAt = at > 0 ? at : null;
 		this.#show(file, plan);
+	}
+
+	/**
+	 * Take up a saved cell on a file known only by its id, asked of the server so the name is
+	 * today's and Hidden is obeyed. A file gone or hidden leaves the cell to find its own.
+	 */
+	async resumeOn(saved: SavedCell, id: string, at = 0): Promise<void> {
+		this.#take(saved);
+		const era = ++this.#era;
+		// Out of `empty` now, or the wall's opening draw fills this cell too (`Wall.open`).
+		this.state = 'loading';
+		const file = await keptFile(id);
+		if (era !== this.#era) return;
+		await (file === null ? this.restart() : this.startOn(file, at));
 	}
 
 	/** The fields a saved cell carries, checked and taken. What starts playing is the caller's. */
@@ -624,6 +611,8 @@ export class Cell {
 		this.#queue = [];
 		this.#ahead = null;
 		this.#history = [];
+		this.#historyLength = 0;
+		this.#missed = 'none';
 		this.#passed.clear();
 		this.#direct.clear();
 		this.#shownRound = [];
@@ -691,6 +680,8 @@ export class Cell {
 		/* A filter waiting on a file no longer on screen was a choice about something else. */
 		this.#pending = null;
 		this.#history = [];
+		this.#historyLength = 0;
+		this.#missed = 'none';
 		this.#passed.clear();
 		this.#direct.clear();
 		this.#shownRound = [];
@@ -732,12 +723,9 @@ export class Cell {
 		if (era !== this.#era) return;
 
 		/*
-		 * The run has ended and this cell PLAYS THROUGH, so it starts again from the top.
-		 *
-		 * Otherwise "Play through" would stop dead like "Stop at the end". The rewind is of the
-		 * source's offset, since the run is a page at a time; a shuffled cell draws a fresh seed,
-		 * and a one-page source is held to a different order (`anotherRound`). Only when something
-		 * has played, so a query matching nothing does not ask for ever.
+		 * The run has ended and this cell PLAYS THROUGH, so it starts again from the top: a fresh
+		 * seed when shuffled, a different order for a one-page source (`anotherRound`). Only when
+		 * something has played, so a query matching nothing does not ask for ever.
 		 */
 		if (next === null && this.endBehaviour === 'loop_all' && this.#history.length > 0) {
 			const before = this.#round;
@@ -765,6 +753,7 @@ export class Cell {
 			// A cell that showed something reached the end of its source; one that never did
 			// matches nothing this account may see. Two different sentences.
 			this.state = this.#history.length ? 'stopped' : 'nothing_here';
+			this.unreachable = this.#missed === 'unreached';
 			this.playing = null;
 			this.plan = null;
 			return;
@@ -779,19 +768,22 @@ export class Cell {
 		if (this.#round !== null) this.#passed.add(id);
 	}
 
+	/** Note a file stepped over: out of Sift's reach, or for any other reason. */
+	#note(unreached: boolean): void {
+		if (this.#missed !== 'other') this.#missed = unreached ? 'unreached' : 'other';
+	}
+
 	/** Put a file at the end of what this cell has shown, keeping the last few of them. */
 	#remember(file: Playable): void {
 		if (this.#round !== null) this.#shownRound.push(file.id);
 		this.#history.push(file);
 		if (this.#history.length > HISTORY) this.#history.shift();
+		this.#historyLength = this.#history.length;
 	}
 
 	/**
-	 * FIND THE NEXT FILE NOW, WHILE THERE IS TIME. See `#ahead`.
-	 *
-	 * Does what an advance would at the end (top the run up, find the first playable file) and keeps
-	 * the answer. It touches nothing on screen: a failure or a source change leaves the cell as it
-	 * was and the advance does the work, which is why nothing has to await it.
+	 * FIND THE NEXT FILE NOW, WHILE THERE IS TIME (`#ahead`). Touches nothing on screen: a failure
+	 * or a source change leaves the advance to do the work, so nothing has to await it.
 	 */
 	#lookAhead(): void {
 		const era = this.#era;
@@ -821,6 +813,7 @@ export class Cell {
 		if (!this.hasBack) return;
 		const era = this.#era;
 		this.#history.pop();
+		this.#historyLength = this.#history.length;
 		const previous = this.#history[this.#history.length - 1];
 		this.state = 'loading';
 		let plan: PlaybackPlan | null;
@@ -841,11 +834,8 @@ export class Cell {
 	}
 
 	/**
-	 * The browser could not play what this cell handed it.
-	 *
-	 * Without this a file the browser cannot decode shows black under "ready" for as long as the
-	 * wall is open. What follows is the end-behaviour, as for a file ending, and after a few in a
-	 * row the cell holds still on the message.
+	 * The browser could not play what this cell handed it: the end-behaviour follows, as for a
+	 * file ending, and after a few in a row the cell holds still on the message.
 	 */
 	async failed(reason: string | null = null): Promise<void> {
 		this.#failures += 1;
@@ -966,11 +956,13 @@ export class Cell {
 			} catch {
 				// An unattended run steps over a file the server would not answer about.
 				if (era !== this.#era) return null;
+				this.#note(false);
 				continue;
 			}
 			if (era !== this.#era) return null;
 			// A file Sift has not read is stepped over; the ask itself queues the read.
 			if (plan === null || plan.route === 'unread') {
+				this.#note(plan === null);
 				this.#stepOver(file.id);
 				continue;
 			}

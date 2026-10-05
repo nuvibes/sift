@@ -177,6 +177,19 @@ def test_the_page_says_the_share_the_step_back_keeps_to(
     assert client.get("/api/jobs").json()["step_back_share"] == 40
 
 
+def test_the_page_says_why_the_work_steps_back(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from sift.kernel import attention
+
+    sign_in(client, "admin")
+    reader = attention.Attention(lambda: 1.0)
+    monkeypatch.setattr(attention, "ATTENTION", reader)
+    assert client.get("/api/jobs").json()["step_back_for"] is None
+    reader.workers(8, step_back=True)
+    assert client.get("/api/jobs").json()["step_back_for"] == "input"
+
+
 def test_the_press_for_the_full_amount_is_answered_and_every_page_follows_it(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1408,6 +1421,48 @@ def test_every_pass_and_chore_names_a_task_that_exists(client: TestClient) -> No
     assert page["families"]["scan"]["task"] == "scan"
 
 
+def test_a_failed_scan_says_so_on_the_scan_row_in_plain_words(
+    client: TestClient, tmp_path: Path
+) -> None:
+    """Only while its folder is still a library folder: no later scan can make the rest good."""
+    from sift.kernel.jobs.failure_words import in_plain_words
+
+    db_path = client.app.state.database.path  # type: ignore[attr-defined]
+    seed_root(db_path, ROOT_ID, folder_id=FOLDER_ID, path=tmp_path)
+    error = "The folder stopped answering partway through the scan. Scan it again once it's back."
+    for job_id, root_id in (
+        ("01HX0000000000000000000077", ROOT_ID),
+        ("01HX0000000000000000000079", "gone"),
+    ):
+        seed_job(db_path, job_id, job_type="scan", error=error, payload={"root_id": root_id})
+    seed(client, "01HX0000000000000000000078")
+    sign_in(client, "admin")
+    scan = client.get("/api/jobs").json()["families"]["scan"]
+    assert (scan["failed"], scan["last_error"]) == (1, in_plain_words(error))
+
+
+def test_the_scan_row_counts_what_its_walk_has_still_to_read(client: TestClient) -> None:
+    """A quarter of 40 counted files read and none taken in yet: before, "0 of 0"."""
+    db_path = client.app.state.database.path  # type: ignore[attr-defined]
+    walk = "01HX0000000000000000000079"
+    seed_job(db_path, walk, state="running", job_type="scan", payload={"root_id": "r"})
+    to_read = json.dumps({"video": 10, "image": 30})
+    write_rows(
+        db_path,
+        [
+            (
+                "UPDATE jobs SET units = 40, progress = 0.25, to_read = ? WHERE id = ?",
+                (to_read, walk),
+            )
+        ],
+    )
+    sign_in(client, "admin")
+
+    scan = client.get("/api/jobs").json()["families"]["scan"]
+
+    assert (scan["done"], scan["total"], scan["waiting"]) == (0, 30, 30)
+
+
 async def test_a_build_narrowed_to_one_product_is_that_products_familys_work() -> None:
     """A task typed by its coordinator counts under the family of what it MAKES.
 
@@ -1470,9 +1525,7 @@ async def test_a_queued_runs_units_never_join_a_familys_denominator() -> None:
 
 
 async def test_a_family_is_priced_by_the_media_kinds_its_work_is_waiting_on() -> None:
-    """Two of Generate's kinds of work wait on three videos and a photograph between them: the
-    estimate is asked with that mix, so it can price the videos at a video's price. A family no
-    counter splits is asked with none."""
+    """The estimate is asked with the mix of kinds a family's work waits on, or with none."""
     from sift.kernel.jobs import register_handler
     from sift.kernel.jobs.families import Family
     from sift.kernel.jobs.switchboard import Switchboard
@@ -1498,6 +1551,35 @@ async def test_a_family_is_priced_by_the_media_kinds_its_work_is_waiting_on() ->
 
     assert asked["generate"] == {"video": 3.0, "image": 1.0}
     assert asked["identify"] is None
+
+
+async def test_a_time_priced_from_the_benchmark_is_sent_as_the_least_it_takes() -> None:
+    """Only the benchmark's floor is sent as one; a time priced from runs is a window."""
+    from sift.kernel.jobs import register_handler
+    from sift.kernel.jobs.families import Family
+    from sift.kernel.jobs.ledger import Estimate
+    from sift.kernel.jobs.switchboard import Switchboard
+    from sift.slices.media_jobs.router import KindOfWork, _families
+
+    async def nothing(_context: object) -> None:
+        return None
+
+    register_handler("picturing", nothing, name="Picturing", family=Family.GENERATE)
+    register_handler("facing", nothing, name="Facing", family=Family.IDENTIFY)
+
+    class Book:
+        async def estimate(self, family: Family, *_args: object, **_named: object) -> Estimate:
+            floor = family is Family.IDENTIFY
+            return Estimate(7200, 7200 if floor else 9000, 0 if floor else 40, 4, floor=floor)
+
+    work = {
+        "picturing": KindOfWork(done=0, outstanding=0, failed=0, waiting=2, total=2),
+        "facing": KindOfWork(done=0, outstanding=0, failed=0, waiting=2, total=2),
+    }
+    families = await _families(work, Book(), Switchboard())  # type: ignore[arg-type]
+
+    assert families["identify"].at_least
+    assert not families["generate"].at_least
 
 
 async def test_a_pass_held_by_the_window_says_when_the_window_opens(client: TestClient) -> None:

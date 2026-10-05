@@ -1,14 +1,13 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """A product's bar on Activity: its two ends range over one set of files.
 
-The count of what is lacking reads only files that have been read and have a copy that is there,
-and so does the denominator. A denominator of the whole library would make "done" (the one minus
-the other) count every file not read yet, every file with no copy and every photo as a file that
-HAD the picture, and the time left would be priced over the few files already read.
+The count of what is lacking reads only read files with a copy there, and so does the denominator:
+a whole library's would count every unread file, every file with no copy and every photo as done.
 """
 
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import replace
 
@@ -142,6 +141,45 @@ async def test_every_file_coming_wants_its_fingerprints(
     fingerprints = VerdictProduct.FINGERPRINTS.value
     assert await content_store.wanting_count(None, fingerprints) == 3
     assert await content_store.coming_count(None, fingerprints) == 2
+
+
+async def test_the_library_s_files_are_the_ones_browse_shows(
+    temp_db: Database, content_store: ContentStore, library_root: LibraryRoot
+) -> None:
+    await _file(temp_db, library_root, "video")
+    await _file(temp_db, library_root, "image", present=False)
+    removed = await _file(temp_db, library_root, "video")
+    await temp_db.execute("DELETE FROM asset_locations WHERE asset_id = ?", (removed,))
+    await temp_db.execute("UPDATE assets SET acodec = 'aac' WHERE media_type = 'video'")
+    refusing_none = identity.wanted_outside([["no-such-folder"]])
+
+    assert await content_store.asset_count() == 2
+    assert await content_store.asset_count(refusing_none) == 2
+    assert await content_store.with_audio_count() == 1
+
+
+async def test_a_count_among_some_files_seeks_only_those(
+    temp_db: Database, content_store: ContentStore, library_root: LibraryRoot
+) -> None:
+    lacking = await _file(temp_db, library_root, "video")
+    await _file(temp_db, library_root, "video")
+    has_it = await _file(temp_db, library_root, "image", pictures=(DerivativeKind.THUMB,))
+    term = lacks_derivative([DerivativeKind.THUMB])
+    assert term is not None
+    term = replace(term, product=picture_verdict(DerivativeKind.THUMB).value)
+    among = [lacking, has_it, "gone"]
+
+    split = await content_store.count_lacking_by_kind([term], among=among)
+    statement = identity._lacking_statement(
+        [term], [True], statement=identity._COUNT_LACKING_BY_KIND, among=among
+    )
+    plan = await temp_db.fetch_all(
+        "EXPLAIN QUERY PLAN " + statement,  # nosemgrep: sift-no-string-built-sql
+        (*identity._term_params([term]), json.dumps(among)),
+    )
+
+    assert {kind: one.files for kind, one in split.items()} == {"image": 0, "video": 1}
+    assert not [row["detail"] for row in plan if str(row["detail"]).startswith("SCAN a")]
 
 
 def _counts_a_bar_is_drawn_from() -> list[tuple[str, str, tuple[object, ...]]]:

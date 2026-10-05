@@ -786,3 +786,88 @@ describe('a column of numbers, and a column the wall is made of', () => {
 		expect(headingsNow()).not.toContain('Loops');
 	});
 });
+
+describe('a named-thing column of files', () => {
+	it('leads with Has and No, outside the five it shows and the box', async () => {
+		const { api } = await import('$lib/api/client');
+		const values = [
+			{ value: 'any', count: 2 },
+			{ value: 'none', count: 9 },
+			...Array.from({ length: 6 }, (_, at) => ({ value: `t${at}`, count: 1 }))
+		];
+		vi.mocked(api.get).mockImplementation((async (
+			_path: string,
+			options?: { query?: Record<string, unknown> }
+		) => {
+			const facet = String(options?.query?.facet ?? '');
+			return { facet, values: facet === 'tags' ? values : [] };
+		}) as never);
+		draw({ lead: ['tags'] });
+		await Promise.resolve();
+		await Promise.resolve();
+		await Promise.resolve();
+		flushSync();
+
+		const column = host?.querySelector('.column');
+		const said = [...(column?.querySelectorAll('.value .name') ?? [])].map(
+			(one) => one.textContent
+		);
+		expect(said).toEqual(['Has tags', 'No tags', 't0', 't1', 't2', 't3', 't4']);
+		expect(column?.querySelector('.more')?.textContent).toContain('View 1 more');
+	});
+});
+
+describe('the Tags column of a wall of things', () => {
+	async function column(
+		subject: 'person' | 'site' | 'collection' | 'photo_set',
+		facet: string,
+		values: unknown[]
+	) {
+		const { api } = await import('$lib/api/client');
+		vi.mocked(api.get).mockImplementation((async (
+			_path: string,
+			options?: { query?: Record<string, unknown> }
+		) => {
+			const asked = String(options?.query?.facet ?? '');
+			return { facet: asked, values: asked === facet ? values : [] };
+		}) as never);
+		draw({ subject, lead: [facet] });
+		await Promise.resolve();
+		await Promise.resolve();
+		await Promise.resolve();
+		flushSync();
+		const first = host?.querySelector('.column');
+		return [...(first?.querySelectorAll('.value .name') ?? [])].map((one) => one.textContent);
+	}
+
+	it.each(['person', 'site', 'collection', 'photo_set'] as const)(
+		'leads with Has tags and No tags on the %s wall, outside the five',
+		async (subject) => {
+			const values = [
+				...Array.from({ length: 6 }, (_, at) => ({ value: `t${at}`, count: 20, label: `t${at}` })),
+				{ value: 'none', count: 9 },
+				{ value: 'any', count: 30 }
+			];
+			expect(await column(subject, 'tags', values)).toEqual([
+				'Has tags',
+				'No tags',
+				't0',
+				't1',
+				't2',
+				't3',
+				't4'
+			]);
+		}
+	);
+
+	it('leaves Not enriched in its place, since only Tags leads with Has and No there', async () => {
+		const values = [
+			{ value: 'stashdb', count: 5 },
+			{ value: 'none', count: 3 }
+		];
+		expect(await column('person', 'enriched', values)).toEqual([
+			'Stash-box: StashDB',
+			'Not enriched'
+		]);
+	});
+});

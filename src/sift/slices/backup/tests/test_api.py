@@ -169,6 +169,7 @@ def test_saving_a_schedule_reports_it_back_and_reading_it_agrees(app: TestClient
         "keep_days": 7,
         "folder": "",
         "beside_sift_data": True,
+        "working": None,
     }
     assert app.get("/api/backup/schedule").json() == saved.json()
 

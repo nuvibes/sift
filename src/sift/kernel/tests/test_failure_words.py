@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 
@@ -19,6 +20,9 @@ from sift.kernel.jobs.failure_words import (
 )
 from sift.kernel.jobs.recovery import _INTERRUPTED
 from sift.kernel.jobs.worker_pool import _NO_HANDLER
+from sift.kernel.subprocess import NEVER_STARTED
+from sift.slices.library_roots import jobs
+from sift.slices.library_roots.walking import RootUnreachable
 
 #: Stored errors in the shapes the queue keeps them, each with the kind it is.
 STORED = [
@@ -41,8 +45,10 @@ STORED = [
     ("NoReadableCopy: none of the 1 known copies of this file could be opened.", "missing"),
     ("PermissionError: [WinError 5] Access is denied: 'X:\\library\\a.mp4'", "refused-write"),
     ("OSError: [Errno 28] No space left on device", "disk-full"),
+    (f"FFmpegError: ffmpeg.exe failed: {NEVER_STARTED}", "never-started"),
     (_INTERRUPTED, "restarted"),
     (_NO_HANDLER, "retired"),
+    (jobs.STOPPED_ANSWERING, "stopped-answering"),
 ]
 
 
@@ -52,6 +58,20 @@ def test_each_stored_error_is_said_by_its_kind(error: str, kind: str) -> None:
     assert found is not None
     assert found.name == kind
     assert in_plain_words(error) == found.words
+
+
+@pytest.mark.parametrize(
+    "why", ["No such file or directory", "Access is denied", "The network path was not found"]
+)
+async def test_a_library_folder_that_did_not_answer_is_said_as_one_whatever_the_reason(
+    why: str, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(jobs, "_root_answer", lambda _: OSError(2, why))
+    with pytest.raises(RootUnreachable) as raised:
+        await jobs._walk_for_scan(cast(Any, None), "root", tmp_path, tmp_path, None)
+    found = kind_of(str(raised.value))
+    assert found is not None
+    assert found.name == "library-unreachable"
 
 
 def test_an_error_no_kind_knows_says_the_tool_failed_and_where_its_words_are() -> None:

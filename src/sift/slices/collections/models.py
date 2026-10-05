@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 
 from sift.kernel.cover_frame import CoverFrame
 from sift.kernel.text import clean_name
@@ -116,8 +116,8 @@ class CollectionItem(Wire):
     favorite: bool = False
     #: Out of five, or absent where this user has not said. Same read as `favorite`.
     rating: int | None = None
-    #: Where this item sits in the arranged sequence, from zero, so Move earlier and Move later
-    #: rearrange the real sequence rather than saving the pinned-first order the wall draws.
+    #: Where this item sits in the arranged sequence, from zero, sent only to an admin, so Move
+    #: earlier and Move later rearrange the real sequence rather than the pinned-first order drawn.
     position: int | None = None
 
 
@@ -208,11 +208,20 @@ class ItemsWrite(Wire):
     """Adding to, removing from, or rearranging a collection.
 
     One body with a named action, so add, remove and reorder cannot drift in what they accept. For
-    `reorder`, `asset_ids` is the new order.
+    `reorder`, `asset_ids` is the new order; `move` names one file and its `direction`.
     """
 
     asset_ids: list[str] = Field(min_length=1, max_length=MAX_BULK_ITEMS)
-    action: Literal["add", "remove", "reorder"] = "add"
+    action: Literal["add", "remove", "reorder", "move"] = "add"
+    direction: Literal["earlier", "later"] | None = None
+
+    @model_validator(mode="after")
+    def _one_move(self) -> ItemsWrite:
+        if (self.action == "move") != (self.direction is not None):
+            raise ValueError("a direction goes with a move, and only with a move")
+        if self.action == "move" and len(self.asset_ids) != 1:
+            raise ValueError("a move names one file")
+        return self
 
 
 class TagOnCollection(Wire):

@@ -81,6 +81,7 @@ import { SEARCHABLE as semantic } from './Semantic.search';
 import { SEARCHABLE as updates } from './Updates.search';
 import { SEARCHABLE as downloads } from './Downloads.search';
 import { SEARCHABLE as appearance } from './Appearance.search';
+import { SEARCHABLE as documentation } from './Documentation.search';
 
 /** One thing somebody can look for, and where pressing it should take them. */
 export interface Searchable {
@@ -252,7 +253,8 @@ export const DECLARED: Searchable[] = [
 	...supportedSites,
 	...tileMarks,
 	...downloadTools,
-	...appearance
+	...appearance,
+	...documentation
 ];
 
 /**

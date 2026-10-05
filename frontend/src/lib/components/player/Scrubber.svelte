@@ -357,16 +357,10 @@
 		min-block-size: 14px;
 	}
 
-	/*
-	 * Nothing to move along, and saying so.
-	 *
-	 * The same 0.5 the shared button takes when it is disabled and the tile-size slider on the top bar
-	 * takes when there is nothing to size: one meaning, one amount, wherever it appears. The input
-	 * inside is separately refused; this is only the look, and dimming alone would leave a track
-	 * somebody could still drag.
-	 */
+	/* Nothing to move along: the shared button's dimmed look, and no playhead. */
 	.timeline.off {
-		opacity: 0.5;
+		opacity: var(--disabled-opacity);
+		--slider-thumb: 0px;
 	}
 
 	/*

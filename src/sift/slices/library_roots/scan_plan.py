@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -14,7 +14,9 @@ from sift.kernel.archives import inspect as inspect_archive
 from sift.kernel.content import (
     ROOT_REL_PATH,
     Root,
+    subtree_prefix,
 )
+from sift.kernel.ingress import ALLOWED_MEDIA, Kind
 from sift.kernel.log import get_logger
 from sift.slices.library_roots.moved_folders import _plan_folders
 from sift.slices.library_roots.service import LibraryService
@@ -73,17 +75,8 @@ class ScanPlan:
 async def plan_scan(
     rows: _Rows, service: LibraryService, root: Root, *, first: int = 50
 ) -> ScanPlan:
-    """What a walk of this whole library would do, from the steps the walk takes. Writes nothing.
-
-    A walk moves folder rows before it decides anything about the files in them (see `scan`), so a
-    plan cannot take its steps in the same order. It works the moves out (`_plan_folders`), decides
-    each file from the rows through them (`_decide`), and asks the sweep's question of every row as
-    the moves would leave it (`_missing`). Those are the functions the walk itself runs, so the two
-    cannot come to different answers about the same disk.
-
-    What it reads: the directory listing, the rows, one stat for each row the walk did not list,
-    and the index of each archive the walk found.
-    """
+    """What a walk of this whole library would do, through the functions the walk itself runs, so
+    the two cannot disagree about one disk. Writes nothing."""
     root_abs = Path(root.abs_path)
     if await asyncio.to_thread(_root_answer, root_abs) is not None:
         return ScanPlan(answered=False)
@@ -148,6 +141,64 @@ async def plan_scan(
         reading=tuple(reading),
         going=tuple(going),
     )
+
+
+@dataclass(frozen=True, slots=True)
+class ToRead:
+    """What a scan of one folder will read, counted ahead of it. See `count_to_read`."""
+
+    #: Files and archives the scan will open; its units on the queue.
+    files: int
+    #: The same files by media kind, as their names say (`kind_by_name`).
+    kinds: dict[str, int] = field(default_factory=dict)
+
+
+#: The kind a name says, the first listed winning: a `.webp` is a still until it is read.
+_KIND_OF_EXTENSION = {
+    extension: media.kind.value
+    for media in reversed(ALLOWED_MEDIA)
+    for extension in media.extensions
+}
+
+
+def kind_by_name(item: Walked, verdict: Verdict) -> str:
+    """The media kind a file to read is, by its name; an archive's members are stills."""
+    if verdict is Verdict.ARCHIVE:
+        return Kind.IMAGE.value
+    return _KIND_OF_EXTENSION.get(item.path.suffix.lower(), Kind.IMAGE.value)
+
+
+async def count_to_read(
+    rows: _Rows, service: LibraryService, root: Root, *, under: str = ROOT_REL_PATH
+) -> ToRead | None:
+    """How many files a scan of this folder would read, decided as the scan decides; None when the
+    library folder did not answer. Writes nothing."""
+    root_abs = Path(root.abs_path)
+    if await asyncio.to_thread(_root_answer, root_abs) is not None:
+        return None
+    prefix = subtree_prefix(under)
+    async with lanes.reading(root_abs / "walk"):
+        walk = await asyncio.to_thread(_walk_confined, root_abs, root_abs / under)
+    folders = await _plan_folders(
+        rows, root_id=root.id, under=under, walk=walk, prefix=prefix, service=service
+    )
+    moves = NO_MOVES if folders is None else folders.moves
+    refusals = await service.rejections_of_root(root.id)
+    kinds: dict[str, int] = {}
+    for item in walk.files:
+        verdict = await _decide(
+            item,
+            rel_path=prefix + item.rel_path,
+            root_id=root.id,
+            service=service,
+            context=rows,
+            refused=refusals,
+            moves=moves,
+        )
+        if verdict.reads:
+            kind = kind_by_name(item, verdict)
+            kinds[kind] = kinds.get(kind, 0) + 1
+    return ToRead(files=sum(kinds.values()), kinds=kinds)
 
 
 def _claimed_inside(item: Walked) -> set[str]:

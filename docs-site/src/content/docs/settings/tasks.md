@@ -14,7 +14,7 @@ Come here to run a task now, change when it runs, or find out what happened to a
 ## The tabs
 
 - **Tasks**: every task, its **Run now** press and its When. A When is **As files arrive**, **On a schedule**, **During quiet hours** or **Only when I press it**, as each task offers.
-- **Activity**: what is running and what ran, under **Library tasks** and **Other tasks**, with each task's status, time left and progress. **All tasks** lists them, and **Type** shows one type of task. **Run in Tasks** on a bar opens that task's row.
+- **Activity**: what is running and what ran, under **Library tasks** and **Other tasks**, with each task's status, time left and progress. While a scan is still counting folders, the Scan row and every task after it show **Not known until every folder is counted.** A task that waits for a scan to read its files says **Waiting for the scan to finish.** When a network share holds the reading back, the Scan row names the library folders on that share. **All tasks** lists them, and **Type** shows one type of task. **Run in Tasks** on a bar opens that task's row.
 - <a id="activity.history"></a>**App History**: everything Sift and you have done in your library, newest first. Select a name to open what it happened to.
 - <a id="activity.log"></a>**Logs**: a record of what Sift did. Read it first when something goes wrong.
 

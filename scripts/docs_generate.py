@@ -256,7 +256,7 @@ def settings_page(index: Index, pane: Any, settings: dict[str, Any], tasks: dict
             lines += _row(index, pane, key, setting)
     if not shown and not rows:
         lines += [
-            "Nothing on this pane is a stored setting: everything on it acts when you press it.",
+            "Nothing on this pane is a stored setting.",
             "",
         ]
     return "\n".join(lines).rstrip("\n") + "\n"

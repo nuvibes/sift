@@ -68,7 +68,7 @@ def _filled(template: str, **names: str) -> str:
 
 
 COMPONENT = "visibility"
-VERSION = 14
+VERSION = 15
 
 # --- the tables ----------------------------------------------------------------------------
 
@@ -148,21 +148,15 @@ CREATE TABLE IF NOT EXISTS visibility_places (
 ) WITHOUT ROWID
 """
 
-# How many of each tag, person, collection, photo set and username a user may see, and how
-# many of those the vault holds back: one row per (user, kind, object) with at least one
-# permitted file. Every entity wall orders by this number by default, so without it a wall would
-# count every membership row of every card on it to draw one page. Kept by
-# every recompute, as sets: the counts of what the staged rows belong to are taken away before
-# the rows go and given back from the rows that return, in one statement per kind rather than one
-# per row. A membership arriving or going is made to look the same way (the file's rows are
-# taken away before the membership row lands and put back after), so there is exactly one path by
-# which a count moves.
+# How many files of each thing a user may see, and how many the vault holds back: one row per
+# (user, kind, object) with at least one permitted file, so a wall reads one row per card instead
+# of counting every membership under the page. Kept by every recompute, as sets: taken away before
+# the staged rows go and given back from the rows that return, and a membership change is made to
+# look the same way, so there is exactly one path by which a count moves.
 #
-# The two byte columns are the sizes of the same two sets, moved by the same statements: what a
-# card says beside "1,200 files" is the size of those 1,200 files and no others. Summed only for a
-# kind whose size a screen draws (`Counted.sized`); every other kind keeps nought there, so a
-# count of faces is never read as a size. Stored rather than summed when a wall is read because a
-# sum is a walk of every membership under the page, where this is one row per card.
+# The byte and `_ms` columns are the size and running time of the same files, moved by the same
+# statements. Summed only for a kind that counts files (`Counted.sized`); every other kind keeps
+# nought there, so a count of faces is never read as a size.
 _CREATE_ENTITY_COUNTS = """
 CREATE TABLE IF NOT EXISTS viewer_entity_counts (
   user_id   TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -172,6 +166,8 @@ CREATE TABLE IF NOT EXISTS viewer_entity_counts (
   concealed INTEGER NOT NULL DEFAULT 0,
   permitted_bytes INTEGER NOT NULL DEFAULT 0,
   concealed_bytes INTEGER NOT NULL DEFAULT 0,
+  permitted_ms INTEGER NOT NULL DEFAULT 0,
+  concealed_ms INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (user_id, kind, object_id)
 ) WITHOUT ROWID
 """
@@ -301,17 +297,12 @@ class Counted:
     table: str
     update: str = "UPDATE"
     keys: tuple[tuple[str, ...], ...] = ()
-    #: Count FILES rather than the rows a file joins to. Every other kind's source holds a file at
-    #: most once per thing (the table's key says so), so `COUNT(*)` over the join is a count of
-    #: files. A Site's does not: a file filed under two usernames on one site, or under two labels
-    #: of one network, reaches that site twice. The count is then `COUNT(DISTINCT asset_id)` per
-    #: (user, thing), and it is still right when moved as sets, because every recompute takes and
-    #: gives a staged file WHOLE: each staged file contributes one to each thing it reaches, on the
-    #: way out and on the way back in, however many rows join it there.
+    #: Count FILES rather than the rows a file joins to: a Site's source can reach one file twice
+    #: (two usernames on one site). Still right when moved as sets, because every recompute takes
+    #: and gives a staged file WHOLE.
     distinct: bool = False
-    #: Sum the SIZE of the files counted as well, into the two byte columns beside the counts. Only
-    #: for a kind whose count is a count of FILES that a screen says a size beside; a kind counting
-    #: faces or marks keeps nought there, and does not pay for reading each file's row to get it.
+    #: Sum the size and running time of the files counted too. Only for a kind counting FILES; one
+    #: counting faces or marks keeps nought there and does not pay for reading each file's row.
     sized: bool = False
 
 
@@ -324,25 +315,25 @@ _FILES_COUNTED = (
 )
 
 #: The sizes beside those counts, as SQL over `v` and `a` (the file's own row): every file's bytes,
-#: and the bytes of the ones the vault holds back. A file with no size recorded adds nothing, which
-#: is the honest reading of a size nobody knows. The second form is a kind that is not sized.
+#: and the vault's share. A file with no size or time recorded adds nothing.
 _BYTES_SUMMED = (
     "COALESCE(SUM(a.size_bytes), 0)",
     "COALESCE(SUM(CASE WHEN v.concealed = 1 THEN a.size_bytes END), 0)",
 )
 _BYTES_NOT_SUMMED = ("0", "0")
+_MS_SUMMED = (
+    "COALESCE(SUM(a.duration_ms), 0)",
+    "COALESCE(SUM(CASE WHEN v.concealed = 1 THEN a.duration_ms END), 0)",
+)
 
 
 def _members(one: Counted, rows: str, tail: str = "") -> str:
     """What one kind's counts are taken over: `rows` (verdict rows aliased `v`) joined to the kind's
     memberships, with `tail` (a WHERE on `v`, or nothing) after them.
 
-    A sized kind also reads each file's own row, as `a`, for its size. A DISTINCT kind that is
-    sized reads its memberships made distinct per (user, file, thing) FIRST: a file filed under two
-    usernames of one Site reaches it twice, and `COUNT(DISTINCT ...)` mends the count, but no
-    aggregate mends a SUM. The DISTINCT is over the rows already joined to `rows` (the staged
-    files in a recompute), never over the kind's source alone, which would be the whole library
-    materialised on every change to one file (see `Counted`).
+    A sized kind also reads each file's own row, as `a`. A DISTINCT sized kind makes its rows
+    distinct per (user, file, thing) FIRST, since no aggregate mends a SUM over a file reached
+    twice; over the rows already joined to `rows`, never over the whole source (see `Counted`).
     """
     if not one.sized:
         template = _JOINED
@@ -354,6 +345,7 @@ def _members(one: Counted, rows: str, tail: str = "") -> str:
 
 
 #: The three shapes `_members` fills: module constants filled with module constants.
+#: The CROSS JOIN keeps the planner from scanning every file to reach a handful of rows.
 _JOINED = "<<ROWS>> JOIN <<TABLE>> m ON m.asset_id = v.asset_id<<TAIL>>"
 _JOINED_SIZED = (
     "<<ROWS>> JOIN <<TABLE>> m ON m.asset_id = v.asset_id"
@@ -362,7 +354,7 @@ _JOINED_SIZED = (
 _JOINED_DISTINCT_SIZED = (
     "(SELECT DISTINCT v.user_id, v.asset_id, v.concealed, m.<<COLUMN>>"
     " FROM <<ROWS>> JOIN <<TABLE>> m ON m.asset_id = v.asset_id<<TAIL>>)"
-    " v JOIN assets a ON a.id = v.asset_id"
+    " v CROSS JOIN assets a ON a.id = v.asset_id"
 )
 
 
@@ -985,9 +977,11 @@ _STATS_GIVEN = _filled(
 # `_each_kind`, which fills both per kind.
 _COUNTS_TAKEN_ONE = (
     "UPDATE viewer_entity_counts SET permitted = permitted - d.n, concealed = concealed - d.c,"
-    " permitted_bytes = permitted_bytes - d.b, concealed_bytes = concealed_bytes - d.cb"
+    " permitted_bytes = permitted_bytes - d.b, concealed_bytes = concealed_bytes - d.cb,"
+    " permitted_ms = permitted_ms - d.ms, concealed_ms = concealed_ms - d.cms"
     " FROM (SELECT v.user_id, <<OBJECT>> AS object_id, <<FILES>> AS n, <<CONCEALED>> AS c,"
-    "              <<BYTES>> AS b, <<CONCEALED_BYTES>> AS cb"
+    "              <<BYTES>> AS b, <<CONCEALED_BYTES>> AS cb,"
+    "              <<MS>> AS ms, <<CONCEALED_MS>> AS cms"
     "         FROM <<MEMBERS>>"
     "        GROUP BY v.user_id, <<OBJECT>>) d"
     " WHERE viewer_entity_counts.user_id = d.user_id AND viewer_entity_counts.kind = '<<KIND>>'"
@@ -995,16 +989,18 @@ _COUNTS_TAKEN_ONE = (
 )
 
 _COUNTS_GIVEN_ONE = (
-    "INSERT INTO viewer_entity_counts"
-    " (user_id, kind, object_id, permitted, concealed, permitted_bytes, concealed_bytes)"
+    "INSERT INTO viewer_entity_counts (user_id, kind, object_id, permitted, concealed,"
+    " permitted_bytes, concealed_bytes, permitted_ms, concealed_ms)"
     " SELECT v.user_id, '<<KIND>>', <<OBJECT>>, <<FILES>>, <<CONCEALED>>,"
-    "        <<BYTES>>, <<CONCEALED_BYTES>>"
+    "        <<BYTES>>, <<CONCEALED_BYTES>>, <<MS>>, <<CONCEALED_MS>>"
     "   FROM <<MEMBERS>> WHERE 1 = 1"
     "  GROUP BY v.user_id, <<OBJECT>>"
     " ON CONFLICT (user_id, kind, object_id) DO UPDATE"
     " SET permitted = permitted + excluded.permitted, concealed = concealed + excluded.concealed,"
     " permitted_bytes = permitted_bytes + excluded.permitted_bytes,"
-    " concealed_bytes = concealed_bytes + excluded.concealed_bytes"
+    " concealed_bytes = concealed_bytes + excluded.concealed_bytes,"
+    " permitted_ms = permitted_ms + excluded.permitted_ms,"
+    " concealed_ms = concealed_ms + excluded.concealed_ms"
 )
 
 _COUNTS_EMPTIED = (
@@ -1187,6 +1183,8 @@ def _each_kind(
             CONCEALED=(_FILES_COUNTED if one.distinct else _ROWS_COUNTED)[1],
             BYTES=(_BYTES_SUMMED if one.sized else _BYTES_NOT_SUMMED)[0],
             CONCEALED_BYTES=(_BYTES_SUMMED if one.sized else _BYTES_NOT_SUMMED)[1],
+            MS=(_MS_SUMMED if one.sized else _BYTES_NOT_SUMMED)[0],
+            CONCEALED_MS=(_MS_SUMMED if one.sized else _BYTES_NOT_SUMMED)[1],
         )
         for one in kinds
     ]
@@ -1332,7 +1330,8 @@ SCOPE = "<<SCOPE>>"
 _ENTITY_COUNT_ROWS_ONE = (
     "SELECT v.user_id AS user_id, '<<KIND>>' AS kind, <<OBJECT>> AS object_id,"
     " <<FILES>> AS permitted, <<CONCEALED>> AS concealed,"
-    " <<BYTES>> AS permitted_bytes, <<CONCEALED_BYTES>> AS concealed_bytes"
+    " <<BYTES>> AS permitted_bytes, <<CONCEALED_BYTES>> AS concealed_bytes,"
+    " <<MS>> AS permitted_ms, <<CONCEALED_MS>> AS concealed_ms"
     " FROM <<MEMBERS>>"
     " GROUP BY v.user_id, <<OBJECT>>"
 )
@@ -1364,8 +1363,8 @@ def _every_kind_joined(template: str, kinds: Sequence[Counted]) -> str:
 
 # Keeps the scope marker: the backfill fills it with nothing, a user's rebuild with itself.
 _FILL_ENTITY_COUNTS = (
-    "INSERT INTO viewer_entity_counts"
-    " (user_id, kind, object_id, permitted, concealed, permitted_bytes, concealed_bytes) <<ROWS>>"
+    "INSERT INTO viewer_entity_counts (user_id, kind, object_id, permitted, concealed,"
+    " permitted_bytes, concealed_bytes, permitted_ms, concealed_ms) <<ROWS>>"
 )
 
 #: The count rows filtered to one user.
@@ -1720,18 +1719,14 @@ def _triggers(halves: _Recompute, watched: Sequence[Counted]) -> list[tuple[str,
         ),
     )
 
-    # A file's SIZE changing. The stored sizes beside the counts are sums of each file's size, so
-    # a size written after the file's rows were counted moves them the way a membership does: the
-    # file taken away with its old size and given back with its new one. Sift writes a size when
-    # it takes a file in and nothing changes it afterwards, so this is what keeps a later writer
-    # (a repair, a test's own row, a future probe) from leaving the sizes behind the files. Only a
-    # change of the column fires it; every other update to a file's row costs nothing here.
+    # A file's SIZE or running time changing (the probe writes the second after the file is
+    # counted): the file taken away with its old values and given back with its new ones.
     add_pair(
         "vis_assets_size",
-        "UPDATE OF size_bytes",
+        "UPDATE OF size_bytes, duration_ms",
         "assets",
         *halves.split(_EVERY_USER_ONE_FILE.format(asset="NEW.id")),
-        when="OLD.size_bytes IS NOT NEW.size_bytes",
+        when="OLD.size_bytes IS NOT NEW.size_bytes OR OLD.duration_ms IS NOT NEW.duration_ms",
     )
 
     # A copy of a file, or a membership of one, appearing, changing or going.
@@ -2228,26 +2223,21 @@ SELECT 'extra' AS what, user_id, asset_id, concealed FROM (
 )
 """
 
-# The expected rows sit inside a subquery on both sides of each EXCEPT, and that is not tidiness:
-# compound operators bind left to right, so `stored EXCEPT tag UNION ALL person ...` would take
-# the stored rows minus the tags and then ADD every other kind back, reporting every count as
-# extra on a library where the two sides are identical.
-_ENTITY_COUNT_DIFFERENCES = (
+# The expected rows sit inside a subquery on both sides of each EXCEPT: compound operators bind
+# left to right, so `stored EXCEPT tag UNION ALL person ...` would add every other kind back.
+_ENTITY_COUNT_DIFFERENCES = _filled(
     "SELECT 'count missing' AS what, user_id || '/' || kind || '/' || object_id,"
-    " permitted || '/' || concealed || '/' || permitted_bytes || '/' || concealed_bytes,"
-    " permitted FROM ("
-    "SELECT user_id, kind, object_id, permitted, concealed, permitted_bytes, concealed_bytes"
-    " FROM (<<ROWS>>)"
-    " EXCEPT SELECT user_id, kind, object_id, permitted, concealed, permitted_bytes,"
-    " concealed_bytes FROM viewer_entity_counts)"
+    " <<SHOWN>>, permitted FROM ("
+    "SELECT <<COLUMNS>> FROM (<<ROWS>>)"
+    " EXCEPT SELECT <<COLUMNS>> FROM viewer_entity_counts)"
     " UNION ALL "
     "SELECT 'count extra', user_id || '/' || kind || '/' || object_id,"
-    " permitted || '/' || concealed || '/' || permitted_bytes || '/' || concealed_bytes,"
-    " permitted FROM ("
-    "SELECT user_id, kind, object_id, permitted, concealed, permitted_bytes, concealed_bytes"
-    " FROM viewer_entity_counts EXCEPT "
-    "SELECT user_id, kind, object_id, permitted, concealed, permitted_bytes, concealed_bytes"
-    " FROM (<<ROWS>>))"
+    " <<SHOWN>>, permitted FROM ("
+    "SELECT <<COLUMNS>> FROM viewer_entity_counts EXCEPT SELECT <<COLUMNS>> FROM (<<ROWS>>))",
+    COLUMNS="user_id, kind, object_id, permitted, concealed, permitted_bytes, concealed_bytes,"
+    " permitted_ms, concealed_ms",
+    SHOWN="permitted || '/' || concealed || '/' || permitted_bytes || '/' || concealed_bytes"
+    " || '/' || permitted_ms || '/' || concealed_ms",
 )
 
 # The same comparison for the pairs, and the same subqueries for the same reason.
@@ -2353,39 +2343,48 @@ async def initialize(connection: Connection, on_disk: int) -> None:
         await connection.execute(_CREATE_PLACES)
         await refresh_everything(connection)
         log.info("visibility.backfilled")
-    # Version 11: the SIZE beside each stored count, so a card, an entity page and Browse can say
-    # how big the files they count are without summing them on every read. The columns where
-    # they are missing, then every stored answer rebuilt from the facts, which fills them.
+    # Version 15's columns come first, since every rebuild below writes them.
+    if 0 < on_disk < 15:
+        await _add_columns(connection, "viewer_entity_counts", ("permitted_ms", "concealed_ms"))
+    # Version 11: the SIZE beside each stored count, then every stored answer rebuilt to fill it.
     if 0 < on_disk < 11:
         for table in ("viewer_stats", "viewer_entity_counts"):
-            for column in ("permitted_bytes", "concealed_bytes"):
-                if not await column_exists(connection, table, column):
-                    # Module constants filled with module constants: nothing from run time.
-                    # nosemgrep: sift-no-string-built-sql
-                    await connection.execute(_ADD_BYTES.format(table=table, column=column))
+            await _add_columns(connection, table, ("permitted_bytes", "concealed_bytes"))
         await refresh_everything(connection)
         log.info("visibility.sized")
-    # Version 12: a SONG is counted per user (its files and their size, as a Photo Set's are), and
-    # is a side of three pairs (a person's, a tag's and a username's), so a Song card draws its
-    # People, Tags and Sites. Every stored answer rebuilt from the facts, as version 11 did: the
-    # triggers this build keeps on `song_files` are written by the same rebuild. A library below
-    # 11 has just been rebuilt by that step, with the songs among the kinds, so it is not twice.
+    # Versions 12 and 13 made a SONG a counted, hidden and shared kind: every stored answer rebuilt
+    # (a library below 11 has just been rebuilt by the step above, songs among the kinds).
     if on_disk == 11:
         await refresh_everything(connection)
         log.info("visibility.songs_counted")
-    # Version 13: a SONG is hidden and shared like every other thing with a page (a hide in
-    # `song_user_state`, a grant naming it, both reaching the files that carry it), and is a side of
-    # two more pairs (a Collection's, and its own marks), so its card draws Loops and Collections
-    # and a Collection's card its Music. Every stored answer rebuilt from the facts, as version 12
-    # did, which writes this build's triggers; a library below 12 has just been rebuilt with them.
     if on_disk == 12:
         await refresh_everything(connection)
         log.info("visibility.songs_hidden_and_shared")
-    # Version 14: every trigger CALLS the steps of a recompute rather than carrying them (see
-    # `RECOMPUTE`). The rules are the same, so the stored answers stay; only the triggers are
-    # rewritten. A library below 13 has just been given this build's triggers by its rebuild.
+    # Version 14: every trigger CALLS the steps of a recompute (see `RECOMPUTE`); the answers stay.
     if on_disk == 13:
         await share_the_steps(connection)
+    # Version 15: the running time beside each size, counted from the stored rows.
+    if 13 <= on_disk < 15:
+        await time_the_counts(connection)
+
+
+async def _add_columns(connection: Connection, table: str, columns: Sequence[str]) -> None:
+    """Each count column where it is missing, so a step stopped half way can run again."""
+    for column in columns:
+        if not await column_exists(connection, table, column):
+            # Module constants filled with module constants: nothing from run time.
+            # nosemgrep: sift-no-string-built-sql
+            await connection.execute(_ADD_COLUMN.format(table=table, column=column))
+
+
+async def time_the_counts(connection: Connection) -> None:
+    """The version 15 step, safe to run again: every count rebuilt from the stored rows, and the
+    triggers rewritten to keep the running time as well."""
+    await _drop_triggers(connection)
+    await connection.execute(_CLEAR_ENTITY_COUNTS)
+    await connection.execute(_built().fill_every_entity_count)
+    await _create_triggers(connection)
+    log.info("visibility.timed")
 
 
 async def share_the_steps(connection: Connection) -> None:
@@ -2423,8 +2422,8 @@ async def _create_pair_counts(connection: Connection) -> None:
     await connection.execute(_CREATE_PARTNER_COUNTS)
 
 
-#: One byte column on one stored count table, for the version 11 step.
-_ADD_BYTES = "ALTER TABLE {table} ADD COLUMN {column} INTEGER NOT NULL DEFAULT 0"
+#: One column on one stored count table, for the version 11 and 15 steps.
+_ADD_COLUMN = "ALTER TABLE {table} ADD COLUMN {column} INTEGER NOT NULL DEFAULT 0"
 
 _ANCESTRY_CHECK = _filled("SELECT 1 FROM (<<DIFF>>) LIMIT 1", DIFF=_ANCESTRY_DIFFERENCES)
 

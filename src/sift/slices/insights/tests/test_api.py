@@ -464,7 +464,7 @@ async def test_every_block_names_what_it_counted(
         "You looked through 1 Photo Set.",
     ]
     assert said(block(body, "theater")["statements"][0]) == (
-        "You spent 5 hours in Theater, mostly on your preset 'Nine up'."
+        "You spent 5 hours in Theater, mostly on your Saved Layout 'Nine up'."
     )
     when = [said(line) for line in block(body, "when")["statements"]]
     assert when[0].startswith("Your earliest start was 7:10 AM on ")

@@ -35,6 +35,7 @@
 	import FilterChip from './FilterChip.svelte';
 	import SavedFilterButton from './SavedFilterButton.svelte';
 	import { partsOf, written } from '$lib/search/query-parts';
+	import { ChipOrder } from './filter-bar.svelte';
 
 	interface Props {
 		/**
@@ -143,6 +144,10 @@
 		fields ? partsOf(editing?.draft ?? '', fields) : partsOf(editing?.draft ?? '')
 	);
 
+	/* One chip per value, in the order the bar's own chips keep. */
+	const order = new ChipOrder();
+	const chips = $derived(order.lay(holding, (part) => part));
+
 	function apply(kept: SavedSearch) {
 		onapply(kept.query);
 	}
@@ -222,10 +227,10 @@
 	<SectionHeading band>Saved filters</SectionHeading>
 
 	{#if keptHere.length === 0}
-		<!-- Where the bookmark is, stated only as that: a direction in a sentence is a fact about
-		     the layout and goes stale as a measurement does. -->
+		<!-- Names the control by its own tooltip, never by where it sits. -->
 		<Empty scope="block"
-			>Nothing kept yet. Filter the screen, then press the bookmark on the chips row.</Empty
+			>No saved filters yet. Select some filters, then press the Add to saved filters icon on the
+			filters bar.</Empty
 		>
 	{:else}
 		<ul>
@@ -307,33 +312,24 @@
 			</p>
 
 			<ul>
-				{#each holding as part, at (at)}
+				{#each chips as entry (entry.key)}
+					{@const part = entry.from}
+					{@const one = entry.value}
 					{@const value = written(part)}
-					<!-- The bar's own chip, drawn by the bar's own component and answering to the
-					     bar's own handlers, so what Save would keep reads and works exactly as on
-					     the row above the panel. What somebody wants to change about a filter is
-					     usually one dimension, and the chip saying so is nearest to hand. The same
-					     three verbs the bar hands its own chips, pointed at the draft rather than
-					     the address, which is the difference between editing a filter and being
-					     moved to it.
-
-					     ONE CHIP PER VALUE, exactly as the bar draws them: one chip for "runway or
-					     Edited" could only refuse both, and a kept filter has to be able to keep one
-					     tag and refuse the other. -->
-					{#each part.values as one, place (`${place}:${one}`)}
-						<li>
-							<FilterChip
-								field={part.field}
-								values={[one]}
-								of={part.values.length}
-								all={part.all}
-								excluded={part.excluded}
-								onselect={onflip ? () => onflip(part.field, one) : undefined}
-								onremove={ondrop ? () => ondrop(part.field, one) : undefined}
-								onswitch={onswitchmatch ? () => onswitchmatch(part.field, value) : undefined}
-							/>
-						</li>
-					{/each}
+					<!-- The bar's own chip and verbs, pointed at the draft: one per value, so one tag can be
+					     kept and another refused. -->
+					<li>
+						<FilterChip
+							field={part.field}
+							values={[one]}
+							of={part.values.length}
+							all={part.all}
+							excluded={part.excluded}
+							onselect={onflip ? () => onflip(part.field, one) : undefined}
+							onremove={ondrop ? () => ondrop(part.field, one) : undefined}
+							onswitch={onswitchmatch ? () => onswitchmatch(part.field, value) : undefined}
+						/>
+					</li>
 				{:else}
 					<li><Chip size="sm" tone="quiet">Everything</Chip></li>
 				{/each}

@@ -136,8 +136,7 @@
 {/if}
 
 <style>
-	/* `--frame-corner`, `--grip-band`, `--bar-height` and `--bar-band` are MiniPlayer's, set on the
-	   frame around this; each fallback is its default there. */
+	/* `--frame-corner` and `--grip-band` are set by MiniPlayer; each fallback is its default there. */
 	/* In the picture's top corner, below the header strip, cleared by the strip's measured height. */
 	.notice {
 		position: absolute;

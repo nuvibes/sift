@@ -31,7 +31,7 @@ from sift.kernel.jobs import (
     worker_pool,
 )
 from sift.kernel.jobs.families import Family
-from sift.kernel.jobs.ledger import Ledger
+from sift.kernel.jobs.ledger import Ledger, report_text
 from sift.kernel.jobs.tuning import (
     BACKGROUND_PRIORITY,
     DEFAULT_PRIORITY,
@@ -491,12 +491,7 @@ async def test_a_handler_that_can_never_succeed_fails_once_and_says_why(
     assert job.error == "the library folder did not answer"
 
 
-# --- what the ledger is told ------------------------------------------------------------------
-#
-# The pool is the one thing that knows when a job started and how it ended, and the ledger is the
-# one thing that writes runs down. Nothing in a handler knows a ledger exists: the kind of file and
-# its size are read off the file's own row, and how many files a job is about is whatever the
-# handler said with `set_units`.
+# --- what the ledger is told: no handler knows a ledger exists -------------------------------
 
 
 @pytest.mark.integration
@@ -545,6 +540,86 @@ async def test_a_pool_with_a_ledger_tells_it_what_each_job_was_about(
     assert run.jobs_done == 1 and run.jobs_failed == 0
     assert run.files["video"].n == 3 and run.files["video"].bytes == 4096
     assert run.worker_ms > 0
+
+
+@pytest.mark.integration
+async def test_the_ledger_is_told_what_a_job_ended_with_only_once_it_will_not_be_tried_again(
+    job_queue: JobQueue,
+    temp_db: Database,
+    content_store: ContentStore,
+    library_store: LibraryStore,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(worker_pool, "_FAMILIES", {})
+
+    async def missing(_context: JobContext) -> None:
+        raise FileNotFoundError("clip.mp4")
+
+    async def gone(_context: JobContext) -> None:
+        raise JobFailedPermanently("The folder stopped answering partway through the scan.")
+
+    register_handler("probe", missing, name="Test job", family=Family.SCAN)
+    register_handler("scan", gone, name="Test walk", family=Family.SCAN)
+    await job_queue.enqueue("probe", {}, max_attempts=2)
+    await job_queue.enqueue("scan", {})
+    ledger = Ledger(temp_db, families_of=worker_pool.registered_families())
+    pool = WorkerPool(
+        job_queue,
+        concurrency=1,
+        poll_interval=0.01,
+        capabilities=SystemCapabilities(content=content_store, library=library_store),
+        ledger=ledger,
+    )
+    await pool.start()
+    try:
+        await drain(job_queue)
+    finally:
+        await pool.stop()
+
+    run = ledger.open_run(Family.SCAN)
+    assert run is not None and run.jobs_failed == 3
+    assert sorted(run.ended_with.values()) == [1, 1]
+    assert any(words.startswith("A file it needed wasn't there.") for words in run.ended_with)
+
+
+async def test_a_done_jobs_note_reaches_the_report_and_a_failed_ones_does_not(
+    job_queue: JobQueue, temp_db: Database, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(worker_pool, "_FAMILIES", {})
+    unread = (
+        "1 folder stopped answering partway through, so nothing in it was marked missing or"
+        " unreadable."
+    )
+
+    async def left_one(context: JobContext) -> None:
+        await context.set_note(unread)
+
+    async def gone(context: JobContext) -> None:
+        await context.set_note("The folder stopped answering partway through the scan.")
+        raise FileNotFoundError("clip.mp4")
+
+    register_handler("scan", left_one, name="Test walk", family=Family.SCAN)
+    register_handler("probe", gone, name="Test job", family=Family.SCAN)
+    await job_queue.enqueue("scan", {})
+    await job_queue.enqueue("probe", {}, max_attempts=2)
+    ledger = Ledger(temp_db, families_of=worker_pool.registered_families())
+    pool = WorkerPool(job_queue, concurrency=1, poll_interval=0.01, ledger=ledger)
+    await pool.start()
+    try:
+        await drain(job_queue)
+    finally:
+        await pool.stop()
+    run = ledger.open_run(Family.SCAN)
+    assert run is not None
+    await ledger._write(run, int(time.time()))
+    record = await ledger.get(run.id)
+    assert record is not None
+    said = report_text(record).splitlines()
+    assert [line for line in said if "ended with" in line.lower() or "failed:" in line] == [
+        f"Ended with: {unread}",
+        "Why 1 failed: A file it needed wasn't there. It may have been moved or deleted, or its"
+        " drive isn't connected.",
+    ], "a failed attempt's note, retried or not, is never said"
 
 
 @pytest.mark.integration

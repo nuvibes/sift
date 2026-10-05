@@ -25,7 +25,7 @@ from typing import Any
 import numpy as np
 import pytest
 
-from sift.kernel.access import Repository
+from sift.kernel.access import Repository, Role
 from sift.kernel.config import Settings
 from sift.kernel.content import ContentStore, VerdictProduct
 from sift.kernel.db import Database
@@ -750,6 +750,21 @@ async def test_a_described_file_gets_the_better_tier(wired: Any, temp_db: Databa
     assert [asset_id for asset_id, _ in found.neighbours] == ["other"]
 
 
+async def test_the_better_tier_ranks_only_what_the_asker_may_see(
+    wired: Any, temp_db: Database
+) -> None:
+    from sift.testing.fixtures import create_user
+
+    service, preferences, _embedder, _reader = wired
+    preferences.values[semantic_settings.ENABLED_KEY] = True
+    await described(temp_db, service, "mine")
+    await described(temp_db, service, "other")
+    guest = await create_user(temp_db, Role.GUEST)
+
+    assert (await service.similar_to("mine", asker=guest)).neighbours == ()
+    assert await service.nearest([1.0] + [0.0] * (DIMENSION - 1), limit=5, asker=guest) == []
+
+
 async def test_a_file_the_pass_has_not_reached_gets_the_cheap_tier(
     temp_db: Database, content_store: ContentStore, settings: Settings
 ) -> None:
@@ -766,7 +781,8 @@ async def test_a_file_the_pass_has_not_reached_gets_the_cheap_tier(
         settings=settings,
         hardware=machine(),
         similar=SimilarFinder(
-            Fingerprints(("mine", "0000000000000000"), ("other", "0000000000000001"))  # type: ignore[arg-type]
+            Fingerprints(("mine", "0000000000000000"), ("other", "0000000000000001")),  # type: ignore[arg-type]
+            None,
         ),
     )
 
@@ -774,6 +790,33 @@ async def test_a_file_the_pass_has_not_reached_gets_the_cheap_tier(
 
     assert found.tier.value == "matches"
     assert [asset_id for asset_id, _ in found.neighbours] == ["other"]
+
+
+async def test_the_cheap_tier_ranks_only_what_the_asker_may_see(
+    temp_db: Database, content_store: ContentStore, settings: Settings
+) -> None:
+    from sift.slices.semantic.similar import SimilarFinder
+    from sift.testing.fixtures import create_user
+
+    await temp_db.initialize_schema()
+    rows: Any = Fingerprints(("mine", "0000000000000000"), ("other", "0000000000000001"))
+    service = SemanticService(
+        store=VectorStore(temp_db),
+        records=Records(temp_db),
+        content=content_store,
+        repository=Repository(temp_db, content_store),
+        preferences=Preferences(),
+        settings=settings,
+        hardware=machine(),
+        similar=SimilarFinder(rows, temp_db),
+    )
+    guest = await create_user(temp_db, Role.GUEST)
+    admin = await create_user(temp_db, Role.ADMIN)
+
+    assert (await service.similar_to("mine", asker=guest)).neighbours == ()
+    assert [one for one, _ in (await service.similar_to("mine", asker=admin)).neighbours] == [
+        "other"
+    ]
 
 
 async def test_a_file_only_the_previous_model_described_gets_the_cheap_tier_and_the_screen_says_so(
@@ -824,7 +867,8 @@ async def test_with_the_switch_off_a_described_file_gets_the_cheap_tier(
         settings=settings,
         hardware=machine(),
         similar=SimilarFinder(
-            Fingerprints(("mine", "0000000000000000"), ("other", "0000000000000001"))  # type: ignore[arg-type]
+            Fingerprints(("mine", "0000000000000000"), ("other", "0000000000000001")),  # type: ignore[arg-type]
+            None,
         ),
     )
     embedder = StubEmbedder()
@@ -994,7 +1038,8 @@ async def test_a_machine_that_cannot_hold_the_index_still_gets_the_cheap_tier(
         settings=settings,
         hardware=machine(),
         similar=SimilarFinder(
-            Fingerprints(("mine", "0000000000000000"), ("other", "0000000000000001"))  # type: ignore[arg-type]
+            Fingerprints(("mine", "0000000000000000"), ("other", "0000000000000001")),  # type: ignore[arg-type]
+            None,
         ),
     )
 

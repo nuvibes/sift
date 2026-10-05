@@ -56,7 +56,7 @@ export const COPY = {
 		name: 'Benchmarking this device',
 		row: 'Benchmark this device',
 		help: 'Find out what this device can do, and get suggested numbers for how many things Sift does at the same time.',
-		lede: "Sift estimates how much to do at the same time from your CPU. The benchmark measures it instead. It encodes the same short clip one at a time, then several at the same time. It times how fast this device decodes video and seeks into a file. Then it reads a few large files from each network share your library is on. Each step runs three times and keeps the middle result. It takes a few minutes, keeps this device busy while it runs, and doesn't measure your GPU.",
+		lede: 'Sift estimates how much to do at the same time from your CPU. The benchmark measures it instead. It encodes the same short clip one at a time, then several at the same time. It times how fast this device decodes video and seeks into a file. It builds previews on your GPU the way Sift does, and times each installed model. Then it reads a few large files from each drive and network share your library is on. Each step runs three times and keeps the middle result. It takes a few minutes and keeps this device busy while it runs.',
 		busy: 'Benchmarking\u2026 this device is busy until it finishes.',
 		round: (at: number, of: number) =>
 			`Round ${at} of up to ${of}. Each one encodes more clips at the same time than the last, and it stops early if this device stops keeping up.`,
@@ -82,15 +82,25 @@ export const COPY = {
 			'Nothing is changed until you press that. You can change any of them later under Importing.',
 		agrees: 'Your settings already match what this device can do. Nothing to change.',
 		notEnough: 'The benchmark finished without enough results. Running it again usually helps.',
-		decode: (fps: number, ms: number) =>
-			`Decodes about ${counted(fps)} frames a second at 720p, and one seek into a file costs about ${ms} ms. On a network share, Generate and Identify weigh these against the share's speed to choose how to read each file.`,
-		shares: 'Your network shares',
+		decode: (fps: number, ms: number, share: boolean) =>
+			`Decodes about ${counted(fps)} frames a second at 720p, and one seek into a file costs about ${ms} ms.${share ? " On a network share, Generate and Identify weigh these against the share's speed to choose how to read each file." : ''}`,
+		shares: 'Your drives and shares',
 		shareReads: (n: number) =>
 			`Sift opens ${counted(n)} ${n === 1 ? 'file' : 'files'} at the same time from every share. The marked line is where each share stopped getting faster. On a share, reading is the slow part. Sift imports files at the pace the share can serve, however busy the rest of this device is.`,
 		notMeasured: (why: string) => `Not measured \u2014 ${why}.`,
 		level: (n: number, mbps: number) => `${n} at a time: ${mbps} MB/s`,
 		quickest: (n: number) => `Quickest at ${n} at a time.`,
-		readingAt: (n: number) => ` Sift is reading ${n} at a time.`,
+		folders: (names: string) => `Library folders on it: ${names}.`,
+		readingAt: (n: number) =>
+			` Files read per share is set to ${n}, so ${n} are read at a time here.`,
+		gpu: 'Previews on your GPU',
+		previews: (n: number, each: number) =>
+			`${n} at the same time: ${each.toFixed(2)} previews a second`,
+		models: 'Installed models',
+		modelOn: (name: string, device: string) => `${name} on the ${device === 'cpu' ? 'CPU' : 'GPU'}`,
+		files: (n: number, each: number) => `${n} at the same time: ${each.toFixed(2)} files a second`,
+		perFile: (seconds: number, memory?: number | null, gpu?: number | null) =>
+			`About ${seconds.toFixed(1)} seconds of one task for each file.${memory ? ` Loading it took ${counted(memory)} MB of memory${gpu ? ` and ${counted(gpu)} MB on the GPU` : ''}.` : ''}`,
 		cannotStart: "Couldn't start the benchmark.",
 		stopped: 'The benchmark stopped responding.',
 		cannotSave: "Couldn't save those numbers."
@@ -116,16 +126,18 @@ export const COPY = {
 			"Whether Sift has stopped responding or had to wait since it started, and whether it's waiting right now.",
 		yes: 'Yes. Sift has answered straight away since it started.',
 		times: (n: number) => `${n.toLocaleString()} ${n === 1 ? 'time' : 'times'}`,
+		measuring: (times: string) =>
+			`Not counted: ${times} the benchmark pushed Sift until it fell behind, which is how it measures.`,
 		/* The worst of the four since Sift started, in the words of the thing that was slow. */
 		was: {
 			loop: (times: string, pause: string) =>
-				`Yes. Since it started, Sift stopped responding ${times}; the longest pause was ${pause}.`,
+				`Not always. Since it started, Sift stopped responding ${times}; the longest pause was ${pause}.`,
 			threads: (times: string, pause: string) =>
-				`Yes. Since Sift started, video and file work waited for a free worker ${times}; the longest wait was ${pause}.`,
+				`Not always. Since Sift started, video and file work waited for a free worker ${times}; the longest wait was ${pause}.`,
 			database: (times: string, pause: string) =>
-				`Yes. Since Sift started, screens waited for the database ${times}; the longest wait was ${pause}.`,
+				`Not always. Since Sift started, screens waited for the database ${times}; the longest wait was ${pause}.`,
 			queue: (times: string, pause: string) =>
-				`Yes. Since Sift started, it fell behind with its work ${times}; the longest it was behind was ${pause}.`
+				`Not always. Since Sift started, it fell behind with its work ${times}; the longest it was behind was ${pause}.`
 		},
 		/* Happening at this moment, which outranks anything in the past. */
 		now: {
@@ -215,6 +227,16 @@ export const SEARCHABLE: Searchable[] = [
 		key: MEASURE_ROW,
 		section: 'performance',
 		keywords: 'benchmark measure speed test this device disk'
+	},
+	{
+		name: COPY.measure.gpu,
+		section: 'performance',
+		keywords: 'gpu graphics card nvenc encoder previews benchmark'
+	},
+	{
+		name: COPY.measure.models,
+		section: 'performance',
+		keywords: 'models faces smart search watermarks recognition benchmark memory'
 	},
 	{
 		name: COPY.much.name,

@@ -53,6 +53,7 @@ function page(jobs: Job[], total = 9): JobsPage {
 		housekeeping: [],
 		stepping_back: false,
 		step_back_share: 25,
+		step_back_for: null,
 		full_amount: false,
 		password_wanted: 0
 	};
@@ -249,22 +250,25 @@ describe('before the queue has answered', () => {
 	});
 });
 
-describe("a running row's note", () => {
-	it('is drawn beside what the job is doing, and a finished row carries none', async () => {
-		/* A swap's row says which device only through its note: the job writes that there, so the
-		   row has to draw it. */
-		const [running, , failed] = EVERYTHING.jobs;
+describe("a running or done row's note", () => {
+	it('is drawn beside what the job is doing or ended with, and a failed row carries none', async () => {
+		const [running, ended, failed] = EVERYTHING.jobs;
+		const unread =
+			'1 folder stopped answering partway through, so nothing in it was marked missing or unreadable.';
 		running.note = 'Swap with device ABCD-EFGH';
-		failed.note = 'A result, not a doing';
+		ended.state = 'done';
+		ended.note = unread;
+		failed.note = 'Not a doing';
 		try {
 			await open();
-			const doing = [...host.querySelectorAll('.doing')].map((one) => one.textContent);
+			const doing = [...host.querySelectorAll('.doing')].map((one) => one.textContent).join(' | ');
 
-			expect(doing.join(' | ')).toContain('Swap with device ABCD-EFGH');
-			expect(doing.join(' | ')).not.toContain('A result, not a doing');
+			expect(doing).toContain('Swap with device ABCD-EFGH');
+			expect(doing).toContain(unread);
+			expect(doing).not.toContain('Not a doing');
 		} finally {
-			running.note = null;
-			failed.note = null;
+			running.note = ended.note = failed.note = null;
+			ended.state = 'blocked';
 		}
 	});
 });

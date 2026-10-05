@@ -27,7 +27,7 @@ import {
 } from './justify';
 import { FAVORITED_ORDERS } from './sort-state.svelte';
 
-/* LIVE: followed by lib/components/AssetGrid.svelte (the page on screen read again on the arrivals, library and jobs bells: catchUp) */
+/* LIVE: followed by lib/components/AssetGrid.svelte (the page on screen read again on the arrivals and library bells: catchUp) */
 
 /**
  * One row of a wall, taken from the server's own definitions rather than described again here.
@@ -258,6 +258,8 @@ export interface RowSource {
 	 * only a wall that asks for them offers (`WALL_ONLY_ORDERS`). The Favorites wall's two.
 	 */
 	adds?: readonly string[];
+	/** The orders this wall leaves out of the whole vocabulary, since they would sort every row equal. */
+	drops?: readonly string[];
 	/**
 	 * What an order is CALLED on this wall, where the file wall's words would name the wrong thing.
 	 * A wall of marks orders `newest` by when each mark was made, so it says so.
@@ -279,6 +281,8 @@ export interface RowSource {
 	 * two marks of one video apart. The line is part of every row's height (`CAPTION_HEIGHT`).
 	 */
 	captioned?: boolean;
+	/** What the pager calls a row, where it is not a file. */
+	noun?: string;
 }
 
 /**
@@ -302,7 +306,8 @@ export const LOOP_SOURCE: RowSource = {
 	/* The bar's filters filter the marks to those cut from matching files; see `filterable`. */
 	filterable: true,
 	files: { loops: 'any' },
-	captioned: true
+	captioned: true,
+	noun: 'loops'
 };
 
 /** The ordinary one: the library, where a row is a file and its own id names it. */
@@ -319,6 +324,7 @@ export const ASSET_SOURCE: RowSource = {
 export const FAVORITES_SOURCE: RowSource = {
 	...ASSET_SOURCE,
 	adds: FAVORITED_ORDERS,
+	drops: ['favorite'],
 	files: { fav: 'yes' }
 };
 
@@ -370,13 +376,7 @@ export class Grid {
 	 */
 	showing = $state<string | null>(null);
 
-	/**
-	 * Whether a request for this grid is OUT, however it was asked for.
-	 *
-	 * Not `loading`, which a quiet catch-up leaves alone so the page does not flicker. Guarding the
-	 * catch-up on `loading` would let its once-a-second asks overlap during a scan; `#generation`
-	 * keeps the answers right, but the machine would slow for nothing.
-	 */
+	/** Whether a request for this grid is out, however asked: `loading` a quiet catch-up leaves alone. */
 	reading = $state(false);
 
 	/**
@@ -409,6 +409,7 @@ export class Grid {
 	 * overwrite the grid.
 	 */
 	#generation = 0;
+	#quietOwed = false;
 
 	containerWidth = $state(0);
 	/**
@@ -482,15 +483,22 @@ export class Grid {
 	/**
 	 * The page, laid out: exactly `pageRows` complete rows. Files fetched past the last row are the
 	 * next page's and are not drawn; asking generously is what makes every page the same shape.
+	 * One row left at the end of the list is drawn here, never as a page of its own.
 	 */
-	readonly filled = $derived(
-		(this.#fromEnd ? fillRowsFromEnd : fillRows)(this.items, {
+	readonly filled = $derived.by(() => {
+		const shape = {
 			containerWidth: this.containerWidth,
 			targetHeight: this.rowHeight,
 			gutter: this.gutter,
 			rows: this.pageRows
-		})
-	);
+		};
+		if (this.#fromEnd) return fillRowsFromEnd(this.items, shape);
+		const page = fillRows(this.items, shape);
+		const atTheEnd = this.complete && this.offset + this.items.length >= this.total;
+		if (!atTheEnd || page.used === this.items.length) return page;
+		const tail = fillRows(this.items, { ...shape, rows: shape.rows + 1 });
+		return tail.used === this.items.length ? tail : page;
+	});
 
 	readonly rows: LaidOutRow[] = $derived(this.filled.rows);
 
@@ -569,14 +577,8 @@ export class Grid {
 	}
 
 	/**
-	 * Every ROW this query matches, read a page at a time, WITHOUT moving the wall: what "select
-	 * all" means, since the grid holds only one screenful of what the count says.
-	 *
-	 * The rows, fixed at the press, so a file imported while somebody decided is not swept into a
-	 * delete. Rows rather than ids, because on a wall of moments a row is a mark and the verbs need
-	 * its `asset_id`. THROWS rather than returning what it managed, since a short answer looks like
-	 * a small library. It stops at `MOST_AT_ONCE`, a known number the control states before it is
-	 * pressed, which is what keeps the gesture affordable at any size.
+	 * Every ROW this query matches, up to `MOST_AT_ONCE`, without moving the wall: what "select all"
+	 * means. Throws rather than return a short answer, which would look like a small library.
 	 */
 	async everyRow(query: WallQuery): Promise<GridItem[]> {
 		const rows: GridItem[] = [];
@@ -611,32 +613,22 @@ export class Grid {
 	}
 
 	/**
-	 * Load the page that begins here, replacing what is shown rather than adding to it.
-	 *
-	 * A loop, because how many files fill a row depends on their shapes: a generous estimate, then
-	 * more only if it fell short (a mostly vertical library, a huge monitor at the smallest tiles).
-	 * Files past the last row are kept, not drawn; one more than drawn proves the last row full.
-	 * `from` asks the server where a file sits, so an address survives another window; `last` fills
-	 * backwards so the final file lands at the bottom. The generation is bumped on entry and
-	 * checked after every await, so an older question's answer is never written.
+	 * Load the page that begins here, replacing what is shown. A loop, because how many files fill
+	 * a row depends on their shapes; the generation check keeps an older answer from being written.
 	 */
 	async loadAt(
 		query: WallQuery,
 		start: PageStart,
 		options: { quiet?: boolean } = {}
 	): Promise<void> {
+		// A catch-up nobody asked for never replaces a page somebody did: it waits for that page.
+		if (this.#holdsBack(options)) return;
 		const generation = ++this.#generation;
-		// A quiet load is the periodic catch-up nobody asked for, so it never shows as loading.
 		if (!options.quiet) this.loading = true;
-		// Whether a request is OUT, a separate question from the spinner. See `reading`.
 		this.reading = true;
 		this.failed = null;
 
-		/*
-		 * Reading backwards to a boundary: `last` ends at the end of the library, a page back ends
-		 * where this page begins. `last` before any load falls through to the beginning.
-		 */
-		const endAt = 'last' in start ? this.total : 'endingAt' in start ? start.endingAt : -1;
+		const endAt = this.#endOf(start);
 		const fromEnd = endAt > 0;
 
 		const collected: GridItem[] = [];
@@ -659,7 +651,7 @@ export class Grid {
 
 		try {
 			for (let attempt = 0; attempt < MAX_FETCHES; attempt += 1) {
-				const wanted = this.#shortfall(collected, fromEnd);
+				const wanted = this.#stillWanted(collected, began, known, fromEnd);
 				if (wanted <= 0) break;
 
 				/*
@@ -696,13 +688,8 @@ export class Grid {
 					username: answer.username ?? null
 				};
 				if ('from' in start && attempt === 0) began = answer.offset;
-				/*
-				 * HOW MANY FILES THERE ARE IS PUBLISHED THE MOMENT AN ANSWER CARRIES IT, not when
-				 * the fill is over, so the count never describes the previous question for the
-				 * seconds a fill can take; every round publishes, since a later one can widen the
-				 * count. Only the total: `offset` describes the tiles on screen, which are still the
-				 * old page.
-				 */
+				/* The count is said as each answer lands, so it never describes the last question;
+				   not `offset`, which describes the tiles still on screen. */
 				this.total = known.total;
 				this.totalBytes = known.totalBytes;
 				const fresh = answer.items.filter((item) => !taken.has(item.id));
@@ -799,8 +786,29 @@ export class Grid {
 			if (generation === this.#generation) {
 				this.loading = false;
 				this.reading = false;
+				this.#payOwed(query, options);
 			}
 		}
+	}
+
+	/*
+	 * Reading backwards to a boundary: `last` ends at the end of the library, a page back ends
+	 * where this page begins. `last` before any load falls through to the beginning.
+	 */
+	#endOf(start: PageStart): number {
+		return 'last' in start ? this.total : 'endingAt' in start ? start.endingAt : -1;
+	}
+
+	#holdsBack(options: { quiet?: boolean }): boolean {
+		if (!options.quiet || !this.loading) return false;
+		this.#quietOwed = true;
+		return true;
+	}
+
+	#payOwed(query: WallQuery, options: { quiet?: boolean }): void {
+		if (!this.#quietOwed || options.quiet || this.failed !== null) return;
+		this.#quietOwed = false;
+		void this.loadAt(query, { at: this.offset }, { quiet: true });
 	}
 
 	/**
@@ -824,6 +832,25 @@ export class Grid {
 			rowHeight: this.rowHeight,
 			averageAspect: averageAspect(collected)
 		});
+	}
+
+	/* What the page still needs, or else the files left after it when they are a row or less,
+	   fetched so `filled` can draw them on this page. */
+	#stillWanted(
+		collected: readonly GridItem[],
+		began: number,
+		known: { total: number; complete: boolean },
+		fromEnd: boolean
+	): number {
+		const short = this.#shortfall(collected, fromEnd);
+		const rest = known.total - began - collected.length;
+		if (short > 0 || fromEnd || !known.complete || rest <= 0) return short;
+		const row = itemsToFill(1, {
+			containerWidth: this.containerWidth,
+			rowHeight: this.rowHeight,
+			averageAspect: averageAspect(collected)
+		});
+		return rest <= row ? rest : 0;
 	}
 
 	/*

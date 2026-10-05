@@ -33,14 +33,14 @@ from sift.kernel.access.catalog import marked_folders
 from sift.kernel.audience import EVERY_ADMIN
 from sift.kernel.changes import About, announce
 from sift.kernel.config import Settings
-from sift.kernel.content import LibraryError, LibraryStore, Root, RootKind
+from sift.kernel.content import FolderRow, LibraryError, LibraryStore, Root, RootKind
 from sift.kernel.db import Database
 from sift.kernel.hardware import machine_name
 from sift.kernel.jobs import WAITED_ON_PRIORITY, JobQueue
 from sift.kernel.ledger import Actor
 from sift.kernel.library_write import LibraryWriteRefused
 from sift.kernel.log import get_logger
-from sift.kernel.paths import PathEscape, Presence, confine, presence
+from sift.kernel.paths import PathEscape, Presence, confine, is_writable, presence
 from sift.kernel.seams import SettingsSeam
 from sift.kernel.where import blurred, profile_to_blur
 from sift.kernel.wiring import part_of, part_or_none
@@ -49,7 +49,7 @@ from sift.slices.auth import csrf_protect, current_viewer, require_admin, requir
 from sift.slices.library_roots import quarantine
 from sift.slices.library_roots import queue as queues
 from sift.slices.library_roots.browse import BrowseRefused, look, machine_roots
-from sift.slices.library_roots.jobs import SCAN, scan_shape
+from sift.slices.library_roots.jobs import queue_scan, scan_shape
 from sift.slices.library_roots.models import (
     BrowseEntry,
     BrowseView,
@@ -87,42 +87,23 @@ def _service(request: Request) -> LibraryService:
 
 
 async def _rewatch(request: Request) -> None:
-    """Tell the watcher the roots have changed.
-
-    Called after anything that alters what should be watched: a root added or removed. Without it
-    the change would take effect at the next restart: a root added through the UI would sit there
-    not watching anything until somebody happened to reboot Sift.
-
-    The watcher is absent in a test that builds routes without booting the application, so this
-    asks rather than assumes.
-    """
+    """Tell the watcher, if one runs, that the roots changed, rather than wait for a restart."""
     watcher = part_or_none(request, WATCHER)
     if watcher is not None:
         await watcher.refresh()
 
 
-#: How long a folder on another machine gets to say it is still there. Long enough for a share that
-#: is merely busy, short enough that the list of folders still draws at once.
+#: How long a folder on another machine gets to say it is still there: enough for a busy share.
 _REACHABLE_TIMEOUT = 1.5
 
 
 async def _reachable(path: Path) -> bool:
-    """Whether a folder on another machine answers at all, without letting a dead mount hold the request.
-
-    The check itself is a blocking one and goes to a thread, because a stat on a share whose server
-    has gone does not fail quickly: it waits for the mount's own timeout, which is measured in
-    tens of seconds. The wait here is the screen's, not the filesystem's: when it runs out the
-    answer is "not there", and the thread is left to finish in its own time.
-    """
+    """Whether a folder on another machine answers, without a dead mount holding the request."""
     return await _presence_elsewhere(path) == "here"
 
 
 async def _presence_elsewhere(path: Path) -> Presence:
-    """`presence` for a folder on another machine, under the same guard as `_reachable`.
-
-    A share that did not answer in time is silent, never missing: the only thing known about it
-    is that it kept the request waiting.
-    """
+    """`presence` for a folder on another machine; one that did not answer in time is silent."""
     try:
         return await asyncio.wait_for(asyncio.to_thread(presence, path), _REACHABLE_TIMEOUT)
     except (TimeoutError, OSError):
@@ -139,23 +120,12 @@ def _root_view(
     presence: Presence | None = None,
     machine: str | None = None,
 ) -> RootView:
-    """Everything about a root except where it is. See `RootView` for why the path is not here.
-
-    `hidden` is the asking user's own: the row itself says nothing about who has hidden the
-    library, because the same one is out of sight for one user and ordinary for the next.
-
-    `mark` is read off the root's own top folder rather than off the root, so it is the same answer
-    the tree draws one level down, including a share made on the root itself, which reaches the
-    folder by inheritance. Two reads of the same thing would be free to disagree.
-
-    `profile` is the folder whose name the path is said without (`kernel.where.blurred`), for an
-    admin who asked for their account name to be kept out of paths.
+    """A root as a screen sees it. `hidden` is the asking user's own; `mark` is read off the root's
+    top folder, so it matches the tree; `profile` is kept out of the path (`kernel.where.blurred`).
     """
     return RootView(
         id=root.id,
-        # Read off the stored path rather than out of the name column, so the two cannot disagree.
-        # Both change together or not at all: the only thing that renames a library folder is a
-        # rename of the directory, which rewrites the path this reads.
+        # Read off the stored path, not the name column, so the two cannot disagree.
         name=Path(root.abs_path).name or str(root.abs_path),
         path=blurred(str(root.abs_path), profile),
         kind=root.kind,
@@ -172,7 +142,10 @@ def _root_view(
 
 
 def _folder_view(
-    folder: Folder, mark: GrantMark | None = None, refused: tuple[bool, bool] = (False, False)
+    folder: Folder,
+    mark: GrantMark | None = None,
+    refused: tuple[bool, bool] = (False, False),
+    writable: bool | None = None,
 ) -> FolderView:
     return FolderView(
         id=folder.id,
@@ -187,7 +160,27 @@ def _folder_view(
         hidden=folder.vault,
         keep_local=refused[0],
         keep_from_swaps=refused[1],
+        writable=writable,
     )
+
+
+async def _writable_roots(library: LibraryStore, root_ids: set[str]) -> dict[str, bool]:
+    """Whether Sift may write in each of these libraries, asked of the disk now and never stored.
+
+    A share that does not answer within the reachability wait reads as not writable.
+    """
+    roots = [root for root in await library.roots() if root.id in root_ids]
+
+    async def asked(root: Root) -> bool:
+        try:
+            return await asyncio.wait_for(
+                asyncio.to_thread(is_writable, Path(root.abs_path)), _REACHABLE_TIMEOUT
+            )
+        except (TimeoutError, OSError):
+            return False
+
+    answers = await asyncio.gather(*(asked(root) for root in roots))
+    return {root.id: answer for root, answer in zip(roots, answers, strict=True)}
 
 
 # --- choosing a folder -----------------------------------------------------------------------
@@ -381,7 +374,7 @@ async def add_root(
     taken_over = await react(root.id, viewer.id, body.scan) if react is not None else False
     if body.scan and not taken_over:
         # Somebody's press, so the pass it starts names them. See `jobs.requested_by`.
-        await queue.enqueue(SCAN, {"root_id": root.id}, dedupe=True, requested_by=viewer.id)
+        await queue_scan(queue, {"root_id": root.id}, requested_by=viewer.id)
     if body.vault:
         await service.set_root_hidden(viewer, root.id, hidden=True)
     return _root_view(root, hidden=body.vault)
@@ -492,11 +485,7 @@ async def rescan_root(
         payload["scan_only"] = True
     # DEDUPED, because this is a button and buttons get pressed twice: undeduped, a double press
     # walks the same folder twice at once, minutes each time on a large root, for one answer.
-    # `dedupe` and not `is_live`, which is the opposite of what the whole-library pass a few files
-    # away chose, and the difference is the parent. That pass hands work out as its own children,
-    # so collapsing onto a waiting row would have given it a job belonging to somebody else's pass
-    # and counted it as part of its own. This queues a job with no parent and answers with its id,
-    # so the row it collapses onto IS the scan that was asked for, whoever queued it.
+    # `dedupe` and not `is_live`: with no parent, the row it collapses onto IS the scan asked for.
     # It deliberately does not stand down for a RUNNING scan. That one built its file list before
     # this request existed, so a file that arrived since would wait for a walk nobody is going to
     # ask for again, the same reasoning written on `enqueue_when_settled`.
@@ -509,9 +498,7 @@ async def rescan_root(
     # It does not preempt or make the scan faster: it bounds the wait at its worst to one job rather
     # than the whole queue. A scan the MACHINE started (the watcher, the catch-up at boot) stays at
     # the ordinary priority, which is the whole point of naming this one.
-    job_id = await queue.enqueue(
-        SCAN, payload, dedupe=True, priority=WAITED_ON_PRIORITY, requested_by=viewer.id
-    )
+    job_id = await queue_scan(queue, payload, priority=WAITED_ON_PRIORITY, requested_by=viewer.id)
     return {"job_id": job_id}
 
 
@@ -693,9 +680,11 @@ async def allow_rejection(
 async def list_folders(
     access: Annotated[Repository, Depends(wiring.access)],
     database: Annotated[Database, Depends(wiring.database)],
+    library: Annotated[LibraryStore, Depends(wiring.library)],
     viewer: Annotated[Viewer, Depends(current_viewer)],
     root: str | None = None,
     parent: str | None = None,
+    writable: bool = False,
 ) -> FoldersView:
     """The folder tree, flat, and only what this viewer may see.
 
@@ -715,14 +704,25 @@ async def list_folders(
     Both are handed down together rather than one being chosen between. They are narrowings of one
     read, and passing them as such means a request naming a folder in a library it is not in gets
     the honest empty answer instead of having half of what it asked silently dropped.
+
+    `writable` asks the disk which folders Sift may write in, for a chooser of where files land;
+    the tree does not ask, so a share that has gone silent never slows it.
     """
     folders = await access.visible_folders(viewer, root_id=root, parent_id=parent)
     marks = await access.visible_marks(viewer, ObjectType.FOLDER, [folder.id for folder in folders])
     # The two refusals are an admin's to read and to change, as the sharing marks are.
     refused = await marked_folders(database) if viewer.is_admin else {}
+    may_write = (
+        await _writable_roots(library, {folder.root_id for folder in folders}) if writable else {}
+    )
     return FoldersView(
         folders=[
-            _folder_view(folder, marks.get(folder.id), refused.get(folder.id, (False, False)))
+            _folder_view(
+                folder,
+                marks.get(folder.id),
+                refused.get(folder.id, (False, False)),
+                may_write.get(folder.root_id, False) if writable else None,
+            )
             for folder in folders
         ]
     )
@@ -825,19 +825,12 @@ async def folder_properties(
     try:
         directory = await asyncio.to_thread(_folder_directory, Path(root.abs_path), folder.rel_path)
     except (LibraryError, OSError, ValueError, PathEscape):
-        # A folder that will not resolve inside its root is not a folder this can describe. It is
-        # not an error worth a 500 either: the row is real and the disk has moved on.
-        #
-        # `PathEscape` is named separately because it is NOT a `ValueError`: it derives straight
-        # from `Exception`, so the three above would miss the one case this paragraph is mostly
-        # about, and a row naming somewhere outside its own library would answer 500. A 500 also
-        # says more than a 404 does: it confirms the id belongs to something.
+        # A folder that will not resolve inside its root cannot be described; `PathEscape` is not a
+        # `ValueError`, and a 500 would confirm the id belongs to something.
         raise HTTPException(status.HTTP_404_NOT_FOUND, "not found") from None
 
     contents = await access.folder_contents(viewer, folder)
-    # `require_admin` is what makes this total; the repository refuses a guest and this route has
-    # none. Written as a floor rather than asserted, so a future non-admin caller gets zeroes rather
-    # than an exception in front of somebody.
+    # Only a guest gets None, and `require_admin` keeps them out: zeroes rather than an exception.
     counted = contents or FolderContents(files=0, bytes=0, folders=0, newest_at=None)
 
     return FolderProperties(
@@ -850,23 +843,12 @@ async def folder_properties(
 
 
 def _folder_directory(base: Path, rel_path: str) -> Path:
-    """Where a folder really is, proved to be inside its library. Blocking; call it on a thread.
-
-    The same confinement `LibraryService` puts every write through, and it is here for the same
-    reason: `confine` resolves and follows links, so this is what stops a row naming an in-library
-    link being read through to somewhere outside the root.
-    """
+    """Where a folder really is, confined to its library as a write is. Blocking: use a thread."""
     return confine(base, base / rel_path) if rel_path else confine(base, base)
 
 
 def _created_at(directory: Path) -> float | None:
-    """When the directory was made, as the filesystem tells it. None where it will not say.
-
-    `st_birthtime` where the site has it and `st_ctime` behind it, which is what Windows fills in
-    with the real creation time, and what Linux fills in with the last INODE change, which is not
-    the same fact. Both are offered rather than one, because the alternative is a panel that shows
-    nothing at all on the site Sift ships on.
-    """
+    """When the directory was made, or None: `st_birthtime`, else `st_ctime` (Windows' creation)."""
     try:
         stat = directory.stat()
     except OSError:
@@ -875,16 +857,20 @@ def _created_at(directory: Path) -> float | None:
     return float(born) if born is not None else float(stat.st_ctime)
 
 
-# Moving a folder is served elsewhere. It writes into a library, and everything that does goes
-# through the one feature that checks the folder was handed over read-write and records the change
-# so it can be undone.
-
-
 # --- arranging the folders in a library ----------------------------------------------------------
-# Making a folder, renaming one and moving one are all writes into somebody's library, so all three
-# go through the one door that decides whether Sift may change files there. The screens ask an admin
-# only, and that is a courtesy: the refusal below is what makes it true of a request that never went
-# near a screen.
+# Making, renaming and moving a folder all write into a library, so all three go through the one
+# door that decides whether Sift may change files there.
+
+
+def _written(folder: FolderRow) -> FolderView:
+    """A folder as a write into its library hands it back."""
+    return FolderView(
+        id=folder.id,
+        root_id=folder.root_id,
+        parent_id=folder.parent_id,
+        name=folder.name,
+        rel_path=folder.rel_path,
+    )
 
 
 @router.post("/folders", status_code=status.HTTP_201_CREATED, dependencies=[Depends(csrf_protect)])
@@ -902,13 +888,7 @@ async def make_folder(
         folder = await service.create_folder(parent_id=body.parent_id, name=body.name)
     except LibraryWriteRefused as refusal:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(refusal)) from refusal
-    return FolderView(
-        id=folder.id,
-        root_id=folder.root_id,
-        parent_id=folder.parent_id,
-        name=folder.name,
-        rel_path=folder.rel_path,
-    )
+    return _written(folder)
 
 
 @router.post("/folders/placed", dependencies=[Depends(csrf_protect)])
@@ -928,13 +908,7 @@ async def place_folder(
         folder = await service.place_folder(parent_id=body.parent_id, name=body.name)
     except LibraryWriteRefused as refusal:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(refusal)) from refusal
-    return FolderView(
-        id=folder.id,
-        root_id=folder.root_id,
-        parent_id=folder.parent_id,
-        name=folder.name,
-        rel_path=folder.rel_path,
-    )
+    return _written(folder)
 
 
 @router.patch("/folders/{folder_id}", dependencies=[Depends(csrf_protect)])
@@ -959,13 +933,7 @@ async def change_folder(
         )
     except LibraryWriteRefused as refusal:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(refusal)) from refusal
-    return FolderView(
-        id=folder.id,
-        root_id=folder.root_id,
-        parent_id=folder.parent_id,
-        name=folder.name,
-        rel_path=folder.rel_path,
-    )
+    return _written(folder)
 
 
 @router.post("/roots/{root_id}/moved", dependencies=[Depends(csrf_protect)])
@@ -1000,5 +968,5 @@ async def root_moved(
     await _rewatch(request)
     # Read it where it now is. A library that has been away has almost certainly changed while it
     # was, and the alternative is somebody hunting for the rescan button after every move.
-    await queue.enqueue(SCAN, {"root_id": root.id}, dedupe=True, requested_by=viewer.id)
+    await queue_scan(queue, {"root_id": root.id}, requested_by=viewer.id)
     return _root_view(root, hidden=root_id in await library.hidden_roots(viewer.id))

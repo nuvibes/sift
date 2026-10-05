@@ -257,6 +257,76 @@ describe('pressing the picture', () => {
 	});
 });
 
+describe('pressing a preview', () => {
+	/* A preview is chosen like any cell on one press; only a double press brings it up, once. */
+	function preview() {
+		const wall = new Wall();
+		wall.setLayout('center_stage');
+		const index = wall.inFocus.length;
+		const cell = wall.at(index) as Cell;
+		cell.playing = playable('p', 'video');
+		cell.plan = PLAN;
+		cell.state = 'ready';
+		const brought = vi.fn();
+		host = document.createElement('div');
+		document.body.append(host);
+		running = mount(CellView, {
+			target: host,
+			props: {
+				wall,
+				cell,
+				index,
+				marksUp: true,
+				chromeUp: true,
+				numbered: true,
+				onpick: () => {},
+				onfullscreen: () => {},
+				preview: true,
+				onpress: brought
+			}
+		});
+		flushSync();
+		return { wall, index, brought, video: host.querySelector('video') as HTMLVideoElement };
+	}
+
+	it('chooses it on one press and brings nothing up', () => {
+		const { wall, index, brought, video } = preview();
+
+		video.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }));
+		flushSync();
+
+		expect(wall.focused).toBe(index);
+		expect(brought, 'one press brought the preview up').not.toHaveBeenCalled();
+	});
+
+	it('brings it up once on a double press', () => {
+		const { brought, video } = preview();
+
+		video.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }));
+		video.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 2 }));
+		video.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+		flushSync();
+
+		expect(brought, 'a double-click swapped it up and straight back').toHaveBeenCalledTimes(1);
+	});
+});
+
+describe('the shape the player measured', () => {
+	it('is written onto the cell, which draws itself from it', () => {
+		const { cell } = show('video');
+		const video = host.querySelector('video') as HTMLVideoElement;
+		Object.defineProperty(video, 'videoWidth', { value: 1440 });
+		Object.defineProperty(video, 'videoHeight', { value: 1920 });
+
+		video.dispatchEvent(new Event('loadedmetadata'));
+		flushSync();
+
+		expect(cell.measured).toEqual({ file: 'a', width: 1440, height: 1920 });
+		const section = host.querySelector('section.cell') as HTMLElement;
+		expect(section.style.getPropertyValue('--shape')).toBe(`${1440 / 1920}`);
+	});
+});
+
 describe('the facts panel', () => {
 	/* Its whole point is that it is not a panel of its own: a cell draws the PLAYER's panel, over
 	 * the picture, in the same corner, saying the same things in the same words. What is checked
@@ -473,6 +543,17 @@ describe('pressing a cell with nothing in it', () => {
 		const cell = host.querySelector('section.cell') as HTMLElement;
 		expect(cell.style.getPropertyValue('--shape'), 'an empty cell was left with no shape').toBe(
 			`${ASSUMED}`
+		);
+	});
+
+	it("says Sift can't reach the files, not that the setting matched nothing, when that is why", () => {
+		const { cell } = nothing('nothing_here');
+		expect(sentence().textContent).toContain('Nothing here matches what this cell is set to.');
+
+		cell.unreachable = true;
+		flushSync();
+		expect(sentence().textContent?.replace(/\s+/g, ' ')).toContain(
+			"Sift can't reach the files this cell found. A drive may not be mounted, or a folder may have moved."
 		);
 	});
 

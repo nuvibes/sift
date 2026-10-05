@@ -40,14 +40,15 @@ function answers(mode: LoopMode) {
 	dwell.mode = mode;
 }
 
-/** A photograph in a run: `onplayedthrough` is where the run goes once it has rested. */
-function picture(onplayedthrough?: () => void) {
+/** A photograph in a run: `onplayedthrough` is where the run goes once it has rested. The run
+    brought it up unless `reachedByRun` says a press did. */
+function picture(onplayedthrough?: () => void, reachedByRun = true) {
 	takeDown();
 	host = document.createElement('div');
 	document.body.append(host);
 	mounted = mount(StillHarness, {
 		target: host,
-		props: { id: 'asset-1', mediaType: 'image', onplayedthrough }
+		props: { id: 'asset-1', mediaType: 'image', onplayedthrough, reachedByRun }
 	});
 	flushSync();
 }
@@ -103,6 +104,25 @@ describe('a picture moves a run on by the rule a clip end follows', () => {
 		const next = vi.fn();
 		picture(next);
 
+		vi.advanceTimersByTime(PICTURE_SECONDS * 1000 - 1);
+		expect(next).not.toHaveBeenCalled();
+		vi.advanceTimersByTime(1);
+		expect(next).toHaveBeenCalledTimes(1);
+	});
+
+	it('waits on a picture a press opened until Play, which starts its rest', () => {
+		answers('loop_all');
+		const next = vi.fn();
+		picture(next, false);
+
+		vi.advanceTimersByTime(PICTURE_SECONDS * 1000 * 30);
+		expect(next, 'a picture opened by a press moved the run on').not.toHaveBeenCalled();
+
+		const play = host.querySelector('.player-bar button.play') as HTMLButtonElement;
+		expect(play.disabled).toBe(false);
+		expect(play.getAttribute('aria-label')).toBe('Play');
+		play.click();
+		flushSync();
 		vi.advanceTimersByTime(PICTURE_SECONDS * 1000 - 1);
 		expect(next).not.toHaveBeenCalled();
 		vi.advanceTimersByTime(1);

@@ -10,12 +10,10 @@
 	 * The default answers come first in this block, because they are what almost everybody sets
 	 * and never returns to. The per-Site list below is empty until somebody singles one out.
 	 *
-	 * !! There is a SECOND writer of the default row: `DownloadFolder.svelte`, the folder chooser
-	 * only the design gallery draws (the page's "Save to" sends a folder with one paste and
-	 * writes nothing). Both send the whole row, so a field added here has to be added there too,
-	 * or choosing a folder there blanks it.
+	 * !! The folder alone is written by `saveDownloadFolder`, which Add and the Downloads screen
+	 * share; it sends the row back whole, so a field added here goes there.
 	 *
-	 * !! And a THIRD: `$lib/library/DownloadFolderOffer.svelte`, which proposes a Downloads
+	 * !! And `$lib/library/DownloadFolderOffer.svelte`, which proposes a Downloads
 	 * folder the moment a library gains its first folder. It reads the row at the moment it
 	 * writes and sends the naming rule and the tool back as they are: a field added to the row
 	 * goes there too.
@@ -32,10 +30,10 @@
 	import { api, ApiError } from '$lib/api/client';
 	import { bridge } from '$lib/bridge';
 	import { toasts } from '$lib/shell/toasts.svelte';
-	import { thing } from '$lib/components/common/toast-pieces';
 	import { COPY } from './NamingTemplate.search';
 	import { folderFor, LIBRARY_STEPS } from './download-folder';
 	import { movable } from '$lib/library/movable.svelte';
+	import { saveDownloadFolder } from '$lib/library/destinations.svelte';
 	import { disambiguate } from '$lib/library/folder-names';
 	import type { components } from '$lib/api/schema';
 
@@ -234,6 +232,14 @@
 
 	const saveDefault = () => void store(EVERYTHING, template, destination, tool);
 
+	/* The folder through the one writer every chooser shares; a refusal puts the row back. */
+	async function chooseDefault(id: string): Promise<void> {
+		const previous = destination;
+		destination = id;
+		const named = placed.find((one) => one.value === id)?.label;
+		if (!(await saveDownloadFolder(id || null, named))) destination = previous;
+	}
+
 	/* Choosing a folder that is not in the list yet. The desktop opens the operating system's own
 	   picker, which is the consent as well as the choice; a browser cannot open that, so there the
 	   press opens the folder picker over the folders Sift has, as Add a folder and the backup
@@ -258,13 +264,7 @@
 			// Read again, so the list offers the folder that was just made or added.
 			movable.forget();
 			await movable.ensure();
-			destination = id;
-			if (await store(EVERYTHING, template, destination, tool)) {
-				const named = placed.find((one) => one.value === id);
-				toasts.show([COPY.goesTo, thing('folder', id, named?.label ?? wanted)], {
-					tone: 'success'
-				});
-			}
+			await chooseDefault(id);
 		} catch (error) {
 			const said =
 				error instanceof ApiError ? error.detail : error instanceof Error ? error.message : null;
@@ -345,16 +345,17 @@
 
 	<LabelledRow id="downloads.default_folder" label={COPY.folder} help={COPY.folderHelp} besideField>
 		<div class="folder">
-			<Select
-				label={COPY.defaultFolder}
-				value={destination}
-				options={destinations({ label: COPY.notSet })}
-				disabled={choosing}
-				onValueChange={(chosen: string) => {
-					destination = chosen;
-					saveDefault();
-				}}
-			/>
+			{#if movable.foldersRead === 'failed' && !problem}
+				<Problem message={COPY.cannotLoad} />
+			{:else}
+				<Select
+					label={COPY.defaultFolder}
+					value={destination}
+					options={destinations({ label: COPY.notSet })}
+					disabled={choosing}
+					onValueChange={(chosen: string) => void chooseDefault(chosen)}
+				/>
+			{/if}
 			<Button disabled={choosing} icon="folder" onclick={() => void pickFolder()}>
 				{COPY.choose}
 			</Button>

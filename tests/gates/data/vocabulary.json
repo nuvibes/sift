@@ -39,7 +39,7 @@
 		{ "word": "device id", "means": "the eight groups of four characters an install is known by to another in a swap (Settings > Privacy > Swaps); the only thing a History line names the other side by (History: from device ABCD-EFGH-...)" },
 		{ "word": "token", "means": "the text the person starting a swap sends to the other; it holds the VPN's address and works once; on the swap screens only, never on a History line" },
 		{ "word": "the code", "means": "the six characters both screens of a swap show, compared before anything is offered (They match / They don't match); on the swap screens, and on History only as the codes didn't match" },
-		{ "word": "Layout Preset", "means": "a saved Theater wall: its layout and what each cell was set to, under a name (Layout Presets on the Theater bar, Presets on Insights); never cell group, saved wall, and never a layout" },
+		{ "word": "Saved Layout", "means": "a saved Theater wall: its layout and what each cell was set to, under a name (Saved Layouts on the Theater bar and on Insights); never preset, cell group or saved wall, and never a layout" },
 		{ "word": "layout", "means": "one of the shapes a Theater wall can take (1x2, 2x2, Center stage 1x1 ...), chosen from Layouts on the Theater bar; never preset" }
 	],
 
@@ -81,7 +81,7 @@
 			"GNU",
 			"AGPL-3.0-or-later"
 		],
-		"phrases": ["Photo Sets", "Photo Set", "Smart Search", "Sites and Tunnels", "Tasks and Activity", "App History", "Updates and Info", "Privacy and Security", "User Management", "Space Grotesk", "Geist Mono", "JetBrains Mono", "Instrument Sans", "Public Sans", "DM Sans", "Layout Presets", "Layout Preset"]
+		"phrases": ["Photo Sets", "Photo Set", "Smart Search", "Sites and Tunnels", "Tasks and Activity", "App History", "Updates and Info", "Privacy and Security", "User Management", "Space Grotesk", "Geist Mono", "JetBrains Mono", "Instrument Sans", "Public Sans", "DM Sans", "Saved Layouts", "Saved Layout"]
 	},
 
 	"verbs": {

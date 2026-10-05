@@ -606,6 +606,116 @@ describe('what shape a cell is', () => {
 		// rather than a wrong layout. It cannot do that if this invents a number.
 		expect(new Cell().shape).toBeNull();
 	});
+
+	/* A file with no stored size, or with non-square pixels, is drawn at what the player measured,
+	   and the wall's rows read the same answer. */
+	it('is the size the player measured, over the stored one', async () => {
+		served.page = page(['a']);
+		const cell = new Cell();
+		await cell.restart();
+
+		cell.measure('a', 1080, 1920);
+
+		expect(cell.shape, 'the stored size outranked what is drawn').toBeCloseTo(9 / 16);
+	});
+
+	it('takes the measured size when nothing is stored', async () => {
+		served.page = { items: [{ ...file('a'), width: null, height: null }], total: 1 };
+		const cell = new Cell();
+		await cell.restart();
+		expect(cell.shape).toBeNull();
+
+		cell.measure('a', 720, 1280);
+
+		expect(cell.shape).toBeCloseTo(9 / 16);
+	});
+
+	it("takes the poster's shape when nothing is stored, and keeps it through a measure that agrees", async () => {
+		served.page = { items: [{ ...file('a'), width: null, height: null }], total: 1 };
+		const cell = new Cell();
+		await cell.restart();
+
+		cell.measurePoster('a', 480, 854);
+		expect(cell.shape).toBe(480 / 854);
+		cell.measure('a', 720, 1280);
+		expect(cell.shape, 'the cell changed size a second time').toBe(480 / 854);
+		cell.measure('a', 1280, 720);
+		expect(cell.shape, 'a poster outranked a player that disagrees').toBe(1280 / 720);
+	});
+
+	it('never puts the poster over a stored size or a measure already taken', async () => {
+		served.page = page(['a']);
+		const stored = new Cell();
+		await stored.restart();
+		stored.measurePoster('a', 480, 854);
+		expect(stored.shape).toBeCloseTo(16 / 9);
+
+		served.page = { items: [{ ...file('a'), width: null, height: null }], total: 1 };
+		const seen = new Cell();
+		await seen.restart();
+		seen.measure('a', 720, 1280);
+		seen.measurePoster('a', 480, 854);
+		expect(seen.shape).toBe(720 / 1280);
+	});
+
+	it('ignores a measurement of another file, and a chosen shape still wins', async () => {
+		served.page = page(['a']);
+		const cell = new Cell();
+		await cell.restart();
+
+		cell.measure('b', 1080, 1920);
+		expect(cell.shape, "a stale file's size reshaped the cell").toBeCloseTo(16 / 9);
+
+		cell.measure('a', 1080, 1920);
+		cell.aspect = 'wide';
+		expect(cell.shape).toBeCloseTo(16 / 9);
+	});
+});
+
+describe('taking a cell up by its file id', () => {
+	it('asks the server for the file and starts on it where it had reached', async () => {
+		vi.spyOn(api, 'get').mockImplementation(async (path: string) =>
+			path === '/assets/k' ? { ...file('k'), original_filename: 'today.mp4' } : page([])
+		);
+		const cell = new Cell();
+
+		const going = cell.resumeOn({ ...new Cell().saved, source: 'tag:cars' }, 'k', 12);
+		// Before any answer, so the wall's opening draw passes this cell by.
+		expect(cell.state).toBe('loading');
+		await going;
+
+		expect(cell.source).toBe('tag:cars');
+		expect(cell.playing?.id).toBe('k');
+		expect(cell.playing?.original_filename, "the name is the server's, today").toBe('today.mp4');
+		expect(cell.resumeAt).toBe(12);
+	});
+
+	it("finds its own when the file comes back as Hidden's placeholder", async () => {
+		vi.spyOn(api, 'get').mockImplementation(async (path: string) =>
+			path === '/assets/k'
+				? { id: 'k', media_type: '', concealed: true, added_at: 0 }
+				: path === '/assets'
+					? page(['a'])
+					: { sprite: null }
+		);
+		const cell = new Cell();
+
+		await cell.resumeOn(new Cell().saved, 'k', 12);
+
+		expect(cell.playing?.id, 'a hidden file was put back on screen').toBe('a');
+	});
+
+	it('finds its own when the file is gone', async () => {
+		vi.spyOn(api, 'get').mockImplementation(async (path: string) => {
+			if (path === '/assets/k') throw new ApiError(404, 'gone');
+			return path === '/assets' ? page(['a']) : { sprite: null };
+		});
+		const cell = new Cell();
+
+		await cell.resumeOn(new Cell().saved, 'k');
+
+		expect(cell.playing?.id).toBe('a');
+	});
 });
 
 describe('a file Sift has not read', () => {
@@ -677,6 +787,37 @@ describe('a file this browser cannot play', () => {
 		await cell.failed();
 
 		expect(cell.state, 'a failure is only a run while nothing plays between them').toBe('ready');
+	});
+});
+
+describe('a cell whose files are out of reach', () => {
+	it('says so when every file it stepped over could not be reached', async () => {
+		served.page = page(['x', 'y']);
+		vi.spyOn(api, 'post').mockRejectedValue(new ApiError(404, 'gone'));
+		const cell = new Cell();
+		cell.orderBy(null);
+		await cell.restart();
+
+		expect(cell.state).toBe('nothing_here');
+		expect(cell.unreachable, 'a missing drive was blamed on the setting').toBe(true);
+	});
+
+	it('blames the setting when nothing matched, or a file was only waiting to be read', async () => {
+		served.page = page([]);
+		const empty = new Cell();
+		await empty.restart();
+		expect(empty.unreachable).toBe(false);
+
+		served.page = page(['x', 'y']);
+		vi.spyOn(api, 'post').mockImplementation(async (path: string) => {
+			if (path.includes('/x/')) throw new ApiError(404, 'gone');
+			return plan('unread');
+		});
+		const mixed = new Cell();
+		mixed.orderBy(null);
+		await mixed.restart();
+		expect(mixed.state).toBe('nothing_here');
+		expect(mixed.unreachable, 'an unread file was said to be out of reach').toBe(false);
 	});
 });
 

@@ -13,6 +13,8 @@ vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
 vi.mock('$lib/shell/toasts.svelte', () => ({ toasts: { show: vi.fn() } }));
 
 import Profile from './Profile.svelte';
+import { api, ApiError } from '$lib/api/client';
+import { session } from '$lib/shell/session.svelte';
 import { vault } from '$lib/shell/vault.svelte';
 
 let host: HTMLElement;
@@ -30,6 +32,7 @@ afterEach(() => {
 	if (drawn) unmount(drawn);
 	drawn = null;
 	host.remove();
+	session.viewer = undefined;
 	vi.restoreAllMocks();
 });
 
@@ -87,5 +90,36 @@ describe('the presses', () => {
 	it('draws who is signed in as a row, not a card', () => {
 		expect(host.querySelector('.who')).toBeNull();
 		expect(host.querySelector('form.card')?.closest('.group')).not.toBeNull();
+	});
+});
+
+describe('renaming yourself', () => {
+	async function refusedWith(failure: Error): Promise<string | null | undefined> {
+		session.viewer = { id: 'u-guest', username: 'visitor', role: 'guest' } as never;
+		flushSync();
+		vi.mocked(api.post).mockRejectedValueOnce(failure);
+		const box = host.querySelector('input[autocomplete="username"]') as HTMLInputElement;
+		box.value = 'Wren Halloway';
+		box.dispatchEvent(new Event('input', { bubbles: true }));
+		flushSync();
+		const form = box.closest('form') as HTMLFormElement;
+		form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+		await vi.waitFor(() => expect(form.querySelector('[role="alert"]')).not.toBeNull());
+		return form.querySelector('[role="alert"]')?.textContent;
+	}
+
+	it("says the server's own words for a name that can't be used", async () => {
+		const said = "That name can't be used.";
+		expect(await refusedWith(new ApiError(409, 'Conflict', said))).toBe(said);
+	});
+
+	it("says the server's own words once the day's changes are spent", async () => {
+		const said = "That's as many name changes as one day allows. Try again tomorrow.";
+		expect(await refusedWith(new ApiError(429, 'Too Many Requests', said))).toBe(said);
+	});
+
+	it('says only that it could not be saved for any other failure', async () => {
+		const failure = new ApiError(500, 'Internal Server Error', 'a trace nobody should read');
+		expect(await refusedWith(failure)).toBe("That couldn't be saved.");
 	});
 });

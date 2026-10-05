@@ -23,8 +23,8 @@
         "settings/library",
         "settings/importing",
         "settings/tasks",
-        "settings/downloads",
         "settings/sites",
+        "settings/downloads",
         "settings/editing",
         "settings/playback"
       ]
@@ -57,7 +57,8 @@
         "settings/performance",
         "settings/maintenance",
         "settings/backup",
-        "settings/updates"
+        "settings/updates",
+        "settings/documentation"
       ]
     }
   ],

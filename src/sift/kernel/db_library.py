@@ -199,6 +199,7 @@ def execute_blocking(database: Path, statement: str, params: tuple[object, ...] 
     before any `Database` has opened it."""
     connection = sqlite3.connect(database)
     connection.execute("PRAGMA trusted_schema=OFF")
+    connection.execute("PRAGMA foreign_keys=ON")
     try:
         connection.execute(statement, params)
         connection.commit()

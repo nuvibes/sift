@@ -142,7 +142,7 @@ describe('folding', () => {
 	let deep: HTMLDivElement;
 	let drawn: Record<string, unknown> | null = null;
 
-	function drawDeep(props: { crumbs: typeof DEEP; fit?: boolean }) {
+	function drawDeep(props: { crumbs: typeof DEEP; fit?: boolean; pressAlone?: boolean }) {
 		deep = document.createElement('div');
 		document.body.append(deep);
 		drawn = mount(Breadcrumbs, { target: deep, props });
@@ -198,23 +198,75 @@ describe('folding', () => {
 		expect(deep.querySelectorAll('li')).toHaveLength(3);
 	});
 
-	it('folds everything but where you are when the box it must fit is too short', async () => {
-		/* jsdom lays nothing out, so the list is said to run past its box at every fold. */
-		const wide = vi.spyOn(HTMLElement.prototype, 'scrollWidth', 'get').mockReturnValue(500);
-		const box = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(100);
+	/** jsdom lays nothing out: each step drawn is said to take 60px of a box this wide. */
+	function laidOut(box: number) {
+		const wide = vi.spyOn(HTMLElement.prototype, 'scrollWidth', 'get').mockImplementation(function (
+			this: HTMLElement
+		) {
+			return this.querySelectorAll(':scope > li').length * 60;
+		});
+		const room = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(box);
+		return () => {
+			wide.mockRestore();
+			room.mockRestore();
+		};
+	}
+
+	async function settled() {
+		for (let step = 0; step < 8; step++) await tick();
+		flushSync();
+	}
+
+	it('folds everything but where you are when the box holds the press and that step', async () => {
+		const restore = laidOut(130);
 		try {
 			drawDeep({ crumbs: DEEP, fit: true });
-			for (let step = 0; step < 6; step++) await tick();
-			flushSync();
+			await settled();
 			const nav = deep.querySelector('nav[aria-label="Breadcrumb"]');
-			expect(nav?.classList.contains('squeezed')).toBe(true);
 			expect(nav!.querySelectorAll('a')).toHaveLength(0);
 			expect(nav!.querySelector('[aria-current="page"]')?.textContent?.trim()).toBe('Boats');
 			expect(nav!.querySelector('button.fold')).not.toBeNull();
 		} finally {
-			wide.mockRestore();
-			box.mockRestore();
+			restore();
 		}
+	});
+
+	it('folds at last to the press alone, whose list is the whole path ending where you are', async () => {
+		const restore = laidOut(100);
+		try {
+			drawDeep({ crumbs: DEEP, fit: true });
+			await settled();
+			const nav = deep.querySelector('nav[aria-label="Breadcrumb"]');
+			expect(nav!.querySelectorAll('li')).toHaveLength(1);
+			expect(nav!.querySelector('[aria-current="page"]')).toBeNull();
+			const press = nav!.querySelector<HTMLButtonElement>('button.fold');
+			expect(press, 'no press at the last fold').not.toBeNull();
+
+			press!.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, button: 0 }));
+			flushSync();
+			await tick();
+			const rows = [...document.querySelectorAll<HTMLElement>('[role="menu"] [role="menuitem"]')];
+			expect(rows.map((row) => row.textContent?.trim())).toEqual([
+				'Your folders',
+				'Holidays',
+				'Coast',
+				'Harbour',
+				'Boats'
+			]);
+			const here = rows.at(-1)!;
+			expect(here.closest('a'), 'where you are is a link').toBeNull();
+			expect(here.getAttribute('aria-disabled')).toBe('true');
+		} finally {
+			restore();
+		}
+	});
+
+	it('folds to the press alone when told, however much room it has', async () => {
+		drawDeep({ crumbs: DEEP.slice(-2), fit: true, pressAlone: true });
+		await settled();
+		const nav = deep.querySelector('nav[aria-label="Breadcrumb"]');
+		expect(nav!.querySelectorAll('li')).toHaveLength(1);
+		expect(nav!.querySelector('button.fold')).not.toBeNull();
 	});
 
 	it('stays at the least fold when it fits, and never folds a trail that is not told to fit', async () => {

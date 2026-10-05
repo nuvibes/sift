@@ -17,6 +17,7 @@ from sift.kernel.attribution import FolderFaces, FolderStamp
 from sift.kernel.db import Connection, Params, Row
 from sift.kernel.library_write import Placed, Staged
 from sift.kernel.records import SourceAnswer, SourceLink, Subject
+from sift.kernel.vocabulary import SubjectKind
 
 
 @runtime_checkable
@@ -41,10 +42,10 @@ class SemanticSeam(Protocol):
     """Asking a model what some words mean, and which files look like that.
 
     Search and the vector index are different slices, so search is handed this at boot. It returns
-    an answer, never a query: files and their distances, closest first, which the visibility read
-    then orders by. `None` means this install cannot answer by meaning now (off, no models, too
-    little memory) and the caller falls back to the ordinary order; an empty tuple means nothing
-    came near, and orders by nothing.
+    an answer, never a query: the files `asker` may see and their distances, closest first, which
+    the visibility read then orders by. `None` means this install cannot answer by meaning now (off,
+    no models, too little memory) and the caller falls back to the ordinary order; an empty tuple
+    means nothing came near.
 
     `can_answer` asks that once rather than per file, so a library-wide pass learns early that
     there is nothing to compare against; False while the feature is off. `describe_many` gives
@@ -55,14 +56,16 @@ class SemanticSeam(Protocol):
     """
 
     async def neighbours(
-        self, text: str, *, limit: int
+        self, text: str, *, limit: int, asker: Viewer | None
     ) -> tuple[tuple[str, float], ...] | None: ...
 
     async def like_asset(
         self, asset_id: str, *, limit: int
     ) -> tuple[tuple[str, float], ...] | None: ...
 
-    async def lookalikes(self, asset_id: str, *, limit: int) -> tuple[tuple[str, float], ...]: ...
+    async def lookalikes(
+        self, asset_id: str, *, limit: int, asker: Viewer | None
+    ) -> tuple[tuple[str, float], ...]: ...
 
     async def describe_many(
         self, asset_ids: Sequence[str]
@@ -88,30 +91,30 @@ class SettingsSeam(Protocol):
     async def get_user(self, user_id: str, key: str) -> Any: ...
 
 
-class InterfaceStateSeam(Protocol):
-    """The interface as one User arranged it, read and written, for a feature that keeps a small
-    fact of its own there (a hint shown once) and must not import the feature that stores it.
-
-    Apart from `SettingsSeam`: a preference is a rule checked against the registry; this is where
-    a User's screens stand, checked against the hub's closed list of keys. The hub is published
-    under both (`wiring.INTERFACE_STATE`, `wiring.SETTINGS_HUB`) so the type checker holds it here.
-    """
-
-    async def interface(self, viewer: Viewer) -> dict[str, str]: ...
-    async def arrange(self, viewer: Viewer, updates: dict[str, str | None]) -> None: ...
-
-
 @runtime_checkable
 class SavedFilterSeam(Protocol):
-    """A saved search as the bound filter its words compile to, for a feature that wants the FILES
-    a saved search names rather than its words: a swap offering "everything this filter finds".
-
-    Owned by the search feature, so the asker never learns there is a query language: it names a
-    saved search by id and gets the viewer-scoped constraints, or None where none of theirs has that
-    id or it is not over files.
+    """A saved search as the viewer-scoped constraints its words compile to, for a feature that
+    wants its FILES (a swap's "everything this filter finds"); None where none of theirs is that id
+    or it is not over files.
     """
 
     async def saved_filter(self, viewer: Viewer, saved_id: str) -> AssetFilter | None: ...
+
+
+@runtime_checkable
+class ForgetGoneSeam(Protocol):
+    """A thing deleted, told to the search feature: a saved filter left naming only gone things goes
+    too. Answers how many went."""
+
+    async def forget_gone(
+        self,
+        kind: SubjectKind,
+        thing_id: str,
+        *,
+        name: str | None,
+        by: Viewer,
+        also: Sequence[str] = (),
+    ) -> int: ...
 
 
 class ReindexSeam(Protocol):
@@ -525,8 +528,8 @@ __all__ = [
     "FaceEvidenceSeam",
     "FilingSeam",
     "FilterEngine",
+    "ForgetGoneSeam",
     "InferenceSeam",
-    "InterfaceStateSeam",
     "LibraryWriteSeam",
     "MetadataSourceSeam",
     "Narrowed",

@@ -279,7 +279,7 @@ describe('the order of the row', () => {
 		expect(names.slice(0, 3)).toEqual(['Filter', 'Sort by', 'Walls']);
 	});
 
-	it("puts the screen's menus before its panels: Theater's Layouts, then Layout Presets", () => {
+	it("puts the screen's menus before its panels: Theater's Layouts, then Saved Layouts", () => {
 		screenBar.publish(SCREEN, {
 			filterable: true,
 			sorts: [{ value: 'newest', label: 'Newest' }],
@@ -298,7 +298,7 @@ describe('the order of the row', () => {
 				{
 					id: 'presets',
 					icon: 'table_view',
-					label: 'Layout Presets',
+					label: 'Saved Layouts',
 					lead: true,
 					content: (() => undefined) as unknown as Component<Record<string, never>>
 				}
@@ -308,6 +308,6 @@ describe('the order of the row', () => {
 		const names = [...host.querySelectorAll('button')].map((b) => b.getAttribute('aria-label'));
 
 		expect(names.indexOf('Layouts'), 'no Layouts on the row').toBeGreaterThan(1);
-		expect(names.indexOf('Layout Presets')).toBeGreaterThan(names.indexOf('Layouts'));
+		expect(names.indexOf('Saved Layouts')).toBeGreaterThan(names.indexOf('Layouts'));
 	});
 });

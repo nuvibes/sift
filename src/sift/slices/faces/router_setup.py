@@ -19,6 +19,8 @@ from fastapi import (
 
 from sift.kernel import wiring
 from sift.kernel.access import Repository, Viewer
+from sift.kernel.access.catalog import refused_over
+from sift.kernel.db import Database
 from sift.kernel.jobs import WAITED_ON_PRIORITY, JobQueue
 from sift.kernel.serving import face_version
 from sift.slices.auth import csrf_protect, require_admin
@@ -297,13 +299,24 @@ async def fingerprint_offers(
 @router.get("/faces/fingerprints/waiting")
 async def waiting_fingerprints(
     service: Annotated[FaceService, Depends(_service)],
+    access: Annotated[Repository, Depends(wiring.access)],
+    database: Annotated[Database, Depends(wiring.database)],
     viewer: Annotated[Viewer, Depends(require_admin)],
 ) -> WaitingFingerprints:
     """Everybody a facial fingerprints file or a folder brought whom no face here matches yet,
-    newest first, with how many faces and where each came from. Admin-only, as the pane is; read
-    with recognition off too, since what is held stays held."""
+    newest first, with how many faces, where each came from and whether an export carries them.
+    Admin-only, as the pane is; read with recognition off too, since what is held stays held."""
+    carried: set[str] = set()
+    alone = 0
+    if await service.enabled():
+        _, entries, alone = await _carried(service, access, database, viewer, [], [])
+        carried = set(entries)
     return WaitingFingerprints(
-        items=[WaitingEntry.model_validate(one) for one in await service.waiting()]
+        items=[
+            WaitingEntry.model_validate({**one, "exportable": one["entry_id"] in carried})
+            for one in await service.waiting()
+        ],
+        exportable=alone,
     )
 
 
@@ -340,39 +353,72 @@ async def make_person_from_fingerprints(
     return MadeFromFingerprints(person_id=person_id)
 
 
+async def _carried(
+    service: FaceService,
+    access: Repository,
+    database: Database,
+    viewer: Viewer,
+    person_ids: list[str],
+    entry_ids: list[str],
+) -> tuple[list[str], list[str], int]:
+    """The People and waiting entries a facial fingerprints file carries for this viewer (none
+    named is everybody), and how many entries go as people of their own.
+
+    Held to the People wall and to what a swap refuses (kept local, Do not swap); an entry named as
+    somebody refused stays too, since it would carry their name out.
+    """
+    everyone = not person_ids and not entry_ids
+    asked = await service.shareable_people() if everyone else list(dict.fromkeys(person_ids))
+    held = await service.held_for_export()
+    if not everyone:
+        wanted = set(entry_ids)
+        held = [one for one in held if one.entry_id in wanted]
+    named = await service.people_named([one.name for one in held])
+    namesakes = [person for ids in named.values() for person in ids]
+    shown = await access.visible_people(viewer, [*asked, *namesakes])
+    refused = {one for one in shown if await refused_over(database, "swap", "person", one)}
+    people = [one for one in asked if one in shown and one not in refused]
+    going = {shown[one].name.casefold() for one in people}
+    entries: list[str] = []
+    alone = 0
+    for one in held:
+        same = named.get(one.name.casefold(), [])
+        if any(person not in shown or person in refused for person in same):
+            continue
+        entries.append(one.entry_id)
+        alone += one.name.casefold() not in going
+    return people, entries, alone
+
+
 @router.post("/faces/packs/export", dependencies=[Depends(csrf_protect)])
 async def export_pack(
     body: PackExportRequest,
     service: Annotated[FaceService, Depends(_service)],
     access: Annotated[Repository, Depends(wiring.access)],
+    database: Annotated[Database, Depends(wiring.database)],
     viewer: Annotated[Viewer, Depends(require_admin)],
 ) -> Response:
-    """Build a pack from People already here, and hand it back as a file.
-
-    Pictures are optional; without them a pack is numbers alone, the right default for one going
-    to somebody else. **Held to the People wall**, as `known_people` is: nobody a shut Hidden holds
-    back leaves in a file, and an empty list is refused in words, never read as "everybody".
+    """Build a facial fingerprints file from People here and the people waiting for a matching
+    face, and hand it back. Loads no model: the numbers are stored. Held to the People wall and to
+    what a swap refuses (`_carried`); nobody to carry is refused in words.
     """
     if not await service.enabled():
         raise _off()
-    try:
-        asked = list(body.person_ids) or await service.shareable_people()
-        shown = await access.visible_people(viewer, asked)
-        chosen = [one for one in asked if one in shown]
-        if not chosen:
-            raise HTTPException(
-                status.HTTP_409_CONFLICT, "There's nobody here whose facial fingerprints to share."
-            )
-        raw = await service.export_pack(
-            name=body.name,
-            version=body.version,
-            person_ids=chosen,
-            include_pictures=body.include_pictures,
+    people, entries, _ = await _carried(
+        service, access, database, viewer, body.person_ids, body.entry_ids
+    )
+    if not people and not entries:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT, "There's nobody here whose facial fingerprints to share."
         )
-    except WeightError as error:
-        # A pack records which model produced its numbers; "no models yet" is said plainly.
-        raise HTTPException(status.HTTP_409_CONFLICT, str(error)) from error
-    log.info("faces.pack.exported", people=len(chosen), bytes=len(raw))
+    raw = await service.export_pack(
+        name=body.name,
+        version=body.version,
+        person_ids=people,
+        entry_ids=entries,
+        include_pictures=body.include_pictures,
+    )
+    log.info("faces.pack.exported", people=len(people), waiting=len(entries), bytes=len(raw))
     return Response(
         content=raw,
         media_type="application/zip",

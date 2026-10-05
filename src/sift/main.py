@@ -334,7 +334,10 @@ def create_app() -> FastAPI:
 
     app = FastAPI(
         title="Sift",
-        description="A self-hosted media browser and downloader.",
+        description=(
+            "Sift is a feature-rich, intelligent media manager that lets you browse, download, "
+            "watch, and organize your content."
+        ),
         lifespan=lifespan,
         **docs_kwargs,  # type: ignore[arg-type]
     )

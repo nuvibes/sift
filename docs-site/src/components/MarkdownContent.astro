@@ -1,0 +1,42 @@
+---
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Starlight's page body, where clicking a heading's link also copies the section's address and
+// says "Link copied". A refused clipboard leaves the jump alone and says nothing.
+import Default from '@astrojs/starlight/components/MarkdownContent.astro';
+---
+
+<Default><slot /></Default>
+
+<script>
+	const SAID_FOR_MS = 2000;
+	const COPIED = 'Link copied';
+	let note: HTMLElement | undefined;
+	let live: HTMLElement | undefined;
+	let quiet: ReturnType<typeof setTimeout> | undefined;
+
+	document.addEventListener('click', async (event) => {
+		const link = event.target instanceof Element ? event.target.closest('.sl-anchor-link') : null;
+		if (!(link instanceof HTMLAnchorElement)) return;
+		try {
+			await navigator.clipboard.writeText(new URL(link.getAttribute('href') ?? '', location.href).href);
+		} catch {
+			return;
+		}
+		if (!live) {
+			live = document.createElement('p');
+			live.className = 'sr-only';
+			live.setAttribute('aria-live', 'polite');
+			document.body.append(live);
+		}
+		note ??= Object.assign(document.createElement('span'), { className: 'link-copied' });
+		note.textContent = COPIED;
+		note.setAttribute('aria-hidden', 'true');
+		link.after(note);
+		live.textContent = COPIED;
+		clearTimeout(quiet);
+		quiet = setTimeout(() => {
+			note?.remove();
+			if (live) live.textContent = '';
+		}, SAID_FOR_MS);
+	});
+</script>

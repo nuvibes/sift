@@ -6,27 +6,56 @@
  *
  * There are two places somebody says where a download goes before starting it: the Add button's
  * "Download folder", from any screen, and the Downloads screen's own, a row of its Options menu.
- * They are the SAME question with the same answer, so they are the same
- * selector, and two copies of how the default row is named, how two folders called "Images" are
- * told apart and which folders come first would be two answers free to drift. So the list is here
- * and both read it.
+ * They are the same question, so one list answers both: two copies of how the default row is
+ * named and which folders come first would drift apart.
  *
- * ## What choosing one does, and what it does not
- *
- * It chooses where THE NEXT download goes, by sending that folder with it, and nothing else. It is
- * not the stored default: that is one field of the default per-Site row, written whole with the
- * naming rule and the tool beside it, and it is changed in Settings, Downloads by the one control
- * that writes that row. The row at the top of this list is the default, named, so leaving the
- * choice alone is never a mystery about where a file lands.
+ * Choosing one makes it the stored default (`saveDownloadFolder`), so the row at the top of the
+ * list, and Settings, Downloads, name it from then on.
  */
 
-import { api } from '$lib/api/client';
+import { api, ApiError } from '$lib/api/client';
+import { toasts } from '$lib/shell/toasts.svelte';
+import { thing } from '$lib/components/common/toast-pieces';
 import { libraryChanges, settingChanges, whenChanged } from '$lib/library/changes.svelte';
 import type { components } from '$lib/api/schema';
 import { disambiguate, recentFirst } from '$lib/library/folder-names';
 import { recentFolders, RECENT_FOLDERS_KEPT } from '$lib/shell/interface-state.svelte';
 
 type Folder = Pick<components['schemas']['FolderView'], 'id' | 'name' | 'rel_path'>;
+type SiteOptions = components['schemas']['SiteOptionsResponse'];
+
+/** The reserved scope everything follows unless a Site is given its own. The server's word. */
+const EVERYTHING = '*default*';
+
+/* One copy of the stored default for every chooser on screen, so a pick in one is named by all. */
+const stored = $state<{ folderId: string | null | undefined; sites: string[] }>({
+	folderId: undefined,
+	sites: []
+});
+
+/**
+ * Make a folder (null for none) the default download folder: the default row is read and written
+ * whole with only the folder replaced, since a field left out is saved as empty.
+ */
+export async function saveDownloadFolder(folderId: string | null, name?: string): Promise<boolean> {
+	try {
+		const row = (await api.get<SiteOptions>('/site-options')).default;
+		await api.put(`/site-options/${encodeURIComponent(EVERYTHING)}`, {
+			body: { naming: row.naming, dest_folder_id: folderId, downloader: row.downloader ?? null }
+		});
+	} catch (error) {
+		const said = error instanceof ApiError ? (error.detail ?? error.message) : null;
+		toasts.show(said ?? "Couldn't change that", { tone: 'error' });
+		return false;
+	}
+	stored.folderId = folderId;
+	if (folderId) {
+		toasts.show(['Downloads will go to ', thing('folder', folderId, name ?? 'that folder')], {
+			tone: 'success'
+		});
+	}
+	return true;
+}
 
 /*
  * What the download folder reads when none is set, in every place it is shown: Settings,
@@ -47,8 +76,16 @@ interface DestinationOption {
 	detail?: string;
 }
 
+export type FoldersRead = 'unread' | 'read' | 'failed';
+
 export class Destinations {
 	folders = $state<Folder[]>([]);
+	#read = $state<FoldersRead>('unread');
+
+	/** An empty list means no folder only once read: a failed read is not "no folder". */
+	get foldersRead(): FoldersRead {
+		return this.#read;
+	}
 
 	/*
 	 * Which folder applies when nothing is chosen, so the first row can NAME it.
@@ -63,7 +100,9 @@ export class Destinations {
 	 * list instead it would be a second answer to the same question, free to disagree, which is
 	 * why this is not a field on `FolderView`.
 	 */
-	defaultFolderId = $state<string | null | undefined>(undefined);
+	get defaultFolderId(): string | null | undefined {
+		return stored.folderId;
+	}
 
 	#loaded = false;
 
@@ -146,14 +185,16 @@ export class Destinations {
 		if (this.#loaded) return;
 		this.#loaded = true;
 		try {
-			const body = await api.get<components['schemas']['FoldersView']>('/library/folders');
-			// An answer with no list (a read that failed, a harness that answers nothing) leaves the
-			// chooser empty rather than a list nothing can map over.
-			this.folders = body?.folders ?? [];
+			const body = await api.get<components['schemas']['FoldersView']>('/library/folders', {
+				query: { writable: true }
+			});
+			// Only folders Sift may write in: any other would be a row that fails at the save.
+			this.folders = (body?.folders ?? []).filter((folder) => folder.writable !== false);
+			this.#read = 'read';
 		} catch {
-			// A missing folder list is not worth a toast: the default download folder still works,
-			// and the chooser just falls back to it.
+			// Not worth a toast: the default download folder still works without the chooser.
 			this.#loaded = false;
+			this.#read = 'failed';
 		}
 		await this.#loadDefault();
 	}
@@ -167,15 +208,18 @@ export class Destinations {
 	 */
 	async #loadDefault(): Promise<void> {
 		try {
-			const stored = await api.get<components['schemas']['SiteOptionsResponse']>('/site-options');
-			this.defaultFolderId = stored.default.dest_folder_id ?? null;
-			this.sitesWithAFolder = stored.sites
-				.filter((site) => site.dest_folder_id)
-				.map((site) => site.scope);
+			const answer = await api.get<SiteOptions>('/site-options');
+			stored.folderId = answer.default.dest_folder_id ?? null;
+			stored.sites = answer.sites.filter((site) => site.dest_folder_id).map((site) => site.scope);
 		} catch {
-			this.defaultFolderId = undefined;
-			this.sitesWithAFolder = [];
+			stored.folderId = undefined;
+			stored.sites = [];
 		}
+	}
+
+	/** Make a listed folder the default, by the one writer, under the name this list gives it. */
+	makeDefault(folderId: string): Promise<boolean> {
+		return saveDownloadFolder(folderId, this.placed.find((one) => one.value === folderId)?.label);
 	}
 
 	/*
@@ -185,7 +229,9 @@ export class Destinations {
 	 * download from THIS Site lands when nobody chooses. A Site with its own folder has an answer
 	 * even with no default set, so a paste from it has nothing to ask.
 	 */
-	sitesWithAFolder = $state<string[]>([]);
+	get sitesWithAFolder(): string[] {
+		return stored.sites;
+	}
 
 	/*
 	 * Whether a download from these Sites, sent with this choice, has NOWHERE to land, so the

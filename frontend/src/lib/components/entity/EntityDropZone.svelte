@@ -2,10 +2,9 @@
 	/*
 	 * The whole of an entity's PAGE, taking a dropped link and filing what comes back under it.
 	 *
-	 * Drawn as a sibling rather than as a wrapper, and it lays out nothing: what it renders is one
-	 * fixed layer, and only while something is actually being held over the window. Why it is not a
-	 * wrapper, and why the answer it publishes is a named question rather than a hook into somebody
-	 * else's handler, is written in full in `aimed-page`.
+	 * Drawn as a sibling, not a wrapper, and it lays out nothing: one fixed layer, drawn only while
+	 * something is held over the window. Why, and why it publishes a named question rather than a
+	 * hook into somebody else's handler, is written in `aimed-page`.
 	 *
 	 * What it draws is `DropOffer`, the same offer the window makes, with this page's name in it.
 	 */
@@ -14,6 +13,7 @@
 	import { carriesALink, overADropZone, readLink } from '$lib/components/common/drag-assign.svelte';
 	import { dropOffer, fetchOnto, type AimedAt } from '$lib/library/aimed-drop.svelte';
 	import { aimPageAt } from '$lib/components/entity/aimed-page.svelte';
+	import { session } from '$lib/shell/session.svelte';
 
 	interface Props {
 		/** What kind of thing this page is about, in the server's own word for it. */
@@ -27,8 +27,10 @@
 	let { kind, id, name }: Props = $props();
 
 	/* Say what this screen is about, for as long as it is on screen. Cleared on the way out, which
-	   is what stops the next screen's drop being aimed at whoever was on this one. */
+	   is what stops the next screen's drop being aimed at whoever was on this one. A fetch is an
+	   admin's, so a guest's drop is left to the window, which says so. */
 	$effect(() => {
+		if (!session.isAdmin) return;
 		aimPageAt({ kind, id, name });
 		return () => aimPageAt(null);
 	});
@@ -50,7 +52,7 @@
 	 * page, one under the card. The question is `overADropZone`'s, and the window's offer stands
 	 * down over this page for exactly the same reason. */
 	function wouldTakeIt(event: DragEvent): boolean {
-		return carriesALink(event) && !overADropZone(event);
+		return session.isAdmin && carriesALink(event) && !overADropZone(event);
 	}
 
 	function enter(event: DragEvent) {

@@ -1,11 +1,8 @@
 <script lang="ts">
 	/*
-	 * The Audio player's strip, in the shape every player bar has: the scrub
-	 * line along the top with the time so far at its start and the length at its end; under it the
-	 * small picture all the way to the left with the name beside it (the picture is the panel's own,
-	 * so the sound never stops between the two), the transport in the middle, the sound and the ways
-	 * out on the right. Docked on a phone it carries what fits a thumb, in the same order: the
-	 * picture, the name, Play, back to full size and close.
+	 * The Audio player's strip, in every player bar's shape: the scrub line on top; under it the
+	 * transport at the start, the panel's own small picture centred, the sound and the ways out at
+	 * the end. Docked on a phone: the picture, the name, Play, back to full size and close.
 	 */
 	import { untrack } from 'svelte';
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
@@ -23,7 +20,7 @@
 	import { ACTS, keyOf } from '$lib/player/acts';
 	import type Player from './Player.svelte';
 	import ScrubLine from './ScrubLine.svelte';
-	import Transport from './Transport.svelte';
+	import Transport, { NOTHING_AFTER, NOTHING_BEFORE } from './Transport.svelte';
 
 	interface Props {
 		asset: NonNullable<typeof mini.asset>;
@@ -59,18 +56,15 @@
 		length
 	}: Props = $props();
 
-	/* The strip keeps one shape: a control that cannot act is dimmed with its reason in the tooltip,
-	   rather than left out, so nothing slides under the pointer that pressed it. */
 	const HIDDEN_REASON = 'This one is hidden';
 
 	/* Where the clip is, on the scrub line: a clip whose length is known. */
 	const timed = $derived(!concealed && !showsPicture && length > 0);
 
-	/* The name in the middle. The panel holds an id rather than a record, so it is asked for here;
-	   never for a Hidden file, which is named only as hidden. */
+	/* The docked strip's name, asked for by id; never for a Hidden file, which is named as hidden. */
 	let named = $state('');
 	$effect(() => {
-		const id = concealed ? null : asset.id;
+		const id = concealed || !docked ? null : asset.id;
 		untrack(() => {
 			named = '';
 			if (id === null) return;
@@ -96,47 +90,40 @@
 		disabled={concealed || showsPicture}
 		onseek={(seconds) => player?.goTo(seconds)}
 		{timed}
+		keepHeight
 	/>
 </div>
-<span class="named" class:docked>
-	<span class="title">{concealed ? holding : named}</span>
-</span>
+{#if docked}
+	<span class="named">
+		<span class="title">{concealed ? holding : named}</span>
+	</span>
+{/if}
 {#if transportHolds}
-	<!-- The transport every player bar draws, in its order: Shuffle, Previous, Play, Next, Repeat.
-	     Docked on a phone, Play alone: a thumb's strip has room for one. The order and what happens
-	     at the end are written where the player's bar writes them (`toggleShuffle`, `dwell.choose`). -->
+	<!-- The transport every player bar draws; Play alone on the docked strip. -->
 	<div class="transport" class:docked>
-		{#if docked}
-			<Transport
-				{playing}
-				onplay={() => player?.togglePlayback()}
-				keyboard="mini"
-				placement="top"
-			/>
-		{:else}
-			<Transport
-				{playing}
-				onplay={() => player?.togglePlayback()}
-				playable={!concealed}
-				playWhy={concealed ? HIDDEN_REASON : undefined}
-				onback={around.back ? () => onwalk(false) : undefined}
-				onforward={around.forward ? () => onwalk(true) : undefined}
-				backWhy="Nothing before this"
-				forwardWhy="Nothing after this"
-				shuffle={{
-					on: run.shuffle,
-					onpress: () => toggleShuffle(asset.id),
-					why: concealed ? HIDDEN_REASON : undefined
-				}}
-				repeat={{
-					mode: dwell.mode,
-					onpress: () => void dwell.choose(nextLoopMode(dwell.mode)),
-					why: concealed ? HIDDEN_REASON : undefined
-				}}
-				keyboard="mini"
-				placement="top"
-			/>
-		{/if}
+		<Transport
+			{playing}
+			onplay={() => player?.togglePlayback()}
+			playable={!concealed}
+			playWhy={concealed ? HIDDEN_REASON : undefined}
+			onback={around.back ? () => onwalk(false) : undefined}
+			onforward={around.forward ? () => onwalk(true) : undefined}
+			backWhy={NOTHING_BEFORE}
+			forwardWhy={NOTHING_AFTER}
+			shuffle={{
+				on: run.shuffle,
+				onpress: () => toggleShuffle(asset.id),
+				why: concealed ? HIDDEN_REASON : undefined
+			}}
+			repeat={{
+				mode: dwell.mode,
+				onpress: () => void dwell.choose(nextLoopMode(dwell.mode)),
+				why: concealed ? HIDDEN_REASON : undefined
+			}}
+			playOnly={docked}
+			keyboard="mini"
+			placement="top"
+		/>
 	</div>
 {/if}
 <div class="ends" class:docked>
@@ -190,9 +177,8 @@
 </div>
 
 <style>
-	/* `--bar-band` and `--bar-picture` are MiniPlayer's, set on the frame around this. Each part
-	   stands in a named area of the frame's grid ('line' along the top; 'start', 'transport' and
-	   'ends' under it; docked, 'picture' and 'title' for the start). */
+	/* Each part stands in a named area of MiniPlayer's grid ('line' on top; 'transport', 'start' and
+	   'ends' under it; docked, 'picture' and 'title' at the start). */
 	.volume {
 		display: flex;
 		align-items: center;
@@ -212,7 +198,6 @@
 	.transport {
 		grid-area: transport;
 		display: flex;
-		justify-content: center;
 	}
 
 	.ends {
@@ -223,14 +208,12 @@
 		gap: var(--space-1);
 	}
 
-	/* The name beside the picture, which shares the start of the row with it: clear of the picture
-	   by its width and the row's gap. The name is the one part that gives way. */
+	/* The docked strip's name, after the picture: the one part that gives way. */
 	.named {
-		grid-area: start;
+		grid-area: title;
 		display: flex;
 		flex-direction: column;
 		min-inline-size: 0;
-		padding-inline-start: calc(var(--bar-picture, 80px) + var(--space-3));
 	}
 
 	.title {
@@ -241,18 +224,7 @@
 		color: var(--sift-ink);
 	}
 
-	/* Docked, the name in its own place on the strip's grid, after the picture. */
-	.named.docked {
-		grid-area: title;
-		padding-inline-start: 0;
-	}
-
-	/*
-	 * The scrub line along the top of the strip, the strip's whole width inside its padding. Its
-	 * target is the slider's own box: a mouse's 16 pixels, a finger's 44 on a phone, the band the
-	 * strip keeps for it. The frame under the pointer rises above the strip's top edge with nothing
-	 * of the strip under it.
-	 */
+	/* The scrub line, the strip's whole width inside its padding. */
 	.bar-timeline {
 		grid-area: line;
 		align-self: center;

@@ -488,39 +488,8 @@
 		var(--sift-accent) 100%
 	);
 
-	/*
-	 * !! AN ENRICHMENT MARK IS NOT PAINTED IN THE WAVE. Giving each author's mark its own offset
-	 * along it reads as right (these marks mean "not a person did this", and the spark already
-	 * means that), but it makes three marks that differ by a colour NOBODY CAN NAME: 20%, 50% and
-	 * 80% of one gradient are three shades of the same idea. The marks do not differ by shade; they
-	 * differ by AUTHOR, and two of the three authors are Sift itself. So Sift's own two wear the
-	 * app's accent (one colour, one meaning: this install did it) and a stash-box's wears THAT
-	 * BOX'S colour, below. The wave belongs to the spark on the search box, which is the control
-	 * it was written for.
-	 */
-
-	/*
-	 * A STASH-BOX'S OWN COLOUR: ONE colour per box Sift has a word for, never a gradient.
-	 *
-	 * Three services can be configured and they can disagree about who is in a scene, and a row
-	 * of identical marks makes you hover each one to find out which said so. A
-	 * colour answers that before the tooltip does.
-	 *
-	 * ONE flat colour each, the way a Site's icon carries its own: nothing in the chrome is
-	 * multicolour, so a box's own gradient (PMVStash's orange running to red, FansDB's five favicon
-	 * fills) is not used. FansDB takes OnlyFans blue, since the site it indexes is the
-	 * one its users have open in another tab; StashDB keeps its brown and PMVStash its orange.
-	 *
-	 * Each is measured against every surface a mark can be drawn on by `contrast.test.ts`, against a
-	 * floor of 3:1 for a meaningful graphic.
-	 */
-	/* Brown, chosen for StashDB rather than taken from it (it has no mark of its own). Lifted from
-	   `#8b5a2b` until it cleared 3:1 everywhere; measures 3.41:1 at its worst. */
-	--sift-box-stashdb: #bd8148;
-	/* PMVStash's orange, the head of its own two-stop mark. Measures 3.88:1 at its worst. */
-	--sift-box-pmvstash: #e08010;
-	/* OnlyFans blue, unlifted: it clears the floor as it is, 4.48:1 at its worst. */
-	--sift-box-fansdb: #00aff0;
+	/* An enrichment mark is not painted in the wave, whose offsets are shades nobody can name: every
+	   mark wears the accent, and a stash-box is told apart by its glyph. */
 
 	--sift-ok: var(--p-ok);
 	--sift-ok-bg: var(--p-ok-bg);
@@ -1036,6 +1005,7 @@
 	 * a control inside something else: a tile, a dense row, a chip strip. */
 	--control-height: 36px;
 	--control-height-sm: 32px;
+	--tab-box-floor: 10ch;
 	/* The colour picker's saturation-and-lightness square, and the ring that marks the place in it
 	   (`ColorPicker`). The square is the one control in the app whose HEIGHT is not a row height:
 	   it is a two-dimensional field, so it has to be as tall as it is wide or the two axes are not
@@ -1064,26 +1034,9 @@
 	--progress-line: 2.5px;
 
 	/* --- Floating lists. One ceiling, one row inset. --------------------------------------------
-	 * A menu, a chooser's open list, a suggestion list and a flyout are the same object: a column
-	 * of rows drawn over the page. Measured against different ceilings (the chooser against
-	 * the WINDOW, a twenty-folder list opening as a 900px column with no bar; the menus against
-	 * nothing at all; the tag suggestions against 240px), how long a list may get would depend on
-	 * which primitive drew it.
-	 *
-	 * 480 is read off the app rather than picked: the longest menu it draws today is a file's
-	 * right-click menu at eleven rows, measured 416px at 1440x900, and it still opens whole. Longer
-	 * than that scrolls, which is what the shared `Scroller` in each of those surfaces is for. Every
-	 * one of them also takes the smaller of this and the room the window actually has, so a short
-	 * window still bounds the list.
-	 *
-	 * The row inset is the other half of the same idea: a row is padded the same in every one of
-	 * those lists. Written out four times (the chooser's rows, a menu's rows, the tag
-	 * suggestions and the rating flyout), the copies drift.
-	 *
-	 * A right-click menu is the one exception: it lists one thing's verbs and opens WHOLE, taking
-	 * the window's room as its ceiling (`.ui-menu.whole`); this ceiling holds the choosers, the
-	 * flyouts and the three-dot dropdowns, which list the library's things. */
-	--menu-max-height: 480px;
+	 * Every floating list is as tall as its rows where the window has the room and scrolls only
+	 * when the window is short: a fixed ceiling would hide the last rows with room to spare. */
+	--menu-max-height: 100dvh;
 	/* The width of a list hanging from the top bar on a desk (Sort by, a screen's own menus on
 	   that row), whatever its rows say. Sized by its widest name, the Sort list comes out 208px and
 	   Similarity's note ("needs a Smart Search or a file") wraps to two lines, pushing Random under
@@ -2201,42 +2154,6 @@ select:disabled {
 	min-block-size: 0;
 	display: grid;
 	grid-template-rows: minmax(0, 1fr);
-}
-
-/*
- * A GLYPH PAINTED IN ONE STASH-BOX'S OWN COLOURS.
- *
- * ## Why a colour per box, and not the wave
- *
- * These marks all say one thing (something wrote to this file and it was not a person), and the
- * spark is the app's colour for exactly that, which is why Sift's own two marks are the plain
- * ACCENT. But what the marks have to tell apart is not "which kind of automatic thing", but
- * WHICH SERVICE, on an install with three of them configured that disagree
- * about who is in a scene. Three offsets along one gradient cannot answer that: they are three
- * shades nobody can name, and you still have to hover each mark to find out.
- *
- * So a stash-box's mark wears that BOX's colour (`--sift-box-*` in the token layer, where the
- * measurements are), and a box Sift has no word for keeps the accent, which is honest: there is no
- * colour to give it.
- *
- * ## Where it lives
- *
- * Here rather than in either component, for the reason the cross below is here: the marks are
- * drawn by `EnrichmentMarks` and the same glyphs are drawn again by the Enriched by column's own
- * rows, in two different files, and one look written twice is two looks by the next edit.
- *
- * The glyph is TEXT (an `Icon` is a ligature in a span), so ONE colour is its `color`, and the rule
- * lands on that span. The class goes on the wrapper, because `Icon` is a component and takes no
- * class of its own, and the rule reaches one level in.
- *
- * NO OUTLINE, and that is measured rather than assumed: each box's colour clears the 3:1 floor for
- * a meaningful graphic on every surface it can be drawn on, which is what the contrast gate holds
- * them to. An outline would be the answer if one ever stopped clearing it.
- */
-.box-mark .icon {
-	/* The FALLBACK is the accent: the class only goes on where there is a box colour to set, and
-	   a box Sift has no colour for is drawn in what an unknown box already wears. */
-	color: var(--box-colour, var(--sift-accent));
 }
 
 /*

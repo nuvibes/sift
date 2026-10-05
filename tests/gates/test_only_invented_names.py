@@ -418,12 +418,17 @@ def _every_candidate() -> list[tuple[str, int, str]]:
     """Every name-shaped string on the scanned surface, with where it was found."""
     found: list[tuple[str, int, str]] = []
     for path in _tracked("*.py"):
+        if not (REPO / path).exists():
+            continue
         source = (REPO / path).read_text(encoding="utf-8")
         found.extend((path, line, name) for line, name in _python_candidates(path, source))
     for path in _tracked("frontend", "desktop"):
         if path in GENERATED or "/generated/" in path:
             continue
-        if not path.endswith((".ts", ".svelte", ".js", ".mjs", ".mts")):
+        if (
+            not path.endswith((".ts", ".svelte", ".js", ".mjs", ".mts"))
+            or not (REPO / path).exists()
+        ):
             continue
         source = (REPO / path).read_text(encoding="utf-8")
         found.extend((path, line, name) for line, name in _client_comments(source))

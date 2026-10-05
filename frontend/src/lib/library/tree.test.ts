@@ -18,7 +18,8 @@ function folder(id: string, name: string, parent_id: string | null, root_id = RO
 		restricted_here: false,
 		hidden: false,
 		keep_local: false,
-		keep_from_swaps: false
+		keep_from_swaps: false,
+		writable: null
 	};
 }
 

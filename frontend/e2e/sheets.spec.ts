@@ -32,7 +32,8 @@ const FOLDERS = [
 		path: '/media/Clips',
 		rel_path: 'Clips',
 		parent_id: null,
-		root_id: 'r1'
+		root_id: 'r1',
+		writable: true
 	},
 	{
 		id: 'f2',
@@ -40,7 +41,8 @@ const FOLDERS = [
 		path: '/media/Stills',
 		rel_path: 'Stills',
 		parent_id: null,
-		root_id: 'r1'
+		root_id: 'r1',
+		writable: true
 	}
 ];
 
@@ -67,12 +69,14 @@ async function serveLibrary(page: Page) {
 			body: JSON.stringify({ roots: ROOTS })
 		})
 	);
-	await page.route('**/api/library/folders', (route) =>
-		route.fulfill({
-			status: 200,
-			contentType: 'application/json',
-			body: JSON.stringify({ folders: FOLDERS })
-		})
+	await page.route(
+		(url) => url.pathname === '/api/library/folders',
+		(route) =>
+			route.fulfill({
+				status: 200,
+				contentType: 'application/json',
+				body: JSON.stringify({ folders: FOLDERS })
+			})
 	);
 }
 

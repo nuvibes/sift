@@ -15,7 +15,7 @@ Each card shows a person's cover, how many files they're on and how much room th
 
 **Search people** finds a person by their name or any other name they go by. **Add person** makes a person with a name and, if you like, a picture.
 
-**Sort by** offers **Newest first**, **Oldest first**, **Recently edited**, **Name A-Z**, **Name Z-A**, **Most files**, **Fewest files**, **Favorites first** and **Highest rated**.
+**Sort by** offers **Newest first**, **Oldest first**, **Recently edited**, **Name A-Z**, **Name Z-A**, **Most files**, **Fewest files**, **Favorites first** and **Highest rated**. Four more orders add up every file under each one. **Largest in total** and **Smallest in total** go by size, and **Longest in total** and **Shortest in total** by length.
 
 **Filter** opens columns about the people themselves:
 

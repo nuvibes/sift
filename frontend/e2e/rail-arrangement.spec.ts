@@ -15,7 +15,7 @@ const HIDDEN = 'sift.rail.hidden';
 const shown = (page: Page) =>
 	page
 		.locator('nav.rail a.item')
-		.evaluateAll((links) => links.map((link) => link.getAttribute('href')));
+		.evaluateAll((links) => links.map((link) => link.getAttribute('href') ?? ''));
 
 /** The rail has drawn. Every read of it has to wait for this: the application mounts the whole
  *  shell in the browser, so a query fired the instant a navigation resolves finds an empty page. */

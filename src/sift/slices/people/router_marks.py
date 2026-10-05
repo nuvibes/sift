@@ -154,7 +154,7 @@ async def tags_of_person(
     await _visible_person_or_404(access, viewer, person_id)
     return [
         TagOnEntity(id=row["id"], name=row["name"])
-        for row in await service.tags_of_person(person_id)
+        for row in await service.tags_of_person(person_id, viewer)
     ]
 
 
@@ -184,7 +184,8 @@ async def tags_of_site(
 ) -> list[TagOnEntity]:
     await _visible_site_or_404(access, viewer, site_id)
     return [
-        TagOnEntity(id=row["id"], name=row["name"]) for row in await service.tags_of_site(site_id)
+        TagOnEntity(id=row["id"], name=row["name"])
+        for row in await service.tags_of_site(site_id, viewer)
     ]
 
 

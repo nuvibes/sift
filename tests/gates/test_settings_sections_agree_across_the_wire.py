@@ -114,6 +114,7 @@ def test_the_screen_offers_no_section_the_server_has_never_heard_of() -> None:
         "users": "the guest list under Users: rows on the server rather than settings",
         "general": "what the desktop app does on this device, answered by the shell",
         "get-to-know": "the learning path, drawn by Path from its own answer",
+        "documentation": "the docs site's pages, built into the client from docs-site",
     }
 
     unexplained = [one for one in screen if one not in hand_written and one not in drawn_homes]

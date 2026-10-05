@@ -33,7 +33,7 @@ from sift.kernel.access.history_entity import history_of_site
 from sift.kernel.db import Database
 from sift.kernel.ledger import Actor
 from sift.kernel.paging import MAX_PAGE_SIZE, resume_at
-from sift.kernel.seams import DisagreementSeam, ReindexSeam
+from sift.kernel.seams import DisagreementSeam, ForgetGoneSeam, ReindexSeam
 from sift.kernel.serving import face_version
 from sift.kernel.text import clean_token_text
 from sift.kernel.wire import FacetCounts, FacetValue, HistoryEvent, history_event
@@ -406,13 +406,14 @@ async def delete_site(
     service: Annotated[PeopleService, Depends(_service)],
     access: Annotated[Repository, Depends(wiring.access)],
     reindexer: Annotated[ReindexSeam, Depends(wiring.reindexer)],
+    forgets: Annotated[ForgetGoneSeam, Depends(wiring.forget_gone)],
     viewer: Annotated[Viewer, Depends(require_admin)],
 ) -> Response:
     """Delete a site, every grant that named it, and what it recorded about where files came from.
 
     **No file is touched and no person goes.**
     """
-    await _visible_site_or_404(access, viewer, site_id)
+    site = await _visible_site_or_404(access, viewer, site_id)
     # BEFORE the delete, for the reason deleting a person reads first: this takes the site's
     # usernames with it, and the walk from a site to its files goes THROUGH those usernames, so after
     # the write there is no path left to the files that just stopped carrying its name.
@@ -422,4 +423,5 @@ async def delete_site(
     # The site's name and its other names were indexed on each of those files, and the usernames that
     # carried them have gone.
     await reindexer.touched_many(was_under)
+    await forgets.forget_gone("site", site_id, name=site.name, by=viewer)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

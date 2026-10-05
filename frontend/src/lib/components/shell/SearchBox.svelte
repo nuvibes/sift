@@ -756,6 +756,7 @@
 	</form>
 
 	<SearchSuggestions
+		wide={!exclusive}
 		{showing}
 		{typing}
 		{leaves}
@@ -874,9 +875,9 @@
 		}
 	}
 
-	/* Too narrow for the hint, so the hint goes rather than the box growing a row.
-	   `ROOM_FOR_THE_MENUS` keeps the desktop window above it; this holds for a narrower browser. */
-	@container search-field (max-width: 210px) {
+	/* The hint shows only with its own 59px beyond the floor's 209 of content, so it never takes
+	   the typing room under what the floor leaves (`FIELD_FLOOR`). */
+	@container search-field (max-width: 268px) {
 		.search :global(.shortcut) {
 			display: none;
 		}

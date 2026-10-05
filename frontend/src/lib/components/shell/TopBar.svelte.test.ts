@@ -213,6 +213,27 @@ describe('what else is on it', () => {
  * Read from the source because the label only exists while it is showing, and where it goes is
  * the one prop that says so for every control at once, including the ones added later.
  */
+describe('the tile size giving way to the field', () => {
+	it('is off the bar while the bar says so, and back when it does not', () => {
+		render();
+		expect(host.querySelector('.size.gone')).toBeNull();
+		screenBar.sizeOnBar = false;
+		flushSync();
+		expect(host.querySelector('.size.gone')).not.toBeNull();
+		screenBar.sizeOnBar = true;
+		flushSync();
+		expect(host.querySelector('.size.gone')).toBeNull();
+	});
+
+	it("offers it on the screen's own row while it is off the bar", () => {
+		render();
+		screenBar.sizeOnBar = false;
+		expect(screenBar.tools.panels?.map((one) => one.label)).toEqual(['Tile size']);
+		screenBar.sizeOnBar = true;
+		expect(screenBar.tools.panels ?? []).toEqual([]);
+	});
+});
+
 describe('the labels on the bar', () => {
 	/** Every `<Tooltip ...>` opening tag in a file, braces respected. */
 	function tooltipTags(text: string): string[] {
@@ -360,28 +381,63 @@ describe("the bar at a phone's width", () => {
 });
 
 /*
- * One placement for the bar's controls: each end packed against the search box, with the rail's
- * collapse parked at the far left and the tile size with Add at the far right. Packed against the
- * window's edges, the controls drift away from the box on every wide window.
+ * Filter, Sort by and the search box are one centre group between two equal ends, so its midpoint
+ * is the bar's; the ends pack against it, with the collapse and Add at the edges.
  */
-describe('the two ends of the bar', () => {
-	afterEach(removeStyles);
+describe('the centre group and the two ends', () => {
+	afterEach(() => {
+		removeStyles();
+		screenBar.barEnd = 0;
+	});
 
-	it('pack against the search box, the collapse and Add at the edges', () => {
+	it('draws the menus and the search box as one group between equal ends', () => {
 		render();
-		const lead = host.querySelector('.lead') as HTMLElement;
-		const actions = host.querySelector('.actions') as HTMLElement;
-		applyStyles(topBarSource, lead);
+		const bar = host.querySelector('.topbar') as HTMLElement;
+		applyStyles(topBarSource, bar);
 
-		expect(getComputedStyle(lead).justifyContent).toBe('flex-end');
-		expect(getComputedStyle(actions).justifyContent).toBe('flex-start');
-		const collapse = host.querySelector('.collapse > *') as HTMLElement;
-		expect(getComputedStyle(collapse).marginInlineEnd).toBe('auto');
+		const centre = bar.querySelector(':scope > .centre') as HTMLElement;
+		expect(centre.querySelector('[role="group"][aria-label="What is on screen"]')).not.toBeNull();
+		expect(centre.querySelector('form.search')).not.toBeNull();
+		expect(
+			bar.querySelector('.lead [role="group"]'),
+			'the menus are still at the start'
+		).toBeNull();
+		expect(getComputedStyle(bar).gridTemplateColumns).toBe(
+			'minmax(max-content, 1fr) auto minmax(max-content, 1fr)'
+		);
+	});
+
+	it('caps the group by the end group, so each end has room for it', () => {
+		screenBar.barEnd = 312;
+		render();
+		const bar = host.querySelector('.topbar') as HTMLElement;
+		expect(bar.style.getPropertyValue('--bar-end')).toBe('312px');
+		expect(bar.style.getPropertyValue('--field-floor')).toBe('227px');
+		applyStyles(topBarSource, bar);
+		const cap = getComputedStyle(bar.querySelector('.centre') as HTMLElement).maxInlineSize;
+		expect(cap.replace(/\s+/g, ' ')).toBe(
+			'max(var(--field-floor), 100cqi - 2 * (var(--bar-end) + var(--space-3)))'
+		);
+	});
+
+	it('packs the ends against the group, the collapse and Add at the edges', () => {
+		render();
+		const bar = host.querySelector('.topbar') as HTMLElement;
+		applyStyles(topBarSource, bar);
+
+		// The trail has no floor of its own and never sizes its end: it folds into what is left.
+		const trail = getComputedStyle(host.querySelector('.trail') as HTMLElement);
+		expect(trail.minInlineSize).toBe('0px');
+		expect(trail.contain).toBe('inline-size');
+		expect(getComputedStyle(host.querySelector('.actions') as HTMLElement).justifyContent).toBe(
+			'flex-start'
+		);
 		const trailing = host.querySelector('.trailing') as HTMLElement;
 		expect(getComputedStyle(trailing).marginInlineStart).toBe('auto');
-		// The one space between the box and the controls either side of it is the bar's own gap.
-		const bar = getComputedStyle(host.querySelector('.topbar') as HTMLElement);
-		expect(bar.getPropertyValue('gap')).toBe('var(--space-3)');
+		// The end group is measured whole, so neither of its parts may shrink.
+		expect(getComputedStyle(trailing).flexShrink).toBe('0');
+		expect(getComputedStyle(host.querySelector('.near') as HTMLElement).flexShrink).toBe('0');
+		expect(getComputedStyle(bar).getPropertyValue('gap')).toBe('var(--space-3)');
 	});
 });
 
@@ -452,6 +508,7 @@ describe("the screen's trail, on the search box's line", () => {
 	afterEach(() => {
 		pageTrail.unsay(owner);
 		phoneWidth.yes = false;
+		screenBar.sizeOnBar = true;
 	});
 
 	it('draws the trail the frame said, the current page last and not a link', () => {
@@ -464,21 +521,21 @@ describe("the screen's trail, on the search box's line", () => {
 		expect(trail!.querySelector('[aria-current="page"]')?.textContent?.trim()).toBe('Somebody');
 	});
 
-	it('holds the room on a screen with no trail, so the bar keeps one shape', () => {
+	it('folds it to the press alone before the tile size leaves', () => {
+		pageTrail.say(owner, [{ label: 'People', href: '/people' }, { label: 'Somebody' }]);
+		const bar = render();
+		screenBar.sizeOnBar = false;
+		flushSync();
+
+		const trail = bar.querySelector('.lead nav[aria-label="Breadcrumb"]')!;
+		expect(trail.querySelector('a, [aria-current="page"]')).toBeNull();
+		expect(trail.querySelector('button.fold')).not.toBeNull();
+	});
+
+	it('keeps the room on a screen with no trail, so the bar keeps one shape', () => {
 		const bar = render();
 		expect(bar.querySelector('.lead .trail')).not.toBeNull();
 		expect(bar.querySelector('nav[aria-label="Breadcrumb"]')).toBeNull();
-	});
-
-	it("lowers the room's floor by what the screen took back for its own controls", () => {
-		/* Theater at 1280: its field short of its floor beside the held room. The room gives way
-		   by what `screenBar.trailGives` says, rather than the menus leaving for a row of their own. */
-		screenBar.trailGives = 52;
-		const bar = render();
-		const room = bar.querySelector('.lead .trail') as HTMLElement;
-		expect(room.style.getPropertyValue('--trail-gives')).toBe('52px');
-		expect(topBarSource).toContain('100cqi - var(--trail-beside) - var(--trail-gives)');
-		screenBar.trailGives = 0;
 	});
 
 	it('draws no trail on a phone, where the page draws it', () => {

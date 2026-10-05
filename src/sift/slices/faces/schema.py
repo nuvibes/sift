@@ -34,10 +34,10 @@ from __future__ import annotations
 
 from sift.kernel.access.visibility import WAITING_FACES_KIND, Counted, register_counted
 from sift.kernel.db import Connection, register_schema_initializer
-from sift.kernel.migrations import check_allows, widen_a_check
+from sift.kernel.migrations import check_allows, column_exists, widen_a_check
 
 COMPONENT = "faces"
-VERSION = 39
+VERSION = 41
 
 # Where a scan got to, per asset. The fifth status (never scanned) is the absence of a row,
 # so it cannot drift out of step with reality by being written down somewhere and not updated.
@@ -397,8 +397,8 @@ _INDEX_GROUPING_ASSET = (
 )
 
 
-# An installed pack, keyed by name so a later edition of one updates what it brought rather than
-# stacking a second copy beside it.
+# An installed pack, found by the library that made it, or by its name where the file names none.
+# `name` then holds a key, since the UNIQUE cannot be dropped from a table others reference.
 _CREATE_PACKS = """
 CREATE TABLE IF NOT EXISTS face_packs (
   id           TEXT PRIMARY KEY,
@@ -407,7 +407,21 @@ CREATE TABLE IF NOT EXISTS face_packs (
   recognizer   TEXT NOT NULL,
   dimension    INTEGER NOT NULL,
   digest       TEXT NOT NULL,
-  installed_at INTEGER NOT NULL
+  installed_at INTEGER NOT NULL,
+  library      TEXT
+)
+"""
+
+_INDEX_PACKS_LIBRARY = (
+    "CREATE UNIQUE INDEX IF NOT EXISTS ix_face_packs_library ON face_packs(library)"
+    " WHERE library IS NOT NULL"
+)
+
+# This library's own id for the files it makes: random, so a move keeps it and a file names no path.
+_CREATE_OWN_LIBRARY = """
+CREATE TABLE IF NOT EXISTS face_own_library (
+  one INTEGER PRIMARY KEY CHECK (one = 1),
+  id  TEXT NOT NULL
 )
 """
 
@@ -632,18 +646,8 @@ _INDEX_PILE_PROPOSALS_FOLDER = (
 )
 
 
-# What a pack brought that this library could not place, kept instead of thrown away.
-#
-# Without a place for an unclaimed person, importing a pack would have two choices for a name
-# matching nobody: create hundreds of People on the spot, or drop every face under it.
-#
-# These two tables are that place. An entry is somebody a pack named, with the names they answer to
-# and the faces that recognize them, held without being a Person. Three things become possible and
-# they are all the same mechanism:
-#
-#   - somebody is created the moment they are RECOGNIZED here rather than on import
-#   - the match is offered when somebody is added by hand months later
-#   - re-importing loses nothing, because nothing was thrown away in between
+# What a pack brought that this library could not place, held without being a Person, so somebody
+# is made when RECOGNIZED here rather than on import and re-importing loses nothing.
 #
 # `claimed_person_id` is who the entry turned into, once it turns into anybody. The row is kept
 # rather than deleted, so a second import of the same pack recognizes what it already gave, and
@@ -682,6 +686,16 @@ CREATE TABLE IF NOT EXISTS pack_entry_faces (
 )
 """
 
+# What the last folder import left out or kept as a near copy, keyed by file so a rerun adds nothing.
+_CREATE_FOLDER_LEFT_OUT = """
+CREATE TABLE IF NOT EXISTS face_folder_left_out (
+  job_id TEXT NOT NULL,
+  file   TEXT NOT NULL,
+  reason TEXT NOT NULL,
+  PRIMARY KEY (job_id, file)
+)
+"""
+
 _PACK_ENTRY_INDEXES = (
     # "Who has this pack not placed yet": the list an import reports and a new person is matched
     # against. Partial, because once a library is settled most entries are claimed.
@@ -712,10 +726,13 @@ _TABLES = (
     _CREATE_PILE_PROPOSALS,
     _CREATE_SUCCESSORS,
     _CREATE_STARTER_REFUSALS,
+    _CREATE_FOLDER_LEFT_OUT,
+    _CREATE_OWN_LIBRARY,
 )
 
 # The indexes kept beside the tables they serve.
 _MORE_INDEXES = (
+    _INDEX_PACKS_LIBRARY,
     _INDEX_CLAIMS_PERSON,
     *_PACK_ENTRY_INDEXES,
     _INDEX_REMOVED_ASSET,
@@ -744,19 +761,20 @@ _ORIGIN_NOW = "origin IN ('added','pack','confirmed','seed','recognized')"
 #: fingerprints leaves held from then on (`pack_entries.declined_at`).
 _ENTRY_DECLINED = "ALTER TABLE pack_entries ADD COLUMN declined_at INTEGER"
 
-#: Version 39's step: the folder an entry was read from where it is not its pack's own name (a
-#: folder import's entries share one pack), and how many confirmed faces the file said the person
-#: had. Keyed by column, so the step adds only what the table lacks and can be taken twice.
+#: Version 39's step: the folder an entry was read from where it is not its pack's own name, and
+#: how many confirmed faces the file said the person had.
 _ENTRY_SOURCE_AND_COUNT = {
     "source": "ALTER TABLE pack_entries ADD COLUMN source TEXT",
     "confirmed": "ALTER TABLE pack_entries ADD COLUMN confirmed INTEGER",
 }
 
+#: Version 41's step: the library a pack came from.
+_PACKS_LIBRARY = "ALTER TABLE face_packs ADD COLUMN library TEXT"
+
 #: Version 34's step. See `initialize`.
 _INDEXES_A_LIBRARY_MAY_LACK = (_TRACKS_BY_DAY_INDEX, _PILES_BY_STATUS_INDEX)
 
 #: Version 35's step: the refusal split by reason, and the size of the biggest face too small.
-#: Keyed by column, so the step adds only what a table lacks and can be taken twice.
 _REFUSAL_REASONS = {
     "refused_largest": "ALTER TABLE face_scans ADD COLUMN refused_largest INTEGER",
     "refused_blurred": "ALTER TABLE face_scans ADD COLUMN refused_blurred INTEGER",
@@ -780,13 +798,7 @@ async def initialize(connection: Connection, on_disk: int) -> None:
     # Version 35: the columns a scan's refusals are told apart by. NULL on every older row, which
     # the History line reads as "not known" and words as it always did.
     if 0 < on_disk < 35:
-        present = {
-            str(row[1])
-            for row in await connection.execute_fetchall("PRAGMA table_info(face_scans)")
-        }
-        for column, statement in _REFUSAL_REASONS.items():
-            if column not in present:
-                await connection.execute(statement)
+        await _add_columns(connection, "face_scans", _REFUSAL_REASONS)
     # Version 36: a stash-box may ask about a face (`AskedBy.BOX`). Only the CHECK widens, in the
     # stored definition, so no row moves and nothing that points at a face is touched.
     if 0 < on_disk < 36 and not await check_allows(connection, "face_tracks", "box"):
@@ -797,22 +809,26 @@ async def initialize(connection: Connection, on_disk: int) -> None:
         await widen_a_check(connection, "face_references", was=_ORIGIN_WAS, now=_ORIGIN_NOW)
     # Version 38: an entry may be declined. NULL on every older row: nothing was declined before.
     if 0 < on_disk < 38:
-        present = {
-            str(row[1])
-            for row in await connection.execute_fetchall("PRAGMA table_info(pack_entries)")
-        }
-        if "declined_at" not in present:
-            await connection.execute(_ENTRY_DECLINED)
+        await _add_columns(connection, "pack_entries", {"declined_at": _ENTRY_DECLINED})
     # Version 39: an entry's own folder and its confirmed count. NULL on every older row, which
     # reads as the pack's name and as a count nobody gave.
     if 0 < on_disk < 39:
-        present = {
-            str(row[1])
-            for row in await connection.execute_fetchall("PRAGMA table_info(pack_entries)")
-        }
-        for column, statement in _ENTRY_SOURCE_AND_COUNT.items():
-            if column not in present:
-                await connection.execute(statement)
+        await _add_columns(connection, "pack_entries", _ENTRY_SOURCE_AND_COUNT)
+    # Version 40: the folder import's left-out pictures, by file. Empty until the next import.
+    if 0 < on_disk < 40:
+        await connection.execute(_CREATE_FOLDER_LEFT_OUT)
+    # Version 41: a pack's library, NULL on an older one, which stays keyed by its name.
+    if 0 < on_disk < 41:
+        await _add_columns(connection, "face_packs", {"library": _PACKS_LIBRARY})
+        await connection.execute(_INDEX_PACKS_LIBRARY)
+        await connection.execute(_CREATE_OWN_LIBRARY)
+
+
+async def _add_columns(connection: Connection, table: str, columns: dict[str, str]) -> None:
+    """Add each column the table lacks, so a step taken twice is taken once."""
+    for column, statement in columns.items():
+        if not await column_exists(connection, table, column):
+            await connection.execute(statement)
 
 
 register_schema_initializer(COMPONENT, VERSION, initialize, baseline=33)

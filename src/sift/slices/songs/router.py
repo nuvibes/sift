@@ -60,7 +60,7 @@ from sift.kernel.db import Database
 from sift.kernel.ledger import Actor
 from sift.kernel.paging import resume_at
 from sift.kernel.reach import BulkWriteDone, require_reachable
-from sift.kernel.seams import ReindexSeam, StillSeam
+from sift.kernel.seams import ForgetGoneSeam, ReindexSeam, StillSeam
 from sift.kernel.serving import face_version
 from sift.kernel.wire import (
     FacetCounts,
@@ -393,17 +393,19 @@ async def delete_song(
     service: Annotated[SongService, Depends(_service)],
     access: Annotated[Repository, Depends(wiring.access)],
     reindexer: Annotated[ReindexSeam, Depends(wiring.reindexer)],
+    forgets: Annotated[ForgetGoneSeam, Depends(wiring.forget_gone)],
     viewer: Annotated[Viewer, Depends(require_admin)],
 ) -> Response:
     """Delete the song. Its files stay where they are, keep their music fingerprints and lose the
     name; the index is told which files they were."""
-    await _require_song(access, viewer, song_id)
+    song = await _require_song(access, viewer, song_id)
     # Every grant naming it first, so a failure between the two leaves grants naming a song that
     # is still there rather than grants naming nothing (`CollectionService.delete` says why).
     await access.forget_object(ObjectType.SONG, song_id)
     changed = await service.delete(song_id, actor=Actor.user(viewer.id))
     if changed.files:
         await reindexer.touched_many(changed.files)
+    await forgets.forget_gone("song", song_id, name=song.name, by=viewer)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 

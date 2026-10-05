@@ -100,7 +100,7 @@ from sift.kernel.access.history import (
     share_makers,
     stash_box_tables_in,
 )
-from sift.kernel.access.history_boxes import BOX_OF_A_ROW, thing_linked
+from sift.kernel.access.history_boxes import BOX_OF_A_ROW, thing_linked, unshown_said
 from sift.kernel.access.history_events import NOTHING_HIDDEN, verdict_of
 from sift.kernel.access.history_folds import (
     NO_RECEIPT,
@@ -158,29 +158,27 @@ _FEATURE_TABLES = (
 _TABLES = "SELECT name FROM sqlite_master WHERE type = 'table'"
 
 
-#: EVERY BULK JUDGEMENT THAT NAMED ONE OF THESE FOUR THINGS, newest last.
-#: The receipt source, as a file's history and a person's read it: a decision a person took ON one
-#: of these, with an Undo sitting on the board, belongs on the page somebody stands on when they
-#: wonder why it changed. Nothing new is recorded for this.
+#: A decision naming no file (a pass over the whole library) is an admin's line alone.
+NAMES_A_FILE = """
+   AND (:admin = 1 OR d.object_kind = 'asset' OR EXISTS (
+         SELECT 1 FROM workbench_decision_subjects f
+          WHERE f.decision_id = d.id AND f.kind = 'asset'))"""
+
+#: EVERY BULK JUDGEMENT THAT NAMED ONE OF THESE FOUR THINGS, newest last: a decision a person took
+#: on one of these, with an Undo on the board, belongs on the page of the thing it changed.
 #:
-#: The kind is BOUND rather than written in, unlike the file's and the person's: this one statement
-#: serves four pages, and a copy per kind would be four places to forget the reserved word below.
-#:
-#: NOT FILTERED TO ONE QUEUE, for the reason the person's is not: queue names belong to the slices
-#: that register them, and a kernel read naming one would hold a copy of a slice's vocabulary.
-#:
-#: The SEARCH is `ix_workbench_subject (kind, subject_id)`, the same index the other two use.
+#: The kind is BOUND, unlike the file's and the person's: one statement serves four pages. It is
+#: NOT FILTERED TO ONE QUEUE: queue names belong to the slices that register them. The SEARCH is
+#: `ix_workbench_subject (kind, subject_id)`, the index the other two use.
 #:
 #: !! AND IT MUST NOT DRAW AN EVENT. The ledger is built by widening this table, so every act a
-#: writer records lands here, and read straight out, an event draws as a bulk judgement with an
-#: Undo on it, settled at a workbench nobody went to, offering a button the workbench refuses. The
-#: word `LEDGER_QUEUE` is reserved so no queue may claim it, which makes the exclusion exact. An
-#: event carrying a RECEIPT is written under that receipt's own queue and still draws, which is
-#: right: it is a decision and it can be taken back. `_ledger_events` draws the rest.
+#: writer records lands here, and read straight out an event draws as a bulk judgement with an
+#: Undo the workbench refuses. `LEDGER_QUEUE` is reserved so no queue may claim it, which makes
+#: the exclusion exact. An event carrying a RECEIPT is written under that receipt's own queue and
+#: still draws: it is a decision and it can be taken back. `_ledger_events` draws the rest.
 #:
-#: Only a receipt whose every file this viewer may be shown: its title's number was written when it
-#: was taken and cannot be scoped when it is read. See `history_person._DECIDED`, which carries the
-#: whole reasoning; the rule is the ledger's own, spliced from `history_events`.
+#: Only a receipt whose every file this viewer may be shown, and for a guest only one naming a file:
+#: its stored number cannot be scoped when read. See `history_person._DECIDED`.
 _DECIDED = splice(
     """
 SELECT d.id AS id, d.title AS title, d.queue AS queue, d.user_id AS user_id,
@@ -191,9 +189,11 @@ SELECT d.id AS id, d.title AS title, d.queue AS queue, d.user_id AS user_id,
   FROM workbench_decision_subjects s
   JOIN workbench_decisions d ON d.id = s.decision_id
  WHERE s.kind = :kind AND s.subject_id = :subject AND d.queue <> :ledger
+{{NAMES_A_FILE}}
 {{NOTHING_HIDDEN}}
  ORDER BY d.decided_at ASC, d.id ASC
 """,
+    NAMES_A_FILE=NAMES_A_FILE,
     NOTHING_HIDDEN=NOTHING_HIDDEN,
 )
 
@@ -548,7 +548,7 @@ async def _from_the_folder(access: Repository, viewer: Viewer, found: Row) -> Li
         return None
     path, name = str(found["folder_path"] or ""), str(found["folder_name"])
     seen = await _folders_seen(access, viewer)
-    if path and folder_said(path, seen=seen.get(str(found["folder_root"]), frozenset())) != path:
+    if folder_said(path, seen=seen.get(str(found["folder_root"]), frozenset())) != path:
         return None
     return say.said(" from the folder ", say.folder_named(str(found["folder_id"]), name))
 
@@ -902,15 +902,13 @@ async def _decided_events(
     )
 
 
-def _ordered(events: list[Event], kept: int) -> list[Event]:
-    """The four entity threads below, in the one order every history uses (`history.ordered`),
-    capped to the NEWEST so a long thread loses its beginning rather than its end.
-
-    A stash-box answer kept and the receipt of that press are made one line first, before the cap
-    counts them (`one_line_per_kept`).
-    """
-    events = ordered(one_line_per_kept(events))
-    return events[-kept:]
+async def _ordered(
+    database: Database, viewer: Viewer, events: list[Event], kept: int, access: Repository | None
+) -> list[Event]:
+    """The newest `kept` in the one order (`history.ordered`), a kept answer and its receipt one
+    line first, each thing said as this viewer may be told it (`unshown_said`)."""
+    events = ordered(one_line_per_kept(events))[-kept:]
+    return await unshown_said(database, access, viewer, events)
 
 
 def _bounded(limit: int) -> int:
@@ -987,7 +985,7 @@ async def history_of_tag(
         )
     )
     linked = (
-        await thing_linked(database, Subject.TAG, tag_id)
+        await thing_linked(database, Subject.TAG, tag_id, viewer)
         if {"tag_stash_box_links", "stash_boxes"} <= here
         else []
     )
@@ -997,7 +995,7 @@ async def history_of_tag(
         events.extend(await _grant_events(database, viewer, "tag", tag_id))
     events.extend(decided)
     events.extend(await _ledger_events(database, viewer, "tag", tag_id, kept, linked))
-    return _ordered(events, kept)
+    return await _ordered(database, viewer, events, kept, None)
 
 
 def _receipts_in(here: set[str]) -> bool:
@@ -1094,7 +1092,7 @@ async def history_of_site(
         )
     )
     linked = (
-        await thing_linked(database, Subject.SITE, site_id)
+        await thing_linked(database, Subject.SITE, site_id, viewer)
         if {"site_stash_box_links", "stash_boxes"} <= here
         else []
     )
@@ -1108,7 +1106,7 @@ async def history_of_site(
             database, viewer, "site", site_id, kept, linked, name_now=str(site["name"])
         )
     )
-    return _ordered(events, kept)
+    return await _ordered(database, viewer, events, kept, None)
 
 
 async def history_of_collection(
@@ -1163,7 +1161,7 @@ async def history_of_collection(
         )
     )
     events.extend(await _ledger_events(database, viewer, "collection", collection_id, kept))
-    return _ordered(events, kept)
+    return await _ordered(database, viewer, events, kept, None)
 
 
 async def history_of_photo_set(
@@ -1227,7 +1225,7 @@ async def history_of_photo_set(
         )
     )
     events.extend(await _ledger_events(database, viewer, "photo_set", photo_set_id, kept))
-    return _ordered(events, kept)
+    return await _ordered(database, viewer, events, kept, access)
 
 
 def _song_events(rows: Sequence[Row]) -> list[Event]:
@@ -1341,7 +1339,7 @@ async def history_of_song(
         await _decided_events(database, viewer, "song", song_id, here, final_queues, bench)
     )
     events.extend(await _ledger_events(database, viewer, "song", song_id, kept))
-    return _ordered(events, kept)
+    return await _ordered(database, viewer, events, kept, None)
 
 
 #: What every one of the four reads above looks like from outside.

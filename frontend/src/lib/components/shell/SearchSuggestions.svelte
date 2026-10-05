@@ -1,3 +1,11 @@
+<script lang="ts" module>
+	/** How far to move a list from `left` to `left + width` so it stays between `start` and `end`. */
+	export function shiftInto(left: number, width: number, start: number, end: number): number {
+		if (left + width > end) return Math.max(start, end - width) - left;
+		return left < start ? start - left : 0;
+	}
+</script>
+
 <script lang="ts">
 	/*
 	 * The list under the search box: one listbox holding the groups the server filled (the filters
@@ -29,14 +37,46 @@
 		onchoose: (row: Row) => void;
 		onremoverecent: (event: Event, remembered: Remembered) => void;
 		onclearrecent: (event: Event) => void;
+		/** As wide as its rows, past the field's edges where it must, rather than the field's width. */
+		wide?: boolean;
 	}
 
-	let { showing, typing, leaves, onchoose, onremoverecent, onclearrecent }: Props = $props();
+	let {
+		showing,
+		typing,
+		leaves,
+		onchoose,
+		onremoverecent,
+		onclearrecent,
+		wide = false
+	}: Props = $props();
 
-	/*
-	 * A heading above the first row of each group, read off the rows the list is drawn from, so a
-	 * new kind added at the front cannot file every heading over the wrong group.
-	 */
+	let popover = $state<HTMLElement | null>(null);
+	let shift = $state(0);
+
+	$effect(() => {
+		const box = popover;
+		if (!box || !wide || typeof ResizeObserver === 'undefined') return;
+		/* Held inside the bar's content box: the rail and the caption buttons are not the app's. */
+		const bar = box.closest('header') ?? document.documentElement;
+		const place = () => {
+			const at = box.getBoundingClientRect();
+			const room = bar.getBoundingClientRect();
+			const pads = getComputedStyle(bar);
+			const start = room.left + (Number.parseFloat(pads.paddingInlineStart) || 0);
+			const end = room.right - (Number.parseFloat(pads.paddingInlineEnd) || 0);
+			shift = shiftInto(at.left - shift, at.width, start, end);
+		};
+		const observer = new ResizeObserver(place);
+		observer.observe(box);
+		addEventListener('resize', place);
+		return () => {
+			observer.disconnect();
+			removeEventListener('resize', place);
+		};
+	});
+
+	/* A heading above each group's first row, read off the rows so a new kind cannot misfile one. */
 	const HEADINGS: Record<Row['kind'], string | null> = {
 		// The words typed need no heading: the row says them.
 		text: null,
@@ -62,11 +102,10 @@
 
 {#if showing}
 	<!-- The list comes out from under the top bar as Sort by and the Filter panel do (`fromBar`). -->
-	<div class="popover" transition:fromBar>
+	<div class="popover" transition:fromBar class:wide bind:this={popover} style:--shift="{shift}px">
 		<!-- A heading is a `role="presentation"` item: a listbox may own options and nothing else, or
 		     `aria-activedescendant` loses its chain. -->
 		<Scroller>
-			<!-- `hits`, not `ui-menu`: a screen-local list wears a screen-local name. -->
 			<ul class="hits" id="search-suggestions" role="listbox" aria-label="Suggestions">
 				<!-- Keyed by position: two people with one name is the ordinary case, and a duplicate key
 				     blanks the list. -->
@@ -112,6 +151,8 @@
 								<span class="token">{@render marked(row.filter.label)}</span>
 								<span class="value">{row.filter.hint}</span>
 								<span class="detail">{@render marked(row.filter.example)}</span>
+								<!-- A filter set by a click says where, in place of an id nobody types. -->
+								{#if row.filter.set_from}<span class="detail">{row.filter.set_from}</span>{/if}
 							{:else if row.kind === 'match'}
 								<!-- A line of text rather than a chip: most suggestions are not picked, and a
 								     wall of faces is the work somebody came to this box to avoid. -->
@@ -182,6 +223,14 @@
 		box-shadow: var(--elev-2);
 	}
 
+	.popover.wide {
+		inset-inline-end: auto;
+		inline-size: max-content;
+		min-inline-size: 100%;
+		max-inline-size: 100cqi;
+		translate: var(--shift) 0;
+	}
+
 	/* The ceiling is on the box that scrolls; the popover is a grid so it resolves to a height. */
 	.popover :global(.scroll-root) {
 		max-block-size: 320px;
@@ -203,9 +252,7 @@
 	}
 
 	/*
-	 * A gutter for the scrollbar only while there is one (`data-state="visible"` is the library's
-	 * own signal), so the token at the far end of a row is not covered by it. One `:global` tail,
-	 * because Svelte allows `:global` only at the start or end of a selector. The bar is 10px and
+	 * A gutter only while the scrollbar shows, so it never covers a row's far end. The bar is 10px
 	 * held 4px off the edge, so 16 leaves daylight; if either grows this must too.
 	 */
 	.popover :global(.scroll-root:has(.scroll-bar[data-state='visible']) .hits) {
@@ -315,9 +362,7 @@
 	.value {
 		flex: 1;
 		min-width: 0;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
+		overflow-wrap: anywhere;
 	}
 
 	/* On a lit row the accent is the ground, so the marked letters take the row's ink. `:global`,
@@ -332,6 +377,11 @@
 		flex: none;
 		color: var(--sift-ink-3);
 		font: var(--text-label);
+	}
+
+	.detail {
+		flex-shrink: 1;
+		overflow-wrap: anywhere;
 	}
 
 	/* The mark on a row that leaves, quiet: it tells two kinds of row apart. */

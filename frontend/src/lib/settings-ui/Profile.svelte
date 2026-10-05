@@ -131,7 +131,7 @@
 			 * because "that one exists" is an answer they could ask about any name they liked. A
 			 * canned line here would override both.
 			 */
-			if (error instanceof ApiError && error.status === 409)
+			if (error instanceof ApiError && (error.status === 409 || error.status === 429))
 				nameError = error.detail ?? "That name can't be used.";
 			else nameError = "That couldn't be saved.";
 		} finally {

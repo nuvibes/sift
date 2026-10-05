@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Your path over HTTP: the three routes, answered for whoever is signed in.
+"""Your path over HTTP: its one route, answered for whoever is signed in.
 
 A small application carrying only this router and the parts it reads, with the sign-in and the
 cross-site check stood in for: those two are the auth slice's and are proved there and by the
@@ -28,7 +28,6 @@ from sift.slices.auth import csrf_protect, current_viewer
 from sift.slices.insights.path import PathService
 from sift.slices.insights.path_router import SERVICE, router
 from sift.slices.insights.tests.test_path import Pile
-from sift.slices.settings_hub.service import SettingsService
 from sift.testing.fixtures import create_user
 
 NOW = datetime(2026, 9, 23, 12, 0).timestamp()
@@ -48,15 +47,13 @@ def app(temp_db: Database, people: dict[str, Viewer], settings: Settings) -> Fas
     app = FastAPI()
     board = Workbench()
     board.register(Pile("folders", 25, verb="folders to name"))
-    hub = SettingsService(temp_db)
     provide(app, wiring.DATABASE, temp_db)
     provide(app, wiring.WORKBENCH, board)
-    provide(app, wiring.INTERFACE_STATE, hub)
     # Held already, on a fixed clock, which is also what the router does on first use.
     provide(
         app,
         SERVICE,
-        PathService(temp_db, board, hub, library=LibraryStore(temp_db, settings), now=lambda: NOW),
+        PathService(temp_db, board, library=LibraryStore(temp_db, settings), now=lambda: NOW),
     )
     app.include_router(router, prefix="/api")
     app.dependency_overrides[csrf_protect] = lambda: None
@@ -79,7 +76,7 @@ async def test_the_paths_are_read_whole(
 ) -> None:
     as_(app, people["admin"])
     body = (await client.get("/api/insights/path")).json()
-    assert set(body) == {"paths", "hints"}
+    assert set(body) == {"paths"}
     assert [one["id"] for one in body["paths"]] == ["set_up", "watch", "organize"]
     first = body["paths"][0]
     assert first["title"] == "Set up your library" and first["sentence"][0]["text"]
@@ -98,16 +95,11 @@ async def test_no_quest_can_be_declined_any_more(
     )
 
 
-async def test_a_hint_seen_is_remembered_and_an_unknown_one_is_missing(
+async def test_no_hint_can_be_marked_seen(
     app: FastAPI, client: httpx.AsyncClient, people: dict[str, Viewer]
 ) -> None:
     as_(app, people["admin"])
-    assert (await client.post("/api/insights/path/hints/first_insights/seen")).status_code == 204
-    hints = {
-        one["name"]: one["seen"] for one in (await client.get("/api/insights/path")).json()["hints"]
-    }
-    assert hints["first_insights"] is True and hints["first_pile"] is False
-    assert (await client.post("/api/insights/path/hints/nope/seen")).status_code == 404
+    assert (await client.post("/api/insights/path/hints/first_pile/seen")).status_code in (404, 405)
 
 
 async def test_the_service_is_built_on_first_use_and_held_for_every_request(
@@ -117,9 +109,6 @@ async def test_the_service_is_built_on_first_use_and_held_for_every_request(
     app = FastAPI()
     provide(app, wiring.DATABASE, temp_db)
     provide(app, wiring.WORKBENCH, Workbench())
-    # The hub as the keeper of interface state, and NOT as the preferences reader: the path reads
-    # and writes a hint's "seen" through the interface part alone.
-    provide(app, wiring.INTERFACE_STATE, SettingsService(temp_db))
     provide(app, wiring.LIBRARY, LibraryStore(temp_db, settings))
     app.include_router(router, prefix="/api")
     as_(app, people["admin"])

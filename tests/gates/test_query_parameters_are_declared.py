@@ -28,8 +28,14 @@ SCHEMA = ROOT / "frontend" / "openapi.json"
 _VERBS = {"get", "post", "put", "patch", "delete", "head", "options"}
 
 #: Routes that read the raw query string as a search query: `/api/loops` takes the bar's filters
-#: on its files' facets.
-_QUERY_LANGUAGE = {"/api/assets", "/api/assets/random", "/api/loops"}
+#: on its files' facets, and a collection's contents take them over its arrangement.
+_QUERY_LANGUAGE = {
+    "/api/assets",
+    "/api/assets/facets",
+    "/api/assets/random",
+    "/api/loops",
+    "/api/collections/{collection_id}/items",
+}
 
 
 def _recognised_filters() -> set[str]:
@@ -111,29 +117,35 @@ def requests_in(text: str) -> list[tuple[int, str, str, set[str]]]:
     return found
 
 
+def discarded_in(text: str, schema: dict[str, object]) -> list[tuple[int, str, str, list[str]]]:
+    declared = declared_parameters(schema)
+    paths = schema["paths"]
+    assert isinstance(paths, dict)
+    templates = list(paths)
+    found: list[tuple[int, str, str, list[str]]] = []
+    for line, verb, literal, keys in requests_in(text):
+        template = template_of(literal, templates)
+        allowed = declared.get((verb, template)) if template else None
+        if template is None or allowed is None:
+            continue
+        if template in _QUERY_LANGUAGE:
+            allowed = allowed | _recognised_filters()
+        unknown = sorted(keys - allowed)
+        if unknown:
+            found.append((line, verb, template, unknown))
+    return found
+
+
 def test_every_query_parameter_a_test_sends_is_one_its_route_reads() -> None:
     schema = json.loads(SCHEMA.read_text(encoding="utf-8"))
-    declared = declared_parameters(schema)
-    templates = list(schema["paths"])
-    recognised = _recognised_filters()
 
     discarded: list[str] = []
     for path in sorted(SOURCE.rglob("*.py")):
         if "tests" not in path.parts:
             continue
-        for line, verb, literal, keys in requests_in(path.read_text(encoding="utf-8")):
-            template = template_of(literal, templates)
-            if template is None:
-                continue
-            allowed = declared.get((verb, template))
-            if allowed is None:
-                continue
-            if template in _QUERY_LANGUAGE:
-                allowed = allowed | recognised
-            unknown = sorted(keys - allowed)
-            if unknown:
-                where = path.relative_to(ROOT)
-                discarded.append(f"{where}:{line} sends {unknown} to {verb} {template}")
+        for line, verb, template, unknown in discarded_in(path.read_text(encoding="utf-8"), schema):
+            where = path.relative_to(ROOT)
+            discarded.append(f"{where}:{line} sends {unknown} to {verb} {template}")
 
     assert not discarded, (
         "\nThese send a query parameter the route does not declare. FastAPI discards it in\n"
@@ -172,6 +184,16 @@ def test_a_request_made_through_request_is_read() -> None:
     (found,) = requests_in(planted)
 
     assert found[1:] == ("DELETE", "/api/jobs", {"type"})
+
+
+def test_a_bar_filter_sent_to_a_collections_contents_is_read() -> None:
+    schema = json.loads(SCHEMA.read_text(encoding="utf-8"))
+    planted = 'client.get("/api/collections/c1/items", params={"media": "video", "limit": 2})\n'
+
+    assert discarded_in(planted, schema) == []
+    assert discarded_in(planted.replace('"media"', '"medium"'), schema) == [
+        (1, "GET", "/api/collections/{collection_id}/items", ["medium"])
+    ]
 
 
 def test_a_request_with_no_query_at_all_is_not_reported() -> None:

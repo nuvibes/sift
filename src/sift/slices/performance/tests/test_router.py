@@ -17,14 +17,23 @@ from fastapi.testclient import TestClient
 
 from sift.kernel.config import get_settings
 from sift.kernel.http import CSRF_HEADER_NAME, SESSION_COOKIE_NAME
-from sift.kernel.lanes import NETWORK_READS_AT_ONCE
+from sift.kernel.wiring import part_of_app
 from sift.main import create_app
 from sift.slices.auth.crypto import derive_csrf_token
-from sift.slices.performance import selftest
+from sift.slices.performance import measure_encoder, measure_together, selftest
+from sift.slices.performance.runner import SELF_TEST_RUNNER
 from sift.slices.performance.selftest import Level, Measurement, Recommendation, SelfTest
 from sift.testing.auth import establish_session
 
 pytestmark = pytest.mark.integration
+
+
+async def _no_clip(*_args: object) -> Path:
+    raise OSError("no clip here")
+
+
+async def _apart(*_args: object, **_kwargs: object) -> measure_together.Together:
+    return measure_together.Together()
 
 
 @pytest.fixture
@@ -38,6 +47,9 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClie
     monkeypatch.setenv("SIFT_DATA_DIR", str(tmp_path / "data"))
     monkeypatch.setenv("SIFT_CACHE_DIR", str(tmp_path / "cache"))
     get_settings.cache_clear()
+    # A planted measurement goes no further: no GPU ladder, no models, no combined run.
+    monkeypatch.setattr(measure_encoder, "build_source", _no_clip)
+    monkeypatch.setattr(measure_together, "run", _apart)
 
     with TestClient(create_app()) as booted:
         yield booted
@@ -232,47 +244,46 @@ def test_a_finished_run_reports_what_it_measured(
     assert body["recommendations"] != []
 
 
-def test_a_run_in_flight_shows_what_it_has_measured_so_far(
+def test_a_run_in_flight_shows_its_rungs_apart_from_the_result_it_will_replace(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A ladder takes minutes, and a screen that says only "running" for all of them reads as a run
-    that has hung.
-
-    The rungs already finished land in the SAME field the finished run lands in, one short, not a
-    second progress shape beside it. What says a run is over is `finished`, and this is that the two
-    can be told apart while the work is still going on.
-    """
+    """The rungs finished so far are `progress`; `measurement` stays the last result until the run
+    ends, so a screen opened mid-run shows both, and a run not yet measuring shows no rungs."""
+    release = asyncio.Event()
 
     async def one_rung_then_a_pause(**kwargs: object) -> Measurement:
         report = kwargs["report"]
         assert callable(report)
         report(Measurement(cores=8, levels=(a_level(1),)))
-        # The loop is free here, which is what lets the reply below be served mid-run. A run that
-        # held it would be a screen that could not ask.
-        await asyncio.sleep(0.5)
+        await release.wait()
         return Measurement(cores=8, levels=(a_level(1), a_level(2)))
 
+    runner = part_of_app(client.app, SELF_TEST_RUNNER)  # type: ignore[arg-type]
+    runner.state = a_finished_run()
     monkeypatch.setattr(selftest, "measure", one_rung_then_a_pause)
     signed_in = _as_admin(client)
 
-    signed_in.post("/api/performance/self-test")
+    pressed = signed_in.post("/api/performance/self-test").json()
+    assert pressed["running"] is True and pressed["progress"] is None
+    assert [level["at_once"] for level in pressed["measurement"]["levels"]] == [1, 2]
 
-    part_way: dict[str, object] | None = None
+    part_way: dict[str, Any] | None = None
     deadline = time.monotonic() + 5
-    while time.monotonic() < deadline:
+    while part_way is None and time.monotonic() < deadline:
         body = dict(signed_in.get("/api/performance/self-test").json())
-        if body["finished"]:
-            break
-        if body["measurement"] is not None:
+        if body["progress"] is not None:
             part_way = body
-            break
+    portal = client.portal
+    assert portal is not None
+    portal.call(release.set)
 
-    assert part_way is not None, "a rung that has been measured has to be visible before the end"
-    assert part_way["running"] is True
-    assert [level["at_once"] for level in part_way["measurement"]["levels"]] == [1]  # type: ignore[index]
+    assert part_way is not None, "a rung that has been measured is visible before the end"
+    assert [level["at_once"] for level in part_way["progress"]["levels"]] == [1]
+    assert part_way["finished"] is True and part_way["recommendations"] != []
+    assert [level["at_once"] for level in part_way["measurement"]["levels"]] == [1, 2]
 
     finished = _when_it_has_finished(signed_in)
-    assert [level["at_once"] for level in finished["measurement"]["levels"]] == [1, 2]
+    assert finished["progress"] is None
 
 
 def test_a_measurement_that_could_not_run_is_reported_as_such(
@@ -323,12 +334,7 @@ def test_the_scratch_directory_is_taken_away_even_when_the_run_fails(
 def test_a_recommendation_is_compared_against_the_setting_as_it_is_now(
     client: TestClient,
 ) -> None:
-    """Not against what it was when the test ran, and the difference is a real annoyance.
-
-    Frozen at measurement time, applying a recommendation would leave the screen still offering
-    to apply it: the suggestion would go on reading as a change and pressing the button again
-    would do nothing anybody could see.
-    """
+    """So an applied recommendation stops being offered as a change."""
     signed_in = _as_admin(client)
     signed_in.app.state.self_test_runner.state = a_finished_run()  # type: ignore[attr-defined]
 
@@ -342,6 +348,28 @@ def test_a_recommendation_is_compared_against_the_setting_as_it_is_now(
 
     assert after["current"] == 4
     assert after["changes_anything"] is False
+
+
+def test_the_gpus_previews_and_each_model_reach_the_screen(client: TestClient) -> None:
+    from sift.slices.performance.measure_encoder import CardCurve, CardLevel
+    from sift.slices.performance.measure_models import ModelCurve, ModelLevel
+
+    signed_in = _as_admin(client)
+    runner = signed_in.app.state.self_test_runner  # type: ignore[attr-defined]
+    runner.state = a_finished_run()
+    runner.card = CardCurve(
+        encoder="h264_nvenc", decodes_on_card=True, levels=(CardLevel(2, 4.0, 2),)
+    )
+    runner.models = (
+        ModelCurve(
+            name="Faces", family="identify", device="nvidia", levels=(ModelLevel(1, 2.0, 1),)
+        ),
+    )
+
+    body = signed_in.get("/api/performance/self-test").json()
+
+    assert body["card"]["encoder"] == "h264_nvenc" and body["card"]["best_at_once"] == 2
+    assert [one["name"] for one in body["models"]] == ["Faces"]
 
 
 def test_a_setting_that_is_not_a_number_does_not_take_the_screen_down(
@@ -376,7 +404,7 @@ def test_the_screen_is_told_how_many_files_a_share_is_read_at_once(client: TestC
 
     automatic = signed_in.get("/api/performance/self-test").json()
 
-    assert automatic["share_reads_now"] == NETWORK_READS_AT_ONCE
+    assert automatic["share_reads_now"] == 0
 
     applied = signed_in.put("/api/settings", json={"values": {selftest.SHARE_READS_KEY: 5}})
     assert applied.status_code in (200, 204), applied.text
@@ -519,6 +547,7 @@ def test_a_restarted_screen_reads_back_the_kept_measurement_without_measuring(
     from sift.kernel.db import Database
     from sift.kernel.wiring import HARDWARE, part_of_app
     from sift.slices.performance.rates import MachineRates, RatesStore
+    from sift.slices.performance.runner import SELF_TEST_RUNNER
 
     async def never(**_: object) -> Measurement:
         raise AssertionError("a read must not measure")
@@ -536,9 +565,37 @@ def test_a_restarted_screen_reads_back_the_kept_measurement_without_measuring(
             await database.close()
 
     asyncio.run(keep())
+    # Written past the app's store, whose boot already cached "nothing measured".
+    part_of_app(client.app, SELF_TEST_RUNNER)._rates._known.clear()  # type: ignore[arg-type]
     body = _as_admin(client).get("/api/performance/self-test").json()
 
     assert body["running"] is False
     assert body["finished"] is True
     assert body["measurement"] is not None and body["measurement"]["cores"] == 8
     assert [level["at_once"] for level in body["measurement"]["levels"]] == [1, 2]
+
+
+def test_the_folders_on_each_storage_are_read_from_the_library_never_kept_with_the_run(
+    client: TestClient,
+) -> None:
+    """A folder removed since the run is not listed, and one added since is."""
+    runner = part_of_app(client.app, SELF_TEST_RUNNER)  # type: ignore[arg-type]
+    runner.state = a_finished_run()
+    runner.state.measurement = Measurement(
+        cores=8,
+        storages=(
+            selftest.StorageCurve(storage="C:\\", label="Removed since", remote=False),
+            selftest.StorageCurve(storage="D:\\", label="Also removed", remote=False),
+        ),
+    )
+
+    async def now_on() -> list[selftest.StorageToMeasure]:
+        return [
+            selftest.StorageToMeasure(storage="C:\\", label="Added since", remote=False, roots=())
+        ]
+
+    runner._storages = now_on
+
+    body = _as_admin(client).get("/api/performance/self-test").json()
+
+    assert [one["folders"] for one in body["measurement"]["storages"]] == ["Added since", ""]

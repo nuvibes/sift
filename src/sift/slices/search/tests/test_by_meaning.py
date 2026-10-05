@@ -35,7 +35,7 @@ class Recording:
         self.asked: list[str] = []
 
     async def neighbours(
-        self, text: str, *, limit: int = CANDIDATES
+        self, text: str, *, limit: int = CANDIDATES, asker: Any = None
     ) -> tuple[tuple[str, float], ...] | None:
         self.asked.append(text)
         return self._answer
@@ -289,7 +289,7 @@ class Ranking:
         self.asked: list[int] = []
 
     async def neighbours(
-        self, text: str, *, limit: int = CANDIDATES
+        self, text: str, *, limit: int = CANDIDATES, asker: Any = None
     ) -> tuple[tuple[str, float], ...] | None:
         self.asked.append(limit)
         return tuple((name, at / 1000) for at, name in enumerate(self._order[:limit]))

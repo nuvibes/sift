@@ -30,6 +30,7 @@ default, and the default is that a guest sees nothing.
 from __future__ import annotations
 
 import json
+import re
 
 from sift.kernel import presses
 from sift.kernel.access import creator_studios, default_covers, edited, schema_columns
@@ -41,19 +42,16 @@ IDENTITY_COMPONENT = "identity"
 IDENTITY_VERSION = 4
 
 CATALOG_COMPONENT = "catalog"
-CATALOG_VERSION = 89
+CATALOG_VERSION = 90
 
 ACCESS_COMPONENT = "access"
 ACCESS_VERSION = 5
 
 
-# There is no email column and there never was. A user who cannot be correlated with an
-# address is one less thing a self-hosted install leaks, and it is why the recovery path is a
-# console reset rather than a mail-out.
-# `role` is read on every single request. It is not copied into the session, so removing an
-# admin's rights or disabling a user takes effect on their next request rather than at their next
-# login, which, for a session that lasts a month, is the difference between a control and a
-# suggestion.
+# No email column: a user who cannot be correlated with an address is one less thing an install
+# leaks, and recovery is a console reset rather than a mail-out.
+# `role` is read on every request, not copied into the session, so removing an admin's rights or
+# disabling a user takes effect on their next request rather than at their next login.
 # `cache_stamp` is how many times what this user may see has changed. It rides in the address of
 # every generated picture alongside the picture's digest, so raising it (on any hide, unhide, share,
 # unshare or delete, in the same transaction) makes every address this user was given unreachable
@@ -746,28 +744,9 @@ CREATE TABLE IF NOT EXISTS photo_set_user_state (
 # --- photo sets ---------------------------------------------------------------------------------
 #
 # A set of pictures that arrived together and belongs together: one gallery fetched from a site, or
-# one folder of stills somebody points Sift at. It is the still-image counterpart of a video, and it
-# is the unit a person actually thinks in: nobody remembers the 43rd file of a shoot, they
-# remember the shoot.
-#
-# ## Why this is not a collection with a flag on it
-#
-# The collections slice settles it: "membership is manual, and only manual. Nothing here derives
-# what is in a collection from a saved search: every row is there because a person put it there." A
-# collection is a DECISION somebody made. A photo set is DERIVED (from a download, from a folder)
-# and is a fact about where the files came from. Putting a derived thing inside a table whose
-# whole documented invariant is that nothing in it is derived would break that invariant to save
-# writing this file.
-#
-# They also carry different columns for different reasons. A photo set knows where it came from; a
-# collection has an owner and an arrangement somebody chose. Neither set of columns is a subset of
-# the other, and one table holding both would have half its columns null on every row.
-#
-# ## Why it lives in the kernel
-#
-# The same reason `collections` does: the permission resolver joins it. A grant can name a photo
-# set, and the files it reaches are reached through the membership rows, so the tables have to
-# exist where the resolver can see them.
+# one folder of stills. Not a collection with a flag: a collection is what a person put together, a
+# photo set is derived from where its files came from, and the two carry different columns. In the
+# kernel because the permission resolver joins it, as it does `collections`.
 _CREATE_PHOTO_SETS = """
 CREATE TABLE IF NOT EXISTS photo_sets (
   id             TEXT PRIMARY KEY,
@@ -808,37 +787,14 @@ CREATE TABLE IF NOT EXISTS photo_sets (
 
 # --- songs ---------------------------------------------------------------------------------------
 #
-# ONE PIECE OF MUSIC, and the files that carry it. A song is named for a file from three places
-# (a Site's page, AcoustID's answer to the file's music fingerprint, or another file with the same
-# music) or by a person's own hand, and every file that carries the same song is on the same row.
-#
-# ## Its identity
-#
-# The AcoustID RECORDING where it has one: two files AcoustID named the same recording are one song
-# whatever each answer was called. Where nothing has said which recording it is (a name read off a
-# Site's page, or typed), its NAME: the files named alike are one song until somebody says
-# otherwise. The partial unique index is what makes the first a property of the table rather than a
-# rule each writer remembers.
-#
-# ## Why it lives in the kernel
-#
-# For the reason `photo_sets` does: the stored per-viewer counts and the walls read it, and a file's
-# song is written by kernel code (the download filing, the record form) as well as by the music
-# feature. The writes go through ONE door, `kernel/content/songs.py`, which is the one home of
-# "this file's song": `assets.music` is kept equal to the song's name by the triggers there, so
-# every reader of a file's Music field reads the song without knowing songs exist.
-#
-# No `owner_id` (nobody owns a piece of music). A song is seen through its files, so a file in the
-# vault takes its song with it for whoever may not see it; and a song is hidden and shared on its
-# own like every other thing with a page: a hide in its per-user state, a grant naming it, and
-# either reaches the files that carry it (`kernel/access/visibility.py`).
-#
-# ## Its artists
-#
-# The artists a song credits are rows of their own (`artists`, `song_artists`), several to a song
-# in the order AcoustID listed them, so one artist's songs are one narrowing away. The song's NAME
-# keeps the artists too ("Title - Artists", the shape a Site's page gives): the credits are a
-# second, structured statement of them, never a rewrite of the name.
+# ONE PIECE OF MUSIC, and the files that carry it, named from a Site's page, AcoustID, another file
+# with the same music, or by hand. Its identity is the AcoustID recording where it has one (held by
+# the partial unique index), its name where it has none. In the kernel because the per-viewer
+# counts and the walls read it and kernel code writes it, every write through
+# `kernel/content/songs.py`, whose triggers keep `assets.music` equal to the song's name. No
+# `owner_id`: a song is seen through its files, and hidden and shared on its own like every other
+# thing with a page (`kernel/access/visibility.py`). Its artists are rows of their own (`artists`,
+# `song_artists`) in AcoustID's order; the name keeps them too ("Title - Artists").
 _CREATE_SONGS = """
 CREATE TABLE IF NOT EXISTS songs (
   id                 TEXT PRIMARY KEY,
@@ -1575,6 +1531,54 @@ async def file_tags_in_a_tree(connection: Connection) -> None:
     await connection.execute(_INDEX_TAG_PARENT)
 
 
+async def tag_what_an_act_made(connection: Connection) -> None:
+    """Step 78: which act made each tag Sift put on a file it produced, read off those files.
+    `produced_files` is the file-editing feature's, so a library that never ran it has none."""
+    if not await column_exists(connection, "tags", "created_by_act"):
+        await connection.execute(_ADD_TAGS_CREATED_BY_ACT)
+    if await table_exists(connection, "produced_files"):
+        await connection.execute(_TAGS_CREATED_BY_ACT)
+
+
+#: Every table the catalog makes, read off the statements that make them.
+_CATALOG_TABLE_NAMES = tuple(
+    re.findall(
+        r"CREATE TABLE IF NOT EXISTS (\w+)",
+        "\n".join((*_CATALOG_TABLES, _CREATE_UNDO_ROWS, creator_studios.CREATE_CREATOR_STUDIOS)),
+    )
+)
+_BROKEN_KEYS = "SELECT DISTINCT fkid FROM pragma_foreign_key_check(?)"
+_KEY_COLUMNS = (
+    'SELECT "table", "from", "to", upper(on_delete) FROM pragma_foreign_key_list(?)'
+    " WHERE id = ? ORDER BY seq"
+)
+_BROKEN_ROWS = "{present} AND NOT EXISTS (SELECT 1 FROM {parent} p WHERE {same})"
+_LET_GO = {"SET NULL": "UPDATE {table} SET {cleared} WHERE {where}"}
+_LET_GO_ROWS = "DELETE FROM {table} WHERE {where}"
+
+
+def _named(identifier: object) -> str:
+    return '"' + str(identifier).replace('"', '""') + '"'
+
+
+async def let_go_of_broken_references(connection: Connection) -> None:
+    """Step 90: a catalog row whose parent is gone, by SQLite's own check, gets what its key's
+    ON DELETE would have done had the parent gone with foreign keys on."""
+    for table in _CATALOG_TABLE_NAMES:
+        for broken in await connection.execute_fetchall(_BROKEN_KEYS, (table,)):
+            key = list(await connection.execute_fetchall(_KEY_COLUMNS, (table, broken[0])))
+            own = [f"{_named(table)}.{_named(one[1])}" for one in key]
+            present = " AND ".join(f"{mine} IS NOT NULL" for mine in own)
+            pairs = zip(key, own, strict=True)
+            same = " AND ".join(f"p.{_named(one[2])} = {mine}" for one, mine in pairs)
+            where = _BROKEN_ROWS.format(present=present, parent=_named(key[0][0]), same=same)
+            cleared = ", ".join(f"{_named(one[1])} = NULL" for one in key)
+            change = _LET_GO.get(str(key[0][3]), _LET_GO_ROWS)
+            statement = change.format(table=_named(table), cleared=cleared, where=where)
+            # nosemgrep: sift-no-string-built-sql (names off this library's own keys, quoted)
+            await connection.execute(statement)
+
+
 async def initialize_catalog(connection: Connection, on_disk: int) -> None:
     if on_disk < 1:
         for statement in (
@@ -1628,13 +1632,7 @@ async def initialize_catalog(connection: Connection, on_disk: int) -> None:
         await connection.execute(edited.CREATE_ASSET_EDITS)
         await edited.backfill(connection)
     if 0 < on_disk < 78:
-        # Which act made each tag Sift put on a file it produced, read back off those files.
-        # `produced_files` belongs to the file-editing feature, so a library that never ran it has
-        # no such table and no such tags, and there is nothing to read.
-        if not await column_exists(connection, "tags", "created_by_act"):
-            await connection.execute(_ADD_TAGS_CREATED_BY_ACT)
-        if await table_exists(connection, "produced_files"):
-            await connection.execute(_TAGS_CREATED_BY_ACT)
+        await tag_what_an_act_made(connection)
     if 0 < on_disk < 79:
         # A cover nobody chose is the whole first picture, never a face: every face Sift made
         # somebody's cover goes back to the rule (`default_covers`), which logs how many.
@@ -1693,6 +1691,8 @@ async def initialize_catalog(connection: Connection, on_disk: int) -> None:
     if 0 < on_disk < 89:
         # A cover nobody chose is never a Hidden file while one nobody hides is filed there.
         await default_covers.out_of_hidden(connection)
+    if 0 < on_disk < 90:
+        await let_go_of_broken_references(connection)
 
 
 register_schema_initializer(IDENTITY_COMPONENT, IDENTITY_VERSION, initialize_identity, baseline=4)

@@ -29,7 +29,7 @@ def _shuffle_key(row: str) -> str:
 # `NULLS LAST` keeps a file with no duration or size out of the front of "longest".
 _ORDER_TAILS: dict[str, str] = {
     "newest": "          a.added_at DESC, a.id DESC",
-    # When THIS user last opened it; per-viewer orders are subqueries, so other walls skip them.
+    # When THIS user last opened it.
     "viewed": (
         "          (SELECT s.last_viewed_at FROM asset_user_state s"
         " WHERE s.asset_id = a.id AND s.user_id = :viewer) DESC NULLS LAST, a.id DESC"
@@ -61,6 +61,9 @@ _ORDER_TAILS: dict[str, str] = {
         "          NULLIF((SELECT s.o_count FROM asset_user_state s"
         " WHERE s.asset_id = a.id AND s.user_id = :viewer), 0) DESC NULLS LAST, a.id DESC"
     ),
+    # THIS user's heart and stars, off the `mine` join.
+    "favorite": "          COALESCE(mine.favorite, 0) DESC, a.added_at DESC, a.id DESC",
+    "rating": "          mine.rating DESC NULLS LAST, a.added_at DESC, a.id DESC",
     # When THIS user hearted it, off their `opinions`, by the opinion's id: a ULID never goes down,
     # where a clock steps backwards. A heart with no history sorts behind.
     "favorited": (

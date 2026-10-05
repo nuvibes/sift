@@ -10,6 +10,7 @@
 	import { savedSearches } from '$lib/search/saved-searches.svelte';
 	import { toasts } from '$lib/shell/toasts.svelte';
 	import type { Subject } from './facet-labels';
+	import { stage } from './stage.svelte';
 
 	interface Props {
 		open: boolean;
@@ -48,6 +49,7 @@
 
 <Modal
 	bind:open
+	portalTo={stage.whatFillsTheWindow}
 	title="Add to saved filters"
 	description="Saves the filters below under a name. They'll be in the Filter panel, ready to use again."
 >

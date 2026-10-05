@@ -251,7 +251,7 @@ def test_a_guest_is_not_told_which_names_are_taken(client: TestClient) -> None:
     sign_in(client, "admin", who="owner")
     told = rename(client, guest_id, taken)
     assert told.status_code == 409
-    assert taken in told.text
+    assert told.json()["detail"] == f"There's already a user called {taken!r}."
 
 
 def test_a_guest_runs_out_of_name_changes(client: TestClient) -> None:
@@ -263,6 +263,9 @@ def test_a_guest_runs_out_of_name_changes(client: TestClient) -> None:
 
     spent = rename(client, guest_id, "Four")
     assert spent.status_code == 429
+    assert spent.json()["detail"] == (
+        "That's as many name changes as one day allows. Try again tomorrow."
+    )
     assert client.get("/api/auth/me").json()["username"] == "Three"
 
 
@@ -273,3 +276,32 @@ def test_an_admin_has_no_such_limit(client: TestClient) -> None:
 
     for name in ("One", "Two", "Three", "Four", "Five"):
         assert rename(client, guest_id, name).status_code == 200
+
+
+def test_a_guest_pays_for_asking_about_a_name_that_is_taken(client: TestClient) -> None:
+    """Every attempt is charged before the name is read, so taken names are not free to test."""
+    sign_in(client, "admin", who="owner")
+    taken = "names-admin-owner"
+    guest_id = sign_in(client, "guest", who="visitor")
+
+    for _ in range(3):
+        refused = rename(client, guest_id, taken)
+        assert refused.status_code == 409
+        assert refused.json()["detail"] == "That name can't be used."
+
+    spent_on_taken = rename(client, guest_id, taken)
+    spent_on_free = rename(client, guest_id, "Unclaimed")
+    assert spent_on_taken.status_code == spent_on_free.status_code == 429
+    assert spent_on_taken.json() == spent_on_free.json()
+    assert client.get("/api/auth/me").json()["username"] == "names-guest-visitor"
+
+
+def test_an_admin_is_never_charged_for_a_name_that_is_taken(client: TestClient) -> None:
+    guest_id = sign_in(client, "guest", who="visitor")
+    admin_id = sign_in(client, "admin")
+
+    for _ in range(5):
+        assert rename(client, guest_id, "names-admin-one").status_code == 409
+        assert rename(client, admin_id, "names-guest-visitor").status_code == 409
+    assert rename(client, guest_id, "Five").status_code == 200
+    assert rename(client, admin_id, "Boss").status_code == 200

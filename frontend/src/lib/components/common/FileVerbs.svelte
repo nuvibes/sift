@@ -535,6 +535,10 @@
 		if (ids.length === 0) return;
 		acting = ids;
 		await movable.ensure();
+		if (movable.foldersRead === 'failed') {
+			toasts.show("Sift couldn't read your folders", { tone: 'error' });
+			return;
+		}
 		if (!movable.possible) {
 			// Said rather than shown as an empty chooser: the reason is a setting, and naming it is
 			// the only thing that turns a dead end into something somebody can fix.

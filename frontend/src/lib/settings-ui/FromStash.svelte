@@ -560,13 +560,13 @@
 			{:else if asking}
 				<p class="warning">{COPY.changes}</p>
 				<div class="line">
-					<Button icon="download" onclick={() => void bringIn()}>{COPY.confirm}</Button>
+					<Button icon="upload" onclick={() => void bringIn()}>{COPY.confirm}</Button>
 					<Button tone="ghost" onclick={() => (asking = false)}>{COPY.cancel}</Button>
 				</div>
 			{:else}
 				<div class="line">
-					<Button icon="add" onclick={() => (naming = true)}>{COPY.intoNew}</Button>
-					<Button icon="download" onclick={() => (asking = true)}
+					<Button icon="upload" onclick={() => (naming = true)}>{COPY.intoNew}</Button>
+					<Button icon="upload" onclick={() => (asking = true)}
 						>{read.ran ? COPY.bringInAgain : COPY.bringIn}</Button
 					>
 				</div>

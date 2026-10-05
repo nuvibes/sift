@@ -5,6 +5,7 @@ and a package this cannot install is refused rather than half-installed."""
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import io
 import os
@@ -530,6 +531,25 @@ async def test_a_check_that_will_not_run_is_reported_rather_than_raised(
     assert said is not None
     assert "restarting the computer" in said
     assert "it never answered" in said
+
+
+async def test_a_proof_that_cannot_even_start_is_stopped_by_the_same_limit(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Starting waits on a pool an import can fill, so the limit covers the start as well."""
+    _installed(settings)
+
+    async def stuck(*_args: object, **_kwargs: object) -> object:
+        await asyncio.sleep(5)
+        return SimpleNamespace(returncode=0, stdout=b"", stderr=b"")
+
+    monkeypatch.setattr(accel, "run_once", stuck)
+    monkeypatch.setattr(accel, "_PROOF_TIMEOUT", 0.05)
+
+    said = await accel.works(settings)
+
+    assert said is not None
+    assert said.endswith("(it did not answer in time)")
 
 
 async def test_a_card_that_runs_the_model_is_proved_rather_than_assumed(

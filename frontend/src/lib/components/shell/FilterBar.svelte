@@ -48,10 +48,14 @@
 	} from './facet-labels';
 	import {
 		ChipNames,
+		ChipOrder,
 		asCounted,
 		asQuery,
+		flip,
 		keptOnThisScreen,
+		opposite,
 		pick as pickIn,
+		placed,
 		sides,
 		stanceOf as stanceIn
 	} from './filter-bar.svelte';
@@ -63,6 +67,7 @@
 	import { WORDS } from './wall-words';
 	import ScreenMenus from './ScreenMenus.svelte';
 	import { stage } from './stage.svelte';
+	import { keptClear } from './kept-clear.svelte';
 
 	/** The parameter a username's files are filtered by. See `narrowedToUsername`. */
 	const USERNAME = 'username';
@@ -94,7 +99,8 @@
 		write: (next) => {
 			// A different question has its own results; page three of the old one is not where to land.
 			next.delete('offset');
-			void goto(`${page.url.pathname}?${next}`);
+			// A pressed chip stays the same element, so the keyboard stays on it.
+			void goto(`${page.url.pathname}?${next}`, { keepFocus: true });
 		}
 	};
 
@@ -171,6 +177,16 @@
 	 * a filter somebody can take back off. `q` is the query language and is drawn below. */
 	const named = $derived(
 		[...describing.read().entries()].filter(([name]) => filterNames.includes(name) && name !== 'q')
+	);
+
+	/* One chip per value in the order first seen; Has and No are one chip, so a press keeps focus. */
+	const order = new ChipOrder();
+	const chips = $derived(
+		order.lay(
+			named,
+			([name, value]) => ({ field: name, values: taken(value).values }),
+			(field, value) => (opposite(subject, field, value) === undefined ? value : 'any|none')
+		)
 	);
 
 	/* What the server made of the typed query. Fetched rather than split up here, for the reason
@@ -262,7 +278,7 @@
 	 * under Editing. One value, so one tag of two in a column can be refused alone.
 	 */
 	function flipValue(where: Narrowing, name: string, value: string) {
-		pick(name, value, stanceOf(name, value, where) === 'out' ? 'on' : 'out', where);
+		flip(subject, name, value, where);
 	}
 
 	function dropValue(where: Narrowing, name: string, value: string) {
@@ -274,12 +290,10 @@
 	function switchMatch(where: Narrowing, name: string, value: string) {
 		const held = taken(value);
 		const next = where.read();
-		const kept = next.getAll(name);
-		next.delete(name);
-		for (const each of kept) {
-			next.append(name, each === value ? written({ ...held, all: !held.all }) : each);
-		}
-		where.write(next);
+		const kept = next
+			.getAll(name)
+			.map((each) => (each === value ? written({ ...held, all: !held.all }) : each));
+		where.write(placed(next, name, kept));
 	}
 
 	function clearAll() {
@@ -329,9 +343,7 @@
 	function dropFiling(parameter: FilingParameter, value: string) {
 		const next = describing.read();
 		const kept = next.getAll(parameter).filter((one) => one !== value);
-		next.delete(parameter);
-		for (const one of kept) next.append(parameter, one);
-		describing.write(next);
+		describing.write(placed(next, parameter, kept));
 	}
 
 	/* Whether anything on this row can be taken off, the username and History lines included, which
@@ -361,8 +373,7 @@
 		{ value: 'empty', label: 'has none' }
 	];
 
-	/* Whether the facet panel is folded away, remembered in the browser: a fact about this window,
-	   and a value arriving from the server late would open and shut it while somebody watched. */
+	/* Whether the panel was left open: a fact about this window, so the browser keeps it. */
 	const PANEL_KEY = 'sift.filters.panel';
 
 	function remembered(): boolean {
@@ -378,8 +389,7 @@
 		}
 	});
 
-	/* Remembered from the state rather than the press, since there are three ways in; only while the
-	   screen has facets, or a wall of people would record it as shut for every screen. */
+	/* Kept from the state, not the press (three ways in), and only where the screen has facets. */
 	$effect(() => {
 		if (!ableTo(tools.filterable)) return;
 		const open = panelOpen;
@@ -399,6 +409,29 @@
 	/* The panels drawn at the tail of this row: the leading ones are named triggers on the top bar,
 	   and one whose trigger is at the top is drawn from neither end, though it opens here. */
 	const trailing = $derived(panels.filter((one) => !one.lead && !one.atTheTop));
+
+	/* How far below this row the open panel hangs, so the screen's title row stays in reach. */
+	let row = $state<HTMLElement | null>(null);
+	let clear = $state(0);
+	$effect(() => {
+		const title = keptClear.row;
+		if (showing === null || row === null) return;
+		const bar = row;
+		const measure = () => {
+			const below = title
+				? title.getBoundingClientRect().bottom - bar.getBoundingClientRect().bottom
+				: 0;
+			clear = Math.max(0, Math.round(below));
+		};
+		measure();
+		const watching = new ResizeObserver(measure);
+		if (title) watching.observe(title);
+		window.addEventListener('resize', measure);
+		return () => {
+			watching.disconnect();
+			window.removeEventListener('resize', measure);
+		};
+	});
 
 	/* The phone's sheet: the orders and the facets together, from the one control a phone's bar
 	   draws for both, wired here because the facets are. A press on an order lands on `onSort`. */
@@ -606,46 +639,44 @@
 		</Chip>
 	{/if}
 
-	<!-- Every chip here is the shared `FilterChip`. Keyed by position as well as pair: the entries are
-	     raw `URLSearchParams`, and `?tags=beach&tags=beach` is one key twice. -->
-	{#each named as [name, value], at (`${at}:${name}=${value}`)}
+	<!-- Every chip here is the shared `FilterChip`, one per value so each is refused on its own;
+	     keyed by facet and value, so a flipped chip is the same element. All-of only on the file
+	     wall, because the entity routes read a repeat as either. -->
+	{#each chips as entry (entry.key)}
+		{@const name = entry.field}
+		{@const one = entry.value}
+		{@const value = entry.from[1]}
 		{@const held = taken(value)}
-		<!-- One chip per value, so each is refused on its own. Refusing is offered on every wall (every
-		     route reads a leading minus); all-of only on the file wall, because the entity routes read
-		     a repeat as either. -->
-		<!-- Keyed by place as well: a hand-written `?tags=a|a` holds one value twice. -->
-		{#each held.values as one, place (`${place}:${one}`)}
-			<!-- A chip naming a thing with verbs of its own (one artist on the Music wall) answers a
-			     right-click with that thing's menu: the verbs the screen declares (`chipVerbs`). -->
-			{@const thingVerbs = live
-				? (tools.chipVerbs?.(name, one, facetValueLabel(name, one)) ?? [])
-				: []}
-			{#snippet chip()}
-				<FilterChip
-					field={name}
-					shown={subject === 'asset' ? null : facetLabel(name, subject)}
-					values={[name === 'in' ? names.folderSaid(one) : one]}
-					of={held.values.length}
-					all={held.all}
-					excluded={held.excluded}
-					onselect={live ? () => flipValue(describing, name, one) : undefined}
-					onremove={live ? () => dropValue(describing, name, one) : undefined}
-					onswitch={!live || picksAreRepeated(subject)
-						? undefined
-						: () => switchMatch(describing, name, value)}
-				/>
-			{/snippet}
-			{#if thingVerbs.length > 0}
-				<ContextMenu label="Actions for {facetValueLabel(name, one)}">
-					{@render chip()}
-					{#snippet items()}
-						<VerbMenuItems ids={[one]} subjectId={one} verbs={menuVerbs(thingVerbs)} />
-					{/snippet}
-				</ContextMenu>
-			{:else}
+		<!-- A chip naming a thing with verbs of its own (one artist on the Music wall) answers a
+		     right-click with that thing's menu: the verbs the screen declares (`chipVerbs`). -->
+		{@const thingVerbs = live
+			? (tools.chipVerbs?.(name, one, facetValueLabel(name, one)) ?? [])
+			: []}
+		{#snippet chip()}
+			<FilterChip
+				field={name}
+				shown={subject === 'asset' ? null : facetLabel(name, subject)}
+				values={[name === 'in' ? names.folderSaid(one) : one]}
+				of={held.values.length}
+				all={held.all}
+				excluded={held.excluded}
+				onselect={live ? () => flipValue(describing, name, one) : undefined}
+				onremove={live ? () => dropValue(describing, name, one) : undefined}
+				onswitch={!live || picksAreRepeated(subject)
+					? undefined
+					: () => switchMatch(describing, name, value)}
+			/>
+		{/snippet}
+		{#if thingVerbs.length > 0}
+			<ContextMenu label="Actions for {facetValueLabel(name, one)}">
 				{@render chip()}
-			{/if}
-		{/each}
+				{#snippet items()}
+					<VerbMenuItems ids={[one]} subjectId={one} verbs={menuVerbs(thingVerbs)} />
+				{/snippet}
+			</ContextMenu>
+		{:else}
+			{@render chip()}
+		{/if}
 	{/each}
 
 	<!-- Keyed by position as well as text: the server's clauses are not deduped. -->
@@ -723,7 +754,7 @@
 	{/if}
 {/snippet}
 
-<div class="bar-row">
+<div class="bar-row" bind:this={row} style:--panel-clear="{clear}px">
 	<!-- The row opens as the drawer does and drops into place on the spring; `inert` while folded. -->
 	<div class="bar-fold" class:folded={nothing} inert={nothing || undefined}>
 		<div class="bar-clip">
@@ -839,6 +870,10 @@
 		position: relative;
 	}
 
+	.bar-row > :global(.drawer) {
+		inset-block-start: calc(100% + var(--panel-clear));
+	}
+
 	/* Faded and out of reach, as the wall's own bar fades. */
 	.bar.quiet {
 		opacity: 0;
@@ -851,8 +886,8 @@
 		align-items: center;
 		flex-wrap: wrap;
 		gap: var(--space-2);
-		/* A row with controls in it: 36px and the padding, so an empty row is as tall as a full one. */
-		min-block-size: calc(36px + var(--space-1) * 2);
+		/* A control's height and the padding, so an empty row is as tall as a full one. */
+		min-block-size: calc(var(--control-height) + var(--space-1) * 2);
 		/* The panel's inset, ground, edge and corner: two halves of one thing. */
 		margin-inline: var(--space-6);
 		margin-block: var(--space-2);
@@ -896,6 +931,16 @@
 		transition:
 			translate var(--dur-slow) var(--ease-spring),
 			opacity var(--dur-slow) var(--ease);
+	}
+
+	/* Holding the screen's menus, the row is their place at this width, not something arriving: an
+	   auto row of its own, whole at once, so the title under it never slides. */
+	.bar-clip:has(> .bar > :global(.menus)) {
+		grid-row: 2;
+	}
+
+	.bar-clip:has(> .bar > :global(.menus)) > .bar {
+		transition: opacity var(--dur-slow) var(--ease);
 	}
 
 	:global(:root[data-motion='reduce']) .bar-fold .bar {

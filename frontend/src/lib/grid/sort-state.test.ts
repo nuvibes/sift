@@ -42,14 +42,16 @@ describe('the orders every wall shares', () => {
 		   they measure bytes on a file and a count everywhere else, so one word for both would
 		   tell neither wall what it sorts by. */
 		const COUNTED = new Set(['largest', 'smallest']);
+		const SUMMED = new Set(['largest_total', 'smallest_total', 'longest_total', 'shortest_total']);
 		for (const shared of UNIVERSAL_SORTS) {
+			if (SUMMED.has(shared.value)) continue;
 			const grid = SORT_OPTIONS.find((option) => option.value === shared.value);
 			expect(grid, `the grid has no order spelled ${shared.value}`).toBeDefined();
 			if (!COUNTED.has(shared.value)) expect(shared.label).toBe(grid!.label);
 		}
 	});
 
-	it('are the seven that every kind of thing can answer, and only those', () => {
+	it('are the eleven that every kind of thing can answer, and only those', () => {
 		// Written out, deliberately. Deriving this list the same way the module does would make the
 		// test a second copy of the module and it could never disagree with it.
 		expect(UNIVERSAL_SORTS.map((one) => one.value)).toEqual([
@@ -59,8 +61,34 @@ describe('the orders every wall shares', () => {
 			'name_az',
 			'name_za',
 			'largest',
-			'smallest'
+			'smallest',
+			'largest_total',
+			'smallest_total',
+			'longest_total',
+			'shortest_total'
 		]);
+	});
+
+	it('sum the bytes under a thing under their own words, and never on the file grid', () => {
+		expect(UNIVERSAL_SORTS.find((one) => one.value === 'largest_total')?.label).toBe(
+			'Largest in total'
+		);
+		expect(UNIVERSAL_SORTS.find((one) => one.value === 'smallest_total')?.label).toBe(
+			'Smallest in total'
+		);
+		const grid = SORT_OPTIONS.map((one) => one.value as string);
+		expect(grid).not.toContain('largest_total');
+		expect(sortIcon('largest_total')).toBe('data_usage');
+		expect(sortIcon('smallest_total')).toBe('data_usage');
+	});
+
+	it('sum the running time under a thing under their own words and the hourglass', () => {
+		const label = (key: string) => UNIVERSAL_SORTS.find((one) => one.value === key)?.label;
+		expect(label('longest_total')).toBe('Longest in total');
+		expect(label('shortest_total')).toBe('Shortest in total');
+		expect(SORT_OPTIONS.map((one) => one.value as string)).not.toContain('longest_total');
+		expect(sortIcon('longest_total')).toBe('hourglass_arrow_up');
+		expect(sortIcon('shortest_total')).toBe('hourglass_arrow_down');
 	});
 
 	it('offer Recently edited on every wall, under the one name and the pencil History draws', () => {
@@ -102,7 +130,7 @@ describe('the orders every wall shares', () => {
 		for (const option of SORT_OPTIONS) {
 			expect(sortIcon(option.value), `${option.value} has no mark`).toBeTruthy();
 		}
-		for (const option of ENTITY_OPINION_SORTS) {
+		for (const option of [...ENTITY_OPINION_SORTS, ...UNIVERSAL_SORTS]) {
 			expect(sortIcon(option.value), `${option.value} has no mark`).toBeTruthy();
 		}
 		/* The names have no direction to draw, so one alphabet serves both rows. */
@@ -142,7 +170,18 @@ describe('the orders that need an opinion', () => {
 		expect(ENTITY_OPINION_SORTS.map((one) => one.value)).toEqual(['favorite', 'rating']);
 	});
 
-	it('are kept out of the universal list, because the file grid cannot answer them yet', () => {
+	it('are taken from the file grid, so Browse and every wall say them in one string', () => {
+		for (const opinion of ENTITY_OPINION_SORTS) {
+			const grid = SORT_OPTIONS.find((one) => one.value === opinion.value);
+			expect(grid?.label, `the grid has no ${opinion.value}`).toBe(opinion.label);
+		}
+		expect(ENTITY_OPINION_SORTS.map((one) => one.label)).toEqual([
+			'Favorites first',
+			'Highest rated'
+		]);
+	});
+
+	it('are kept out of the universal list, since a wall with no opinions cannot answer them', () => {
 		const universal = UNIVERSAL_SORTS.map((one) => one.value);
 		for (const opinion of ENTITY_OPINION_SORTS) expect(universal).not.toContain(opinion.value);
 	});

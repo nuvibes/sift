@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """Theater: several videos at once, each cell drawing from a query of its own.
 
-A wall of two to four cells in one of seven named shapes. Each cell holds a query, fills a run from
-it, plays through that run and moves on, on its own clock, with its own sound, and with a timeline
-of its own so a cell can be scrubbed and looped like an ordinary video.
+A wall of one to four cells, with or without previews, in one of the named shapes. Each cell holds a
+query, fills a run from it, plays through that run and moves on, on its own clock, with its own
+sound, and with a timeline of its own so a cell can be scrubbed and looped like an ordinary video.
 
 Almost none of that is here. A cell is the search route deciding what it may draw, the playback
 route deciding how this browser should play a file, and the player's own stage drawing it: all of
@@ -44,6 +44,7 @@ RESUME_KEY = "theater.resume"
 _OFFERED: tuple[str, ...] = (
     "single",
     "side_by_side",
+    "stacked",
     "side_by_side_by_side",
     "grid",
     "center_stage",
@@ -54,7 +55,8 @@ _OFFERED: tuple[str, ...] = (
 
 _LAYOUT_LABELS: tuple[str, ...] = (
     "1x1",
-    "1x2",
+    "1x2 (P)",
+    "1x2 (L)",
     "1x3",
     "2x2",
     "Center stage 1x1",
@@ -90,15 +92,15 @@ register_setting(
     section="Theater",
     label="When a preview comes up",
     help=(
-        "Center stage shows up to four videos in focus with previews under them. Selecting a "
-        "preview always brings it into focus."
+        "Center stage shows up to four videos in focus with previews under them. "
+        "Double-clicking a preview always brings it into focus."
     ),
     disclosure=(
         "Something new means the next file in that preview's queue. Resuming after a pause, a "
         "seek or a stall isn't a new file, so it doesn't bring a preview into focus."
     ),
     choices=("pick", "newest"),
-    choice_labels=("When I press it", "As soon as it starts something new"),
+    choice_labels=("When I double-click it", "As soon as it starts something new"),
 )
 
 register_setting(
@@ -128,16 +130,15 @@ register_setting(
 
 register_setting(
     key=RESUME_KEY,
-    # Read by the wall in the browser, which is the only thing holding what it had up. The server
-    # stores the switch and nothing else: the wall itself is kept in memory, never written.
+    # The server stores the switch only; the wall is kept in the browser tab, files by id.
     read_by=ReadBy.CLIENT,
     scope="user",
     default=False,
     section="Theater",
     label="Pick up where you left off",
     help=(
-        "Coming back to Theater brings back the layout and what each cell was playing. "
-        "It's remembered until Sift restarts or the page is reloaded."
+        "Coming back to Theater, or reloading the page, brings back the layout and what each "
+        "cell was playing. It's forgotten when the window is closed."
     ),
 )
 

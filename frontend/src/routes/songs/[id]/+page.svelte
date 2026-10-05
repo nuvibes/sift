@@ -52,8 +52,11 @@
 		iconOf,
 		tabsFor,
 		type RelatedKind,
-		TabCounts
+		TabCounts,
+		TabWords
 	} from '$lib/entity/related.svelte';
+	import WallControls from '$lib/components/entity/WallControls.svelte';
+	import { emptyWallSays } from '$lib/components/shell/wall-words';
 	import { api } from '$lib/api/client';
 	import { recorded, reloadOnLibraryChange } from '$lib/library/changes.svelte';
 	import { EntitySubject } from '$lib/entity/subject.svelte';
@@ -95,13 +98,13 @@
 	const MUSIC = iconOf('song');
 
 	const songId = $derived(page.params.id ?? '');
-	/* What happened to it is a tab and not a wall, kept out of `tabsFor` for the reason the Photo
-	   Set page gives. */
+	/* History has no wall behind it, so it is kept out of `tabsFor`. */
 	const HISTORY = 'history';
 
 	const asked = $derived(page.url.searchParams.get('show'));
 	const showingHistory = $derived(asked === HISTORY);
 	const shown = $derived<RelatedKind>(chosenTab('song', asked));
+	const fileWords = new TabWords();
 
 	/* The subject, shared with every other entity page: a re-read leaves this song on screen, and
 	   `follow` re-reads a name, a heart or a cover that has moved. */
@@ -491,14 +494,20 @@
 						titleHidden
 						above={identity}
 						{crumbs}
-						empty="No file carries this song yet."
+						empty={emptyWallSays('files', fileWords.asked, false, 'No file carries this song yet.')}
 						pinnable
 						menuExtraGrouped
 					>
+						{#snippet tools()}
+							<WallControls
+								noun="file"
+								plural="files"
+								bind:term={fileWords.term}
+								onsettled={(typed) => fileWords.write(typed)}
+							/>
+						{/snippet}
 						{#snippet menuExtra(item, grid)}
-							<!-- The two things this screen can do to a file that the grid knows nothing about.
-						     Admin only: the cover is the song's face, and which files carry it is what the
-						     song IS. -->
+							<!-- Admin only: the cover and which files carry it are the song itself. -->
 							{#if session.isAdmin}
 								<ContextMenuGroup>
 									<ContextMenuItem
@@ -529,8 +538,8 @@
 						titleHidden
 						above={identity}
 						{crumbs}
-						oncount={(total) => {
-							counts.saw(tab, total);
+						oncount={(total, searched) => {
+							if (!searched) counts.saw(tab, total);
 							arrived();
 						}}
 					/>

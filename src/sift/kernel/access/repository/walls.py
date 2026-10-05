@@ -6,8 +6,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-#: What a wall of things may be ordered by, bound as a value, in the file grid's own words. `newest`
-#: and `oldest` are the id, a ULID minted in time order; `edited` is withheld on a locked tile.
+#: What a wall of things may be ordered by, bound as a value, in the file grid's own words; the id
+#: is a ULID minted in time order; `largest` counts files, `largest_total` bytes, `longest_total` time.
 ENTITY_SORT_SEEN = "seen"
 ENTITY_SORT_KEYS: frozenset[str] = frozenset(
     {
@@ -21,6 +21,10 @@ ENTITY_SORT_KEYS: frozenset[str] = frozenset(
         "edited",
         "largest",
         "smallest",
+        "largest_total",
+        "smallest_total",
+        "longest_total",
+        "shortest_total",
     }
 )
 
@@ -97,8 +101,7 @@ def _wall(statement: str, name: str) -> _Wall:
 
 
 def _position(wall: _Wall) -> str:
-    """One wall reprojected to "how far down is this row", in the page's own order. A concealed row
-    has no position, the answer an id never minted gets."""
+    """One wall reprojected to each row's place in the page's order; a concealed row has none."""
     return (
         wall.ctes
         + "\nSELECT position FROM ("
@@ -130,8 +133,19 @@ def locked_tile(kind: str, row: str) -> str:
     return _LOCKED_TILE.format(kind=kind, row=row)
 
 
-# The filter seam filters a wall of things to a set of files, inside the `visible` wrapper over
-# `permitted`, which has applied every rule: a conjunct over a finished set cannot widen it.
+#: Anybody but an admin is matched only on what they may be shown, so hidden names cost nothing.
+_SHOWN = (
+    "(:is_admin = 1 OR {row}.id IN (SELECT nm.object_id FROM viewer_entity_counts nm"
+    " WHERE nm.user_id = :viewer AND nm.kind = '{kind}' AND nm.permitted > 0))"
+)
+
+
+def shown(kind: str, row: str) -> str:
+    """Where a typed name is tried: `kind` as the stored counts name it, `row` its alias."""
+    return _SHOWN.format(kind=kind, row=row)
+
+
+# The filter seam narrows a wall to a set of files after every rule: it cannot widen it.
 _FILTER_AT = "\n     -- The wall's own narrowing is spliced in here. See `_filtered`.\n"
 
 
@@ -149,19 +163,20 @@ _NOTHING = "1"
 
 #: An unfiltered wall's counts, off `viewer_entity_counts`. A filtered wall counts live, since no
 #: stored number knows a filter on files; unfiltered the two agree.
-_STORED_COUNTS = """counted({key}, {col}, {size}) AS (
+_STORED_COUNTS = """counted({key}, {col}, {size}, {length}) AS (
   SELECT c.object_id, c.permitted - CASE WHEN :reveal = 1 THEN 0 ELSE c.concealed END,
-         c.permitted_bytes - CASE WHEN :reveal_named = 1 THEN 0 ELSE c.concealed_bytes END
+         c.permitted_bytes - CASE WHEN :reveal_named = 1 THEN 0 ELSE c.concealed_bytes END,
+         c.permitted_ms - CASE WHEN :reveal_named = 1 THEN 0 ELSE c.concealed_ms END
     FROM viewer_entity_counts c
    WHERE c.user_id = :viewer AND c.kind = '{kind}'
 ),
-whole({key}, {col}, {size}) AS (
-  SELECT {key}, {col}, {size} FROM counted
+whole({key}, {col}, {size}, {length}) AS (
+  SELECT {key}, {col}, {size}, {length} FROM counted
 )
 """
 
 _COUNT_BLOCK = re.compile(
-    r"^counted\((\w+), (\w+), (\w+)\) AS \(\n.*?^\),\n(?:^--[^\n]*\n)*^whole\(\1, \2, \3\) AS \(\n.*?^\)\n",
+    r"^counted\((\w+), (\w+), (\w+), (\w+)\) AS \(\n.*?^\),\n(?:^--[^\n]*\n)*^whole\(\1, \2, \3, \4\) AS \(\n.*?^\)\n",
     re.M | re.S,
 )
 
@@ -183,8 +198,8 @@ def _with_stored_counts(statement: str, name: str) -> str:
     found = _COUNT_BLOCK.search(statement)
     if found is None:  # pragma: no cover (an edit across the seam)
         raise RuntimeError(f"{name} no longer carries its two count CTEs where the seam expects")
-    key, col, size = found.group(1), found.group(2), found.group(3)
-    stored = _STORED_COUNTS.format(key=key, col=col, size=size, kind=kind)
+    key, col, size, length = found.group(1), found.group(2), found.group(3), found.group(4)
+    stored = _STORED_COUNTS.format(key=key, col=col, size=size, length=length, kind=kind)
     return statement.replace(found.group(0), stored, 1)
 
 

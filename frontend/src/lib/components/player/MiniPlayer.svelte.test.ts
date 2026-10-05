@@ -466,6 +466,7 @@ describe('docked above the tabs at a phone width', () => {
 		/* What does not fit a thumb across 390 pixels is the full-size view's there. */
 		expect(strip('Previous')).toBeNull();
 		expect(strip('Next')).toBeNull();
+		expect(host.querySelectorAll('.transport button'), 'Play alone').toHaveLength(1);
 		expect(strip('Open mini player')).toBeNull();
 	});
 
@@ -976,11 +977,15 @@ describe("the Audio player's timeline", () => {
 		expect(host.querySelector('.bar-timeline .time')).toBeNull();
 	});
 
-	it('lies in a band of its own along the top, over the controls', () => {
+	it("lies along the top, in Theater's bar's shell, tall by its content", () => {
 		const floating = rule('.mini.bar').replace(/\s+/g, ' ');
-		expect(floating).toContain('block-size: var(--bar-height);');
-		expect(floating).toContain('grid-template-rows: var(--bar-band) minmax(0, 1fr);');
-		expect(floating).toContain("grid-template-areas: 'line line line' 'start transport ends';");
+		expect(floating).toContain('block-size: auto;');
+		expect(floating).toContain('padding: var(--space-2) var(--space-3);');
+		expect(floating).toContain('grid-template-rows: auto auto;');
+		expect(floating).toContain("grid-template-areas: 'line line line' 'transport start ends';");
+		expect(floating).toContain('border: 1px solid var(--sift-line);');
+		expect(floating).toContain('background: var(--sift-scrim);');
+		expect(floating).toContain('box-shadow: none;');
 		expect(rule('.bar-timeline')).toContain('grid-area: line;');
 	});
 
@@ -988,8 +993,8 @@ describe("the Audio player's timeline", () => {
 		/* The slider's own box is a finger high at a phone's width (`Slider`); the strip keeps a
 		   band that tall over its controls, so the target lies under no press. */
 		const strip = rule('.mini.docked');
-		expect(strip).toContain('--bar-height: var(--docked-strip);');
-		expect(strip).toContain('--bar-band: var(--touch-target);');
+		expect(strip).toContain('block-size: var(--docked-strip);');
+		expect(strip).toContain('grid-template-rows: var(--touch-target) minmax(0, 1fr);');
 	});
 
 	it('shows the frame under the pointer above the bar, clear of the name, with no lift', () => {
@@ -1038,8 +1043,8 @@ describe('the audio-only bar keeps one shape', () => {
 		const after = presses();
 
 		expect(after.length).toBe(before.length);
-		/* Shuffle first, then the step pair, as on every player bar. */
-		expect(before.slice(0, 2)).toEqual(['Shuffle', 'Previous']);
+		/* Repeat first, then the step pair, as on every player bar. */
+		expect(before.slice(0, 2)).toEqual(['Play through', 'Previous']);
 		expect(after[1]).toBe('Nothing before this (dimmed)');
 		expect([after[0], ...after.slice(2)]).toEqual([before[0], ...before.slice(2)]);
 	});
@@ -1113,5 +1118,43 @@ describe('the audio-only bar keeps one shape', () => {
 
 		expect(press.defaultPrevented).toBe(false);
 		expect(handover.takeFill('asset-7')).toBe(false);
+	});
+});
+
+describe('the corner at the end of a clip', () => {
+	afterEach(() => run.reset());
+
+	it('moves the run on to the next file, as the popout does', async () => {
+		openAsset('asset-1', ['asset-0', 'asset-1', 'asset-2'].map(CLIP));
+		served.detail = { id: 'asset-2', media_type: 'video', added_at: 0 };
+		await show({ id: 'asset-1', mediaType: 'video' });
+		const asked = vi.mocked(api.get);
+		asked.mockClear();
+
+		host.querySelector('video')!.dispatchEvent(new Event('ended'));
+		for (let turn = 0; turn < 6; turn += 1) await Promise.resolve();
+		flushSync();
+
+		expect(asked.mock.calls.map(([path]) => String(path))).toContain('/assets/asset-2');
+		expect(mini.asset?.id).toBe('asset-2');
+	});
+	it('finds the next file while this one plays, and steps to it without asking again', async () => {
+		openAsset('asset-1', ['asset-0', 'asset-1', 'asset-2'].map(CLIP));
+		served.detail = { id: 'asset-2', media_type: 'video', added_at: 0 };
+		await show({ id: 'asset-1', mediaType: 'video' });
+		const asked = vi.mocked(api.get);
+		asked.mockClear();
+		const video = host.querySelector('video')!;
+
+		video.dispatchEvent(new Event('playing'));
+		for (let turn = 0; turn < 6; turn += 1) await Promise.resolve();
+		expect(asked).toHaveBeenCalledWith('/assets/asset-2');
+
+		video.dispatchEvent(new Event('ended'));
+		for (let turn = 0; turn < 6; turn += 1) await Promise.resolve();
+		flushSync();
+		expect(mini.asset?.id).toBe('asset-2');
+		const records = asked.mock.calls.filter(([path]) => path === '/assets/asset-2');
+		expect(records).toHaveLength(1);
 	});
 });

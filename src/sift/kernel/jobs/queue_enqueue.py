@@ -88,6 +88,12 @@ RETURNING id
 """
 
 
+# How many files a waiting job is about, counted ahead of it. See `JobQueue.set_waiting_units`.
+_SET_WAITING_UNITS = (
+    "UPDATE jobs SET units = ?, updated_at = ? WHERE id = ? AND state = 'queued' RETURNING id"
+)
+
+
 class Enqueuing(QueueCore):
     """Putting work into the queue."""
 
@@ -425,6 +431,14 @@ class Enqueuing(QueueCore):
             rows = await _fetch(connection, _RETIME_WAITING, (run_after, self._now(), job_id))
         if rows:
             log.info("job.retimed", job_id=job_id, run_after=run_after)
+        return bool(rows)
+
+    async def set_waiting_units(self, job_id: str, units: int) -> bool:
+        """Say how many files a job still waiting is about. False once it is not waiting."""
+        async with self._writing() as connection:
+            rows = await _fetch(
+                connection, _SET_WAITING_UNITS, (max(0, units), self._now(), job_id)
+            )
         return bool(rows)
 
     async def withdraw_waiting(self, job_type: str) -> list[str]:

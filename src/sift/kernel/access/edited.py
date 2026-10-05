@@ -277,7 +277,7 @@ OPINIONS: tuple[str, ...] = (
     "asset_user_state",
 )
 
-#: A file's record columns, on `assets`: the fields its record form writes.
+#: A file's record fields on `assets`; not `music`, the song's name, which the song keeps.
 ASSET_RECORD_COLUMNS: tuple[str, ...] = (
     "title",
     "download_url",
@@ -285,7 +285,6 @@ ASSET_RECORD_COLUMNS: tuple[str, ...] = (
     "details",
     "production_date",
     "site_code",
-    "music",
 )
 
 
@@ -321,10 +320,9 @@ _LISTS: tuple[_List, ...] = (
     _List("loop_tags", "loops", "loop_id", other=("tags", "tag_id")),
     _List("asset_tags", _ASSET, "asset_id", other=("tags", "tag_id")),
     _List("asset_people", _ASSET, "asset_id", other=("people", "person_id")),
-    # A file's song, as its people and tags: put on, taken off, or moved to another song. Its own
-    # list rather than left to the Music field the song keeps equal (`ASSET_RECORD_COLUMNS`),
-    # because a move between two songs of one name leaves that field as it was.
-    _List("song_files", _ASSET, "asset_id", other=("songs", "song_id"), updates=("song_id",)),
+    # A file's song, as its people and tags: put on, taken off, or moved by hand. A move by hand
+    # stamps `added_at`; a merge moves `song_id` alone, which is the songs' edit, not the file's.
+    _List("song_files", _ASSET, "asset_id", other=("songs", "song_id"), updates=("added_at",)),
     _List("asset_links", _ASSET, "asset_id", updates=("url", "label")),
 )
 

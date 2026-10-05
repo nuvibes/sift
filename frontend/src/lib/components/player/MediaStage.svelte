@@ -291,6 +291,9 @@
 		--frame-corner: var(--stage-radius, var(--radius-xl));
 		border-radius: var(--frame-corner);
 		overflow: hidden;
+		/* One clip for the picture and the bar's frost: Chromium lets a backdrop filter escape a
+		   rounded `overflow: hidden`, and two rounded clips leave a seam where they meet. */
+		clip-path: inset(0 round var(--frame-corner));
 	}
 
 	/* The window, where the browser lets nothing fill the screen (see `filling`): edge to edge and
@@ -301,6 +304,7 @@
 		z-index: var(--z-bar);
 		block-size: auto;
 		border-radius: 0;
+		clip-path: none;
 	}
 
 	/*
@@ -531,21 +535,7 @@
 		block-size: 100%;
 		inline-size: 100%;
 		border-radius: 0;
-	}
-
-	/*
-	 * The bar rounds its own bottom corners to match the frame: its backdrop-filter escapes the
-	 * frame's rounded clip, so it has to clip itself (see Player). Fullscreen has no rounded frame,
-	 * so the bar goes square.
-	 *
-	 * Both selectors, the same pair the frame carries above. `:fullscreen` is the browser's own
-	 * answer and cannot lag; the class is this component's, and applies while a test or a nested
-	 * element stands in for it. With only one, the frame could be square while the bar stayed
-	 * rounded, leaving a line of the frame's ground under the timeline.
-	 */
-	.stage:fullscreen :global(.player-bar),
-	.stage.fullscreen :global(.player-bar) {
-		border-radius: 0;
+		clip-path: none;
 	}
 
 	/* Out of the way, but still there.
@@ -588,9 +578,9 @@
 		transition: opacity var(--dur-fast) var(--ease);
 	}
 
-	.stage :global(.player-bar),
-	.stage :global(.player-edge),
-	.stage :global(.player-progress),
+	:global(:root[data-motion='reduce']) .stage :global(.player-bar),
+	:global(:root[data-motion='reduce']) .stage :global(.player-edge),
+	:global(:root[data-motion='reduce']) .stage :global(.player-progress),
 	:global(:root[data-motion='reduce']) .stage :global(.still-control) {
 		transition: none;
 	}

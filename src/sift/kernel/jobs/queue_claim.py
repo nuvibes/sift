@@ -8,6 +8,7 @@ from collections.abc import Mapping, Sequence
 
 from sift.kernel.db import Connection, Row, in_clause
 from sift.kernel.jobs.queue_rows import Job, _fetch, _to_job
+from sift.kernel.jobs.queue_settle import PAUSE_CHUNK, PAUSED_FOR_BENCHMARK
 from sift.kernel.jobs.queue_switchboard import SwitchboardReads
 from sift.kernel.jobs.tuning import WAITED_ON_PRIORITY
 from sift.kernel.log import get_logger
@@ -23,8 +24,7 @@ SELECT EXISTS (SELECT 1 FROM jobs
 """
 
 # The claim. `attempts` goes up on the attempt, not on the failure, so a job whose handler takes the
-# process down still runs out of attempts and stops. `error` is cleared, since it is a previous
-# run's, and `started_at` is stamped, since this is the moment the work begins.
+# process down still runs out of attempts and stops. The last three `?` are a family's hold.
 _CLAIM = """
 UPDATE jobs
    SET state = 'running',
@@ -40,6 +40,9 @@ UPDATE jobs
         WHERE state = 'queued' AND (run_after IS NULL OR run_after <= ?)
           AND (? OR NOT (COALESCE(timing, '') = 'quiet'
                          OR (timing IS NULL AND type IN (SELECT value FROM json_each(?)))))
+          AND (? OR NOT (root_id IN (SELECT value FROM json_each(?))
+                         AND COALESCE(timing, '') <> 'now'
+                         AND type NOT IN (SELECT value FROM json_each(?))))
         ORDER BY priority, id
         LIMIT 1
  )
@@ -65,6 +68,9 @@ UPDATE jobs
           AND type NOT IN (?*)
           AND (? OR NOT (COALESCE(timing, '') = 'quiet'
                          OR (timing IS NULL AND type IN (SELECT value FROM json_each(?)))))
+          AND (? OR NOT (root_id IN (SELECT value FROM json_each(?))
+                         AND COALESCE(timing, '') <> 'now'
+                         AND type NOT IN (SELECT value FROM json_each(?))))
         ORDER BY priority, id
         LIMIT 1
  )
@@ -75,10 +81,8 @@ _RUNNING_BY_TYPE = (
     "SELECT type, COUNT(*) AS running FROM jobs WHERE state = 'running' GROUP BY type"
 )
 
-# THE QUEUE TO ITSELF: whether a job of a type that has it (`worker_pool._EXCLUSIVE`) is running,
-# or waiting and claimable now. Asked inside the write lock on every claim, so it is a seek of
-# `ix_jobs_by_type` on each type and state: a handful of rows, where the queued ones of every
-# type can be a library's worth.
+# THE QUEUE TO ITSELF: whether a job of a type that has it (`worker_pool._EXCLUSIVE`) runs or waits
+# claimable now. Asked inside the write lock, so a seek of `ix_jobs_by_type` per type and state.
 _EXCLUSIVE_HELD = """
 SELECT state FROM jobs
  WHERE type IN (?*)
@@ -108,6 +112,23 @@ UPDATE jobs
         LIMIT 1
  )
 RETURNING *
+"""
+
+# What a benchmark holds back: every waiting row the claim would take now, but its own kind.
+_PAUSE_CLAIMABLE = """
+UPDATE jobs SET state = 'paused', stop_wanted = ?, updated_at = ?
+ WHERE id IN (
+       SELECT id FROM jobs
+        WHERE state = 'queued' AND (run_after IS NULL OR run_after <= ?)
+          AND type NOT IN (?*)
+          AND (? OR NOT (COALESCE(timing, '') = 'quiet'
+                         OR (timing IS NULL AND type IN (SELECT value FROM json_each(?)))))
+          AND (? OR NOT (root_id IN (SELECT value FROM json_each(?))
+                         AND COALESCE(timing, '') <> 'now'
+                         AND type NOT IN (SELECT value FROM json_each(?))))
+        LIMIT ?
+ )
+RETURNING id
 """
 
 
@@ -153,15 +174,15 @@ class Claiming(SwitchboardReads):
     async def claim(self, worker_id: str, *, limits: Mapping[str, int] | None = None) -> Job | None:
         """Take the next job, atomically. Returns None when there is nothing to take.
 
-        The count and the claim share one `write()` block, so no other writer starts a job of a
-        capped type between them; keep it short, since every other writer waits on it. What cannot
-        run on this machine and what quiet hours hold are asked BEFORE the lock: both are slower.
+        The count and the claim share one short `write()` block, so no other writer starts a capped
+        type between them; readiness, quiet hours and a family's hold are asked BEFORE the lock.
         """
         now = self._now()
         held_back = await self._not_ready_types()
         # QUIET HOURS, asked before the lock for the reason readiness is: it is a settings read.
         quiet = await self._held()
         hold = (quiet.open, json.dumps(sorted(quiet.types)))
+        families = self._family_holds()
 
         from sift.kernel.jobs.worker_pool import exclusive_job_types
 
@@ -191,12 +212,34 @@ class Claiming(SwitchboardReads):
             if at_capacity:
                 sql, params = in_clause(_CLAIM_EXCLUDING, sorted(at_capacity))
                 rows = await _fetch(
-                    connection, sql, (worker_id, now, now, now, now, *params, *hold)
+                    connection, sql, (worker_id, now, now, now, now, *params, *hold, *families)
                 )
             else:
-                rows = await _fetch(connection, _CLAIM, (worker_id, now, now, now, now, *hold))
+                rows = await _fetch(
+                    connection, _CLAIM, (worker_id, now, now, now, now, *hold, *families)
+                )
 
         return _claimed(rows, worker_id)
+
+    async def pause_waiting_for_benchmark(self, *, chunk: int = PAUSE_CHUNK) -> int:
+        """Pause, as the benchmark's, every waiting row the claim would take now. How many."""
+        from sift.kernel.jobs.worker_pool import exclusive_job_types
+
+        quiet = await self._held()
+        hold = (quiet.open, json.dumps(sorted(quiet.types)))
+        sql, params = in_clause(_PAUSE_CLAIMABLE, sorted(exclusive_job_types()) or [""])
+        paused = 0
+        while True:
+            now = self._now()
+            async with self._writing() as connection:
+                rows = await _fetch(
+                    connection,
+                    sql,
+                    (PAUSED_FOR_BENCHMARK, now, now, *params, *hold, *self._family_holds(), chunk),
+                )
+            paused += len(rows)
+            if len(rows) < chunk:
+                return paused
 
     @staticmethod
     async def _at_capacity(connection: Connection, limits: Mapping[str, int]) -> set[str]:

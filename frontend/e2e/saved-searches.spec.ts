@@ -159,7 +159,9 @@ test('a set of filters can be kept, applied, and deleted', async ({ page }) => {
 	// Reopen and delete it, through the row's own menu.
 	await (await menuFor(page, 'Beach clips')).getByRole('menuitem', { name: 'Delete' }).click();
 	await expect(
-		page.getByText('Nothing kept yet. Filter the screen, then press the bookmark on the chips row.')
+		page.getByText(
+			'No saved filters yet. Select some filters, then press the Add to saved filters icon on the filters bar.'
+		)
 	).toBeVisible();
 });
 

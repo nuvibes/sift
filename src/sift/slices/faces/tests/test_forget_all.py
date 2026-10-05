@@ -24,6 +24,7 @@ from sift.slices.faces.forget_all import TABLES, TURN_SECONDS, Turns, forget_all
 from sift.slices.faces.jobs import forget
 from sift.slices.faces.service import FaceService
 from sift.slices.faces.store import Store
+from sift.slices.faces.store_left_out import LeftOutStore
 from sift.slices.faces.tests.conftest import make_person
 from sift.testing.fixtures import Actors
 
@@ -79,6 +80,17 @@ async def test_the_writer_is_given_back_between_batches(
 
     assert opened > PILES + len(TABLES)
     assert await _piles(temp_db) == 0
+
+
+async def test_the_files_a_folder_import_left_out_are_deleted_too(
+    store: Store, temp_db: Database
+) -> None:
+    left_out = LeftOutStore(temp_db)
+    await left_out.keep("job-1", [("a.jpg", "no face")], most=10)
+
+    await forget_all(temp_db, actor=Actor.sift("faces"), roots=())
+
+    assert await left_out.of("job-1") == []
 
 
 def test_a_batch_is_sized_by_what_its_rows_cost() -> None:

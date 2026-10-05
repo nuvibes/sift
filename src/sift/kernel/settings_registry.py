@@ -71,8 +71,8 @@ SECTIONS: tuple[str, ...] = (
     # What the editor produces AND what compression produces. Two headings, one section: two
     # questions a person asks in the same breath, not two rail slots of one and four numbers.
     "Editing",
-    "Downloads",
     "Sites and Tunnels",
+    "Downloads",
     "Playback",
     "Theater",
     "Identify",
@@ -208,6 +208,7 @@ class Setting:
     #: The release whose update last changed `default` (`"0.1.218"`), or None. Give it whenever a
     #: default changes: the first start of that release says so on History (`settings_hub.defaults`).
     default_since: str | None = None
+    names_a_tunnel: bool = False
 
     def metadata(self) -> dict[str, Any]:
         """The parts the settings screen renders from. The validator is not among them: it is a
@@ -325,6 +326,24 @@ def _build_validator(
 _REGISTRY: dict[str, Setting] = {}
 
 
+def _check_choices(
+    key: str, choices: Sequence[Any] | None, choice_labels: Sequence[str] | None
+) -> None:
+    """Each choice needs a name, refused here rather than shown as the stored word (`nvidia`)."""
+    if choices is not None:
+        if choice_labels is None:
+            raise SettingError(f"setting {key!r} has choices and needs a name for each of them")
+        if len(tuple(choice_labels)) != len(tuple(choices)):
+            raise SettingError(
+                f"setting {key!r} has {len(tuple(choices))} choices and "
+                f"{len(tuple(choice_labels))} names for them"
+            )
+        if any(not one.strip() for one in choice_labels):
+            raise SettingError(f"setting {key!r} has a choice with a blank name")
+    elif choice_labels is not None:
+        raise SettingError(f"setting {key!r} names choices it does not have")
+
+
 def register_setting(
     *,
     key: str,
@@ -345,37 +364,15 @@ def register_setting(
     read_by: ReadBy = ReadBy.SERVER,
     changes_visibility: bool = False,
     default_since: str | None = None,
+    names_a_tunnel: bool = False,
 ) -> None:
     """Declare a preference. Called once, at import time, by the feature that owns it.
 
-    `scope` is `"user"` (per-user) or `"app"` (global, admin-only). Give `choices` for a menu, a
-    `minimum`/`maximum` for a bounded number, or a `validator` for anything else; with none of them
-    the type of `default` decides. `label` and `help` are shown on the settings screen and must be
-    plain language: they are required, and empty ones are refused, because the screen is generated
-    from them and a blank one is a defect the person running Sift would have to read the source to
-    understand.
-
-    `choices` requires `choice_labels`, one for each, and that is why the screen never holds a
-    second list saying what `nvidia` is called. `unit` is the suffix a number is shown with, and a
-    unit of `%` is also what makes the screen draw a slider instead of a box, so the control
-    follows from the declaration rather than from a decision taken again per setting.
-
-    Registering the same key twice raises. Two features each believing they own `playback.loop_mode`
-    is exactly the drift a single registry exists to prevent, so it fails at import rather than
-    letting the second silently win.
-
-    `refuse` is for a value that is perfectly valid and cannot be honoured HERE: a graphics card
-    on a machine that has none. It runs only when somebody is choosing the value, never when one is
-    read back, because a check about the machine has no business rewriting what is stored. See
-    `Refusal`.
-
-    `read_by` says which side acts on the value: the server by default, or `CLIENT` for the few
-    that are genuinely the browser's alone: how big the tiles are, whether motion is reduced.
-    It is checked, so a server setting nothing on the server reads is a failure rather than a
-    control that quietly does nothing.
-
-    There is no `setup` argument: the first run asks no questions (see the note above `Setting`),
-    and a setting is answered on the settings screen or stays at its default.
+    `scope` is `"user"` or `"app"` (admin-only). `choices` make a menu, one `choice_labels` name
+    each. Without a `validator`, the choices or the type of `default` decide what is valid, a
+    number within `minimum`/`maximum`. `label` and `help` are required: the screen is generated
+    from them. A `unit` of `%` draws a slider. A key registered twice raises at import. `refuse`
+    runs only when a value is chosen (see `Refusal`); `read_by` names the side that acts on it.
     """
     if key in _REGISTRY:
         raise SettingError(f"setting {key!r} is registered twice")
@@ -403,21 +400,7 @@ def register_setting(
     if not help.strip():
         raise SettingError(f"setting {key!r} needs help text")
 
-    # A menu whose options have no names shows the stored words: `nvidia`, `fully_gone`. Refused
-    # here rather than left to the screen, so the failure is at the declaration that caused it.
-    if choices is not None:
-        if choice_labels is None:
-            raise SettingError(f"setting {key!r} has choices and needs a name for each of them")
-        if len(tuple(choice_labels)) != len(tuple(choices)):
-            raise SettingError(
-                f"setting {key!r} has {len(tuple(choices))} choices and "
-                f"{len(tuple(choice_labels))} names for them"
-            )
-        if any(not one.strip() for one in choice_labels):
-            raise SettingError(f"setting {key!r} has a choice with a blank name")
-    elif choice_labels is not None:
-        raise SettingError(f"setting {key!r} names choices it does not have")
-
+    _check_choices(key, choices, choice_labels)
     validate = validator or _build_validator(default, choices, minimum, maximum)
 
     # A default that its own validator rejects is a contradiction that would surface only when a
@@ -446,6 +429,7 @@ def register_setting(
         read_by=read_by,
         changes_visibility=changes_visibility,
         default_since=_a_release(key, default_since),
+        names_a_tunnel=names_a_tunnel,
     )
 
 

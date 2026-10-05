@@ -38,8 +38,8 @@ export const COPY = {
 	steppingBack: usingShareOf,
 	/* More of a family's steps than the first page held. */
 	moreSteps: 'Show more steps',
-	/* One of the other tasks, failed: why, on the hover of its last-run phrase, which opens the
-	   failed ones in the list below. */
+	/* A task that failed: why, on the hover of what says so, which opens the failed ones in the
+	   list below. */
 	failedWhy: (why: string) =>
 		`Why it failed: ${why.replace(/\.$/, '')}. Press to see it with the other failed tasks.`
 } as const;

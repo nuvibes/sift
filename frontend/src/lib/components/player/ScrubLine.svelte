@@ -1,15 +1,7 @@
 <script lang="ts">
 	/*
-	 * THE SCRUB LINE: the time so far at the line's start, the timeline, the length at its end.
-	 *
-	 * One row, at the top of every player bar (the popout player's, Theater's, the Audio player's),
-	 * each time centred on the line's height. Rather than one reading beside the buttons
-	 * ("1:23 / 4:36"), the clock is split across the line's two ends, where it says where the
-	 * playhead is against the whole without a second look, and the buttons' row is left to presses.
-	 *
-	 * The two times are hidden from a screen reader: the timeline is a slider that already says
-	 * where it is and how long the file is (`Scrubber`), so reading them out would be the same fact
-	 * twice.
+	 * THE SCRUB LINE, along the top of every player bar: the time so far, the timeline, the length.
+	 * The times are hidden from a screen reader, since the slider already says both.
 	 */
 	import { lengthClock, playheadClock } from '$lib/shell/duration';
 	import type { SpriteSheet } from '$lib/player/trickplay';
@@ -29,11 +21,10 @@
 		disabled?: boolean;
 		/** Whether there is a clock worth reading: a picture has no playhead and no length. */
 		timed?: boolean;
-		/**
-		 * Keep the clocks' room with no clock in it, so a bar that drives several things in turn
-		 * (Theater's, over a wall of clips and pictures) does not change width under the hand.
-		 */
+		/** Keep the clocks' room with no clock in it, so Theater's bar keeps its width. */
 		keepRoom?: boolean;
+		/** Keep a clock's height with no clock, so the bar does not step from a clip to a picture. */
+		keepHeight?: boolean;
 	}
 
 	let {
@@ -49,13 +40,14 @@
 		label = 'Position',
 		disabled = false,
 		timed = true,
-		keepRoom = false
+		keepRoom = false,
+		keepHeight = false
 	}: Props = $props();
 
 	const clocks = $derived(timed || keepRoom);
 </script>
 
-<div class="scrub-line" class:clocked={clocks}>
+<div class="scrub-line" class:clocked={clocks} class:steady={keepHeight && !clocks}>
 	{#if clocks}
 		<span class="time start" class:held-room={keepRoom} aria-hidden="true"
 			>{#if timed}<span class="reading">{playheadClock(position, duration)}</span>{/if}</span
@@ -82,17 +74,24 @@
 </div>
 
 <style>
-	/* The timeline takes what the two times leave; each time is centred on the line's height. */
+	/* Inset so each time stands over the ink of the row's first and last controls, whose 18px glyphs
+	   sit 9px into their 36px buttons. */
 	.scrub-line {
 		display: grid;
 		grid-template-columns: minmax(0, 1fr);
 		align-items: center;
 		column-gap: var(--space-3);
 		min-inline-size: 0;
+		padding-inline: var(--space-2);
 	}
 
 	.scrub-line.clocked {
 		grid-template-columns: auto minmax(0, 1fr) auto;
+	}
+
+	.scrub-line.steady {
+		font: var(--text-data);
+		min-block-size: 1lh;
 	}
 
 	.time {

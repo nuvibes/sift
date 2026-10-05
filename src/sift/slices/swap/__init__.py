@@ -62,6 +62,7 @@ register_setting(
     section="Sites and Tunnels",
     label="Tunnel for joining a swap",
     help="The tunnel your side of a swap goes through when you join one.",
+    names_a_tunnel=True,
 )
 
 __all__ = [

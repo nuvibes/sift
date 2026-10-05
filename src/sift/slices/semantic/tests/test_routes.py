@@ -272,7 +272,7 @@ def test_lookalikes_come_back_resolved_against_whoever_asked(client: TestClient)
 
     asyncio.run(seed())
 
-    async def pretend(asset_id: str, *, limit: int = 200) -> Similar:
+    async def pretend(asset_id: str, *, limit: int = 200, asker: object = None) -> Similar:
         return Similar(tier=Tier.LOOKS, neighbours=((second, 0.2),))
 
     client.app.state.semantic.similar_to = pretend  # type: ignore[attr-defined]
@@ -337,7 +337,7 @@ def test_a_file_the_asker_may_not_see_answers_exactly_as_an_invented_id_does(
     )
     share_folder(db_path(client), shared_folder, guest_id, grant_id="01HX0000000000000000000206")
 
-    async def pretend(asset_id: str, *, limit: int = 200) -> Similar:
+    async def pretend(asset_id: str, *, limit: int = 200, asker: object = None) -> Similar:
         """The service's own shape: neighbours for a file it has described, nothing for anything
         else. An id that names no file has no fingerprint to compare, which is the cheap tier."""
         if asset_id == withheld_id:

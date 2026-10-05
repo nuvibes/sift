@@ -47,6 +47,7 @@ from sift.kernel.access.repository.walls import (
     _narrowed,
     _row_narrowed,
     _Wall,
+    shown,
 )
 from sift.kernel.access.repository.walls import ENTITY_SORT_KEYS as ENTITY_SORT_KEYS
 from sift.kernel.access.repository.walls import ENTITY_SORT_SEEN as ENTITY_SORT_SEEN
@@ -166,29 +167,26 @@ def entity_facet_query(subject: str, facet: str, where: str, rows: str = _NOTHIN
 #: person. The third is what makes linking a username quietly make it searchable: there is no
 #: separate step and nothing to re-index, which is the point.
 #:
-#: The resolver is here, and there are no counts. This answers who a word names, not what they
-#: may see, so the visible set is joined to rather than tallied and the caller takes these ids on
-#: to a query that is scoped. The vault is honoured for the same reason: a vaulted person's name
-#: is exactly what must not come back.
-_ALIAS_TARGETS = """
-WITH RECURSIVE
+#: Anybody but an admin is matched only among the people they may be shown, and the vault is
+#: honoured: a vaulted person's name is exactly what must not come back.
+_ALIAS_TARGETS = splice(
+    """
+WITH
 matched(person_id) AS (
-  SELECT id FROM people WHERE name = :term COLLATE NOCASE
+  SELECT id FROM people WHERE :is_admin = 1 AND name = :term COLLATE NOCASE
   UNION
-  SELECT person_id FROM people_aliases WHERE alias = :term COLLATE NOCASE
+  SELECT person_id FROM people_aliases WHERE :is_admin = 1 AND alias = :term COLLATE NOCASE
   UNION
   SELECT person_id FROM usernames
-   WHERE person_id IS NOT NULL AND name = :term COLLATE NOCASE
-),
-
--- The stored verdict for this viewer (see `sift.kernel.access.visibility`): every file they may
--- see that the vault is not holding back, which is the set a count may describe.
-counted(person_id, asset_count) AS (
-  SELECT ap.person_id, COUNT(*)
-    FROM asset_people ap
-    CROSS JOIN viewer_assets v ON v.asset_id = ap.asset_id AND v.user_id = :viewer
-   WHERE (:reveal = 1 OR v.concealed = 0)
-   GROUP BY ap.person_id
+   WHERE :is_admin = 1 AND person_id IS NOT NULL AND name = :term COLLATE NOCASE
+  UNION
+  SELECT p.id FROM people p
+   WHERE :is_admin = 0 AND {{SHOWN}}
+     AND (p.name = :term COLLATE NOCASE
+          OR EXISTS (SELECT 1 FROM people_aliases al
+                      WHERE al.person_id = p.id AND al.alias = :term COLLATE NOCASE)
+          OR EXISTS (SELECT 1 FROM usernames un
+                      WHERE un.person_id = p.id AND un.name = :term COLLATE NOCASE))
 )
 -- Scoped exactly as the people list is, and that is why the resolver is here rather than being a
 -- bare name lookup. A term is a probe: type one, and an answer tells the asker that somebody by
@@ -198,14 +196,17 @@ counted(person_id, asset_count) AS (
 SELECT p.id
   FROM people p
   JOIN matched m ON m.person_id = p.id
-  LEFT JOIN counted c ON c.person_id = p.id
  WHERE (:reveal_named = 1
         OR NOT EXISTS (SELECT 1 FROM person_user_state hp
                         WHERE hp.person_id = p.id AND hp.user_id = :viewer AND hp.hidden = 1))
-   AND (:is_admin = 1 OR COALESCE(c.asset_count, 0) > 0)
+   AND (:is_admin = 1 OR EXISTS (SELECT 1 FROM viewer_entity_counts e
+         WHERE e.user_id = :viewer AND e.kind = 'person' AND e.object_id = p.id
+           AND e.permitted - CASE WHEN :reveal = 1 THEN 0 ELSE e.concealed END > 0))
  ORDER BY COALESCE(p.name_sort, p.name) ASC, p.id ASC
  LIMIT :limit
-"""
+""",
+    SHOWN=shown("person", "p"),
+)
 
 
 # --- what an entity CARD draws beside its name -------------------------------------------------

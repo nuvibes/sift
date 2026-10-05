@@ -321,7 +321,8 @@ describe('the order the dropdown offers things in', () => {
 		field: 'tags',
 		label: 'Tags',
 		hint: 'Anything you have tagged',
-		example: 'tags:beach'
+		example: 'tags:beach',
+		set_from: null
 	};
 
 	it('puts the library first, then the filters, then what was searched before', () => {
@@ -752,7 +753,8 @@ describe('how much of each band the dropdown draws', () => {
 				token: `f${at}:`,
 				label: `Filter ${at}`,
 				hint: '',
-				example: ''
+				example: '',
+				set_from: null
 			})) as Suggestions['filters']
 		});
 

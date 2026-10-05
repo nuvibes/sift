@@ -31,7 +31,6 @@ export const COPY = {
 		cancel: 'Cancel',
 		atTop: 'Click into a folder first: this is the list of folders Sift has, not a folder itself.'
 	},
-	goesTo: 'Downloads will go to ',
 	siteFolder: 'Download folder',
 	defaultFolder: 'Download folder',
 	/** The folder row with nothing set. Shared with every chooser that offers the default, so

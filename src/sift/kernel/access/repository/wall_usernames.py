@@ -11,6 +11,7 @@ from sift.kernel.access.repository.walls import (
     _position,
     _wall,
     _with_stored_counts,
+    shown,
 )
 from sift.kernel.access.sites import SITE_CONCEALED
 from sift.kernel.sql_splice import splice
@@ -71,9 +72,10 @@ in_scope(grp, folder_id) AS (
 -- grouping is by USERNAME and `asset_usernames` has `(asset_id, username_id)` as its primary key,
 -- so one file can appear against one username exactly once. The site query below groups a level up
 -- and has to say DISTINCT for precisely the reason this does not.
-counted(username_id, asset_count, size_bytes) AS (
+counted(username_id, asset_count, size_bytes, duration_ms) AS (
   SELECT aa.username_id, COUNT(*),
-         COALESCE(SUM(CASE WHEN :reveal_named = 1 OR v.concealed = 0 THEN a.size_bytes END), 0)
+         COALESCE(SUM(CASE WHEN :reveal_named = 1 OR v.concealed = 0 THEN a.size_bytes END), 0),
+         COALESCE(SUM(CASE WHEN :reveal_named = 1 OR v.concealed = 0 THEN a.duration_ms END), 0)
     FROM asset_usernames aa
     CROSS JOIN viewer_assets v ON v.asset_id = aa.asset_id AND v.user_id = :viewer
     JOIN assets a ON a.id = aa.asset_id
@@ -100,9 +102,10 @@ counted(username_id, asset_count, size_bytes) AS (
 -- share unless `:reveal`), and which carries the SIZE of those files beside it. Summed live, the
 -- size would walk every membership of every row on the wall. Read here it costs one range of the
 -- stored rows, and the number and the size come off one row, so they cannot describe different files.
-whole(username_id, asset_count, size_bytes) AS (
+whole(username_id, asset_count, size_bytes, duration_ms) AS (
   SELECT c.object_id, c.permitted - CASE WHEN :reveal = 1 THEN 0 ELSE c.concealed END,
-         c.permitted_bytes - CASE WHEN :reveal_named = 1 THEN 0 ELSE c.concealed_bytes END
+         c.permitted_bytes - CASE WHEN :reveal_named = 1 THEN 0 ELSE c.concealed_bytes END,
+         c.permitted_ms - CASE WHEN :reveal_named = 1 THEN 0 ELSE c.concealed_ms END
     FROM viewer_entity_counts c
    WHERE c.user_id = :viewer AND c.kind = 'username'
 )
@@ -129,9 +132,11 @@ SELECT ac.id, ac.name, ac.display_name, ac.url, ac.site_id,
        -- `:reveal_named` and not `:reveal`, the same flag the People, tags, collections, Photo Sets
        -- and sites walls read: placeholder mode reveals a locked TILE, which has no content in
        -- it, and a name is nothing but content.
-       CASE WHEN :reveal_named = 1 OR COALESCE(pst.hidden, 0) = 0 THEN ac.person_id END AS person_id,
+       CASE WHEN (:reveal_named = 1 OR COALESCE(pst.hidden, 0) = 0) AND {{PERSON_SHOWN}}
+            THEN ac.person_id END AS person_id,
        pl.name AS site_name,
-       CASE WHEN :reveal_named = 1 OR COALESCE(pst.hidden, 0) = 0 THEN pe.name END AS person_name,
+       CASE WHEN (:reveal_named = 1 OR COALESCE(pst.hidden, 0) = 0) AND {{PERSON_SHOWN}}
+            THEN pe.name END AS person_name,
        COALESCE(w.asset_count, 0) AS asset_count,
        -- The size of exactly the files that number counts, off the same tally.
        COALESCE(w.size_bytes, 0) AS size_bytes,
@@ -143,15 +148,13 @@ SELECT ac.id, ac.name, ac.display_name, ac.url, ac.site_id,
        -- nothing happens). Those are different work and only the second is a judgement, and
        -- without this column the screen could not tell them apart.
        --
-       -- GUARDED, and the guard is the point. This is a correlated subquery, and the usernames
-       -- statement is also the People page's username list, a site's username list and every by-id
-       -- read, none of which asks this question. `:name_candidates` is 0 for all of them and
-       -- SQLite skips the subquery entirely, so the only caller that pays is the one that asked.
+       -- Only an admin works that queue, and the count takes in people a guest may not be shown.
+       -- `:name_candidates` is 0 for every other reader, so SQLite skips the subquery.
        --
        -- It is the SAME rule `people_named` applies, written the same way. Two spellings of "who
        -- does this word name" is two answers, and the one that drifts is the one nobody is looking
        -- at, so if that rule ever changes, this changes with it.
-       CASE WHEN :name_candidates = 1 THEN (
+       CASE WHEN :name_candidates = 1 AND :is_admin = 1 THEN (
               SELECT COUNT(*) FROM (
                 SELECT id AS person_id FROM people WHERE name = ac.name COLLATE NOCASE
                 UNION
@@ -198,17 +201,14 @@ SELECT ac.id, ac.name, ac.display_name, ac.url, ac.site_id,
    -- than the whole one, so a row this keeps can never draw a card that says 0. The board's count
    -- and the panel's wall both read this statement, so the two agree by construction.
    AND (:unattached IS NULL OR :unattached = 0 OR COALESCE(c.asset_count, 0) > 0)
-   AND (:prefix = '' OR ac.name LIKE :like ESCAPE '\\'
-        OR ac.display_name LIKE :like ESCAPE '\\')
+   AND (:prefix = '' OR ({{SHOWN}} AND (ac.name LIKE :like ESCAPE '\\'
+        OR ac.display_name LIKE :like ESCAPE '\\')))
    -- A site this viewer has hidden takes its usernames with it, the same way it takes its files,
    -- and so does a NETWORK above that site, so a username under a label under a hidden network
    -- does not stay on the wall with its name and its count on it.
    AND (:reveal_named = 1 OR NOT {{SITE_CONCEALED_USERNAME}})
    AND (:list_empty = 1 OR COALESCE(c.asset_count, 0) > 0)
- -- The wall's chosen order, then most-seen first, then the username. No heart and no stars to order
- -- by, for the reason above; the keys this does not know fall through and leave the ordinary order,
- -- exactly as the others do. The seam `USERNAMES_POSITION` is cut at, so a row's place is taken in
- -- this order and no other.
+ -- The wall's chosen order, then most-seen first, then the username. No heart and no stars here.
  ORDER BY CASE :entity_sort WHEN 'name_az' THEN COALESCE(ac.name_sort, ac.name) END ASC,
           CASE :entity_sort WHEN 'name_za' THEN COALESCE(ac.name_sort, ac.name) END DESC,
           CASE :entity_sort WHEN 'newest' THEN ac.id END DESC,
@@ -217,10 +217,16 @@ SELECT ac.id, ac.name, ac.display_name, ac.url, ac.site_id,
           CASE :entity_sort WHEN 'oldest' THEN ac.id END ASC,
           CASE :entity_sort WHEN 'largest' THEN COALESCE(w.asset_count, 0) END DESC,
           CASE :entity_sort WHEN 'smallest' THEN COALESCE(w.asset_count, 0) END ASC,
+          CASE :entity_sort WHEN 'largest_total' THEN COALESCE(w.size_bytes, 0) END DESC,
+          CASE :entity_sort WHEN 'smallest_total' THEN COALESCE(w.size_bytes, 0) END ASC,
+          CASE :entity_sort WHEN 'longest_total' THEN NULLIF(w.duration_ms, 0) END DESC NULLS LAST,
+          CASE :entity_sort WHEN 'shortest_total' THEN NULLIF(w.duration_ms, 0) END ASC NULLS LAST,
           COALESCE(c.asset_count, 0) DESC, COALESCE(ac.name_sort, ac.name) ASC, ac.id ASC
  LIMIT :limit OFFSET :offset
 """,
     SITE_CONCEALED_USERNAME=SITE_CONCEALED.format(site="ac.site_id"),
+    SHOWN=shown("username", "ac"),
+    PERSON_SHOWN=shown("person", "pe"),
 )
 _USERNAMES_HEAD, _USERNAMES_ACCESS = _cut(_VISIBLE_USERNAMES, "_VISIBLE_USERNAMES")
 #: The usernames wall in pieces: the list Organize's Usernames Waiting pages through, which is the

@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from sift.kernel.budget import STEP_BACK_SHARE
 from sift.kernel.hardware import HardwareReport
-from sift.kernel.lanes import MAX_READS_AT_ONCE, NETWORK_READS_AT_ONCE
+from sift.kernel.lanes import MAX_READS_AT_ONCE
 from sift.kernel.sampling import (
     DEFAULT_PREVIEW_SHAPE,
     PREVIEW_SHAPE_SETTING,
@@ -58,9 +58,8 @@ GENERATE_SPRITES_KEY = "performance.generate_sprites"
 GENERATE_FINGERPRINTS_KEY = "performance.generate_fingerprints"
 SCAN_FACES_ON_IMPORT_KEY = "performance.scan_faces_on_import"
 
-#: How many files may be read at once from each network share. 0 = automatic, which is the
-#: measured two. See `kernel.lanes` for the reading and for why the cap is the storage's
-#: rather than the job count's.
+#: How many files may be read at once from every network share, instead of each share's measured
+#: number; 0 = as measured for each storage. See kernel.lanes.
 SHARE_READS_KEY = "performance.share_reads_at_once"
 
 #: A removed setting ("Offer to measure this device"). A stored row for it is inert; it is
@@ -68,10 +67,12 @@ SHARE_READS_KEY = "performance.share_reads_at_once"
 TUNE_PROMPT_REMOVED_KEY = "performance.tune_prompt"
 REPAIR_PLAYBACK_KEY = "performance.repair_playback"
 
-#: Whether background work runs half as many tasks while somebody is using the computer. Read by
-#: the worker pool's reconfigure (`sift/wiring/workers.py`); the reading of "in use" is the
-#: kernel's (`kernel.attention`).
+#: Whether background work steps back while somebody is using the computer (`kernel.attention`).
 STEP_BACK_KEY = "performance.step_back_while_used"
+
+#: Whether background work steps back while other programs keep this device busy. Off until the
+#: reading (`kernel.device_load`) is measured accurate; it logs what it would do either way.
+BUSY_STEP_BACK_KEY = "performance.step_back_while_busy"
 
 #: How much of the device background work uses while it steps back, in percent: a quarter unless
 #: somebody chose otherwise. Bounds the worker count and each tool's threads together (see
@@ -157,8 +158,9 @@ def _register_counts() -> None:
         label="Files read per share",
         automatic_label="Automatic",
         disclosure=(
-            "Automatic is two, the number a home network share keeps up with. A "
-            "local drive is never limited by this. Benchmarking this device can set it for you."
+            "Automatic reads each share at the number the benchmark measured for it, and two from "
+            "a share not measured yet. A number here is used for every share instead. A local "
+            "drive is never limited by this."
         ),
         help=(
             "Limits how many files Sift opens at the same time from each network share. A share "
@@ -262,6 +264,22 @@ def _register_step_back() -> None:
         ),
     )
     register_setting(
+        key=BUSY_STEP_BACK_KEY,
+        scope="app",
+        default=False,
+        section="Performance",
+        label="Use less system resources while other programs are busy",
+        disclosure=(
+            "Sift checks every few seconds how busy the CPU and GPU are with other programs, "
+            "not counting its own work. Once they have been quiet for a minute, it goes back "
+            "to its usual number of tasks. This works only on Windows."
+        ),
+        help=(
+            "While other programs keep this device busy, Sift uses only a share of it for "
+            "background tasks."
+        ),
+    )
+    register_setting(
         key=STEP_BACK_SHARE_KEY,
         scope="app",
         default=STEP_BACK_SHARE,
@@ -317,11 +335,10 @@ def resolve_generation_limit(raw: object, concurrency: int) -> int:
 
 
 def resolve_share_reads(raw: object) -> int:
-    """How many files to read at once from each network share: the stored value, or the measured
-    automatic answer when it is 0. Never below one: a share nobody may read from is a library
-    that never finishes."""
+    """The number read at once from every network share, or 0 where each share reads as
+    measured (`kernel.lanes`)."""
     if isinstance(raw, bool) or not isinstance(raw, int) or raw < 1:
-        return NETWORK_READS_AT_ONCE
+        return AUTOMATIC
     return min(raw, MAX_READS_AT_ONCE)
 
 

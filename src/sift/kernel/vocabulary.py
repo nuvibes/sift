@@ -176,8 +176,7 @@ SubjectKind = Literal[
     "box",
     "grant",
     "setting",
-    # A row on the Downloads queue: a download that never landed made no file, so this is all an
-    # event about it can name. Its page is that row picked out (`_ADDRESS` in the ledger's router).
+    # A row on the Downloads queue, all an event about a download that made no file can name.
     "download",
     # A sign-in (a User, on screen). Not `username`: one word naming two tables would resolve a
     # sharing event's user against usernames (see `_LOGINS_WRITTEN_AS_ACCOUNTS`).
@@ -194,6 +193,8 @@ SubjectKind = Literal[
     # The computer running Sift, changed from a window (`kernel/machine_acts.py`); named by the
     # name the machine gives itself. No page.
     "computer",
+    # A saved filter, deleted with the last thing it named (`slices/search`). No page.
+    "saved_filter",
 ]
 
 

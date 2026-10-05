@@ -264,6 +264,9 @@ SILENT: dict[str, str] = {
     "faces.store_models.record_pack": "the row of an imported pack, which no screen lists",
     "faces.store_references.decline_entry": "its one caller, the Undo of a facial fingerprints line, tells every admin in the same act",
     "faces.store_models.folder_import_pack": "the standing row folder imports hang held people off; no screen lists it",
+    "faces.store_models.own_library": "this library's id for the files it makes, minted once; no screen draws it",
+    "faces.store_left_out.begin": "an earlier import's left-out files cleared as the next starts; the queue reports the job",
+    "faces.store_left_out.keep": "the files one import left out, read by that job's own report, which the queue reports",
     "faces.store_models.record_weight": "which model files are installed, from the download job the queue reports",
     "faces.store_piles.propose_pile": (
         "a may-be card made by the folder pass per folder; the pass counts the cards it put up"

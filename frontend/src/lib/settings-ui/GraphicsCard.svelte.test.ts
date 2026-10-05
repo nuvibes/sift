@@ -166,6 +166,23 @@ describe('the graphics card panel', () => {
 		expect(host.textContent).toMatch(/driver is too old/i);
 	});
 
+	it('says the test did not answer when its own time limit runs out', async () => {
+		get.mockResolvedValue(machine({ installed: true }));
+		post.mockRejectedValue(new DOMException('signal timed out', 'TimeoutError'));
+		await draw();
+
+		const press = () =>
+			[...host.querySelectorAll('button')].find((one) =>
+				/run the test/i.test(one.textContent ?? '')
+			);
+		press()?.click();
+		await vi.waitFor(() => {
+			flushSync();
+			expect(host.textContent).toMatch(/didn't answer in two and a half minutes/);
+		});
+		expect(press()?.disabled).toBe(false);
+	});
+
 	it('says a restart is needed when it was installed too late in this session', async () => {
 		/* The install is real and cannot take effect until Sift is opened again. Saying nothing
 		   would leave a screen claiming the card is in use while the work goes to the processor.
@@ -288,12 +305,14 @@ describe('when a restart is needed', () => {
 		await vi.waitFor(
 			() => {
 				flushSync();
-				expect(host.textContent).toContain('Working');
+				expect(host.textContent).toContain('Passed');
 			},
 			{ timeout: 5000 }
 		);
 
-		expect(post).toHaveBeenCalledWith('/performance/accelerator/test');
+		expect(post).toHaveBeenCalledWith('/performance/accelerator/test', {
+			signal: expect.any(AbortSignal)
+		});
 	});
 
 	/* A backend nothing is supervising would stop and stay stopped, and the server refuses rather

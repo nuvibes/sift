@@ -16,8 +16,7 @@ import type { Searchable } from './search';
 
 /**
  * How the two rules on automatic backups read together, in one sentence somebody can predict the
- * folder from: the newest `keep`, and none older than `days` (zero is never). Said under the two
- * rows and again when they are saved.
+ * folder from: the newest `keep`, and none older than `days` (zero is never).
  */
 export function keptSaid(keep: number, days: number): string {
 	const newest =
@@ -60,11 +59,6 @@ export const COPY = {
 	/* The Backup folder row: what an empty folder means, and the way back to it. */
 	folderEmpty: "With Sift's own data",
 	folderReset: "Use Sift's own folder",
-	apply: {
-		label: 'Save backup settings',
-		help: 'Saves the settings above together.',
-		action: 'Save'
-	},
 	/** The backups in the folder whose names carry no library's mark. No rule deletes them. */
 	unmarked: {
 		name: 'Backups Sift leaves alone',

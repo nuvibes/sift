@@ -157,12 +157,8 @@ async def suggest(
 
     caret = token_prefix(q)
     if caret is not None:
-        # Inside a token, so the answer is about that one field and nothing else: no filter list,
-        # no recent searches. Said even when there is nothing to say: `rating:` has no list of
-        # ratings to offer, and the token is still the fact the box needs in order to draw the
-        # filter as a chip rather than as the characters somebody typed. An empty answer here is
-        # the difference between "no suggestions for this filter" and "you are not in a filter",
-        # and the box cannot tell them apart without being told.
+        # Inside a token: that field only, and said even with no matches (`rating:`), since the
+        # token is what the box needs to draw the filter as a chip.
         matches = (
             await service.suggest(viewer, caret.field, caret.prefix)
             if caret.field in SUGGESTED_FIELDS
@@ -184,35 +180,13 @@ async def suggest(
     # With no word being typed, a chosen filter is inserted at the end rather than over anything.
     at = word.at if word else len(q)
 
-    # Matched ANYWHERE in a name, not only at the start of one.
-    #
-    # A prefix is the textbook rule for a completion and it is wrong for this list, because what is
-    # being completed is not a word: it is the name of something in the library, and people type
-    # the part of a name they remember. By prefix, `solb` would offer nobody while Reya Solberg was
-    # right there, and a folder called "redgifs archive" would answer to `redgifs` and to nothing
-    # else. The dropdown would then read as the library not holding the thing it is holding.
-    #
-    # The noise this lets in is paid for in ORDER rather than in matching: an exact name first, then
-    # what starts with the word, then what merely contains it, and within each the thing that
-    # already names the most files. The results band beneath matches this way too, so a word that
-    # finds something there finds it here, rather than one feature disagreeing with itself.
+    # Matched ANYWHERE in a name, as people type the part they remember (`solb` for Reya Solberg);
+    # the noise is paid for in order, exactly as the results band beneath orders it.
     across = await service.suggest_across(viewer, prefix, anywhere=True) if word is not None else []
 
-    # The whole trailing run of words FIRST, because names have spaces in them.
-    #
-    # `reya so` is not a question about `st`: asked as one, it would put Instagram and a collection
-    # called "best of" above Reya Solberg, both of which really do contain `st`, so nothing would
-    # look broken, only badly ordered. Widened to the phrase, the same query asks what it meant.
-    #
-    # The word is still asked, and it is still what the answer falls back to: a phrase is a good
-    # guess and a bad requirement. `beach sunset` is two things somebody is searching for rather
-    # than one thing's name, and a dropdown that went empty because no tag is called "beach sunset"
-    # would be worse than one that offers the tag `sunset`.
-    #
-    # Which one answered decides `matched_from`: the span a picked NAME replaces. It is reported
-    # separately from `replace_from` because the two are different questions on one list: picking
-    # Reya Solberg out of `reya so` replaces both words, and picking the `duration:` filter off the
-    # same list must replace only what was being typed of the filter's own name.
+    # The whole trailing run of words FIRST, because names have spaces in them; the last word is
+    # the fallback (`beach sunset` still offers `sunset`). Whichever answered sets `matched_from`,
+    # the span a picked name replaces, apart from `replace_from`, which a picked filter replaces.
     phrase = phrase_prefix(q)
     matched_at = at
     if phrase is not None:
@@ -231,6 +205,7 @@ async def suggest(
                 label=entry.label,
                 hint=entry.hint,
                 example=entry.example,
+                set_from=entry.set_from,
             )
             for entry in filters_matching(prefix)
         ],

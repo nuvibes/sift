@@ -1,26 +1,9 @@
 import type { IconName } from '$lib/design/icons';
 
 /*
- * What every icon in Sift means, and where you would come across it.
- *
- * ## Why this is here rather than in the gallery
- *
- * `Record<IconName, ...>` is the whole point. The icon list is a union of exact names, so a record
- * keyed by it must have an entry for EVERY one: adding a glyph and not saying what it is for is a
- * type error while you are typing it, and deleting a glyph leaves an entry that will not compile.
- * Written on the page instead, the two lists would drift the first time somebody was in a hurry,
- * and the drift would be invisible: an icon with no description simply would not be drawn.
- *
- * ## Why "where" and not just "what"
- *
- * A glyph on its own is a shape. The question somebody actually has in front of a wall of them is
- * "which one of these is the thing I keep seeing on the top bar", and no amount of describing the
- * drawing answers it. So each entry says where it appears, and where two icons could be confused
- * the entry says why they are different: the spark against the magnifying glass, the crossed-out
- * group against the no-entry ring.
+ * What every icon in Sift means, and where you would come across it. Keyed by `IconName`, so a
+ * glyph with no entry, or an entry for a removed glyph, does not compile.
  */
-/* Not exported. Nothing outside this file needs to name the shape: the record below is the whole
-   public surface, and an exported type with no reader is a promise nobody asked for. */
 interface IconUse {
 	/** What it means, in a few words. */
 	what: string;
@@ -292,30 +275,27 @@ export const ICON_USES: Record<IconName, IconUse> = {
 	expand_circle_up: {
 		what: 'There is more down here',
 		where:
-			'The sliver at the foot of a wall in Theater, while its bar is down — pointing at it brings ' +
-			'the bar up.'
+			'The sliver at the foot of a wall in Theater, while its bar is down — pointing at it brings the bar up.'
 	},
 	bolt: {
 		what: 'It happens automatically',
 		where:
-			'The wall drawer in Theater, on the Center stage mode — lit when a preview comes up the ' +
-			'moment it starts something new. The hand beside it is the other half of the same control. ' +
-			"Also the sidebar's bolt, above the rule, in green: background work using the full amount " +
-			"of this device although it's in use, because you pressed for it."
+			'The wall drawer in Theater, on the Center stage mode — lit when a preview comes up the moment it starts something new. The hand beside it is the other half of the same control.'
+	},
+	bolt_boost: {
+		what: 'Using the full amount of this device',
+		where:
+			"The sidebar's bolt, above the rule, in yellow. Background work is using the full amount of this device although it's in use, because you pressed for it. On a phone, the same row heads More."
 	},
 	energy_savings_leaf: {
 		what: 'Using less of this device',
 		where:
-			"The sidebar's leaf, above the rule, in green: background work using a share of this " +
-			"device, a quarter unless you chose otherwise, because it's in use. Pressed, it becomes " +
-			'the bolt; on a phone, the same row ' +
-			'heads More.'
+			"The sidebar's leaf, above the rule, in green: background work using a share of this device, a quarter unless you chose otherwise, because it's in use. Pressed, it becomes the bolt; on a phone, the same row heads More."
 	},
 	touch_app: {
-		what: 'It happens when you press it',
+		what: 'It happens when you double-click it',
 		where:
-			'The wall drawer in Theater, on the Center stage mode — the mode where a preview waits to ' +
-			'be pressed. The bolt is the other half of the same control.'
+			'The wall drawer in Theater, on the Center stage mode — the mode where a preview waits to be pressed. The bolt is the other half of the same control.'
 	},
 	block: {
 		what: 'Turn off',
@@ -400,8 +380,7 @@ export const ICON_USES: Record<IconName, IconUse> = {
 	aspect_ratio: {
 		what: 'The shape of the box, rather than of what is in it',
 		where:
-			"A Theater cell's menu, where it opens the list of shapes that one cell can be held to \u2014 " +
-			'including Dynamic, which is the shape of whatever it is playing.'
+			"A Theater cell's menu, where it opens the list of shapes one cell can be held to. One of them is Dynamic, the shape of whatever it is playing."
 	},
 	crop: {
 		what: 'Crop the picture',
@@ -410,8 +389,7 @@ export const ICON_USES: Record<IconName, IconUse> = {
 	content_cut: {
 		what: 'Take a clip out',
 		where:
-			"The editor's clip panel, the player's control for saving the marked stretch as a clip, " +
-			'and the mark on something made from another file.'
+			"The editor's clip panel, the player's control for saving the marked stretch as a clip, and the mark on something made from another file."
 	},
 	gif: {
 		what: 'Turn it into a GIF',
@@ -543,12 +521,17 @@ export const ICON_USES: Record<IconName, IconUse> = {
 	save: {
 		what: 'A copy kept on your device',
 		where:
-			'Every Save and Export button, where something is written down to keep, and the History row for a file saved to your device. Saved Filters use the funnel with a plus instead. A disk says a file is written, and a Saved Filter keeps a filter, not a file.'
+			'Every Save button, where something is written down to keep, and the History row for a file saved to your device. Saved Filters use the funnel with a plus instead. A disk says a file is written, and a Saved Filter keeps a filter, not a file.'
+	},
+	publish: {
+		what: 'Send a copy out of Sift',
+		where:
+			'Every Export button, such as the Export of a pack of faces under Settings > Faces. An arrow leaving the tray: what is exported is taken somewhere else, where a disk says it is kept here.'
 	},
 	bookmark_stacks: {
 		what: 'The filters you have kept',
 		where:
-			'The top bar, third of the three marks, opening the list of Saved Filters. Stacked bookmarks rather than one, because it is the LIST — a single bookmark is the act of keeping one.'
+			'Not drawn on any screen now. A filter is kept with the funnel with a plus, at the end of the filters bar. The kept ones are listed at the foot of the Filter panel.'
 	},
 	autostop: {
 		what: 'Stop previewing',
@@ -561,9 +544,9 @@ export const ICON_USES: Record<IconName, IconUse> = {
 			'The theater bar, on the panel that chooses the arrangement of cells. Columns side by side, which is what a layout IS here; the tile grid beside it in the rail is a wall of files.'
 	},
 	table_view: {
-		what: 'Layout Presets you have saved',
+		what: 'Your Saved Layouts',
 		where:
-			'The theater bar, on the Layout Presets panel. A ruled grid, which is what a Layout Preset IS \u2014 a wall divided into places with a source in each.'
+			'The theater bar, on the Saved Layouts panel. A ruled grid, which is what a Saved Layout IS \u2014 a wall divided into places with a source in each.'
 	},
 	grid_view: {
 		what: 'The grid',
@@ -596,15 +579,12 @@ export const ICON_USES: Record<IconName, IconUse> = {
 	calendar_month: {
 		what: 'A date',
 		where:
-			"The filter panel's Added column, on the control that opens the calendar. Not the history " +
-			'dial beside it in this list: that one is about what you did, this one is about when a file ' +
-			'arrived.'
+			"The filter panel's Added column, on the control that opens the calendar. Not the history dial beside it in this list: that one is about what you did, this one is about when a file arrived."
 	},
 	history: {
 		what: 'Recently viewed',
 		where:
-			"The rail's history, the search box's recent queries, a face group's past decisions, and " +
-			'the mark on a picker row that is in front because it was picked recently.'
+			"The rail's history, the search box's recent queries and a face group's past decisions. Also the mark on a picker row that is in front because it was picked recently."
 	},
 	info: {
 		what: 'Something worth knowing',
@@ -913,14 +893,12 @@ export const ICON_USES: Record<IconName, IconUse> = {
 	sync: {
 		what: 'Working on it, or going round again',
 		where:
-			'A job in flight, a download running, a folder being scanned — and the button that ' +
-			'closes Sift and opens it again after the graphics card runtime is installed.'
+			'A job in flight, a download running, a folder being scanned. Also the button that closes Sift and opens it again after the graphics card runtime is installed.'
 	},
 	filter_alt: {
 		what: 'Filter it',
 		where:
-			"The filter panel on the bar, and a theater cell's own filter. Filled, in the accent, over " +
-			"the picture of a card picked on an entity page's tab: that card is filtering the page's files."
+			"The filter panel on the bar, and a theater cell's own filter. Filled, in the accent, over the picture of a card picked on an entity page's tab: that card is filtering the page's files."
 	},
 	filter_plus: {
 		what: 'Keep these filters',
@@ -943,7 +921,7 @@ export const ICON_USES: Record<IconName, IconUse> = {
 	upload: {
 		what: 'Upload a file',
 		where:
-			'The file picker on the Add panel, for a cookie export or a tunnel config. Also every Import button: a pack, a folder, a tunnel, a library. And the History line saying a library was created from a database file.'
+			'The file picker on the Add panel, for a cookie export or a tunnel config. Also Settings > Importing, and every Import button: a pack, a folder, a tunnel, a library, a Stash database. And the History line saying a library was created from a database file.'
 	},
 	visibility: {
 		what: 'Show it',
@@ -1058,5 +1036,24 @@ export const ICON_USES: Record<IconName, IconUse> = {
 		what: 'PMV creator',
 		where:
 			"Right of the name on a PMV creator's own page, and in the same spot on a preview of them. Also the bottom-right corner of their card on the People wall, and the facet that filters to them. It uses the ordinary ink of a glyph, with no color of its own."
+	},
+	browser_updated: {
+		what: 'A newer Sift is ready',
+		where:
+			"The desktop app's title bar, left of minimise, in the accent colour, for an admin while an update is available. It opens Settings > Updates and Info."
+	},
+	menu_book: {
+		what: 'Documentation',
+		where: "Settings > Documentation, under Updates and Info: Sift's own guide, readable offline."
+	},
+	movie: {
+		what: 'Enriched by the music-video stash-box',
+		where:
+			'The Enriched by and Created by marks when PMVStash filled in the file. Shown on a file, a preview, an entity page and their facet rows.'
+	},
+	person_celebrate: {
+		what: "Enriched by the creators' stash-box",
+		where:
+			'The Enriched by and Created by marks when FansDB filled in the file. Shown on a file, a preview, an entity page and their facet rows.'
 	}
 };

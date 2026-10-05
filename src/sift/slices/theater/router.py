@@ -82,12 +82,8 @@ def _shape(body: ArrangementBody) -> Shape | None:
 
 
 def name_taken(name: str) -> str:
-    """The refusal a save or a rename onto a name already used reads as, word for word on screen.
-
-    One sentence for both routes, and in the screen's word: the Theater bar and its panel call a
-    saved wall a preset, so a toast saying "wall" names a thing the screen never mentions.
-    """
-    return f'You already have a preset called "{name}".'
+    """The refusal a save or a rename onto a name already used reads as, word for word on screen."""
+    return f'You already have a Saved Layout called "{name}".'
 
 
 def _out(arrangement: Arrangement) -> ArrangementOut:

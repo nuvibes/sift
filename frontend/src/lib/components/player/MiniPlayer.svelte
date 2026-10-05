@@ -1,11 +1,6 @@
 <script lang="ts">
-	/*
-	 * The player as a small panel over the app, drawn by the shell rather than by any screen, so it
-	 * stays while somebody moves around the library. Dragged by its top edge, resized from its edges,
-	 * and kept inside the window at every step: a panel pushed off the edge is a video nobody can
-	 * stop. The same `Player` the full-size view uses, told to keep its bar short, so a fix lands in
-	 * both.
-	 */
+	/* The player as a small panel over the app, drawn by the shell so it stays across screens, and
+	   kept inside the window at every step. The same `Player` the full-size view uses. */
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
 	import { offerViewer } from '$lib/remote/offer.svelte';
 	import { onMount, untrack } from 'svelte';
@@ -30,10 +25,16 @@
 		canStepBack,
 		canStepForward,
 		leaveAssetPanel,
+		lookAhead,
+		playOn,
 		reopenAsset,
+		runGoesOn,
 		stepBack,
-		stepForward
+		stepForward,
+		takeRecord
 	} from '$lib/player/asset-view';
+	import { dwell } from '$lib/player/dwell.svelte';
+	import { run } from '$lib/player/run.svelte';
 	import TheaterWall from '$lib/components/theater/TheaterWall.svelte';
 	import { showing as theater } from '$lib/theater/wall.svelte';
 	import { matches, pressed } from '$lib/shell/shortcuts';
@@ -47,15 +48,10 @@
 	/** What the panel is showing. Null the rest of the time, and then nothing is drawn. */
 	const asset = $derived(mini.asset);
 
-	/* Where a clip in the corner is watched: the corner, carrying on a file the panel opened, and so
-	   opened from whatever the panel's sitting was opened from (`inTheCorner`). Only the corner,
-	   where nothing handed one over. */
+	/* Where a clip in the corner is watched (`inTheCorner`). */
 	const corner = $derived(inTheCorner(asset?.from));
 
-	/*
-	 * Whether what is in the panel is a picture rather than a clip. A GIF is one: no browser demuxes
-	 * GIF through the media stack, so a `<video>` would show a blank frame. An absent type is a clip.
-	 */
+	/* A picture rather than a clip; a GIF is one, since a `<video>` shows it blank. */
 	const showsPicture = $derived(
 		asset !== null && asset.mediaType !== undefined && asset.mediaType !== 'video'
 	);
@@ -67,8 +63,7 @@
 	 */
 	const concealed = $derived(asset?.concealed === true);
 
-	/* What the panel says it is holding. A word for each thing, because "Playing" over a photograph
-	 * is a sentence that is not true, and so is "Showing" over something nobody is being shown. */
+	/* What the panel says it is holding, a word for each kind of thing. */
 	const holding = $derived(
 		mini.wall ? 'Theater' : concealed ? 'Hidden' : showsPicture ? 'Showing' : 'Playing'
 	);
@@ -78,8 +73,7 @@
 
 	/** The window, as the thing the panel is kept inside, less whatever is drawn above the app. */
 	function within() {
-		/* From the token, which the stylesheet owns: `0px` in a browser, the drag strip's height in
-		   the desktop shell, where a panel under the strip could not be grabbed back. */
+		/* The desktop shell's drag strip, where a panel could not be grabbed back. */
 		const chrome = Number.parseFloat(
 			getComputedStyle(document.documentElement).getPropertyValue('--window-chrome')
 		);
@@ -90,24 +84,17 @@
 		};
 	}
 
-	/*
-	 * The same file, opened at full size. Two players on one file are two sound tracks a fraction
-	 * apart, so one goes, and which depends on which arrived second: a hand-over from the full-size
-	 * view leaves the panel, and opening at full size what the panel plays closes the panel. A
-	 * different file opened at full size is what the panel exists for.
-	 */
+	/* The same file open at full size: one of the two players goes, whichever arrived first. */
 	const openFullSize = $derived(
 		asset !== null && (page.state.asset === asset.id || page.url.pathname === `/asset/${asset.id}`)
 	);
 
-	/* Whether the view is on its way out already, so a second run of the effect does not go back
-	 * twice before the navigation lands. */
+	/* The view is on its way out, so a second run of the effect does not go back twice. */
 	let leaving = false;
 
 	$effect(() => {
 		if (!openFullSize) {
-			// The hand-over ends when the view has gone; cleared earlier, this effect would run again
-			// with the view still on screen and close the panel it had just filled.
+			// Cleared any earlier, this would close the panel the view had just filled.
 			if (mini.handover) mini.left();
 			leaving = false;
 			return;
@@ -119,16 +106,12 @@
 		if (leaving) return;
 		leaving = true;
 		untrack(() => {
-			// Leave the way the panel's own close does: the shell's one rule, back out of the dialog or
-			// to the library for a file page opened by its own address.
+			// The way the panel's own close leaves.
 			leaveAssetPanel();
 		});
 	});
 
-	/*
-	 * The corner's sitting with a picture, which has no player to keep one. A picture handed over
-	 * from the panel carries the panel's sitting on; one reached by Next or Back is its own.
-	 */
+	/* A picture's sitting: carried on from the panel when handed over, its own when stepped to. */
 	const still = newSitting();
 
 	$effect(() => {
@@ -160,8 +143,7 @@
 		return () => window.removeEventListener('resize', onResize);
 	});
 
-	/* A drag in progress. The shape is read once at the start: read per event it would measure the
-	 * panel mid-drag, and the drag would chase its own last frame. */
+	/* A drag in progress, its shape read once at the start so it never chases its own frame. */
 	let gesture: {
 		kind: 'move' | Grip;
 		x: number;
@@ -170,10 +152,7 @@
 		shape?: number;
 	} | null = null;
 
-	/**
-	 * What is in the panel as width over height, or nothing where there is no single answer (a
-	 * Theater wall, or a file whose header is not read yet), which falls through to a free resize.
-	 */
+	/** What is in the panel as width over height, or nothing where there is no single answer. */
 	function shapeOf(): number | undefined {
 		if (mini.wall) return undefined;
 		const size = showsPicture ? picture?.pictureSize() : player?.pictureSize();
@@ -193,8 +172,7 @@
 			place: { ...mini.place },
 			shape: kind === 'move' ? undefined : (mini.shape ?? shapeOf())
 		};
-		// The pointer belongs to this element for the rest of the gesture, so a fast drag that
-		// outruns the panel does not simply stop when it leaves it.
+		// So a fast drag that outruns the panel does not stop when it leaves it.
 		(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
 		event.preventDefault();
 	}
@@ -211,8 +189,7 @@
 
 	function drag(event: PointerEvent) {
 		if (!gesture) return;
-		// Not written down yet. A drag is one gesture and several hundred pointer events, and storage
-		// is written synchronously: a write per event is a write on the thread doing the dragging.
+		// Stored only at the end: a synchronous write per pointer event would stall the drag.
 		mini.moveTo(reached(event), within());
 	}
 
@@ -223,17 +200,12 @@
 		(event.currentTarget as HTMLElement).releasePointerCapture?.(event.pointerId);
 	}
 
-	/*
-	 * Back to the full-size view, at the moment the panel had got to, as a new entry so closing the
-	 * view returns to the page somebody was on. The id is read before the panel closes, because
-	 * closing empties `asset`.
-	 */
+	/* Back to full size where the panel had got to, as a new entry so closing returns here. */
 	function expand(fill = false) {
 		if (!asset) return;
 		const returning = asset.id;
 		const at = Math.round(playedTo * 1000);
-		// Whether it was running, so the full-size view picks it up in the state it was left in
-		// rather than starting to play something somebody had deliberately paused.
+		// So the full-size view does not play what was deliberately paused.
 		const held = player?.isPaused() ?? false;
 		handPlace(panel?.getBoundingClientRect() ?? null);
 		mini.close();
@@ -272,12 +244,7 @@
 		}
 	}
 
-	/**
-	 * Whether there is a file before and after this one, in the run it was opened from.
-	 *
-	 * Asked of the run the full-size view walks, so the panel and the page agree about what Next
-	 * and Back mean, in order and with Shuffle on alike. See the note above `canStepForward`.
-	 */
+	/** Whether there is a file before and after this one, asked of the run the popout walks. */
 	const around = $derived(
 		asset
 			? { back: canStepBack(asset.id), forward: canStepForward(asset.id) }
@@ -290,14 +257,29 @@
 		await step(forward ? await stepForward(asset.id) : stepBack(asset.id));
 	}
 
-	/**
-	 * Step the panel to a neighbour, fetched when asked (see `save`), from the beginning: a
-	 * neighbour has no playhead to carry across.
-	 */
+	/* The end of a clip moves the run on here as it does in the popout (`AssetModal`). */
+	const goesOn = $derived(asset !== null && runGoesOn(asset.id, { pictures: dwell.pictures }));
+
+	const endRule = () => ({ pictures: dwell.pictures, wraps: !dwell.stopsAtTheEnd });
+
+	async function playedThrough() {
+		const from = asset?.id;
+		if (!from) return;
+		const next = await playOn(from, endRule());
+		if (next !== from && asset?.id === from) await step(next);
+	}
+
+	/* The next file is found while this one plays, so its end waits only on the media. */
+	function started() {
+		if (asset && goesOn && run.movesOnAfter(dwell.mode)) lookAhead(asset.id, endRule());
+	}
+
+	/** Step the panel to a neighbour, from the beginning; its record found ahead when it was. */
 	async function step(id: string | null) {
 		if (!id) return;
 		try {
-			const file = await api.get<components['schemas']['AssetDetail']>(`/assets/${id}`);
+			const file =
+				takeRecord(id) ?? (await api.get<components['schemas']['AssetDetail']>(`/assets/${id}`));
 			mini.open(
 				{
 					id: file.id,
@@ -605,6 +587,8 @@
 						if (size) takeTheShapeOf(size);
 					}}
 					seekTo={asset.at ? { ms: asset.at * 1000 } : null}
+					onplayedthrough={goesOn ? () => void playedThrough() : undefined}
+					onstarted={started}
 					place={corner}
 					onplan={(next) => (plan = next)}
 				/>
@@ -683,8 +667,7 @@
 		pointer-events: none;
 	}
 
-	/* On the Audio player the badge stands on the strip's small picture, in its grid area, centred
-	   on the strip's line, and never over the transport. */
+	/* On the Audio player the badge stands on the strip's small picture, in its grid area. */
 	.mini.bar .key-echoes {
 		grid-area: start;
 		inset-block-start: 50%;
@@ -900,37 +883,40 @@
 		inset-inline-end: 0;
 	}
 
-	/* The Audio player, in every player bar's shape: the scrub line on top, then three columns, the
-	   outer two equal so the transport stands on the centre line. Centred in the PAGE (`inThePage`)
-	   less a drawer beside it: centred on the window it would run under the rail. */
+	/* The Audio player, in Theater's bar's shell: the scrub line on top, then the transport, the
+	   picture on the centre line (the outer columns are equal), the ends. Tall by its content.
+	   Centred in the PAGE (`inThePage`) less a drawer beside it, so it never runs under the rail. */
 	.mini.bar {
 		--frame-corner: var(--radius-xl);
-		--bar-picture: 80px;
+		--bar-picture: calc(var(--touch-target) * 16 / 9);
 		--bar-room: calc(var(--frame-w, 100%) - var(--drawer-beside, 0px));
 		inset-block-start: auto;
 		inset-block-end: var(--space-4);
 		inset-inline-start: calc(var(--frame-x, 0px) + var(--bar-room) / 2);
 		translate: -50% 0;
 		inline-size: min(800px, calc(var(--bar-room) - var(--space-8)));
-		/* 64 pixels and a step, so the times on the scrub line's band clear the top corners. */
-		--bar-height: calc(var(--space-16) + var(--space-2));
-		--bar-band: var(--space-4);
-		block-size: var(--bar-height);
-		padding-block: var(--space-1);
+		block-size: auto;
+		padding: var(--space-2) var(--space-3);
 		/* The frame under the pointer stands above the bar, which has nothing else to clip. */
 		overflow: visible;
 		display: grid;
 		grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
-		grid-template-rows: var(--bar-band) minmax(0, 1fr);
+		grid-template-rows: auto auto;
 		grid-template-areas:
 			'line line line'
-			'start transport ends';
+			'transport start ends';
 		align-items: center;
 		column-gap: var(--space-3);
-		padding-inline: var(--space-3);
-		/* The player bar's own dress: glass, and a scrim for the words. */
-		background: var(--sift-scrim-strong);
+		row-gap: var(--space-1);
+		border: 1px solid var(--sift-line);
+		background: var(--sift-scrim);
 		backdrop-filter: blur(var(--blur-glass));
+		box-shadow: none;
+	}
+
+	/* The border is the edge here, not the panel's inside ring. */
+	.mini.bar:not(.docked)::after {
+		display: none;
 	}
 
 	/*
@@ -949,9 +935,13 @@
 		inline-size: auto;
 		translate: none;
 		/* A finger-high scrub line over the controls; the selection bar reads `DOCKED_STRIP`. */
-		--bar-height: var(--docked-strip);
-		--bar-band: var(--touch-target);
-		padding-block-end: var(--space-1);
+		block-size: var(--docked-strip);
+		grid-template-rows: var(--touch-target) minmax(0, 1fr);
+		row-gap: 0;
+		padding-block: var(--space-1);
+		border: none;
+		background: var(--sift-scrim-strong);
+		box-shadow: var(--elev-3);
 		/* The floating bar's order in a thumb's width. The name gives way, so Play stands after it
 		   rather than on the centre line; a picture's strip has no Play (`bare`). */
 		grid-template-columns: auto minmax(0, 1fr) auto auto;
@@ -980,13 +970,12 @@
 		display: none;
 	}
 
-	/* The picture, kept playing and drawn small (the same element, so nothing reloads), at the far
-	   left with the name beside it. */
+	/* The picture, kept playing and drawn small (the same element, so nothing reloads), no taller
+	   than Play. */
 	.mini.bar .screen {
 		grid-area: start;
-		justify-self: start;
 		inline-size: var(--bar-picture);
-		block-size: 45px;
+		block-size: var(--touch-target);
 		overflow: hidden;
 		border-radius: var(--radius-sm);
 	}

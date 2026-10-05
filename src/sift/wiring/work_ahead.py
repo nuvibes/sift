@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from dataclasses import replace
 from functools import partial
 from typing import Any
 
@@ -11,8 +12,10 @@ from fastapi import FastAPI
 
 from sift.kernel import wiring
 from sift.kernel.content import ContentStore
-from sift.kernel.jobs import JobQueue, WorkAhead
+from sift.kernel.jobs import JobQueue, WorkAhead, by_itself_job_types, registered_families
 from sift.kernel.jobs.families import Family
+from sift.kernel.jobs.queue_rows import FilesToRead
+from sift.kernel.jobs.work_ahead import Split
 from sift.kernel.wiring import provide
 from sift.slices import faces, importing, media_jobs, music, semantic, stash_migration, watermarks
 from sift.wiring.built import Storage, Understanding
@@ -87,9 +90,10 @@ async def _pass_ahead_by_kind(
 
 
 async def _product_left(
-    products: importing.ProductRegistry, content: ContentStore, key: str
-) -> int:
-    """How many files still want this one product, asked of its own switch.
+    products: importing.ProductRegistry, content: ContentStore, key: str, live: Sequence[str]
+) -> Split:
+    """How many files still want this one product, asked of its own switch, and how many of the
+    read ones no live job is about: they wait for a run of their task.
 
     Through `files_lacking` rather than a count over the derivative table, because that is the one
     place a switch is consulted: a product whose switch is off answers with no condition at all
@@ -100,9 +104,16 @@ async def _product_left(
     """
     lacking = await importing.files_lacking(products, [key], content)
     product = products.get(key)
-    if product is None or product.coming is None or await product.lack() is None:
-        return lacking
-    return lacking + await product.coming(await products.within(product))
+    lack = None if product is None else await product.lack()
+    if product is None or lack is None:
+        return Split(waiting=lacking)
+    within = await products.within(product)
+    # The term `files_lacking` counted, over the live files alone.
+    term = replace(lack, product=key, within=within)
+    under_way = await content.count_lacking_by_kind([term], among=live) if live else {}
+    arriving = {kind: one.files for kind, one in under_way.items()}
+    coming = 0 if product.coming is None else await product.coming(within)
+    return Split(lacking + coming, max(0, lacking - sum(arriving.values())), arriving)
 
 
 async def _product_left_by_kind(
@@ -146,7 +157,7 @@ def _register_products(
     # `register_total` is the denominator. What is left falls to nought on a finished library, and
     # with nothing to divide it by the bar would draw empty over work that is entirely done.
     for picture in media_jobs.PICTURES:
-        ahead.register(
+        ahead.register_split(
             picture.job_type, partial(_product_left, products, store.content, picture.key)
         )
         ahead.register_total(
@@ -166,7 +177,7 @@ def _register_products(
         (watermarks.WATERMARK_READ, "watermarks"),
         (music.AUDIO_FINGERPRINT, music.PRODUCT),
     ):
-        ahead.register(job_type, partial(_product_left, products, store.content, product_key))
+        ahead.register_split(job_type, partial(_product_left, products, store.content, product_key))
         ahead.register_total(
             job_type, partial(_product_wanted, products, store.content, product_key)
         )
@@ -193,6 +204,13 @@ def _declare_readiness(
     queue.switchboard.declare_window(Family.IDENTIFY, products.night_start)
 
 
+async def _walks_to_read(queue: JobQueue) -> FilesToRead:
+    """Not the probes: tens of thousands wait during an import, and none is a walk."""
+    quiet = by_itself_job_types()
+    walks = [kind for kind, family in registered_families().items() if family is Family.SCAN]
+    return await queue.files_to_read([kind for kind in walks if kind not in quiet])
+
+
 def build_work_ahead(
     app: FastAPI,
     store: Storage,
@@ -204,20 +222,9 @@ def build_work_ahead(
 
     After the products, because every counter but the walk's is a question asked of one.
     """
-    # WHAT IS STILL TO COME, per kind of job, and this is the one place it can be assembled.
-    #
-    # A progress bar needs a denominator, and the work already in the queue GROWS while a pass
-    # runs, so it cannot be the total.
-    #
-    # None of it needs the disk. Sift already records what has been done to each file, so "what is
-    # left" is the library minus that record: indexed counts. The counters are registered rather than written
-    # in the queue because each belongs to whoever owns the record it reads: only recognition
-    # knows that a file scanned under a shallower setting counts as unscanned, and only Smart Search
-    # knows that a file described by a superseded model counts as undescribed.
-    #
-    # The folder WALK is the one kind with nothing to register, and it needs nothing: a scan builds
-    # its whole list before it hands out a single job, so its count exists the moment the walk ends.
-    ahead = WorkAhead()
+    # Each counter belongs to whoever owns the record it reads. What the walks have still to read
+    # is taken on the same count, so a file is counted read or unread, never both or neither.
+    ahead = WorkAhead(live_files=queue.live_files, to_read=partial(_walks_to_read, queue))
     ahead.register(media_jobs.PROBE, store.content.unread_count)
 
     # One counter per pass, Generate and Identify, each answering for the runs of its own

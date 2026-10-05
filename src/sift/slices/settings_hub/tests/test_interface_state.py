@@ -385,13 +385,10 @@ async def test_the_withdrawn_record_pane_key_is_refused_like_any_other_unknown_k
     assert await service.interface(users.admin) == {}
 
 
-async def test_a_hint_shown_once_is_held_by_the_one_word_seen(
-    service: SettingsService, users: Users
+@pytest.mark.parametrize("hint", ["organize_empty", "first_pile", "first_insights"])
+async def test_the_withdrawn_hint_keys_are_refused_like_any_other_unknown_key(
+    service: SettingsService, users: Users, hint: str
 ) -> None:
-    """A hint has one state worth a word: never shown is no row at all."""
-    await service.arrange(users.admin, {"path.hint.first_pile.seen": "seen"})
-    assert await service.interface(users.admin) == {"path.hint.first_pile.seen": "seen"}
-
     with pytest.raises(SettingError):
-        await service.arrange(users.admin, {"path.hint.first_insights.seen": "skip"})
-    assert await service.interface(users.admin) == {"path.hint.first_pile.seen": "seen"}
+        await service.arrange(users.admin, {f"path.hint.{hint}.seen": "seen"})
+    assert await service.interface(users.admin) == {}

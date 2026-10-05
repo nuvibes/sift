@@ -57,10 +57,11 @@
 		 * A picture beside each answer of a menu row, handed to the chooser's own `preview`.
 		 *
 		 * For a setting whose answers are shapes rather than words: Theater's default layout is
-		 * the Layouts chooser on the wall, and a list of "1x3" and "Center stage 2x2" beside it
-		 * would be the same choice drawn two ways. Absent on every other row.
+		 * the Layouts chooser on the wall, drawn the same way.
 		 */
 		preview?: Snippet<[SelectOption]>;
+		/** The words each answer shows when highlighted, as the wall's own chooser does. */
+		tooltip?: (value: string) => string | undefined;
 	}
 
 	let {
@@ -70,11 +71,14 @@
 		disabled = false,
 		showHelp = true,
 		showDisclosure = true,
-		preview
+		preview,
+		tooltip
 	}: Props = $props();
 
 	const kind = $derived(controlFor(entry));
-	const options = $derived(optionsFor(entry));
+	const options = $derived(
+		optionsFor(entry).map((one) => ({ ...one, tooltip: tooltip?.(one.value) }))
+	);
 	/* The units this number may be read in, if it is a number and if its unit has any. A setting
 	   whose unit has no ladder gets the plain word it always got. */
 	const units = $derived(ladderFor(entry.unit));

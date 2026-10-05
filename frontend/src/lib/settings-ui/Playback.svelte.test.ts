@@ -174,3 +174,34 @@ it("draws the default layout's shapes as the wall's own Layouts chooser does", a
 	expect(picture, 'the chosen layout is not drawn as its shape').not.toBeNull();
 	expect(picture?.querySelectorAll('.block')).toHaveLength(4);
 });
+
+it('says Portrait and Landscape on the default layout chooser, from the one place they are named', async () => {
+	for (const name of ['setPointerCapture', 'releasePointerCapture', 'hasPointerCapture'] as const) {
+		if (!(name in Element.prototype))
+			Object.defineProperty(Element.prototype, name, { value: () => false, writable: true });
+	}
+	const layout = setting('theater.layout', 'Default layout when Theater opens', {
+		value: 'single',
+		default: 'side_by_side_by_side',
+		choices: ['single', 'side_by_side', 'stacked'],
+		choice_labels: ['1x1', '1x2 (P)', '1x2 (L)']
+	});
+	fetchSettings.mockResolvedValue([
+		{ name: 'Theater', settings: [layout] }
+	] as unknown as SettingSection[]);
+	await draw();
+
+	const trigger = host.querySelector<HTMLElement>('[id="theater.layout"] .ui-select')!;
+	trigger.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, button: 0 }));
+	trigger.dispatchEvent(new MouseEvent('pointerup', { bubbles: true, button: 0 }));
+	trigger.click();
+	flushSync();
+	const rows = [...document.querySelectorAll<HTMLElement>('.ui-select-item')];
+	expect(rows.map((one) => one.querySelector('.wrap') !== null)).toEqual([false, true, true]);
+
+	rows[2].querySelector('.wrap')!.dispatchEvent(new PointerEvent('pointermove', { bubbles: true }));
+	await vi.waitFor(() => {
+		flushSync();
+		expect(document.querySelector('[role="tooltip"]')?.textContent?.trim()).toBe('Landscape');
+	});
+});

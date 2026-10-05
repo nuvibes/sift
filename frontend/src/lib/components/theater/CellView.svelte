@@ -48,9 +48,9 @@
 		/** Where the wall's shape puts this cell, as a `grid-area`. Absent in the strip, which is not a
 		 *  grid. See `TheaterWall`. */
 		place?: string;
-		/** A preview in the strip: a press runs `onpress`, which brings it up into the wall. */
+		/** A preview in the strip. */
 		preview?: boolean;
-		/** What pressing the picture does, when it is not the ordinary 'talk to this one'. */
+		/** What a double press does instead of filling the screen: a preview comes up into the wall. */
 		onpress?: () => void;
 	}
 
@@ -89,9 +89,6 @@
 	/* Written onto the cell, which the filled window's one bar reads (`Cell.position`). */
 	const position = $derived(cell.position);
 	const duration = $derived(cell.duration);
-	/* The shape of what is in the cell, which is what the cell then makes itself. See `shape`. */
-	let mediaWide = $state(0);
-	let mediaTall = $state(0);
 	let attachment: Attachment | null = null;
 	/** Which file the element is currently pointed at, so a change is noticed once. */
 	let attached: string | null = null;
@@ -141,25 +138,25 @@
 	/** Which file the GIF was started for, so a re-render does not start it again. */
 	let animating: string | null = null;
 
-	/* The cell's shape is its file's, so feeds sit edge to edge, uncropped (`template`): the
-	   library's size first, the element's measurement second. */
-	const wide = $derived(cell.playing?.width || mediaWide);
-	const tall = $derived(cell.playing?.height || mediaTall);
-	/* `Cell.shape` decides, as the wall's track arithmetic does (`fit.ts`); `ASSUMED` covers a cell
-	   with no picture, which would otherwise resolve to zero. */
-	const shape = $derived(
-		cell.shape !== null
-			? `${cell.shape}`
-			: wide > 0 && tall > 0
-				? `${wide} / ${tall}`
-				: `${ASSUMED}`
-	);
-
-	/* No width measured here: the wall's decides if its bar fits (`StallBar`). */
+	/* The wall's answer (`Cell.shape`), so the cell and its row agree; `ASSUMED` as `fit.ts` does. */
+	const shape = $derived(`${cell.shape ?? ASSUMED}`);
+	/* What the player measured for the file on screen, for the facts panel. */
+	const seen = $derived(cell.measured?.file === cell.playing?.id ? cell.measured : null);
 
 	const poster = $derived(
 		cell.playing?.thumb ? thumbUrl({ id: cell.playing.id, art: cell.playing.art }) : undefined
 	);
+
+	/* The poster's size, for a video with no stored size, so its cell has a shape before the video. */
+	$effect(() => {
+		const file = cell.playing;
+		const url = poster;
+		if (!file || !url || still || (file.width && file.height)) return;
+		const image = new Image();
+		image.onload = () => cell.measurePoster(file.id, image.naturalWidth, image.naturalHeight);
+		image.src = url;
+		return () => (image.onload = null);
+	});
 
 	/* A picture's own file, off the plan; a GIF's thumbnail is one frame. */
 	const pictureUrl = $derived(still ? (cell.plan?.url ?? null) : null);
@@ -190,8 +187,6 @@
 		attached = id;
 		cell.position = 0;
 		cell.duration = 0;
-		mediaWide = 0;
-		mediaTall = 0;
 		// A new file has its own one recovery, and nothing is being waited for yet.
 		watch.stop();
 		recovered = false;
@@ -253,8 +248,7 @@
 		void driveAnimation(url, canvas, {
 			held: wall.paused || cell.paused,
 			onsize: (size) => {
-				mediaWide = size.width;
-				mediaTall = size.height;
+				cell.measure(id, size.width, size.height);
 				/* Its first frame has been decoded into the canvas, which is when a driven GIF
 				   is on screen: the same moment `shown` is for one drawn as an ordinary picture. */
 				onScreen(id);
@@ -405,20 +399,19 @@
 			video.currentTime = at;
 			cell.position = at;
 		}
-		// The file's own shape, which only the element knows and only once it has the metadata.
-		mediaWide = video.videoWidth;
-		mediaTall = video.videoHeight;
+		const id = cell.playing?.id;
+		if (id !== undefined) cell.measure(id, video.videoWidth, video.videoHeight);
 	}
 
 	/** The same, for a photograph, which has no metadata event and no element to ask. */
 	function shown(event: Event) {
 		const image = event.currentTarget as HTMLImageElement;
-		mediaWide = image.naturalWidth;
-		mediaTall = image.naturalHeight;
 		pictureLoads += 1;
 		// And the picture is ON SCREEN, which is the moment its time starts. See `onScreen`.
 		const id = cell.playing?.id;
-		if (id !== undefined) onScreen(id);
+		if (id === undefined) return;
+		cell.measure(id, image.naturalWidth, image.naturalHeight);
+		onScreen(id);
 	}
 
 	/* This file cannot be played here: one handler for the element's `error`, the picture's and a
@@ -548,19 +541,17 @@
 		start(video);
 	}
 
-	/* A press on the picture chooses this cell and nothing else; every control acts on the chosen
-	   cell, and a double-click still fills the screen. */
+	/* A press chooses this cell and nothing else, since every control acts on the chosen cell. */
 	function pressed() {
+		wall.focus(index);
+	}
+
+	/* A double press fills the screen; in the strip it brings the preview up instead. */
+	function pressedTwice() {
 		if (onpress) {
 			onpress();
 			return;
 		}
-		wall.focus(index);
-	}
-
-	/* A second press fills the screen, except in the strip, where the first moved it. */
-	function pressedTwice() {
-		if (onpress) return;
 		wall.focus(index);
 		onfullscreen();
 	}
@@ -670,6 +661,9 @@
 								Waiting for the converter — this install converts one file at a time.
 							{:else if cell.state === 'stopped'}
 								Stopped at the end.
+							{:else if cell.state === 'nothing_here' && cell.unreachable}
+								Sift can't reach the files this cell found. A drive may not be mounted, or a folder
+								may have moved.
 							{:else if cell.state === 'nothing_here'}
 								Nothing here matches what this cell is set to.
 							{:else}
@@ -701,8 +695,8 @@
 						{position}
 						{duration}
 						media={video}
-						playingWide={mediaWide}
-						playingTall={mediaTall}
+						playingWide={seen?.width ?? 0}
+						playingTall={seen?.height ?? 0}
 						source={cell.source.trim() || 'Everything'}
 						state={cell.state}
 						{still}

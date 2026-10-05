@@ -958,7 +958,7 @@ class AuthService:
         """
         cleaned = username.strip()
         if not cleaned:
-            raise UsernameTaken("a username cannot be blank")
+            raise UsernameTaken("A username can't be blank.")
         validate_password(password)
         password_hash = await self._hash(self._hasher.hash, password)
         user_id = new_id()
@@ -970,7 +970,7 @@ class AuthService:
         async with telling(self._db, EVERY_ADMIN, About.SETTINGS) as connection:
             taken = list(await connection.execute_fetchall(_USER_BY_USERNAME, (cleaned,)))
             if taken:
-                raise UsernameTaken(f"there is already a user called {cleaned!r}")
+                raise UsernameTaken(f"There's already a user called {cleaned!r}.")
             await connection.execute(
                 _INSERT_USER,
                 (user_id, cleaned, password_hash, "guest", None, None, None, now),
@@ -1025,16 +1025,15 @@ class AuthService:
     def _charge_rename(self, connection: Connection, row: Row) -> None:
         """Refuse a rename once this user has had their allowance for the day.
 
-        Read before the name is looked at, on purpose. Checking the name first and the allowance
-        second would answer "is this name taken" for every attempt including the refused ones,
-        which is the question the allowance exists to stop anybody asking repeatedly.
+        Charged before the name is looked at: otherwise "is this name taken" is answered for
+        free, which is the question the allowance exists to stop anybody asking repeatedly.
         """
         started = row["renames_since"]
         used = int(row["renames"] or 0)
         within_window = started is not None and self._now() - int(started) < RENAME_WINDOW_SECONDS
         if within_window and used >= MAX_RENAMES_PER_WINDOW:
             raise TooManyRenames(
-                "that is as many name changes as one day allows. Try again tomorrow."
+                "That's as many name changes as one day allows. Try again tomorrow."
             )
 
     async def _record_rename(self, connection: Connection, row: Row, user_id: str) -> None:
@@ -1067,7 +1066,7 @@ class AuthService:
         """
         cleaned = username.strip()
         if not cleaned:
-            raise UsernameTaken("a username cannot be blank")
+            raise UsernameTaken("A username can't be blank.")
 
         async with telling(self._db, EVERY_ADMIN, About.SETTINGS) as connection:
             existing = list(await connection.execute_fetchall(_MANAGED_USER_BY_ID, (user_id,)))
@@ -1079,29 +1078,30 @@ class AuthService:
             # limit would only be in the way when they are tidying up several at once.
             if not counted_against_admin:
                 self._charge_rename(connection, existing[0])
+                await self._record_rename(connection, existing[0], user_id)
 
             taken = list(await connection.execute_fetchall(_USER_BY_USERNAME, (cleaned,)))
-            if taken and str(taken[0]["id"]) != user_id:
-                raise UsernameTaken(
-                    f"there is already a user called {cleaned!r}"
-                    if counted_against_admin
-                    else "That name cannot be used."
+            refused = bool(taken) and str(taken[0]["id"]) != user_id
+            if not refused:
+                await connection.execute(_RENAME_USER, (cleaned, user_id))
+                # The old name in the payload: the row is overwritten in place, so it exists
+                # nowhere else. Every act on a user goes through `_user_event`, so the user list
+                # can say who was renamed as well as who was removed.
+                await self._user_event(
+                    connection,
+                    by,
+                    "renamed",
+                    user_id,
+                    cleaned,
+                    {"before": str(existing[0]["username"])},
                 )
-            await connection.execute(_RENAME_USER, (cleaned, user_id))
-            # The name it HAD, in the payload, and the new one as the subject's snapshot: the
-            # row is overwritten in place, so the old spelling exists nowhere else the moment this
-            # returns. Every act on a user goes through `_user_event`, so the user list can say
-            # who was renamed as well as who was removed.
-            await self._user_event(
-                connection,
-                by,
-                "renamed",
-                user_id,
-                cleaned,
-                {"before": str(existing[0]["username"])},
+        # Raised once the charge has landed: a refusal inside the write would take it back.
+        if refused:
+            raise UsernameTaken(
+                f"There's already a user called {cleaned!r}."
+                if counted_against_admin
+                else "That name can't be used."
             )
-            if not counted_against_admin:
-                await self._record_rename(connection, existing[0], user_id)
 
         security_event("account.renamed", user_id=user_id)
         return replace(_user_from_row(existing[0]), username=cleaned)

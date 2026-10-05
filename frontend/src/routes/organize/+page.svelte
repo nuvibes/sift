@@ -1,42 +1,11 @@
 <script lang="ts">
 	/*
-	 * Organize: what needs you.
+	 * Organize: what needs you. Browse answers "what do I have", so there are no grid tools here;
+	 * this shows only what is pending and is finished when it is empty.
 	 *
-	 * Browse answers "what do I have". This answers "what needs me", and that is why it is a second
-	 * screen rather than a view of the first one. It follows that the failure mode is building a
-	 * place to LOOK at files: there are no grid tools here, no sort, no sizes and no filter bar. If
-	 * somebody wants to look at files they go to Browse. This shows only what is pending, and it is
-	 * finished when it is empty.
-	 *
-	 * The board knows nothing about faces or folders. It draws what registered: a name, a sentence
-	 * saying what the pile is for, a count, and a few things to look at so a pile is recognizable
-	 * before it is opened, with one button that opens the pile's page. Nothing on the board decides
-	 * anything: deciding happens on the page, where the items are in front of somebody. A panel
-	 * added in a later version appears here without this file changing.
-	 *
-	 * ## A board of cards, read across
-	 *
-	 * One card per pile, across the whole of the frame like a wall of files, in the order the
-	 * queues' bands give (the work first, then the tidying, then what Sift could not read). Piles of
-	 * one kind are read by scanning: every card is one size and one shape, the count leads each, and
-	 * a wall of cards at one height reads as one group of piles where a list of rows at their own
-	 * heights read as a queue. The band is DECLARED BY THE QUEUE, on the server, for
-	 * the same reason the icon and the sentence are; this file knows the order and nothing else. See
-	 * `$lib/organize/bands`.
-	 *
-	 * EVERY PILE IS ON THE BOARD, AT NOUGHT TOO. A pile that left the wall when it emptied could
-	 * not be told from one never turned on, so a card at nought keeps its place and says there is
-	 * nothing to review where its stills would be (`BoardCard`); its page, with the records' tabs,
-	 * is still reached through it. When nothing in the work band is waiting the board says so over
-	 * the cards, or as the whole screen where there is no pile at all.
-	 *
-	 * Two things are not on this screen. **Records** (what was set aside, who has been identified)
-	 * are reached through their group's TABS, beside the pile they were settled from, because a
-	 * count that never goes down cannot sit on a screen whose promise is that it empties. **What was
-	 * decided** is History, showing Decisions (`Settings > Tasks and Activity > App History`): every answer given
-	 * here and every filing Sift made by itself is a line of History already, each with its Undo, so
-	 * a record of its own would be a second place to look for one stream. The header's Decisions is the
-	 * way there from here.
+	 * One card per registered pile, in the order the queues' bands give (`$lib/organize/bands`),
+	 * kept at nought so an empty pile is not mistaken for one never turned on. Nothing on the board
+	 * decides anything: deciding happens on the pile's page. What was decided is History.
 	 */
 
 	import { ApiError } from '$lib/api/client';
@@ -45,20 +14,16 @@
 	import { screenBar } from '$lib/components/shell/screen-bar.svelte';
 	import PageFrame from '$lib/components/shell/PageFrame.svelte';
 	import BoardCard from '$lib/components/organize/BoardCard.svelte';
-	import Hint from '$lib/components/insights/Hint.svelte';
 	import { bandsOf } from '$lib/organize/bands';
 	import { heldBoard, type Board, answered } from '$lib/organize/organize.svelte';
 	import { reloadOnLibraryChange } from '$lib/library/changes.svelte';
+	import { session } from '$lib/shell/session.svelte';
 
 	/* Held in a store rather than here, so coming back to this screen draws the last board at once
 	   instead of a blank page and a request. See `heldBoard`. */
 	const found = $derived<Board | null>(heldBoard.found);
 	let failed = $state(false);
-	/* Refused, held apart from failed, because they are not the same answer and only one of them
-	   is worth trying again. This screen is admin-only and refused on the server, so a guest who
-	   types the address gets a 403, and collapsed into `failed` that reads as "That could not be
-	   loaded. Try again in a moment", which is untrue twice over: nothing went wrong, and trying
-	   again will never work. It would also describe the feature to somebody who may not use it. */
+	/* Refused, apart from failed: a guest's 403 is not worth trying again. */
 	let refused = $state(false);
 
 	/* Whether the answer has ARRIVED, held apart from whether it was empty.
@@ -154,11 +119,11 @@
 			the less useful description and the one free to drift from what is under it.
 		-->
 		<!-- The way to what was decided here: History, showing Decisions, where each line keeps its
-		     Undo. A link into Settings and not a pile, because it is a record and not work. -->
+		     Undo. An admin's: a refused screen offers a guest nothing of its own. -->
 		{#snippet controls()}
 			<SettingLink section="tasks" setting="activity.decisions">Decisions</SettingLink>
 		{/snippet}
-		<PageHeader title="Organize" icon="inbox" {controls} />
+		<PageHeader title="Organize" icon="inbox" controls={session.isAdmin ? controls : undefined} />
 	{/snippet}
 	{#if !ready}
 		<Skeleton lines={3} />
@@ -168,8 +133,6 @@
 		<Problem message="That couldn't be loaded. Try again in a moment." />
 	{:else}
 		{#if nothingWaiting}
-			<!-- A hint, once per account, on the first board with nothing on it. -->
-			<Hint name="organize_empty" />
 			<!--
 				The goal state, and it reads as one: this screen is meant to be empty most of the time,
 				so "nothing needs you" is success rather than a broken page, and it says what would put

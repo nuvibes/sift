@@ -3,8 +3,9 @@
 
 from __future__ import annotations
 
+import json
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -24,12 +25,20 @@ from sift.kernel.cover_frame import CoverFrame
 from sift.kernel.db import Connection, Database
 from sift.kernel.ids import is_id, new_id
 from sift.kernel.jobs import JobQueue
+from sift.kernel.ledger import Actor, Object, record_event
 from sift.kernel.site_icons import icon_token
 from sift.kernel.use_history import register_clearing
+from sift.kernel.vocabulary import Subject, SubjectKind
 from sift.kernel.wiring import Part
 from sift.slices.search.filters import OFFERED_VALUES, Field, FilterCompiler
 from sift.slices.search.jobs import catch_up_if_behind
-from sift.slices.search.stored import Noted, as_kept, as_shown
+from sift.slices.search.stored import (
+    Noted,
+    as_kept,
+    as_shown,
+    names_only_gone,
+    wall_names_only_gone,
+)
 
 
 class NameTaken(Exception):
@@ -84,11 +93,7 @@ INSERT INTO search_opens (id, user_id, event_id, subject, asset_id, at, device_i
 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 """
 
-# Ordered by the ID and not by the clock, and the two are not interchangeable. `created_at` is a
-# wall-clock reading, and a machine corrects its clock while Sift is running, so a search made
-# after a correction carries a SMALLER number than the one before it and sorts to the bottom of its
-# own history. The ID is minted by `new_id` under a floor that never goes down, which exists for
-# exactly this, so it is the only field here that really is in the order things happened.
+# By the id, not `created_at`: a corrected wall clock runs backwards, and `new_id` never does.
 _RECENT = """
 SELECT kind, subject, label FROM search_history
  WHERE user_id = :viewer AND label LIKE :like ESCAPE '\\'
@@ -114,19 +119,15 @@ _FORGET_EVENTS_ONE = (
     "DELETE FROM search_events WHERE user_id = ? AND subject = ?",
 )
 
-# Saving under a name already used updates that name's query rather than adding a second row: the
-# id and timestamp move too, so an edited search sorts as freshly saved.
-#: How many this user already keeps, and whether the name being saved is one of them. Both in one
-#: read, because the cap is about ADDING a row: saving over a name already held replaces one.
-#: The cap counts the user's whole store and `mine` counts one WALL's name, because those are two
-#: different questions: the cap is about how much one user may store, and the replacement is
-#: about whether this save adds a row or overwrites one, which it does only for the same wall.
+#: How many this user keeps in all (the cap), and whether this wall already holds the name (a save
+#: over it replaces a row rather than adding one).
 _SAVED_COUNT = """
 SELECT COUNT(*) AS held,
        COALESCE(SUM(CASE WHEN kind = ? AND name = ? THEN 1 ELSE 0 END), 0) AS mine
   FROM saved_searches WHERE user_id = ?
 """
 
+# A save under a name already held replaces its query, id and time, so an edit sorts as new.
 _SAVE_SEARCH = """
 INSERT INTO saved_searches (id, user_id, kind, name, query, created_at)
 VALUES (?, ?, ?, ?, ?, ?)
@@ -143,6 +144,15 @@ SELECT id, kind, name, query FROM saved_searches
 """
 
 _DELETE_SAVED = "DELETE FROM saved_searches WHERE user_id = ? AND id = ?"
+
+# Ids are whole words no other id or name contains, as a merge relies on (`access/merged.py`).
+_HOLDING = (
+    "SELECT id, user_id, kind, name, query FROM saved_searches"
+    " WHERE EXISTS (SELECT 1 FROM json_each(?) WHERE instr(query, value) > 0)"
+)
+
+# Only while it still says what was judged: an edit in between keeps it.
+_DELETE_EMPTIED = "DELETE FROM saved_searches WHERE id = ? AND query = ? RETURNING id"
 
 # Change a saved search's NAME and leave its query alone, which is the half saving cannot do.
 # Saving under an existing name already replaces that name's query, so "update the query" is a
@@ -526,10 +536,6 @@ class SearchService:
         """Keep a query under a name, for this user and for one wall."""
         cleaned_name = " ".join(name.split())
         cleaned_query = " ".join(query.split())
-        # `saved_searches.kind` holds the wall's own noun, and since catalog version 50 that is
-        # the same word everything else says. A filter kept on the Sites wall before 0.1.153 is a
-        # row carrying the old word, and this component's version 5 step rewrote every one of them,
-        # so there is one kind per wall rather than two that would offer each filter on neither.
         cleaned_kind = kind.strip() or ASSET_WALL
         if not cleaned_name:
             raise ValueError("a saved search needs a name")
@@ -605,8 +611,7 @@ class SearchService:
         cleaned = " ".join(name.split())
         if not cleaned:
             raise ValueError("a saved search needs a name")
-        # Through a write connection, because this is one: `fetch_all` refuses a statement that
-        # writes, which is what keeps a read path from quietly becoming a write path.
+        # A write connection: `fetch_all` refuses a statement that writes.
         async with telling(self._db, Audience.of_user(viewer.id), About.MINE) as connection:
             taken = list(
                 await connection.execute_fetchall(
@@ -626,6 +631,50 @@ class SearchService:
         user names no row this deletes, so it is a no-op rather than a way to reach across."""
         async with telling(self._db, Audience.of_user(viewer.id), About.MINE) as connection:
             await connection.execute(_DELETE_SAVED, (viewer.id, saved_id))
+
+    async def forget_gone(
+        self,
+        kind: SubjectKind,
+        thing_id: str,
+        *,
+        name: str | None,
+        by: Viewer,
+        also: Sequence[str] = (),
+    ) -> int:
+        """Delete each saved filter left naming only gone things, as its owner reads it."""
+        emptied: dict[str, list[tuple[str, str, str]]] = {}
+        for row in await self._db.fetch_all(_HOLDING, (json.dumps([thing_id, *also]),)):
+            # The vault open: a thing Hidden from its owner is still there.
+            owner = await self._access.load_viewer(str(row["user_id"]), show_hidden=True)
+            if owner is None:
+                continue
+            wall, query = str(row["kind"]), str(row["query"])
+            if not await (
+                names_only_gone(self._compiler, owner, query)
+                if wall == ASSET_WALL
+                else wall_names_only_gone(self._compiler, owner, wall, query)
+            ):
+                continue
+            emptied.setdefault(owner.id, []).append((str(row["id"]), str(row["name"]), query))
+        went = 0
+        for owner_id, rows in emptied.items():
+            async with telling(self._db, Audience.of_user(owner_id), About.MINE) as connection:
+                for saved_id, saved_name, query in rows:
+                    if not list(
+                        await connection.execute_fetchall(_DELETE_EMPTIED, (saved_id, query))
+                    ):  # pragma: no cover - edited or deleted between the read and this write
+                        continue
+                    await record_event(
+                        connection,
+                        actor=Actor.user(by.id),
+                        verb="deleted",
+                        # Its name only here, which History reads back for its owner alone.
+                        subject=Subject(kind="saved_filter", id=saved_id),
+                        object=Object(kind=kind, id=thing_id, name=name),
+                        payload=json.dumps({"named": kind, "of": owner_id, "called": saved_name}),
+                    )
+                    went += 1
+        return went
 
     # --- suggestions -------------------------------------------------------------------------
 

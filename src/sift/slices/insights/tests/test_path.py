@@ -1,9 +1,8 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """Get to know Sift, judged from a library written by hand on a fixed clock.
 
-Every table is the application's own (the whole schema is built), the Organize board is a real
-`Workbench` with stand-in piles, and the interface state goes through the real settings hub, so a
-key the hub's closed list does not admit fails here rather than in front of somebody.
+Every table is the application's own (the whole schema is built), and the Organize board is a real
+`Workbench` with stand-in piles.
 """
 
 from __future__ import annotations
@@ -28,15 +27,12 @@ from sift.slices.insights import path
 from sift.slices.insights.path import (
     GOALS,
     PATHS,
-    NotFound,
     PathService,
     achievement_head,
-    hint_key,
 )
 from sift.slices.insights.path_models import Goal
 from sift.slices.insights.recaps_models import RecapHead
 from sift.slices.insights.store import day_bounds, recaps_of, write_recap
-from sift.slices.settings_hub.service import SettingsService
 from sift.testing.fixtures import create_user
 
 #: A Wednesday, at noon on this device's clock.
@@ -93,7 +89,6 @@ class Library:
     admin: Viewer
     guest: Viewer
     board: Workbench
-    hub: SettingsService
     path: PathService
 
     async def run(self, sql: str, params: tuple[object, ...] = ()) -> None:
@@ -138,15 +133,13 @@ class Library:
 async def library(temp_db: Database, settings: Settings) -> Library:
     await temp_db.initialize_schema()
     board = Workbench()
-    hub = SettingsService(temp_db)
     roots = LibraryStore(temp_db, settings)
     return Library(
         db=temp_db,
         admin=await create_user(temp_db, Role.ADMIN),
         guest=await create_user(temp_db, Role.GUEST),
         board=board,
-        hub=hub,
-        path=PathService(temp_db, board, hub, library=roots, now=lambda: NOW),
+        path=PathService(temp_db, board, library=roots, now=lambda: NOW),
     )
 
 
@@ -332,26 +325,6 @@ async def test_a_card_this_user_emptied_is_an_achievement(library: Library) -> N
     await library.decision("shoots", noon(TODAY))
     again = await achieved(library)
     assert [head.id for head in again] == [head.id for head in heads]
-
-
-# --- the hints ------------------------------------------------------------------------------------
-
-
-async def test_a_hint_is_seen_once_and_stays_seen(library: Library) -> None:
-    hints = (await library.path.summary(library.admin)).hints
-    assert [(hint.name, hint.seen) for hint in hints] == [
-        ("organize_empty", False),
-        ("first_pile", False),
-        ("first_insights", False),
-    ]
-    await library.path.seen(library.admin, "first_pile")
-    await library.path.seen(library.admin, "first_pile")
-    seen = {hint.name: hint.seen for hint in (await library.path.summary(library.admin)).hints}
-    assert seen == {"organize_empty": False, "first_pile": True, "first_insights": False}
-    assert (await library.hub.interface(library.admin))[hint_key("first_pile")] == "seen"
-    assert not any(hint.seen for hint in (await library.path.summary(library.guest)).hints)
-    with pytest.raises(NotFound):
-        await library.path.seen(library.admin, "a_fourth_hint")
 
 
 # --- the board's cards, and the milestones in full ----------------------------------------------

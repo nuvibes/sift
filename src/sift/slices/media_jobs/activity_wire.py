@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import Field
 
 from sift.kernel.budget import STEP_BACK_SHARE
@@ -211,6 +213,11 @@ class FamilyOfWork(Wire):
         description="The slow end of the same estimate. Equal to the quick end where the sample "
         "is runs' own means and there is only one run, which is a figure rather than a range.",
     )
+    at_least: bool = Field(
+        default=False,
+        description="The time left is the least the work takes, priced from the benchmark before "
+        "any run of this pass.",
+    )
     sample: int = Field(
         default=0,
         description="How many finished items the estimate was priced from. Nought is no estimate, "
@@ -247,6 +254,31 @@ class FamilyOfWork(Wire):
         "when it runs is chosen), or null for a pass that is more than one task (Identify is "
         "faces and watermarks) or none.",
     )
+    time_unknown: str | None = Field(
+        default=None,
+        description="The sentence the time left says instead of a time, or null: while a folder "
+        "waits to be counted, nothing after the walk has a total to price.",
+    )
+    pace: str | None = Field(
+        default=None,
+        description="What sets the pace of the read, in one sentence, or null: the network share "
+        "whose readers waited most of the last minute, named by its library folders.",
+    )
+    for_task: str | None = Field(
+        default=None,
+        description="How many files wait for their task's own run, in one sentence said after the "
+        "time left, or null: while only arriving files run, the time left is theirs alone.",
+    )
+    failed: int = Field(
+        default=0,
+        description="This pass's failed runs in the Failed list that a person can still act on: "
+        "none over a folder no longer in the library, and none a later run made good.",
+    )
+    last_error: str | None = Field(
+        default=None,
+        description="Why the newest of them failed, in plain words, or null while none stands.",
+    )
+    running: int = Field(default=0, description="How many of this pass's tasks are running now.")
 
 
 class Chore(Wire):
@@ -360,6 +392,11 @@ class JobsPage(Wire):
         default=STEP_BACK_SHARE,
         description="The share of this device, in percent, background work keeps to while it "
         "steps back (Settings > Performance). What the leaf and the Activity line say.",
+    )
+    step_back_for: Literal["input", "others"] | None = Field(
+        default=None,
+        description="Why the work steps back while `stepping_back` is true: somebody at this "
+        "device (input) or other programs busy (others).",
     )
     password_wanted: int = Field(
         default=0,

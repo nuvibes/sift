@@ -1,8 +1,5 @@
 <script lang="ts">
-	/* One file, drawn: the picture or the player, the name, the marks, what it is filed under and
-	   its record. Frameless on purpose: whether it sits in the panel over a wall or fills a page is
-	   the one thing that differs between the two ways of arriving at a file, so it is one
-	   component. */
+	/* One file, drawn; frameless, so the panel over a wall and a page of its own share it. */
 	import { bridge } from '$lib/bridge';
 	import { abLoop } from '$lib/player/loop.svelte';
 	import { onMount, untrack } from 'svelte';
@@ -23,6 +20,7 @@
 		Button,
 		Drawer,
 		Empty,
+		Separator,
 		FileVerbs,
 		MenuButton,
 		Selection,
@@ -37,7 +35,9 @@
 	import { noticeLabel, noticeWords } from '$lib/player/facts';
 	import type { PlaybackPlan } from '$lib/player/playback';
 	import { newSitting } from '$lib/player/sitting.svelte';
-	import { panelPlace } from '$lib/player/asset-view';
+	import { panelPlace, takeRecord } from '$lib/player/asset-view';
+	import { run } from '$lib/player/run.svelte';
+	import { dwell } from '$lib/player/dwell.svelte';
 	import MediaStage from '$lib/components/player/MediaStage.svelte';
 	import { swipeBetween } from '$lib/components/player/swipe';
 	import { phoneWidth } from '$lib/components/common/phone-width.svelte';
@@ -84,12 +84,13 @@
 		onclose?: () => void;
 		/** Where a clip goes when it plays to its end and "Play through" is on. Skips stills. */
 		onplayedthrough?: () => void;
+		/** Whether the run brought this file up rather than a press: only then does a picture rest. */
+		reachedByRun?: boolean;
+		/** A clip's first frame is playing. */
+		onstarted?: () => void;
 		/** Open another file, one this list may not hold; `runs` says whether it plays. */
 		onopen?: (id: string, runs: boolean) => void;
-		/**
-		 * This file no longer exists (deleted from the menu below): told rather than acted on, since
-		 * stepping on or closing is the frame's decision, not this view's.
-		 */
+		/** This file was deleted from the menu below; stepping on or closing is the frame's call. */
 		ongone?: (id: string) => void;
 		/** A moment to open at, in milliseconds, for a link to one (a pile of faces, a search). */
 		startAt?: number | null;
@@ -104,23 +105,22 @@
 		onprevious,
 		onclose,
 		onplayedthrough,
+		reachedByRun = false,
+		onstarted,
 		onopen,
 		ongone,
 		startAt = null,
 		playUntil = null
 	}: Props = $props();
 
-	/* A moment somebody asked for by pressing a face: an object, so pressing the same face twice is a
-	   new request. Back to what the address asked for when the file changes. */
+	/* A moment asked for by pressing a face: an object, so the same face twice is a new request. */
 	let seekTo = $state<{ ms: number } | null>(null);
 	$effect(() => {
 		void id;
 		seekTo = startAt === null ? null : { ms: startAt };
 	});
 
-	/* Arriving from a saved loop arms the A-B pair, so the stretch repeats rather than the file
-	   running on to its end; in seconds, as the element's `currentTime` is. Cleared for a file with
-	   no stretch named, or stepping on would carry the marks onto the next file. */
+	/* A saved loop arms the A-B pair, in seconds; cleared for a file with none, or it would carry on. */
 	$effect(() => {
 		const from = startAt;
 		const to = playUntil;
@@ -168,9 +168,7 @@
 
 	let asset = $state<AssetDetail | null>(null);
 
-	/* Which file is showing, as a value that moves only when the FILE moves: the record is read
-	   again on every bell, a new object for the same file, and anything keyed on `asset.id` would
-	   empty and refill under the picture. `AssetView.flash.test.ts` holds it. */
+	/* Moves only when the file does: a re-read record is a new object (`AssetView.flash.test.ts`). */
 	const shownId = $derived(asset === null ? '' : asset.id);
 
 	/* This view offers itself to the phone whatever it shows (`offerViewer`), with the two presses
@@ -284,9 +282,7 @@
 		return text === '' ? null : text;
 	}
 
-	/* Save the record: every editable field the registry declares and is drawn, sent only when it
-	   is in the draft, since the route writes only what it is sent. Anything thrown is left to
-	   `RecordGrid`, which keeps the form up with what was typed. */
+	/* Sends only the drawn, editable fields in the draft; a throw keeps `RecordGrid`'s form up. */
 	async function saveRecord(draft: Record<string, unknown>) {
 		const file = asset;
 		if (!file) return;
@@ -324,9 +320,7 @@
 		await load();
 	}
 
-	/* Whether everything under the file's own row is showing: one control folds the band, the
-	   strips and the record together. Remembered per account; open by default and while the read is
-	   in flight, since a panel that starts folded and unfolds reads as broken. */
+	/* One fold for everything under the file's row, remembered per account and open until read. */
 	let expanded = $state(popoutExpanded());
 	onMount(() => {
 		void recallInterfaceState().then(() => {
@@ -411,17 +405,13 @@
 	/* The host wants a selection, and this screen shows one file: an empty one costs nothing. */
 	const selection = new Selection();
 
-	/* Follow the id rather than being rebuilt around it: a browser draws the fullscreened ELEMENT,
-	   so rebuilding on Next would drop out of fullscreen. The load is untracked, or it would depend
-	   on what it writes. */
+	/* Follows the id rather than being rebuilt, which would drop out of fullscreen. */
 	$effect(() => {
 		void id;
 		untrack(() => void load());
 	});
 
-	/* Follow the file that is open, quietly: either bell re-reads its record and band in place,
-	   settled over a short window, never the whole `load`, which blanks the rows and restarts a
-	   still's dwell. */
+	/* Either bell re-reads the record and band in place, never the whole `load`, which blanks them. */
 	let following: ReturnType<typeof setTimeout> | null = null;
 
 	function followSoon(withHistory: boolean) {
@@ -481,8 +471,9 @@
 		/* The history goes with the file, and is asked again at once only where its pane is open. */
 		thread.reset();
 		if (recordTab === 'history') void thread.load(id, () => id);
+		const held = takeRecord(wanted);
 		try {
-			const loaded = await api.get<AssetDetail>(`/assets/${wanted}`);
+			const loaded = held ?? (await api.get<AssetDetail>(`/assets/${wanted}`));
 			// A slower request for a clip already moved on from must not overwrite a newer one.
 			if (wanted !== id) return;
 			asset = loaded;
@@ -495,14 +486,14 @@
 			return;
 		}
 		await band.load(wanted);
+		// A record found while the last file played may be minutes old.
+		if (held !== null) void rereadRecord();
 	}
+
+	const HIDDEN = 'This one is hidden';
 </script>
 
-<!--
-	One frame, and inside it whatever this file turns out to be. The stage is outside the branch on
-	media type: it is the element held fullscreen, so stepping from a clip to a photograph must not
-	replace it, and it keeps the dialog one size.
--->
+<!-- The stage stands outside the branch on media type: it is the element held fullscreen. -->
 <svelte:window onkeydown={onKeydown} onkeydowncapture={shutDetailsFirst} />
 
 {#if failed}
@@ -511,13 +502,26 @@
 	<p class="note">Loading&hellip;</p>
 {:else}
 	{@const file = asset}
+	<!-- The end of a hidden file's row, where a clip's bar keeps it, every press dimmed. -->
+	{#snippet hiddenTrailing()}
+		<Separator vertical />
+		{#if !phoneWidth.yes}
+			<Tooltip label={HIDDEN}>
+				<Button tone="ghost" icon="cadence" aria-label={HIDDEN} disabled />
+			</Tooltip>
+		{/if}
+		<Tooltip label={HIDDEN}>
+			<Button tone="ghost" icon="picture_in_picture" aria-label={HIDDEN} disabled />
+		</Tooltip>
+		<Tooltip label={HIDDEN}>
+			<Button tone="ghost" icon="fullscreen" aria-label={HIDDEN} disabled />
+		</Tooltip>
+	{/snippet}
 	{#snippet stageNotice()}
 		<!-- `StageNotice`, in `noticeWords`' one rule, as a Theater cell and the corner panel say it. -->
 		<StageNotice label={noticeLabel(plan, asset?.playback_repair)}>
 			{noticeWords(plan, asset?.playback_repair)}
-			<!-- The sentence ends where the link begins, and only here: a wall has nowhere to send
-			     somebody. The link goes to the row itself rather than naming a long pane and
-			     leaving the reader to find it. -->
+			<!-- Only here, since a wall has nowhere to send somebody; the link goes to the row itself. -->
 			{#if asset?.playback_repair === 'off' && (!plan || plan.route === 'direct')}
 				<SettingLink section="performance" setting="performance.repair_playback">
 					Turn it on
@@ -551,34 +555,37 @@
 				{#if !asset}
 					<span></span>
 				{:else if asset.concealed}
-					<!-- A hidden file keeps the dialog's shape, and the bar keeps only the way through the run. -->
+					<!-- A hidden file keeps the dialog's shape and the whole bar, every control dimmed but the
+					     steps through the run. -->
 					<div class="concealed">
 						<Empty scope="block" icon="visibility_off"
 							>This one is hidden. It takes the PIN to see.</Empty
 						>
 					</div>
-					{#if onprevious || onnext}
-						<!-- Stepping, and nothing else. Every other control on this bar drives something that
-					     is playing, and there is nothing playing. -->
-						<PlayerBar
-							position={0}
-							duration={0}
-							onseek={() => {}}
-							seekable={false}
-							sound={false}
-							playing={false}
-							playable={false}
-							timed={false}
-							onplay={() => {}}
-							onback={onprevious}
-							onforward={onnext}
-							keyboard="picture"
-							muted={true}
-							volume={0}
-							onmute={() => {}}
-							onvolume={() => {}}
-						/>
-					{/if}
+					<PlayerBar
+						position={0}
+						duration={0}
+						onseek={() => {}}
+						seekable={false}
+						sound={false}
+						soundWhy={HIDDEN}
+						playing={false}
+						playable={false}
+						playWhy={HIDDEN}
+						timed={false}
+						onplay={() => {}}
+						onback={onprevious}
+						onforward={onnext}
+						shuffle={{ on: run.shuffle, onpress: () => {}, why: HIDDEN }}
+						repeat={{ mode: dwell.mode, onpress: () => {}, why: HIDDEN }}
+						keyboard="picture"
+						muted={true}
+						volume={0}
+						onmute={() => {}}
+						onvolume={() => {}}
+						trayWhy={HIDDEN}
+						trailing={hiddenTrailing}
+					/>
 				{:else if asset.media_type === 'video'}
 					<!-- The way onwards is handed in: an asset opened by id knows nothing of the grid. `draggable`
 					     only where the stage listens for it. -->
@@ -605,6 +612,7 @@
 						}}
 						{onopen}
 						{onplayedthrough}
+						{onstarted}
 						{seekTo}
 						{place}
 						onplan={(next) => (plan = next)}
@@ -623,6 +631,7 @@
 						mayNotDraw={asset.browser_may_not_draw}
 						{onopen}
 						{onplayedthrough}
+						{reachedByRun}
 					/>
 				{/if}
 			{/snippet}
@@ -630,9 +639,7 @@
 	</div>
 
 	{#if !asset.concealed}
-		<!-- The verbs and their sheets from the one host every surface uses, around everything under the
-		     stage, since the band draws Save and Options. Not drawn for a file this account may not see.
-		     `forget` is the seam a delete needs; `refresh` the one for changes that keep the file. -->
+		<!-- The verbs from the one host every surface uses, around everything under the stage. -->
 		<FileVerbs
 			items={[file]}
 			around={{
@@ -649,9 +656,7 @@
 				{@const share = verbs.named('share', on, file.id)}
 				{@const hide = verbs.named('hide', on, file.id)}
 				{@const move = verbs.named('move', on, file.id)}
-				<!-- Who else can see this file, as a report. Declared beside Sharing in `FileVerbs`
-				     (admin only, one file at a time); listed here beside Share because the two answer
-				     the same question from opposite ends: one sets it, the other reads it back. -->
+				<!-- Who else can see this file, beside Share: one sets it, the other reads it back. -->
 				{@const reach = verbs.named('visibility', on, file.id)}
 				<!-- Add to, off the same builder the right-click menu grows it from (`bar-and-menu.test.ts`). -->
 				{@const all = verbs.menu(on, file.id)}

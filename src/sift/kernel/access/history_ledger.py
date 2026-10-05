@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, cast
 
 from sift.kernel.access import sentences as say
 from sift.kernel.access.history_actors import _actor_of_act, _names_of, _Who
-from sift.kernel.access.history_boxes import enriched_by_box, named_of_event
+from sift.kernel.access.history_boxes import enriched_by_box, named_of_event, unshown_unnamed
 from sift.kernel.access.history_line import (
     DEFAULT_LIMIT,
     VIAS,
@@ -482,13 +482,7 @@ class Lent:
 
 
 def _ledger_actor(event: LedgerEvent, who: _Who) -> tuple[Actor, str | None]:
-    """Who took an act, in the words a history says it in.
-
-    A box is named in words and not looked up, which is the one place this says less than the feed
-    does: nothing writes a box as an actor today, and a read per page for a name no row carries
-    would be a cost paid on every thread for an answer that is always the same. The day a box
-    writes one, `history_events.actor_names` is the read to reach for.
-    """
+    """Who took an act, in the words a history says it in. A box is named in words, not looked up."""
     return _actor_of_act(event.actor_kind, event.actor_id, event.user_id, who)
 
 
@@ -497,29 +491,29 @@ def _ledger_actor(event: LedgerEvent, who: _Who) -> tuple[Actor, str | None]:
 _LEDGER_KIND_OF_LINK: Mapping[str, str] = {link: kind for kind, link in _LINKED_KINDS_OF.items()}
 
 
-def _resolved(line: Line, present: Mapping[tuple[str, str], str]) -> Line:
-    """A line's things as ways to them, and as plain words where there is nowhere to go.
-
-    A thing that has since been deleted carries no link at all: an event outlives its subject on
-    purpose, and a link to a deleted person lands on "no such person", which reads as a broken
-    screen rather than as a library that has moved on. EACH THING BY ITS OWN PROBE: a line read
-    from the object's side names a SUBJECT, and asking the object whether the subject is there
-    would link a deleted file whenever the page itself stood.
-
-    The probe answers with an address rather than a yes, which is each thing's id, a folder's
-    too, since `in:` takes one (a path would not do: a library folder's own path is empty). A thing
-    the LINE already knows is gone (a delete names the file it ended) needs no probe: it stays,
-    struck through.
-    """
+def _resolved(
+    line: Line,
+    present: Mapping[tuple[str, str], str],
+    unshown: frozenset[tuple[str, str]] = frozenset(),
+) -> Line:
+    """A line's things as ways to them, and as plain words where there is nowhere to go: a thing
+    since deleted, or one this viewer may not be shown (`unshown`). Each thing by its own probe;
+    a folder's address is its id, since `in:` takes one."""
     out: list[Piece] = []
     for one in line:
         if one.rest:
-            out.append(replace(one, rest=_resolved(one.rest, present)))
+            out.append(replace(one, rest=_resolved(one.rest, present, unshown)))
             continue
-        if one.kind is None or one.gone or one.href is not None:
+        if one.kind is None or one.gone:
             out.append(one)
             continue
         ledger_kind = _LEDGER_KIND_OF_LINK.get(one.kind, one.kind)
+        if (ledger_kind, one.id or "") in unshown:
+            out.append(Piece(one.text))
+            continue
+        if one.href is not None:
+            out.append(one)
+            continue
         address = present.get((ledger_kind, one.id or ""))
         if address is None:
             out.append(Piece(one.text))
@@ -594,6 +588,7 @@ async def ledger_events(
     drawn = await _with_subjects(database, drawn, kind, subject_id, on_object)
     drawn = await removals_named(database, drawn, subject_id if kind == "asset" else None)
     drawn = _copies_not_standing(drawn, standing, subject_id, on_object)
+    drawn, unshown = await unshown_unnamed(database, viewer, drawn)
     present = await _present_of(database, drawn, on_object)
     who = await _ledger_who(database, viewer, found, drawn, standing, lent)
 
@@ -607,6 +602,8 @@ async def ledger_events(
         present=present,
         name_now=name_now,
         on_object=on_object,
+        viewer=viewer,
+        unshown=unshown,
     )
 
 
@@ -752,6 +749,8 @@ async def _said_oldest_first(
     present: Mapping[tuple[str, str], str],
     name_now: str | None,
     on_object: Callable[[LedgerEvent], bool],
+    viewer: Viewer | None = None,
+    unshown: frozenset[tuple[str, str]] = frozenset(),
 ) -> list[Event]:
     """Each drawn event as a line, OLDEST FIRST.
 
@@ -780,7 +779,7 @@ async def _said_oldest_first(
                     one,
                     kind,
                     again=pressed_first is not None and pressed_first != one.id,
-                    named=await named_of_event(database, one, kind, subject_id),
+                    named=await named_of_event(database, one, kind, subject_id, viewer),
                 )
             )
             continue
@@ -788,7 +787,7 @@ async def _said_oldest_first(
         said = _said_about(
             one, here, who, None if kind == "asset" else kind, from_object=on_object(one)
         )
-        line = _resolved(said.pieces, present)
+        line = _resolved(said.pieces, present, unshown)
         events.append(
             Event(
                 at=one.at,

@@ -42,6 +42,7 @@ export type Direction = 'left' | 'right' | 'up' | 'down';
 export type LayoutId =
 	| 'single'
 	| 'side_by_side'
+	| 'stacked'
 	| 'side_by_side_by_side'
 	| 'grid'
 	| 'center_stage'
@@ -52,6 +53,8 @@ export type LayoutId =
 export interface Layout {
 	id: LayoutId;
 	label: string;
+	/** What the label's letter stands for, shown when a row is pointed at. */
+	tooltip?: string;
 	shape: Shape;
 	/**
 	 * How many PREVIEWS this layout opens with, under the wall. Absent means none.
@@ -86,18 +89,23 @@ function at(row: number, col: number, rowSpan = 1, colSpan = 1): Slot {
 const MOST_PREVIEWS = 5;
 export const MOST_IN_FOCUS = 4;
 
-/* Named by shape, rows by columns, as the shapes below are declared: "1x2" is one row of two.
-   A shape is a thing you count, and a word per shape would be one more thing to learn per shape.
-   Plain ASCII "x" rather than the multiplication sign: the repo refuses non-ASCII in the public
-   tree, and the letter reads the same. */
+/* Named rows by columns, except the two pairs, whose letter names the files each suits: (P) side
+   by side for portrait, (L) stacked for landscape. */
 export const LAYOUTS: readonly Layout[] = [
 	/* One feed, which is a player with a wall's controls, and worth having for exactly that: a
 	   cell is a RUN, so a wall of one is a channel playing whatever a filter matches, forever. */
 	{ id: 'single', label: '1x1', shape: { rows: 1, cols: 1, slots: [at(0, 0)] } },
 	{
 		id: 'side_by_side',
-		label: '1x2',
+		label: '1x2 (P)',
+		tooltip: 'Portrait',
 		shape: { rows: 1, cols: 2, slots: [at(0, 0), at(0, 1)] }
+	},
+	{
+		id: 'stacked',
+		label: '1x2 (L)',
+		tooltip: 'Landscape',
+		shape: { rows: 2, cols: 1, slots: [at(0, 0), at(1, 0)] }
 	},
 	{
 		id: 'side_by_side_by_side',
@@ -214,11 +222,8 @@ export function template(shape: Shape): string {
 	 * fallback for the moment before the wall has been measured. See `feedHeight`, which answers
 	 * null until then.
 	 *
-	 * ## Where that remainder goes is the WALL's business, not this line's
-	 *
-	 * Centred, at the outside of the wall, in every case. The stage bar rises OVER the foot of the
-	 * wall rather than holding a band open under the pictures: a reserved band stays reserved
-	 * while the bar is faded out. `TheaterWall`'s stylesheet is where both are written down.
+	 * The remainder is centred at the outside of the wall, and the bar's band is held under the
+	 * pictures only while the bar is up; both are `TheaterWall`'s.
 	 */
 	return `repeat(${shape.rows}, var(--feed-height, 1fr)) / repeat(${shape.cols}, minmax(0, auto))`;
 }

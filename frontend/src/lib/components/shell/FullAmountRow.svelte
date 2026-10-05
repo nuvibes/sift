@@ -35,9 +35,9 @@
 </script>
 
 {#if shown !== null}
-	<div class="full-amount-row">
+	<div class="full-amount-row" class:full={shown === 'full'}>
 		<ActionRow
-			icon={shown === 'full' ? 'bolt' : 'energy_savings_leaf'}
+			icon={shown === 'full' ? 'bolt_boost' : 'energy_savings_leaf'}
 			label={fullAmountSays(shown, share)}
 			action={shown === 'full' ? FULL_AMOUNT_COPY.stepBack : FULL_AMOUNT_COPY.useFull}
 			busy={pressing}
@@ -47,8 +47,12 @@
 {/if}
 
 <style>
-	/* The press's glyph in Sift's green, as on the rail; the words keep their own ink. */
+	/* The press's glyph as on the rail, the leaf green and the bolt yellow; the words keep their ink. */
 	.full-amount-row > :global(.row > .control > .press > .btn > .icon) {
 		color: var(--sift-ok);
+	}
+
+	.full-amount-row.full > :global(.row > .control > .press > .btn > .icon) {
+		color: var(--sift-warn);
 	}
 </style>

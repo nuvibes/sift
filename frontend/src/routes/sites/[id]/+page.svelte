@@ -60,8 +60,11 @@
 		iconOf,
 		tabsFor,
 		type RelatedKind,
-		TabCounts
+		TabCounts,
+		TabWords
 	} from '$lib/entity/related.svelte';
+	import WallControls from '$lib/components/entity/WallControls.svelte';
+	import { emptyWallSays } from '$lib/components/shell/wall-words';
 	import ShareDialog from '$lib/components/ShareDialog.svelte';
 	import VisibilityDialog from '$lib/components/VisibilityDialog.svelte';
 	import type { ShareTarget } from '$lib/library/sharing';
@@ -141,19 +144,13 @@
 
 	/* Which wall this page is showing, read off the address so every tab is a real place: the back
 	   button steps between them and a shared link opens on the one the sender was on. */
-	/*
-	 * WHAT HAPPENED TO IT is a tab and not a wall, which is why it is kept out of `tabsFor`.
-	 *
-	 * Every other tab here is one question (an entity wall filtered to this page's files),
-	 * answered by one shared table that a gate holds against the server's. A history is none of
-	 * that: no wall, no count, no filter and no page. Putting it in that table to save four
-	 * lines here would give a tab with no endpoint to every page that reads the same table.
-	 */
+	/* History has no wall behind it, so it is kept out of `tabsFor`. */
 	const HISTORY = 'history';
 
 	const asked = $derived(page.url.searchParams.get('show'));
 	const showingHistory = $derived(asked === HISTORY);
 	const shown = $derived<RelatedKind>(chosenTab('site', asked));
+	const fileWords = new TabWords();
 
 	/*
 	 * The numbers beside the tab words.
@@ -608,7 +605,7 @@
 			{tags}
 			onfavorite={(next) => heart(next)}
 			onrate={(next) => rate(next)}
-			onuntag={(tagId) => untag(tagId)}
+			onuntag={session.isAdmin ? (tagId) => untag(tagId) : undefined}
 			ontag={session.isAdmin ? (tag) => addTag(tag) : undefined}
 		>
 			{#snippet summary()}
@@ -729,9 +726,22 @@
 						titleHidden
 						above={identity}
 						{crumbs}
-						empty="Nothing has come from this Site yet."
+						empty={emptyWallSays(
+							'files',
+							fileWords.asked,
+							false,
+							'Nothing has come from this Site yet.'
+						)}
 						pinnable
 					>
+						{#snippet tools()}
+							<WallControls
+								noun="file"
+								plural="files"
+								bind:term={fileWords.term}
+								onsettled={(typed) => fileWords.write(typed)}
+							/>
+						{/snippet}
 						{#snippet menuExtra(item)}
 							{#if session.isAdmin}
 								<ContextMenuItem
@@ -757,8 +767,8 @@
 						titleHidden
 						above={identity}
 						{crumbs}
-						oncount={(total) => {
-							counts.saw(tab, total);
+						oncount={(total, searched) => {
+							if (!searched) counts.saw(tab, total);
 							arrived();
 						}}
 						trailing={looseHere.length}

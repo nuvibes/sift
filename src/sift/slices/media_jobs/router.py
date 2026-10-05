@@ -1,30 +1,25 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""The Jobs dashboard's endpoints.
-
-Admin-only, all of them, enforced here on the server. The dashboard shows what Sift is doing with
-the files in the library: their names, the errors it hit, what failed and why. That is a picture
-of somebody's library, and it is not a guest's to see. Hiding the nav item is not this and is
-never trusted to be: these routes refuse a guest called directly, with no interface involved.
-
-These are ordinary reads and writes: the dashboard is live because the connection that carries
-every kind of live update in this application tells it when the queue has moved, not because this
-feature holds a socket of its own.
-"""
+"""The Jobs dashboard's endpoints: admin-only, enforced here, since the queue is a picture of
+somebody's library. Live because the shared live connection says when the queue moved."""
 
 from __future__ import annotations
 
+import time
+from collections import deque
 from collections.abc import Collection, Mapping, Sequence
-from dataclasses import dataclass
-from typing import Annotated
+from dataclasses import dataclass, field
+from functools import partial
+from pathlib import Path
+from typing import Annotated, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import Field
 
-from sift.kernel import attention, wiring
+from sift.kernel import attention, lanes, wiring
 from sift.kernel.access import Repository, Viewer
 from sift.kernel.attention import full_amount, stepping_back
 from sift.kernel.content import ContentStore
-from sift.kernel.content.library import names_for_assets, names_for_roots
+from sift.kernel.content.library import LibraryStore, names_for_assets, names_for_roots
 from sift.kernel.db import Database
 from sift.kernel.jobs import (
     CANCELABLE_STATES,
@@ -48,18 +43,20 @@ from sift.kernel.jobs import (
     unlisted_job_types,
     waits_for_password,
 )
-from sift.kernel.jobs.failure_words import in_plain_words
+from sift.kernel.jobs.failure_words import in_plain_words, kind_of
 from sift.kernel.jobs.families import (
     FAMILY_LABELS,
     HOUSEKEEPING,
     LONG_PASSES,
     PRODUCT_FAMILIES,
+    PRODUCT_TYPES,
     Family,
     own_estimate,
 )
 from sift.kernel.jobs.families import Chore as HousekeepingChore
 from sift.kernel.jobs.ledger import Estimate, Ledger
 from sift.kernel.jobs.queue import LiveProducts, LiveWork
+from sift.kernel.jobs.queue_rows import FilesToRead
 from sift.kernel.jobs.schedules import get_schedule
 from sift.kernel.jobs.switchboard import Readiness, Switch, Switchboard
 from sift.kernel.jobs.work_ahead import Ahead
@@ -67,7 +64,7 @@ from sift.kernel.log import get_logger
 from sift.kernel.sampling import PREVIEW_SHAPE_SETTING, preview_shape
 from sift.kernel.seams import SettingsSeam
 from sift.kernel.wire import Wire
-from sift.kernel.wiring import ACCESS, DATABASE, LEDGER, part_or_none
+from sift.kernel.wiring import ACCESS, DATABASE, LEDGER, LIBRARY, part_or_none
 from sift.slices.auth import csrf_protect, require_admin
 from sift.slices.media_jobs.activity_wire import Chore as Chore
 from sift.slices.media_jobs.activity_wire import FamilyOfWork as FamilyOfWork
@@ -78,6 +75,7 @@ from sift.slices.media_jobs.activity_wire import PartOfWork as PartOfWork
 from sift.slices.media_jobs.activity_wire import StepsOfJob as StepsOfJob
 from sift.slices.media_jobs.activity_wire import StepSummary as StepSummary
 from sift.slices.media_jobs.jobs import (
+    PROBE,
     REBUILD_PREVIEWS,
     REBUILD_THUMBNAILS,
     preview_recipe,
@@ -102,11 +100,7 @@ def _access(request: Request) -> Repository | None:
 
 
 class _Shown:
-    """Which files the viewer asking may be shown by name: seen by them, and not held in their vault.
-
-    A job names the file it works on, and the vault conceals a file from its own admin too. Asked
-    once per page for the files the page is about to name.
-    """
+    """Which files the viewer may be shown by name: seen by them, and not held in their vault."""
 
     def __init__(self, access: Repository | None, viewer: Viewer) -> None:
         self._access = access
@@ -119,6 +113,11 @@ class _Shown:
         return {asset_id for asset_id, concealed in standing.items() if not concealed}
 
 
+def _library(request: Request) -> LibraryStore | None:
+    """The library folders, or None in a test that builds routes without them: no share is named."""
+    return part_or_none(request, LIBRARY)
+
+
 def _ledger(request: Request) -> Ledger | None:
     """The ledger, or None in a test that builds routes without one: the families are still
     drawn, with no estimate beside them."""
@@ -126,18 +125,12 @@ def _ledger(request: Request) -> Ledger | None:
 
 
 def _pool(request: Request) -> WorkerPool | None:
-    """The worker pool, or None in a test that builds routes without one.
-
-    What it is here for is the EFFECTIVE CONCURRENCY (how many workers a family can occupy at
-    once), which the estimate divides by. Without it the estimate would price a library as though
-    one worker were doing the whole of it.
-    """
+    """The worker pool, or None in a test without one: what a family can occupy, which the estimate
+    divides by."""
     return part_or_none(request, wiring.POOL)
 
 
-#: What a row of a type this version has no handler for is called. The table keeps no name of
-#: its own for a row, and the type is an id nobody should read, so the row says what it is: work
-#: an older release did. The Type choice's one entry for all of them is the client's words.
+#: What a row of a type this version has no handler for is called: work an older release did.
 OLDER_TASK = "Older task"
 
 
@@ -164,12 +157,9 @@ def _view(
         progress=job.progress,
         attempts=job.attempts,
         max_attempts=job.max_attempts,
-        # Already scrubbed on the way in: the queue stores what the redactor let through. This is
-        # the one screen where a raw path would otherwise be most likely to escape, because it is
-        # the screen that exists to show what went wrong.
+        # Already scrubbed on the way in: the queue stores what the redactor let through.
         error=job.error,
-        # Scrubbed on the way in like the error beside it, so a note that named a folder cannot
-        # reach this screen with the name still in it.
+        # Scrubbed on the way in, like the error beside it.
         note=job.note,
         run_after=job.run_after,
         position=position,
@@ -198,15 +188,8 @@ def _subject_assets(jobs: Sequence[Job]) -> dict[str, str]:
 async def _subjects(
     database: Database | None, jobs: Sequence[Job], shown: _Shown
 ) -> dict[str, str]:
-    """The name of the thing each job is about, keyed by job id.
-
-    Two lookups for a whole page rather than one per row: a page is fifty jobs and this screen
-    refreshes every second. The queries themselves are the kernel's: nothing outside it writes
-    SQL against the tables that carry permissions, whatever the route's own authorization says.
-
-    Absent from the result is not an error: a file deleted since its job was queued has no name to
-    show, and the row still says what the work was.
-    """
+    """The name of the thing each job is about, by job id, in two lookups for the page; a file gone
+    since is left out."""
     if database is None:
         return {}
 
@@ -238,6 +221,8 @@ async def _families_and_holds(
     pool: WorkerPool | None,
     listed: dict[str, dict[str, int]],
     counted: Ahead,
+    library: LibraryStore | None = None,
+    unread: FilesToRead | None = None,
 ) -> tuple[dict[str, FamilyOfWork], Mapping[str, int], dict[str, int]]:
     """The long passes' rows, with what quiet hours hold and what waits for the password."""
     held = await _held_for_quiet_hours(queue.switchboard, queue)
@@ -254,10 +239,64 @@ async def _families_and_holds(
         listed,
         held=held,
         kinds=counted.by_kind,
+        standing=counted.standing,
+        arriving=counted.arriving,
         presses=presses,
         live=live,
+        unread=unread,
+        scan_held=await queue.held_for_family_by_type(),
+        pace=await _paced_by(library),
+        benchmark=await queue.held_by_exclusive(),
     )
+    roots = None if library is None else {root.id for root in await library.roots()}
+    for key, (failed, why) in (await _failed_runs(queue, roots)).items():
+        families[key] = families[key].model_copy(update={"failed": failed, "last_error": why})
     return families, held, sealed
+
+
+def _run_types() -> dict[Family, list[str]]:
+    """A pass's run types: its own less each file's work and the carriers, and its task's."""
+    left_out = by_itself_job_types() | registered_product_carriers()
+    runs: dict[Family, list[str]] = {family: [] for family in LONG_PASSES}
+    for job_type, family in registered_families().items():
+        if family in runs and job_type not in left_out:
+            runs[family].append(job_type)
+    for family, task_id in FAMILY_TASKS.items():
+        task = get_schedule(task_id)
+        if task is not None and task.job_type is not None:
+            runs[family].append(task.job_type)
+    return runs
+
+
+def _over(job: Job) -> tuple[str, object]:
+    return job.type, (job.payload or {}).get(_ROOT_KEY)
+
+
+async def _failed_runs(
+    queue: JobQueue, roots: Collection[str] | None = None
+) -> dict[str, tuple[int, str]]:
+    """Each pass's failed runs a person can still act on, with the newest one's reason in plain
+    words: none over a folder gone from `roots`, none a later walk of its folder made good, and no
+    restart a later scan of any kind made good."""
+    of = {job_type: family for family, types in _run_types().items() for job_type in types}
+    failed = (await queue.list(state=JobState.FAILED, among=sorted(of), limit=MAX_PAGE_SIZE)).jobs
+    if not failed:
+        return {}
+    done = (await queue.list(state=JobState.DONE, among=sorted({one.type for one in failed}))).jobs
+    ran = {_over(one): one.updated_at for one in reversed(done)}
+    walked = {_over(one): one.updated_at for one in reversed(done) if "paths" not in one.payload}
+    answer: dict[str, tuple[int, str]] = {}
+    for one in failed:
+        root = one.payload.get(_ROOT_KEY)
+        restarted = getattr(kind_of(one.error or ""), "name", None) == "restarted"
+        if (roots is not None and root is not None and root not in roots) or (
+            (ran if restarted else walked).get(_over(one), 0) > one.updated_at
+        ):
+            continue
+        family = of[one.type].value
+        count, why = answer.get(family, (0, in_plain_words(one.error or "")))
+        answer[family] = (count + 1, why)
+    return answer
 
 
 async def _about_the_rows(
@@ -270,8 +309,7 @@ async def _about_the_rows(
 ) -> tuple[dict[str, str], dict[str, str], dict[str, StepSummary]]:
     """What the page's rows are about: the names, the files to link to, and each family's fold."""
     subjects = await _subjects(database, jobs, shown)
-    # Only for a job whose subject really resolved: an id whose file has since gone would be a link
-    # to a page that is not there, which is worse than a plain name.
+    # Only for a subject that resolved: a link to a file since gone is worse than a plain name.
     assets = {
         job_id: asset_id for job_id, asset_id in _subject_assets(jobs).items() if job_id in subjects
     }
@@ -282,12 +320,7 @@ async def _about_the_rows(
 async def _work_of(
     summary: WorkSummary, work_ahead: WorkAhead, upkeep: frozenset[str]
 ) -> tuple[dict[str, KindOfWork], Ahead]:
-    """Each kind of work's run, from the queue's tally and what the library has left to do.
-
-    Counted from the library (see `WorkAhead`, which counts behind the request and is told first
-    when a run has ended, `observe`), so this waits for nothing on nearly every read. The
-    remainders, their denominators and the mix by media kind come from one count.
-    """
+    """Each kind of work's run, from the queue's tally and one count of what the library has left."""
     finished = {
         kind: sum(n for state, n in by_state.items() if state not in _UNFINISHED_STATES)
         for kind, by_state in summary.states.items()
@@ -295,16 +328,13 @@ async def _work_of(
     work_ahead.observe((kind for kind, one in summary.run.items() if one.outstanding > 0), finished)
     counted = await work_ahead.counted()
     ahead, wanted = counted.waiting, counted.wanted
-    # Every kind either half knows about. A kind with a counter and no jobs yet still has a number
-    # worth drawing (it is exactly the case this exists for), and a kind with jobs and no counter
-    # still has its queue.
+    # Every kind either half knows about: a counter with no jobs yet, or jobs with no counter.
     work: dict[str, KindOfWork] = {}
     for kind in (set(summary.run) | set(ahead)) - upkeep:
         one = summary.run.get(kind, WorkKind())
         left = ahead.get(kind)
         if left is None:
-            # Nothing can count this kind from the library: the folder walk is the real case,
-            # since there is no record of a file nobody has seen. The queue is all there is.
+            # Nothing in the library counts a walk's files: the queue is all there is.
             work[kind] = KindOfWork(
                 done=one.done,
                 outstanding=one.outstanding,
@@ -375,13 +405,12 @@ async def _page(
     fold: bool = False,
     older: bool = False,
     shown: _Shown,
+    library: LibraryStore | None = None,
 ) -> JobsPage:
     # THE BACKGROUND UPKEEP IS NOT LISTED (`unlisted_job_types`): neither rows nor tallies, though
     # a caller naming one by type still reads it, and a family's steps are never upkeep.
     upkeep = unlisted_job_types()
-    # AND THE WORK THAT RUNS BY ITSELF AS FILES ARRIVE (`by_itself_job_types`) is left off where
-    # it heads its own row, nobody pressed it and it is waiting, running or done. Its failures
-    # stay, a step of a run stays folded in the run, and a caller naming its type reads every row.
+    # Nor the work that runs by itself as files arrive, where it heads its own row; its failures stay.
     unnamed = job_type is None and parent_id is None
     quiet = sorted(by_itself_job_types()) if unnamed else []
     # The whole queue's shape, not the page's: the tallies above the table count everything. Read
@@ -417,10 +446,12 @@ async def _page(
         older=gone if older else None,
         parent_id=parent_id,
     )
-    # Only for the rows that could be in the line, so a page with nothing waiting on it costs
-    # nothing at all, and the whole page is asked in one statement rather than one per row.
+    # Only the rows that could be in the line, asked in one statement for the whole page.
     places = await queue.positions_of([job.id for job in page.jobs if job.state is JobState.QUEUED])
-    families, held, sealed = await _families_and_holds(queue, work, ledger, pool, listed, counted)
+    unread = await work_ahead.unread_now(counted)
+    families, held, sealed = await _families_and_holds(
+        queue, work, ledger, pool, listed, counted, library, unread
+    )
     return JobsPage(
         jobs=_views(page.jobs, subjects, assets, places, folded),
         total=page.total,
@@ -435,6 +466,7 @@ async def _page(
         stepping_back=stepping_back(),
         full_amount=full_amount(),
         step_back_share=attention.ATTENTION.share,
+        step_back_for=attention.ATTENTION.cause,
         password_wanted=sum(sealed.values()),
     )
 
@@ -448,17 +480,8 @@ def _tallies(
     older: list[str] | None,
     parent_id: str | None,
 ) -> dict[str, int]:
-    """The numbers above the list, in the universe the list draws, with `all` their sum.
-
-    ONE UNIVERSE PER LIST, and the list decides it. A folded page draws families, so its tallies
-    are the families by the state each one's row shows (`families`, from the page's own
-    statement): a family counts once under All and once under its state, and a step counts
-    nowhere on its own. A page of rows draws rows, so its tallies are rows: of the kind asked for,
-    of every kind no handler claims (`older`), or of every kind (`rows`, the quiet and the upkeep
-    already taken off). Rows counted under a tab whose list draws families read Done and Failed
-    together as more than All. Never narrowed by the state being looked at, so each tab keeps its
-    number while another is chosen.
-    """
+    """The numbers above the list, in the universe the list draws (families or rows), `all` their sum,
+    never narrowed by the state looked at."""
     if parent_id is not None:
         return {}
     if families is not None:
@@ -484,11 +507,8 @@ async def _folded(
     assets: Mapping[str, str],
     shown: _Shown,
 ) -> dict[str, StepSummary]:
-    """Each top row's family, folded: its steps counted, its one state, its file named once.
-
-    Three statements for the page whatever its size (the counts, the one file each family is
-    about, and that file's name) rather than a walk of each family. See `JobQueue.step_counts`.
-    """
+    """Each top row's family folded (steps counted, one state, its file named once), in three
+    statements for the page."""
     counts = await queue.step_counts([job.id for job in tops])
     # Named from the steps only where the top has no subject of its own and its family is small
     # enough to have been counted whole: a family past the cap is a pass over many files.
@@ -524,35 +544,30 @@ async def _folded(
 _NO_STEPS = StepCounts(by_state={}, at_least=False)
 
 
-#: What a pass that is not running says, in one sentence each. Written here rather than on the
-#: screen because only the server can tell them apart: the night window is the pool's limits going
-#: to nought, which a browser cannot see.
-#:
-#: "Paused." and "Another pass is using the disk." are deliberately not here: this route cannot
-#: tell them apart. A family held by the night window and one held by a budget set to nothing are
-#: both every type capped at zero, and whether the storage lane is in the way is a fact about
-#: `kernel/lanes` that nothing publishes. Either would be a guess that reads as a measurement.
+#: What a pass that is not running says, in one sentence each: only the server can tell them apart.
 NOTHING_WAITING = "Nothing waiting"
 WAITING_FOR_WINDOW = "Waiting for tonight's window."
 #: The same sentence with the hour the window opens, when the family declared where to read it
 #: (`Switchboard.declare_window`). Without the hour somebody cannot tell ten minutes from ten hours.
 WAITING_FOR_WINDOW_AT = "Waiting for tonight's window, which opens at {opens}."
-#: A family whose every unfinished job waits for quiet hours: its task is set to "In quiet hours" (or
-#: it was pressed "Run during quiet hours") and the range is shut. No hour in it: the range is the install's
-#: one setting, drawn with its hour at the top of Tasks, and an hour written here would be in the
-#: server's words rather than the reader's clock.
+#: A family whose every unfinished job waits for quiet hours; their hour is drawn at the top of Tasks.
 WAITING_FOR_QUIET_HOURS = "Waiting for quiet hours."
+#: A pass whose every unfinished job a big read keeps back until its reads end.
+WAITING_FOR_THE_SCAN = "Waiting for the scan to finish."
+PAUSED_FOR_THE_BENCHMARK = "Paused while Sift benchmarks this device."
+AFTER_THE_BENCHMARK = "Waits until the benchmark's done."
+_HOLD: dict[str, object] = {"time_unknown": AFTER_THE_BENCHMARK, "for_task": None, "pace": None}
+#: What the Scan row and every pass after it say in place of a time while a folder is uncounted.
+NOT_KNOWN_UNTIL_COUNTED = "Not known until every folder is counted."
+#: What sets the pace of the read, by the library folders on the share.
+PACED_BY_SHARE = "Reading is limited by the network share that holds {folders}."
 #: A chore with work outstanding, none of it running, and some of it parked until somebody gives
 #: the password (`WaitingForPassword`): the row's own rows say which key, and the unlock bar asks.
 WAITING_FOR_UNLOCK = "Waiting for your password."
 
 
 async def _held_for_quiet_hours(board: Switchboard, queue: JobQueue | None) -> Mapping[str, int]:
-    """What quiet hours are holding back at this moment, by job type: nothing while they are on.
-
-    One read for the page, handed to the passes and to the housekeeping alike, so two rows held the
-    same way say the same thing.
-    """
+    """What quiet hours hold back now, by job type, read once for the page; nothing while they are on."""
     hold = await board.quiet_hold()
     if queue is None or hold.open:
         return {}
@@ -560,14 +575,8 @@ async def _held_for_quiet_hours(board: Switchboard, queue: JobQueue | None) -> M
 
 
 def _at_once(pool: WorkerPool | None, job_types: Sequence[str]) -> int:
-    """How many workers this family can occupy at once.
-
-    The sum of its types' caps, held under the pool's own worker count, which is what "can
-    occupy" means: three types capped at eight each cannot take more than the twelve workers there
-    are. A type with no cap can take them all, so it answers with the whole pool.
-
-    One when there is no pool to ask, which is a test rather than an install.
-    """
+    """How many workers this family can occupy: its types' caps added, held under the pool's count;
+    one with no pool."""
     if pool is None:
         return 1
     workers = pool.concurrency
@@ -576,12 +585,7 @@ def _at_once(pool: WorkerPool | None, job_types: Sequence[str]) -> int:
 
 
 def _held(pool: WorkerPool | None, job_types: Sequence[str]) -> bool:
-    """Whether every one of these types is capped at nothing right now.
-
-    Zero is how "only overnight" is expressed (the budget resolves the cap to nought outside its
-    hours), so a family whose every type is at zero is held rather than idle, and a screen that
-    said "no estimate" over it would be describing a pass that was working perfectly, at night.
-    """
+    """Whether every one of these types is capped at nothing now: held for the night, not idle."""
     if pool is None or not job_types:
         return False
     limits = pool.limits
@@ -605,18 +609,14 @@ def _counted(
     for job_type in types:
         kind = work.get(job_type)
         if kind is None or job_type in carriers:
-            # A carrier's work was attributed above, to the families of the products its
-            # tasks name, rather than to the family its coordinator is registered under.
+            # A carrier's work went above, to the families of the products its tasks name.
             continue
         here = kind.waiting if kind.waiting is not None else kind.left_units
         left += here
         counted_left += here
         outstanding += kind.outstanding
-        # DONE AND TOTAL COME FROM THE LIBRARY, not from the run, and that is what makes the
-        # bar defined at rest: `total` is the files that want this work whether they have it
-        # or not, so a finished library is full rather than empty. A kind nothing can count a
-        # total for contributes NOTHING here: a queued run's units are work in flight, and
-        # would swell the denominator past the library the moment a Build was pressed.
+        # From the library, so a finished library is full; a kind with no total adds nothing, as
+        # a queued run's units would swell the denominator past the library.
         if kind.total is not None:
             done += kind.done
             total += kind.total
@@ -634,13 +634,7 @@ def _counted(
 async def _switched_on(
     board: Switchboard, types: Sequence[str], switches: Mapping[str, Switch]
 ) -> bool:
-    """One switch for the family, or none.
-
-    A switch is declared per job type because "stop scanning" must not stop probing a file already
-    taken in, so a family can hold types with different switches and types with none. Reported
-    only where every switched type agrees: "off" over work that is half running would be worse
-    than saying nothing.
-    """
+    """One switch for the family, reported only where every switched type agrees; on otherwise."""
     switched = [job_type for job_type in sorted(types) if job_type in switches]
     distinct = {switches[job_type].key for job_type in switched}
     return True if len(distinct) != 1 else await board.refusal(switched[0]) is None
@@ -672,44 +666,25 @@ async def _families(
     queue: JobQueue | None = None,
     states: Mapping[str, Mapping[str, int]] | None = None,
     held: Mapping[str, int] | None = None,
-    kinds: Mapping[str, Mapping[str, int]] | None = None,
+    kinds: Mapping[str, Mapping[str, float]] | None = None,
+    standing: Mapping[str, int] | None = None,
+    arriving: Mapping[str, Mapping[str, float]] | None = None,
     presses: Mapping[Family, Presses] | None = None,
     live: Sequence[LiveWork] | None = None,
+    unread: FilesToRead | None = None,
+    scan_held: Mapping[str, int] | None = None,
+    pace: str | None = None,
+    benchmark: bool = False,
 ) -> dict[str, FamilyOfWork]:
-    """The long passes, from the registry, each with its estimate and what it is allowed to do.
-
-    `kinds` is what is waiting for each job type by media kind, where a counter can say
-    (`WorkAhead.waiting_by_kind`). A family whose priced types have one is priced kind by kind.
-
-    `presses` is the runs somebody pressed over some files (`presses.read_presses`). Given, a
-    family whose live work is those presses alone is described by THEM: the amounts are done of
-    total of the presses still going, per product, and the time left is their own live rows priced
-    at the ledger's pace, never the library's owed files. Beside a pass over the library the row is
-    the library's, plus the presses' work that makes something again, which no count of the
-    library holds: one sum that is the sum. Not given (a caller with no queue), the row is the
-    library's.
-
-    A task's Run now over some library folders is told the same way and drawn by the same rule:
-    alone, each line is what it has made of what its folders' files lacked when it was pressed,
-    the count the task's dry run over them states and the run carries (`importing.start_runs`),
-    and what is left of it is the rest. Beside a pass over the library its files are among the
-    library's owed ones, and add nothing.
-
-    `live` is the live rows the presses were read from (`read_presses`); given, the coordinators'
-    work is laid at each product's family from it rather than from a second read of the queue.
-
-    What is left for a family is what is left for its kinds, counted from the library where a kind
-    can be and from the queue where it cannot: the same number the bar for each kind draws. From
-    the queue it is files, not rows: a job's units times what it has not yet done, so a scan
-    holding thousands of files weighs thousands.
-
-    The switch and the readiness are the server's, declared where the work is registered (see
-    `Switchboard`), so a family added on the server reaches the screen with both.
-    """
+    """The long passes, each with its estimate, its reason and what it may do. `presses` alone
+    describe a family whose live work is theirs; `unread` is what the walks have still to read."""
     grouped: dict[Family, list[str]] = {family: [] for family in LONG_PASSES}
     for job_type, family in registered_families().items():
         if family in grouped:
             grouped[family].append(job_type)
+    if unread is not None:
+        arriving = _with_unread(work, arriving or {}, unread)[1]
+        work, kinds = _with_unread(work, kinds or {}, unread)
     reads = _Reads(
         work=work,
         ledger=ledger,
@@ -725,6 +700,10 @@ async def _families(
         # What quiet hours are holding back, read once for every family: the pool's caps alone
         # would say "Running" over a family whose every job is held at the claim.
         held_rows=held if held is not None else await _held_for_quiet_hours(board, queue),
+        scan_held=scan_held or {},
+        benchmark=benchmark,
+        standing=standing or {},
+        arriving=arriving or {},
     )
     answer: dict[str, FamilyOfWork] = {}
     alone: set[str] = set()
@@ -732,7 +711,12 @@ async def _families(
         answer[family.value], by_presses_alone = await _family(family, types, reads)
         if by_presses_alone:
             alone.add(family.value)
-    return not_before_the_read(pictured_in_the_read(answer, alone), alone)
+    answer = not_before_the_read(pictured_in_the_read(answer, alone), alone)
+    answer = not_known_yet(answer, uncounted=0 if unread is None else unread.uncounted, pace=pace)
+    return {
+        key: one.model_copy(update=_HOLD) if one.reason == PAUSED_FOR_THE_BENCHMARK else one
+        for key, one in answer.items()
+    }
 
 
 @dataclass(frozen=True, slots=True)
@@ -744,13 +728,17 @@ class _Reads:
     board: Switchboard
     pool: WorkerPool | None
     states: Mapping[str, Mapping[str, int]] | None
-    kinds: Mapping[str, Mapping[str, int]] | None
+    kinds: Mapping[str, Mapping[str, float]] | None
     presses: Mapping[Family, Presses] | None
     switches: Mapping[str, Switch]
     readiness: Mapping[Family, Readiness]
     carried: tuple[dict[Family, float], dict[Family, int], dict[str, Family]]
     carriers: frozenset[str]
     held_rows: Mapping[str, int]
+    scan_held: Mapping[str, int]
+    benchmark: bool = False
+    standing: Mapping[str, int] = field(default_factory=dict)
+    arriving: Mapping[str, Mapping[str, float]] = field(default_factory=dict)
 
 
 async def _family(family: Family, types: list[str], reads: _Reads) -> tuple[FamilyOfWork, bool]:
@@ -765,28 +753,23 @@ async def _family(family: Family, types: list[str], reads: _Reads) -> tuple[Fami
         outstanding=carried_outstanding.get(family, 0),
     )
     at_once = _at_once(reads.pool, types)
-    # The family prices itself from its own kinds' finished items, plus a carrier's when that
-    # carrier's every live task is this family's: a pressed Smart Search run is priced by its
-    # own tasks and is not Identify's sample, though its task type is Identify's.
+    # Its own kinds' items, plus a carrier's whose every live task is this family's.
     priced = [one for one in types if one not in reads.carriers] + [
         one for one, whose in carried_by.items() if whose is family
     ]
     press = None if reads.presses is None else reads.presses.get(family)
+    priced_mix = priced
     if press is not None:
         press.held = sum(int(reads.held_rows.get(one, 0)) for one in types)
-        # A coordinator's live tasks for products the library counts are among the files those
-        # counts already hold, so they are not added again.
+        # A coordinator's live tasks are among the files the library's counts already hold.
         library_left = counted_left if parts else left
         left, done, total, parts = _with_presses(press, library_left, done, total, parts)
         if press.alone:
             by_presses_alone = True
             # The mix of what is left is the presses' own files: a carrier's live tasks.
             priced_mix = [one for one in priced if one in reads.carriers]
-        else:
-            priced_mix = priced
-    else:
-        priced_mix = priced
-    estimate = await _estimate(reads, family, priced, priced_mix, left=left, at_once=at_once)
+    alone = outstanding > 0 and not carried_outstanding.get(family) and not (press and press.going)
+    estimate, standing = await _estimate(reads, family, priced, priced_mix, left, at_once, alone)
     on = await _switched_on(reads.board, types, reads.switches)
     state = reads.readiness.get(family)
     ready = True if state is None else state.ready
@@ -794,12 +777,13 @@ async def _family(family: Family, types: list[str], reads: _Reads) -> tuple[Fami
     # holds the family's own types, so those are what "held" asks about.
     own = [one for one in types if one not in reads.carriers]
     held_now = _held(reads.pool, own)
-    quiet = _held_for_quiet(
+    running = sum((reads.states or {}).get(one, {}).get(JobState.RUNNING.value, 0) for one in types)
+    held_by = partial(
+        _held_for_quiet,
         own,
         outstanding=outstanding,
         carried=carried_outstanding.get(family, 0),
         states=reads.states,
-        held_rows=reads.held_rows,
     )
     row = FamilyOfWork(
         label=FAMILY_LABELS[family],
@@ -809,6 +793,7 @@ async def _family(family: Family, types: list[str], reads: _Reads) -> tuple[Fami
         problem=None if state is None else state.problem,
         quick_seconds=None if estimate is None else estimate.quick_seconds,
         slow_seconds=None if estimate is None else estimate.slow_seconds,
+        at_least=estimate is not None and estimate.floor,
         sample=0 if estimate is None else estimate.items,
         at_once=at_once,
         outstanding=outstanding,
@@ -816,6 +801,8 @@ async def _family(family: Family, types: list[str], reads: _Reads) -> tuple[Fami
         done=min(done, total),
         total=total,
         parts=parts,
+        time_unknown=_for_task(standing, more=False) if standing >= left else None,
+        for_task=_for_task(standing, more=True) if 0 < standing < left else None,
         reason=_reason(
             left=left,
             outstanding=outstanding,
@@ -824,11 +811,22 @@ async def _family(family: Family, types: list[str], reads: _Reads) -> tuple[Fami
             held=held_now,
             # Asked only of a held family: the hour is the answer to "held until when".
             opens=await reads.board.window_opens(family) if held_now else None,
-            quiet=quiet,
+            quiet=held_by(held_rows=reads.held_rows),
+            by_scan=held_by(held_rows=reads.scan_held),
+            by_benchmark=reads.benchmark and outstanding > 0 and not running,
         ),
         task=FAMILY_TASKS.get(family),
+        running=running,
     )
     return row, by_presses_alone
+
+
+def _for_task(files: int, *, more: bool) -> str | None:
+    """What waits for its task's own run, said apart from the time left, or None for nothing."""
+    if files <= 0:
+        return None
+    said = f"{files:,} more" if more else f"{files:,}"
+    return f"{said} waits for its task." if files == 1 else f"{said} wait for their task."
 
 
 async def _estimate(
@@ -836,35 +834,31 @@ async def _estimate(
     family: Family,
     priced: list[str],
     priced_mix: list[str],
-    *,
     left: float,
     at_once: int,
-) -> Estimate | None:
-    """The ledger's estimate of a family's time left, priced kind by kind where a counter can say."""
+    alone: bool,
+) -> tuple[Estimate | None, int]:
+    """The ledger's estimate of a family's time left, priced kind by kind where a counter can say,
+    and the files waiting for their task: while only arriving files run, those are not coming."""
+    standing = round(min(left, sum(reads.standing.get(one, 0) for one in priced))) if alone else 0
+    kinds = reads.arriving if standing else (reads.kinds or {})
     mix: dict[str, float] = {}
     for job_type in priced_mix:
-        for media_kind, n in (reads.kinds or {}).get(job_type, {}).items():
+        for media_kind, n in kinds.get(job_type, {}).items():
             mix[media_kind] = mix.get(media_kind, 0.0) + n
     if reads.ledger is None:
-        return None
-    return await reads.ledger.estimate(
-        family, priced, left=left, at_once=at_once, kinds=mix or None
+        return None, standing
+    found = await reads.ledger.estimate(
+        family, priced, left=left - standing, at_once=at_once, kinds=mix or None
     )
+    return found, standing
 
 
 def _with_presses(
     press: Presses, library_left: float, done: int, total: int, parts: list[PartOfWork]
 ) -> tuple[float, int, int, list[PartOfWork]]:
-    """A family's left, done, total and lines with the runs over some files.
-
-    Alone, those runs ARE the row: each line is done of total of the presses still going, plus
-    what the runs over some folders have made of what their folders' files lacked, and what is
-    left is the presses' live rows and the files still lacking in those folders. Beside the
-    library's work the library's lines stand, each with the pressed work that makes something
-    again added to it, and so does what is left: the sum of two runs, one line per product. A run
-    over some folders adds nothing there, its files being among the library's owed ones. No such
-    run going, the library's figures as they are.
-    """
+    """A family's left, done, total and lines with the runs over some files: alone, those runs are
+    the row; beside the library's work, what they make again is added to it."""
     if not press.going:
         return library_left, done, total, parts
     if press.alone:
@@ -899,13 +893,8 @@ def _with_presses(
 def pictured_in_the_read(
     answer: dict[str, FamilyOfWork], alone: Collection[str] = ()
 ) -> dict[str, FamilyOfWork]:
-    """Generate's work arriving from the read, counted as Generate running.
-
-    Every read hands out its file's thumbnail, and its hover clip and strip where Generate runs as
-    files arrive, so while files are still being read Generate has work on the way and none of it
-    queued yet: at the tail of a first import the row would read "Not started" between the last
-    picture of one file and the read of the next. The read's outstanding work is Generate's too.
-    """
+    """Generate's work arriving from the read counted as Generate running, so the tail of a first
+    import does not read "Not started" between one file's pictures and the next file's read."""
     generate = answer.get(Family.GENERATE.value)
     read = answer.get(Family.SCAN.value)
     if generate is None or read is None or read.outstanding <= 0 or generate.waiting <= 0:
@@ -920,23 +909,53 @@ def pictured_in_the_read(
     return answer
 
 
-#: The passes whose count of what is left takes in files not read yet (`Product.coming`). Their
-#: work on such a file cannot start before the read, so neither can their finish.
-_AFTER_THE_READ = (Family.GENERATE, Family.FINGERPRINT)
+#: The passes made from the files the read takes in. Their work on a file not read yet cannot start
+#: before the read, so neither can their finish.
+_AFTER_THE_READ = (Family.GENERATE, Family.FINGERPRINT, Family.IDENTIFY, Family.SEMANTIC)
+
+#: The media kinds a file not read yet is counted as wanting a product for, as the library counts
+#: an unread file (`_MADE_FOR_UNREAD`); a product not named is for every kind.
+_UNREAD_KINDS: dict[str, frozenset[str]] = {
+    "previews": frozenset({"video", "gif"}),
+    "sprites": frozenset({"video", "gif"}),
+    "music": frozenset({"video"}),
+}
+
+
+def _with_unread(
+    work: Mapping[str, KindOfWork],
+    kinds: Mapping[str, Mapping[str, float]],
+    unread: FilesToRead,
+) -> tuple[dict[str, KindOfWork], dict[str, dict[str, float]]]:
+    """The read (key "") and each product after it with the walks' files still to read added to
+    what it has left, to its total and to its mix, narrowed to the kinds it is made for."""
+    added = dict(work)
+    mixed = {job_type: dict(mix) for job_type, mix in kinds.items()}
+    for key, job_type in (("", PROBE), *PRODUCT_TYPES.items()):
+        kind = work.get(job_type)
+        # A product switched off wants nothing and has no total; a new library's read has 0.
+        if kind is None or kind.waiting is None or not (kind.total or job_type == PROBE):
+            continue
+        wanted = _UNREAD_KINDS.get(key)
+        coming = {one: n for one, n in unread.by_kind.items() if wanted is None or one in wanted}
+        files = round(sum(coming.values()))
+        if files <= 0 or (key and PRODUCT_FAMILIES[key] not in _AFTER_THE_READ):
+            continue
+        added[job_type] = kind.model_copy(
+            update={"waiting": kind.waiting + files, "total": (kind.total or 0) + files}
+        )
+        mix = mixed.setdefault(job_type, {})
+        for one, n in coming.items():
+            mix[one] = mix.get(one, 0.0) + n
+    return added, mixed
 
 
 def not_before_the_read(
     answer: dict[str, FamilyOfWork], alone: Collection[str] = ()
 ) -> dict[str, FamilyOfWork]:
-    """A pass waiting on files that are still being read is not done before the read is.
-
-    Its own price is the pace of its own items (a thumbnail is a fifth of a second), and it has
-    no way to see that the files it is counting reach it only as fast as they are read. On a first
-    import Generate would say "under a minute" for most of the run and finish minutes later,
-    because every file it was waiting for is behind the read, and the read carries the
-    fingerprints. So while the read has work, a
-    pass after it says at least what the read says, and where the read cannot say, neither can it.
-    """
+    """A pass after the read is not done before the read is: at least the read's time, and the
+    read's time AND its own while the read holds its work back. Where the read cannot say, neither
+    can it."""
     reading = answer.get(Family.SCAN.value)
     if reading is None or reading.waiting <= 0 or Family.SCAN.value in alone:
         return answer
@@ -952,12 +971,98 @@ def not_before_the_read(
             or reading.quick_seconds is None
             or reading.slow_seconds is None
         ):
-            quick = max(after.quick_seconds, reading.quick_seconds)
-            slow = max(after.slow_seconds, reading.slow_seconds)
+            if after.reason == WAITING_FOR_THE_SCAN:
+                quick = after.quick_seconds + reading.quick_seconds
+                slow = after.slow_seconds + reading.slow_seconds
+            else:
+                quick = max(after.quick_seconds, reading.quick_seconds)
+                slow = max(after.slow_seconds, reading.slow_seconds)
         answer[family.value] = after.model_copy(
             update={"quick_seconds": quick, "slow_seconds": slow}
         )
     return answer
+
+
+def not_known_yet(
+    answer: dict[str, FamilyOfWork], *, uncounted: int, pace: str | None = None
+) -> dict[str, FamilyOfWork]:
+    """No time on the Scan row or any pass after it while a folder waits to be counted, and the
+    running read's pace where a share sets it."""
+    scan = answer.get(Family.SCAN.value)
+    if scan is not None and pace is not None and scan.outstanding > 0:
+        answer[Family.SCAN.value] = scan.model_copy(update={"pace": pace})
+    if uncounted <= 0:
+        return answer
+    for family in (Family.SCAN, *_AFTER_THE_READ):
+        row = answer.get(family.value)
+        if row is not None:
+            answer[family.value] = row.model_copy(
+                update={
+                    "quick_seconds": None,
+                    "slow_seconds": None,
+                    "time_unknown": NOT_KNOWN_UNTIL_COUNTED,
+                }
+            )
+    return answer
+
+
+#: How long a share's readers are watched for, and the share of it they must have spent waiting,
+#: between them, for the share to be named as what sets the pace.
+PACE_WINDOW_SECONDS = 60.0
+PACE_WAITED_SHARE = 0.5
+
+
+class ShareWaits:
+    """Each network share's seconds waited, as the page has seen them over the last minute."""
+
+    def __init__(self) -> None:
+        self._seen: deque[tuple[float, dict[str, float]]] = deque()
+
+    def busiest(self, readings: Mapping[str, Mapping[str, object]], now: float) -> str | None:
+        """The share whose readers waited most of the last minute, by its key, or None."""
+        totals = {
+            key: cast(float, one["urgent_wait_seconds"]) + cast(float, one["ordinary_wait_seconds"])
+            for key, one in readings.items()
+            if one.get("remote")
+        }
+        seen = self._seen
+        seen.append((now, totals))
+        while len(seen) > 1 and now - seen[1][0] >= PACE_WINDOW_SECONDS:
+            seen.popleft()
+        then, before = seen[0]
+        span = now - then
+        # A page not read for a while has no last minute to speak of: watch again from here.
+        if span > 2 * PACE_WINDOW_SECONDS:
+            seen.clear()
+            seen.append((now, totals))
+        if not PACE_WINDOW_SECONDS <= span <= 2 * PACE_WINDOW_SECONDS:
+            return None
+        waited = {key: total - before.get(key, 0.0) for key, total in totals.items()}
+        key = max(waited, key=waited.__getitem__, default=None)
+        return key if key is not None and waited[key] >= PACE_WAITED_SHARE * span else None
+
+
+_SHARE_WAITS = ShareWaits()
+
+
+def _joined(names: Sequence[str]) -> str:
+    return names[0] if len(names) == 1 else f"{', '.join(names[:-1])} and {names[-1]}"
+
+
+async def _paced_by(library: LibraryStore | None) -> str | None:
+    """The sentence naming the share that sets the read's pace, by its library folders, or None."""
+    installed = lanes.installed()
+    if installed is None:
+        return None
+    busiest = _SHARE_WAITS.busiest(installed.readings(), time.monotonic())
+    if busiest is None or library is None:
+        return None
+    names = sorted(
+        root.name
+        for root in await library.roots()
+        if lanes.storage_for(Path(root.abs_path) / "walk").key == busiest
+    )
+    return PACED_BY_SHARE.format(folders=_joined(names)) if names else None
 
 
 def _run_type(chore: HousekeepingChore) -> str:
@@ -974,22 +1079,11 @@ async def _housekeeping(
     held: Mapping[str, int] | None = None,
     sealed: Mapping[str, int] | None = None,
 ) -> list[Chore]:
-    """The work that is not a pass over the library, with the same four columns.
-
-    Its estimate is priced the same way a pass's is (the middle half of what one of these has
-    been costing, divided by the workers it can occupy), so the two groups on the screen are one
-    piece of arithmetic and cannot come to disagree. What differs is the last column: there is no
-    library count that says how far through a duplicate sweep is, so the row says how its last run
-    went instead of drawing a bar over a denominator nothing can supply.
-    """
-    # Whose runs the last column reads: the task's own job type for a chore that is a task, its own
-    # type for one that is not. Enrichment's chore is the files' questions (`stash_box_scan`) and
-    # its task is the sweep (`stash_box_sweep`), and the last run shown must be the one Tasks shows.
+    """The work that is not a pass over the library, priced as a pass is, with its last run in place
+    of a bar."""
+    # The last run shown is the one Tasks shows: the task's own type where the chore is a task.
     ran_as = {chore.job_type: _run_type(chore) for chore in HOUSEKEEPING}
-    # One statement for every chore rather than one each, and THE SAME FUNCTION the Tasks row reads
-    # (`JobQueue.last_finished_runs`), so the two say one run to the second. The job row is the
-    # only thing that records WHICH chore ran, since they all share the `other` family in the work
-    # ledger.
+    # One statement for every chore, through the function the Tasks row reads, so the two agree.
     last = await queue.last_finished_runs(sorted(set(ran_as.values())))
     rows: list[Chore] = []
     for chore in HOUSEKEEPING:
@@ -1009,8 +1103,7 @@ async def _housekeeping(
         quick = said if estimate is None else estimate.quick_seconds
         slow = said if estimate is None else estimate.slow_seconds
         run = last.get(ran_as[chore.job_type])
-        # Held for quiet hours by the pass's own rule (`_families`): work outstanding, none of it
-        # running, and every row of it held while the range is shut.
+        # Held for quiet hours by the pass's rule (`_families`): outstanding, none running, all held.
         quiet = (
             one.outstanding > 0
             and not states.get(JobState.RUNNING.value, 0)
@@ -1045,19 +1138,11 @@ async def _housekeeping(
     return rows
 
 
-#: WHICH TASK EACH PASS IS, on the Tasks screen, by the task's id. Activity's bar links to that
-#: task's row ("Run in Tasks"), where it is run and where when it runs is chosen, rather than
-#: being one more door that starts the same work.
-#:
-#: Named rather than worked out from the registry, because a family and a task are not the same cut:
-#: Identify is faces AND watermarks, and Fingerprint is Generate's stash-box fingerprints AND the
-#: music task's, so neither is one task and both are left out (their bars open Tasks at the top,
-#: which is still the one right place). A test holds every id here to the task registry.
-#: The states a job is still going to be worked on in, by their stored spelling: the queue's
-#: summary keys its tallies by that spelling.
+#: The states a job is still to be worked on in, as the queue's summary spells them.
 _UNFINISHED_STATES = frozenset(state.value for state in CANCELABLE_STATES)
 
 
+#: Which task each pass is on Tasks; a test holds every id here to the task registry.
 FAMILY_TASKS: dict[Family, str] = {
     Family.SCAN: "scan",
     Family.GENERATE: "generate",
@@ -1071,29 +1156,15 @@ async def _carried(
     queue: JobQueue | None,
     live: Sequence[LiveWork] | None = None,
 ) -> tuple[dict[Family, float], dict[Family, int], dict[str, Family]]:
-    """What the product-carrying task types have in flight, laid at each PRODUCT's family.
-
-    A Build's task is typed by its coordinator, so without this a run filtered to Smart Search
-    would draw as Identify's work and Smart Search would read "Waiting" while it ran. Each live
-    task counts
-    once under every family its products belong to (a task making faces and meaning is both
-    families' work), and a coordinator's remaining units are shared out over its live rows the
-    same way. A product the map does not know stays with its coordinator.
-
-    `live` is the page's one grouped read of the live rows (`JobQueue.live_by_press`), whose lines
-    hold the same type, products and count; given, the queue is not asked again.
-    """
+    """What the product-carrying task types have in flight, laid at each product's family, from `live`
+    where given."""
     left: dict[Family, float] = {}
     outstanding: dict[Family, int] = {}
-    # A carrier whose every live task makes products of ONE family: that family may price itself
-    # from the carrier's finished items. A run making faces and meaning at once prices nobody,
-    # because a task's cost is not one family's.
+    # A carrier whose every live task is ONE family's: that family may price from its items.
     single: dict[str, Family] = {}
     if queue is None:
         return left, outstanding, single
-    # Counted by the queue, grouped by the products each row names: a run's thousands of tasks
-    # name a handful of lists, and reading every payload here would parse each one on the event
-    # loop on every read of this screen.
+    # Grouped by the queue, so no payload is parsed on the event loop for every read of this screen.
     carriers = registered_product_carriers()
     by_type: dict[str, list[LiveProducts | LiveWork]] = {}
     lines: Sequence[LiveProducts | LiveWork] = (
@@ -1128,24 +1199,21 @@ def _reason(
     held: bool,
     opens: str | None = None,
     quiet: bool = False,
+    by_scan: bool = False,
+    by_benchmark: bool = False,
 ) -> str | None:
-    """Why this pass is not running, in one sentence, or None while it is.
-
-    In the order somebody would ask it. Switched off first, because a person who turned a pass off
-    is owed that answer rather than a sentence about model files. Then whether it can run here at
-    all, which the family's own words answer and this does not repeat. Then the night window, then
-    nothing left to do, and a pass with work outstanding and none of the above is simply running,
-    which has no reason and says none.
-    """
+    """Why this pass is not running, in one sentence, or None while it is."""
     if not on or not ready:
-        # Both already have their own words on the family: `on` is drawn as "Switched off" with
-        # the way to change it, and `problem` is the feature's own sentence. A third copy here
-        # would be a second place for the same answer to be worded differently.
+        # Both already have their own words on the family; a third copy could only disagree.
         return None
+    if by_benchmark:
+        return PAUSED_FOR_THE_BENCHMARK
     if held:
         return WAITING_FOR_WINDOW if opens is None else WAITING_FOR_WINDOW_AT.format(opens=opens)
     if quiet:
         return WAITING_FOR_QUIET_HOURS
+    if by_scan:
+        return WAITING_FOR_THE_SCAN
     if left <= 0 and outstanding == 0:
         return NOTHING_WAITING
     # Work to do and nothing claimed is NOT a reason: it is a pass nobody has started, and the
@@ -1161,6 +1229,7 @@ async def list_jobs(
     ledger: Annotated[Ledger | None, Depends(_ledger)],
     pool: Annotated[WorkerPool | None, Depends(_pool)],
     access: Annotated[Repository | None, Depends(_access)],
+    library: Annotated[LibraryStore | None, Depends(_library)],
     viewer: Annotated[Viewer, Depends(require_admin)],
     state: JobState | None = None,
     type: str | None = None,
@@ -1187,17 +1256,9 @@ async def list_jobs(
 ) -> JobsPage:
     """A page of the queue, newest first: of every row, or with `fold`, of every family.
 
-    The bounds are DECLARED rather than checked in the body, which is the same enforcement and a
-    truthful schema. Written out by hand they would be invisible to anything reading what this
-    route accepts, and a client generated from the schema would have nothing to respect.
-
-    ONE ROUTE, TWO ANSWERS, chosen by the caller and never guessed: without `fold` a page is rows
-    (every step its own row, the file name on each); with it a page is families. A folded page
+    The bounds are declared rather than checked in the body, so the schema says them. A folded page
     filtered by state reads the state the family's row shows (`folded_state`: a family with a
-    failed step in it IS a failed family, so folding hides no failure), which puts every family
-    under exactly one state. The choice between a failed family and a family with a failed step
-    is `folded_state`'s, made once for the row, and a state's tab that listed steps instead would
-    count a universe its All does not (`_tallies`).
+    failed step is a failed family), so every family is under exactly one state (`_tallies`).
     """
     if fold and parent_id is not None:
         raise HTTPException(
@@ -1218,6 +1279,7 @@ async def list_jobs(
         fold=fold,
         older=older,
         shown=_Shown(access, viewer),
+        library=library,
     )
 
 
@@ -1231,14 +1293,9 @@ async def list_steps(
     limit: Annotated[int, Query(ge=1, le=MAX_PAGE_SIZE)] = DEFAULT_PAGE_SIZE,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> StepsOfJob:
-    """The steps folded under one top row, a page at a time, asked for when somebody opens it.
+    """The steps folded under one top row, however deep, in the order they were handed out.
 
-    Every job the top started, however deep, in the order they were handed out: a download's
-    probing, then the seven steps it started. Each is a whole row, named, so a step reads on its
-    own.
-
-    404 for a job that is not there AND for one that heads no family (it has a parent): its steps
-    are its top's, asked of the top. One answer for both, like `retry`, since neither has steps.
+    404 for a job that is not there and for one that heads no family: neither has steps.
     """
     top = await queue.get(job_id)
     if top is None or top.parent_id is not None:
@@ -1267,11 +1324,8 @@ async def retry_job(
     queue: Annotated[JobQueue, Depends(wiring.queue)],
     viewer: Annotated[Viewer, Depends(require_admin)],
 ) -> None:
-    """Put a failed job back in the queue, with its attempts reset.
-
-    404 for a job that is not there and for one that cannot be retried alike: a job that is
-    already running is not a thing to say "no" to twice.
-    """
+    """Put a failed job back in the queue, its attempts reset; 404 for one that is not there or
+    cannot be retried."""
     if not await queue.retry(job_id):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "no job to retry")
 
@@ -1287,14 +1341,9 @@ async def retry_failed_jobs(
     queue: Annotated[JobQueue, Depends(wiring.queue)],
     viewer: Annotated[Viewer, Depends(require_admin)],
 ) -> Retried:
-    """Put everything that failed back in the queue.
+    """Put everything that failed back in the queue; canceled work is left alone.
 
-    Failures come in batches (a fix to how a kind of file is read, a drive that was unplugged and
-    is back), and retrying them one row at a time is not something anybody does. Cancelled work is
-    left alone: somebody stopped it on purpose.
-
-    Nothing to retry is a success with a zero, not a 404. The button was pressed and the queue now
-    holds no failures, which is what was asked for.
+    Nothing to retry is a success with a zero, not a 404.
     """
     return Retried(retried=await queue.retry_failed())
 
@@ -1304,19 +1353,9 @@ async def retry_canceled_jobs(
     queue: Annotated[JobQueue, Depends(wiring.queue)],
     viewer: Annotated[Viewer, Depends(require_admin)],
 ) -> Retried:
-    """Start everything that was stopped, again.
+    """Start everything that was stopped, again: the other half of `cancel-all`.
 
-    The other half of `cancel-all`: stopping an import that got away is one press, and without
-    this the only route back to the same work would be to scan the folders again, which re-walks
-    every file to rediscover the ones it already knew about. What was stopped is still in the
-    table with its payload; it can simply be offered again.
-
-    Failures are left where they are, and that is not tidiness. Stopped and failed are two
-    different situations wearing the same "unfinished" label: one is a decision somebody made and
-    is taking back, the other is work that broke and will likely break again more expensively.
-    `retry-failed` beside this is the button for the second, and it says so.
-
-    Nothing to start is a success with a zero, the same as retrying nothing.
+    Failures are left alone; `retry-failed` is for them. Nothing to start is a success with a zero.
     """
     return Retried(retried=await queue.retry_canceled())
 
@@ -1332,15 +1371,9 @@ async def clear_failed_jobs(
     queue: Annotated[JobQueue, Depends(wiring.queue)],
     viewer: Annotated[Viewer, Depends(require_admin)],
 ) -> Cleared:
-    """Throw away everything that failed.
+    """Throw away everything that failed, for the failures no retry can fix.
 
-    The companion to retrying, and the answer to failures that cannot succeed however often they
-    are offered again: a graphics card that was not installed at the time, a drive that has gone,
-    a run made under settings nobody uses now. Without it the only way to shift them would be to
-    retry every one and watch it fail a second time.
-
-    Cancelled and finished work is left alone: one is somebody's decision and the other ages out by
-    itself. Nothing to clear is a success with a zero, the same as retrying nothing.
+    Canceled and finished work is left alone. Nothing to clear is a success with a zero.
     """
     return Cleared(cleared=await queue.clear_failed())
 
@@ -1350,18 +1383,9 @@ async def clear_canceled_jobs(
     queue: Annotated[JobQueue, Depends(wiring.queue)],
     viewer: Annotated[Viewer, Depends(require_admin)],
 ) -> Cleared:
-    """Throw away everything that was stopped.
+    """Throw away everything that was stopped, the pile a stopped import leaves behind.
 
-    The pile `clear-failed` does not touch, and the one that actually accumulates: a stop is one
-    press that cancels the whole queue, so a library-sized import leaves a library-sized heap of
-    stopped rows behind, often beside a handful of failures.
-
-    The rows are only ever swept a week after they were stopped, which is the right pace for
-    housekeeping and no answer to somebody looking at a screen made of them today.
-
-    Finished work is left alone. It is the record of what the library actually has, and `retry-
-    canceled` beside this is the other thing to do with a stopped job. This is for when the answer
-    is that the work is not wanted at all.
+    Finished work is left alone. Nothing to clear is a success with a zero.
     """
     return Cleared(cleared=await queue.clear_canceled())
 
@@ -1378,24 +1402,13 @@ async def cancel_everything(
     ledger: Annotated[Ledger, Depends(wiring.ledger)],
     viewer: Annotated[Viewer, Depends(require_admin)],
 ) -> Stopped:
-    """Stop every job that has not finished.
+    """Stop every job that has not finished, running work included: what runs keeps queueing
+    more (a scan hands out a read per file).
 
-    For the queue that got away: a folder that turned out to hold far more than anybody meant to
-    point at, a setting switched on that queued work for the whole library, an import worth hours
-    that is no longer wanted. Fifty thousand rows is not something anybody cancels one at a time,
-    and without this the only way to stop it is to close the application.
-
-    Running work is stopped along with waiting work, and it has to be. What is in the queue was put
-    there by something that is still running (a scan hands out a probing job per file, and each
-    of those hands out a thumbnail, a preview and a sprite), so calling off only the waiting rows
-    would leave the producer walking and the queue would refill behind the press.
-
-    Nothing is deleted. The rows stay and can be read afterwards, and a file that was taken into
-    the library but never looked at is picked up by the next scan of its folder. Nothing to stop is
-    a success with a zero, the same as retrying nothing.
+    Nothing is deleted, and the next scan of a folder picks up what was never read. Nothing to stop
+    is a success with a zero.
     """
-    # Told before the queue is, so the runs that end by this press are recorded as stopped by
-    # hand rather than as finished.
+    # Told first, so the runs this press ends are recorded as stopped by hand.
     ledger.stopped_by_hand()
     return Stopped(stopped=await queue.cancel_everything())
 
@@ -1427,12 +1440,7 @@ async def press_full_amount(
 ) -> StepBack:
     """Use the full amount of this device although it is in use, or step back again.
 
-    The press behind the leaf on the sidebar. An admin's, as the queue is: the pool is the whole
-    installation's. Answered with the state as asked for; the pool reaches it at its next
-    reconfigure, a few seconds later, finishing the task in each retiring worker's hand first.
-
-    Held in memory and not stored: see `kernel.attention` for why a press is a moment and the
-    setting is the standing choice. Pressing what is already on is a success that changes nothing.
+    Held in memory, not stored; the pool reaches it at its next reconfigure, a few seconds later.
     """
     reading = attention.ATTENTION
     reading.press(full=body.on)
@@ -1463,11 +1471,7 @@ async def count_rebuildable(
 
 
 async def _current_recipe(hub: SettingsSeam) -> dict[str, int]:
-    """What a hover clip built right now would be built from.
-
-    Read per request rather than bound at boot, because the answer has to be the one in force at
-    the moment somebody presses the button, not the one that was in force when the server started.
-    """
+    """What a hover clip built now would be built from: read per request, as it may change."""
     return preview_recipe(preview_shape(str(await hub.get_app(PREVIEW_SHAPE_SETTING))))
 
 
@@ -1495,14 +1499,7 @@ async def rebuild_previews(
 ) -> Rebuilding:
     """Bring every hover clip in the library up to the shape that is set.
 
-    One sweep job rather than one job per file from here, which is the opposite of what the
-    thumbnail rebuild beside it does and is deliberate: the work of finding which clips are out of
-    date is a query that belongs with the job, and doing it inside a request would hold the
-    connection open while a large library is read. The sweep queues one encode per file once it has
-    the list, so the dashboard still shows the real work rather than one opaque row.
-
-    `enqueue_when_settled` rather than `enqueue`, so a rebuild asked for in the middle of an import
-    waits for the import to stop arriving instead of competing with it for the encoders.
+    One sweep job that queues an encode per file, asked for once an import stops arriving.
     """
     total = await content.previews_of_another_recipe_count(await _current_recipe(hub))
     if total == 0:
@@ -1518,22 +1515,9 @@ async def rebuild_thumbnails(
     queue: Annotated[JobQueue, Depends(wiring.queue)],
     viewer: Annotated[Viewer, Depends(require_admin)],
 ) -> Rebuilding:
-    """Make every picture again, for the whole library.
+    """Make every picture again, for the whole library: a scan never revisits a made one.
 
-    The answer to a change nothing else can see. A thumbnail is made once, when a file arrives, and
-    nothing ever revisits it, so a library that was imported before a sizing was fixed, or on a
-    machine whose ffmpeg was producing something wrong, keeps those pictures for ever. A rescan does
-    not help: a scan skips any file whose path, size and mtime are unchanged, which is exactly what
-    makes a rescan quick.
-
-    One sweep job, not a walk in the request: on a hundred-thousand-file library that would be a
-    hundred thousand enqueues on the one write connection, with every job waiting behind them to
-    record its progress, a browser holding the request open, and nothing stoppable until it ended.
-
-    The sweep hands out the same per-file rows, paced and cancellable, from a worker instead of
-    from a request: the shape `rebuild-previews` next door uses.
-    `enqueue_when_settled` for the reason it gives: a rebuild asked for in the middle of an import
-    waits for the import to stop arriving rather than competing with it for the encoders.
+    One sweep job that hands out the per-file rows, asked for once an import stops arriving.
     """
     total = await content.thumbnailable_count()
     if total == 0:
@@ -1558,8 +1542,7 @@ async def cancel_job(
     one thing to call off. A job already running stops at its next checkpoint: the fence on its
     claim means nothing it writes afterwards can land regardless.
     """
-    # The runs this ends are recorded as stopped by hand, the way `cancel_everything` records
-    # them, told by the queue before the stop is committed, for the reason it gives.
+    # Told by the queue before the stop commits, so the runs this ends read as stopped by hand.
     canceled = await queue.cancel(
         job_id, on_canceled=None if ledger is None else ledger.stopped_by_hand
     )
@@ -1567,8 +1550,4 @@ async def cancel_job(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "no job to cancel")
 
 
-# --- what runs on a clock ----------------------------------------------------------------------
-#
-# Nothing here: the list of every task with its When, and the one door for running one, are
-# `/api/tasks` (`slices/tasks/router.py`). History keeps every task's "ran" line for longer than a
-# job row's week, and the Tasks row keeps the last run beside the choice.
+# What runs on a clock is `/api/tasks` (`slices/tasks/router.py`), not here.

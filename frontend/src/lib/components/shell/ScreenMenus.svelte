@@ -284,8 +284,8 @@
 
 	<!-- A screen's own MENUS (Theater's Layouts), drawn exactly as the order is; `isAMenu` reads this
 	     published list, so a new one inherits every menu behaviour. -->
-	<!-- THE SCREEN'S OWN MENUS COME FIRST, then its panels: on Theater, Layouts and then Layout
-	     Presets, the shape of the wall before the walls kept. -->
+	<!-- THE SCREEN'S OWN MENUS COME FIRST, then its panels: on Theater, Layouts and then Saved
+	     Layouts, the shape of the wall before the walls kept. -->
 	{#each tools.menus ?? [] as menu (menu.id)}
 		<Tooltip label={menu.label} placement={labelSide}>
 			<span

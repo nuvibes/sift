@@ -23,11 +23,10 @@
 		 * relationship between the two is on screen.
 		 */
 		dependsOn?: Record<string, string>;
-		/**
-		 * The picture drawn beside each answer of a menu row, by the row's key. For answers that
-		 * are shapes: see `SettingRow`'s `preview`.
-		 */
+		/** The picture beside each answer of a menu row, by the row's key: see `SettingRow`'s `preview`. */
 		pictures?: Record<string, Snippet<[SelectOption]>>;
+		/** The words an answer of a menu row shows when highlighted, by the row's key. */
+		tooltips?: Record<string, (value: string) => string | undefined>;
 	}
 </script>
 
@@ -78,6 +77,7 @@
 				value={panel.value(entry.key)}
 				showHelp={!block.help}
 				preview={block.pictures?.[entry.key]}
+				tooltip={block.tooltips?.[entry.key]}
 				onchange={(next) => panel.save(entry.key, next)}
 			/>
 		{/each}

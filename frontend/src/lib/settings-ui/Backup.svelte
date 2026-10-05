@@ -18,7 +18,7 @@
 		Skeleton
 	} from '$lib/components/common';
 	import ActionRow from './ActionRow.svelte';
-	import { Backup } from './backup-state.svelte';
+	import { SAVING, backup } from './backup-state.svelte';
 	import { settingChanges, whenChanged } from '$lib/library/changes.svelte';
 	import DatabaseSwitcher from './DatabaseSwitcher.svelte';
 	import SettingGroup from './SettingGroup.svelte';
@@ -31,16 +31,21 @@
 	import type { UnmarkedBackup } from './backup-state.svelte';
 	import { filesSaid } from '$lib/entity/entity-counts';
 	import LastRun from '$lib/jobs/LastRun.svelte';
+	import { taskList } from '$lib/jobs/tasks.svelte';
 	import { runWords } from '$lib/jobs/last-run';
 	import { bridge } from '$lib/bridge';
 	import { explainAbsentRows } from '$lib/settings-ui/settings-anchor.svelte';
+	import { toasts } from '$lib/shell/toasts.svelte';
 
-	/* The automatic backup's last run, as its row on Tasks says it: the task's record, so a reload
-	   still says when the last one was. */
+	/* The backup task, as its row on Tasks says its last run, so a reload still says it. */
 	const BACKUP_TASK = 'backup';
 	const LAST_BACKUP = runWords('The last automatic backup');
 
-	const view = new Backup();
+	const view = backup;
+	/* A save elsewhere or the task's own run holds its lock; any such work refuses a restore. */
+	const taskSaving = $derived(taskList.row(BACKUP_TASK)?.running === true);
+	const saving = $derived(view.exporting || view.working === SAVING || taskSaving);
+	const held = $derived(view.busy || view.working !== null || taskSaving);
 
 	/* The backups no rule keeps are listed only while there are any. */
 	const NONE_UNMARKED = "Every backup in the folder is one a rule keeps, so there's none to list.";
@@ -52,15 +57,11 @@
 		)
 	);
 
-	/* Where Save a backup put its file, the way this device can reach it. The Sift app on the
-	   computer running Sift shows it in its folder; a browser, or the app onto a library on another
-	   computer, cannot reach that computer's folders, so it reads the folder as text and is offered
-	   a copy instead. One press saves, and the second is only for a copy somewhere else. */
+	/* The Sift app on the computer running Sift shows the saved file in its folder; anywhere else
+	   reads the folder as text and is offered a copy. */
 	const showsFolder = bridge.canShowInFolder();
 
-	/* The declarations for the rows. The VALUES stay on the view: where they go and how many to
-	   keep are saved together by the button below rather than one at a time, because a schedule
-	   with nowhere to write to is a half-applied change. */
+	/* The rows' declarations; their values stay on the view, which saves all three on each change. */
 	const declarations = new SettingsPanel();
 
 	const KEEP_KEY = 'backup.keep';
@@ -68,21 +69,12 @@
 	const FOLDER_KEY = 'backup.folder';
 	const INCLUDE_DETECTED_KEY = 'backup.include_detected_faces';
 
-	/* Save where they go and how many to keep. How often and the time of day are not sent: they
-	 * are the task's rows on Scheduled tasks, and the backup route keeps what is stored for a field
-	 * left out, so a Save here never puts back a cadence this pane loaded before one was changed
-	 * there. */
-	async function applySchedule() {
-		await view.saveSchedule();
-	}
-
 	let chosen = $state<File | null>(null);
 	let restoreOpen = $state(false);
 
 	onMount(() => {
-		void view.load();
-		void view.loadContents();
-		void view.loadUnmarked();
+		view.arrive();
+		void taskList.ensure();
 		void declarations.load();
 	});
 	/* The schedule, the folder and what the file holds are settings: moved in another window or by
@@ -107,6 +99,8 @@
 		if (!deleting) return;
 		await view.deleteUnmarked(deleting.name);
 		deleting = null;
+		if (view.done) toasts.show(view.done);
+		else if (view.problem) toasts.show(view.problem, { tone: 'error' });
 	}
 
 	/* The one switch about what the file holds. Written through the settings hub like every other
@@ -167,7 +161,8 @@
 			help={COPY.fileHolds(holds)}
 			action={COPY.now.button}
 			icon="save"
-			busy={view.busy}
+			busy={saving}
+			disabled={held}
 			onclick={() => void view.exportNow()}
 		/>
 		{#if view.saved}
@@ -238,17 +233,16 @@
 					entry={keep}
 					value={view.keep}
 					disabled={view.busy}
-					onchange={(next: unknown) => (view.keep = Number(next))}
+					onchange={(next: unknown) => void view.saveRules({ keep: Number(next) })}
 				/>
 			{/if}
 			{@const keepDays = declarations.entry(KEEP_DAYS_KEY)}
 			{#if keepDays}
-				<!-- Saved with the count by the button below: the two rules decide one folder. -->
 				<SettingRow
 					entry={keepDays}
 					value={view.keepDays}
 					disabled={view.busy}
-					onchange={(next: unknown) => (view.keepDays = Number(next) || 0)}
+					onchange={(next: unknown) => void view.saveRules({ keepDays: Number(next) || 0 })}
 				/>
 			{/if}
 			{@const folder = declarations.entry(FOLDER_KEY)}
@@ -260,7 +254,7 @@
 					value={view.folder}
 					empty={COPY.folderEmpty}
 					reset={COPY.folderReset}
-					onchange={(next) => (view.folder = next)}
+					onchange={(next) => void view.saveRules({ folder: next })}
 				/>
 			{/if}
 		</SettingGroup>
@@ -277,16 +271,6 @@
 			</p>
 		{/if}
 
-		<!-- The two above are saved together rather than one at a time: a schedule with nowhere
-		     to write to is a half-applied change. -->
-		<ActionRow
-			label={COPY.apply.label}
-			help={COPY.apply.help}
-			action={COPY.apply.action}
-			busy={view.busy}
-			onclick={() => void applySchedule()}
-		/>
-
 		{#if view.unmarked.length > 0}
 			<!-- The backups no rule takes: why the folder holds more than the number kept. Each is
 			     deleted only by its own press, behind a confirm that says where it goes. -->
@@ -302,7 +286,8 @@
 						action={COPY.unmarked.action}
 						actionLabel={COPY.unmarked.actionLabel(day)}
 						destructive
-						busy={view.busy}
+						busy={view.busy && deleting?.name === one.name}
+						disabled={view.busy}
 						onclick={() => askToDelete(one)}
 					/>
 				{/each}
@@ -316,7 +301,7 @@
 		<LabelledRow label={COPY.restore.row} help={COPY.restore.help}>
 			<ChooseFile
 				accept=".zip,.sqlite3"
-				disabled={view.busy}
+				disabled={held}
 				label={COPY.restore.choose}
 				onchoose={pickFile}
 			>

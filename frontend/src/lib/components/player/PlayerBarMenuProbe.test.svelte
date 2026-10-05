@@ -23,6 +23,8 @@
 	onseek={() => {}}
 	playing={false}
 	onplay={() => {}}
+	shuffle={{ on: false, onpress: () => {} }}
+	repeat={{ mode: 'loop_all', onpress: () => {} }}
 	muted={false}
 	volume={1}
 	onmute={() => {}}

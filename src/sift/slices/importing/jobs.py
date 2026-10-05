@@ -49,9 +49,12 @@ RUNS: Mapping[Family, tuple[str, str]] = {
 
 #: What the run says while the self-test goes, on the Activity screen.
 MEASURING_FIRST = (
-    "Benchmarking this device first to find the fastest way to process each file. This takes a "
-    "few minutes and runs once."
+    "Benchmarking this device first to find the fastest way to process each file. It takes "
+    "several minutes and runs once."
 )
+
+#: The payload key of a first page queued again behind the benchmark it asked for.
+MEASURED_FIRST = "measured_first"
 
 
 async def build(
@@ -89,19 +92,19 @@ async def build(
         log.info("importing.build.nothing_ticked")
         return
 
-    # This page weighs nothing of its own. The files the run still has to hand out are counted for
-    # the family by the counter `sift/wiring/work_ahead.py` registers for the task type (the same
-    # count the Importing row shows before the button is pressed) and a page that weighed them too
-    # would be counted twice while it was queued and counted as DONE the moment it finished, which
-    # makes the estimate far too short. The first page of a run on a machine that was never
-    # measured measures it first: the reads every task is about to make are shaped by rates only
-    # the self-test knows, and a run that started without them would read every file the guessed
-    # way. See `products.Machine`.
-    if first and not await products.machine.measured():
+    # This page weighs nothing of its own: the files still to hand out are counted for the family by
+    # the task type's counter (`sift/wiring/work_ahead.py`); weighing them here counts them twice.
+    # On a machine never measured the first page asks for the benchmark and queues itself again
+    # behind it, once: waiting inside a worker would hold one the benchmark pauses everything for.
+    if first and not context.payload.get(MEASURED_FIRST) and not await products.machine.measured():
+        await products.machine.measure()
+        await context.enqueue_child(
+            run_type, {**context.payload, MEASURED_FIRST: True}, priority=context.job.priority
+        )
+        await context.set_progress(1.0)
         await context.set_note(MEASURING_FIRST)
         log.info("importing.build.measuring_first")
-        await products.machine.measure()
-        await context.raise_if_canceled()
+        return
     # And each ticked product's once-per-run housekeeping, on the first page only.
     if first:
         for key in keys:

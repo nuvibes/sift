@@ -1,19 +1,11 @@
 /*
- * A picture built while the wall is open reaches the wall without a reload.
- *
- * Pressing Generate on a file with no hover clip builds one in a second or two, and none of it moves
- * the file's row, so the wall's other bells do not ring for it and the tile would go on drawing a
- * file with nothing to play until the page was reloaded. The queue's own message is what says the work
- * finished; the wall re-reads its page on it, and a tile already in view is offered the clip its
- * row now says exists.
- *
- * The known positive comes first: every "it asked for nothing" below is also what a wall that never
- * listens at all would do.
+ * A picture built while the wall is open reaches it on the arrivals bell, and the queue moving
+ * alone reads nothing: a wall that re-read on every beat of the queue threw a turned page back.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushSync, mount, unmount } from 'svelte';
 import AssetGrid from './AssetGrid.svelte';
-import { jobChanges } from '$lib/library/changes.svelte';
+import { arrivals, jobChanges } from '$lib/library/changes.svelte';
 
 /** What the server answers with, and every page read it was asked for. */
 const server = vi.hoisted(() => ({
@@ -176,13 +168,18 @@ function inView(id: string) {
 }
 
 describe('a task finishing while the wall is open', () => {
-	it('re-reads the page when the queue moves', async () => {
+	it('re-reads the page when a picture arrives, and not when only the queue moves', async () => {
 		await wall();
 
-		jobChanges.changed();
+		arrivals.changed();
 		await settle();
+		expect(server.reads, 'the known positive: an arrival did not re-read').toBe(1);
 
-		expect(server.reads, 'the wall did not re-read when the queue moved').toBe(1);
+		for (let beat = 0; beat < 5; beat += 1) {
+			jobChanges.changed();
+			await settle();
+		}
+		expect(server.reads, 'the queue moving re-read the wall').toBe(1);
 	});
 
 	it('asks for the clip of a tile in view once its row says one was built', async () => {
@@ -193,40 +190,20 @@ describe('a task finishing while the wall is open', () => {
 
 		// Generate finished: the clip is on disk and the row now says so.
 		server.preview = true;
-		jobChanges.changed();
+		arrivals.changed();
 		await settle();
 		await settle();
 
 		expect(clips.some((source) => source.includes('/api/assets/a/preview'))).toBe(true);
 	});
-
-	it('reads once at once and once more at the end of a busy second, not once a beat', async () => {
-		// A pass building previews moves the queue on every beat. The first read is at once, so a
-		// single Generate lands without a wait; the rest of the second is one more read, not five.
-		vi.useFakeTimers();
-		await wall();
-
-		for (let beat = 0; beat < 5; beat += 1) {
-			jobChanges.changed();
-			await settle();
-		}
-		expect(server.reads, 'the first beat was not read at once').toBe(1);
-
-		await vi.advanceTimersByTimeAsync(1000);
-		await settle();
-
-		expect(server.reads, 'the beats inside the second were not one read at its end').toBe(2);
-	});
 });
 
 describe('a clip refused at its address', () => {
 	/*
-	 * A row can say a clip exists while its file answers 404 (a cache copied without it, a file
-	 * removed by hand). Every beat of a running task re-reads the page and offers the tiles in view
-	 * their clips again, and a wall that forgot its refusals on each beat would ask the same
-	 * address once a second for as long as the task ran.
+	 * A row can say a clip exists while its file answers 404. Every arrival re-reads the page and
+	 * offers the tiles in view their clips again, so a forgotten refusal is asked again each time.
 	 */
-	it('is not asked again while the queue beats, and is asked once its token moves', async () => {
+	it('is not asked again on each re-read, and is asked once its token moves', async () => {
 		vi.useFakeTimers();
 		server.refusedArt = 'first';
 		await wall();
@@ -238,17 +215,17 @@ describe('a clip refused at its address', () => {
 		]);
 
 		for (let beat = 0; beat < 4; beat += 1) {
-			jobChanges.changed();
+			arrivals.changed();
 			await settle();
 			await vi.advanceTimersByTimeAsync(1000);
 			await settle();
 		}
-		expect(server.reads, 'the queue beats never re-read the page').toBeGreaterThan(1);
+		expect(server.reads, 'the arrivals never re-read the page').toBeGreaterThan(1);
 		expect(asked(), 'a refused address was asked again on a beat').toHaveLength(1);
 
 		// Rebuilt: the row's picture token moves, so the clip has a new address to ask.
 		server.refusedArt = 'second';
-		jobChanges.changed();
+		arrivals.changed();
 		await settle();
 		await settle();
 		expect(asked()).toEqual(['/api/assets/b/preview?v=first', '/api/assets/b/preview?v=second']);

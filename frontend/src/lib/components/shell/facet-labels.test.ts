@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { appearance } from '$lib/theme/appearance.svelte';
 
 import {
-	boxColour,
+	boxIcon,
 	facetIcon,
 	facetKeys,
 	facetLabel,
@@ -199,23 +199,21 @@ describe('what a value reads as', () => {
 		expect(facetValueLabel('size', '500mb+')).toBe('500mb+');
 	});
 
-	it('gives each stash-box Sift knows its own paint, and nothing to one it does not', () => {
-		/* Keyed on the box's own WORD rather than on where its mark sits, because the same mark is
-		   drawn on a card, on a file's own row and down two columns, and each holds them in its own
-		   order. A different paint per box, so they can be told apart on one row, and nothing at
-		   all for a box Sift has no colour for, which then keeps the accent. */
-		const paints = [boxColour('stashdb'), boxColour('pmvstash'), boxColour('fansdb')];
-		expect(paints.every((one) => one !== undefined)).toBe(true);
-		expect(new Set(paints).size).toBe(3);
-		// ONE colour each, a token and never a gradient: nothing in the chrome is multicolour.
-		for (const one of paints) expect(one).toMatch(/^var\(--sift-box-[a-z]+\)$/);
-
-		expect(boxColour('someone-elses-box')).toBeUndefined();
-		expect(boxColour(null)).toBeUndefined();
-		expect(boxColour(undefined)).toBeUndefined();
+	it('gives each stash-box Sift knows its own glyph, and nothing to one it does not', () => {
+		expect(boxIcon('stashdb')).toBe('inventory_2');
+		expect(boxIcon('pmvstash')).toBe('movie');
+		expect(boxIcon('fansdb')).toBe('person_celebrate');
+		// The columns' rows wear the same glyph as the marks.
+		for (const box of ['stashdb', 'pmvstash', 'fansdb']) {
+			expect(facetValueIcon('enriched', box)).toBe(boxIcon(box));
+			expect(facetValueIcon('created', box)).toBe(boxIcon(box));
+		}
+		expect(boxIcon('someone-elses-box')).toBeUndefined();
+		expect(boxIcon(null)).toBeUndefined();
+		expect(boxIcon(undefined)).toBeUndefined();
 	});
 
-	it('names every stash-box it has a colour for, under both dimensions', () => {
+	it('names every stash-box it has a word for, under both dimensions', () => {
 		/* One table of names read by `enriched:` and `created:`, so a box added to one is a box
 		   added to both. The service's own capitalisation, not whatever somebody typed into the
 		   box when they added it: a row is a word in the query language before it is a name. */
@@ -230,11 +228,10 @@ describe('what a value reads as', () => {
 				`Stash-box: ${facetValueLabel('created', box)}`
 			);
 			expect(facetValueLabel('enriched', box)).not.toBe(box);
-			expect(facetValueIcon('created', box)).toBe(facetValueIcon('enriched', 'stash'));
 		}
 		// The union keeps its own words and is not a box.
 		expect(facetValueLabel('enriched', 'stash')).toBe('A stash-box');
-		expect(boxColour('stash')).toBeUndefined();
+		expect(boxIcon('stash')).toBeUndefined();
 	});
 
 	it('names the two makers that are not a stash-box, under Created by', () => {
@@ -251,9 +248,9 @@ describe('what a value reads as', () => {
 		expect(facetValueIcon('created', 'sift')).toBeDefined();
 		expect(facetValueIcon('created', 'sift')).not.toBe(facetValueIcon('created', 'stashdb'));
 		expect(facetValueIcon('created', 'me')).not.toBe(facetValueIcon('created', 'sift'));
-		// And neither is a box, so neither takes a box's colour.
-		expect(boxColour('sift')).toBeUndefined();
-		expect(boxColour('me')).toBeUndefined();
+		// And neither is a box, so neither takes a box's glyph.
+		expect(boxIcon('sift')).toBeUndefined();
+		expect(boxIcon('me')).toBeUndefined();
 	});
 
 	it('draws a glyph per value only on the two columns whose rows are authors', () => {

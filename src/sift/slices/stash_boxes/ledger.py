@@ -7,6 +7,7 @@ import json
 from collections.abc import Sequence
 from dataclasses import dataclass
 
+from sift.kernel.access import Viewer
 from sift.kernel.access import sentences as say
 from sift.kernel.access.history_boxes import agreeing_with_box, filled_named
 from sift.kernel.access.sentences import Line
@@ -263,19 +264,25 @@ class BoxLedger(ScanningBoxes):
             )
         return out
 
-    async def what_it_filled(self, one: LinkedSubject, box: str) -> Line:
+    async def what_it_filled(self, one: LinkedSubject, box: str, viewer: Viewer) -> Line:
         """What this link's box filled in, as ONE line with every field and its values named.
 
         The line an entity's own History says for the same run (`history_boxes.linked_line`), in
-        the ledger's vantage: the row already names the thing. A link with no run was made before
-        Sift recorded what a box fills in, and says so, with what the record agrees with it on.
+        the ledger's vantage. A link with no run was made before Sift recorded what a box fills in,
+        and says so, with what the record agrees with it on.
         """
         subject = one.subject.value
         if one.run_at is None:
-            matching = await agreeing_with_box(self._db, subject, one.local_id, one.box_id)
+            matching = await agreeing_with_box(self._db, subject, one.local_id, one.box_id, viewer)
             return say.linked_before_recorded(box, matching)
         fields = await filled_named(
-            self._db, subject, one.local_id, one.box_id, at=one.run_at, stored=one.applied
+            self._db,
+            subject,
+            one.local_id,
+            one.box_id,
+            at=one.run_at,
+            stored=one.applied,
+            viewer=viewer,
         )
         return say.box_filled_named(box, fields)
 

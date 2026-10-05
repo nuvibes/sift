@@ -83,6 +83,8 @@ class Walk:
     mtimes: dict[str, float | None] = field(default_factory=dict)
     #: The starting directory was really listed. False: nothing was learned.
     looked: bool = True
+    #: Directories a listing named that would not list themselves: nothing under them is judged.
+    unlisted: tuple[str, ...] = ()
 
 
 def _worth_reading(entry: os.DirEntry[str], stack: list[Path]) -> os.stat_result | None:
@@ -116,6 +118,7 @@ def walk_media(root: Path) -> Walk:
     files: list[Walked] = []
     directories: list[str] = []
     mtimes: dict[str, float | None] = {}
+    unlisted: list[str] = []
     looked = False
     stack = [root]
     while stack:
@@ -126,20 +129,23 @@ def walk_media(root: Path) -> Walk:
             seen_at: float | None = directory.stat().st_mtime
         except OSError:
             seen_at = None
+        here = "." if directory == root else str(directory.relative_to(root).as_posix())
         try:
             entries = list(os.scandir(directory))
         except OSError as exc:
-            # Skipped and NOT reported: a shut folder is not an empty one, nor a reason to stop.
+            # A shut folder is not an empty one, nor a reason to stop: kept, and looked at again.
             log.warning("library.directory_unreadable", error=exc.strerror)
+            if here != ".":
+                directories.append(here)
+                unlisted.append(here)
+                mtimes[here] = None
             continue
 
-        if directory == root:
+        if here == ".":
             looked = True
-            mtimes["."] = seen_at
         else:
-            here = str(directory.relative_to(root).as_posix())
             directories.append(here)
-            mtimes[here] = seen_at
+        mtimes[here] = seen_at
 
         for entry in entries:
             stat = _worth_reading(entry, stack)
@@ -154,16 +160,18 @@ def walk_media(root: Path) -> Walk:
                 )
             )
 
-    return Walk(files=tuple(files), directories=tuple(directories), looked=looked, mtimes=mtimes)
+    return Walk(
+        files=tuple(files),
+        directories=tuple(directories),
+        looked=looked,
+        mtimes=mtimes,
+        unlisted=tuple(unlisted),
+    )
 
 
 def look_at(root_abs: Path, rel_paths: Sequence[str]) -> Walk:
-    """The same shape a walk comes back in, for a NAMED set of files rather than a whole tree.
-
-    A change notification carries the path of the file that changed, so this stats exactly what was
-    named rather than walking its folder again. Every path is confined before it is touched, and
-    anything since gone, or not a plain file, is left out. `looked` is TRUE: this pass positively
-    looked at each of those paths, so the sweep may conclude from it."""
+    """A walk of the NAMED files only, each confined before it is touched; anything gone or not a
+    plain file is left out. `looked` is true: each path was looked at, so the sweep may conclude."""
     files: list[Walked] = []
     directories: set[str] = set()
     for rel_path in rel_paths:
@@ -191,6 +199,10 @@ def look_at(root_abs: Path, rel_paths: Sequence[str]) -> Walk:
     return Walk(files=tuple(files), directories=tuple(sorted(directories)), looked=True)
 
 
+class FolderStoppedAnswering(JobFailedPermanently):
+    """The folder being scanned stopped answering partway through: nothing in it was judged."""
+
+
 class RootUnreachable(JobFailedPermanently):
     """The library folder did not answer, so the pass did nothing.
 
@@ -210,6 +222,13 @@ def _root_answer(root_abs: Path) -> OSError | None:
     if not stat_module.S_ISDIR(found.st_mode):
         return NotADirectoryError(errno.ENOTDIR, "the library path is not a folder")
     return None
+
+
+def _quiet_from(base: Path, directory: Path) -> Path:
+    """The highest folder from `directory` up to `base` that does not answer. Blocking."""
+    while base in directory.parents and _root_answer(directory.parent) is not None:
+        directory = directory.parent
+    return directory
 
 
 def _walk_confined(root_abs: Path, base: Path) -> Walk:

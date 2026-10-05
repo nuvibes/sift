@@ -1,9 +1,8 @@
 /* Measuring what this machine can actually do, and reading back what it found.
  *
- * The test works the machine hard for about a minute, so starting it and reading the result are two
- * different requests: the start answers straight away and the result is polled. A second start while
- * one is running is deliberately not an error: the server answers with the run already in flight,
- * because two of these at once would measure each other.
+ * The test works the machine hard for several minutes, so starting it and reading the result
+ * are two requests: the start queues the run and answers straight away, and the result is polled.
+ * A second start while one is coming queues nothing, because two runs would measure each other.
  *
  * Nothing here writes a setting. The recommendations name settings and say what they should be;
  * applying goes through the ordinary settings save, so a suggestion gets the same validation as a

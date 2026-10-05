@@ -155,7 +155,7 @@ PINNED = [
         SAID[11][1],
         f"Your most-viewed person this month was {SOMEBODY}: 6 hours, 38 videos and 140 pictures.",
     ),
-    (SAID[12][1], "You spent 5 hours in Theater, mostly on your preset 'Nine up'."),
+    (SAID[12][1], "You spent 5 hours in Theater, mostly on your Saved Layout 'Nine up'."),
     (SAID[14][1], "14 files you came back to three times or more."),
     (SAID[16][1], "You looked through 36 Photo Sets."),
     (SAID[-1][1], "You viewed files carrying 12 songs."),

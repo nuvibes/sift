@@ -3,6 +3,7 @@
 	   test holding the press that says a wall has its answer. The shape an entity page hands
 	   `TabHold`, minus the walls, which fetch. */
 	import TabHold, { wallOfTab } from './TabHold.svelte';
+	import TabHeldProbe from './TabHeldProbe.svelte';
 
 	interface Props {
 		tab: string;
@@ -15,6 +16,8 @@
 
 <TabHold {tab} wallOf={wallOfTab}>
 	{#snippet surface(drawn, arrived)}
-		<div class="wall" data-tab={drawn} {@attach () => onwall(drawn, arrived)}>{drawn}</div>
+		<div class="wall" data-tab={drawn} {@attach () => onwall(drawn, arrived)}>
+			{drawn}<TabHeldProbe />
+		</div>
 	{/snippet}
 </TabHold>

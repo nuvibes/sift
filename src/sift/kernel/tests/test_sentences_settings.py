@@ -29,13 +29,21 @@ def test_a_setting_says_its_values_in_its_own_controls_words(
 
     declared = {
         "t.volume": SimpleNamespace(
-            unit="%", choices=None, choice_labels=None, automatic_label=None
+            unit="%", choices=None, choice_labels=None, automatic_label=None, names_a_tunnel=False
         ),
         "t.device": SimpleNamespace(
-            unit=None, choices=("cpu", "nvidia"), choice_labels=("CPU", "GPU"), automatic_label=None
+            unit=None,
+            choices=("cpu", "nvidia"),
+            choice_labels=("CPU", "GPU"),
+            automatic_label=None,
+            names_a_tunnel=False,
         ),
         "t.workers": SimpleNamespace(
-            unit=None, choices=None, choice_labels=None, automatic_label="Automatic"
+            unit=None,
+            choices=None,
+            choice_labels=None,
+            automatic_label="Automatic",
+            names_a_tunnel=False,
         ),
     }
     for key, one in declared.items():
@@ -75,6 +83,33 @@ def test_a_setting_says_its_values_in_its_own_controls_words(
     )
     assert say.text_of(cleared) == (
         "Sift changed Instagram's name template from {site}{creator}{name} to the default"
+    )
+
+
+def test_a_tunnel_setting_says_the_tunnels_name_and_never_its_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from sift.kernel import settings_registry
+
+    monkeypatch.setitem(
+        settings_registry._REGISTRY,
+        "t.route",
+        SimpleNamespace(
+            unit=None, choices=None, choice_labels=None, automatic_label=None, names_a_tunnel=True
+        ),
+    )
+
+    def changed(**payload: object) -> str:
+        line = _feed(
+            "edited",
+            subjects=[("setting", say.Piece("Connect to AcoustID through"))],
+            payload={"key": "t.route", "before": "null", "after": '"tun-7c1e"', **payload},
+        )
+        return say.text_of(line)
+
+    assert changed() == "You changed Connect to AcoustID through"
+    assert changed(before_said="Direct", after_said="Home VPN") == (
+        "You changed Connect to AcoustID through from Direct to Home VPN"
     )
 
 

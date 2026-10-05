@@ -31,13 +31,13 @@ import asyncio
 import secrets
 import socket
 import time
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass, replace
 from functools import partial
 
 from sift.kernel.audience import EVERY_ADMIN
 from sift.kernel.changes import About, telling
-from sift.kernel.db import Database
+from sift.kernel.db import Connection, Database, in_clause
 from sift.kernel.ids import new_id
 from sift.kernel.log import get_logger
 from sift.kernel.secret_store import SecretStore
@@ -86,6 +86,7 @@ _REPLACE_CONFIG = "UPDATE tunnels SET secret_id = ?, updated_at = ? WHERE id = ?
 _SET_ENABLED = "UPDATE tunnels SET enabled = ?, updated_at = ? WHERE id = ?"
 _SET_CAN_HOST = "UPDATE tunnels SET can_host = ?, updated_at = ? WHERE id = ?"
 _DELETE = "DELETE FROM tunnels WHERE id = ?"
+_NAMES = "SELECT id, name FROM tunnels WHERE id IN (?*)"
 
 _GET_ROUTE = "SELECT route FROM tunnel_routes WHERE scope = ?"
 _LIST_ROUTES = "SELECT scope, route FROM tunnel_routes"
@@ -96,7 +97,6 @@ _SET_ROUTE = (
 _CLEAR_ROUTE = "DELETE FROM tunnel_routes WHERE scope = ?"
 
 #: What a swap is told when the provider gives the tunnel no port: the screen's own words.
-#:
 #: The one fault with one cause and one fix: a provider forwards a port only from a server that
 #: offers it, to a configuration made with forwarding turned on. So it names both, and names nothing
 #: about the tunnel's address, which a screen has no use for.
@@ -743,6 +743,16 @@ def _view(row: object, health: TunnelHealth | None, problem: str | None = None) 
     )
 
 
+async def tunnels_said(connection: Connection, ids: Iterable[object]) -> dict[str, str]:
+    wanted = sorted({one for one in ids if isinstance(one, str) and one})
+    if not wanted:
+        return {}
+    asked, values = in_clause(_NAMES, wanted)
+    rows = await connection.execute_fetchall(asked, values)
+    named = {str(row["id"]): str(row["name"]) for row in rows}
+    return {one: named.get(one, "a tunnel since removed") for one in wanted}
+
+
 __all__ = [
     "CANNOT_HOST",
     "DEFAULT_SCOPE",
@@ -751,6 +761,7 @@ __all__ = [
     "HostingMoved",
     "TunnelStore",
     "TunnelView",
+    "tunnels_said",
 ]
 
 

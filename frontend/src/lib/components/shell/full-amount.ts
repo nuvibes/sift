@@ -1,31 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 /*
- * THE LEAF AND THE BOLT: background work stepping back while this device is in use, said where
- * somebody can see it, and a press that overrules it for a while.
+ * THE LEAF AND THE BOLT: background work stepping back to a share of this device, said where
+ * somebody can see it, and a press that overrules it until Sift stops or the next press.
  *
- * Background work uses a share of this device (a quarter unless somebody chose otherwise) while
- * somebody is at its keyboard or mouse, and all of it once it has been left alone for a minute
- * (Settings > Performance, "Use less system resources while you're working"). The words name that share. That is right most of the time and wrong exactly when the person at the
- * keyboard is waiting on the work: then they want it done, and the setting is the wrong size of
- * answer, since it turns the step back off for good. The press is the moment's answer instead,
- * held by the server until Sift stops or somebody presses again, so every window draws the same
- * state and a press in one is seen in the others.
+ * The work steps back while somebody is at the keyboard or mouse, or while other programs keep the
+ * device busy (Settings > Performance). The leaf is drawn while it holds, the bolt while the full
+ * amount was pressed for; nothing while no task runs, while neither cause holds, or for a guest.
  *
- * WHEN IT IS DRAWN, and why each other case draws nothing (a control that would do nothing is not
- * offered):
- *   - The leaf: tasks are running on a share of this device because it is in use.
- *     A press runs the full amount.
- *   - The bolt: tasks are running, somebody is at this device, and the full amount was pressed
- *     for. A press steps back again.
- *   - Nothing running: there is nothing to give more of or less of.
- *   - Nobody at this device: the pool already runs its full count by itself, so there is nothing
- *     held back to give. A press made earlier is kept and the bolt comes back with the person.
- *   - The setting off, a pool of one task, or a device whose input cannot be read (anything but
- *     Windows): the step back is never in play, and the server says neither state.
- *   - A guest: the queue is an admin's, and a guest's window never reads it.
- *
- * What is read is the queue's first page, which the shell already keeps current for the rail
- * (`imports`): its two flags and its running count. Nothing here asks the server on a timer.
+ * What is read is the queue's first page, which the shell already keeps current for the rail.
  */
 
 import { api, ApiError } from '$lib/api/client';
@@ -34,12 +16,15 @@ import { imports } from '$lib/library/imports.svelte';
 import { toasts } from '$lib/shell/toasts.svelte';
 import { UNREACHABLE } from '$lib/shell/unreachable';
 
-/* The queue page's two flags, its counts and the share: all this reads of it, so a test hands in
-   only those. A server that does not say the share reads as the default quarter. */
+/** Why the work steps back: somebody at this device, or other programs keeping it busy. */
+type StepBackCause = NonNullable<components['schemas']['JobsPage']['step_back_for']>;
+
+/* All this reads of the queue page, so a test hands in only those. A server that does not say the
+   share reads as the default quarter, and one that does not say why reads as somebody here. */
 type StepBackFacts = Partial<
 	Pick<
 		components['schemas']['JobsPage'],
-		'stepping_back' | 'full_amount' | 'counts' | 'step_back_share'
+		'stepping_back' | 'full_amount' | 'counts' | 'step_back_share' | 'step_back_for'
 	>
 >;
 
@@ -61,12 +46,13 @@ export function shareWords(percent: number): string {
 	return SHARE_WORDS[percent] ?? `${percent}%`;
 }
 
-/**
- * The sentence the leaf's tooltip, a phone's row and the Activity line all say while the step
- * back holds: how much of this device background work is using, and why.
- */
-export function usingShare(percent: number | null | undefined): string {
-	return `Using ${shareWords(percent ?? DEFAULT_SHARE)} of this device while it's in use`;
+/** What the leaf's tooltip, a phone's row and the Activity line say while the step back holds. */
+export function usingShare(
+	percent: number | null | undefined,
+	cause: StepBackCause | null | undefined = 'input'
+): string {
+	const why = cause === 'others' ? 'other programs are busy' : "it's in use";
+	return `Using ${shareWords(percent ?? DEFAULT_SHARE)} of this device while ${why}`;
 }
 
 /** Which of the two is drawn, or neither. */
@@ -96,34 +82,43 @@ export function fullAmountState(page: StepBackFacts | null, isAdmin: boolean): F
 
 /** The current state, from the queue page the shell keeps. */
 export function currentFullAmount(isAdmin: boolean): FullAmountState {
-	return fullAmountState(imports.page as StepBackFacts | null, isAdmin);
+	return fullAmountState(imports.page, isAdmin);
 }
 
 /** `usingShare` for a queue page: the share it names, or the default where it names none. */
-export function usingShareOf(page: unknown): string {
-	return usingShare((page as StepBackFacts | null | undefined)?.step_back_share);
+export function usingShareOf(page: StepBackFacts | null | undefined): string {
+	return usingShare(page?.step_back_share, page?.step_back_for);
 }
 
 /** The share the step back keeps to, as the queue page the shell keeps says it. */
 export function currentShare(): number {
-	return (imports.page as StepBackFacts | null)?.step_back_share ?? DEFAULT_SHARE;
+	return imports.page?.step_back_share ?? DEFAULT_SHARE;
+}
+
+/** Why the work steps back now, as the queue page the shell keeps says it. */
+function currentCause(): StepBackCause | null {
+	return imports.page?.step_back_for ?? null;
 }
 
 /** The state's first sentence: what is happening. */
-export function fullAmountSays(state: Exclude<FullAmountState, null>, share: number): string {
-	return state === 'less' ? usingShare(share) : FULL_AMOUNT_COPY.full;
+export function fullAmountSays(
+	state: Exclude<FullAmountState, null>,
+	share: number,
+	cause: StepBackCause | null = currentCause()
+): string {
+	return state === 'less' ? usingShare(share, cause) : FULL_AMOUNT_COPY.full;
 }
 
 /** The tooltip's two sentences for a state: what is happening, then what a press does. */
 export function fullAmountTip(
 	state: Exclude<FullAmountState, null>,
-	share: number = currentShare()
+	share: number = currentShare(),
+	cause: StepBackCause | null = currentCause()
 ): string {
 	const press = state === 'less' ? FULL_AMOUNT_COPY.lessPress : FULL_AMOUNT_COPY.fullPress;
-	return `${fullAmountSays(state, share)}. ${press}`;
+	return `${fullAmountSays(state, share, cause)}. ${press}`;
 }
 
-/* The press's own address. Cast because the generated paths do not carry it yet. */
 const PRESS = '/jobs/full-amount';
 
 /**

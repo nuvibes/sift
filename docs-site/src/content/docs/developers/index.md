@@ -16,7 +16,7 @@ uv run pre-commit install --install-hooks    # the commit, commit-message and pr
 uv run sift                                  # Sift, on http://127.0.0.1:5171
 ```
 
-On Windows, `uv run python scripts/fetch_vendor.py` downloads ffmpeg, the libwebp tools, yt-dlp, gallery-dl and QuickJS, and checks each against a pinned SHA-256. It also checks the two things the repository builds itself, the tunnel client and the HEIF reader's wheel, and `--build-missing` builds one that isn't there. Elsewhere Sift uses the copies on your `PATH`. The desktop app is in `desktop/`, and `scripts/release.py` builds the installer.
+On Windows, `uv run python scripts/fetch_vendor.py` downloads ffmpeg, the libwebp tools, yt-dlp, gallery-dl and QuickJS, and checks each against a pinned SHA-256. It also checks the two things the repository builds itself, the tunnel client and the HEIF reader's wheel, and `--build-missing` builds one that isn't there. On any computer but the one that builds Sift's releases, add `--wheel-by-contents` as well. The script then checks what's inside the wheel your compiler makes, since its digest won't match the release's. On other operating systems, Sift uses the copies on your `PATH`. The desktop app is in `desktop/`, and `scripts/release.py` builds the installer.
 
 [CONTRIBUTING.md](https://github.com/nuvibes/sift/blob/main/CONTRIBUTING.md#the-checks) also lists the checks every change runs and how to write a commit. A change written with a language model is welcome after a person has reviewed it.
 

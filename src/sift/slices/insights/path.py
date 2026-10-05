@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Get to know Sift: learning paths, each an ordered set of goals drawn from the whole app, and three hints.
+"""Get to know Sift: learning paths, each an ordered set of goals drawn from the whole app.
 
 The feel of a habit-forming app and none of its machinery: short, one thing at a time, progress you
 can see, a small celebration when something is done, and no guilt. So there are no points, no
@@ -25,12 +25,6 @@ Two kinds, both read from what happened:
   achievements, each frozen ONCE as a `recaps` row through the insights store,
   `achievement:<name>`, one card, dated the day it happened (the table's
   `UNIQUE (user_id, period)` makes a second write a no-op). A frozen milestone stays reached.
-
-## What is written, and where
-
-The achievements, as above, and one thing in `interface_state` through the settings hub's own
-writer (`arrange`), on this User's row and nobody else's: `path.hint.<name>.seen`, for each of the
-three hints once it has been shown.
 """
 
 from __future__ import annotations
@@ -48,13 +42,12 @@ from sift.kernel.db import Database
 from sift.kernel.ids import new_id
 from sift.kernel.jobs.families import Family
 from sift.kernel.log import get_logger
-from sift.kernel.seams import InterfaceStateSeam
 from sift.kernel.when import day_of
 from sift.kernel.wire import pieces_of
 from sift.kernel.workbench import Band, Summary, Workbench
 from sift.slices.insights.metrics import rows_of
 from sift.slices.insights.models import Figure
-from sift.slices.insights.path_models import Goal, Hint, HintName, LearningPath, Path
+from sift.slices.insights.path_models import Goal, LearningPath, Path
 from sift.slices.insights.recaps_models import KeptCard, RecapHead
 from sift.slices.insights.store import (
     RecapRow,
@@ -65,37 +58,6 @@ from sift.slices.insights.store import (
 )
 
 log = get_logger(__name__)
-
-
-class PathError(Exception):
-    """Something asked of Get to know Sift that cannot be done."""
-
-
-class NotFound(PathError):
-    """No such hint."""
-
-
-# --- where the path's two small facts are kept ----------------------------------------------------
-
-
-# The hints' "seen" lives in the settings hub's per-User interface state, reached through the
-# kernel's `InterfaceStateSeam` (published as `wiring.INTERFACE_STATE`): a slice may not import the
-# settings slice, and the hub's own writer checks every key against its closed list.
-
-#: The three hints, each shown once per User, where the person is stuck: the first empty Organize
-#: board, the first face pile opened, the first visit to Insights. Their WORDS live in the client
-#: (`lib/components/insights/your-path.ts` `HINT_WORDS`), which is the one place that draws them:
-#: the wire carries only the name and whether it was seen, so the board and the pile screen need
-#: not read the whole path to show one sentence.
-HINTS: tuple[HintName, ...] = ("organize_empty", "first_pile", "first_insights")
-
-#: The word a seen hint is stored as.
-SEEN = "seen"
-
-
-def hint_key(name: str) -> str:
-    """The `interface_state` key one hint's "seen" is kept under."""
-    return f"path.hint.{name}.seen"
 
 
 # --- the goals that are a first time ---------------------------------------------------------------
@@ -767,32 +729,29 @@ async def make_due(
 
 
 class PathService:
-    """Get to know Sift for one User: read the paths, say a hint was seen."""
+    """Get to know Sift for one User: read the paths."""
 
     def __init__(
         self,
         database: Database,
         workbench: Workbench,
-        interface: InterfaceStateSeam,
         *,
         library: LibraryStore,
         now: Callable[[], float] = time.time,
     ) -> None:
         self._db = database
         self._workbench = workbench
-        self._interface = interface
         self._library = library
         self._now = now
 
     async def summary(self, viewer: Viewer) -> Path:
-        """Every path this User can walk, each goal judged now, and the hints.
+        """Every path this User can walk, each goal judged now.
 
         The milestones a page may judge are frozen here first (faces named, a year of Sift, a pile
         emptied), so a goal reached since the last visit is done on this one; every file
         fingerprinted is a whole-library count and is left to the helper (`make_due`).
         """
         today = local_today(self._now())
-        stored = await self._interface.interface(viewer)
         frozen = await frozen_names(self._db, viewer.id)
         found = await faces_milestones(self._db, viewer.id, today, frozen)
         if "year_of_sift" not in frozen:
@@ -808,10 +767,7 @@ class PathService:
         goals = await goals_of(
             self._db, viewer, library=self._library, frozen=await frozen_at(self._db, viewer.id)
         )
-        return Path(
-            paths=paths_of(goals),
-            hints=[Hint(name=name, seen=stored.get(hint_key(name)) == SEEN) for name in HINTS],
-        )
+        return Path(paths=paths_of(goals))
 
     async def _cards(self, viewer: Viewer) -> list[Card]:
         """The Organize board's cards, for somebody the board is for. The board is an admin's.
@@ -833,9 +789,3 @@ class PathService:
                 if name not in card.names:
                     card.names.append(name)
         return cards
-
-    async def seen(self, viewer: Viewer, name: str) -> None:
-        """Remember that this User has been shown a hint, so it is not shown again."""
-        if name not in HINTS:
-            raise NotFound("no such hint")
-        await self._interface.arrange(viewer, {hint_key(name): SEEN})

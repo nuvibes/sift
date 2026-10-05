@@ -80,8 +80,10 @@ def test_the_waiting_list_holds_who_no_face_matches_with_their_file_and_count(
                 "confirmed": None,
                 "source": "Studio Faces",
                 "added_at": 1000,
+                "exportable": False,
             }
-        ]
+        ],
+        "exportable": 0,
     }
 
 
@@ -91,7 +93,7 @@ def test_removing_a_waiting_entry_forgets_it_and_says_so_in_history(client: Test
 
     assert client.delete("/api/faces/fingerprints/waiting/e1").status_code == 204
 
-    assert client.get("/api/faces/fingerprints/waiting").json() == {"items": []}
+    assert client.get("/api/faces/fingerprints/waiting").json() == {"items": [], "exportable": 0}
     assert read_rows(db_path(client), "SELECT id FROM pack_entry_faces") == []
     said = read_rows(
         db_path(client),

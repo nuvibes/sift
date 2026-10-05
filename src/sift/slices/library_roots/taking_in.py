@@ -35,7 +35,7 @@ from sift.kernel.jobs import (
 from sift.kernel.log import get_logger
 from sift.slices.library_roots.service import LibraryService
 from sift.slices.library_roots.sweeping import _folder_for
-from sift.slices.library_roots.walking import _STILL_EXTENSIONS, NO_MOVES, Walked
+from sift.slices.library_roots.walking import _STILL_EXTENSIONS, NO_MOVES, Walked, _root_answer
 
 if TYPE_CHECKING:
     from sift.slices.library_roots.jobs import ArchiveSettled
@@ -62,6 +62,19 @@ def _empty_and_settled(rejection: IngressRejected, item: Walked) -> bool:
     if rejection.reason is not Reason.EMPTY:
         return False
     return time.time_ns() - item.mtime_ns >= EMPTY_SETTLED_SECONDS * 1_000_000_000
+
+
+class UnansweredFolder(Exception):
+    """A file could not be opened and the folder holding it no longer answers."""
+
+    def __init__(self, directory: Path) -> None:
+        super().__init__(directory.name)
+        self.directory = directory
+
+
+async def _unless_its_folder_went(item: Walked) -> None:
+    if await asyncio.to_thread(_root_answer, item.path.parent) is not None:
+        raise UnansweredFolder(item.path.parent)
 
 
 class Verdict(StrEnum):
@@ -157,6 +170,10 @@ async def _take_in(
         # comes back to it.
         log.info("library.file_still_changing", root_id=root_id)
         return {rel_path}
+    except OSError:
+        await _unless_its_folder_went(item)
+        log.info("library.file_not_readable_now", root_id=root_id, reason="gone")
+        return {rel_path}
     # It passed. Any refusal written down against this path describes bytes that are not there any
     # more, and a stale refusal would keep a file out on a later pass that happened to match it.
     # Only where one exists: a delete of a row that is not there is a write for nothing.
@@ -226,6 +243,8 @@ async def _through_the_gate(
             verify_ingress, item.path, origin=Origin.SCAN, settings=settings
         )
     except IngressRejected as rejection:
+        if rejection.reason is Reason.UNREADABLE:
+            await _unless_its_folder_went(item)
         # A refusal is remembered against the BYTES at a path. A file that could not be opened
         # just now, or was empty a moment after it was made, is a fact about a moment, and is
         # looked at again next time; one that has stayed empty is not (`_empty_and_settled`).
@@ -245,12 +264,8 @@ async def _through_the_gate(
 def _collect_probe(
     ingested: Ingested, *, taken_in: list[str], to_probe: list[str], to_check: list[str]
 ) -> None:
-    """`probe` and nothing else: it starts the thumbnail, the preview and the sprite itself.
-
-    The second half is the recovery for an asset whose `probe` was lost (a file renamed while its
-    own probe was in flight): asked of the queue (`_probe_unless_already_coming`), so it is safe on
-    every pass.
-    """
+    """`probe` and nothing else: it starts the thumbnail, the preview and the sprite itself. An
+    asset whose probe was lost is asked of the queue (`_probe_unless_already_coming`)."""
     if ingested.asset_is_new:
         to_probe.append(ingested.asset.id)
         # Collected rather than indexed here: telling the search index per file is a write and an
@@ -354,6 +369,7 @@ async def _archive_members(
     try:
         members = await asyncio.to_thread(inspect_archive, item.path, wanted=_STILL_EXTENSIONS)
     except ArchiveRefused as refused:
+        await _unless_its_folder_went(item)
         # Remembered the same way a rejected file is, against the ARCHIVE's own path, so a bomb or a
         # password-protected file is opened once rather than on every pass for ever.
         await service.remember_rejection(

@@ -10,11 +10,13 @@ anything for exactly as long as somebody was watching it.
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Sequence
 
 import pytest
 
 from sift.kernel.jobs import work_ahead
-from sift.kernel.jobs.work_ahead import Counter, WorkAhead
+from sift.kernel.jobs.queue_rows import FilesToRead
+from sift.kernel.jobs.work_ahead import Counter, Split, WorkAhead
 
 
 async def test_it_reports_what_each_kind_registered() -> None:
@@ -409,6 +411,40 @@ async def test_the_total_and_the_remainder_are_asked_on_one_cycle() -> None:
     assert asked == ["left", "wanted"], "the second question asked again instead of sharing"
 
 
+async def test_what_the_walks_have_left_to_read_is_taken_on_the_same_count() -> None:
+    """Read apart from the library's count, a file the walk took in since that count would be
+    neither read nor unread, and the Scan row's total would sag below the folder's count."""
+    read, added = [0], [0]
+
+    async def taken_in() -> int:
+        return read[0]
+
+    async def walks() -> FilesToRead:
+        return FilesToRead(by_kind={"video": 769.0 - read[0]}, uncounted=added[0])
+
+    ahead = WorkAhead(fresh_for=3600.0, to_read=walks)
+    ahead.register_total("probe", taken_in)
+    first = await ahead.counted()
+    read[0], added[0] = 600, 1
+
+    held = await ahead.counted()
+    now = await ahead.unread_now(held)
+
+    assert held.wanted["probe"] + held.unread.by_kind["video"] == 769  # type: ignore[union-attr]
+    assert now == FilesToRead(by_kind={"video": 769.0}, uncounted=1), "a folder added is told now"
+    assert first.unread == held.unread
+    assert await WorkAhead().unread_now(held) is None
+
+
+async def test_walks_that_cannot_be_read_leave_the_unread_unknown() -> None:
+    async def broken() -> FilesToRead:
+        raise RuntimeError("the queue is not there")
+
+    ahead = WorkAhead(to_read=broken)
+
+    assert await ahead.unread_now(await ahead.counted()) is None
+
+
 async def test_what_is_waiting_is_split_by_media_kind_where_a_counter_can_say() -> None:
     """What the estimate prices apart. A kind with nothing waiting is dropped, and a counter that
     fails is left out rather than read as a library of nothing but the other kinds."""
@@ -424,3 +460,36 @@ async def test_what_is_waiting_is_split_by_media_kind_where_a_counter_can_say() 
     ahead.register_kinds("sprite", broken)
 
     assert await ahead.waiting_by_kind() == {"preview": {"video": 40, "gif": 3}}
+
+
+async def test_a_split_count_says_what_stands_and_what_arrives_from_one_read_of_the_live_files() -> (
+    None
+):
+    asked: list[Sequence[str]] = []
+    reads: list[int] = []
+
+    async def live() -> list[str]:
+        reads.append(1)
+        return ["f1", "f2"]
+
+    async def faces(files: Sequence[str]) -> Split:
+        asked.append(files)
+        return Split(waiting=2727, standing=2691, arriving={"video": 36, "image": 0})
+
+    async def broken() -> list[str]:
+        raise RuntimeError("the queue is not there")
+
+    ahead = WorkAhead(live_files=live)
+    ahead.register_split("face_scan", faces)
+    ahead.register_split("watermark_read", faces)
+    counted = await ahead.counted()
+
+    assert counted.waiting == {"face_scan": 2727, "watermark_read": 2727}
+    assert counted.standing == {"face_scan": 2691, "watermark_read": 2691}
+    assert counted.arriving["face_scan"] == {"video": 36}
+    assert reads == [1] and asked == [["f1", "f2"], ["f1", "f2"]]
+
+    blind = WorkAhead(live_files=broken)
+    blind.register_split("face_scan", faces)
+    counted = await blind.counted()
+    assert counted.waiting == {"face_scan": 2727} and counted.standing == {}

@@ -505,22 +505,23 @@ print(json.dumps({"ok": True, "version": onnxruntime.__version__}))
 
 
 async def works(settings: Settings) -> str | None:
-    """Prove the card really runs a model. None when it does, a reason when it does not.
-
-    In a process of its own, and see the note at the top of this file for why that is the design
-    rather than an implementation detail.
-    """
+    """Prove the card really runs a model, in a process of its own (see the module's note).
+    None when it does, a reason when it does not."""
     if not installed(settings):
         return "The graphics-card runtime is not installed."
 
     argv = [sys.executable, "-c", _PROOF, str(directory(settings)), _PROOF_MODEL]
     try:
-        finished = await run_once(argv, time_limit=_PROOF_TIMEOUT)
-    except SubprocessError as exc:
+        # The one limit covers starting the proof too, which waits on the pool an import fills.
+        finished = await asyncio.wait_for(
+            run_once(argv, time_limit=_PROOF_TIMEOUT), timeout=_PROOF_TIMEOUT
+        )
+    except (SubprocessError, TimeoutError) as exc:
+        why = str(exc) or "it did not answer in time"
         return (
             "The card could not be tested: Sift could not run the check, or it did not answer "
             f"within two minutes. That usually means the graphics driver is busy or has stopped "
-            f"responding, and restarting the computer is what clears it. ({exc})"
+            f"responding, and restarting the computer is what clears it. ({why})"
         )
     if finished.returncode == 0:
         log.info("ml.accel.proved", pin=PIN)

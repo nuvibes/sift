@@ -123,3 +123,33 @@ test('both chips can be taken off, and the screen keeps the other one', async ({
 	// The one left is the exclusion, still an exclusion.
 	expect(new URL(page.url()).searchParams.getAll('media')).toEqual(['-video']);
 });
+
+test('a People row ticked on a wall of files writes the id, and its chip still reads the name', async ({
+	page
+}) => {
+	const id = '01HX00000000000000000000PB';
+	await page.route('**/api/assets/facets*', (route) => {
+		const facet = new URL(route.request().url()).searchParams.get('facet') ?? '';
+		const values = facet === 'people' ? [{ value: id, label: 'Bryn Calloway', count: 1 }] : [];
+		return route.fulfill({
+			status: 200,
+			contentType: 'application/json',
+			body: JSON.stringify({ facet, values })
+		});
+	});
+	await page.route(`**/api/people/${id}`, (route) =>
+		route.fulfill({
+			status: 200,
+			contentType: 'application/json',
+			body: JSON.stringify({ id, name: 'Bryn Calloway' })
+		})
+	);
+	await page.goto('/browse');
+	await page.getByRole('button', { name: 'Filter', exact: true }).click();
+	await page.locator('.column .value', { hasText: 'Bryn Calloway' }).click();
+
+	await expect(page).toHaveURL(new RegExp(`[?&]people=${id}(&|$)`));
+	await expect(page.locator(CHIP)).toHaveCount(1);
+	expect((await chips(page))[0].text).toContain('Bryn Calloway');
+	expect((await chips(page))[0].text).not.toContain(id);
+});

@@ -1,14 +1,7 @@
-/* THE WALL SETTLES WHEN THE SCREEN FILLS, AND AGAIN WHEN IT LETS GO.
+/* THE WALL'S CELLS MOVE FROM THE BOX THEY STOOD IN TO THE ONE THE PAGE GIVES THEM, ON EACH FRAME.
  *
- * Entering full screen is the biggest change this application makes: every picture on the wall
- * changes size at once. The chrome has motion on both edges of that, and pictures with none
- * would cut while the bars slide.
- *
- * What is pinned here is the RULE rather than the pixels: the first draw is not a change of state
- * and must not animate, every change after it must, and it is the movement every player's screen
- * change makes (`screenChanges` in `player/motion.ts`): the wall eases from the box it stood in,
- * at the stage's pace going up and one pace quicker coming down. jsdom has no layout and no
- * compositor, so the wall's box is said here and the animation is recorded rather than watched.
+ * jsdom lays nothing out, so the cells' boxes are said here and the frames are stepped by hand;
+ * `e2e` measures the pixels.
  */
 
 import { readFileSync } from 'node:fs';
@@ -22,7 +15,8 @@ vi.mock('$lib/api/client', () => ({
 	api: { get: vi.fn(async () => ({ items: [], total: 0 })), post: vi.fn(async () => ({})) }
 }));
 
-import TheaterWall from './TheaterWall.svelte';
+import TheaterWall, { between } from './TheaterWall.svelte';
+import { bezier } from '$lib/shell/motion.svelte';
 import { Wall } from '$lib/theater/wall.svelte';
 import type { PlaybackPlan } from '$lib/player/playback';
 import { stage } from '$lib/components/shell/stage.svelte';
@@ -42,23 +36,32 @@ function draw() {
 
 const PAGE = new DOMRect(233, 149, 1334, 727);
 const SCREEN = new DOMRect(0, 70, 1600, 830);
-/** Where the wall stands: in the page, or filling the screen. */
+/** Where the cells stand: in the page, or filling the screen. */
 let standing = PAGE;
-const animate = vi.fn();
+let filled = false;
+let now = 0;
+let frames: FrameRequestCallback[] = [];
 
-/** How the screen says it has been filled, or let go: the browser first, then the shell. */
+/** How the screen says it has been filled, or let go: the style first, then the browser's event. */
 function fills(yes: boolean) {
 	standing = yes ? SCREEN : PAGE;
+	filled = yes;
 	stage.filling = yes;
-	document.dispatchEvent(new Event('fullscreenchange'));
+	document.dispatchEvent(new Event('fullscreenchange', { bubbles: true }));
 	flushSync();
 }
 
-/** The calls that moved the wall itself, rather than anything inside it. */
-function wallMoves() {
-	return animate.mock.contexts
-		.map((element, at) => ({ element: element as HTMLElement, call: animate.mock.calls[at] }))
-		.filter(({ element }) => element.classList.contains('wall'));
+/** The next frame, `ms` later. */
+function frameAfter(ms: number) {
+	now += ms;
+	const due = frames;
+	frames = [];
+	for (const run of due) run(now);
+	flushSync();
+}
+
+function wallOf() {
+	return host.querySelector('.wall') as HTMLElement;
 }
 
 beforeEach(() => {
@@ -73,64 +76,104 @@ afterEach(() => {
 	vi.restoreAllMocks();
 });
 
-/** The wall's box said, and its movements recorded: for the settling tests only. */
+/** The cells' box said, the screen's state said, and the frames held: for the screen-change tests. */
 function watchTheWall() {
-	animate.mockClear();
 	standing = PAGE;
-	vi.stubGlobal('requestAnimationFrame', (run: FrameRequestCallback) => {
-		run(0);
-		return 0;
-	});
+	filled = false;
+	now = 0;
+	frames = [];
+	vi.spyOn(performance, 'now').mockImplementation(() => now);
+	vi.stubGlobal('requestAnimationFrame', (run: FrameRequestCallback) => frames.push(run));
+	vi.stubGlobal('cancelAnimationFrame', () => (frames = []));
+	vi.stubGlobal(
+		'ResizeObserver',
+		class {
+			observe() {}
+			unobserve() {}
+			disconnect() {}
+		}
+	);
 	vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (
 		this: HTMLElement
 	) {
-		return this.classList.contains('wall') ? standing : new DOMRect(0, 0, 0, 0);
+		if (this.classList.contains('cell')) return standing;
+		return this.classList.contains('wall') ? new DOMRect(0, 0, 1920, 1080) : new DOMRect();
 	});
-	HTMLElement.prototype.animate = animate as unknown as HTMLElement['animate'];
-	HTMLElement.prototype.getAnimations = () => [];
+	const closest = Element.prototype.closest;
+	vi.spyOn(Element.prototype, 'closest').mockImplementation(function (
+		this: Element,
+		selector: string
+	) {
+		if (selector === ':fullscreen') return filled ? document.body : null;
+		return closest.call(this, selector);
+	});
 }
 
-describe('the wall settling around a change of screen', () => {
+/** Where the cells are drawn, read back off the wall's own translate and scales. */
+function drawnAt(to: DOMRect) {
+	const frame = wallOf();
+	if (frame.style.scale === '') return to;
+	const [x, y] = frame.style.translate.split(' ').map(parseFloat);
+	const [sx, sy] = frame.style.scale.split(' ').map(Number);
+	return new DOMRect(to.left + x, to.top + y, to.width * sx, to.height * sy);
+}
+
+describe('the wall around a change of screen', () => {
 	beforeEach(watchTheWall);
-	afterEach(() => {
-		vi.unstubAllGlobals();
-		delete (HTMLElement.prototype as Partial<HTMLElement>).animate;
-		delete (HTMLElement.prototype as Partial<HTMLElement>).getAnimations;
-	});
+	afterEach(() => vi.unstubAllGlobals());
 
-	it('does not animate on the first draw', () => {
-		// Opening Theater is not a change of state, and a wall that fades in on arrival is a screen
-		// that looks slow to load.
+	it('does not move on the first draw', () => {
 		draw();
-		expect(wallMoves(), 'the wall animated itself into existence').toHaveLength(0);
+		expect(wallOf().style.translate, 'the wall moved itself into existence').toBe('');
 	});
 
-	it('settles when the screen fills', () => {
+	it('draws its cells where they stood on the frame the screen fills, then eases them in', () => {
 		draw();
 		fills(true);
-		expect(wallMoves(), 'the wall cut straight from one size to the other').toHaveLength(1);
+		expect(drawnAt(SCREEN), 'the cells jumped to the screen before moving').toEqual(PAGE);
+		frameAfter(160);
+		const halfway = bezier([0.2, 0, 0, 1])(0.5);
+		expect(drawnAt(SCREEN).top).toBeCloseTo(PAGE.top + (SCREEN.top - PAGE.top) * halfway);
+		frameAfter(160);
+		expect(wallOf().style.translate, 'the movement outlived the bars').toBe('');
 	});
 
-	it('settles again when the screen lets go', () => {
-		// The half a stylesheet cannot do: the element stops matching `:fullscreen` the instant the
-		// browser lets go, so there is no state left to animate from.
+	it('goes back on the bars\u2019 leaving curve, the same token', () => {
 		draw();
 		fills(true);
-		animate.mockClear();
+		frameAfter(320);
 		fills(false);
-		expect(wallMoves(), 'leaving full screen was not answered at all').toHaveLength(1);
+		expect(drawnAt(PAGE)).toEqual(SCREEN);
+		frameAfter(160);
+		const halfway = bezier([0.4, 0, 1, 1])(0.5);
+		expect(drawnAt(PAGE).top).toBeCloseTo(SCREEN.top + (PAGE.top - SCREEN.top) * halfway);
 	});
 
-	it('grows from the box it stood in at the stage pace, and goes back one pace quicker', () => {
+	it('follows where the page puts the cells on each frame, never the box it first saw', () => {
+		// A row folding on the way moves the cells under the wall; drawn from the first box, they
+		// would overshoot and come back.
 		draw();
 		fills(true);
-		const [[frames, options]] = wallMoves().map(({ call }) => call);
-		expect(frames[0]).toMatchObject({ offset: 0, scale: `${PAGE.width / SCREEN.width}` });
-		// The stylesheet is not loaded here, so these are the values the stage tokens stand for.
-		expect(options.duration).toBe(320);
-		animate.mockClear();
-		fills(false);
-		expect(wallMoves()[0].call[1].duration).toBe(200);
+		standing = new DOMRect(0, 0, 1600, 900);
+		frameAfter(160);
+		const halfway = bezier([0.2, 0, 0, 1])(0.5);
+		expect(drawnAt(standing).top).toBeCloseTo(PAGE.top * (1 - halfway));
+	});
+
+	it('moves its cells, edge by edge, one way from the first frame to the last', () => {
+		const from = new DOMRect(233, 149, 448.9, 798);
+		const to = new DOMRect(706.6, 70, 506.8, 901);
+		let last = from;
+		for (const k of [0, 0.25, 0.5, 0.75, 1]) {
+			const { x, y, sx, sy } = between(from, to, k);
+			const at = new DOMRect(to.left + x, to.top + y, to.width * sx, to.height * sy);
+			if (k === 0) expect(at.top).toBeCloseTo(from.top);
+			expect(at.left).toBeGreaterThanOrEqual(last.left);
+			expect(at.top).toBeLessThanOrEqual(last.top);
+			expect(at.bottom).toBeGreaterThanOrEqual(last.bottom);
+			last = at;
+		}
+		expect(last.top).toBeCloseTo(to.top);
 	});
 });
 
@@ -197,34 +240,132 @@ describe('what brings the wall\u2019s chrome up', () => {
 });
 
 /*
- * The pictures take the whole height; the bar rises over them.
- *
- * The grid reserves no band for the bar, which fades with the chrome while staying mounted, so a
- * reserved band would be held open with nothing in it. The strip, a row of controls at the edge the
- * bar rises from, still keeps its margin.
- *
- * The class is pinned rather than the pixels: jsdom lays nothing out, so the bottom edge is
- * measured in `e2e/theater.spec.ts` and the condition is what a test can hold.
+ * THE KEYBOARD IS SOMEBODY BEING THERE: Tab raises the bars and enters them, they hold while the
+ * keyboard is in them, and `B` sends them away or brings them back.
+ */
+describe('the keyboard and the wall\u2019s chrome', () => {
+	beforeEach(() => vi.useFakeTimers());
+	afterEach(() => vi.useRealTimers());
+
+	function press(key: string) {
+		document.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }));
+		flushSync();
+	}
+
+	function bar() {
+		return host.querySelector('.stage-bar') as HTMLElement;
+	}
+
+	it('raises the bars on Tab, reachable at once', () => {
+		draw();
+		expect(bar().inert).toBe(true);
+		press('Tab');
+		expect(wallChrome.up, 'Tab left the bars away').toBe(true);
+		expect(bar().inert, 'the bar came up out of reach of the Tab').toBeFalsy();
+	});
+
+	it('holds them while the keyboard is in the bar, and lets them go once it is back on the wall', () => {
+		draw();
+		press('Tab');
+		bar().querySelector('button')!.focus();
+		flushSync();
+		vi.advanceTimersByTime(5000);
+		flushSync();
+		expect(wallChrome.up, 'the bars went from under the keyboard').toBe(true);
+		(host.querySelector('.cell') as HTMLElement).dispatchEvent(
+			new FocusEvent('focusin', { bubbles: true })
+		);
+		vi.advanceTimersByTime(1600);
+		flushSync();
+		expect(wallChrome.up, 'the bars stayed after the keyboard left them').toBe(false);
+	});
+
+	it('leaves F to the screen change, which raises them once it lands', () => {
+		// Raised at the press, the band would still be easing in as the screen filled.
+		draw();
+		press('f');
+		expect(wallChrome.up).toBe(false);
+	});
+
+	it('brings them back on B when they are away, and sends them away on B when they are up', () => {
+		draw();
+		press('b');
+		expect(wallChrome.up, 'B did not bring the bars back').toBe(true);
+		press('b');
+		expect(wallChrome.up, 'B did not send the bars away').toBe(false);
+	});
+});
+
+/*
+ * The bar's band: held under the pictures while the bar is up, by the strip where there is one and
+ * by the grid where there is not, so the gap above the bar is the top's 8px either way. jsdom lays
+ * nothing out, so the classes and the sums are pinned and `e2e/theater.spec.ts` measures the pixels.
  */
 describe('the band the bar sits in', () => {
 	function gridOf() {
 		return host.querySelector('.grid') as HTMLElement;
 	}
 
-	it('is never taken out of the grid, with the chrome up or down', () => {
+	/* jsdom measures every box at nought, so a pointer at y=0 is inside the top band. */
+	function reachTheTop() {
+		document.dispatchEvent(new MouseEvent('pointermove', { clientY: 0 }));
+		flushSync();
+	}
+
+	it('is the bar, its float and the top gap again', () => {
 		draw();
-		expect(gridOf().classList.contains('clear'), 'the grid reserved room for a bar').toBe(false);
+		const frame = host.querySelector('.wall') as HTMLElement;
+		expect(frame.style.getPropertyValue('--band')).toBe(`${16 + 8}px`);
 	});
 
-	it('is still held open by the strip where there is one', () => {
+	it('is held by the grid while the bar is up, and given back while it is away', () => {
+		draw();
+		expect(gridOf().classList.contains('held'), 'the band stayed with the bar away').toBe(false);
+		reachTheTop();
+		expect(gridOf().classList.contains('held'), 'the pictures ran under the bar').toBe(true);
+	});
+
+	it('is held by the strip where there is one', () => {
 		const wall = draw();
 		wall.strip = 2;
 		flushSync();
-		expect(gridOf().classList.contains('clear')).toBe(false);
+		reachTheTop();
+		expect(gridOf().classList.contains('held')).toBe(false);
 		expect(
 			host.querySelector('.strip.clear'),
 			'the strip stopped holding the band open'
 		).toBeTruthy();
+	});
+
+	it('arrives and leaves on the bars\u2019 own token and curves, so a cell never dips', () => {
+		const source = readFileSync(
+			join(dirname(fileURLToPath(import.meta.url)), 'TheaterWall.svelte'),
+			'utf8'
+		).replace(/\t/g, '');
+		expect(source).toContain(
+			'.grid.held {\nmargin-block-end: var(--band);\ntransition: margin-block-end var(--dur-slow) var(--ease);\n}'
+		);
+		expect(source, 'the band was given back on a curve the top bar does not leave on').toContain(
+			'gap: 8px;\ntransition: margin-block-end var(--dur-slow) var(--ease-in);\n}'
+		);
+		expect(source).toContain('.strip.clear {\n--strip-room: var(--band);\n}');
+		expect(source, 'the room eased under the cells while the wall moved them').toContain(
+			'.wall.following .grid,\n.wall.following .strip {\ntransition: none;\n}'
+		);
+	});
+});
+
+/*
+ * The strip's height is worked out (`stripHeight`) and written on it; unmeasured, it is the least.
+ */
+describe('the strip\u2019s height', () => {
+	it('is written on the strip, at its least before the wall is measured', () => {
+		const wall = draw();
+		wall.strip = 2;
+		flushSync();
+		const least = Math.floor(Math.min(148, Math.max(72, window.innerHeight * 0.16)));
+		const strip = host.querySelector('.strip') as HTMLElement;
+		expect(strip.style.getPropertyValue('--strip-tall')).toBe(`${least}px`);
 	});
 });
 
@@ -360,13 +501,5 @@ describe('where the wall puts what it cannot use', () => {
 
 		expect(declared.length).toBeGreaterThan(0);
 		expect(new Set(declared)).toEqual(new Set(['center']));
-	});
-
-	it('does not take the bar band out of the box it lays the wall out in', () => {
-		/* Declarations only, for the reason above. */
-		expect(source).not.toMatch(/^\s*\.grid\.clear\s*\{/m);
-		expect(source).not.toMatch(
-			/^\s*margin-block-end: calc\(var\(--bar-room, 0px\) \+ var\(--space-4\)\);/m
-		);
 	});
 });

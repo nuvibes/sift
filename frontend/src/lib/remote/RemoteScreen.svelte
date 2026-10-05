@@ -15,10 +15,10 @@
 	 *
 	 * - A PLAYER (the popout, the corner player, a still): the sound with Mini player and Full
 	 *   screen at its end as the bar has them, the heart and the O counter, then which screen, then
-	 *   the drawer's nine presses in the drawer's own order.
+	 *   the drawer's seven presses in the drawer's own order.
 	 * - A WALL: the chosen cell as a player (its scrubber, transport and sound), then which screen,
-	 *   the wall's bar (Play everything, Silence everything, Layouts, Presets) and the cells as a
-	 *   strip with the one being talked to lit (and Every cell under them), then the cell's drawer
+	 *   the wall's bar (Play everything, Silence everything, Layouts, Saved Layouts) and the cells as
+	 *   a strip with the one being talked to lit (and Every cell under them), then the cell's drawer
 	 *   in the drawer's order. Under Every cell the scrubber is dimmed with its reason: the cells'
 	 *   files are each their own length, so one position means nothing for all of them.
 	 *
@@ -29,12 +29,11 @@
 	 *
 	 * ## What is drawn, and what is dimmed
 	 *
-	 * The transport and the sound draw a control only for a verb the screen said it answers, which
-	 * is what the desk's own bar does (no Previous for a list of one). The DRAWERS draw every press
-	 * in its place and dim the ones the screen cannot make now, as the desk's drawers do, so the row
-	 * never rearranges under a thumb. A dimmed press cannot be pressed into a refusal. Three are
-	 * always dimmed, with the reason: Full screen, Screenshot and Stats for nerds happen on the
-	 * computer's own screen and need a press made there.
+	 * The transport is every bar's (`Transport`): all five, each dimmed with its reason where the
+	 * screen cannot act. The sound draws only what the screen answers. The DRAWERS draw every press
+	 * in its place, dimmed where the screen cannot make it now, so a row never rearranges under a
+	 * thumb. Full screen, Screenshot and Stats for nerds are always dimmed: they need a press made
+	 * at the computer.
 	 *
 	 * A toggle sends the state it wants rather than "flip it" (both ends act on the same player),
 	 * and a choice (a size, a layout, a preset, the repeat) sends its place in the list the screen
@@ -77,10 +76,11 @@
 		Tooltip
 	} from '$lib/components/common';
 	import LayoutGlyph from '$lib/components/theater/LayoutGlyph.svelte';
+	import Transport from '$lib/components/player/Transport.svelte';
 	import type { IconName } from '$lib/design/icons';
 	import { thumbUrl } from '$lib/entity/art';
 	import { lengthClock, playheadClock } from '$lib/shell/duration';
-	import { LOOP_MODES, loopModeIcon, loopModeLabel, loopRepeats } from '$lib/player/loop-modes';
+	import { LOOP_MODES } from '$lib/player/loop-modes';
 	import { SKIP_SECONDS } from '$lib/player/skip';
 	import { LAST_SECONDS } from '$lib/player/snapshot';
 	import { LAYOUTS } from '$lib/theater/layouts';
@@ -143,6 +143,10 @@
 	const nextVerb = $derived<RemoteAction>(wall ? 'theater.next' : 'player.next');
 	const playVerb = $derived<RemoteAction>(wall ? 'theater.pause' : 'player.playPause');
 	const cornerVerb = $derived<RemoteAction>(wall ? 'theater.corner' : 'player.corner');
+	const repeatVerb = $derived<RemoteAction>(wall ? 'theater.repeat' : 'player.repeat');
+	const shuffleVerb = $derived<RemoteAction>(wall ? 'theater.shuffle' : 'player.shuffle');
+	/* A wall from before a cell could be held from here: its only hold is the wall's. */
+	const wallHoldOnly = $derived(wall && !offers.has(playVerb) && offers.has('theater.pauseAll'));
 
 	/* Whether what the scrubber belongs to is playing, and heard: on a wall, the cell under its own
 	   hold and the wall's (the drawer's play control reads both), and silent under either mute. */
@@ -273,7 +277,7 @@
 					<!-- Dimmed under Every cell, never taken away: the row keeps its place under a thumb,
 					     and the line under it says why in place of one cell's times. -->
 					<Tooltip label={scrubbable ? COPY.position : COPY.positionOfEvery} stretch>
-						<div class="band">
+						<div class="band grow">
 							<Slider
 								class="track"
 								label={COPY.position}
@@ -298,73 +302,58 @@
 					</p>
 				{/if}
 
-				<!-- THE TRANSPORT, centred on its play press, the one control reached for without
-				     looking. A wall's play press is the cell's; the wall's own is on its bar above. -->
+				<!-- Five seconds either way, the keys' arrows at the desk, over the transport. -->
+				{#if offers.has(backVerb) || offers.has(forwardVerb)}
+					<div class="row skips">
+						{#if offers.has(backVerb)}
+							<Tooltip label={COPY.back}>
+								<Button
+									tone="ghost"
+									icon="replay_5"
+									iconSize={28}
+									aria-label={COPY.back}
+									onclick={() => send(backVerb, SKIP_SECONDS)}
+								/>
+							</Tooltip>
+						{/if}
+						{#if offers.has(forwardVerb)}
+							<Tooltip label={COPY.forward}>
+								<Button
+									tone="ghost"
+									icon="forward_5"
+									iconSize={28}
+									aria-label={COPY.forward}
+									onclick={() => send(forwardVerb, SKIP_SECONDS)}
+								/>
+							</Tooltip>
+						{/if}
+					</div>
+				{/if}
+
+				<!-- THE TRANSPORT, every bar's own. A wall's play press is the cell's. -->
 				<div class="row transport">
-					{#if offers.has(previousVerb)}
-						<Tooltip label={COPY.previous}>
-							<Button
-								tone="ghost"
-								icon="skip_previous"
-								aria-label={COPY.previous}
-								onclick={() => send(previousVerb)}
-							/>
-						</Tooltip>
-					{/if}
-					{#if offers.has(backVerb)}
-						<Tooltip label={COPY.back}>
-							<Button
-								tone="ghost"
-								icon="replay_5"
-								iconSize={28}
-								aria-label={COPY.back}
-								onclick={() => send(backVerb, SKIP_SECONDS)}
-							/>
-						</Tooltip>
-					{/if}
-					{#if offers.has(playVerb)}
-						<Tooltip label={going ? COPY.pause : COPY.play}>
-							<Button
-								tone="primary"
-								shape="circle"
-								icon={going ? 'pause' : 'play_arrow'}
-								aria-label={going ? COPY.pause : COPY.play}
-								onclick={() => send(playVerb, wall ? (going ? 1 : 0) : going ? 0 : 1)}
-							/>
-						</Tooltip>
-					{:else if wall && offers.has('theater.pauseAll') && !offers.has('theater.pause')}
-						<!-- A wall from before a cell could be held from here: its only hold is the wall's. -->
-						<Tooltip label={screen.playing ? COPY.pauseAll : COPY.playAll}>
-							<Button
-								tone="primary"
-								shape="circle"
-								icon={screen.playing ? 'autostop' : 'autoplay'}
-								aria-label={screen.playing ? COPY.pauseAll : COPY.playAll}
-								onclick={() => send('theater.pauseAll', screen.playing ? 1 : 0)}
-							/>
-						</Tooltip>
-					{/if}
-					{#if offers.has(forwardVerb)}
-						<Tooltip label={COPY.forward}>
-							<Button
-								tone="ghost"
-								icon="forward_5"
-								iconSize={28}
-								aria-label={COPY.forward}
-								onclick={() => send(forwardVerb, SKIP_SECONDS)}
-							/>
-						</Tooltip>
-					{/if}
-					{#if offers.has(nextVerb)}
-						<Tooltip label={COPY.next}>
-							<Button
-								tone="ghost"
-								icon="skip_next"
-								aria-label={COPY.next}
-								onclick={() => send(nextVerb)}
-							/>
-						</Tooltip>
-					{/if}
+					<Transport
+						playing={wallHoldOnly ? screen.playing : going}
+						playable={offers.has(playVerb) || wallHoldOnly}
+						playWhy={COPY.notHere}
+						onplay={() =>
+							wallHoldOnly
+								? send('theater.pauseAll', screen.playing ? 1 : 0)
+								: send(playVerb, wall ? (going ? 1 : 0) : going ? 0 : 1)}
+						onback={offers.has(previousVerb) ? () => send(previousVerb) : undefined}
+						onforward={offers.has(nextVerb) ? () => send(nextVerb) : undefined}
+						repeat={{
+							mode: repeat,
+							onpress: () => send(repeatVerb, nextRepeat()),
+							why: offers.has(repeatVerb) ? undefined : COPY.notHere
+						}}
+						shuffle={{
+							on: shuffled,
+							onpress: () => send(shuffleVerb, shuffled ? 0 : 1),
+							why: offers.has(shuffleVerb) ? undefined : COPY.notHere
+						}}
+						keyboard={null}
+					/>
 				</div>
 
 				<!-- THE SOUND, with the bar's two ways out at its end: the Mini player, and Full screen,
@@ -566,20 +555,6 @@
 							</ContextMenuGroup>
 						{/snippet}
 						{#if wall}
-							{@render verb(
-								loopModeIcon(repeat),
-								loopModeLabel(repeat),
-								'theater.repeat',
-								() => send('theater.repeat', nextRepeat()),
-								{ lit: loopRepeats(repeat) }
-							)}
-							{@render verb(
-								'shuffle',
-								COPY.shuffle,
-								'theater.shuffle',
-								() => send('theater.shuffle', shuffled ? 0 : 1),
-								{ lit: shuffled }
-							)}
 							{@render verb('all_inclusive', LOOP_STEPS[marks], 'theater.loop', () =>
 								send('theater.loop')
 							)}
@@ -622,20 +597,6 @@
 								'player.quality',
 								{ why: qualities.length > 1 ? undefined : COPY.oneSize },
 								qualityRows
-							)}
-							{@render verb(
-								loopModeIcon(repeat),
-								loopModeLabel(repeat),
-								'player.repeat',
-								() => send('player.repeat', nextRepeat()),
-								{ lit: loopRepeats(repeat) }
-							)}
-							{@render verb(
-								'shuffle',
-								COPY.shuffle,
-								'player.shuffle',
-								() => send('player.shuffle', shuffled ? 0 : 1),
-								{ lit: shuffled }
 							)}
 							{@render verb('casino', COPY.randomize, 'player.random', () => send('player.random'))}
 							{@render verb('all_inclusive', LOOP_STEPS[marks], 'player.loop', () =>
@@ -764,7 +725,8 @@
 		gap: var(--space-2);
 	}
 
-	.transport {
+	.transport,
+	.skips {
 		justify-content: center;
 	}
 

@@ -30,9 +30,11 @@
 		read: number;
 		/** A person was created, so the pane's list of who Sift can recognize changed. */
 		onchanged: () => void;
+		/** Each answer as it is read, or null when it could not be: the export row counts it. */
+		onread?: (answer: WaitingFingerprints | null) => void;
 	}
 
-	let { enabled, read, onchanged }: Props = $props();
+	let { enabled, read, onchanged, onread }: Props = $props();
 
 	let held = $state<WaitingFingerprints['items']>([]);
 	let lookingFor = $state('');
@@ -47,9 +49,12 @@
 
 	async function readHeld() {
 		try {
-			held = (await waitingFingerprints()).items;
+			const answer = await waitingFingerprints();
+			held = answer.items;
+			onread?.(answer);
 		} catch {
 			held = [];
+			onread?.(null);
 		}
 	}
 

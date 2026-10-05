@@ -10,7 +10,8 @@ import pytest
 from sift.kernel import changes
 from sift.kernel.changes import About, ChangeBus
 from sift.kernel.db import Database
-from sift.kernel.settings_registry import Scope, SettingError, register_setting
+from sift.kernel.settings_registry import Scope, SettingError, get_registered, register_setting
+from sift.slices.music.settings import LOOKUP_ROUTE_KEY
 from sift.slices.settings_hub.service import (
     ScopeForbidden,
     SettingsService,
@@ -22,6 +23,7 @@ from sift.slices.settings_hub.tests.conftest import (
     LOOP_KEY,
     Users,
 )
+from sift.slices.swap import GUEST_TUNNEL_KEY
 
 pytestmark = [pytest.mark.integration]
 
@@ -437,3 +439,70 @@ async def test_sift_never_saves_a_personal_setting(service: SettingsService) -> 
         )
 
     assert await service.app_is_stored(GUEST_SAVE_KEY) is False
+
+
+async def test_a_tunnel_setting_is_written_down_by_the_tunnels_name_and_never_its_id(
+    service: SettingsService, users: Users, temp_db: Database
+) -> None:
+    from sift.kernel.access import sentences as say
+
+    def route(value: object) -> object:
+        return None if value in (None, "direct") else value
+
+    register_setting(
+        key="t.join_tunnel",
+        scope="app",
+        default="",
+        validator=str,
+        section="Sites and Tunnels",
+        label="Tunnel for joining a swap",
+        help="h",
+        names_a_tunnel=True,
+    )
+    register_setting(
+        key="t.lookup_route",
+        scope="app",
+        default=None,
+        choices=("direct",),
+        choice_labels=("Direct",),
+        validator=route,
+        section="Music",
+        label="Connect to AcoustID through",
+        help="h",
+        names_a_tunnel=True,
+    )
+    for tunnel, name in (("tun-home-0001", "Home VPN"), ("tun-away-0002", "Away VPN")):
+        await temp_db.execute(
+            "INSERT INTO tunnels (id, name, enabled, created_at, updated_at)"
+            " VALUES (?, ?, 0, 0, 0)",
+            (tunnel, name),
+        )
+    for key in ("t.join_tunnel", "t.lookup_route"):
+        await service.apply(users.admin, {key: "tun-home-0001"})
+        await service.apply(users.admin, {key: "tun-away-0002"})
+    await temp_db.execute("DELETE FROM tunnels WHERE id = 'tun-away-0002'")
+    await service.apply(users.admin, {"t.lookup_route": "direct"})
+
+    rows = await temp_db.fetch_all(
+        "SELECT s.name AS name, d.payload AS payload FROM workbench_decision_subjects s"
+        " JOIN workbench_decisions d ON d.id = s.decision_id WHERE d.verb = 'edited'"
+        " ORDER BY d.rowid"
+    )
+    lines = [
+        say.text_of(say.setting_changed("You", say.Piece(row["name"]), json.loads(row["payload"])))
+        for row in rows
+    ]
+    assert lines == [
+        "You changed Tunnel for joining a swap to Home VPN",
+        "You changed Tunnel for joining a swap from Home VPN to Away VPN",
+        "You changed Connect to AcoustID through from Direct to Home VPN",
+        "You changed Connect to AcoustID through from Home VPN to Away VPN",
+        "You changed Connect to AcoustID through from a tunnel since removed to Direct",
+    ]
+    assert not [line for line in lines if "tun-" in line]
+
+
+def test_both_settings_that_hold_a_tunnel_say_so() -> None:
+    for key in (LOOKUP_ROUTE_KEY, GUEST_TUNNEL_KEY):
+        declared = get_registered(key)
+        assert declared is not None and declared.names_a_tunnel

@@ -29,8 +29,11 @@ uv run sift                                  # the server, on http://127.0.0.1:5
 On Windows, `uv run python scripts/fetch_vendor.py` downloads ffmpeg, the libwebp tools, yt-dlp,
 gallery-dl and QuickJS, and checks each against a pinned SHA-256. It also checks the two things this
 repository builds itself, the tunnel client and the HEIF reader's wheel, and `--build-missing` builds
-one that isn't there. Elsewhere Sift uses the copies on your `PATH`. The desktop app is in
-`desktop/`, with its own README, and `scripts/release.py` builds the installer.
+one that isn't there. Anywhere but the computer that builds Sift's releases, add
+`--wheel-by-contents` as well. Your compiler's wheel won't match the release's digest, so the script
+checks the libraries inside it instead. On other operating systems, Sift uses the copies on your
+`PATH`. The desktop app is in `desktop/`, with its own README, and `scripts/release.py` builds the
+installer.
 
 ### SQLite
 

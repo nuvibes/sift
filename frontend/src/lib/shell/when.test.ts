@@ -12,6 +12,7 @@ import {
 	NOT_ENOUGH_TO_SAY,
 	onRecord,
 	sayAgo,
+	sayAtLeast,
 	sayWhen,
 	sayWindow,
 	span,
@@ -371,5 +372,27 @@ describe('sayWindow', () => {
 		expect(sayWindow(10 * HOUR, HOUR)).toBe(NOT_ENOUGH_TO_SAY);
 		expect(sayWindow(-1, 10)).toBe(NOT_ENOUGH_TO_SAY);
 		expect(sayWindow(0, Number.POSITIVE_INFINITY)).toBe(NOT_ENOUGH_TO_SAY);
+	});
+});
+
+describe('sayAtLeast', () => {
+	const MINUTE = 60;
+	const HOUR = 3600;
+	const DAY = 86_400;
+
+	it('says the least the work takes, rounded down to its step', () => {
+		expect(sayAtLeast(7 * MINUTE)).toBe('at least 5 minutes');
+		expect(sayAtLeast(50 * MINUTE)).toBe('at least 45 minutes');
+		expect(sayAtLeast(HOUR)).toBe('at least an hour');
+		expect(sayAtLeast(5.9 * HOUR)).toBe('at least 5 hours');
+		expect(sayAtLeast(20 * HOUR)).toBe('at least 18 hours');
+		expect(sayAtLeast(3.5 * DAY)).toBe('at least 3 days');
+	});
+
+	it('has nothing to say under five minutes or without a figure', () => {
+		expect(sayAtLeast(4 * MINUTE)).toBe(NOT_ENOUGH_TO_SAY);
+		expect(sayAtLeast(null)).toBe(NOT_ENOUGH_TO_SAY);
+		expect(sayAtLeast(undefined)).toBe(NOT_ENOUGH_TO_SAY);
+		expect(sayAtLeast(Number.POSITIVE_INFINITY)).toBe(NOT_ENOUGH_TO_SAY);
 	});
 });

@@ -61,7 +61,7 @@ from sift.kernel.seams import (
     DisagreementSeam,
     FaceEvidenceSeam,
     FilterEngine,
-    InterfaceStateSeam,
+    ForgetGoneSeam,
     PhotoSetSeam,
     RecognitionSeam,
     ReindexSeam,
@@ -272,10 +272,6 @@ start-up for the reason `ON_SETTINGS_CHANGED` is."""
 # the feature it belongs to uses more of the object than the interface describes.
 
 SETTINGS_HUB: Part[SettingsSeam] = Part("settings_hub")
-#: The same hub, as the keeper of each User's arrangement of the interface: read and written for that
-#: User only. Its own part because a reader of preferences has no business writing a User's state,
-#: and a feature that keeps a hint there needs both calls. See `InterfaceStateSeam`.
-INTERFACE_STATE: Part[InterfaceStateSeam] = Part("interface_state")
 #: The one filter engine: the search feature's compiler, published at boot. The grid, the search
 #: endpoints and a collection's Files tab all hold this same instance, so none of them can come to
 #: disagree with another about what a query means. See `FilterEngine`.
@@ -286,13 +282,14 @@ SUBJECT_COVERS: Part[SubjectCovers] = Part("subject_covers")
 """Reading a preference. Seven features do; none of them owns the store."""
 
 COVER_PICTURES: Part[CoverPictures] = Part("cover_pictures")
-"""The store for uploaded cover pictures. One dependency for the twelve cover routes
-(six that receive one and six that serve one) rather than a database and a settings object
-at each of them."""
+"""The store for uploaded cover pictures, one dependency for the twelve cover routes."""
 
 REINDEXER: Part[ReindexSeam] = Part("reindexer")
 STILLS: Part[StillSeam] = Part("stills")
 """Telling the search index that text it holds has changed."""
+
+FORGET_GONE: Part[ForgetGoneSeam] = Part("forget_gone")
+"""A deleted thing told to the search feature, which drops a saved filter left naming nothing."""
 
 RECOGNITION: Part[RecognitionSeam] = Part("recognition")
 """Handing a new person the faces already waiting under their name."""
@@ -392,6 +389,10 @@ def cover_pictures(request: Request) -> CoverPictures:
 
 def reindexer(request: Request) -> ReindexSeam:
     return part_of(request, REINDEXER)
+
+
+def forget_gone(request: Request) -> ForgetGoneSeam:
+    return part_of(request, FORGET_GONE)
 
 
 def stills(request: Request) -> StillSeam:

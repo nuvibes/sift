@@ -1,24 +1,16 @@
 /*
- * One tab's wall on an entity page.
- *
- * What is worth checking is in the addresses and the words, each of which can be wrong while
- * drawing perfectly.
- *
- * A wall of marks is drawn by the media grid rather than by this one, with the grid's verbs,
- * preview and zoom, so for that tab no card is drawn at all.
- *
- * A tab somebody has left must not have its answer land under the tab they are now on, which is the
- * rising counter, visible only under a slow server.
+ * One tab's wall on an entity page: its addresses and words, each of which can be wrong while
+ * drawing perfectly, and a left tab's answer never landing under the tab now chosen.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createRawSnippet, flushSync, mount, unmount, tick, type ComponentProps } from 'svelte';
 
 import { api } from '$lib/api/client';
-import { loadRelated, type RelatedRow } from '$lib/entity/related.svelte';
+import { loadRelated, ordersFor, tabSort, type RelatedRow } from '$lib/entity/related.svelte';
 import { forgetMeasurements } from '$lib/grid/cards.svelte';
 import { measuring } from '$lib/grid/measuring';
-import { ableTo, screenBar } from '$lib/components/shell/screen-bar.svelte';
+import { ableTo, ordersOffered, screenBar } from '$lib/components/shell/screen-bar.svelte';
 import { openAsset } from '$lib/player/asset-view';
 import { readFileSync } from 'node:fs';
 
@@ -328,7 +320,7 @@ describe('the number beside the tab', () => {
 
 		await draw('tags', { oncount: counted });
 
-		expect(counted).toHaveBeenCalledWith(12);
+		expect(counted).toHaveBeenCalledWith(12, false);
 	});
 });
 
@@ -844,5 +836,62 @@ describe("the page's own cards after the wall's", () => {
 
 		expect(host.querySelector('.loose')?.textContent).toBe('nobody yet');
 		expect(host.textContent).not.toContain('Nobody else turns up');
+	});
+});
+
+describe('the box and the order on a tab', () => {
+	const address = page as unknown as { url: URL };
+
+	afterEach(() => {
+		address.url = new URL('http://localhost/');
+		tabSort('tags').set('largest');
+	});
+
+	it('asks with the words in the address, and draws them in its box', async () => {
+		address.url = new URL('http://localhost/people/p1?show=tags&called=bea');
+		const oncount = vi.fn();
+		load.mockResolvedValue(answered([row()], 1));
+
+		await draw('tags', { oncount });
+
+		expect(load).toHaveBeenLastCalledWith(
+			'person',
+			'p1',
+			'tags',
+			expect.objectContaining({ words: 'bea', offset: 0 })
+		);
+		const box = host.querySelector('input[placeholder="Search tags"]') as HTMLInputElement;
+		expect(box.value).toBe('bea');
+		expect(oncount).toHaveBeenLastCalledWith(1, true);
+	});
+
+	it("offers the bar the wall's orders, and asks again from the top in the one chosen", async () => {
+		load.mockResolvedValue(answered([row()], 200));
+		await draw('tags');
+
+		expect(ordersOffered(screenBar.tools.sorts)).toEqual(ordersFor('tags'));
+		expect(screenBar.tools.sort).toBe('largest');
+		screenBar.tools.onSort?.('name_az');
+		flushSync();
+		await settle();
+
+		expect(load).toHaveBeenLastCalledWith(
+			'person',
+			'p1',
+			'tags',
+			expect.objectContaining({ sort: 'name_az', offset: 0 })
+		);
+		expect(tabSort('tags').value).toBe('name_az');
+	});
+
+	it("leaves the order on the Loops tab to the media grid, whose orders are a loop's", async () => {
+		const props = await draw('loops');
+		// Asked again after the grid has published, as a renamed heading does.
+		props.title = 'Marks';
+		flushSync();
+		await settle();
+
+		const labels = ordersOffered(screenBar.tools.sorts).map((one) => one.label);
+		expect(labels).toContain('Recently created');
 	});
 });

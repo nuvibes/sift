@@ -25,7 +25,7 @@ vi.mock('$lib/api/client', async (importOriginal) => ({
 import PasteBox from './PasteBox.svelte';
 import type { components } from '$lib/api/schema';
 import { api } from '$lib/api/client';
-import { NO_DOWNLOAD_FOLDER } from '$lib/library/destinations.svelte';
+import { Destinations, NO_DOWNLOAD_FOLDER } from '$lib/library/destinations.svelte';
 
 let host: HTMLElement;
 let instance: ReturnType<typeof mount> | null = null;
@@ -203,11 +203,14 @@ it('keeps them on one line on a window with room', () => {
 /** What the server holds: the folders a download can go to, and which one is the default. */
 function holds(
 	defaultFolder: string | null,
-	sites: { scope: string; dest_folder_id: string }[] = []
+	sites: { scope: string; dest_folder_id: string }[] = [],
+	foldersFail = false
 ) {
 	vi.mocked(api.get).mockImplementation(async (path: string) => {
-		if (path === '/library/folders')
+		if (path === '/library/folders') {
+			if (foldersFail) throw new Error('500');
 			return { folders: [{ id: 'f1', name: 'Clips', rel_path: 'Clips' }] };
+		}
 		if (path === '/site-options') {
 			return {
 				default: {
@@ -241,8 +244,7 @@ async function press(props: Record<string, unknown>) {
 	return onsubmit;
 }
 
-const ASKS =
-	'No download folder is set. Choose one for this download under Options, Download folder.';
+const ASKS = 'No download folder is set. Choose one under Options, Download folder.';
 
 it('asks where a paste goes instead of sending it when no folder is set', async () => {
 	holds(null);
@@ -282,4 +284,31 @@ it('still asks when one line of the paste is from a Site with no folder', async 
 		value: 'https://www.tiktok.com/@someone/video/1\nhttps://nowhere.example/clip'
 	});
 	expect(onsubmit).not.toHaveBeenCalled();
+});
+
+it('says the folders could not be read, not that there are none, and reads them again', async () => {
+	vi.mocked(api.get).mockClear();
+	holds(null, [], true);
+	const onsubmit = await press({ value: 'https://www.tiktok.com/@someone/video/1' });
+	expect(onsubmit).not.toHaveBeenCalled();
+	expect(words(host)).toContain("Sift couldn't read your folders.");
+	expect(words(host)).not.toContain('Sift has no folder');
+	await vi.waitFor(() =>
+		expect(
+			vi.mocked(api.get).mock.calls.filter(([path]) => path === '/library/folders')
+		).toHaveLength(2)
+	);
+});
+
+it('asks for a folder while the list is still being read, rather than say there is none', async () => {
+	holds(null);
+	await new Destinations().load();
+	vi.mocked(api.get).mockImplementation(async (path: string) =>
+		path === '/library/folders' ? new Promise(() => {}) : undefined
+	);
+	draw({ value: 'https://www.tiktok.com/@someone/video/1' });
+	host.querySelector('form')?.requestSubmit();
+	await new Promise((resolve) => setTimeout(resolve, 0));
+	flushSync();
+	expect(words(host)).toContain(ASKS);
 });

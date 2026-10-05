@@ -16,10 +16,11 @@ from typing import Any, cast
 
 import pytest
 
-from sift.kernel import media
+from sift.kernel import media, subprocess
 from sift.kernel.config import Settings
 from sift.kernel.content import Asset, ContentStore, Location, LocationStatus
 from sift.kernel.hardware import HardwareReport
+from sift.kernel.jobs.failure_words import kind_of
 from sift.kernel.media import Encoder, FFmpegError, MissingAsset, NoReadableCopy, render_node
 from sift.testing.tools import stand_in_tool
 
@@ -338,6 +339,18 @@ async def test_a_tool_that_exits_badly_is_reported_with_what_it_said(tmp_path: P
     false = stand_in_tool(tmp_path, "false", "raise SystemExit(1)")
     with pytest.raises(FFmpegError, match="failed:"):
         await media.run([false], time_limit=5, capture=True)
+
+
+async def test_a_tool_windows_could_not_start_says_so_in_place_of_no_detail(
+    tmp_path: Path,
+) -> None:
+    locked = stand_in_tool(tmp_path, "locked", "raise SystemExit(0xC0000043)")
+    with pytest.raises(FFmpegError) as raised:
+        await media.run([locked], time_limit=5, capture=True)
+    assert subprocess.NEVER_STARTED in str(raised.value)
+    found = kind_of(f"FFmpegError: {raised.value}")
+    assert found is not None
+    assert found.name == "never-started"
 
 
 async def test_a_tool_that_is_not_there_is_a_media_error_and_not_an_os_one() -> None:

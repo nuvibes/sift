@@ -1,19 +1,15 @@
+<script module lang="ts">
+	/** The words a step with nothing beside it is dimmed with. */
+	export const NOTHING_BEFORE = 'Nothing before this';
+	export const NOTHING_AFTER = 'Nothing after this';
+</script>
+
 <script lang="ts">
 	/*
-	 * THE TRANSPORT: Shuffle, Previous, Play or Pause, Next, Repeat, in that order, on every bar.
+	 * THE TRANSPORT: Repeat, Previous, Play or Pause, Next, Shuffle, in that order, on every bar.
 	 *
-	 * One component for the popout player's bar, every Theater bar and the Audio player, so the five
-	 * presses stand in the same order with the same glyphs, words and keys wherever somebody meets
-	 * them: the step pair and Play in the middle of the bar, Shuffle left of Previous, Repeat right
-	 * of Next. Where the five stand on a bar is the bar's; what they are is here.
-	 *
-	 * What each press DOES is the caller's: a player shuffles its run, a Theater bar every cell it is
-	 * addressing, the Audio player the run it carries. So each arrives as a state and a callback, and
-	 * this file draws the button.
-	 *
-	 * A press with nothing to act on is either not drawn or dimmed with its reason, and the caller
-	 * says which: no handler and no reason is not drawn (a list of one has no next to wait for);
-	 * a reason is drawn dimmed with that reason as its words (the Audio player keeps one shape).
+	 * What each press does is the caller's; this file draws the five. Every press is always drawn:
+	 * one with nothing to act on is dimmed with its reason as its words, so a bar keeps one shape.
 	 */
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
 	import { Button } from '$lib/components/common';
@@ -39,21 +35,24 @@
 	interface Props {
 		playing: boolean;
 		onplay?: () => void;
-		/** Whether there is anything to play: false draws no Play unless `playWhy` says why not. */
+		/** Whether there is anything to play: false dims Play with `playWhy`. */
 		playable?: boolean;
-		/** Why Play cannot act, drawn dimmed with these words. */
 		playWhy?: string;
 		onback?: () => void;
 		onforward?: () => void;
 		backLabel?: string;
 		forwardLabel?: string;
-		/** Why Previous or Next cannot act, drawn dimmed with these words where there is no handler. */
+		/** Why Previous or Next cannot act, where there is no handler. */
 		backWhy?: string;
 		forwardWhy?: string;
-		shuffle?: ShuffleControl;
-		repeat?: RepeatControl;
-		/** Whose keys this bar answers, so each tooltip shows the key the act table gives it. */
-		keyboard?: Keyboard;
+		shuffle: ShuffleControl;
+		repeat: RepeatControl;
+		/** Play alone, for the docked phone strip: a thumb's strip has room for one press. */
+		playOnly?: boolean;
+		/** False where a swipe steps instead (a phone in the hand), so the step pair stands down. */
+		steps?: boolean;
+		/** Whose keys this bar answers, so each tooltip shows its key; null where it answers none. */
+		keyboard?: Keyboard | null;
 		/** The handlers that say a verb is being pointed at, spread on every press. See `PlayerBar`. */
 		aims?: Record<string, (() => void) | undefined>;
 		/** The tooltips open above the bar where it stands along the foot of a window. */
@@ -67,99 +66,34 @@
 		playWhy,
 		onback,
 		onforward,
-		backLabel = ACTS.previous,
-		forwardLabel = ACTS.next,
+		backLabel,
+		forwardLabel,
 		backWhy,
 		forwardWhy,
 		shuffle,
 		repeat,
+		playOnly = false,
+		steps = true,
 		keyboard = 'player',
 		aims = {},
 		placement
 	}: Props = $props();
 
-	const playWords = $derived(playing ? ACTS.pause : ACTS.play);
-	const repeatWords = $derived(repeat ? (repeat.why ?? loopModeLabel(repeat.mode)) : '');
-	const shuffleWords = $derived(shuffle?.why ?? ACTS.shuffle);
+	const playWords = $derived(
+		playable ? (playing ? ACTS.pause : ACTS.play) : (playWhy ?? NOTHING_AFTER)
+	);
+	const repeatWords = $derived(repeat.why ?? loopModeLabel(repeat.mode));
+	const shuffleWords = $derived(shuffle.why ?? ACTS.shuffle);
+	const backWords = $derived(onback ? (backLabel ?? ACTS.previous) : (backWhy ?? NOTHING_BEFORE));
+	const forwardWords = $derived(
+		onforward ? (forwardLabel ?? ACTS.next) : (forwardWhy ?? NOTHING_AFTER)
+	);
 </script>
 
 <div class="transport">
-	{#if shuffle}
-		<!-- `{...aims}` FIRST on every one of these, so anything written after it wins: a spread placed
-		     last is how a caller's object comes to replace a `class` the call site set. -->
-		<Tooltip
-			label={shuffleWords}
-			{placement}
-			shortcut={shuffle.why ? undefined : keyOf('shuffle', keyboard)}
-		>
-			<Button
-				{...aims}
-				tone="ghost"
-				icon="shuffle"
-				aria-label={shuffleWords}
-				pressed={shuffle.on}
-				disabled={shuffle.why !== undefined}
-				onclick={shuffle.onpress}
-			/>
-		</Tooltip>
-	{/if}
-
-	{#if onback}
-		<Tooltip label={backLabel} {placement} shortcut={keyOf('previous', keyboard)}>
-			<Button {...aims} tone="ghost" icon="skip_previous" aria-label={backLabel} onclick={onback} />
-		</Tooltip>
-	{:else if backWhy}
-		<Tooltip label={backWhy} {placement}>
-			<Button {...aims} tone="ghost" icon="skip_previous" aria-label={backWhy} disabled />
-		</Tooltip>
-	{/if}
-
-	<!-- Not drawn at all where there is nothing to play, unless the caller says why it cannot. -->
-	{#if playable}
-		<Tooltip label={playWords} {placement} shortcut={keyOf(playing ? 'pause' : 'play', keyboard)}>
-			<Button
-				{...aims}
-				tone="ghost"
-				class="play"
-				iconSize={28}
-				icon={playing ? 'pause' : 'play_arrow'}
-				aria-label={playWords}
-				onclick={onplay}
-			/>
-		</Tooltip>
-	{:else if playWhy}
-		<Tooltip label={playWhy} {placement}>
-			<Button
-				{...aims}
-				tone="ghost"
-				class="play"
-				iconSize={28}
-				icon="play_arrow"
-				aria-label={playWhy}
-				disabled
-			/>
-		</Tooltip>
-	{/if}
-
-	{#if onforward}
-		<Tooltip label={forwardLabel} {placement} shortcut={keyOf('next', keyboard)}>
-			<Button
-				{...aims}
-				tone="ghost"
-				icon="skip_next"
-				aria-label={forwardLabel}
-				onclick={onforward}
-			/>
-		</Tooltip>
-	{:else if forwardWhy}
-		<Tooltip label={forwardWhy} {placement}>
-			<Button {...aims} tone="ghost" icon="skip_next" aria-label={forwardWhy} disabled />
-		</Tooltip>
-	{/if}
-
-	{#if repeat}
-		<!-- No key on the tooltip: R answers it on the keyboard, and the act table names no key for
-		     it, which is how every bar has shown it. -->
+	{#if !playOnly}
+		<!-- `{...aims}` FIRST on every one of these, so anything written after it wins. -->
+		<!-- No key on the tooltip: R answers it, and the act table names no key for it. -->
 		<Tooltip label={repeatWords} {placement}>
 			<Button
 				{...aims}
@@ -169,6 +103,75 @@
 				pressed={loopRepeats(repeat.mode)}
 				disabled={repeat.why !== undefined}
 				onclick={repeat.onpress}
+			/>
+		</Tooltip>
+	{/if}
+
+	{#if !playOnly && steps}
+		<Tooltip
+			label={backWords}
+			{placement}
+			shortcut={onback && keyboard ? keyOf('previous', keyboard) : undefined}
+		>
+			<Button
+				{...aims}
+				tone="ghost"
+				icon="skip_previous"
+				aria-label={backWords}
+				disabled={!onback}
+				onclick={onback}
+			/>
+		</Tooltip>
+	{/if}
+
+	<Tooltip
+		label={playWords}
+		{placement}
+		shortcut={playable && keyboard ? keyOf(playing ? 'pause' : 'play', keyboard) : undefined}
+	>
+		<Button
+			{...aims}
+			tone="ghost"
+			class="play"
+			iconSize={28}
+			icon={playable && playing ? 'pause' : 'play_arrow'}
+			aria-label={playWords}
+			disabled={!playable}
+			onclick={onplay}
+		/>
+	</Tooltip>
+
+	{#if !playOnly && steps}
+		<Tooltip
+			label={forwardWords}
+			{placement}
+			shortcut={onforward && keyboard ? keyOf('next', keyboard) : undefined}
+		>
+			<Button
+				{...aims}
+				tone="ghost"
+				icon="skip_next"
+				aria-label={forwardWords}
+				disabled={!onforward}
+				onclick={onforward}
+			/>
+		</Tooltip>
+	{/if}
+
+	{#if !playOnly}
+		<Tooltip
+			label={shuffleWords}
+			{placement}
+			shortcut={shuffle.why || !keyboard ? undefined : keyOf('shuffle', keyboard)}
+		>
+			<Button
+				{...aims}
+				tone="ghost"
+				icon="shuffle"
+				aria-label={shuffleWords}
+				pressed={shuffle.on}
+				disabled={shuffle.why !== undefined}
+				onclick={shuffle.onpress}
 			/>
 		</Tooltip>
 	{/if}
@@ -183,13 +186,8 @@
 		flex: none;
 	}
 
-	/*
-	 * The one control on the bar somebody aims at without looking: bigger, and at full ink.
-	 *
-	 * The class twice: the shared button sizes an icon-only control with `.btn.icon-only.medium`,
-	 * which carries its own file's scope class and counts four, so a rule counting three loses
-	 * silently and Play comes out the size of every other glyph with every test still green.
-	 */
+	/* The press aimed at without looking: bigger, at full ink. The class twice to outrank the
+	   shared button's own four-class size rule. */
 	.transport :global(.btn.play.play) {
 		inline-size: 44px;
 		block-size: 44px;

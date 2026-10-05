@@ -24,6 +24,7 @@
 	import Pager from '$lib/components/common/Pager.svelte';
 	import { CardPaging } from '$lib/grid/cards.svelte';
 	import { screenBar } from '$lib/components/shell/screen-bar.svelte';
+	import { wallHeld } from '$lib/components/entity/TabLayer.svelte';
 	import { untrack, type Snippet } from 'svelte';
 	import type { IconName } from '$lib/design/icons';
 	import type { Crumb } from '$lib/components/common/Breadcrumbs.svelte';
@@ -32,9 +33,13 @@
 		loadRelated,
 		narrowingFor,
 		nounFor,
+		ordersFor,
 		pinnableOf,
 		relatedHref,
 		RELATED_PER_PAGE,
+		NAME_WORDS,
+		TabWords,
+		tabSort,
 		type EntityKind,
 		type RelatedKind,
 		type RelatedRow
@@ -60,6 +65,8 @@
 	import { glyphOf } from '$lib/entity/entity-picture';
 	import SongArtists from '$lib/components/entity/SongArtists.svelte';
 	import ArtistRenameDialog from '$lib/components/entity/ArtistRenameDialog.svelte';
+	import WallControls from '$lib/components/entity/WallControls.svelte';
+	import { emptyWallSays } from '$lib/components/shell/wall-words';
 
 	interface Props {
 		/** What kind of page this wall is on. */
@@ -82,8 +89,8 @@
 		above?: Snippet;
 		/** The trail for the frame's band, the same one on every tab of this page. */
 		crumbs?: Crumb[];
-		/** Told what the wall found, so the tab strip above can put the number beside its word. */
-		oncount?: (total: number) => void;
+		/** What the wall found, and whether words narrowed it: then it is not the tab's number. */
+		oncount?: (total: number, searched: boolean) => void;
 		/**
 		 * What the PAGE knows about one card, drawn under that card's facts. See
 		 * `EntityCard.beneath`. A person's page hands its handles on each Site to the Sites tab and a
@@ -126,11 +133,8 @@
 	/*
 	 * Which tab the rows on screen were read for, and where in it.
 	 *
-	 * Not always the tab chosen. A tab pressed keeps the last tab's cards on screen until the new
-	 * answer lands (`held`), so a wall never goes empty between two answers. Those cards are drawn
-	 * as what they ARE: a person's card on its way out of a People tab keeps its face and its link
-	 * while the heading above already says Sites. Everything a card is drawn from reads this, never
-	 * `showing`; the heading, the empty words and the bar read `showing`.
+	 * Not always the tab chosen: the last tab's cards stay until the new answer lands (`held`), drawn
+	 * as what they are. A card reads this; the heading, the empty words and the bar read `showing`.
 	 */
 	let rowsOf = $state<Exclude<RelatedKind, 'files'>>(untrack(() => showing));
 	let rowsAt = $state(0);
@@ -152,20 +156,26 @@
 	/** Whether the rows on screen were read for the tab that is chosen. */
 	const settled = $derived(rowsOf === showing);
 
-	/*
-	 * The wall pages through the shared pager. The heading above takes the scoped total, so drawing
-	 * only a first page with no pager would show "People 200" over sixty cards with no way to reach
-	 * the rest, while both numbers stayed correct. `CardPaging` measures a real card and the box it
-	 * scrolls in and asks for whole rows, which is also what makes the size slider below mean
-	 * something here.
-	 *
-	 * One paging per kind of card, named for it, so the session remembers what each kind measured
-	 * (see `CardPaging`). A person's Tags tab and a site's People tab draw different cards, so one
-	 * name for every tab would hand a tag card's size to a wall of faces. Derived, because the same
-	 * wall is handed a new `showing` when the tab strip changes, and a new kind is a new wall: its
-	 * offset starts at the top and its size is that kind's own.
-	 */
+	/* One paging per kind of card, so each kind keeps its own measured size (`CardPaging`). */
 	const paging = $derived(new CardPaging(RELATED_PER_PAGE, `related.${showing}`));
+
+	/* The box's words: a name, a Loop's or a card's, so never the query language's `q`. */
+	const tabWords = new TabWords(NAME_WORDS);
+	const words = $derived(tabWords.asked);
+
+	/* The order, remembered per kind of tab as the walls remember theirs. */
+	const order = $derived(tabSort(showing));
+	const sort = $derived(order.value);
+
+	/* What the wall is asked: a different one starts at the top and is read loudly. */
+	function here() {
+		return { on, id, showing, words, sort };
+	}
+	type Where = ReturnType<typeof here>;
+
+	function keyOf(where: Where): string {
+		return `${where.on}/${where.id}/${where.showing}\n${where.sort}\n${where.words}`;
+	}
 
 	/*
 	 * What one row of this wall is called, which is not what the tab is called.
@@ -219,10 +229,7 @@
 	 * would move the mark and leave the card exactly where it was until somebody navigated away and
 	 * back.
 	 */
-	async function read(
-		where: { on: EntityKind; id: string; showing: Exclude<RelatedKind, 'files'> },
-		{ quiet = false } = {}
-	) {
+	async function read(where: Where, { quiet = false } = {}) {
 		const wanted = ++generation;
 		if (!quiet) loading = true;
 		failed = null;
@@ -232,13 +239,15 @@
 			   The question is the subject and the tab; this wall has no anchor, so every ask is an
 			   offset. */
 			const page = await paging.fill(
-				`${where.on}/${where.id}/${where.showing}`,
+				keyOf(where),
 				() => rows,
 				async (ask) => {
 					const offset = 'offset' in ask ? ask.offset : 0;
 					const got = await loadRelated(where.on, where.id, where.showing, {
 						limit: ask.limit,
-						offset
+						offset,
+						words: where.words,
+						sort: where.sort
 					});
 					return { ...got, offset };
 				},
@@ -251,7 +260,7 @@
 			rowsOf = where.showing;
 			rowsAt = page.offset;
 			answeredEmpty = page.rows.length === 0 ? emptyWords : null;
-			oncount?.(page.total);
+			oncount?.(page.total, Boolean(where.words));
 		} catch {
 			if (wanted !== generation) return;
 			// A quiet re-read that fails leaves what is on screen alone: it is still the truth as of
@@ -283,7 +292,7 @@
 	 * `/api/sites/<person>/cover` with a link to a Site that is not there.
 	 */
 	$effect.pre(() => {
-		const where = `${on}/${id}/${showing}`;
+		const where = keyOf(here());
 		untrack(() => {
 			if (where === resetFor) return;
 			resetFor = where;
@@ -304,8 +313,8 @@
 		   re-ask. */
 		const wanted = paging.offset;
 		const size = paging.size;
-		const where = { on, id, showing };
-		const key = `${on}/${id}/${showing}`;
+		const where = here();
+		const key = keyOf(where);
 		untrack(() => {
 			if (askedWhere === key && askedFor === wanted && askedSize === size) return;
 			/* Only the SIZE moved: the first measurement of a visit, or a resize. Read quietly: a
@@ -321,7 +330,7 @@
 
 	/* And again, quietly, when the library moves: a username given to somebody, a share taken back.
 	   Every other wall follows the library; a tab showing the same cards must too. */
-	reloadOnLibraryChange(() => void read({ on, id, showing }, { quiet: true }));
+	reloadOnLibraryChange(() => void read(here(), { quiet: true }));
 
 	/* The page's own cards go after the last of this wall's, so they are drawn once, at the end. */
 	const onLastPage = $derived(
@@ -329,27 +338,24 @@
 	);
 	const trailingHere = $derived(after && onLastPage ? trailing : 0);
 
-	/*
-	 * What the bar above this screen can do, while this wall is the screen.
-	 *
-	 * The wall honours `gridSize.step` (see `cardWidthForStep`), and the bar has to be told so, or
-	 * the size slider would do nothing on any tab but Files. `AssetGrid` publishes for the Files
-	 * tab, this publishes for
-	 * the other five, and only one of the two is ever mounted, so there is no second publisher
-	 * fighting the first.
-	 *
-	 * The reasons on the two dimmed controls are this wall's own, in the words the four entity walls
-	 * already use for the same facts: these are named things rather than files, so the query language
-	 * has nothing to filter here, and a card is not a moving picture.
-	 */
+	/* What the bar can do over the cards. The Loops tab is the media grid, which publishes its own. */
 	const mine = Symbol('related-wall');
+	const leaving = wallHeld();
 
 	$effect(() => {
+		if (showing === 'loops') {
+			screenBar.release(mine);
+			return;
+		}
+		if (leaving()) return;
+		const chosen = order;
 		screenBar.publish(mine, {
 			filterable: `This wall is ${title.toLowerCase()}, not files`,
 			resizable: true,
 			playable: 'A card is a picture and a name, and neither plays',
-			sorts: []
+			sorts: ordersFor(showing),
+			sort,
+			onSort: (next) => chosen.set(next)
 		});
 	});
 
@@ -415,15 +421,18 @@
 	 * to work out whether it is broken.
 	 */
 	const emptyWords = $derived(
-		showing === 'people'
-			? 'Nobody else turns up on these files.'
-			: showing === 'sites_within'
-				? // The two walls here that are not about this thing's FILES, so the sentence cannot be
-					// about them either: nothing is filed under this, no site says it is part of it.
-					'No other Site is part of this one.'
-				: showing === 'tags_within'
-					? 'No tag is filed under this one yet.'
-					: `Nothing here carries ${title.toLowerCase()} yet.`
+		emptyWallSays(
+			rowNoun.many,
+			words,
+			false,
+			showing === 'people'
+				? 'Nobody else turns up on these files.'
+				: showing === 'sites_within'
+					? 'No other Site is part of this one.'
+					: showing === 'tags_within'
+						? 'No tag is filed under this one yet.'
+						: `Nothing here carries ${title.toLowerCase()} yet.`
+		)
 	);
 
 	/*
@@ -486,7 +495,7 @@
 			})),
 		/* Quietly: the rows on screen stay until the new ones land. A verb that wrote something is
 		   not a reason to blank a wall somebody is looking at. */
-		changed: () => void read({ on, id, showing }, { quiet: true }),
+		changed: () => void read(here(), { quiet: true }),
 		clear: () => selection.clear(),
 		get pins() {
 			return pinnable !== null && wallKind !== null;
@@ -576,6 +585,7 @@
 	   one function rather than assembled here, so a tag's Loops tab and a tag's Tags tab cannot
 	   come to disagree about what "on this tag" means. */
 	const narrowing = $derived(Object.fromEntries(narrowingFor(on, id, showing)));
+	const loopsAsked = $derived(words ? { ...narrowing, [NAME_WORDS]: words } : narrowing);
 
 	/*
 	 * The same page in the words the FILTER BAR reads, for the Loops tab's panel.
@@ -594,24 +604,23 @@
 	const filesQuery = $derived(named ? { [fieldOf(on)]: named } : undefined);
 </script>
 
-<!--
-	A wall of MARKS is drawn by the media grid, not by this one, and that is parity rather than a
-	special case.
+<!-- The search box at the end of the tab row, searching what this tab lists. -->
+{#snippet searchBox()}
+	<WallControls
+		noun={rowNoun.one}
+		plural={rowNoun.many}
+		bind:term={tabWords.term}
+		onsettled={(typed) => tabWords.write(typed)}
+	/>
+{/snippet}
 
-	Every other kind here is an ENTITY: a person, a tag, a shoot: a named thing with a count, which
-	is exactly what an entity card draws. A loop is not one. It is a piece of a video, and on its own
-	screen it is drawn by the same grid Browse is: a bare tile, a preview under the cursor, the
-	shared verbs, the shared zoom. Drawn as an entity card instead it would come out as "Untitled
-	loop / 2s" with none of that: a second, worse way of showing media, on one tab out of six.
-
-	The filtering is the same parameter the endpoint already takes, so nothing about this is a
-	related-list special case either. See `LOOP_SOURCE`.
--->
+<!-- A Loop is media, not a named thing, so the Loops tab is the media grid Browse draws. -->
 {#if showing === 'loops'}
 	<AssetGrid
 		source={LOOP_SOURCE}
-		query={narrowing}
+		query={loopsAsked}
 		{filesQuery}
+		words={NAME_WORDS}
 		{title}
 		{icon}
 		{beside}
@@ -619,9 +628,13 @@
 		{above}
 		{crumbs}
 		titleLevel={2}
-		{oncount}
+		oncount={(found) => oncount?.(found, Boolean(words))}
 		empty={emptyWords}
-	/>
+	>
+		{#snippet tools()}
+			{@render searchBox()}
+		{/snippet}
+	</AssetGrid>
 {:else}
 	<EntityGrid
 		{title}
@@ -639,6 +652,9 @@
 		measure={settled ? paging.cards : undefined}
 		page={loading && rows.length === 0 ? null : String(entrance)}
 	>
+		{#snippet controls()}
+			{@render searchBox()}
+		{/snippet}
 		{#snippet pager()}
 			<!--
 				In the frame's footer, where every other wall's is. What it pages is what the

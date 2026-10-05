@@ -21,7 +21,7 @@ Insights opens with a sentence about the period and the time you spent viewing. 
 - **By kind**: your viewing split into videos, pictures and Theater, the files you opened and came back to, and the Photo Sets you looked through.
 - **When**: your earliest start and latest finish, and the hours you view most.
 - **Most viewed**: your top People, Sites, Tags, Photo Sets and Files.
-- **Theater**: the time you spent in [Theater](/library/theater/#keep-a-wall-to-open-again), in how many sessions, and the presets you watched.
+- **Theater**: the time you spent in [Theater](/library/theater/#keep-a-wall-to-open-again), in how many sessions, and the Saved Layouts you watched.
 - **Visits**: how many times you opened Sift, and under **First opened**, the people you opened first.
 - **Opinions**: the files you rated and starred and your O count, with **Files you starred** and **Most O presses**.
 - **Organizing**: the questions you answered in [Organize](/library/organize/#the-board), card by card.

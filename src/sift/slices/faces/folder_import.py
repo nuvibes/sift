@@ -22,6 +22,7 @@ from sift.kernel.log import get_logger
 from sift.slices.faces.models import Finding
 from sift.slices.faces.references import PersonReport, folders_in, images_in
 from sift.slices.faces.service import FaceService
+from sift.slices.faces.store_left_out import LeftOutStore
 from sift.slices.faces.weights import WeightError
 
 log = get_logger(__name__)
@@ -51,6 +52,11 @@ LEFT_OUT_WORDS: dict[Finding, str] = {
     Finding.RUNS_OFF_EDGE: "cut off at the edge",
     Finding.ODD_ONE_OUT: "looking like someone else",
 }
+
+
+def worded(reason: Finding) -> str:
+    """A reason's words in the report, its own name where it has none."""
+    return LEFT_OUT_WORDS.get(reason, reason.value.replace("_", " "))
 
 
 @dataclass(frozen=True, slots=True)
@@ -96,6 +102,20 @@ def over_the_caps(listing: FolderListing) -> str | None:
     return None
 
 
+async def _listing_of(root: Path) -> FolderListing:
+    """The folder's listing, or the import refused where it cannot be read or is past a cap."""
+    try:
+        listing = await asyncio.to_thread(read_folder, root)
+    except OSError as error:
+        raise JobFailedPermanently(
+            f"Sift couldn't read the folder {root}. Check that it is still there."
+        ) from error
+    refused = over_the_caps(listing)
+    if refused:
+        raise JobFailedPermanently(refused)
+    return listing
+
+
 @dataclass(slots=True)
 class Tally:
     """What the import has done so far, added to a person at a time."""
@@ -122,8 +142,7 @@ class Tally:
         left = sum(self.left_out.values())
         if left:
             reasons = [
-                f"{count:,} {LEFT_OUT_WORDS.get(reason, reason.value.replace('_', ' '))}"
-                for reason, count in self.left_out.most_common()
+                f"{count:,} {worded(reason)}" for reason, count in self.left_out.most_common()
             ]
             photos = "1 photo" if left == 1 else f"{left:,} photos"
             parts.append(f"{photos} left out: {', '.join(reasons)}.")
@@ -138,11 +157,33 @@ class Tally:
         return " ".join(parts)
 
 
+def left_out_files(report: PersonReport, root: Path) -> list[tuple[str, str]]:
+    """Each picture of a person's folder that was left out or kept as a near copy, as
+    `(path inside the chosen folder, reason)`."""
+    rows: list[tuple[str, str]] = []
+    for item in report.candidates:
+        reason = item.left_out_for
+        if reason is None and Finding.NEAR_DUPLICATE in item.findings:
+            reason = Finding.NEAR_DUPLICATE
+        if reason is not None:
+            rows.append((_inside(item.path, root), reason.value))
+    return rows
+
+
+def _inside(path: Path, root: Path) -> str:
+    """A picture's path inside the chosen folder, or its name where a link led outside it."""
+    try:
+        return path.relative_to(root).as_posix()
+    except ValueError:
+        return path.name
+
+
 async def import_folder(
     context: JobContext,
     *,
     service: FaceService,
     ask: Callable[[JobQueue], Awaitable[None]],
+    left_out: LeftOutStore | None = None,
 ) -> None:
     """Read a folder of people and hold each person's faces as facial fingerprints.
 
@@ -150,7 +191,8 @@ async def import_folder(
     one Sift has been given, checked again here, or `staged` for the copy of a browser's upload,
     removed when the task ends for good (kept through a pause, which runs it again from the start:
     a person already held adds nothing the second time). `ask` queues the pass over facial
-    fingerprints, asked for whenever anything landed, a stopped import included.
+    fingerprints, asked for whenever anything landed, a stopped import included. `left_out` keeps
+    which pictures the report counts.
     """
     staged = context.payload.get("staged")
     tally = Tally()
@@ -162,15 +204,9 @@ async def import_folder(
             )
         root = await _folder_of(context, service)
         await context.set_note(READING)
-        try:
-            listing = await asyncio.to_thread(read_folder, root)
-        except OSError as error:
-            raise JobFailedPermanently(
-                f"Sift couldn't read the folder {root}. Check that it is still there."
-            ) from error
-        refused = over_the_caps(listing)
-        if refused:
-            raise JobFailedPermanently(refused)
+        listing = await _listing_of(root)
+        if left_out is not None:
+            await left_out.begin(context.job.id)
         total = len(listing.people)
         source = _source_of(context, root)
         for done, folder in enumerate(listing.people, start=1):
@@ -178,9 +214,13 @@ async def import_folder(
             if context.stopping() == "pause":
                 raise JobPaused
             try:
-                tally.add(await service.import_person_folder(folder, source=source))
+                report = await service.import_person_folder(folder, source=source)
             except WeightError as error:
                 raise JobFailedPermanently(str(error)) from error
+            tally.add(report)
+            if left_out is not None:
+                rows = left_out_files(report, root)
+                await left_out.keep(context.job.id, rows, most=MAX_FOLDER_FILES)
             await context.set_note(f"Importing {done:,} of {people_counted(total)}\u2026")
             await context.report_progress(done / total)
         await context.set_progress(1.0)

@@ -539,61 +539,59 @@ class LibraryWatcher:
         #: A root whose watch ended and is being attached again, by the task doing it.
         self._reattaching: dict[str, asyncio.Task[None]] = {}
         self._reattach_seconds = reattach_seconds
+        #: The roots the last refresh saw, or None before the first.
+        self._known: set[str] | None = None
+        self._matching = asyncio.Lock()
 
     async def start(self) -> None:
-        """Begin watching every watched root, without holding up whatever is starting us.
-
-        Attaching a watcher walks the folder tree, and on a slow or very large one (a network
-        share, or a Windows drive seen through WSL), that walk takes minutes. Awaited during
-        startup, it would keep Sift from finishing starting and serving anything at all: one slow
-        folder and the whole application unreachable, with no error to explain it. So the observers
-        are attached in the background and the app comes up regardless. Roots added later are
-        picked up by `refresh`.
-        """
+        """Begin watching every root in the background: attaching can walk a slow share for minutes,
+        and awaited here it would keep Sift from serving anything at all."""
         self._task = asyncio.create_task(self._run())
         self._attaching = asyncio.create_task(self.refresh())
 
     async def watching(self) -> None:
-        """Wait until the observers are actually attached.
-
-        Startup deliberately does not wait (see `start`), but anything that means "watching has
-        begun by the time this returns" needs a way to say so, and a test that drops a file the
-        instant after starting is exactly that. Without it the file lands before inotify is
-        listening and the test is a race it usually loses.
-        """
+        """Wait until the observers are attached, which `start` does not."""
         if self._attaching is not None:
             await self._attaching
 
     async def refresh(self) -> None:
-        """Match the observers to the roots that currently want watching.
+        """Match the watches to the library folders: drop the removed and moved, attach the rest.
 
-        Called at boot and whenever a root is added or removed.
-        Simplest correct thing: stop everything and start what should be running. Reconciling the
-        difference would be an optimisation over an operation that happens when a person clicks a
-        toggle.
+        A watch already attached is left running. The first refresh catches every folder up, and a
+        later one only a folder whose watch could not attach before: a folder added or moved is
+        read by whoever added or moved it, and a catch-up beside that walk names every file again.
         """
-        # Every attach in flight first: this attaches every root itself, and a re-attach finishing
-        # after the stop below would hand a root a second watch.
-        await self._cancel_reattaching()
-        await asyncio.to_thread(self._stop_observers)
-        loop = asyncio.get_running_loop()
-        for root in await self._library.roots():
-            # Off the event loop: attaching walks the tree, and a slow share would otherwise stall
-            # every request being served while it did.
-            watching = await asyncio.to_thread(self._observe, root, loop)
-            if watching is not None:
-                self._keep(root, watching)
-            # AFTER the watch is attached, and for every root whether or not it could be.
-            #
-            # A watcher reports changes, and a change is only a change relative to the moment it
-            # started watching, so anything that arrived while Sift was closed is not a change and
-            # never becomes one. This is what finds those, and it must be queued after attaching or
-            # a file landing in the gap between the two belongs to neither.
-            #
-            # Queued rather than done here: it reads a disk, and `refresh` runs during startup. And
-            # it is queued for a root whose watch FAILED as well, because the catch-up is the only
-            # thing such a root will ever get.
-            await self._catch_up(root.id)
+        async with self._matching:
+            first = self._known is None
+            roots = {root.id: root for root in await self._library.roots()}
+            moved = {
+                root_id
+                for root_id, base in self._bases.items()
+                if root_id in roots and Path(roots[root_id].abs_path) != base
+            }
+            for root_id in [one for one in self._watches if one not in roots or one in moved]:
+                await self._drop(root_id)
+            for root_id in [one for one in self._reattaching if one not in roots or one in moved]:
+                task = self._reattaching.pop(root_id)
+                task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await task
+            for root_id in [one for one in self._bases if one not in roots or one in moved]:
+                del self._bases[root_id]
+            loop = asyncio.get_running_loop()
+            for root in roots.values():
+                running = self._reattaching.get(root.id)
+                if root.id in self._watches or (running is not None and not running.done()):
+                    continue
+                # Off the event loop: attaching may walk a slow share's tree.
+                watching = await asyncio.to_thread(self._observe, root, loop)
+                if watching is not None:
+                    self._keep(root, watching)
+                # After attaching, so a file landing between the two belongs to one of them; and
+                # for a watch that failed too, as the catch-up is all such a folder gets.
+                if first or (root.id in (self._known or set()) and root.id not in moved):
+                    await self._catch_up(root.id)
+            self._known = set(roots)
 
     def _keep(self, root: Root, watching: tuple[BaseObserver, _Events]) -> None:
         """Record a watch that attached, under its root. On the loop."""
@@ -602,6 +600,17 @@ class LibraryWatcher:
         self._handlers.append(handler)
         self._watches[root.id] = watching
         self._bases[root.id] = Path(root.abs_path)
+
+    async def _drop(self, root_id: str) -> None:
+        """Let go of one root's watch, if it has one."""
+        dead = self._watches.pop(root_id, None)
+        if dead is not None:
+            observer, handler = dead
+            with contextlib.suppress(ValueError):
+                self._observers.remove(observer)
+            with contextlib.suppress(ValueError):
+                self._handlers.remove(handler)
+            await asyncio.to_thread(_let_go, [observer], [handler])
 
     def _ended(self, root_id: str, handler: _Events, loop: asyncio.AbstractEventLoop) -> None:
         """A watch stopped by itself: the share went, the folder went. On the emitter's thread.
@@ -645,14 +654,7 @@ class LibraryWatcher:
         of rather than left running with nobody holding it.
         """
         loop = asyncio.get_running_loop()
-        dead = self._watches.pop(root_id, None)
-        if dead is not None:
-            observer, handler = dead
-            with contextlib.suppress(ValueError):
-                self._observers.remove(observer)
-            with contextlib.suppress(ValueError):
-                self._handlers.remove(handler)
-            await asyncio.to_thread(_let_go, [observer], [handler])
+        await self._drop(root_id)
         delay = self._reattach_seconds
         attempts = 0
         while True:
@@ -690,9 +692,7 @@ class LibraryWatcher:
     async def _catch_up(self, root_id: str) -> None:
         """Ask for a pass over one library's folders, to find what moved while Sift was off.
 
-        Deduped like the scans are: `refresh` runs at boot and again whenever a root is added,
-        removed or toggled, and three of those in quick succession should be one pass rather than
-        three reading the same disk at once.
+        Deduped like the scans are: a boot, a watch coming back and lost events can ask at once.
         """
         # Switched off is not a failure here. This runs for the machine rather than for somebody,
         # so a refusal is the answer rather than something to report: the queue says so in its own

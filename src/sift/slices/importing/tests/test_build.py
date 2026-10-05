@@ -37,6 +37,8 @@ from sift.slices.importing.jobs import (
     GENERATE_FILE,
     IDENTIFY,
     IDENTIFY_FILE,
+    MEASURED_FIRST,
+    MEASURING_FIRST,
     _handed_out,
     _page_key,
     build,
@@ -130,13 +132,14 @@ class Unmeasured:
     def __init__(self) -> None:
         self.measured_times = 0
         self.is_measured = False
+        self.stays_unmeasured = False
 
     async def measured(self) -> bool:
         return self.is_measured
 
     async def measure(self) -> None:
         self.measured_times += 1
-        self.is_measured = True
+        self.is_measured = not self.stays_unmeasured
 
 
 def registry_of(*made: Made, machine: Unmeasured | None = None) -> ProductRegistry:
@@ -194,9 +197,11 @@ async def test_a_machine_never_measured_is_measured_before_the_first_file(
     context_for: Any,
 ) -> None:
     """The reads every task makes are shaped by rates only the self-test knows, so the first page
-    of a run measures the machine first: once, and only the first page."""
+    of a run asks for the benchmark and queues itself again behind it, once: the page queued again
+    hands out the files whether or not the run could measure."""
     a = await a_probed_file(library_root, content_store, settings, "a.mp4")
     machine = Unmeasured()
+    machine.stays_unmeasured = True
     registry = registry_of(Made("pictures", {a}), machine=machine)
 
     first = await context_for(GENERATE, {"products": ["pictures"], "files": 1})
@@ -204,7 +209,18 @@ async def test_a_machine_never_measured_is_measured_before_the_first_file(
         first, content=content_store, products=registry, run_type=GENERATE, file_type=GENERATE_FILE
     )
     assert machine.measured_times == 1
-    assert len(await job_queue.children(first.job.id)) == 1, "the page went on to its files"
+    [again] = await job_queue.children(first.job.id)
+    assert again.type == GENERATE, "no file is handed out before the benchmark"
+    assert again.payload == {"products": ["pictures"], "files": 1, MEASURED_FIRST: True}
+    first_row = await job_queue.get(first.job.id)
+    assert first_row is not None and first_row.note == MEASURING_FIRST
+
+    behind = await context_for(GENERATE, dict(again.payload))
+    await build(
+        behind, content=content_store, products=registry, run_type=GENERATE, file_type=GENERATE_FILE
+    )
+    assert machine.measured_times == 1, "asked once"
+    assert len(await job_queue.children(behind.job.id)) == 1, "the page went on to its files"
 
     later = await context_for(GENERATE, {"products": ["pictures"], "files": 1, "offset": 1000})
     await build(

@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from sift.kernel.access import by_user
+from sift.kernel.access import Viewer, by_user
 from sift.kernel.db import Connection, Row
 from sift.kernel.log import get_logger
 from sift.slices.faces import crop as cropping
@@ -173,7 +173,7 @@ class ReferencesMixin(WeightsMixin, GroupingMixin):
             **bands,
         )
 
-    async def recognition_of(self, person_id: str) -> Strength:
+    async def recognition_of(self, person_id: str, viewer: Viewer | None = None) -> Strength:
         """How reliably Sift can recognize one person, and what it rests on.
 
         The number that was invisible. Matching against a person compares a new face with every
@@ -187,7 +187,7 @@ class ReferencesMixin(WeightsMixin, GroupingMixin):
         """
         in_use, retired, sources = await self._store.starters_of(person_id)
         return Strength(
-            references=await self._store.reference_count(person_id),
+            references=await self._store.reference_count(person_id, viewer=viewer),
             target=tuning.GOOD_REFERENCES,
             floor=tuning.MIN_REFERENCES,
             strong=tuning.STRONG_REFERENCES,

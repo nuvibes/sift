@@ -36,7 +36,9 @@ class Lookalikes:
         self._order = order
         self.asked: list[tuple[str, int]] = []
 
-    async def lookalikes(self, asset_id: str, *, limit: int) -> tuple[tuple[str, float], ...]:
+    async def lookalikes(
+        self, asset_id: str, *, limit: int, asker: Viewer | None
+    ) -> tuple[tuple[str, float], ...]:
         self.asked.append((asset_id, limit))
         return tuple((name, at / 1000) for at, name in enumerate(self._order[:limit]))
 
@@ -87,7 +89,9 @@ async def test_a_file_two_likes_both_name_sits_at_the_nearer_of_its_two_distance
     other = "01HX0000000000000000000003"
 
     class TwoRankings:
-        async def lookalikes(self, asset_id: str, *, limit: int) -> tuple[tuple[str, float], ...]:
+        async def lookalikes(
+            self, asset_id: str, *, limit: int, asker: Viewer | None
+        ) -> tuple[tuple[str, float], ...]:
             if asset_id == SUBJECT:
                 return (("a", 0.1), ("b", 0.4))
             return (("b", 0.2), ("a", 0.3))

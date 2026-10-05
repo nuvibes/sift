@@ -129,6 +129,77 @@ it("says the task's report on the row when it ends", async () => {
 	expect(pressOf(host).textContent).toContain('Import folder');
 });
 
+it('folds the files under each count of the report, as many as the report says', async () => {
+	(window as { sift?: unknown }).sift = { chooseFolder: vi.fn().mockResolvedValue('D:\\Gallery') };
+	const host = draw();
+	pressOf(host).click();
+	await settle();
+	const said = 'Kept 0 faces from 2 people. 3 photos left out: 2 with no face in it, 1 too small.';
+	const left = {
+		left_out: [
+			{
+				reason: 'no_face',
+				words: 'with no face in it',
+				files: ['Bryn Calloway/a.jpg', 'Elina Sorrel/b.jpg']
+			},
+			{ reason: 'too_small', words: 'too small', files: ['Bryn Calloway/c.jpg'] }
+		],
+		near_copies: []
+	};
+	const reads = calls.get.getMockImplementation();
+	calls.get.mockImplementation(async (path: string, ...rest: unknown[]) =>
+		path === '/faces/references/folder/j1/left-out' ? left : reads?.(path, ...rest)
+	);
+
+	rows = [row('done', { progress: 1, note: said })];
+	await vi.advanceTimersByTimeAsync(2100);
+	await settle();
+
+	const folds = [...host.querySelectorAll('[id="faces.folder-import"] details')];
+	expect(folds.map((one) => one.querySelector('summary')?.textContent?.trim())).toEqual([
+		'2 with no face in it',
+		'1 too small'
+	]);
+	for (const fold of folds) {
+		const [count, ...words] = (fold.querySelector('summary')?.textContent ?? '').trim().split(' ');
+		expect(said).toContain(`${count} ${words.join(' ')}`);
+		expect(fold.querySelectorAll('li')).toHaveLength(Number(count));
+	}
+});
+
+it('draws no fold when the files cannot be read', async () => {
+	(window as { sift?: unknown }).sift = { chooseFolder: vi.fn().mockResolvedValue('D:\\Gallery') };
+	const host = draw();
+	pressOf(host).click();
+	await settle();
+	const reads = calls.get.getMockImplementation();
+	calls.get.mockImplementation(async (path: string, ...rest: unknown[]) => {
+		if (path.endsWith('/left-out')) throw new Error('offline');
+		return reads?.(path, ...rest);
+	});
+
+	rows = [
+		row('done', { progress: 1, note: 'Kept 0 faces from 1 person. 1 photo left out: 1 too small.' })
+	];
+	await vi.advanceTimersByTimeAsync(2100);
+	await settle();
+
+	expect(host.textContent).toContain('1 photo left out');
+	expect(host.querySelector('[id="faces.folder-import"] details')).toBeNull();
+});
+
+it("wears the import's upload glyph on the press that sends a folder from this device", async () => {
+	const host = draw();
+	pressOf(host).click();
+	await settle();
+
+	const buttons = [...document.querySelectorAll('button')];
+	const glyphOf = (words: string) =>
+		buttons.find((one) => one.textContent?.includes(words))?.querySelector('.icon')?.textContent;
+	expect(glyphOf('Import from this device')).toBeTruthy();
+	expect(glyphOf('Import from this device')).toBe(glyphOf('Import this folder'));
+});
+
 it('cancels the task from the row, and says what a cancel keeps', async () => {
 	(window as { sift?: unknown }).sift = { chooseFolder: vi.fn().mockResolvedValue('D:\\Gallery') };
 	const host = draw();

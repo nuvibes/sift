@@ -36,3 +36,11 @@ it('writes no save row of its own', () => {
 	);
 	expect(source).not.toMatch(/saveToDevice/);
 });
+
+it("offers to close the strip from a preview's own menu", () => {
+	const preview = source.slice(
+		source.indexOf('{#if wall.isPreview(index)}'),
+		source.indexOf('{:else}')
+	);
+	expect(preview).toMatch(/label="Close the strip"[^>]*onselect=\{\(\) => wall\.closeStrip\(\)\}/);
+});

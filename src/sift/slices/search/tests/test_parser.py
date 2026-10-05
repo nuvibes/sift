@@ -702,6 +702,10 @@ def test_a_field_with_nothing_to_suggest_is_still_a_token() -> None:
 def test_every_filter_is_offered_and_every_example_parses() -> None:
     """Every filter is offered, and every example printed beside it parses."""
     for entry in FILTERS:
+        if entry.set_from is not None:
+            # A filter that takes an id shows its bare token: nobody types the id.
+            assert entry.example == f"{entry.field.value}:", entry.example
+            continue
         parsed = parse_tokens(entry.example)
         assert parsed.text is None, f"{entry.example} was read as free text, not as a filter"
         assert parsed.where is not EVERYTHING, f"{entry.example} built no constraint"
@@ -1013,6 +1017,11 @@ def test_a_negated_presence_is_the_presence_turned_over() -> None:
     """ "Not nothing" is "something"."""
     assert write(Negated(Presence(Field.TAGS, False))) == "tags:any"
     assert write(Negated(Presence(Field.TAGS, True))) == "-tags"
+
+
+def test_a_refused_value_is_written_beside_the_value_it_refuses() -> None:
+    """So a typed chip turned to "none of" keeps its place among its field's chips."""
+    assert write(parse_tokens("tags:b -tags:a tags:c").where) == "-tags:a tags:b tags:c"
 
 
 def test_a_group_of_mixed_fields_is_written_side_by_side() -> None:

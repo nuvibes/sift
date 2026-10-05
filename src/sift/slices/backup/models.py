@@ -52,9 +52,10 @@ class ScheduleView(Wire):
     #: How many days an automatic backup is kept beside the count, zero for never.
     keep_days: int
     folder: str
-    #: Whether the destination is the directory Sift owns rather than one somebody chose. The
-    #: screen says so, because a backup on the same disk as the database is a weak backup.
+    #: Whether the destination is Sift's own directory: a backup beside the database is weak.
     beside_sift_data: bool
+    #: The whole-library work running now ("backup", "restore", "duplicate", "switch", "delete").
+    working: str | None = None
 
 
 class UnmarkedBackupView(Wire):

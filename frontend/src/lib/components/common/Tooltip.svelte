@@ -39,10 +39,6 @@
 	 * fires enter, so a panel that closes and rebuilds the control it was opened from would put the
 	 * label back up with nobody hovering, through the library's delay.
 	 *
-	 * So this stays, reviewably: if the library can open on move only, this becomes a short
-	 * conversion. Everything else here (the portal, the placement, the escape, the delay) would be
-	 * the library's job.
-	 *
 	 * A short label for a control that does not carry its own words.
 	 *
 	 * The browser's version, the `title` attribute, is drawn by the operating system in its own
@@ -58,6 +54,7 @@
 	import { keysFor } from '$lib/shell/shortcuts';
 	import type { Snippet } from 'svelte';
 	import { motion } from '$lib/shell/motion.svelte';
+	import { untrack } from 'svelte';
 
 	interface Props {
 		/**
@@ -150,6 +147,8 @@
 		 * control and changes the label instead.
 		 */
 		staysOnPress?: boolean;
+		/** Shown while true, whatever the pointer and focus do: a list row the keyboard highlighted. */
+		held?: boolean;
 		/** The control being labelled. */
 		children: Snippet;
 	}
@@ -163,6 +162,7 @@
 		shrinks = false,
 		shortcut,
 		staysOnPress = false,
+		held = false,
 		children,
 		detail,
 		wide = false
@@ -301,6 +301,11 @@
 		clearTimeout(timer);
 		open = false;
 	}
+
+	$effect(() => {
+		const holding = held;
+		untrack(() => (holding ? show(0) : hide()));
+	});
 
 	/** What a press does: take the label away, unless the label is what the press is FOR. */
 	function onPress() {

@@ -55,7 +55,6 @@
 	import MoveFacesDialog from '$lib/components/faces/MoveFacesDialog.svelte';
 	import ReferenceCount from '$lib/components/faces/ReferenceCount.svelte';
 	import OrganizeHeader from '$lib/components/organize/OrganizeHeader.svelte';
-	import Hint from '$lib/components/insights/Hint.svelte';
 	import Pressable from '$lib/components/common/Pressable.svelte';
 	import PageFrame from '$lib/components/shell/PageFrame.svelte';
 	import { organizeCrumbs, tabOpenedFrom } from '$lib/organize/bands';
@@ -726,11 +725,6 @@
 	{:else if failed}
 		<Problem message="That group couldn't be loaded. It's still there — try again in a moment." />
 	{:else}
-		{#if status === 'open'}
-			<!-- The second hint of Get to know Sift, once per account, on the first group of faces opened to be
-			     named. Not on a set-aside group: there is nothing to name there. -->
-			<Hint name="first_pile" />
-		{/if}
 		{#if status === 'open' && (made || offer)}
 			<!-- The fingerprints question, above the group's own row and in its shape: the question
 			     on the left, its one press on the right; once answered, who was made, as a link. -->

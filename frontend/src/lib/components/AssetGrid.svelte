@@ -14,6 +14,7 @@
 	import TileControls from '$lib/components/TileControls.svelte';
 	import { startAssign } from '$lib/components/common/drag-assign.svelte';
 	import { anchorIn, forgetAnchor, rememberAnchor } from '$lib/grid/anchor';
+	import { WalkBack } from '$lib/grid/walk-back';
 	import { openAsset, type Continues, type RunOrder } from '$lib/player/asset-view';
 	import { toasts } from '$lib/shell/toasts.svelte';
 	import {
@@ -36,6 +37,7 @@
 	import PageFrame from '$lib/components/shell/PageFrame.svelte';
 	import PageAbove from '$lib/components/shell/PageAbove.svelte';
 	import { screenBar } from '$lib/components/shell/screen-bar.svelte';
+	import { wallHeld } from '$lib/components/entity/TabLayer.svelte';
 	import type { IconName } from '$lib/design/icons';
 	import HiddenDialog from '$lib/components/HiddenDialog.svelte';
 	import type { ShareTarget } from '$lib/library/sharing';
@@ -284,8 +286,7 @@
 	/* Escape lets go of a selection from wherever the focus is, on the window, and only while
 	 * something is picked, since every dialog and menu wants Escape too. */
 	function onEscape(event: KeyboardEvent) {
-		// Ctrl+Z takes back the last thing PICKED, Ctrl+Shift+Z picks it again. It touches no
-		// data and never reaches the server. See `TileGesture.undoKeys`.
+		// Ctrl+Z takes back the last thing PICKED; no data changes. See `TileGesture.undoKeys`.
 		if (gesture.undoKeys(event)) {
 			event.preventDefault();
 			event.stopPropagation();
@@ -343,9 +344,9 @@
 	/* What this account may see has moved: re-read in place, not reset to the top. */
 	whenChanged(libraryChanges, () => void current.catchUp());
 
-	/* Where the page on screen begins: a file, since a page holds what fills the window. A new
-	   question goes back to the start; a library change holds its place. */
+	/* Where the page on screen begins: a new question goes back to the start, a change holds it. */
 	let start = $state<PageStart>({ at: 0 });
+	const walk = new WalkBack();
 
 	/* How much of the library a search by meaning can reach, asked only by a wall drawing one. */
 	$effect(() => {
@@ -353,6 +354,7 @@
 	});
 
 	const mine = Symbol('asset-grid');
+	const leaving = wallHeld();
 
 	/* What this wall is, in the words the bar reads; the rows' route is asked `query`. */
 	const barQuery = $derived<Record<string, string>>({
@@ -361,6 +363,7 @@
 	});
 
 	$effect(() => {
+		if (leaving()) return;
 		screenBar.publish(mine, {
 			query: barQuery,
 			/* What every row here is by definition (a Loop, a heart): one value, so no column. */
@@ -392,6 +395,7 @@
 		void order.asked;
 		void order.askedOrder;
 		untrack(() => {
+			walk.forget();
 			// Arriving at a link: the address named a file and it belongs to this question.
 			const named = arriving && source.anchored ? anchorIn(address.url) : null;
 			arriving = false;
@@ -448,6 +452,7 @@
 	const path = address.url.pathname;
 
 	function turnTo(next: PageStart) {
+		walk.forget();
 		start = next;
 	}
 
@@ -479,14 +484,12 @@
 		return () => observer.disconnect();
 	}
 
-	/* What is on screen, in order, for the file about to be opened over it. A still does not run on
-	 * by itself, though Next and Back walk everything. */
+	/* What is on screen, in order, for the file about to be opened over it. */
 	function neighbours() {
 		return grid.items.map(asNeighbour);
 	}
 
-	/* One row of the wall as one step of a run. Written once because the run reads the SAME shape
-	   from two places now: the page in hand, and the blocks fetched past the end of it. */
+	/* One row of the wall as one step of a run, for the page in hand and the blocks past it. */
 	function asNeighbour(each: GridItem) {
 		return {
 			id: fileOf(each),
@@ -862,10 +865,11 @@
 		total={grid.total}
 		loading={grid.loading && grid.loaded === 0}
 		onfirst={() => turnTo({ at: 0 })}
-		onprevious={() => turnTo({ endingAt: grid.offset })}
-		onnext={() => turnTo({ at: grid.nextOffset })}
+		onprevious={() => (start = walk.previous(grid, source.anchored))}
+		onnext={() => (start = walk.next(grid))}
 		onlast={() => turnTo({ last: true })}
 		onjump={(position) => turnTo({ at: Math.max(0, position - 1) })}
+		noun={source.noun}
 	/>
 {/snippet}
 

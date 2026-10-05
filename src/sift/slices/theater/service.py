@@ -61,7 +61,9 @@ class TooMany(Exception):
 #: `custom` is what a built wall is stored under. It has no cell count: the shape says how many
 #: there are, which is the whole point of storing one.
 LAYOUT_CELLS: dict[str, int] = {
+    "single": 1,
     "side_by_side": 2,
+    "stacked": 2,
     "side_by_side_by_side": 3,
     "grid": 4,
     # The focus half is ONE feed and the strip holds five, so a Center Stage wall is six cells.
@@ -78,8 +80,6 @@ LAYOUT_CELLS: dict[str, int] = {
     # would turn shortening a menu into losing somebody's data, and a wall kept under one of them
     # would stop opening and could never be saved again. What is OFFERED is the browser's layout
     # list and the choices on `theater.layout`; what is ACCEPTED is this.
-    "single": 1,
-    "stacked": 2,
     "stacked_three": 3,
     "one_above_two": 3,
     "two_above_one": 3,
@@ -509,8 +509,8 @@ class TheaterService:
             held = list(await connection.execute_fetchall(_ARRANGEMENT_COUNT, (viewer.id,)))
             if int(held[0]["held"]) >= MAX_ARRANGEMENTS:
                 raise TooMany(
-                    # Read on screen as it is (the panel's toast), so in the panel's word.
-                    f"You already have {MAX_ARRANGEMENTS} saved presets. "
+                    # Read on screen as it is, in the panel's word.
+                    f"You already have {MAX_ARRANGEMENTS} Saved Layouts. "
                     "Delete one to save another."
                 )
             await connection.execute(

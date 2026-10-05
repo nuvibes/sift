@@ -65,7 +65,7 @@ from sift.kernel.db import Database
 from sift.kernel.ledger import Actor
 from sift.kernel.paging import resume_at
 from sift.kernel.reach import BulkWriteDone, require_reachable
-from sift.kernel.seams import DisagreementSeam, ReindexSeam, StillSeam
+from sift.kernel.seams import DisagreementSeam, ForgetGoneSeam, ReindexSeam, StillSeam
 from sift.kernel.serving import face_version
 from sift.kernel.wire import FacetCounts, FacetValue, HistoryEvent, history_event
 from sift.kernel.wiring import part_of
@@ -97,13 +97,7 @@ _NOT_FOUND = "not found"
 
 
 def _disagreement_seam(request: Request) -> DisagreementSeam:
-    """Whoever can say which records a stash-box disagrees with.
-
-    A SHAPE and not the reconciler itself: these walls are this slice's and disagreements are the
-    stash-box slice's, and a slice may not import another. The same dependency the entity strip's
-    route takes, and required for the same reason written there: the composition root wires it
-    beside the reconciler it already builds, so an absent case is a branch nothing can take.
-    """
+    """Who can say which records a stash-box disagrees with: a shape, as slices import no other."""
     return wiring.part_of(request, wiring.DISAGREEMENTS)
 
 
@@ -116,11 +110,7 @@ def _missing() -> HTTPException:
 
 
 def _taken(name: str) -> HTTPException:
-    """A name already in use.
-
-    409 rather than 404, and it discloses nothing new: tag names are already readable by anybody
-    allowed to ask for the list, and the alternative is a create that silently does nothing.
-    """
+    """A name already in use. A 409 discloses nothing: anybody listing tags reads the names."""
     return HTTPException(status.HTTP_409_CONFLICT, f"there is already a tag called '{name}'")
 
 
@@ -134,13 +124,7 @@ def _loop() -> HTTPException:
 
 
 def _view(tag: Tag, *, asset_count: int = 0, mark: GrantMark | None = None) -> TagView:
-    """One tag as a write route hands it back.
-
-    The mark rides along. A write reply is what the screen puts in place of the row it was holding,
-    so a field left out here is a field the screen forgets, and a forgotten restrict is a badge
-    that stops being drawn while the grant behind it is still in force. The people wall's write
-    reply carries its mark for the same reason.
-    """
+    """One tag as a write route hands it back, mark included: the screen swaps it in for its row."""
     return TagView(
         id=tag.id,
         name=tag.name,
@@ -414,7 +398,7 @@ async def read_tag(
     cells = await access.card_counts(viewer, "tag", [found.id])
     return view.model_copy(
         update={
-            "record": await service.record_of(tag_id),
+            "record": await service.record_of(tag_id, viewer),
             "o_count": await access.o_count_of_tag(viewer, found.id),
             "counts": cells.get(found.id, {}),
         }
@@ -756,6 +740,7 @@ async def delete_tag(
     service: Annotated[TagService, Depends(_service)],
     access: Annotated[Repository, Depends(wiring.access)],
     reindexer: Annotated[ReindexSeam, Depends(wiring.reindexer)],
+    forgets: Annotated[ForgetGoneSeam, Depends(wiring.forget_gone)],
     viewer: Annotated[Viewer, Depends(require_admin)],
 ) -> Response:
     """Delete a tag, its assignments, and every grant that named it.
@@ -769,7 +754,8 @@ async def delete_tag(
     with Hidden open it deletes like any other. Otherwise a write would reach a row the same user's
     reads say is not there.
     """
-    if await access.visible_tag(viewer, tag_id) is None:
+    tag = await access.visible_tag(viewer, tag_id)
+    if tag is None:
         raise _missing()
     # BEFORE the delete: the cascade takes the assignments with the tag, so asking afterwards which
     # files carried it answers nothing and the index would keep the word for ever.
@@ -779,6 +765,7 @@ async def delete_tag(
     # The cascade took the assignments, so every file that carried this tag now indexes without it:
     # those files, and not the library.
     await reindexer.touched_many(carried_by)
+    await forgets.forget_gone("tag", tag_id, name=tag.name, by=viewer)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 

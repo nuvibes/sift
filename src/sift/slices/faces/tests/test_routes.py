@@ -1260,6 +1260,56 @@ def test_recognition_strength_of_somebody_this_account_cannot_see_is_a_miss(
     assert client.get(f"/api/people/{scene.person}/recognition").status_code == 404
 
 
+_REFERENCE = (
+    "INSERT INTO face_references (id, person_id, crop_digest, embedding, quality, origin,"
+    " recognizer, asset_id, created_at) VALUES (?, ?, ?, x'00', 0.9, 'confirmed', 'test', ?, 0)"
+)
+
+
+def _references(client: TestClient, scene: Scene) -> int:
+    return int(client.get(f"/api/people/{scene.person}/recognition").json()["references"])
+
+
+def test_recognition_counts_no_reference_on_a_file_the_viewer_may_not_see(
+    client: TestClient, scene: Scene
+) -> None:
+    turn_on(client)
+    admin = sign_in(client)
+    other = new_id()
+    write(
+        db_path(client),
+        [
+            (_INSERT_ASSET, (other, "digest-other", 5, "other.mp4", _EPOCH)),
+            (
+                _INSERT_LOCATION,
+                (new_id(), other, scene.root, scene.folder, "clips/other.mp4", "other.mp4", 0, 0),
+            ),
+            (
+                "INSERT INTO asset_people (asset_id, person_id) VALUES (?, ?)",
+                (scene.asset, scene.person),
+            ),
+            ("INSERT INTO asset_people (asset_id, person_id) VALUES (?, ?)", (other, scene.person)),
+            *[
+                (_REFERENCE, (new_id(), scene.person, f"crop-{n}", on))
+                for n, on in enumerate((scene.asset, other, None))
+            ],
+        ],
+    )
+    assert _references(client, scene) == 3
+
+    guest = sign_in(client, "guest", who="two")
+    scene.share_with(client, guest)
+    assert _references(client, scene) == 2
+    assert unlock(client) == 200
+    assert _references(client, scene) == 2
+
+    sign_in(client)
+    scene.hide(client, "asset", other, admin)
+    assert _references(client, scene) == 2
+    assert unlock(client) == 200
+    assert _references(client, scene) == 3
+
+
 # --- the cover, which is not the recognizer's square ---------------------------------------------
 
 

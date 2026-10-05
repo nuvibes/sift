@@ -1465,6 +1465,9 @@ MATRIX: dict[tuple[str, str], Case] = {
     # Decides what every other user is told about who is in a file.
     ("POST", "/api/faces/references/folder"): Case(Policy.ADMIN),
     ("POST", "/api/faces/references/folder/path"): Case(Policy.ADMIN, body={"path": "/nowhere"}),
+    ("GET", "/api/faces/references/folder/{job_id}/left-out"): Case(
+        Policy.ADMIN, params={"job_id": FAILED_JOB}
+    ),
     ("POST", "/api/faces/packs/export"): Case(Policy.ADMIN),
     # Empties the tables the routes above read.
     ("POST", "/api/faces/forget"): Case(Policy.ADMIN, destructive=True),
@@ -1494,9 +1497,6 @@ MATRIX: dict[tuple[str, str], Case] = {
     ),
     # --- Get to know Sift: each path is worked out for whoever asks.
     ("GET", "/api/insights/path"): Case(Policy.AUTHENTICATED),
-    ("POST", "/api/insights/path/hints/{name}/seen"): Case(
-        Policy.AUTHENTICATED, params={"name": "first_insights"}
-    ),
     # --- Insights: every read is narrowed to the asker; what Sift did is left out of a guest's page
     # inside the route.
     ("GET", "/api/insights"): Case(Policy.AUTHENTICATED),

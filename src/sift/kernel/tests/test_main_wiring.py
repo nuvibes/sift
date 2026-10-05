@@ -11,6 +11,7 @@ from __future__ import annotations
 # The NAME only: `sqlite3.Error` is what the settings converger catches, raised below to prove that
 # arm; nothing here opens a database.
 import sys
+from collections.abc import Mapping
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -23,6 +24,7 @@ from sift.kernel.config import ConfigError, Settings
 from sift.kernel.db import DatabaseError, readers_for
 from sift.kernel.hardware import HardwareReport
 from sift.kernel.jobs import BACKGROUND_PRIORITY, worker_pool
+from sift.kernel.jobs.families import Family
 from sift.kernel.jobs.switchboard import Switchboard
 from sift.slices import (
     auth,
@@ -382,6 +384,7 @@ _SWITCHED = [
     (library_roots.SCAN, importing.SCAN_KEY),
     (library_roots.LIBRARY_SCAN, importing.SCAN_KEY),
     (library_roots.RECONCILE, importing.SCAN_KEY),
+    (library_roots.SCAN_COUNT, importing.SCAN_KEY),
     (dedup.DEDUP_SCAN, dedup.SCAN_KEY),
     (suggestions.SUGGESTION_SCAN, suggestions.SCAN_KEY),
     (stash_boxes.STASH_SWEEP, stash_boxes.ASK_NEW_FILES_KEY),
@@ -1160,12 +1163,14 @@ class _PoolQueue:
         # No quiet-hours work.
         return await self.unfinished_by_type()
 
+    async def held_for_family_by_type(self) -> dict[str, int]:
+        return {}
+
 
 def _capture_pool_config(
     monkeypatch: pytest.MonkeyPatch, hub: _Hub, *, resizes: bool = False
 ) -> tuple[Any, _Database]:
-    """Build the workers and keep the callable the pool polls, to see its decision for given
-    settings without waiting on the timer."""
+    """Build the workers and keep what the pool is handed, without waiting on the timer."""
     caught: dict[str, Any] = {}
     database = _Database(resizes=resizes)
 
@@ -1174,6 +1179,7 @@ def _capture_pool_config(
             caught["read_config"] = kwargs["read_config"]
             caught["initial_limits"] = kwargs["limits"]
             caught["initial_concurrency"] = kwargs["concurrency"]
+            caught["ledger"] = kwargs["ledger"]
 
         async def start(self) -> None:
             return None
@@ -1186,6 +1192,18 @@ def _capture_pool_config(
     return caught, database
 
 
+class _Runner:
+    def __init__(self, prices: Mapping[str, float]) -> None:
+        self.state = SimpleNamespace(running=False)
+        self.kept = dict(prices)
+
+    async def prices(self) -> dict[str, float]:
+        return self.kept
+
+    async def rates(self) -> None:
+        return None
+
+
 async def _pool_config(
     monkeypatch: pytest.MonkeyPatch,
     hub: _Hub,
@@ -1193,6 +1211,7 @@ async def _pool_config(
     resizes: bool = False,
     encoders: tuple[str, ...] = (),
     queue: Any = None,
+    prices: Mapping[str, float] | None = None,
 ) -> tuple[dict[str, Any], _Database]:
     caught, database = _capture_pool_config(monkeypatch, hub, resizes=resizes)
     hardware = HardwareReport(
@@ -1212,7 +1231,11 @@ async def _pool_config(
     accelerator = media.Accelerator(hardware)
     caught["accelerator"] = accelerator
     # Which product each maker's job is for; none here.
-    app = SimpleNamespace(state=SimpleNamespace(**{importing.PRODUCTS.name: []}))
+    parts = {
+        importing.PRODUCTS.name: [],
+        performance.SELF_TEST_RUNNER.name: _Runner(prices or {}),
+    }
+    app = SimpleNamespace(state=SimpleNamespace(**parts))
     await workers.build_workers(
         app,  # type: ignore[arg-type]
         store,
@@ -1266,12 +1289,23 @@ async def test_the_read_makes_room_for_the_thumbnails_it_hands_out(
 async def test_the_read_pool_size_follows_the_worker_count(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Raising the worker count raises the read connections with it, or the connections become the
-    ceiling with nothing left for the browser."""
+    """Raising the worker count raises the read connections, or they leave the browser nothing."""
     caught, database = await _pool_config(monkeypatch, _Hub(), resizes=True)
 
     assert database.asked, "the read pool was never asked to follow the worker count"
     assert database.asked[0] == readers_for(caught["initial_concurrency"])
+
+
+async def test_a_fresh_library_is_priced_from_the_benchmark_as_a_floor(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """With no run in the history, the time left is the benchmark's price, as the least it takes."""
+    caught, _database = await _pool_config(monkeypatch, _Hub(), prices={"identify": 15.8})
+
+    found = await caught["ledger"].estimate(Family.IDENTIFY, ["face_scan"], left=100, at_once=4)
+
+    assert found is not None
+    assert (found.quick_seconds, found.slow_seconds, found.floor) == (395, 395, True)
 
 
 async def test_a_read_pool_already_the_right_size_is_left_alone(
@@ -1290,7 +1324,9 @@ class _Lanes:
         self.changes = changes
         self.asked: list[int] = []
 
-    async def configure(self, *, network_reads_at_once: int) -> bool:
+    async def configure(
+        self, *, network_reads_at_once: int, measured: Mapping[str, int] | None = None
+    ) -> bool:
         self.asked.append(network_reads_at_once)
         return self.changes
 

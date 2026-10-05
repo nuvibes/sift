@@ -422,7 +422,7 @@
 			onassign: addDropped,
 			/* A link dropped on a song: what it downloads is put on that song, as a link dropped on
 			   a tag is filed under the tag. */
-			onlink: (url, id) => void fetchOnto(url, 'song', id, song.name)
+			onlink: session.isAdmin ? (url, id) => void fetchOnto(url, 'song', id, song.name) : undefined
 		})}
 		<div
 			role="listitem"

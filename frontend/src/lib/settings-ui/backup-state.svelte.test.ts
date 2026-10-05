@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { setCsrfToken } from '$lib/api/client';
 import { Backup, copyAddress, type ScheduleView } from './backup-state.svelte';
+import { toasts } from '$lib/shell/toasts.svelte';
 
 /* Backup, as the settings screen sees it.
  *
@@ -24,7 +25,8 @@ const SCHEDULE: ScheduleView = {
 	keep: 5,
 	keep_days: 0,
 	folder: '/media/nas/backups',
-	beside_sift_data: false
+	beside_sift_data: false,
+	working: null
 };
 
 beforeEach(() => {
@@ -42,6 +44,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+	vi.restoreAllMocks();
 	vi.unstubAllGlobals();
 	setCsrfToken(null);
 });
@@ -67,6 +70,16 @@ describe('reading the schedule', () => {
 		expect(view.folder).toBe('/media/nas/backups');
 		expect(view.besideSiftData).toBe(false);
 		expect(view.loaded).toBe(true);
+		expect(view.working).toBeNull();
+	});
+
+	it('takes the whole-library work the server says is running, a save from elsewhere included', async () => {
+		answers({ ok: true, body: { ...SCHEDULE, working: 'backup' } });
+		const view = new Backup();
+
+		await view.load();
+
+		expect(view.working).toBe('backup');
 	});
 
 	it('does not claim backups are off when it could not ask', async () => {
@@ -93,9 +106,16 @@ describe('saving a backup now', () => {
 
 	it('saves into the backup folder and keeps where it went, handing nothing to the browser', async () => {
 		answers({ ok: true, body: SAVED }, { ok: true, body: { backups: [], recycle_bin: false } });
+		const said = vi.spyOn(toasts, 'show');
 		const view = new Backup();
 
-		await view.exportNow();
+		const running = view.exportNow();
+		// Its own press turns its arc; nothing else on the pane does.
+		expect(view.exporting).toBe(true);
+		await running;
+		expect(view.exporting).toBe(false);
+		// Said in a toast as well, which outlives the pane.
+		expect(said).toHaveBeenCalledWith(`Saved a backup in ${SAVED.folder}`);
 
 		expect(String(fetchMock.mock.calls[0][0])).toContain('/backup/export');
 		expect(view.saved).toEqual(SAVED);
@@ -104,6 +124,25 @@ describe('saving a backup now', () => {
 		expect(clickMock).not.toHaveBeenCalled();
 		// And the list of backups no rule takes is read again, so the new one is on it.
 		expect(String(fetchMock.mock.calls[1][0])).toContain('/backup/unmarked');
+	});
+
+	it('is still saving when the pane is opened again, and says where it went when it ends', async () => {
+		let answer: (value: unknown) => void = () => {};
+		fetchMock.mockReturnValueOnce(new Promise((ok) => (answer = ok)));
+		fetchMock.mockResolvedValue({ ok: true, status: 200, json: async () => ({}) });
+		const view = new Backup();
+
+		const running = view.exportNow();
+		view.arrive();
+		expect(view.exporting).toBe(true);
+		expect(view.busy).toBe(true);
+
+		answer({ ok: true, status: 200, json: async () => SAVED });
+		await running;
+		expect(view.exporting).toBe(false);
+		expect(view.saved).toEqual(SAVED);
+		view.arrive();
+		expect(view.saved).toBeNull();
 	});
 
 	it('hands a copy to this device only when asked, by the name the list shows', () => {
@@ -117,12 +156,13 @@ describe('saving a backup now', () => {
 
 	it('says the server-s own reason when it could not take one, and keeps nothing', async () => {
 		answers({ ok: false, status: 409, body: { detail: 'A restore is running.' } });
+		const said = vi.spyOn(toasts, 'show');
 		const view = new Backup();
 
 		await view.exportNow();
 
 		expect(view.saved).toBeNull();
-		expect(view.problem).toBeTruthy();
+		expect(said).toHaveBeenCalledWith('A restore is running.', { tone: 'error' });
 	});
 });
 
@@ -144,26 +184,44 @@ describe('saving the schedule', () => {
 		const sent = JSON.parse(String(fetchMock.mock.calls[0][1].body));
 		expect(Object.keys(sent).sort()).toEqual(['folder', 'keep', 'keep_days']);
 		expect(sent.keep_days).toBe(0);
-		/* The two rules said as one sentence, from what the server stored. */
-		expect(view.done).toBe(
-			'Saved. Sift keeps the newest 3 automatic backups, and none older than 7 days.'
-		);
-		/* And no cadence: the When on Tasks decides whether it runs on its own, so a promise
-		   of a daily backup here could be one that never comes. */
-		expect(view.done).not.toMatch(/back up|daily|weekly/);
+		// Saved quietly, as every other setting is.
+		expect(view.done).toBeNull();
 	});
 
-	it('shows the sentence the server wrote when a folder is refused', async () => {
-		answers({
-			ok: false,
-			status: 409,
-			body: { detail: 'Sift cannot write to that folder.' }
-		});
+	it('saves a rule the moment it changes, each save carrying the values of its own moment', async () => {
+		answers(
+			{ ok: true, body: { ...SCHEDULE, keep: 6 } },
+			{ ok: true, body: { backups: [], recycle_bin: false } },
+			{ ok: true, body: { ...SCHEDULE, keep: 6, keep_days: 3 } },
+			{ ok: true, body: { backups: [], recycle_bin: false } }
+		);
+		const view = new Backup();
+		view.keep = 5;
+
+		const first = view.saveRules({ keep: 6 });
+		const second = view.saveRules({ keepDays: 3 });
+		await Promise.all([first, second]);
+
+		const puts = fetchMock.mock.calls.filter(([, init]) => init?.method === 'PUT');
+		expect(puts.map(([, init]) => JSON.parse(String(init.body)))).toEqual([
+			{ keep: 6, keep_days: 7, folder: '' },
+			{ keep: 6, keep_days: 3, folder: '' }
+		]);
+		expect(view.keepDays).toBe(3);
+	});
+
+	it('says the refusal in the server-s words and goes back to what is stored', async () => {
+		answers(
+			{ ok: false, status: 409, body: { detail: 'Sift cannot write to that folder.' } },
+			{ ok: true, body: SCHEDULE }
+		);
+		const said = vi.spyOn(toasts, 'show');
 		const view = new Backup();
 
-		await view.saveSchedule();
+		await view.saveRules({ folder: 'Z:\\nowhere' });
 
-		expect(view.problem).toBe('Sift cannot write to that folder.');
+		expect(said).toHaveBeenCalledWith('Sift cannot write to that folder.', { tone: 'error' });
+		expect(view.folder).toBe(SCHEDULE.folder);
 		expect(view.done).toBeNull();
 	});
 });

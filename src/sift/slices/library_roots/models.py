@@ -1,12 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""What the library screens send and receive.
-
-A payload carries ids, never paths: a root's absolute path is the layout of the server's disk, and
-the folder tree is built from rows so the browser can draw a library without it. The exceptions
-are about CHOOSING a folder: adding a root sends a path one way, and the admin-only picker
-(`BrowseView`) sends paths back from inside folders deliberately handed to Sift, to whoever handed
-them. Everything about an indexed folder carries ids.
-"""
+"""What the library screens send and receive: ids, never paths, except where a folder is chosen."""
 
 from __future__ import annotations
 
@@ -41,13 +34,9 @@ class RootView(Wire):
     restricted: bool = False
     shared_here: bool = False
     restricted_here: bool = False
-    #: Which computer this folder is on, by name, since "this computer" is untrue for anybody
-    #: looking from another machine. Shown, never matched on: the path is the identity. Local roots
-    #: only; a share is named by its address.
+    #: Which computer a local folder is on, by name; shown, never matched on.
     machine: str | None = None
-    #: Whether this folder is there right now, asked of every root: a local disk can vanish as
-    #: completely as a share, and an unasked root would draw as ordinary while downloads fail.
-    #: A share that does not answer in a moment counts as not there.
+    #: Whether this folder is there right now, asked of every root; a silent share is not there.
     reachable: bool | None = None
     #: What `reachable` is short for, where the two kinds of "not there" can be told apart: the
     #: folder answered (here), the drive or share it lives on did not (silent), or the drive
@@ -230,6 +219,9 @@ class FolderView(Wire):
     #: Filled for an admin only, as the sharing marks are.
     keep_local: bool = False
     keep_from_swaps: bool = False
+    #: Whether Sift may write in this folder's library, asked of the disk when the list is read
+    #: with `writable=true`; null where nobody asked.
+    writable: bool | None = None
 
 
 class FoldersView(Wire):
@@ -288,9 +280,6 @@ class FolderProperties(Wire):
     folder_count: int
     #: Seconds since the epoch, or None where the disk did not say.
     created_at: float | None
-
-
-# Moving a folder is answered elsewhere, so the shapes it takes and returns live with it.
 
 
 class NewFolder(Wire):

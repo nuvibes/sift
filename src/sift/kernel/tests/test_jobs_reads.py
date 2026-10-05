@@ -1006,6 +1006,8 @@ async def test_live_rows_are_counted_by_the_products_they_name_and_read_as_files
     }
     assert {line.state for line in lines} == {JobState.QUEUED}
     assert sorted(await job_queue.live_asset_ids("identify_file")) == ["a-1", "a-2", "a-3"]
+    await job_queue.enqueue("face_scan", {"asset_id": "a-1"}, require_handler=False)
+    assert sorted(await job_queue.live_files()) == ["a-1", "a-2", "a-3"], "any type, each once"
     assert await job_queue.live_products([]) == []
     newest = await job_queue.newest_of("identify_file", limit=2)
     assert [one.id for one in newest] == sorted((one.id for one in newest), reverse=True)
@@ -1126,15 +1128,17 @@ async def test_the_live_rows_say_which_are_a_press_over_some_files_and_a_press_r
     assert await job_queue.live_tops([]) == []
 
 
+#: The table as it was before version 15, with none of its indexes.
+_BEFORE_THE_WALKS_KINDS = jobs_schema._CREATE_TABLE.replace(",\n  to_read      TEXT", "")
+
+
 @pytest.mark.integration
 async def test_a_queue_from_before_the_type_indexes_gets_them_at_boot(temp_db: Database) -> None:
     """Version 13: a library at 12 is given the two indexes the live questions read through, and
     keeps its rows; a new one is made with them."""
     async with temp_db.write() as connection:
         await connection.execute("DROP TABLE IF EXISTS jobs")
-        await jobs_schema.initialize(connection, on_disk=0)
-        await connection.execute("DROP INDEX ix_jobs_by_type")
-        await connection.execute("DROP INDEX ix_jobs_unpressed_tops")
+        await connection.execute(_BEFORE_THE_WALKS_KINDS)  # nosemgrep: sift-no-string-built-sql
         await connection.execute(
             "INSERT INTO jobs (id, type, payload, created_at, updated_at, root_id)"
             " VALUES ('J1', 'probe', '{}', 1, 1, 'J1')"
@@ -1234,3 +1238,89 @@ def test_the_products_a_grouped_row_names_are_read_and_anything_else_names_none(
     stored: object, named: tuple[str, ...]
 ) -> None:
     assert queue_rows._products_named(stored) == named
+
+
+# --- what the walks still have to read --------------------------------------------------------
+
+
+async def _walk(
+    queue: JobQueue, payload: dict[str, object], *, units: int, to_read: str | None
+) -> str:
+    job_id = await queue.enqueue("walk", payload, require_handler=False)
+    async with queue._db.write() as connection:
+        await connection.execute(
+            "UPDATE jobs SET units = ?, to_read = ? WHERE id = ?", (units, to_read, job_id)
+        )
+    return job_id
+
+
+async def test_the_walks_files_to_read_are_shared_out_by_kind_and_the_uncounted_told(
+    job_queue: JobQueue,
+) -> None:
+    await _walk(job_queue, {"root_id": "r-1"}, units=1000, to_read='{"video": 100, "image": 900}')
+    half = await _walk(job_queue, {"root_id": "r-2"}, units=200, to_read='{"video": 200}')
+    await _walk(job_queue, {"root_id": "r-3"}, units=1, to_read=None)
+    await _walk(job_queue, {"root_id": "r-4", "paths": ["a.mp4"]}, units=1, to_read=None)
+    later = await _walk(job_queue, {"root_id": "r-5"}, units=1, to_read=None)
+    paused = await _walk(job_queue, {"root_id": "r-6"}, units=50, to_read='{"gif": 50}')
+    await _walk(job_queue, {"root_id": "r-7", "asset_id": "A"}, units=1, to_read='{"gif": 9}')
+    async with job_queue._db.write() as connection:
+        await connection.execute(
+            "UPDATE jobs SET state = 'running', progress = 0.5 WHERE id = ?", (half,)
+        )
+        await connection.execute(
+            "UPDATE jobs SET run_after = ? WHERE id = ?", (int(job_queue._now()) + 3600, later)
+        )
+        await connection.execute("UPDATE jobs SET state = 'paused' WHERE id = ?", (paused,))
+
+    unread = await job_queue.files_to_read(["walk"])
+
+    assert unread.by_kind == {"video": 200.0, "image": 900.0}
+    assert unread.uncounted == 1, "a named-path walk and one not due yet are not waited on"
+    assert (await job_queue.files_to_read(["probe"])).by_kind == {}
+
+
+async def test_a_counted_walk_still_waiting_has_all_it_counted_left(job_queue: JobQueue) -> None:
+    job_id = await _walk(job_queue, {"root_id": "r-1"}, units=1, to_read=None)
+    assert await job_queue.set_to_read(job_id, {"video": 100, "image": 200})
+
+    unread = await job_queue.files_to_read(["walk"])
+
+    assert unread.by_kind == {"video": 100.0, "image": 200.0}
+    assert unread.uncounted == 0
+
+
+async def test_a_walks_kinds_are_written_while_it_waits_or_by_the_worker_holding_it(
+    job_queue: JobQueue,
+) -> None:
+    job_id = await _walk(job_queue, {"root_id": "r-1"}, units=3, to_read=None)
+
+    assert await job_queue.set_to_read(job_id, {"video": 3})
+    async with job_queue._db.write() as connection:
+        await connection.execute(
+            "UPDATE jobs SET state = 'running', claimed_by = ? WHERE id = ?", (OTHER_WORKER, job_id)
+        )
+    assert not await job_queue.set_to_read(job_id, {"video": 1}), "a waiting row's count only"
+    assert not await job_queue.set_to_read(job_id, {"video": 1}, worker_id=WORKER)
+    assert await job_queue.set_to_read(job_id, {"video": 2}, worker_id=OTHER_WORKER)
+    (row,) = await job_queue._db.fetch_all("SELECT to_read FROM jobs WHERE id = ?", (job_id,))
+    assert row["to_read"] == '{"video": 2}'
+
+
+@pytest.mark.integration
+async def test_a_queue_from_before_the_walks_kinds_gets_the_column_and_keeps_its_rows(
+    temp_db: Database,
+) -> None:
+    async with temp_db.write() as connection:
+        await connection.execute("DROP TABLE IF EXISTS jobs")
+        await connection.execute(_BEFORE_THE_WALKS_KINDS)  # nosemgrep: sift-no-string-built-sql
+        await connection.execute(
+            "INSERT INTO jobs (id, type, payload, created_at, updated_at, root_id, units)"
+            " VALUES ('J1', 'scan', '{\"root_id\": \"r\"}', 1, 1, 'J1', 40)"
+        )
+        await jobs_schema.initialize(connection, on_disk=14)
+
+    rows = await temp_db.fetch_all("SELECT id, units, to_read FROM jobs")
+    assert [(row["id"], row["units"], row["to_read"]) for row in rows] == [("J1", 40, None)]
+    columns = await temp_db.fetch_all("SELECT name FROM pragma_table_info('jobs')")
+    assert [row["name"] for row in columns].count("to_read") == 1

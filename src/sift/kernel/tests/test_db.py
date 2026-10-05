@@ -34,8 +34,6 @@ from sift.kernel.db import (
     _refuse_writes,
     after_commit,
     check_sqlite_capabilities,
-    execute_blocking,
-    fetch_blocking,
     in_clause,
     keep_the_log_folded,
     keep_the_statistics_current,
@@ -2234,33 +2232,3 @@ async def test_a_database_with_no_extensions_registered_opens_with_none(
         assert database.extensions == frozenset()
     finally:
         await database.close()
-
-
-# --- the blocking helpers the library switcher writes a file with ------------------------------
-
-
-def test_a_blocking_write_is_committed_before_it_returns(tmp_path: Path) -> None:
-    """The switcher writes a new library's first row and then hands the file to a `Database` on
-    another connection, which sees only what was committed."""
-    database = tmp_path / "library.sqlite3"
-    execute_blocking(database, "CREATE TABLE t (x INTEGER)")
-    execute_blocking(database, "INSERT INTO t VALUES (?)", (7,))
-
-    other = sqlite3.connect(database)
-    try:
-        assert other.execute("SELECT x FROM t").fetchall() == [(7,)]
-    finally:
-        other.close()
-
-
-def test_a_blocking_read_answers_plain_tuples_and_cannot_write(tmp_path: Path) -> None:
-    """Read-only by the connection, not by the statement: a read helper handed a write refuses it,
-    so looking at somebody's file never changes it."""
-    database = tmp_path / "library #2.sqlite3"
-    execute_blocking(database, "CREATE TABLE t (x INTEGER, y TEXT)")
-    execute_blocking(database, "INSERT INTO t VALUES (1, 'one')")
-
-    assert fetch_blocking(database, "SELECT x, y FROM t WHERE x = ?", (1,)) == [(1, "one")]
-    with pytest.raises(sqlite3.OperationalError, match="readonly"):
-        fetch_blocking(database, "INSERT INTO t VALUES (2, 'two')")
-    assert fetch_blocking(database, "SELECT COUNT(*) FROM t") == [(1,)]

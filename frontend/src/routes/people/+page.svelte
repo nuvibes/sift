@@ -37,6 +37,7 @@
 	import { enrichBoxes, loadEnrichBoxes } from '$lib/entity/enrichment.svelte';
 	import { fetchOnto } from '$lib/library/aimed-drop.svelte';
 	import { personRow } from '$lib/people/person-row';
+	import { nearNames } from './near-names';
 	import EntityGrid from '$lib/components/entity/EntityGrid.svelte';
 	import WallControls from '$lib/components/entity/WallControls.svelte';
 	import { filesSaid, filesSized, sizeOf } from '$lib/entity/entity-counts';
@@ -44,9 +45,8 @@
 	import EntitySelectionBar from '$lib/components/entity/EntitySelectionBar.svelte';
 	import { screenBar } from '$lib/components/shell/screen-bar.svelte';
 	import { facetParams } from '$lib/components/shell/facet-labels';
-	import { UNIVERSAL_SORTS } from '$lib/grid/sort-state.svelte';
+	import { ENTITY_OPINION_SORTS, UNIVERSAL_SORTS } from '$lib/grid/sort-state.svelte';
 	import {
-		ENTITY_SORTS,
 		people,
 		PEOPLE_PER_PAGE,
 		PeopleSearch,
@@ -95,7 +95,7 @@
 	/* The typed search, and its answer. Held in `PeopleSearch` so that re-reading the wall re-reads
 	   it too. See `reread` below, and the class for the merged person it would otherwise leave on
 	   screen. */
-	const typedSearch = new PeopleSearch((wanted) => people.matchingAnywhere(wanted));
+	const typedSearch = new PeopleSearch((wanted) => people.matchingAnywhere(wanted, narrowedBy));
 	const searched = $derived(typedSearch.searched);
 	const matches = $derived(typedSearch.matches);
 	let aliasTarget = $state<Person | null>(null);
@@ -126,12 +126,7 @@
 		});
 	});
 
-	/* Which page of the wall is being shown.
-	 *
-	 * Not applied while a search is running: a search asks the server for everybody whose name
-	 * contains the term and shows the answer whole, which is a different question from walking the
-	 * library. Paging the answer to "who is called Neve" would be paging a list of two.
-	 */
+	/* Which page of the wall is shown; not while a search is, whose answer is shown whole. */
 	const paging = new CardPaging(PEOPLE_PER_PAGE, 'wall.people');
 
 	/*
@@ -165,6 +160,12 @@
 	 */
 	const narrowedBy = $derived(facetParams('person', address.url.searchParams));
 	const narrowedKey = $derived(JSON.stringify(narrowedBy));
+
+	/* A typed name answers within the chips, so a chip going on or off asks it again. */
+	$effect(() => {
+		void narrowedKey;
+		untrack(() => void typedSearch.again());
+	});
 
 	/* The route this wall belongs to, captured once so a navigation away can be told from a reload. */
 	const path = address.url.pathname;
@@ -277,7 +278,7 @@
 			 * Gating it would take the Sort menu off this screen for a guest while leaving it on
 			 * Browse, which is the one kind of inconsistency this bar exists to prevent.
 			 */
-			sorts: [...UNIVERSAL_SORTS, ...ENTITY_SORTS],
+			sorts: [...UNIVERSAL_SORTS, ...ENTITY_OPINION_SORTS],
 			sort: people.sort,
 			onSort: (next) =>
 				// No prefix, and back to the first page. This wall filters through the server's
@@ -301,93 +302,10 @@
 		else void people.fill(paging, next);
 	}
 
-	/*
-	 * Who to offer as "maybe this is another name for them", ranked by how close they actually are.
-	 *
-	 * The first few of the wall, in whatever order the wall happens to be in, would be the same
-	 * names every time and have nothing to do with what was typed: a prompt that teaches people
-	 * to ignore it.
-	 *
-	 * Scored on three-letter runs shared with the typed term, which is the cheap measure that copes
-	 * with the case this prompt exists for: a name typed wrong. A prefix match and a plain
-	 * substring both beat it, because when one of those is true it is almost certainly the answer.
-	 *
-	 * Everybody is scored, but only names with something in common are offered. Eight strangers are
-	 * worse than none: an empty prompt says "nothing here looks like that", which is true and
-	 * useful, and a full one that happens to be wrong every time is noise somebody learns to skip
-	 * past.
-	 */
-	/*
-	 * The same name written the way people actually write it.
-	 *
-	 * A handle is rarely plain letters: `h0ll0wgrain` is Hollowgrain with two zeros in it, and to a
-	 * comparison that reads characters literally those two zeros break every run of three around
-	 * them, so typing `hollo` would score zero against the very person it names. Digits and
-	 * symbols are folded back to the letters they stand in for, and everything that is not a letter
-	 * is dropped, so `h.0.ll_0-wgrain` and `Hollowgrain` end up the same word before anything is
-	 * compared.
-	 */
-	const LOOKALIKE: Record<string, string> = {
-		'0': 'o',
-		'1': 'i',
-		'3': 'e',
-		'4': 'a',
-		'5': 's',
-		'7': 't',
-		'8': 'b',
-		'9': 'g',
-		'@': 'a',
-		$: 's',
-		'!': 'i'
-	};
+	/* Who to offer as "maybe this is another name for them": only names close to what was typed. */
+	const candidates = $derived(term.trim() ? nearNames(people.items, term) : []);
 
-	function flatten(text: string): string {
-		return [...text.toLowerCase().trim()]
-			.map((char) => LOOKALIKE[char] ?? char)
-			.filter((char) => /[a-z0-9]/.test(char))
-			.join('');
-	}
-
-	function trigrams(text: string): Set<string> {
-		const padded = ` ${flatten(text)} `;
-		const held = new Set<string>();
-		for (let at = 0; at + 3 <= padded.length; at += 1) held.add(padded.slice(at, at + 3));
-		return held;
-	}
-
-	function closeness(name: string, typed: string): number {
-		const one = flatten(name);
-		const other = flatten(typed);
-		if (!other) return 0;
-		if (one.startsWith(other)) return 1000 - one.length;
-		if (one.includes(other)) return 500 - one.length;
-		const mine = trigrams(name);
-		const theirs = trigrams(other);
-		let shared = 0;
-		for (const run of theirs) if (mine.has(run)) shared += 1;
-		return shared === 0 ? 0 : shared;
-	}
-
-	const candidates = $derived(
-		term.trim()
-			? people.items
-					.map((person) => ({ person, score: closeness(person.name, term) }))
-					.filter((one) => one.score > 0)
-					.sort((one, other) => other.score - one.score)
-					.slice(0, 8)
-					.map((one) => one.person)
-			: []
-	);
-
-	/* Enter works, and does the same thing the typing does: a box that ignores Enter is its own
-	 * small annoyance, and pressing it must not run a DIFFERENT search from the one that has
-	 * already filtered the screen.
-	 */
-	/* Enter still works, and runs the search that has already run rather than a different one.
-	 *
-	 * There is no Find button (see the controls below), so this is reached only by pressing
-	 * Enter in the box, which a form has to answer with something, and the honest something is the
-	 * filtering that is already on screen. */
+	/* Enter runs the search that has already run, never a different one. */
 	async function search(event: SubmitEvent) {
 		event.preventDefault();
 		// Written, the address runs the search (above); already there, it is run again here.
@@ -576,7 +494,9 @@
 			kind: 'asset',
 			targetId: person.id,
 			onassign: assignDropped,
-			onlink: (url, id) => void fetchOnto(url, 'person', id, person.name)
+			onlink: session.isAdmin
+				? (url, id) => void fetchOnto(url, 'person', id, person.name)
+				: undefined
 		})}
 		<div
 			role="listitem"

@@ -10,26 +10,26 @@
 import type { Attachment } from 'svelte/attachments';
 import type { Component, Snippet } from 'svelte';
 import { untrack } from 'svelte';
+import { page } from '$app/state';
 import type { IconName } from '$lib/design/icons';
 import type { Subject } from './facet-labels';
 import type { Verb } from '$lib/components/common/verbs';
 import type { NarrowedToUsername } from '$lib/grid/grid.svelte';
 import { PHONE_WIDTH } from '$lib/components/common/phone-width.svelte';
+import { stage } from './stage.svelte';
 
 /** One entry in an order dropdown: the value the screen sorts by, and what to call it. */
 export interface SortChoice {
 	value: string;
 	label: string;
-	/**
-	 * A row that is a PRESS rather than an order (`Shuffle again`): drawn as a row, never the
-	 * value, so it can be pressed again. Carried here too, so the flag survives the trip to the bar
-	 * (`action` in `common/Select.svelte`).
-	 */
+	/** A row that is a press rather than an order (`action` in `common/Select.svelte`). */
 	action?: boolean;
 	/** Drawn dimmed and never chosen: an order this wall cannot be put in now. `detail` says why. */
 	disabled?: boolean;
 	/** A second line under the name: what the order is measured against, or why it is dimmed. */
 	note?: string;
+	/** Words shown when the row is pointed at (`tooltip` in `common/Select.svelte`). */
+	tooltip?: string;
 }
 
 /**
@@ -313,33 +313,29 @@ interface ScreenTools {
 
 const NOTHING: ScreenTools = {};
 
-/*
- * The room the named menus need on the top bar, measured across the bar's own content box.
- *
- * Not a media query, because the rail and the desktop caption buttons take slices the window's
- * width does not show. 723 is the menus' end, the actions' end (the larger, admin's) and the two
- * column gaps beside the search field's floor; `e2e/top-bar.spec.ts` pins it at seven widths.
- * Below it the menus move to the screen's own row and the field keeps its floor down to the
- * window's minimum; the field also drops its keyboard hint below its floor (`SearchBox`).
- */
-const ROOM_FOR_THE_MENUS = 723;
+/* Filter and Sort with their two gaps, read off the bar rather than the window. */
+const MENUS_ROOM = 88;
 
-/** The search field's floor: at 228px it holds one row, at 226 it wraps. See the sum above. */
-const FIELD_FLOOR = 227;
+/** The search field's floor: at 228px it holds one row, at 226 it wraps. */
+export const FIELD_FLOOR = 227;
 
-/** How the bar finds the search field inside itself, to read what it was left. */
 const SEARCH_FIELD = 'form.search';
 
-/** How the bar finds the room it holds for the screen's trail (`TopBar`'s `.trail`). */
-const TRAIL_ROOM = '.trail';
+/** The end group's parts, whose widths are what each side of the centre group keeps. */
+const BAR_END = '.actions > *';
 
-/** The least room a trail keeps: the fold's press and the start of where you are (`--trail-least`). */
-const TRAIL_LEAST = 64;
+const TILE_SIZE = '.size';
 
-/*
- * Under the phone's width (`PHONE_WIDTH`) the bar is a row of squares (the search, Filter and Sort
- * together, Hidden, Add) and the sum above does not apply.
- */
+/* Under the phone's width (`PHONE_WIDTH`) the bar is a row of squares and none of this applies. */
+
+interface Need {
+	room: number;
+	end: number;
+}
+
+/* By route, for the session: a screen met again draws its menus in their home on its first frame.
+   The bar's width is read live, so a sidebar or window changed since is still decided fresh. */
+const needs = new Map<string, Need>();
 
 class ScreenBar {
 	#tools = $state<ScreenTools>(NOTHING);
@@ -359,76 +355,79 @@ class ScreenBar {
 	 */
 	keptInForce = $state<string | null>(null);
 
-	/*
-	 * Whether the named menus fit on the top bar. Only one of the two homes may draw them, since a
-	 * copy hidden by a stylesheet stays in the tab order and the accessibility tree.
-	 */
+	/** Whether the named menus fit on the top bar; one home draws them, never a hidden copy. */
 	roomOnTopBar = $state(true);
 
-	/*
-	 * How much of the trail's room this screen takes back for its own controls, in pixels. A screen
-	 * with extra controls (Theater) gives up trail room first, down to its least, before the menus
-	 * leave the bar, so its title is not a row lower than other screens'. `TopBar` subtracts it.
-	 */
-	trailGives = $state(0);
+	/** The end group's own width in px (`--bar-end`): each side of the centre group is at least this. */
+	barEnd = $state(0);
 
-	/* The trail's room given up whole: the menus have left and the field is still short. */
-	trailBare = $state(false);
+	/** Whether the tile size is on the bar: it leaves before the centre group would slide. */
+	sizeOnBar = $state(true);
 
-	/**
-	 * Watch the top bar and answer `roomOnTopBar` from what it actually has: its content box, since
-	 * padding is what the caption buttons take. Hands back the teardown.
-	 */
+	/** The tile size's panel on the screen's own row while it is off the top bar. Set by the bar. */
+	sizeHome = $state.raw<BarPanel | null>(null);
+
+	/** Watch the top bar's content box, its end group and its field. Hands back the teardown. */
 	watchRoom(bar: HTMLElement): () => void {
 		// jsdom has no `ResizeObserver`.
 		if (typeof ResizeObserver === 'undefined') return () => {};
 		const phone = typeof matchMedia === 'function' ? matchMedia(PHONE_WIDTH) : null;
 		const field = bar.querySelector<HTMLElement>(SEARCH_FIELD);
-		const trail = bar.querySelector<HTMLElement>(TRAIL_ROOM);
+		const ends = [...bar.querySelectorAll<HTMLElement>(BAR_END)];
+		const gapOf = (box: Element | null) =>
+			box === null ? 0 : Number.parseFloat(getComputedStyle(box).columnGap) || 0;
+		const endWidth = () =>
+			Math.ceil(
+				ends.reduce((total, one) => total + one.getBoundingClientRect().width, 0) +
+					gapOf(ends[0]?.parentElement ?? null) * Math.max(0, ends.length - 1)
+			);
+		const size = bar.querySelector<HTMLElement>(TILE_SIZE);
+		let sizeRoom = 0;
+		/* The end group with the tile size counted in, so its leaving moves no threshold. */
+		let end = 0;
+		const sum = () => 2 * (end + gapOf(bar)) + MENUS_ROOM + FIELD_FLOOR;
 		let width = Number.POSITIVE_INFINITY;
-		/*
-		 * The width this screen's menus need: the sum, RAISED when the field is seen below its floor
-		 * with the menus up (by what it is short, since the field is the one track that gives way).
-		 * Never lowered until the screen changes, or the menus would bounce up and down a frame apart.
-		 */
-		let needed = ROOM_FOR_THE_MENUS;
+		/* What a screen's own menus need beyond the sum; never lowered in a visit, or they would bounce. */
+		let raised = 0;
+		/* The same need as a whole width: the sum is stale while the last screen's end is on the bar. */
+		let room = 0;
 		const decide = () => {
-			this.roomOnTopBar = (phone?.matches ?? false) || width >= needed;
+			const onPhone = phone?.matches ?? false;
+			this.roomOnTopBar = onPhone || width >= Math.max(sum() + raised, room);
+			// Each end must hold the whole end group beside the field's floor, or the group slides.
+			this.sizeOnBar = onPhone || width >= sum() - MENUS_ROOM;
 		};
 		const observer = new ResizeObserver((entries) => {
 			for (const entry of entries) {
-				if (field !== null && entry.target === field) continue;
+				if (entry.target === field || ends.includes(entry.target as HTMLElement)) continue;
 				width = entry.contentBoxSize?.[0]?.inlineSize ?? entry.contentRect.width;
 			}
+			this.barEnd = endWidth();
+			const standing = size?.getBoundingClientRect().width ?? 0;
+			const holder = ends.find((one) => size !== null && one.contains(size));
+			if (standing > 0 && holder !== undefined)
+				sizeRoom = standing + (holder.childElementCount > 1 ? gapOf(holder) : 0);
+			end = this.barEnd + (standing > 0 ? 0 : sizeRoom);
 			if (field !== null && this.roomOnTopBar && !(phone?.matches ?? false)) {
 				const has = field.getBoundingClientRect().width;
 				if (has > 0 && has < FIELD_FLOOR && Number.isFinite(width)) {
-					let short = Math.ceil(FIELD_FLOOR - has);
-					/* The trail's room first, down to its least; the field takes what it gives up. */
-					const room = trail?.getBoundingClientRect().width ?? 0;
-					const given = Math.min(short, Math.max(0, Math.floor(room - TRAIL_LEAST)));
-					if (given > 0) {
-						this.trailGives += given;
-						short -= given;
-					}
-					if (short > 0) needed = Math.max(needed, Math.ceil(width + short));
+					raised = Math.max(raised, Math.ceil(width + FIELD_FLOOR - has) - sum());
+					room = Math.max(room, sum() + raised);
 				}
-			} else if (field !== null && !(phone?.matches ?? false)) {
-				const has = field.getBoundingClientRect().width;
-				if (has > 0 && has < FIELD_FLOOR) this.trailBare = true;
 			}
+			if (this.#screen !== null) needs.set(this.#screen, { room, end });
 			decide();
 		});
-		/* A new screen starts from the sum again: what the last one needed says nothing about it. */
+		/* A new screen starts from what it needed last time, or from the sum: never from another's. */
 		this.#screenChanged = () => {
-			needed = ROOM_FOR_THE_MENUS;
-			this.trailGives = 0;
-			this.trailBare = false;
+			({ room, end } = (this.#screen !== null && needs.get(this.#screen)) || { room: 0, end });
+			raised = 0;
 			decide();
 		};
 		observer.observe(bar);
-		// The field too: extra controls squeeze it without the bar changing size.
+		// The field and the ends too: a screen's controls change them without the bar changing size.
 		if (field !== null) observer.observe(field);
+		for (const one of ends) observer.observe(one);
 		phone?.addEventListener('change', decide);
 		return () => {
 			observer.disconnect();
@@ -440,16 +439,26 @@ class ScreenBar {
 	/** Told when a different screen takes the bar. Set by `watchRoom`, which owns the reading. */
 	#screenChanged: (() => void) | null = null;
 
+	#screen: string | null = null;
+
 	get tools(): ScreenTools {
-		return this.#tools;
+		return this.#offered;
 	}
+
+	#offered = $derived(
+		this.sizeOnBar || this.sizeHome === null || stage.filling
+			? this.#tools
+			: { ...this.#tools, panels: [...(this.#tools.panels ?? []), this.sizeHome] }
+	);
 
 	/** Say what this screen can do. Called by the screen, with a token of its own. */
 	publish(owner: symbol, tools: ScreenTools): void {
 		const another = this.#owner !== owner;
 		this.#owner = owner;
 		this.#tools = tools;
-		if (another) this.#screenChanged?.();
+		if (!another) return;
+		this.#screen = untrack(() => page.route?.id ?? null);
+		this.#screenChanged?.();
 	}
 
 	/*
@@ -594,6 +603,7 @@ class ScreenBar {
 	release(owner: symbol): void {
 		if (this.#owner !== owner) return;
 		this.#owner = null;
+		this.#screen = null;
 		this.#tools = NOTHING;
 		this.open = null;
 	}

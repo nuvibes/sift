@@ -140,10 +140,8 @@ class JobContext:
     worker_id: str
     queue: JobQueue
     capabilities: SystemCapabilities | None = None
-    #: WHO PRESSED THE WORK THIS JOB CARRIES OUT: its own `requested_by`, or the press at the top
-    #: of its tree where a pressed job of the same family handed it out (`WorkerPool._pressed_by`).
-    #: None for work Sift started by itself. What the pool records a pass over one file under
-    #: (`kernel.presses`), so a file's History can say who had Sift look.
+    #: Who pressed the work this job carries out (`WorkerPool._pressed_by`), or None for Sift's own;
+    #: what a file's History says had Sift look (`kernel.presses`).
     pressed_by: str | None = None
     _progress_written: float = field(default=-1.0e9, repr=False)
     #: What the handler said the job is about, or the row's own count until it does.
@@ -152,10 +150,11 @@ class JobContext:
     _handed_on: int = field(default=0, repr=False)
     #: Files this job brought into the library for the first time. See `arrived`.
     _arrived: int = field(default=0, repr=False)
+    #: The last note this job wrote, for the ledger.
+    noted: str | None = field(default=None, repr=False)
     #: What the last heartbeat heard somebody asking of this job. See `stopping`.
     _stop: str | None = field(default=None, repr=False)
-    #: Whether this handler ever asked for its workspace. What decides whether there is a directory
-    #: to sweep when the job settles, so a job that never wanted one costs no read and no delete.
+    #: Whether this handler asked for its workspace, so one that never did costs no sweep.
     _workspace_used: bool = field(default=False, repr=False)
 
     @property
@@ -221,16 +220,9 @@ class JobContext:
         a heartbeat interval. A handler reading it every couple of seconds hears a pause in about
         that time without writing anything itself.
 
-        THE TWO ARE NOT THE SAME REQUEST and a handler that can tell them apart should. `pause`
-        means stop soon and keep what you have written: the workspace is not swept and the job
-        will be claimed again with the same payload. `cancel` means the job is no longer this
-        worker's at all: nothing it writes can land, because every write is fenced on a claim it
-        has lost, and the workspace goes.
-
-        A handler may ignore this entirely, which is safe: a cancel drops it at the next beat, and a
-        pause simply waits for the attempt to end. What it costs is the time between the press and
-        the stop. Read it between the expensive steps of a long handler, and call
-        `raise_if_canceled` to refresh it now rather than at the next beat.
+        `pause` means stop soon and keep what you have written: the job is claimed again with the
+        same payload. `cancel` means the job is no longer this worker's: nothing it writes can land.
+        Ignoring it is safe and costs only the time between the press and the stop.
         """
         return self._stop
 
@@ -309,12 +301,8 @@ class JobContext:
     async def report_progress(self, fraction: float) -> None:
         """Report progress from inside a loop over many small steps, writing rarely.
 
-        `set_progress` is a write transaction, and a handler that calls it once per file is a
-        library-sized number of writes for a bar nobody can watch move that fast: a scan of a
-        hundred thousand files would be a hundred thousand transactions on the one write connection,
-        each one taken in turn by every other job that wanted to record anything. This writes at
-        most once per `PROGRESS_INTERVAL_SECONDS`, and always for the last step, so the bar still
-        arrives at the end.
+        `set_progress` is a write transaction; this writes at most once per
+        `PROGRESS_INTERVAL_SECONDS`, and always for the last step.
         """
         now = time.monotonic()
         if fraction < 1.0 and now - self._progress_written < PROGRESS_INTERVAL_SECONDS:
@@ -323,21 +311,14 @@ class JobContext:
         await self.set_progress(fraction)
 
     async def set_note(self, note: str) -> None:
-        """Say what this job did, in a sentence, for whoever asked for it.
-
-        For the case a progress bar cannot express: work that finished correctly having found
-        nothing to do. A control that returns instantly and says nothing reads as broken, and the
-        handler is the only thing that knows the difference.
-        """
+        """Say what this job did, in a sentence: what a bar cannot, such as finding nothing to do."""
+        self.noted = note
         await self.queue.set_note(self.job.id, self.worker_id, note)
 
     async def enqueue_child(
         self, job_type: str, payload: Mapping[str, Any] | None = None, **options: Any
     ) -> str:
-        """Fan out. A scan spawns a probe per file this way.
-
-        The child's progress rolls up into this job as it finishes, so a caller gets one thing to
-        watch and one thing to cancel.
+        """Fan out, as a scan hands out a probe per file; the child's progress rolls up into this job.
 
         A child in this job's OWN family is work handed on rather than work done, and is counted as
         such. See `units_done`. A child in another family is not: the two are counted separately
@@ -364,6 +345,13 @@ class JobContext:
         if self.job.timing is not None and family_of(job_type) is mine:
             options.setdefault("at", self.job.timing)
         return await self.queue.enqueue(job_type, payload, parent_id=self.job.id, **options)
+
+    async def hold_own_family(self, *, spared: Sequence[str]) -> None:
+        """Keep this job's family waiting until `lift_own_hold` or the job ends."""
+        await self.queue.hold_family(self.job.id, spared=spared)
+
+    def lift_own_hold(self) -> bool:
+        return self.queue.lift_hold(self.job.id)
 
     async def raise_if_canceled(self) -> None:
         """Stop, if the job has been cancelled or taken away. Also counts as a heartbeat.
@@ -1260,6 +1248,7 @@ class WorkerPool:
             units=context.units_done,
             arrived=context.files_arrived,
             pressed=pressed_job(job.type, job.payload, context.pressed_by, job.started_at),
+            noted=context.noted,
         )
         await self._sweep_workspace(context)
 
@@ -1314,6 +1303,7 @@ class WorkerPool:
         units: int = 1,
         arrived: int = 0,
         pressed: Pressed | None = None,
+        noted: str | None = None,
     ) -> None:
         if isinstance(error, JobCanceled):
             # The handler asked, and stopped. The row already says what it needs to.
@@ -1324,6 +1314,7 @@ class WorkerPool:
         # said so, so the row is parked with everything it had, including the workspace below.
         paused = False
         held = False
+        state: JobState | None = None
         if isinstance(error, JobPaused):
             landed = await self._queue.pause_running(
                 job.id, worker_id, str(error) or _PAUSED_MID_JOB
@@ -1341,16 +1332,12 @@ class WorkerPool:
             held = await self._queue.hold(job.id, worker_id, str(error), retry_in=hold)
             landed = held
         elif isinstance(error, JobFailedPermanently):
-            # The handler said no retry can fix it, so the row says failed once, for that reason,
-            # rather than "failed too often" after two more attempts at the same thing.
-            landed = (
-                await self._queue.fail(job.id, worker_id, str(error), permanent=True)
-            ) is not None
+            # No retry can fix it: failed once, for that reason, not "failed too often" later.
+            state = await self._queue.fail(job.id, worker_id, str(error), permanent=True)
+            landed = state is not None
         else:
-            # A handler that ignored the ask and then raised was interrupted part way through by
-            # OUR request, not by its own fault. `fail` reads that off the row and answers `paused`,
-            # from the row, because a pause asked between the last heartbeat and this moment is
-            # written there and is in nobody's memory.
+            # Raised after ignoring a pause asked of it: `fail` reads the ask off the row, where a
+            # pause asked since the last heartbeat is written, and answers `paused`.
             state = await self._queue.fail(job.id, worker_id, f"{type(error).__name__}: {error}")
             landed = state is not None
             paused = state is JobState.PAUSED
@@ -1379,6 +1366,10 @@ class WorkerPool:
                 ok=error is None,
                 units=units,
                 arrived=arrived,
+                failed_with=f"{type(error).__name__}: {error}"
+                if state is JobState.FAILED
+                else None,
+                noted=noted,
             )
 
     async def _account(
@@ -1390,13 +1381,11 @@ class WorkerPool:
         ok: bool,
         units: int = 1,
         arrived: int = 0,
+        failed_with: str | None = None,
+        noted: str | None = None,
     ) -> None:
-        """Tell the ledger what this job was about. Never the reason a job fails.
-
-         What kind of file, and how big, is read off the file's own row when the payload names one:
-        a point read, so the kernel can say it for every handler without any of them being
-         told. A job about no file is counted with no kind.
-        """
+        """Tell the ledger what this job was about, its file's kind and size read off the file's
+        own row where the payload names one. Never the reason a job fails."""
         media_type: str | None = None
         size_bytes: int | None = None
         asset_id = job.payload.get("asset_id")
@@ -1417,6 +1406,8 @@ class WorkerPool:
             size_bytes=size_bytes,
             units=units,
             arrived=arrived,
+            failed_with=failed_with,
+            noted=noted,
         )
 
     async def _invoke(self, handler: Handler, context: JobContext) -> None:
@@ -1428,6 +1419,7 @@ class WorkerPool:
                 await handler(context)
         finally:
             CURRENT_FAMILY.reset(token)
+            self._queue.lift_hold(context.job.id)
 
     async def _beat(self, context: JobContext, wake: asyncio.Event | None = None) -> None:
         """Keep saying the job is alive, and return the moment it is no longer ours.

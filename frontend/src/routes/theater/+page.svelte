@@ -33,6 +33,7 @@
 	import Shortcuts from '$lib/components/theater/Shortcuts.svelte';
 	import TheaterTools from '$lib/components/theater/TheaterTools.svelte';
 	import PresetsPanel from '$lib/components/theater/PresetsPanel.svelte';
+	import SaveLayout from '$lib/components/theater/SaveLayout.svelte';
 	import { screenBar, type Narrowing } from '$lib/components/shell/screen-bar.svelte';
 	import LayoutGlyph from '$lib/components/theater/LayoutGlyph.svelte';
 	import { LAYOUTS, layout, type LayoutId } from '$lib/theater/layouts';
@@ -40,7 +41,7 @@
 	import Icon from '$lib/components/Icon.svelte';
 	import { mini } from '$lib/player/mini.svelte';
 	import { ACTS, keyOf } from '$lib/player/acts';
-	import { wallChrome } from '$lib/theater/chrome.svelte';
+	import { rowQuiet, wallChrome } from '$lib/theater/chrome.svelte';
 	import { vault } from '$lib/shell/vault.svelte';
 	import { toCorner } from '$lib/theater/corner';
 	import {
@@ -166,7 +167,11 @@
 					id: 'layout',
 					icon: 'view_array',
 					label: 'Layouts',
-					options: LAYOUTS.map((one) => ({ value: one.id, label: one.label })),
+					options: LAYOUTS.map((one) => ({
+						value: one.id,
+						label: one.label,
+						tooltip: one.tooltip
+					})),
 					/* Each shape drawn as itself, from the wall's own `grid-template`, since names one
 					   character apart are different pictures. */
 					preview: layoutPicture,
@@ -177,9 +182,9 @@
 			/* The wall's silence goes on the TOP bar, after the play control that asks the same question
 			   about the same wall and the Hidden control the bar keeps in one place. See `topExtra`. */
 			topExtra: tools,
-			/* This row goes and comes back WITH the wall's own bar: one gesture, one answer. The rule
-			   is the wall's, because the wall is where the pointer is; see `wallChrome`. */
-			quiet: !wallChrome.up,
+			/* This row goes and comes back WITH the wall's own bar, unless it holds the menus in a
+			   window; see `rowQuiet`. */
+			quiet: rowQuiet(wallChrome.up, stage.filling, screenBar.roomOnTopBar),
 			panels: [
 				/*
 				 * What is KEPT, and what the keys do: the two that are genuinely panels (a row of pills,
@@ -188,7 +193,7 @@
 				{
 					id: 'presets',
 					icon: 'table_view',
-					label: 'Layout Presets',
+					label: 'Saved Layouts',
 					content: PresetsPanel,
 					lead: true
 				},
@@ -266,9 +271,9 @@
 		try {
 			const kept = await presets.byId(id);
 			if (kept) wall.adopt(kept);
-			else toasts.show('That Layout Preset is no longer saved', { tone: 'error' });
+			else toasts.show('That Saved Layout no longer exists', { tone: 'error' });
 		} catch {
-			toasts.show("Your Layout Presets couldn't be loaded", { tone: 'error' });
+			toasts.show("Your Saved Layouts couldn't be loaded", { tone: 'error' });
 		}
 	}
 
@@ -801,6 +806,8 @@
 		</div>
 	{/if}
 </section>
+
+<SaveLayout />
 
 <style>
 	.screen {

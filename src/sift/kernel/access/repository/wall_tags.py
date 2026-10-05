@@ -14,6 +14,7 @@ from sift.kernel.access.repository.walls import (
     _wall,
     _with_stored_counts,
     locked_tile,
+    shown,
 )
 from sift.kernel.sql_splice import splice
 
@@ -59,9 +60,10 @@ in_scope(grp, folder_id) AS (
 -- that have already been through every rule and closed as their own CTE, so no arrangement of ORs
 -- inside it can reach a permission rule at all.
 --
-counted(tag_id, asset_count, size_bytes) AS (
+counted(tag_id, asset_count, size_bytes, duration_ms) AS (
   SELECT t.tag_id, COUNT(*),
-         COALESCE(SUM(CASE WHEN :reveal_named = 1 OR v.concealed = 0 THEN a.size_bytes END), 0)
+         COALESCE(SUM(CASE WHEN :reveal_named = 1 OR v.concealed = 0 THEN a.size_bytes END), 0),
+         COALESCE(SUM(CASE WHEN :reveal_named = 1 OR v.concealed = 0 THEN a.duration_ms END), 0)
     FROM asset_tags t
     CROSS JOIN viewer_assets v ON v.asset_id = t.asset_id AND v.user_id = :viewer
     JOIN assets a ON a.id = t.asset_id
@@ -88,9 +90,10 @@ counted(tag_id, asset_count, size_bytes) AS (
 -- share unless `:reveal`), and which carries the SIZE of those files beside it. Summed live, the
 -- size would walk every membership of every row on the wall. Read here it costs one range of the
 -- stored rows, and the number and the size come off one row, so they cannot describe different files.
-whole(tag_id, asset_count, size_bytes) AS (
+whole(tag_id, asset_count, size_bytes, duration_ms) AS (
   SELECT c.object_id, c.permitted - CASE WHEN :reveal = 1 THEN 0 ELSE c.concealed END,
-         c.permitted_bytes - CASE WHEN :reveal_named = 1 THEN 0 ELSE c.concealed_bytes END
+         c.permitted_bytes - CASE WHEN :reveal_named = 1 THEN 0 ELSE c.concealed_bytes END,
+         c.permitted_ms - CASE WHEN :reveal_named = 1 THEN 0 ELSE c.concealed_ms END
     FROM viewer_entity_counts c
    WHERE c.user_id = :viewer AND c.kind = 'tag'
 )
@@ -169,13 +172,14 @@ SELECT t.id, CASE WHEN {{LOCKED}} THEN '' ELSE t.name END AS name,
            WHERE ta.tag_id = t.id AND ta.alias LIKE :like ESCAPE '\\'
            ORDER BY ta.alias COLLATE NOCASE LIMIT 1) END AS matched_alias,
        -- The tag this one is filed under, so a picker can group a branch under its parent. Held
-       -- back with a locked tile's name, and for a parent this viewer has hidden, whose name is the
-       -- disclosure.
-       CASE WHEN {{LOCKED}} THEN NULL ELSE t.parent_id END AS parent_id,
+       -- back with a locked tile's name, and for a parent this viewer has hidden or may not be shown.
+       CASE WHEN {{LOCKED}} THEN NULL ELSE
+         (SELECT pt.id FROM tags pt WHERE pt.id = t.parent_id AND {{PARENT_SHOWN}}) END AS parent_id,
        CASE WHEN {{LOCKED}} THEN NULL ELSE
          (SELECT pt.name FROM tags pt
            LEFT JOIN tag_user_state ph ON ph.tag_id = pt.id AND ph.user_id = :viewer
-           WHERE pt.id = t.parent_id AND (:reveal_named = 1 OR COALESCE(ph.hidden, 0) = 0))
+           WHERE pt.id = t.parent_id AND (:reveal_named = 1 OR COALESCE(ph.hidden, 0) = 0)
+             AND {{PARENT_SHOWN}})
          END AS parent_name,
        COUNT(*) OVER () AS total_count
   FROM tags t
@@ -189,9 +193,9 @@ SELECT t.id, CASE WHEN {{LOCKED}} THEN '' ELSE t.name END AS name,
    -- one finds the files), and without them here the tag itself would be unreachable by any word
    -- but the one it happened to be filed under. The record's own help text promises "any of them
    -- finds it".
-   AND (:prefix = '' OR t.name LIKE :like ESCAPE '\\'
+   AND (:prefix = '' OR ({{SHOWN}} AND (t.name LIKE :like ESCAPE '\\'
         OR EXISTS (SELECT 1 FROM tag_aliases ta
-                    WHERE ta.tag_id = t.id AND ta.alias LIKE :like ESCAPE '\\'))
+                    WHERE ta.tag_id = t.id AND ta.alias LIKE :like ESCAPE '\\'))))
    AND (:reveal_named = 1 OR COALESCE(h.hidden, 0) = 0)
    AND (:list_empty = 1 OR COALESCE(c.asset_count, 0) > 0)
    -- A LOCKED TILE matches no typed word: a box that finds a padlock has said the name. See
@@ -231,19 +235,31 @@ SELECT t.id, CASE WHEN {{LOCKED}} THEN '' ELSE t.name END AS name,
           CASE :entity_sort WHEN 'edited' THEN CASE WHEN {{LOCKED}} THEN NULL ELSE t.edited_at END END DESC NULLS LAST,
           CASE :entity_sort WHEN 'edited' THEN t.id END DESC,
           CASE :entity_sort WHEN 'oldest' THEN t.id END ASC,
-          -- The SAME expression the card prints, `:count_narrowed` and all. A wall ordered by
-          -- size that orders on the other tally puts its cards out of the order their own numbers
-          -- read in, which looks like a broken sort and is a second answer to one question.
+          -- The number and the size the card prints, so the cards read in the order asked.
           CASE :entity_sort WHEN 'largest' THEN
             COALESCE(CASE WHEN :count_narrowed = 1 THEN c.asset_count ELSE w.asset_count END, 0)
           END DESC,
           CASE :entity_sort WHEN 'smallest' THEN
             COALESCE(CASE WHEN :count_narrowed = 1 THEN c.asset_count ELSE w.asset_count END, 0)
           END ASC,
+          CASE :entity_sort WHEN 'largest_total' THEN
+            COALESCE(CASE WHEN :count_narrowed = 1 THEN c.size_bytes ELSE w.size_bytes END, 0)
+          END DESC,
+          CASE :entity_sort WHEN 'smallest_total' THEN
+            COALESCE(CASE WHEN :count_narrowed = 1 THEN c.size_bytes ELSE w.size_bytes END, 0)
+          END ASC,
+          CASE :entity_sort WHEN 'longest_total' THEN
+            NULLIF(CASE WHEN :count_narrowed = 1 THEN c.duration_ms ELSE w.duration_ms END, 0)
+          END DESC NULLS LAST,
+          CASE :entity_sort WHEN 'shortest_total' THEN
+            NULLIF(CASE WHEN :count_narrowed = 1 THEN c.duration_ms ELSE w.duration_ms END, 0)
+          END ASC NULLS LAST,
           COALESCE(c.asset_count, 0) DESC, CASE WHEN {{LOCKED}} THEN NULL ELSE COALESCE(t.name_sort, t.name) END ASC NULLS LAST, t.id ASC
  LIMIT :limit OFFSET :offset
 """,
     LOCKED=locked_tile("tag", "t"),
+    SHOWN=shown("tag", "t"),
+    PARENT_SHOWN=shown("tag", "pt"),
 )
 
 

@@ -22,6 +22,7 @@ from __future__ import annotations
 from collections import OrderedDict
 from collections.abc import Sequence
 
+from sift.kernel.access import Viewer
 from sift.kernel.changes import current_mark
 from sift.kernel.log import get_logger
 from sift.kernel.memo import MarkedMemo
@@ -29,20 +30,28 @@ from sift.slices.semantic.service import SemanticService
 
 log = get_logger(__name__)
 
-#: How many neighbours to ask the index for, however small the page is.
-#:
-#: The lookup runs before any permission rule does, and several of what it returns will be filtered
-#: out afterwards: a file this user may not see, a file in a shut vault. Asking for exactly one
-#: page therefore hands back less than a page. Two hundred is generous against any page the app
-#: offers and is still a single pass over the index, which is the cheap half of this feature.
+#: How many neighbours to ask for: more than a page, as the other filters run after.
 CANDIDATES = 200
 
-#: How many recent questions are remembered, vectors and rankings alike.
-REMEMBERED = 32
+#: How many recent questions are remembered for each asker, vectors and rankings alike.
+REMEMBERED = 16
+
+#: How many askers' questions are remembered at once.
+ASKERS = 16
 
 
 class _NothingToRankBy(Exception):
     """The words could not be described, so there is nothing to rank by and nothing to keep."""
+
+
+class _Kept:
+    """One asker's recent questions: what the words meant, and what was closest under a mark."""
+
+    __slots__ = ("ranked", "vectors")
+
+    def __init__(self) -> None:
+        self.vectors: OrderedDict[str, list[float]] = OrderedDict()
+        self.ranked: MarkedMemo[tuple[tuple[str, float], ...]] = MarkedMemo(kept=REMEMBERED)
 
 
 class SemanticSearch:
@@ -50,44 +59,60 @@ class SemanticSearch:
 
     def __init__(self, service: SemanticService) -> None:
         self._service = service
-        # What the words mean is a property of the model alone, so a text's vector is kept as
-        # long as this process lives, bounded. What is CLOSEST to it is a property of the index,
-        # so the ranking is kept under the change bus's mark and thrown away when anything moves.
-        # The grid asks the same question several times per search (the first page, its
-        # top-up, the next page with a deeper reach), and each would otherwise pay the model and
-        # the whole-index scan again.
-        self._vectors: OrderedDict[str, list[float]] = OrderedDict()
-        self._ranked: MarkedMemo[tuple[tuple[str, float], ...]] = MarkedMemo(kept=REMEMBERED)
+        # Per asker, so a quick answer never tells one User what another searched for.
+        self._kept: OrderedDict[str, _Kept] = OrderedDict()
 
     async def neighbours(
-        self, text: str, *, limit: int = CANDIDATES
+        self, text: str, *, limit: int = CANDIDATES, asker: Viewer | None
     ) -> tuple[tuple[str, float], ...] | None:
-        """Files that look like what these words describe, closest first."""
+        """The files `asker` may see that look like what these words describe, closest first.
+
+        Kept for `asker` alone until the mark or what they may see moves; with no asker every
+        file is ranked and nothing is kept."""
+        kept = self._kept_for(asker)
         try:
-            return await self._ranked.get(
-                (text, limit), current_mark(), lambda: self._rank(text, limit)
+            if asker is None or kept is None:
+                return await self._rank(text, limit, None, None)
+            scope = (asker.role, asker.show_hidden, asker.cache_stamp)
+            return await kept.ranked.get(
+                (text, limit, scope), current_mark(), lambda: self._rank(text, limit, kept, asker)
             )
         except _NothingToRankBy:
             return None
 
-    async def _rank(self, text: str, limit: int) -> tuple[tuple[str, float], ...]:
-        vector = await self._vector(text)
-        found = await self._service.nearest(vector, limit=limit)
+    def _kept_for(self, asker: Viewer | None) -> _Kept | None:
+        if asker is None:
+            return None
+        kept = self._kept.get(asker.id)
+        if kept is None:
+            kept = self._kept[asker.id] = _Kept()
+            while len(self._kept) > ASKERS:
+                self._kept.popitem(last=False)
+        else:
+            self._kept.move_to_end(asker.id)
+        return kept
+
+    async def _rank(
+        self, text: str, limit: int, kept: _Kept | None, asker: Viewer | None
+    ) -> tuple[tuple[str, float], ...]:
+        vector = await self._vector(text, kept)
+        found = await self._service.nearest(vector, limit=limit, asker=asker)
         return tuple((neighbour.asset_id, neighbour.distance) for neighbour in found)
 
-    async def _vector(self, text: str) -> list[float]:
-        held = self._vectors.get(text)
-        if held is not None:
-            self._vectors.move_to_end(text)
-            return held
+    async def _vector(self, text: str, kept: _Kept | None) -> list[float]:
+        if kept is not None:
+            held = kept.vectors.get(text)
+            if held is not None:
+                kept.vectors.move_to_end(text)
+                return held
         vector = await self._service.describe_query(text)
         if vector is None:
-            # Nothing is kept: the model may simply not be ready yet, and the next asker should
-            # get to find out rather than inherit this one's answer.
+            # Not kept: the model may not be ready yet, and the next ask should find out.
             raise _NothingToRankBy
-        self._vectors[text] = vector
-        while len(self._vectors) > REMEMBERED:
-            self._vectors.popitem(last=False)
+        if kept is not None:
+            kept.vectors[text] = vector
+            while len(kept.vectors) > REMEMBERED:
+                kept.vectors.popitem(last=False)
         return vector
 
     async def can_answer(self) -> bool:
@@ -98,11 +123,7 @@ class SemanticSearch:
         and one file's None cannot tell those apart, so a pass would have no way to find out that
         every answer it was about to ask for would be None except by asking for all of them.
 
-        Two conditions and they are different failures. The machine may not be able to hold the
-        index at all, which no amount of describing will change; or it can, and nothing has been
-        described by the model in use: a new library, the feature switched on this minute, or a
-        model changed under an index full of the previous one's numbers. Both mean the same thing
-        to a caller: there is nothing here to compare against.
+        False where the machine cannot hold the index or the model in use has described nothing.
         """
         readiness = await self._service.readiness()
         if not readiness.supported:
@@ -121,14 +142,15 @@ class SemanticSearch:
         return await self._service.describes_many(asset_ids)
 
     async def lookalikes(
-        self, asset_id: str, *, limit: int = CANDIDATES
+        self, asset_id: str, *, limit: int = CANDIDATES, asker: Viewer | None
     ) -> tuple[tuple[str, float], ...]:
-        """Files similar to this one, closest first, by whichever way can answer.
+        """Files similar to this one, closest first, by whichever way can answer, ranked among
+        what `asker` may see.
 
         The strip under a file asks the service the same question (`SemanticService.similar_to`),
         so a wall filtered by `like:` holds what that strip draws, and more of it.
         """
-        return (await self._service.similar_to(asset_id, limit=limit)).neighbours
+        return (await self._service.similar_to(asset_id, limit=limit, asker=asker)).neighbours
 
     async def like_asset(
         self, asset_id: str, *, limit: int = CANDIDATES

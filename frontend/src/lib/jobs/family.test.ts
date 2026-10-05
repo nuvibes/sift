@@ -141,13 +141,12 @@ describe("the Now tab's columns", () => {
 		expect(ACTIVITY_COLUMNS.find((column) => column.id === 'left')?.align ?? 'start').toBe('start');
 	});
 
-	it('give the status as much of the width as the name, so a running task stays in its column', () => {
-		/* At 1.4 shares against the name's 3, a running task's pill would run on under Time left in
-		   an ordinary window. */
-		const share = (id: string) =>
-			Number(/(\d+(?:\.\d+)?)fr/.exec(ACTIVITY_COLUMNS.find((one) => one.id === id)!.width)![1]);
+	it('give the status as much of the width as the name, and room for the benchmark pill whole', () => {
+		const width = (id: string) => ACTIVITY_COLUMNS.find((one) => one.id === id)!.width;
+		const share = (id: string) => Number(/(\d+(?:\.\d+)?)fr/.exec(width(id))![1]);
 		expect(share('status')).toBeGreaterThanOrEqual(share('name'));
-		expect(share('status')).toBeGreaterThanOrEqual(2);
+		// "Paused while Sift benchmarks this device" with its mark is 259px at the label font.
+		expect(Number(/^minmax\((\d+)rem/.exec(width('status'))?.[1] ?? 0) * 16).toBeGreaterThan(259);
 	});
 });
 
@@ -187,6 +186,7 @@ function page(
 		housekeeping: [],
 		stepping_back: false,
 		step_back_share: 25,
+		step_back_for: null,
 		full_amount: false,
 		password_wanted: 0,
 		families: Object.fromEntries(
@@ -214,6 +214,7 @@ function page(
 						problem: null,
 						quick_seconds: null,
 						slow_seconds: null,
+						at_least: false,
 						sample: 0,
 						at_once: 12,
 						outstanding,
@@ -223,6 +224,12 @@ function page(
 						reason: null,
 						parts: [],
 						task: null,
+						time_unknown: null,
+						pace: null,
+						for_task: null,
+						failed: 0,
+						last_error: null,
+						running: 0,
 						...one
 					}
 				];
@@ -252,15 +259,23 @@ describe('the bar, which is done over what wants doing', () => {
 	it('says how much of the library has the work while a pass is part way through', () => {
 		const [one] = passes(
 			page(
-				{ identify: { label: 'Identify', types: ['face_scan'], done: 9000, total: 100000 } },
+				{
+					identify: {
+						label: 'Identify',
+						types: ['face_scan'],
+						done: 9000,
+						total: 100000,
+						running: 3
+					}
+				},
 				{ face_scan: kind({ waiting: 91000, outstanding: 4, total: 100000 }) }
 			)
 		);
 
 		expect(one.done).toBe('9,000 of 100,000');
 		expect(Math.round(one.progress)).toBe(9);
-		// How many run together, in the In progress chip's own word: never "at once" or "at a time".
-		expect(one.now).toBe('12 in progress');
+		// The tasks running now, in the In progress chip's own word, never how many could.
+		expect(one.now).toBe('3 in progress');
 		expect(nowState(one.tone), 'drawn as the In progress chip').toBe('running');
 	});
 
@@ -413,12 +428,86 @@ describe('the estimate, as a range in words', () => {
 		expect(priced({ quick_seconds: 64800, slow_seconds: 93600 }).when).toBe('About 18 to 27 hours');
 	});
 
+	it('says the total is not known while a folder waits to be counted, never a floor', () => {
+		const unknown = 'Not known until every folder is counted.';
+		const row = priced({ quick_seconds: null, slow_seconds: null, time_unknown: unknown });
+		expect(row.when).toBe(unknown);
+		expect(row.now).toBe('In progress');
+	});
+
+	it('does not call a pass up to date while files may still be coming to it', () => {
+		const unknown = 'Not known until every folder is counted.';
+		const [row] = passes(page({ generate: { label: 'Generate', time_unknown: unknown } }));
+		expect([row.now, row.when]).toEqual(['Not started', unknown]);
+		const [said] = passes(page({ semantic: { reason: NOTHING_WAITING, time_unknown: unknown } }));
+		expect([said.now, said.tone]).toEqual(['Not started', 'plain']);
+	});
+
+	it('says a time priced from the benchmark as the least it takes', () => {
+		const floor = { quick_seconds: 7.5 * 3600, slow_seconds: 7.5 * 3600, at_least: true };
+		expect(priced(floor).when).toBe('At least 6 hours');
+		expect(priced({ ...floor, quick_seconds: 200, slow_seconds: 200 }).when).toBe(NOT_ENOUGH);
+		const unknown = 'Not known until every folder is counted.';
+		expect(priced({ ...floor, time_unknown: unknown }).when).toBe(unknown);
+	});
+
+	it('says what sets the pace after the time left', () => {
+		const pace = 'Reading is limited by the network share that holds Films.';
+		expect(priced({ quick_seconds: 64800, slow_seconds: 93600, pace }).when).toBe(
+			`About 18 to 27 hours. ${pace}`
+		);
+	});
+
+	it("says what waits for its task after the arriving files' time, never in it", () => {
+		const for_task = '2,691 more wait for their task.';
+		expect(priced({ quick_seconds: 65, slow_seconds: 89, for_task }).when).toBe(
+			`A few minutes. ${for_task}`
+		);
+		expect(priced({ quick_seconds: null, slow_seconds: null, for_task }).when).toBe(
+			`${NOT_ENOUGH}. ${for_task}`
+		);
+	});
+
 	it('says it cannot say rather than guessing from too small a sample', () => {
 		/* The number is not the single newest run of the family with no minimum sample: a run of
 		   ONE arriving file would set the price of a hundred thousand, and an unchanging backlog
 		   would read days apart from one hour to the next. The server sends nothing at all when the sample is under twenty
 		   items, and this is what the column says instead. */
 		expect(priced({ quick_seconds: null, slow_seconds: null }).when).toBe(NOT_ENOUGH);
+	});
+});
+
+describe('a pass whose last run failed', () => {
+	const why = "A folder stopped answering partway through the scan. Scan it again once it's back.";
+	const scan = (over: Partial<Family>) =>
+		passes(
+			page({
+				scan: {
+					label: 'Scan',
+					reason: NOTHING_WAITING,
+					done: 10,
+					total: 10,
+					failed: 2,
+					last_error: why,
+					...over
+				}
+			})
+		)[0];
+
+	it('says so on its own row with why, never up to date', () => {
+		expect([scan({}).now, scan({}).tone, scan({}).why]).toEqual(['Failed 2 times', 'warn', why]);
+	});
+
+	it('says the later run while one is going', () => {
+		expect([scan({ outstanding: 1 }).now, scan({ outstanding: 1 }).why]).toEqual([
+			'In progress',
+			null
+		]);
+	});
+
+	it('is up to date once no failure stands', () => {
+		const row = scan({ failed: 0, last_error: null });
+		expect([row.now, row.tone, row.why]).toEqual(['Up to date', 'good', null]);
 	});
 });
 

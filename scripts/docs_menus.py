@@ -15,6 +15,7 @@ import docs_client
 
 LIB = docs_client.ROOT / "frontend" / "src" / "lib"
 _LABEL = re.compile(r"""\blabel:\s*(?:'([^']+)'|"([^"]+)")""")
+_KEYED = re.compile(r"value: '([^']+)', label: '([^']+)'")
 _TERNARY = re.compile(
     r"""\blabel:\s*[\w.!]+\s*\?\s*(?:'([^']+)'|"([^"]+)")\s*:\s*(?:'([^']+)'|"([^"]+)")"""
 )
@@ -56,18 +57,20 @@ def _walls() -> dict[str, list[str]]:
     verbs = _labels(_read("components/entity/verbs.ts"))
     facts = _between(_read("components/entity/wall-verbs.svelte.ts"), "KIND_FACTS", "\n};")
     sorts = _read("grid/sort-state.svelte.ts")
-    counted = [a or b for a, b in _LABEL.findall(_between(sorts, "SORT_OPTIONS", "] as const"))]
+    options = dict(_KEYED.findall(_between(sorts, "SORT_OPTIONS", "] as const")))
     instead = dict(re.findall(r"(\w+): '([^']+)'", _between(sorts, "COUNTED_INSTEAD", "};")))
     universal = ["Newest first", "Oldest first", "Recently edited", "Name A-Z", "Name Z-A"]
-    universal = [one for one in universal if one in counted] + list(instead.values())
-    opinions = _labels(_between(sorts, "ENTITY_OPINION_SORTS", "];"))
+    universal = [one for one in universal if one in options.values()] + list(instead.values())
+    totals = _labels(_between(sorts, "TOTAL_SORTS", "];"))
+    keys = re.findall(r"'(\w+)'", _between(sorts, "ENTITY_OPINION_SORTS", "].map"))
+    opinions = [options[key] for key in keys]
     found: dict[str, list[str]] = {}
     for _kind, block in _KIND.findall(facts):
         wall = re.search(r"wall: '([^']+)'", block)
         if wall is None:
             continue
         offered = [verb for verb in verbs if f"{_NEEDS.get(verb, 'x')}: null" not in block]
-        found[_page("/" + wall.group(1))] = offered + universal + opinions
+        found[_page("/" + wall.group(1))] = offered + universal + totals + opinions
     return found
 
 

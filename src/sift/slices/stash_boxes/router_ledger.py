@@ -95,7 +95,7 @@ async def linked_ledger(
                 # The line the entity's own History says for this link, built once, so the tab
                 # and the record cannot come to two different accounts of one link.
                 said=pieces_of(
-                    await service.what_it_filled(one, names.get(one.box_id, one.box_id))
+                    await service.what_it_filled(one, names.get(one.box_id, one.box_id), viewer)
                 ),
             )
         )

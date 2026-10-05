@@ -13,6 +13,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { flushSync, mount } from 'svelte';
 import Scrubber from './Scrubber.svelte';
+import source from './Scrubber.svelte?raw';
 import { SKIP_SECONDS } from '$lib/player/skip';
 
 let host: HTMLElement;
@@ -117,6 +118,10 @@ describe('a timeline with nothing to move along', () => {
 		press(slider, 'ArrowRight');
 
 		expect(seek).not.toHaveBeenCalled();
+	});
+
+	it('draws no playhead, read from the rule since jsdom paints no handle', () => {
+		expect(source).toMatch(/\.timeline\.off \{[^}]*--slider-thumb: 0px;/);
 	});
 
 	/* Nothing has said how long it is yet, so there is nowhere to seek TO. Without this the arrows

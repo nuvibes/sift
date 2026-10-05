@@ -51,7 +51,6 @@ const NOT_A_PANE = /\.test\.svelte$|Probe/;
  */
 const EXCUSED = {
 	'ApplicationLog.svelte': { Show: "the log view's level filter, not a setting" },
-	'Backup.svelte': { 'Save backup settings': 'the press that saves the rows above it' },
 	'GraphicsCard.svelte': {
 		'Restart needed': 'a state the pane reports, not something to set',
 		"Sift didn't restart": 'a state the pane reports, not something to set',
@@ -63,7 +62,7 @@ const EXCUSED = {
 		Action: 'a filter on the history shown, not a setting'
 	},
 	'NetworkSharing.svelte': { Address: 'a fact of Network sharing, found by that heading' },
-	'Performance.svelte': { 'Your network shares': 'a result of Benchmark this device' },
+	'Performance.svelte': { 'Your drives and shares': 'a result of Benchmark this device' },
 	'Profile.svelte': {
 		'Current password': 'a box of the Password form, found by Password',
 		'New password': 'a box of the Password form, found by Password',

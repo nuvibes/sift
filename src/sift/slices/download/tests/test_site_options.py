@@ -20,8 +20,9 @@ import pytest
 import sift.slices.workbench.schema  # noqa: F401 (the ledger's tables, for the History lines)
 from sift.kernel.db import Database
 from sift.kernel.ledger import Actor
-from sift.slices.download.site_options import DEFAULT_SCOPE, SiteOptionStore
+from sift.slices.download.site_options import DEFAULT_SCOPE, DOWNLOAD_FOLDER, SiteOptionStore
 from sift.slices.download.sources.sites.catalog import by_key
+from sift.slices.workbench.router import _setting_label
 from sift.testing.fixtures import Actors
 
 pytestmark = pytest.mark.anyio
@@ -242,6 +243,25 @@ async def test_the_rule_for_other_addresses_and_a_kept_name_are_said_in_words(
     (_, other, _), (_, _, kept) = await _lines(temp_db)
     assert other == "The name template for other addresses"
     assert kept["after_said"] == "the name the Site gave it"
+
+
+async def test_the_default_folder_is_named_by_its_row(
+    store: SiteOptionStore, temp_db: Database, actors: Actors
+) -> None:
+    folder = await _a_folder(temp_db)
+
+    await store.set(
+        DEFAULT_SCOPE,
+        naming=None,
+        dest_folder_id=folder,
+        actor=Actor.user(actors.admin.id),
+        folders={folder: "Library"},
+    )
+
+    [(key, name, payload)] = await _lines(temp_db)
+    assert (key, name) == ("site_options.*default*.dest_folder_id", DOWNLOAD_FOLDER)
+    assert payload["after_said"] == "Library"
+    assert _setting_label(key, "The download folder for other addresses") == name
 
 
 async def test_a_save_with_no_person_behind_it_writes_no_line(

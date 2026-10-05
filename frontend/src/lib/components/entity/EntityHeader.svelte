@@ -2,6 +2,7 @@
 	/* The top of a person's page, or a site's: picture, name, counts and opinions, one component
 	   for every kind with the fields handed in as snippets. The cover stands to one side, not as a
 	   banner, which would crop the subject out of a portrait frame. */
+	import { keepClear } from '$lib/components/shell/kept-clear.svelte';
 	import type { Snippet } from 'svelte';
 	import Icon from '$lib/components/Icon.svelte';
 	import { coverUrl, wholeCoverUrl } from '$lib/entity/art';
@@ -420,7 +421,7 @@
 <div class="top">
 	<!-- A box of this file's own, because a scoped rule cannot reach `PageHeader`'s root to stand it
 	     above the backdrop. -->
-	<div class="title-row">
+	<div class="title-row" {@attach keepClear}>
 		<PageHeader
 			{icon}
 			title={name}

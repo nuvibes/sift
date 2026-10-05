@@ -9,14 +9,19 @@ module's question and there is a conformance step in the image for it.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+import json
+import sys
+from collections.abc import Callable, Sequence
+from dataclasses import replace
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 from sift.kernel.config import Settings
+from sift.kernel.lanes import MAX_READS_AT_ONCE
 from sift.kernel.media import FFmpegError
-from sift.slices.performance import selftest
+from sift.slices.performance import rates, selftest, uncached
 from sift.slices.performance.selftest import Level, Measurement, recommend
 
 
@@ -56,19 +61,14 @@ def test_scaling_stops_where_more_at_once_stops_finishing_more() -> None:
     assert measurement.best.at_once == 2
 
 
-def test_the_curve_is_walked_rather_than_maximised() -> None:
-    """A later level that scores highest does not win if the curve already flattened before it.
+def test_the_answer_is_the_smallest_level_within_five_percent_of_the_best() -> None:
+    """The whole curve decides, not one step against the next: a flat step before a real climb
+    does not stop the walk, and a level within the margin of the best is as good as the best."""
+    climbs_late = Measurement(cores=16, levels=(a_level(1, 1.0), a_level(2, 1.02), a_level(4, 4.0)))
+    near = Measurement(cores=16, levels=(a_level(1, 1.0), a_level(2, 1.9), a_level(4, 1.98)))
 
-    Throughput wobbles. Taking the maximum of a wobbly curve reliably takes the peak of the noise,
-    which on a saturated machine is the level that made everything else unusable.
-    """
-    measurement = Measurement(
-        cores=16,
-        levels=(a_level(1, 1.0), a_level(2, 1.02), a_level(4, 4.0)),
-    )
-
-    assert measurement.best is not None
-    assert measurement.best.at_once == 1
+    assert climbs_late.best is not None and climbs_late.best.at_once == 4
+    assert near.best is not None and near.best.at_once == 2
 
 
 def test_a_level_that_made_the_app_unresponsive_is_never_the_answer() -> None:
@@ -174,11 +174,72 @@ def test_a_run_that_reached_the_top_of_the_ladder_says_so_rather_than_claiming_a
     assert "finished no more work" in words
 
 
+def _tasks_reason(measurement: Measurement) -> str:
+    found = recommend(measurement, current={})
+    return next(one.reason for one in found if one.key == selftest.WORKER_COUNT_KEY)
+
+
+def test_the_reason_says_the_ladder_stopped_because_more_finished_no_more_work() -> None:
+    reason = _tasks_reason(
+        Measurement(cores=24, levels=(a_level(1, 0.2), a_level(2, 0.345), a_level(4, 0.35)))
+    )
+
+    assert reason.startswith(
+        "Measured: this device encoded 2 clips at the same time without falling behind, and "
+        "running more than that finished no more work, within 5%."
+    )
+    assert "fell behind" not in reason
+
+
+def test_the_reason_says_the_ladder_stopped_because_sift_fell_behind_not_for_no_more_work() -> None:
+    stalled = replace(a_level(4, 0.45), fell_behind=1)
+    reason = _tasks_reason(
+        Measurement(cores=24, levels=(a_level(1, 0.2), a_level(2, 0.345), stalled))
+    )
+
+    assert reason.startswith(
+        "Measured: this device encoded 2 clips at the same time without falling behind. At 4 "
+        "clips at the same time it finished 30% more work, but Sift fell behind."
+    )
+    assert "no more work" not in reason
+    assert "chosen" not in reason, "4 is the task count suggested beside it"
+    assert "so 4 is the 2 clips measured plus 2 for the tasks that aren't" in reason
+
+
+@pytest.mark.parametrize(
+    ("cores", "at_once", "said"),
+    [
+        (
+            24,
+            2,
+            "so 4 is the 2 clips measured plus 2 for the tasks that aren't \u2014 a judgment "
+            "rather than something the test measured.",
+        ),
+        (
+            5,
+            2,
+            "so 4 is the 2 clips measured plus 2 for the tasks that aren't \u2014 a judgment "
+            "rather than something the test measured, and no more, because one of the 5 threads "
+            "this device reports is kept for everything that isn't a task.",
+        ),
+        (9, 8, "8 adds nothing for the tasks that aren't encoding, because one of the 9 threads"),
+        (8, 8, "7 is lower than that on purpose: one of the 8 threads"),
+    ],
+)
+def test_the_tasks_reason_says_why_the_number_is_what_it_is(
+    cores: int, at_once: int, said: str
+) -> None:
+    levels = tuple(a_level(n, n * 0.2) for n in (1, 2, 4, 8) if n <= at_once)
+    stalled = replace(a_level(at_once * 2, at_once * 0.3), fell_behind=1)
+    reason = _tasks_reason(Measurement(cores=cores, levels=(*levels, stalled)))
+
+    assert said in reason
+    assert "chosen" not in reason
+
+
 def test_the_reasons_on_screen_use_a_real_dash_never_two_hyphens() -> None:
-    """The reasons are read on the Performance pane, so they use a real dash, never two hyphens.
-    Both shapes of run are asked, because the sentences are split between them: a ladder that ran
-    out (the ceiling words and the preview cap held to the job count) and a peak under the job
-    count (the margin above it)."""
+    """Read on the Performance pane, so a real dash, never two hyphens: both shapes of run, as
+    the sentences are split between a ladder that ran out and a peak under the task count."""
     ceiling = Measurement(
         cores=8,
         levels=(a_level(1, 1.0), a_level(2, 2.0), a_level(4, 4.0), a_level(8, 8.0)),
@@ -192,10 +253,9 @@ def test_the_reasons_on_screen_use_a_real_dash_never_two_hyphens() -> None:
 
 
 def test_the_numbers_are_called_threads_because_that_is_what_they_are() -> None:
-    """`cpu_count` is LOGICAL processors, which the Performance screen labels "Threads" ten lines
-    above these words, so these words say threads too: an eight-core machine with two threads a
-    core is not to be told about "your 16 cores" beside a readout saying 16 threads."""
-    measurement = Measurement(cores=16, levels=(a_level(1, 1.0), a_level(2, 2.0), a_level(4, 4.0)))
+    """`cpu_count` is logical processors, which the Performance screen labels "Threads" above
+    these words, so these say threads too. Six threads, so the thread kept back is said."""
+    measurement = Measurement(cores=6, levels=(a_level(1, 1.0), a_level(2, 2.0), a_level(4, 4.0)))
 
     words = " ".join(one.reason for one in recommend(measurement, current={}))
 
@@ -297,6 +357,7 @@ async def test_the_levels_are_walked_and_recorded(
     tmp_path: Path, settings: Settings, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     seen: list[int] = []
+    monkeypatch.setattr(selftest, "midpoint", lambda *_args, **_kwargs: None)
 
     async def build(into: Path, _settings: Settings) -> Path:
         return into / "source.mp4"
@@ -343,6 +404,7 @@ async def test_each_rung_is_published_as_it_finishes(
         return True
 
     monkeypatch.setattr(selftest, "build_clip", build)
+    monkeypatch.setattr(selftest, "midpoint", lambda *_args, **_kwargs: None)
 
     measured = await selftest.measure(
         workspace=tmp_path,
@@ -595,12 +657,12 @@ def test_a_level_that_took_no_time_has_no_rate() -> None:
 
 
 def test_the_share_recommendation_says_when_nothing_wider_was_tried() -> None:
-    """A share whose widest level tried was still its fastest has not been seen to collapse, and
-    the reason says so rather than claiming a knee that was never found."""
+    """A share whose widest level tried was still its fastest has not been seen to collapse."""
     share = a_share(a_storage_level(1, 45), a_storage_level(2, 80))
     found = selftest.recommend_share_reads([share], current={})
-    assert found is not None and found.suggested == 2
-    assert "Nothing wider was tried" in found.reason
+    assert found is not None and found.suggested == selftest.AS_MEASURED
+    assert "\\\\nas\\photos: 2 files at once" in found.reason
+    assert "nothing wider was tried" in found.reason
 
 
 def test_a_share_that_keeps_delivering_more_is_read_to_its_widest_level() -> None:
@@ -616,33 +678,28 @@ def test_a_share_that_collapses_is_read_at_the_level_before_the_collapse() -> No
 
 def test_a_share_that_stops_improving_is_not_pushed_wider() -> None:
     curve = a_share(a_storage_level(1, 80), a_storage_level(2, 84), a_storage_level(4, 86))
-    assert curve.best is not None and curve.best.at_once == 1
+    assert curve.best is not None and curve.best.at_once == 2
 
 
-def test_a_share_that_climbs_within_the_noise_is_not_told_it_delivered_less() -> None:
-    """A share reading 22, 22, 23, 26 MB/s at one, two, four and eight readers.
-
-    Eight readers really did deliver more than one (it is printed in the reason), so the
-    sentence may not say the share delivered less. What it may say is why one reader is still the
-    answer: no step of the ladder gained the margin a step has to gain.
-    """
+def test_a_share_that_climbs_within_the_margin_is_not_told_it_delivered_less() -> None:
+    """Wider levels did deliver a little more, so the sentence says that, never "less"."""
     share = a_share(
-        a_storage_level(1, 22),
-        a_storage_level(2, 22),
-        a_storage_level(4, 23),
-        a_storage_level(8, 26),
+        a_storage_level(1, 20),
+        a_storage_level(2, 23),
+        a_storage_level(4, 23.5),
+        a_storage_level(8, 23.8),
     )
-    assert share.best is not None and share.best.at_once == 1
+    assert share.best is not None and share.best.at_once == 2
     assert share.collapsed is False
     found = selftest.recommend_share_reads([share], current={})
-    assert found is not None and found.suggested == 1
-    assert "no more than the noise between runs" in found.reason
+    assert found is not None
+    assert "delivered under 5% more" in found.reason
     assert "delivered less" not in found.reason
-    # Singular at one, and the four readings are on the screen beside the claim.
-    assert "more than 1 file at once" in found.reason
     assert (
-        "1 at once 22 MB/s, 2 at once 22 MB/s, 4 at once 23 MB/s, 8 at once 26 MB/s" in found.reason
+        "1 at once 20 MB/s, 2 at once 23 MB/s, 4 at once 24 MB/s, 8 at once 24 MB/s" in found.reason
     )
+    alone = selftest.recommend_share_reads([a_share(a_storage_level(1, 20))], current={})
+    assert alone is not None and "1 file at once" in alone.reason
 
 
 def test_a_share_with_no_readings_did_not_collapse() -> None:
@@ -657,9 +714,9 @@ def test_a_share_that_really_fell_over_still_says_it_delivered_less() -> None:
     share = a_share(a_storage_level(1, 45), a_storage_level(2, 80), a_storage_level(4, 42))
     assert share.collapsed is True
     found = selftest.recommend_share_reads([share], current={})
-    assert found is not None and found.suggested == 2
+    assert found is not None
     assert "delivered less, not more" in found.reason
-    assert "more than 2 files at once" in found.reason
+    assert "\\\\nas\\photos: 2 files at once" in found.reason
 
 
 def test_a_share_that_could_not_be_measured_has_no_best_level() -> None:
@@ -667,8 +724,8 @@ def test_a_share_that_could_not_be_measured_has_no_best_level() -> None:
     assert curve.best is None
 
 
-def test_the_share_recommendation_is_the_knee_of_the_weakest_share() -> None:
-    """One setting governs every share, so the number safe for the weakest is the number."""
+def test_each_share_keeps_its_own_number_and_a_set_number_is_advised_back_to_automatic() -> None:
+    """Each share is read at its own measured number, so one typed for all is the thing to undo."""
     strong = a_share(a_storage_level(1, 50), a_storage_level(2, 95), a_storage_level(4, 170))
     weak = selftest.StorageCurve(
         storage="\\\\old\\share\\",
@@ -676,11 +733,13 @@ def test_the_share_recommendation_is_the_knee_of_the_weakest_share() -> None:
         remote=True,
         levels=(a_storage_level(1, 30), a_storage_level(2, 50), a_storage_level(4, 20)),
     )
-    found = selftest.recommend_share_reads([strong, weak], current={})
+    found = selftest.recommend_share_reads([strong, weak], current={selftest.SHARE_READS_KEY: 4})
     assert found is not None
     assert found.key == selftest.SHARE_READS_KEY
-    assert found.suggested == 2
-    assert "Old NAS" in found.reason and "2 shares" in found.reason
+    assert (found.current, found.suggested) == (4, selftest.AS_MEASURED)
+    assert found.changes_anything
+    assert "nas\\photos: 4 files at once" in found.reason
+    assert "\\\\old\\share: 2 files at once" in found.reason
 
 
 def test_a_local_disk_recommends_nothing_about_shares() -> None:
@@ -871,7 +930,9 @@ async def test_each_storage_measured_is_reported_as_it_lands(
     assert [len(one.storages) for one in seen][-2:] == [1, 2]
 
 
-async def test_only_network_storages_are_measured(tmp_path: Path, settings: Settings) -> None:
+async def test_every_storage_is_measured_a_local_disk_too(
+    tmp_path: Path, settings: Settings
+) -> None:
     measured: list[str] = []
 
     async def one_storage(one: selftest.StorageToMeasure, *, repeats: int) -> selftest.StorageCurve:
@@ -897,7 +958,7 @@ async def test_only_network_storages_are_measured(tmp_path: Path, settings: Sett
         ],
         measure_one_storage=one_storage,
     )
-    assert measured == ["\\\\nas\\a\\"]
+    assert measured == ["C:\\", "\\\\nas\\a\\"]
 
 
 # --- three runs, the middle one kept ------------------------------------------------------------
@@ -961,6 +1022,7 @@ async def test_a_storage_level_is_the_middle_of_three_runs_on_distinct_places() 
     assert salts == [0, 1, 2]
     (level,) = curve.levels
     assert level.megabytes_per_second == 60.0
+    assert (level.low, level.high) == (40.0, 100.0), "the spread rides with the middle run"
 
 
 def test_a_storage_level_prices_one_seek_for_one_reader() -> None:
@@ -1051,3 +1113,359 @@ async def test_the_decoder_and_a_seek_are_really_run(tmp_path: Path, settings: S
     assert found is not None
     assert found.frames_per_second > 0
     assert found.seek_seconds > 0
+
+
+# --- the curve's rule, the finer step and the spread ---------------------------------------------
+
+
+def his_storage_level(at_once: int, mb_per_second: float, per_seek: float) -> selftest.StorageLevel:
+    """A level read with real seeks, so its seconds per seek is the figure given."""
+    seconds = 4.0
+    seeks = round(seconds * at_once / per_seek)
+    return selftest.StorageLevel(
+        at_once=at_once, seconds=seconds, bytes_read=int(mb_per_second * seconds * 1e6), seeks=seeks
+    )
+
+
+def test_the_rule_on_two_kept_runs_and_one_kept_share() -> None:
+    """Two runs of one device, idle and busy, and the share it read, as they were logged; the
+    old ratio of 1.15 gave 8 and 16 previews and 4 readers."""
+    idle = Measurement(
+        cores=24,
+        levels=tuple(
+            a_level(n, rate)
+            for n, rate in ((1, 0.316), (2, 0.605), (4, 1.084), (8, 1.598), (16, 1.681))
+        ),
+    )
+    busy = Measurement(
+        cores=24,
+        levels=tuple(
+            a_level(n, rate)
+            for n, rate in ((1, 0.266), (2, 0.51), (4, 0.859), (8, 1.353), (16, 1.639))
+        ),
+    )
+    share = a_share(
+        his_storage_level(1, 15.2, 0.0691),
+        his_storage_level(2, 18.6, 0.1127),
+        his_storage_level(4, 22.3, 0.188),
+        his_storage_level(8, 25.6, 0.3276),
+    )
+
+    def said(measurement: Measurement) -> tuple[int, int]:
+        found = {one.key: one.suggested for one in recommend(measurement, current={})}
+        return found[selftest.GENERATION_LIMIT_KEY], found[selftest.WORKER_COUNT_KEY]
+
+    assert said(idle) == (8, 12), "1.598 is 4.9% under 1.681, inside the margin"
+    assert said(busy) == (16, 23), "1.353 is 17% under 1.639"
+    assert share.best is not None and share.best.at_once == 4
+    assert share.too_slow is not None and share.too_slow.at_once == 8
+    reason = selftest.recommend_share_reads([share], current={})
+    assert reason is not None and "waited 0.33 s for each seek" in reason.reason
+
+
+def test_a_level_whose_seeks_pass_the_bound_is_never_the_answer_unless_it_is_the_first() -> None:
+    quick_then_slow = a_share(his_storage_level(1, 10, 0.05), his_storage_level(2, 30, 0.3))
+    slow_alone = a_share(his_storage_level(1, 10, 0.4))
+    assert quick_then_slow.best is not None and quick_then_slow.best.at_once == 1
+    assert slow_alone.best is not None and slow_alone.best.at_once == 1
+
+
+def test_the_midpoint_is_between_the_best_doubling_and_its_better_neighbour() -> None:
+    def at(*pairs: tuple[int, float]) -> list[selftest.StorageLevel]:
+        return [a_storage_level(n, rate) for n, rate in pairs]
+
+    def mid(levels: list[selftest.StorageLevel]) -> int | None:
+        return selftest.midpoint(levels, key=lambda level: level.megabytes_per_second)
+
+    assert mid(at((1, 10), (2, 18), (4, 22), (8, 20))) == 6
+    assert mid(at((1, 10), (2, 18), (4, 22), (8, 12))) == 3
+    assert mid(at((1, 10), (2, 18))) is None, "nothing whole lies between one and two"
+    assert mid(at((1, 10), (2, 18), (3, 19), (4, 22))) is None, "already tried"
+    assert mid(at((4, 10))) is None
+
+
+def test_the_spread_says_how_sure_the_number_is() -> None:
+    sure = selftest.sureness(19.0, 19.8, 19.5, "MB/s")
+    unsure = selftest.sureness(15.0, 21.0, 19.5, "MB/s")
+    assert "19 to 19.8 MB/s, 4% apart, inside the 5%" in sure
+    assert "31% apart: wider than the 5%" in unsure
+    assert selftest.sureness(None, None, 19.5, "MB/s") == ""
+    measurement = Measurement(cores=16, levels=(replace(a_level(1, 1.0), low=0.9, high=1.1),))
+    assert all("ranged from 0.9 to 1.1" in one.reason for one in recommend(measurement, current={}))
+
+
+async def test_the_encoding_ladder_tries_the_midpoint_and_keeps_the_levels_in_order(
+    tmp_path: Path, settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    rates = {1: 1.0, 2: 1.9, 4: 3.0, 8: 3.2, 6: 3.25}
+    asked: list[int] = []
+
+    async def build(into: Path, _settings: Settings) -> Path:
+        return into / "source.mp4"
+
+    async def level(at_once: int, **_kwargs: object) -> Level:
+        asked.append(at_once)
+        return a_level(at_once, rates[at_once])
+
+    monkeypatch.setattr(selftest, "build_clip", build)
+    monkeypatch.setattr(selftest, "_encode_level", level)
+    measured = await selftest.measure(
+        workspace=tmp_path,
+        settings=settings,
+        cores=16,
+        worst_lag=lambda: 0.0,
+        worst_wait=lambda: 0.0,
+        levels=(1, 2, 4, 8),
+        measure_decoder=skip_decode,
+    )
+
+    assert asked == [1, 2, 4, 8, 6]
+    assert [one.at_once for one in measured.levels] == [1, 2, 4, 6, 8]
+    assert measured.best is not None and measured.best.at_once == 6
+
+
+def a_reader(
+    rates: dict[int, float], per_seek: dict[int, float] | None = None
+) -> Callable[..., Any]:
+    async def read_level(files: list[Path], *, at_once: int, salt: int) -> selftest.StorageLevel:
+        return his_storage_level(at_once, rates[at_once], (per_seek or {}).get(at_once, 0.01))
+
+    return read_level
+
+
+async def test_the_storage_ladder_doubles_while_it_gains_then_tries_the_midpoint() -> None:
+    one = selftest.StorageToMeasure(storage="s", label="Photos", remote=True, roots=())
+    rates = {1: 10.0, 2: 19.0, 4: 30.0, 8: 31.0, 16: 50.0, 6: 30.5}
+    curve = await selftest.measure_storage(
+        one, read_level=a_reader(rates), files=[Path(f"f{i}") for i in range(40)], repeats=1
+    )
+    assert [level.at_once for level in curve.levels] == [1, 2, 4, 6, 8]
+    assert curve.unmeasured is None, "it stopped because it stopped gaining"
+    assert curve.best is not None and curve.best.at_once == 4
+
+
+async def test_the_storage_ladder_says_what_it_did_not_try_and_why() -> None:
+    one = selftest.StorageToMeasure(storage="s", label="Photos", remote=True, roots=())
+    rising = {n: float(n) for n in range(1, MAX_READS_AT_ONCE + 1)}
+    files = [Path(f"f{i}") for i in range(selftest.SAMPLE_FILES)]
+
+    slow = await selftest.measure_storage(
+        one, read_level=a_reader(rising, {4: 0.3}), files=files, repeats=1
+    )
+    short = await selftest.measure_storage(
+        one, read_level=a_reader(rising), files=files[:10], repeats=1
+    )
+    widest = await selftest.measure_storage(
+        one, read_level=a_reader(rising), files=files, repeats=1
+    )
+
+    assert [level.at_once for level in slow.levels] == [1, 2, 4]
+    assert slow.unmeasured is not None and "waited 0.30 s for each seek" in slow.unmeasured
+    assert [level.at_once for level in short.levels] == [1, 2, 3, 4]
+    assert short.unmeasured is not None and "only 10 files" in short.unmeasured
+    assert [level.at_once for level in widest.levels][-3:] == [32, 48, 64]
+    assert widest.unmeasured is not None and "still getting quicker" in widest.unmeasured
+    said = Measurement(cores=8, storages=(replace(slow, storage="M:\\"),)).not_measured()
+    assert said == [f"On drive M:, {slow.unmeasured}"]
+
+
+def test_a_run_says_where_encoding_stopped_keeping_up() -> None:
+    measurement = Measurement(cores=16, levels=(a_level(1, 1.0), a_level(2, 3.0, responsive=False)))
+    assert measurement.not_measured() == [
+        "Encoding more than 2 at once was not tried: at 2 Sift stopped keeping up."
+    ]
+    assert Measurement(cores=16, levels=(a_level(1, 1.0),)).not_measured() == []
+
+
+async def test_a_local_disk_is_read_past_the_cache_and_a_share_is_not(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    asked: list[bool] = []
+
+    async def read_level(
+        files: list[Path], *, at_once: int, salt: int, uncached: bool
+    ) -> selftest.StorageLevel:
+        asked.append(uncached)
+        return a_storage_level(at_once, 10.0)
+
+    monkeypatch.setattr(selftest, "_read_level", read_level)
+    files = [Path(f"f{i}") for i in range(4)]
+    for remote in (False, True):
+        one = selftest.StorageToMeasure(storage="s", label="x", remote=remote, roots=())
+        await selftest.measure_storage(one, levels=(1,), files=files, repeats=1)
+
+    assert asked == [True, False]
+
+
+async def test_a_local_disk_is_not_measured_where_the_cache_cannot_be_passed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(uncached, "AVAILABLE", False)
+    one = selftest.StorageToMeasure(storage="C:\\", label="Local", remote=False, roots=())
+    curve = await selftest.measure_storage(one, files=[Path("a"), Path("b")])
+    assert curve.failed == selftest.NO_UNCACHED and curve.levels == ()
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="the unbuffered open is the Windows one")
+def test_an_uncached_read_reads_the_disk_unbuffered(tmp_path: Path) -> None:
+    """An unbuffered handle refuses a place off the sector boundary; a buffered one would not."""
+    path = tmp_path / "big.bin"
+    path.write_bytes(bytes(range(256)) * (3 << 14))
+    assert uncached.read(path, [0, 1 << 20], 1 << 20) == 2 << 20
+    assert selftest._seek_and_read(path, salt=1, uncached=True) > 0
+    with pytest.raises(OSError):
+        uncached.read(path, [1], uncached.ALIGN)
+    with pytest.raises(OSError):
+        uncached.read(tmp_path / "missing.bin", [0], uncached.ALIGN)
+
+
+def test_a_reading_kept_before_the_spread_existed_still_loads() -> None:
+    kept = json.dumps(
+        {
+            "cores": 8,
+            "levels": [
+                {
+                    "at_once": 1,
+                    "seconds": 1.0,
+                    "finished": 1,
+                    "worst_lag_seconds": 0.0,
+                    "worst_wait_seconds": 0.0,
+                }
+            ],
+            "storages": [
+                {
+                    "storage": "s",
+                    "label": "Photos",
+                    "remote": True,
+                    "levels": [{"at_once": 1, "seconds": 1.0, "bytes_read": 10, "seeks": 6}],
+                }
+            ],
+        }
+    )
+    loaded = rates.measurement_from_json(kept)
+    assert loaded is not None
+    assert loaded.levels[0].low is None and loaded.storages[0].unmeasured is None
+    assert rates.storage_rates(loaded)["s"].at_once == 1
+    assert rates.measurement_from_json(rates.measurement_to_json(loaded)) == loaded
+
+
+async def test_a_kept_share_number_is_judged_again_by_todays_rule(tmp_path: Path) -> None:
+    """A number kept under the old ratio is read back as the curve now says, so the lanes and the
+    screen agree."""
+    from sift.slices.performance.tests.test_runner import a_store
+
+    curve = a_share(his_storage_level(1, 15.2, 0.07), his_storage_level(2, 22.0, 0.11))
+    kept = rates.MachineRates(
+        profile="p",
+        measured_at=1,
+        decode_fps=None,
+        seek_seconds=None,
+        storages={curve.storage: rates.StorageRate(1, 15.2, 0.07)},
+        measurement=Measurement(cores=8, storages=(curve,)),
+    )
+    store = await a_store(tmp_path)
+    await store.save(kept)
+
+    loaded = await store.load("p")
+    assert loaded is not None and loaded.reads_at_once() == {curve.storage: 2}
+
+
+async def test_a_level_taken_while_other_programs_were_busy_is_taken_again_and_marked(
+    tmp_path: Path, settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seen: list[int] = []
+
+    async def build(into: Path, _settings: Settings) -> Path:
+        return into / "source.mp4"
+
+    async def encode(_s: Path, _i: Path, index: int, _settings: Settings, _threads: int) -> bool:
+        seen.append(index)
+        return True
+
+    monkeypatch.setattr(selftest, "build_clip", build)
+    busy = iter([True, True, True, False])
+    measured = await selftest.measure(
+        workspace=tmp_path,
+        settings=settings,
+        cores=64,
+        worst_lag=lambda: 0.0,
+        worst_wait=lambda: 0.0,
+        levels=(1, 2),
+        encode=encode,
+        repeats=1,
+        measure_decoder=skip_decode,
+        busy=lambda: next(busy, False),
+    )
+    assert [(one.at_once, one.busy) for one in measured.levels] == [(1, True), (2, False)]
+    assert len(seen) == 2 * 1 + 2 * 2, "each busy level twice"
+    assert measured.not_measured() == [
+        "Encoding 1 at the same time was measured while other programs were busy."
+    ]
+
+
+async def test_a_storage_level_taken_while_busy_is_taken_again_on_new_places() -> None:
+    salts: list[int] = []
+
+    async def read_level(files: list[Path], *, at_once: int, salt: int) -> selftest.StorageLevel:
+        salts.append(salt)
+        return a_storage_level(at_once, 50.0)
+
+    one = selftest.StorageToMeasure(storage="s", label="Photos", remote=True, roots=(Path("."),))
+    curve = await selftest.measure_storage(
+        one,
+        levels=(2,),
+        read_level=read_level,
+        files=[Path(f"f{i}") for i in range(20)],
+        busy=lambda: True,
+    )
+    assert salts == [0, 1, 2, 3, 4, 5]
+    assert curve.levels[0].busy
+    measurement = Measurement(cores=8, storages=(curve,))
+    assert measurement.not_measured()[-1] == (
+        "On s, reading 2 at the same time was measured while other programs were busy."
+    )
+
+
+def test_a_storage_is_named_once_and_shortly_in_every_sentence_about_it() -> None:
+    folders = ", ".join(f"Folder {n}" for n in range(17))
+    level = replace(a_storage_level(1, 50.0), busy=True)
+    disk = selftest.StorageCurve(storage="C:\\", label=folders, remote=False, levels=(level,))
+    share = selftest.StorageCurve(
+        storage="\\\\nas\\Media\\", label="Clips, Trips", remote=True, levels=(level,)
+    )
+
+    said = " ".join(Measurement(cores=8, storages=(disk, share)).not_measured())
+    reason = selftest.recommend_share_reads((share,), current={})
+
+    assert "On drive C:, reading 1 at the same time" in said and "Folder" not in said
+    assert reason is not None and reason.reason.startswith("Measured on \\\\nas\\Media: ")
+    assert "Clips" not in reason.reason
+    assert selftest.storage_name("/") == "the system disk"
+
+
+async def test_a_stall_under_the_worst_since_the_start_still_stops_the_ladder(
+    tmp_path: Path, settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def build(into: Path, _settings: Settings) -> Path:
+        return into / "source.mp4"
+
+    async def encode(_s: Path, _i: Path, _index: int, _settings: Settings, _threads: int) -> bool:
+        return True
+
+    monkeypatch.setattr(selftest, "build_clip", build)
+    stalls = iter([0, 1])
+    measured = await selftest.measure(
+        workspace=tmp_path,
+        settings=settings,
+        cores=64,
+        worst_lag=lambda: 0.5,
+        worst_wait=lambda: 0.0,
+        levels=(1, 2),
+        encode=encode,
+        repeats=1,
+        measure_decoder=skip_decode,
+        busy=lambda: False,
+        fell_behind=lambda: next(stalls),
+    )
+    (only,) = measured.levels
+    assert only.fell_behind == 1 and not only.responsive and measured.best is None

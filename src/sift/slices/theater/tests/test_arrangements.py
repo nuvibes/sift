@@ -109,8 +109,8 @@ def test_a_name_this_account_already_uses_is_refused(client: TestClient) -> None
 
     clash = client.post(ARRANGEMENTS, json=wall(name="Front room"))
     assert clash.status_code == 409
-    # Word for word, because the panel's toast shows it as it is: the screen says "preset".
-    assert clash.json()["detail"] == 'You already have a preset called "Front room".'
+    # Word for word, because the panel's toast shows it as it is.
+    assert clash.json()["detail"] == 'You already have a Saved Layout called "Front room".'
 
     # And the wall that was there is still there, unchanged.
     assert len(client.get(ARRANGEMENTS).json()["items"]) == 1
@@ -131,7 +131,7 @@ def test_an_account_may_not_keep_more_walls_than_the_cap(client: TestClient) -> 
     full = client.post(ARRANGEMENTS, json=wall(name="One more"))
     assert full.status_code == 409
     assert full.json()["detail"] == (
-        f"You already have {MAX_ARRANGEMENTS} saved presets. Delete one to save another."
+        f"You already have {MAX_ARRANGEMENTS} Saved Layouts. Delete one to save another."
     )
 
     held = client.get(ARRANGEMENTS).json()["items"]
@@ -193,7 +193,7 @@ def test_renaming_onto_another_wall_of_this_accounts_is_refused(client: TestClie
 
     clash = client.patch(f"{ARRANGEMENTS}/{second['id']}", json=wall(name="Front room"))
     assert clash.status_code == 409
-    assert clash.json()["detail"] == 'You already have a preset called "Front room".'
+    assert clash.json()["detail"] == 'You already have a Saved Layout called "Front room".'
 
 
 def test_a_wall_can_be_deleted(client: TestClient) -> None:

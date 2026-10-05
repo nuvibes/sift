@@ -83,4 +83,9 @@ describe('sayLength', () => {
 		expect(sayLength(60)).toBe('1 minute');
 		expect(sayLength(300)).toBe('5 minutes');
 	});
+
+	it('keeps a length that is not whole minutes in seconds, never rounding it away', () => {
+		expect(sayLength(90)).toBe('90 seconds');
+		expect(sayLength(150)).toBe('150 seconds');
+	});
 });

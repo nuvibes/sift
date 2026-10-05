@@ -243,8 +243,16 @@ class SiteRecordMixin(PeopleBase):
         )
         return _state_from_row(rows[0])
 
-    async def tags_of_site(self, site_id: str) -> list[Row]:
-        return await self._db.fetch_all(_TAGS_OF_SITE, (site_id,))
+    async def tags_of_site(self, site_id: str, viewer: Viewer | None = None) -> list[Row]:
+        admin = viewer is None or viewer.is_admin
+        return await self._db.fetch_all(
+            _TAGS_OF_SITE,
+            {
+                "subject": site_id,
+                "is_admin": int(admin),
+                "viewer": None if viewer is None else viewer.id,
+            },
+        )
 
     async def tag_site(self, site_id: str, tag_id: str, *, add: bool = True) -> None:
         if add:

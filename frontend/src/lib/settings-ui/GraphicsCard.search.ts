@@ -40,11 +40,13 @@ export const COPY = {
 		help: "Loads a real model onto the GPU and runs it in a separate process. A GPU that's present doesn't always work; this checks.",
 		testing: 'Testing',
 		action: 'Run the test',
-		working: 'Working',
+		passed: 'Passed',
 		refused: 'Refused',
 		said: 'What the GPU reported',
 		noModel: "It didn't run a model.",
-		failed: 'The test failed.'
+		failed: 'The test failed.',
+		noAnswer:
+			"The test didn't answer in two and a half minutes. If an import is running, try again when it's done."
 	},
 	remove: {
 		heading: 'GPU support',

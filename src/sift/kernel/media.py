@@ -625,10 +625,8 @@ async def run(
     library (an encode of Sift's own scratch, a stitch of tiles it just wrote) passes nothing and
     waits for nobody.
 
-    `time_limit` is the caller's, deliberately, because the two callers want very different things
-    from it. A background sprite sheet wants a generous guard against a hang; a segment somebody is
-    waiting on wants a budget, because a segment that has not arrived is not going to be wanted.
-    One shared constant would be wrong for one of them.
+    `time_limit` is the caller's: a background sprite sheet wants a generous guard against a
+    hang, a segment somebody is waiting on wants a budget.
 
     `stdin` hands the tool bytes on its input, for the one caller that gives ffmpeg pictures rather
     than a filename to read.
@@ -647,7 +645,8 @@ async def run(
         raise FFmpegError(str(error)) from error
 
     if result.returncode != 0:
-        detail = result.stderr.decode("utf-8", "replace").strip() or "no detail"
+        said = result.stderr.decode("utf-8", "replace").strip()
+        detail = said or subprocess.unsaid(result.returncode)
         raise FFmpegError(f"{Path(argv[0]).name} failed: {detail}")
     return result.stdout
 

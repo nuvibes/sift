@@ -38,7 +38,11 @@ const INPUTS = [
 	join(frontend, 'vite.config.ts'),
 	join(frontend, 'tsconfig.json'),
 	join(frontend, 'svelte.config.js'),
-	join(frontend, '.npmrc')
+	join(frontend, '.npmrc'),
+	// The Documentation pane draws the docs site's pages, built in.
+	join(repo, 'docs-site', 'src'),
+	join(repo, 'docs-site', 'generated'),
+	join(repo, 'docs-site', 'astro.config.mjs')
 ];
 
 async function whyBuild() {

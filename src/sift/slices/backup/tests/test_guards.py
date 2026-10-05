@@ -13,13 +13,18 @@ from types import SimpleNamespace
 
 import pytest
 
+from sift.kernel.audience import EVERY_ADMIN, Audience
+from sift.kernel.changes import About
 from sift.kernel.config import Settings
 from sift.kernel.content import LibraryStore
 from sift.kernel.db import Database
 from sift.kernel.jobs import JobQueue, JobState
 from sift.kernel.jobs.schedules import when_key
+from sift.slices.backup import service as service_module
 from sift.slices.backup.jobs import BACKUP_RUN, BUSY_RETRY_SECONDS, register_handlers, run_backup
+from sift.slices.backup.router import _schedule_view
 from sift.slices.backup.service import (
+    BACKING_UP,
     DUPLICATING,
     FOLDER_KEY,
     KEEP_KEY,
@@ -121,3 +126,19 @@ async def test_a_scheduled_backup_due_while_busy_waits_instead_of_failing(
     assert waiting.jobs[0].run_after == int(fake_clock.now()) + BUSY_RETRY_SECONDS
     # Still the schedule's run, not a press: its timing came with it.
     assert waiting.jobs[0].timing == "quiet"
+
+
+async def test_the_schedule_says_a_save_runs_and_every_admin_is_told_at_its_start_and_end(
+    backup: BackupService, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    told: list[tuple[Audience, About]] = []
+    monkeypatch.setattr(
+        service_module, "announce_now", lambda who, about: told.append((who, about))
+    )
+
+    assert (await _schedule_view(backup)).working is None
+    async with backup.exclusively(BACKING_UP):
+        assert (await _schedule_view(backup)).working == BACKING_UP
+        assert told == [(EVERY_ADMIN, About.SETTINGS)]
+    assert (await _schedule_view(backup)).working is None
+    assert told == [(EVERY_ADMIN, About.SETTINGS)] * 2

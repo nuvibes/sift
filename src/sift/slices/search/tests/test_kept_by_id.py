@@ -424,14 +424,14 @@ def test_the_version_nine_step_keeps_each_theater_cell_by_id(
     _step(client, 8)
 
     assert _cells(client) == [
-        f"tags:{world.tag_beach} -people:{world.person}",
+        f"-people:{world.person} tags:{world.tag_beach}",
         f"-collections sites:{world.site} OR tags:{world.tag_city}",
         "tags:Harbourside",
         f"tags:{world.tag_city}",
     ]
     # Twice is once.
     _step(client, 8)
-    assert _cells(client)[0] == f"tags:{world.tag_beach} -people:{world.person}"
+    assert _cells(client)[0] == f"-people:{world.person} tags:{world.tag_beach}"
 
 
 def test_the_record_of_renames_is_followed_only_where_it_says_something_of_a_thing_still_here(

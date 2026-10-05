@@ -19,7 +19,7 @@ A stash-box can add tags too, when you enrich a file or a person from it. [Setti
 
 Each card shows the tag's cover, or its first letter on a color, with how many files carry it and how much room they take. The marks under it count the people, Sites, collections and Photo Sets that carry it. **Search tags** finds a tag by its name or any of its aliases. **Add tag** makes a tag with a name and, if you like, a picture.
 
-**Sort by** offers **Newest first**, **Oldest first**, **Recently edited**, **Name A-Z**, **Name Z-A**, **Most files**, **Fewest files**, **Favorites first** and **Highest rated**.
+**Sort by** offers **Newest first**, **Oldest first**, **Recently edited**, **Name A-Z**, **Name Z-A**, **Most files**, **Fewest files**, **Favorites first** and **Highest rated**. Four more orders add up every file under each one. **Largest in total** and **Smallest in total** go by size, and **Longest in total** and **Shortest in total** by length.
 
 **Filter** opens these columns:
 

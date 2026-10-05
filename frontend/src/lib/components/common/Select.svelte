@@ -28,18 +28,15 @@
 	import { strokes } from '$lib/components/player/swipe';
 	import { Select } from 'bits-ui';
 	import Icon from '$lib/components/Icon.svelte';
+	import Tooltip from './Tooltip.svelte';
 	import { fromBar } from '$lib/shell/motion.svelte';
-	import type { Snippet } from 'svelte';
+	import { untrack, type Snippet } from 'svelte';
 	import type { IconName } from '$lib/design/icons';
 
 	export interface SelectOption {
 		value: string;
 		label: string;
-		/**
-		 * A quieter phrase beside the label, for a list whose names repeat (nine folders called
-		 * "Images"): only enough to tell this one apart, never the whole path, which buries the
-		 * difference (`disambiguate` in `$lib/library/folder-names`). Absent where names are distinct.
-		 */
+		/** A quieter phrase beside a repeated name, just enough to tell it apart (`disambiguate`). */
 		detail?: string;
 		/**
 		 * A second line under the name, in small letters: what the row is measured against, or why it
@@ -47,11 +44,10 @@
 		 */
 		note?: string;
 		disabled?: boolean;
-		/**
-		 * A row that is a press rather than an answer (`Shuffle again`): the Select will not deliver a
-		 * re-selection, so this fires through `onAction`, never becomes `value`, never wears the tick.
-		 */
+		/** A press rather than an answer (`Shuffle again`): it fires `onAction`, never `value`. */
 		action?: boolean;
+		/** Words shown when the row is pointed at, for a label too short to say it (`1x2 (P)`). */
+		tooltip?: string;
 	}
 
 	interface Props {
@@ -189,9 +185,23 @@
 	/** Whether this open was started by a pointer rather than the keyboard. */
 	let pointerDriven = $state(false);
 
+	/** Whether the keyboard moved the highlight last, so the highlighted row's tooltip is held up. */
+	let keyed = $state(false);
+	$effect(() => {
+		if (!open) return;
+		keyed = !untrack(() => pointerDriven);
+		const key = () => (keyed = true);
+		const point = () => (keyed = false);
+		window.addEventListener('keydown', key, true);
+		window.addEventListener('pointermove', point, true);
+		return () => {
+			window.removeEventListener('keydown', key, true);
+			window.removeEventListener('pointermove', point, true);
+		};
+	});
+
 	/* An option whose value is the empty string: the underlying Select reads "" as nothing chosen, so
-	 * it is swapped for a stand-in phrase here and back on the way out. A phrase, never a control
-	 * character, which would make the file binary to the checks. */
+	 * it is swapped for a stand-in phrase here and back on the way out. */
 	/* Only where the list holds such an option: otherwise "" means nothing picked yet, and the
 	 * placeholder must show. */
 	const NOTHING = 'no answer was chosen';
@@ -373,6 +383,27 @@
 	</Select.Portal>
 </Select.Root>
 
+{#snippet row(option: SelectOption, selected: boolean)}
+	{#if preview}
+		<!-- Before the words, where a reader's eye lands first: on these lists the
+		     picture is the answer and the words confirm it. -->
+		<span class="ui-select-item-preview">{@render preview(option)}</span>
+	{/if}
+	<span class="ui-select-item-text" class:noted={Boolean(option.note)}>
+		<span class="ui-select-item-label">
+			{#if optionLabel}{@render optionLabel(option)}{:else}{option.label}{/if}
+		</span>
+		{#if option.detail}
+			<!-- Quieter than the name, ellipsised so a path never pushes the tick off. -->
+			<span class="ui-select-item-detail">{option.detail}</span>
+		{/if}
+		{#if option.note}
+			<span class="ui-select-item-note">{option.note}</span>
+		{/if}
+	</span>
+	{#if selected}<Icon name="check" size={16} />{/if}
+{/snippet}
+
 <!-- The list itself, drawn in the floating box or in a phone's sheet. -->
 {#snippet list()}
 	<!-- The list scrolls like every other region. The ceiling stays on the content box, which
@@ -403,25 +434,21 @@
 					disabled={option.disabled}
 					class="ui-select-item"
 				>
-					{#snippet children({ selected })}
-						{#if preview}
-							<!-- Before the words, where a reader's eye lands first: on these lists the
-							     picture is the answer and the words confirm it. -->
-							<span class="ui-select-item-preview">{@render preview(option)}</span>
+					{#snippet children({ selected, highlighted })}
+						{#if option.tooltip}
+							<!-- Beside the list, so it never covers the next row. -->
+							<Tooltip
+								label={option.tooltip}
+								placement="right"
+								stretch
+								shrinks
+								held={keyed && highlighted}
+							>
+								<span class="ui-select-item-row">{@render row(option, selected)}</span>
+							</Tooltip>
+						{:else}
+							{@render row(option, selected)}
 						{/if}
-						<span class="ui-select-item-text" class:noted={Boolean(option.note)}>
-							<span class="ui-select-item-label">
-								{#if optionLabel}{@render optionLabel(option)}{:else}{option.label}{/if}
-							</span>
-							{#if option.detail}
-								<!-- Quieter than the name, ellipsised so a path never pushes the tick off. -->
-								<span class="ui-select-item-detail">{option.detail}</span>
-							{/if}
-							{#if option.note}
-								<span class="ui-select-item-note">{option.note}</span>
-							{/if}
-						</span>
-						{#if selected}<Icon name="check" size={16} />{/if}
 					{/snippet}
 				</Select.Item>
 			{/each}
@@ -603,6 +630,14 @@
 
 	:global(.ui-select-item[data-highlighted]) {
 		background: var(--menu-row-highlight);
+	}
+
+	.ui-select-item-row {
+		display: flex;
+		flex: 1;
+		align-items: center;
+		gap: var(--space-2);
+		min-inline-size: 0;
 	}
 
 	/* A finger's height for a row on a phone, in the sheet the list is there. */

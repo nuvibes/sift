@@ -37,6 +37,7 @@ from sift.slices.performance.runner import (
 )
 from sift.slices.performance.settings import (
     AUTOMATIC,
+    BUSY_STEP_BACK_KEY,
     GENERATE_FINGERPRINTS_KEY,
     GENERATE_PREVIEWS_KEY,
     GENERATE_SPRITES_KEY,
@@ -74,6 +75,7 @@ __all__ = [
     "AUTOMATIC",
     "BENCHMARK",
     "BENCHMARK_NAME",
+    "BUSY_STEP_BACK_KEY",
     "FIRST_BENCHMARK",
     "GENERATE_FINGERPRINTS_KEY",
     "GENERATE_PREVIEWS_KEY",

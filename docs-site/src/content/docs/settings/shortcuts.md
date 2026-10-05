@@ -22,4 +22,4 @@ Come here to look up a key. A shortcut works only on the screen it belongs to, a
 - **Watching something**: play, pause, step, volume, the Mini player, repeat, shuffle, Loops and full screen.
 - **Theater**: controlling one cell or every cell, and their volume.
 
-Nothing on this pane is a stored setting: everything on it acts when you press it.
+Nothing on this pane is a stored setting.

@@ -3,9 +3,11 @@
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable, Mapping
+
 from fastapi import FastAPI
 
-from sift.kernel import attention, budget, lanes, media, wiring
+from sift.kernel import attention, budget, device_load, lanes, media, wiring
 from sift.kernel.config import get_settings
 from sift.kernel.db import readers_for
 from sift.kernel.hardware import HardwareReport
@@ -52,6 +54,12 @@ def _makers_of(products: importing.ProductRegistry) -> dict[str, tuple[str, ...]
     return makers
 
 
+def _less(counts: dict[str, int], held: dict[str, int]) -> dict[str, int]:
+    """Counts of work less what a family's hold keeps waiting: held is not due."""
+    left = {kind: count - held.get(kind, 0) for kind, count in counts.items()}
+    return {kind: count for kind, count in left.items() if count > 0}
+
+
 class _PoolConfig:
     """How many workers, and the per-type caps, as the performance settings currently say.
 
@@ -75,6 +83,8 @@ class _PoolConfig:
         hub: settings_hub.SettingsService,
         accelerator: media.Accelerator,
         book: Ledger,
+        measuring: Callable[[], bool] = lambda: False,
+        measured_reads: Callable[[], Awaitable[Mapping[str, int]]] | None = None,
     ) -> None:
         self._store = store
         self._queue = queue
@@ -82,20 +92,28 @@ class _PoolConfig:
         self._get_app = hub.get_app
         self._accelerator = accelerator
         self._book = book
+        self._measuring = measuring
+        self._measured_reads = measured_reads
 
     async def __call__(self) -> tuple[int, dict[str, int]]:
         get_app = self._get_app
         full = performance.resolve_worker_count(
             await get_app(performance.WORKER_COUNT_KEY), self._hardware
         )
-        # A share of the device while somebody is using the computer (a quarter by default), the
-        # full count once they have left it alone for a minute, or at once when a person presses
-        # for the full amount (the leaf on the sidebar). Read first, because everything below is
-        # sized from what actually runs: every per-kind share is a share OF this count, so a
-        # setting such as recognition's "Share of this device to use" multiplies in and never adds.
+        # Read first: every per-kind share below is a share OF the count that actually runs.
         step_back = bool(await get_app(performance.STEP_BACK_KEY))
         share = performance.resolve_step_back_share(await get_app(performance.STEP_BACK_SHARE_KEY))
-        concurrency = attention.ATTENTION.workers(full, step_back=step_back, share=share)
+        busy_on = bool(await get_app(performance.BUSY_STEP_BACK_KEY))
+        measuring = self._measuring()
+        # Read whatever the setting says, so its log shows what it would have done.
+        others = device_load.READER.tick(acting=busy_on and not measuring)
+        concurrency = attention.ATTENTION.workers(
+            full,
+            step_back=step_back,
+            share=share,
+            others_busy=busy_on and others,
+            measuring=measuring,
+        )
         share_reads = await self._resize_shared(full, concurrency)
         limits = {
             # The accelerator's answer, not the report's: the cap for a card is three segments at
@@ -105,7 +123,9 @@ class _PoolConfig:
             **player.job_limits(self._accelerator.encoder),
         }
         generation = await self._own_caps(limits, concurrency)
-        unfinished = await self._queue.due_by_type()
+        unfinished = _less(
+            await self._queue.due_by_type(), await self._queue.held_for_family_by_type()
+        )
         limits.update(await self._divided(concurrency))
         # The ledger closes the runs whose family has nothing left that is due (`due_by_type`: a
         # row put off to a later moment begins the next run), and writes the open ones through. The
@@ -117,6 +137,7 @@ class _PoolConfig:
                 "previews at once": generation,
                 "network share reads": share_reads,
             },
+            stepped_back=attention.ATTENTION.holding,
         )
         return concurrency, limits
 
@@ -140,9 +161,7 @@ class _PoolConfig:
         # it must read the number set here, not the one chosen at boot. See `media.jobs_at_once`.
         if media.set_jobs_at_once(full):
             log.info("media.thread_share.resized", workers=full)
-        # And the database's read connections, on the same timer and for the identical reason:
-        # raising the worker count without them can leave the browser with no connection to
-        # borrow, twelve workers against twelve connections. See `readers_for`.
+        # And the database's read connections, so the browser is left one to borrow (`readers_for`).
         database = self._store.database
         if await database.resize_readers(readers_for(full)):
             log.info("db.readers.resized", readers=database.readers, workers=full)
@@ -154,10 +173,11 @@ class _PoolConfig:
         share_reads = performance.resolve_share_reads(
             await self._get_app(performance.SHARE_READS_KEY)
         )
+        measured = await self._measured_reads() if self._measured_reads is not None else None
         if storage_lanes is not None and await storage_lanes.configure(
-            network_reads_at_once=share_reads
+            network_reads_at_once=share_reads, measured=measured
         ):
-            log.info("lanes.configured", network_reads_at_once=share_reads)
+            log.info("lanes.configured", network_reads_at_once=share_reads, measured=measured)
         return share_reads
 
     async def _own_caps(self, limits: dict[str, int], concurrency: int) -> int:
@@ -306,8 +326,20 @@ async def build_workers(
     await book.start()
     set_stage_sink(book.stage)
     provide(app, wiring.LEDGER, book)
+    book.first_prices = wiring.part_of_app(app, performance.SELF_TEST_RUNNER).prices
 
-    read_pool_config = _PoolConfig(store, queue, hardware, hub, accelerator, book)
+    def measuring() -> bool:
+        runner = wiring.part_of_app_or_none(app, performance.SELF_TEST_RUNNER)
+        return runner is not None and runner.state.running
+
+    async def measured_reads() -> dict[str, int]:
+        runner = wiring.part_of_app_or_none(app, performance.SELF_TEST_RUNNER)
+        kept = await runner.rates() if runner is not None else None
+        return kept.reads_at_once() if kept is not None else {}
+
+    read_pool_config = _PoolConfig(
+        store, queue, hardware, hub, accelerator, book, measuring, measured_reads
+    )
 
     # Read once at boot so the pool starts at the settings' numbers rather than the automatic ones
     # and then correcting itself a few seconds later.

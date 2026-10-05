@@ -29,7 +29,9 @@ that is still being written hashes perfectly happily, and the digest is of the h
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Awaitable, Callable, Sequence
+import time
+from collections import Counter
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -44,17 +46,23 @@ from sift.kernel.content import (
 )
 from sift.kernel.jobs import (
     BACKGROUND_PRIORITY,
+    DEFAULT_PRIORITY,
+    MAX_PAGE_SIZE,
+    WAITED_ON_PRIORITY,
     JobContext,
     JobQueue,
+    JobState,
     JobSwitchedOff,
     register_handler,
 )
 from sift.kernel.jobs.families import Family
+from sift.kernel.jobs.quiet_hours import AT_NOW
 from sift.kernel.log import get_logger, timing_hook
 from sift.kernel.seams import ReindexSeam, SettingsSeam
 from sift.slices.library_roots import quarantine
 from sift.slices.library_roots.catch_up import _differences, _folders_that_moved
 from sift.slices.library_roots.moved_folders import _reconcile_folders
+from sift.slices.library_roots.scan_plan import count_to_read, kind_by_name
 from sift.slices.library_roots.service import LibraryService
 from sift.slices.library_roots.sweeping import (
     _folder_for,
@@ -67,6 +75,7 @@ from sift.slices.library_roots.sweeping import (
 )
 from sift.slices.library_roots.taking_in import (
     PROBE,
+    UnansweredFolder,
     Verdict,
     _decide,
     _probe_payload,
@@ -78,8 +87,10 @@ from sift.slices.library_roots.walking import (
 )
 from sift.slices.library_roots.walking import (
     FolderIsGone,
+    FolderStoppedAnswering,
     RootIsGone,
     RootUnreachable,
+    _quiet_from,
     _root_answer,
     _walk_confined,
     look_at,
@@ -93,6 +104,8 @@ log = get_logger(__name__)
 
 SCAN = "scan"
 
+#: Walking a folder and counting what its scan will read, while the scan waits. See `count_scan`.
+SCAN_COUNT = "scan_count"
 
 #: One pass over EVERY library folder, with a scan of each hanging off it. See `scan_everything`.
 LIBRARY_SCAN = "library_scan"
@@ -105,27 +118,76 @@ RECONCILE = "library_reconcile"
 def scan_shape(root_id: str, folder: FolderRow | None = None) -> dict[str, object]:
     """What identifies one scan: a root, and the folder inside it, unless that folder IS the root.
 
-    **A whole-root walk is ONE job, whoever asked for it.** The queue decides whether the work is
-    already coming by matching a payload exactly, and the same walk could have two spellings: a
-    press queues `{root_id}` and the watcher would queue `{root_id, folder_id}` naming the root's
-    own top folder. Those never collide, so the two would run back to back over the same files.
-
-    The two MEAN the same walk and only look different. `_scope` resolves a missing
-    `folder_id` to `ROOT_REL_PATH`, and the root's own top folder's `rel_path` IS `ROOT_REL_PATH`,
-    so both spellings send the walk to the same directory and filter the sweep to the same subtree.
-    Dropping the id where it names the top folder is what makes them one row rather than two.
-
-    A narrower folder keeps its id and stays a job of its own, which is the whole point of the
-    watcher naming one: two different sub-folders are two walks and both are needed.
-
-    The key ORDER is load-bearing, because the match is on the serialized payload rather than on the
-    mapping: `root_id` then `folder_id`, and whatever a caller adds (`scan_only`, `paths`) goes
-    after. Every enqueue of a scan goes through here so there is one order to keep.
+    A whole-root walk is ONE job whoever asked: the queue dedupes on the payload exactly, so the
+    root's own top folder is dropped and `{root_id}` is the only spelling. The key ORDER is
+    load-bearing for the same reason: `root_id`, then `folder_id`, then whatever a caller adds.
     """
     shape: dict[str, object] = {"root_id": root_id}
     if folder is not None and folder.rel_path != ROOT_REL_PATH:
         shape["folder_id"] = folder.id
     return shape
+
+
+async def queue_scan(
+    queue: JobQueue,
+    shape: Mapping[str, object],
+    *,
+    requested_by: str | None,
+    priority: int = DEFAULT_PRIORITY,
+) -> str:
+    """Queue a walk, deduped, with the count that runs ahead of it. Returns the walk's id."""
+    scan_id = await queue.enqueue(
+        SCAN, shape, dedupe=True, priority=priority, requested_by=requested_by
+    )
+    await count_ahead(queue, scan_id, shape, at=AT_NOW if requested_by is not None else None)
+    return scan_id
+
+
+async def count_ahead(
+    queue: JobQueue, scan_id: str, shape: Mapping[str, object], *, at: str | None
+) -> None:
+    """Queue the count of a walk, outside the scans' share so no other folder's read holds it."""
+    # A named-path scan is a few hundred files at most, and nobody waits on its total.
+    if "paths" not in shape:
+        await queue.enqueue(
+            SCAN_COUNT, {"scan_id": scan_id}, dedupe=True, priority=WAITED_ON_PRIORITY, at=at
+        )
+
+
+async def count_scan(context: JobContext, *, service: LibraryService) -> None:
+    """Walk the folder of a scan still waiting and write how many files it will read onto its row.
+
+    The scan lists the folder again when it runs, so this only ever sets the number sooner."""
+    await context.set_units(0)
+    scan_id = context.require_str("scan_id", "a count needs the id of the scan it is for")
+    waiting = await context.queue.get(scan_id)
+    if waiting is None or waiting.state is not JobState.QUEUED:
+        log.info("library.count_not_needed", scan_id=scan_id)
+        return
+    root = await context.library.get_root(str(waiting.payload.get("root_id")))
+    try:
+        under = None if root is None else await _scope(context, root.id, waiting.payload)
+    except (FolderIsGone, ValueError):
+        under = None
+    if root is None or under is None:
+        # The scan says why when it runs.
+        log.info("library.count_not_needed", scan_id=scan_id)
+        return
+    counted = await count_to_read(context, service, root, under=under)
+    if counted is None:
+        await context.set_note("The library folder gave no answer, so nothing was counted.")
+        return
+    written = await context.queue.set_waiting_units(scan_id, counted.files)
+    await context.queue.set_to_read(scan_id, counted.kinds)
+    await context.set_note(f"{counted.files:,} file{'' if counted.files == 1 else 's'} to read.")
+    log.info(
+        "library.scan_counted",
+        root_id=root.id,
+        to_read=counted.files,
+        ahead=True,
+        written=written,
+        waited_seconds=max(0, int(time.time()) - waiting.created_at),
+    )
 
 
 #: Ageing the quarantine directory out. A recurring job rather than a sweep at boot, because a
@@ -166,9 +228,29 @@ FolderSettled = Callable[[str, str], Awaitable[None]]
 ArchiveSettled = Callable[[str, str, str, list[str]], Awaitable[None]]
 
 
-#: How many files a scan takes in before it hands out their probes. Small enough that a pass
-#: stopped part way strands little; large enough that the queue is not written per file.
+#: How many files a scan takes in before it hands out their probes and tells the search index.
+#: Small enough that a pass stopped part way strands little; large enough that the queue is not
+#: written per file.
 PROBE_HANDOUT_BATCH = 100
+
+#: A read of this many files or more on a network share holds back its own per-file work until its
+#: reads end, so the share's places go to the read: about seven minutes of reading on a share.
+SCAN_FIRST_FILES = 2_000
+
+#: Off, a big read shares its share with its own per-file work.
+HOLD_WHILE_READING = True
+
+STOPPED_ANSWERING = (
+    "The folder stopped answering partway through the scan, so nothing in it was marked missing"
+    " or unreadable. Scan it again once it's back."
+)
+
+
+def _went_quiet(folders: int) -> str:
+    return (
+        f"{folders:,} folder{'' if folders == 1 else 's'} stopped answering partway through, so"
+        f" nothing in {'it' if folders == 1 else 'them'} was marked missing or unreadable."
+    )
 
 
 async def _walk_for_scan(
@@ -184,7 +266,7 @@ async def _walk_for_scan(
         raise RootUnreachable(
             "the library folder did not answer"
             + (f" ({refused.strerror})" if refused.strerror else "")
-            + ". Nothing was changed. Scan it again once it is back."
+            + ". Nothing was changed. Scan it again once it's back."
         )
     with timing_hook("library.scan.walk", root_id=root_id):
         # The walk is blocking and can run for minutes on a large library, so it is done in a
@@ -215,8 +297,10 @@ class _ScanPass:
         under: str,
         named: list[str] | None,
         walk: Walk,
+        reindexer: ReindexSeam,
     ) -> None:
         self.context = context
+        self.reindexer = reindexer
         self.settings = settings
         self.service = service
         self.archive_settled = archive_settled
@@ -239,6 +323,28 @@ class _ScanPass:
         self.to_probe: list[str] = []
         self.to_check: list[str] = []
         self.finished = 0
+        self.indexed = 0
+        self.to_read = 0
+        self.unread: Counter[str] = Counter()
+        self.opened = 0
+        # A scan ends for the folder somebody pressed it on; any other only for its library folder.
+        self.answers_for = under if named is None and context.job.requested_by else ROOT_REL_PATH
+        # Prefixes of the folders that would not answer: nothing under one is read or judged.
+        self.unjudged = {subtree_prefix(self.prefix + one) for one in walk.unlisted}
+        self.went_quiet: set[str] = set()
+        self.holding = False
+
+    @property
+    def ended(self) -> bool:
+        return subtree_prefix(self.answers_for) in self.unjudged
+
+    async def stopped_answering(self, directory: Path) -> None:
+        base = self.root_abs / self.answers_for
+        quiet = (await asyncio.to_thread(_quiet_from, base, directory)).relative_to(self.root_abs)
+        here = ROOT_REL_PATH if quiet == Path() else quiet.as_posix()
+        self.went_quiet.add(here)
+        self.unjudged.add(subtree_prefix(here))
+        log.warning("library.folder_stopped_answering", root_id=self.root_id, whole=self.ended)
 
     def walked_dirs(self) -> set[str]:
         # The directories the walk went through, as paths relative to the root. Gathered as strings
@@ -299,8 +405,13 @@ class _ScanPass:
                 refused=self.refusals,
             )
             self.decided.append((item, rel_path, verdict))
-        to_read = sum(1 for _item, _rel, verdict in self.decided if verdict.reads)
+        self.unread = Counter(
+            kind_by_name(item, verdict) for item, _rel, verdict in self.decided if verdict.reads
+        )
+        self.to_read = to_read = self.unread.total()
         await context.set_units(to_read)
+        await self.write_unread()
+        await self.hold_own_work(to_read)
         # The folder rows of every directory about to receive a file, resolved once each BEFORE the
         # reads: the reads run several at a time, and two files of one directory arriving together
         # would each resolve and write the chain before either had remembered it.
@@ -311,69 +422,103 @@ class _ScanPass:
             "library.scan_counted", root_id=self.root_id, files=len(self.found), to_read=to_read
         )
 
+    async def write_unread(self) -> None:
+        context = self.context
+        await context.queue.set_to_read(context.job.id, self.unread, worker_id=context.worker_id)
+
     async def hand_out(self) -> None:
-        # As children of this job so a cancel takes them too, in the order the files were taken
-        # in. A batch at a time rather than all at the end: a pass stopped part way (a restart,
-        # a crash) then loses the probes of one batch, not of everything it had read. The lane
-        # still puts this pass's reads first, so a probe handed out mid-pass waits its turn.
+        # Children, so a cancel takes them too; a batch at a time, so a pass stopped part way loses
+        # one batch of probes. The lane still puts this pass's reads first.
         batch = self.to_probe[:]
         del self.to_probe[:]
+        await self.write_unread()
         for asset_id in batch:
-            # AT THIS WALK'S OWN URGENCY, the way `scan_everything` hands its walks this job's
-            # priority: a pressed Scan's reads go to the front of the queue with it. Read from the
-            # row, so a walk the watcher started hands the machine's urgency down and a walk a
-            # person pressed hands the person's.
+            # At this walk's own urgency, read from its row, as `scan_everything` hands down its.
             await self.context.enqueue_child(
                 PROBE, _probe_payload(self.context, asset_id), priority=self.context.job.priority
             )
+
+    async def index_arrivals(self) -> None:
+        """Tell the search index about the files taken in since it was last told."""
+        batch = self.taken_in[self.indexed :]
+        self.indexed = len(self.taken_in)
+        await self.reindexer.touched_many(batch)
+
+    async def hold_own_work(self, to_read: int) -> None:
+        """A big read on a share keeps its own per-file work waiting until its reads end."""
+        # A named-path scan is a few hundred files, and a local disk has no places to share.
+        if not HOLD_WHILE_READING or self.named is not None or to_read < SCAN_FIRST_FILES:
+            return
+        if not lanes.storage_for(self.root_abs / "walk").remote:
+            return
+        # Its probes are the read, and the walk goes first in the lane: they pass.
+        await self.context.hold_own_family(spared=(SCAN, SCAN_COUNT, LIBRARY_SCAN, PROBE))
+        self.holding = True
+        log.info("library.scan_holding", root_id=self.root_id, to_read=to_read)
+
+    async def ahead_of_what_it_held(self) -> None:
+        """Ask again, a step ahead, for this read's probes still waiting as its hold lifts: the
+        per-file work it releases is older than they are, and would otherwise go first."""
+        queue, job = self.context.queue, self.context.job
+        more, offset = self.holding, 0
+        while more:
+            page = await queue.list(
+                parent_id=job.id,
+                job_type=PROBE,
+                state=JobState.QUEUED,
+                limit=MAX_PAGE_SIZE,
+                offset=offset,
+            )
+            for one in page.jobs:
+                await queue.enqueue(PROBE, one.payload, dedupe=True, priority=job.priority - 1)
+            more, offset = len(page.jobs) == MAX_PAGE_SIZE, offset + MAX_PAGE_SIZE
 
     async def take(
         self, gate: asyncio.Semaphore, item: Walked, rel_path: str, verdict: Verdict
     ) -> None:
         async with gate:
             await self.context.raise_if_canceled()
-            self.seen.update(
-                await _take_in(
-                    self.context,
-                    item,
-                    rel_path=rel_path,
-                    root_id=self.root_id,
-                    settings=self.settings,
-                    service=self.service,
-                    taken_in=self.taken_in,
-                    archive_settled=self.archive_settled,
-                    decided=verdict,
-                    to_probe=self.to_probe,
-                    to_check=self.to_check,
-                    folders=self.folders,
-                    refused=self.refusals,
-                )
-            )
+            claimed = {rel_path}
+            try:
+                if not rel_path.startswith(tuple(self.unjudged)):
+                    claimed = await _take_in(
+                        self.context,
+                        item,
+                        rel_path=rel_path,
+                        root_id=self.root_id,
+                        settings=self.settings,
+                        service=self.service,
+                        taken_in=self.taken_in,
+                        archive_settled=self.archive_settled,
+                        decided=verdict,
+                        to_probe=self.to_probe,
+                        to_check=self.to_check,
+                        folders=self.folders,
+                        refused=self.refusals,
+                    )
+                    self.opened += verdict.reads
+            except UnansweredFolder as quiet:
+                await self.stopped_answering(quiet.directory)
+            self.seen.update(claimed)
             self.finished += 1
+            if verdict.reads:
+                self.unread[kind_by_name(item, verdict)] -= 1
             if len(self.to_probe) >= PROBE_HANDOUT_BATCH:
                 await self.hand_out()
-            # Progress stops at 0.9: the sweep is the rest, and a bar that sits at 100% while the
-            # job is still working is a bar nobody believes the next time. Reported, not set: a
-            # write per file would hold the write connection once per file for a bar nobody can
-            # watch move that fast.
-            await self.context.report_progress(0.9 * self.finished / len(self.found))
+            if len(self.taken_in) - self.indexed >= PROBE_HANDOUT_BATCH:
+                await self.index_arrivals()
+            # Files read of files to read, so what is left is what the read still has to open.
+            await self.context.report_progress(1 - self.unread.total() / max(1, self.to_read))
 
     async def read(self) -> None:
-        # THE READS, A FEW AT A TIME AND FIRST IN THE LANE. The scan's reads go to the front of the
-        # lane (files first), and as many are open at once as the storage is capped to, so a
-        # share's read slots are not left to the probes of the files this pass took in. The probes
-        # are handed out AFTER the reads.
+        # THE READS, A FEW AT A TIME AND FIRST IN THE LANE, as many open as the storage is capped
+        # to, so a share's places are not left to the probes of the files this pass took in.
         #
-        # What a take-in CLAIMED, rather than the one path the walk found. They are the same thing
-        # for a file and they are not for an archive: opening one `gallery.zip` claims a location
-        # per picture inside it, and the archive's own path is claimed by nothing because no asset
-        # is ever the archive. The sweep compares against this set, so a take-in that reported the
-        # wrong paths would mark every picture in an archive missing on the way out.
+        # What a take-in CLAIMED, not the path the walk found: an archive claims a location per
+        # picture inside it and none for itself, and the sweep compares against this set.
         gate = asyncio.Semaphore(max(1, lanes.reads_at_once(self.root_abs)))
-        # `gather` rather than a task group: a refusal a take-in raises (the root's folder row being
-        # gone) has to reach the caller as ITSELF, and a group wraps it in an exception group that
-        # nothing above knows how to read. The others are cancelled on the way out, which is what
-        # the group would have done.
+        # `gather`, not a task group, so a take-in's refusal (the root's folder row gone) reaches the
+        # caller as itself rather than wrapped in a group; the others are cancelled on the way out.
         async with lanes.first():
             pending = [asyncio.ensure_future(self.take(gate, *one)) for one in self.decided]
             try:
@@ -406,6 +551,7 @@ class _ScanPass:
                 under=self.under,
                 seen=self.seen,
                 only=self.named,
+                unjudged=self.unjudged,
             )
             await _forget_gone_refusals(
                 self.service,
@@ -415,26 +561,15 @@ class _ScanPass:
                 refused=self.refusals,
                 walked={self.prefix + item.rel_path for item in self.found},
                 only=self.named,
+                unjudged=self.unjudged,
             )
 
 
 async def _ask_for_what_settles(context: JobContext, settles_into: Sequence[str]) -> None:
-    """The whole-library work this walk has made worth doing again, asked for HERE and not only by
-    `probe`.
-
-    `probe` is one file's job, and a scan of a library that is already indexed reads almost no file
-    and hands out almost no `probe`. Asked for only there, the passes that read FOLDER AND FILE
-    NAMES (which is all the evidence they have) would never run on the one press a person makes
-    when they want their library read again. `probe`'s own list stays where it is: a fingerprint is
-    written by `probe` and the duplicate sweep has nothing to compare before it.
-
-    It is the same QUESTION asked from the other end (what whole-library work has this pass made
-    worth doing?) and the same `enqueue_when_settled`, so the two collapse onto one waiting row
-    rather than becoming two sweeps. A scan of a dozen folders is one request for each of these,
-    a minute after the last walk stops.
-
-    Not conditional on whether this walk found anything new: a library where nothing has changed
-    on disk is exactly the one where a pass written since the last import has never run.
+    """The whole-library work this walk has made worth doing again, asked for here as well as by
+    `probe`: a scan of a library already indexed hands out almost no `probe`, and the passes that
+    read folder and file names would never run. The same `enqueue_when_settled`, so the two collapse
+    onto one waiting row. Asked whether or not the walk found anything new.
     """
     for job_type in settles_into:
         try:
@@ -460,30 +595,17 @@ async def scan(
     archive_settled: ArchiveSettled | None = None,
     settles_into: Sequence[str] = (),
 ) -> None:
-    """Walk a root, or one folder of it, index what is new, and mark what has gone.
+    """Walk a root, or one folder of it (`folder_id`), index what is new, and mark what has gone.
 
-    The sweep at the end is the half that is easy to leave out. Without it a file deleted from the
-    library stays on the grid forever, because nothing else ever revisits a row to ask whether its
-    bytes are still there.
-
-    A `folder_id` in the payload filters both halves to that folder's subtree, which is what the
-    watcher asks for when a file lands: re-walking a million files because one arrived is a design
-    that works on a small library. The two halves must narrow *together* (see `_sweep`).
-
-    Whatever was taken in is handed to the search index at the end, in one pass. A scan is the main
-    way files enter a running library, and a writer that does not say what it wrote is a file that
-    cannot be found by name until something else happens to rebuild the index.
-    """
+    The read and the sweep narrow together (see `_sweep`); without the sweep a deleted file would
+    stay on the grid for ever."""
     root_id = _root_id(context)
     root = await context.library.get_root(root_id)
     if root is None:
         raise RootIsGone(f"library root {root_id} was removed before its scan ran")
-    under = await _scope(context, root_id)
+    under = await _scope(context, root_id, context.payload)
     root_abs = Path(root.abs_path)
-    #: The files a change notification NAMED, or None for an ordinary walk of everything.
-    #:
-    #: Relative to the ROOT, like everything else stored, so a scan of a folder and a scan of named
-    #: files inside it speak the same paths. See `_named_paths` for what is refused.
+    # The files a change notification named, relative to the root, or None for a whole walk.
     named = _named_paths(context)
     walk = await _walk_for_scan(context, root_id, root_abs, root_abs / under, named)
     one = _ScanPass(
@@ -496,19 +618,29 @@ async def scan(
         under=under,
         named=named,
         walk=walk,
+        reindexer=reindexer,
     )
     walked_dirs = one.walked_dirs()
     if named is None:
         await one.settle_moved_folders()
-    await one.decide()
-    await one.read()
-    # Before the sweep rather than after it. The sweep is the longer half and the one that can
-    # fail on its own, and a pass that took files in and then died on the way out should still
-    # leave them findable: the alternative loses the index write for work that was really done.
-    await reindexer.touched_many(one.taken_in)
+    try:
+        await one.decide()
+        await one.read()
+        await one.ahead_of_what_it_held()
+    finally:
+        # Before the sweep, and on a cancel, a pause or a failure.
+        held = context.lift_own_hold()
+        log.info("library.scan_read", root_id=root_id, read=one.finished, held=held)
+    # Before the sweep, so a pass that dies on the way out still leaves its files findable.
+    await one.index_arrivals()
     # And counted, for the scan's line in History: the files this walk imported that the library
     # did not hold before, archive members included.
     context.arrived(len(one.taken_in))
+    if one.went_quiet:
+        # What its History line counts: the files read before a folder stopped answering.
+        await context.set_units(one.opened)
+    if one.ended:
+        raise FolderStoppedAnswering(STOPPED_ANSWERING)
     await one.sweep()
     # After the sweep, so a folder is judged on what is really still in it rather than on what the
     # walk happened to find before the missing files were marked.
@@ -517,8 +649,12 @@ async def scan(
     # at again (see `reconcile`). Only after a real LISTING: a named-path scan stats the files it
     # was told about and never reads the directory, so it has no business saying it has seen one.
     if named is None:
-        await _record_what_was_seen(context, root_id=root_id, under=under, walk=walk)
+        await _record_what_was_seen(
+            context, root_id=root_id, under=under, walk=walk, unjudged=one.unjudged
+        )
     await context.set_progress(1.0)
+    if one.went_quiet:
+        await context.set_note(_went_quiet(len(one.went_quiet)))
     await _ask_for_what_settles(context, settles_into)
     log.info(
         "library.scan_finished",
@@ -542,40 +678,10 @@ MOST_NAMED_PATHS = 200
 def _named_paths(context: JobContext) -> list[str] | None:
     """The files this scan was told about, or None for an ordinary walk.
 
-    ## Why a PATH is allowed in this payload at all
-
-    `queue.py` states the rule (a payload carries ids, not places on disk) and gives three
-    reasons. It is worth answering them one at a time rather than leaning on the fact that the
-    enforced form of the check (absolute paths, `~`, and `..` segments) lets a relative one past.
-
-    **"A path in a payload is a path in every log line, backup and diagnostics export."** Checked
-    rather than assumed: no payload is ever logged, `diagnostics.py` does not touch the jobs table,
-    and `media_jobs/router.py` deliberately keeps the payload off the wire for exactly this reason.
-    What is left is the backup, which already contains `asset_locations`: every library path Sift
-    knows. So this adds no class of information to any surface that did not already carry it.
-
-    **"The file may have moved by the time the job runs."** True, and inherent: a notification
-    describes a moment that has already passed. `look_at` is built for it: a path that has gone is
-    left out, and the half of the scan that decides a file is absent does it by looking.
-
-    **"A job that takes a path can be pointed at any file on the machine."** This one is the reason
-    the rule exists and it is fully answered. The path is RELATIVE, to a root named by an id in the
-    same payload; it goes through `check_rel_path` here; and `look_at` then `confine`s it against
-    that root's real directory before anything opens it. Three gates, and the queue's own backstop
-    is a fourth. A payload cannot name a file outside the library it names.
-
-    ## What is refused
-
-    Every path is checked with `check_rel_path`, the same function every stored library path goes
-    through: an absolute path, a `..`, or a backslash in it must never reach a filesystem call. A
-    payload naming more than the cap is refused as a whole rather than truncated: a silently
-    shortened list is a scan that reports success having looked at some of what it was asked about,
-    which is the worst of both.
-
-    An EMPTY list is not the same as no list, and it is not an error either: it means "these paths
-    turned out to be nothing worth opening", which a walk of nothing correctly concludes nothing
-    from. It comes back as an empty list rather than None so the scan does not widen into a walk of
-    the entire root because a burst happened to contain no media.
+    A path is allowed here because it is relative to the root the payload names, goes through
+    `check_rel_path`, and is confined to that root by `look_at` before anything opens it. A list
+    over the cap is refused whole, never truncated. An empty list stays empty, so a burst holding
+    no media does not widen into a walk of the whole root.
     """
     raw = context.payload.get("paths")
     if raw is None:
@@ -600,36 +706,10 @@ def _named_paths(context: JobContext) -> list[str] | None:
 async def scan_everything(context: JobContext) -> None:
     """Scan every library folder, as ONE job with a scan of each hanging off it.
 
-    ## Why this is a job and not a loop in the client
-
-    A loop in the client would send one request per folder: on a library with a dozen of them,
-    a dozen round trips, a dozen toasts saying the same thing, a dozen rows on the Jobs screen
-    with no parent between them, and no total anywhere, so the question the screen exists to
-    answer, how long did that scan take, could not be answered from it.
-
-    It would also be quietly wrong about WHAT it scanned: a client looping over the folders the
-    screen last loaded silently misses a folder added since. The roots are read here, now, from the
-    library itself.
-
-    ## Why the parts are still separate jobs
-
-    Because folders are independent and the pool is wide. A dozen scans are handed out at once and
-    walk alongside each other; one job walking a dozen folders in turn would take the sum of them
-    on one worker while the rest of the pool had nothing to do. The parent is what makes them one
-    thing to watch and one thing to stop: cancelling it cancels the tree, which is the shape the
-    whole queue already has.
-
-    ## Why it asks first rather than deduping
-
-    `is_live` and not `enqueue(dedupe=True)`, and the two are not the same question here. Dedupe is
-    for a caller who has decided to queue something and wants one of it: it collapses onto a WAITING
-    row and hands back that row's id, which would count as a part of this pass while actually
-    belonging to whichever pass queued it. Asking first is the question this caller has (is a walk
-    of this whole folder already under way?), and a RUNNING scan answers it just as well as a
-    waiting one. It is the same shape `_probe_unless_already_coming` uses a few hundred lines down.
-
-    A folder skipped that way is not a part of this pass, and the note says so: `7 of 12 folders`
-    is the honest reading of a press where five were already being walked.
+    The roots are read here, now, so a folder added since the screen loaded is not missed. The parts
+    are separate jobs so a dozen folders walk side by side and one cancel stops them all. A folder
+    already being walked (`is_live`, not `dedupe`, which would claim another pass's row) is skipped,
+    and the note says so: `7 of 12 folders`.
     """
     roots = await context.library.roots()
     # `scan_only` travels down to each part, and is left OUT of the payload rather than set false.
@@ -650,7 +730,8 @@ async def scan_everything(context: JobContext) -> None:
         #
         # Read from the row rather than named here, so a pass the machine started hands its parts
         # the machine's priority and a pass a person started hands them the person's.
-        await context.enqueue_child(SCAN, shape, priority=context.job.priority)
+        scan_id = await context.enqueue_child(SCAN, shape, priority=context.job.priority)
+        await count_ahead(context.queue, scan_id, shape, at=context.job.timing)
         handed += 1
     await context.set_progress(1.0)
     # A pass that handed out nothing at all finished correctly having found nothing to do, and a job
@@ -684,10 +765,7 @@ async def _root_to_catch_up(context: JobContext, root_id: str) -> Path | None:
     if root is None:
         raise RootIsGone(f"library root {root_id} was removed before its catch-up ran")
 
-    # A WALK OF THE WHOLE LIBRARY ALREADY COMING ANSWERS THIS, and more thoroughly. Adding a folder
-    # asks for both at once (the add's own walk, and this pass from the watcher attaching to it),
-    # and with no folder yet recorded every file reads as changed, so both would take every file
-    # in. The walk records what each folder looked like as it goes.
+    # A walk of the whole library already coming takes in every file this would name.
     if await _whole_walk_coming(context, root_id):
         log.info("library.catch_up_covered", root_id=root_id)
         return None
@@ -704,42 +782,11 @@ async def _root_to_catch_up(context: JobContext, root_id: str) -> Path | None:
 
 
 async def reconcile(context: JobContext, *, service: LibraryService) -> None:
-    """Find what changed in a library while Sift was not running, without re-reading the library.
+    """Find what changed in a library while Sift was not running, without walking it again.
 
-    ## Why this exists
-
-    A watcher reports CHANGES, and a change is only a change relative to a moment it started
-    watching. Anything already on the disk when it attached is not a change and never becomes one:
-    a file copied in while Sift was stopped stays absent through any number of poll cycles until
-    somebody presses Rescan. Quit the application, download something, open it again, and without
-    this pass the file is not there and never will be. That is a correctness fault rather than a
-    slow one.
-
-    ## Why it does not walk
-
-    A walk of the library at every start is the thing this whole design is trying to stop: on the
-    libraries Sift is built for (hundreds of thousands of files, thousands of folders, multiple
-    terabytes), it is minutes of reading at every launch, most of it re-reading files that have not
-    moved in a year.
-
-    So this asks the only question that scales: **which folders changed?** A directory's own
-    timestamp moves when an entry is added to it or taken out of it, and a scan records what it saw
-    (`folders.seen_mtime`). One `stat` per folder answers it, and the ones that did not change are
-    never listed at all.
-
-    A folder that HAS changed is listed once, and what it holds is compared with what Sift recorded
-    for it. That comparison is `(name, size)` on both sides: `_recorded_in` already returns exactly
-    that shape, and `os.scandir` hands back the size from the directory entry itself on the site
-    Sift ships on, so a listing costs no more than the names.
-
-    ## What it deliberately does not catch
-
-    A file REWRITTEN in place, under the same name, while Sift was closed. A directory's timestamp
-    does not move for that (on NTFS or on an SMB share), and the size comparison catches
-    it only if the size changed too. Closing it properly means comparing every file's own mtime,
-    which is the walk this exists to avoid. It is caught the moment anything else touches that
-    folder, and by a rescan by hand. Recorded rather than hidden: the alternative is a pass that
-    claims to be exhaustive and is not.
+    One `stat` per folder says which folders' timestamps moved; only those are listed, and compared
+    with the rows by `(name, size)`. A file rewritten in place with the same size while Sift was
+    closed is not caught: that needs the walk this exists to avoid, and a rescan finds it.
     """
     root_id = _root_id(context)
     base = await _root_to_catch_up(context, root_id)
@@ -843,14 +890,14 @@ async def _ask_for_catch_up_scans(
             )
 
 
-async def _scope(context: JobContext, root_id: str) -> str:
+async def _scope(context: JobContext, root_id: str, payload: Mapping[str, object]) -> str:
     """Which folder this scan is of: the root itself, or one folder inside it.
 
     The payload carries a folder id, never a path, so the path comes from the row, which is the
     only thing that could authorise it. A made-up id cannot point the walk anywhere: it resolves to
     a folder or it resolves to nothing.
     """
-    folder_id = context.payload.get("folder_id")
+    folder_id = payload.get("folder_id")
     if folder_id is None:
         return ROOT_REL_PATH
     if not isinstance(folder_id, str):
@@ -877,17 +924,9 @@ async def prune_quarantine(
     preferences: SettingsSeam,
     queue: JobQueue,
 ) -> None:
-    """Remove quarantined files older than the retention rule.
+    """Remove quarantined files older than the retention rule, read fresh on every run.
 
-    The rule is read fresh every time rather than held, so turning retention off stops the very next
-    run instead of the one after a restart.
-
-    Its NEXT run is not queued here. The sweep is a task, and every timed task's next run is placed
-    by the one scheduler (`kernel.jobs.clock`) when this run settles, whatever it found, and not
-    at all while retention is off or the task only runs when pressed. Queuing itself at the end
-    with its own interval would ignore quiet hours and be a second writer of the row the scheduler
-    places.
-    """
+    Its next run is placed by the one scheduler (`kernel.jobs.clock`), never queued here."""
     del queue
     keep_days = quarantine.keep_days_from(await preferences.get_app(quarantine.KEEP_DAYS_KEY))
     removed = await asyncio.to_thread(quarantine.prune, settings, keep_days=keep_days)
@@ -911,18 +950,10 @@ def register_handlers(
     archive_settled: ArchiveSettled | None = None,
     settles_into: Sequence[str] = (),
 ) -> None:
-    """Claim the job types this slice owns. Called once, at boot.
+    """Claim the job types this slice owns, once at boot, with what each handler needs bound in.
 
-    The settings, the service and the index's "this changed" seam are bound in here rather than
-    reached for inside a handler: a handler is handed its context by the kernel and nothing else, so
-    the alternative is a module-level global holding them, which is the thing that makes a test
-    reach into a module and swap something out.
-
-    `settles_into` is job types belonging to OTHER features that a walk makes worth running once
-    over the whole library. Empty here on purpose and handed down by the composition root, for the
-    reason every other list of this kind is: a slice depends on the kernel and never on another
-    slice, so this module must not learn that reading folder names or looking for shoots exists.
-    """
+    `settles_into` names other features' whole-library passes a walk makes worth running, handed
+    down by the composition root because a slice never imports another."""
     register_handler(
         SCAN,
         partial(
@@ -936,6 +967,14 @@ def register_handlers(
         ),
         name="Scanning folder",
         family=Family.SCAN,
+    )
+    register_handler(
+        SCAN_COUNT,
+        partial(count_scan, service=service),
+        name="Counting folder",
+        family=Family.SCAN,
+        # One at a time: a walk holds a place on its share for as long as it lists.
+        alone=True,
     )
     register_handler(
         LIBRARY_SCAN,

@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from sift.kernel.access.repository.walls import shown
 from sift.kernel.access.sites import site_address
 from sift.kernel.sql_splice import splice
 
@@ -259,20 +260,26 @@ _TAG_SITE = "INSERT OR IGNORE INTO site_tags (site_id, tag_id, added_at) VALUES 
 _UNTAG_SITE = "DELETE FROM site_tags WHERE site_id = ? AND tag_id = ?"
 
 
-_TAGS_OF_PERSON = """
+_TAGS_OF_PERSON = splice(
+    """
 SELECT t.* FROM tags t
   JOIN person_tags pt ON pt.tag_id = t.id
- WHERE pt.person_id = ?
+ WHERE pt.person_id = :subject AND {{SHOWN}}
  ORDER BY COALESCE(t.name_sort, t.name) ASC, t.id ASC
-"""
+""",
+    SHOWN=shown("tag", "t"),
+)
 
 
-_TAGS_OF_SITE = """
+_TAGS_OF_SITE = splice(
+    """
 SELECT t.* FROM tags t
   JOIN site_tags pt ON pt.tag_id = t.id
- WHERE pt.site_id = ?
+ WHERE pt.site_id = :subject AND {{SHOWN}}
  ORDER BY COALESCE(t.name_sort, t.name) ASC, t.id ASC
-"""
+""",
+    SHOWN=shown("tag", "t"),
+)
 
 
 # The face goes with the file, and that is why `cover_track_id` is cleared here rather than left.

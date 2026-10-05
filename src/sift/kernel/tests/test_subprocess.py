@@ -171,6 +171,18 @@ def test_creation_flags_are_zero_at_normal_priority() -> None:
     assert sp.creation_flags(sp.Priority.NORMAL) == 0
 
 
+@pytest.mark.parametrize("status", [0xC0000043, 0xC0000135, 0xC000007B, 0xC0000142])
+def test_a_status_windows_gives_a_tool_it_could_not_start_is_told_apart(status: int) -> None:
+    assert sp.could_not_start(status)
+    assert sp.could_not_start(status - (1 << 32)), "the same status read as signed"
+    assert sp.unsaid(status) == sp.NEVER_STARTED
+
+
+def test_any_other_bad_exit_with_nothing_written_says_no_detail() -> None:
+    assert not sp.could_not_start(1)
+    assert sp.unsaid(1) == "no detail"
+
+
 def test_creation_flags_name_the_below_normal_class_on_windows_only() -> None:
     flags = sp.creation_flags(sp.Priority.BACKGROUND)
     if ON_WINDOWS:
@@ -1183,6 +1195,9 @@ class _Api:
     def TerminateJobObject(self, job: int, status: int) -> None:
         self.ended.append(job)
 
+    def QueryInformationJobObject(self, *args: object) -> bool:
+        return False
+
     def GetQueuedCompletionStatus(
         self, port: object, message: object, key: object, detail: object, wait: int
     ) -> bool:
@@ -1299,6 +1314,7 @@ def test_a_background_tool_is_held_to_the_rate_in_force_and_let_go_with_it(
     monkeypatch.setattr(sp, "_job_api", lambda: api)
     monkeypatch.setattr(sp, "_memory_watch", lambda: None)
     monkeypatch.setattr(sp, "_JOBS", weakref.WeakKeyDictionary())
+    monkeypatch.setattr(sp, "_LIVE_JOBS", set())
     monkeypatch.setattr(sp, "_BACKGROUND", weakref.WeakSet())
     monkeypatch.setattr(sp, "_background_rate", None)
     on = sp._CPU_RATE_ON | sp._CPU_RATE_HARD_CAP
@@ -1320,6 +1336,37 @@ def test_a_background_tool_is_held_to_the_rate_in_force_and_let_go_with_it(
     sp.hold_background(None)
     assert api.rates[2:] == [(41, 0, 0)], "lifted from the one still running, and only that one"
     assert sp.background_rate() is None
+
+
+_SPIN_HALF_A_SECOND = (
+    "import time\nend = time.process_time() + 0.5\nwhile time.process_time() < end: pass\n"
+)
+
+
+@WINDOWS_JOBS_ONLY
+async def test_every_tools_processor_time_is_counted_while_it_runs_and_after_it_ends() -> None:
+    """What the device's load takes out as Sift's own: a running tool's job, by its ids, and an
+    ended one's total kept once its job has closed."""
+    before, _ = sp.tools_time()
+    child = await sp.start_long_lived([REAL_PYTHON, "-c", _SPIN_HALF_A_SECOND])
+    _, running = sp.tools_time()
+    assert child.pid in running
+    await child.wait(time_limit=30)
+    after, ids = sp.tools_time()
+    assert after - before >= 4_000_000, "half a second of processor, in 100 ns units"
+    assert child.pid not in ids
+
+
+def test_off_windows_no_tool_time_is_read(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(sp, "_job_api", lambda: None)
+    assert sp.tools_time() == (0, frozenset())
+
+
+def test_a_job_that_will_not_say_its_time_counts_none(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(sp, "_LIVE_JOBS", {9})
+    monkeypatch.setattr(sp, "_tools_ended", 5)
+    sp._close_job(_Api(), 9, None)
+    assert (sp._tools_ended, sp._LIVE_JOBS) == (5, set())
 
 
 def test_a_rate_is_kept_where_there_are_no_jobs_to_hold_a_tool_to(

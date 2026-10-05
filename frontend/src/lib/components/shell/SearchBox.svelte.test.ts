@@ -17,7 +17,8 @@ import source from './SearchBox.svelte?raw';
 import tabsSource from '$lib/components/common/Tabs.svelte?raw';
 import { fromBar } from '$lib/shell/motion.svelte';
 import { api } from '$lib/api/client';
-import { screenBar } from './screen-bar.svelte';
+import { FIELD_FLOOR, screenBar } from './screen-bar.svelte';
+import { shiftInto } from './SearchSuggestions.svelte';
 import { searchBox } from '$lib/search/search.svelte';
 
 /* The bar's motion, watched rather than replaced, so the list can be seen asking for it. */
@@ -165,6 +166,16 @@ const PEOPLE_FILTER = {
 };
 
 describe('choosing a filter from the dropdown', () => {
+	it('says where a filter that takes an id is set, and shows no id', async () => {
+		const box = render();
+		const like = { field: 'like', label: 'Similar to this', hint: 'One file', example: 'like:' };
+		await offering(box, { filters: [{ ...like, set_from: 'from a file' }], replace_from: 0 });
+
+		const row = box.querySelector('[role="option"]') as HTMLElement;
+		const details = [...row.querySelectorAll('.detail')].map((one) => one.textContent?.trim());
+		expect(details).toEqual(['like:', 'from a file']);
+	});
+
 	it('draws it as a chip straight away, not as text in the box', async () => {
 		/*
 		 * Picking `people:` puts a chip in the box, not the characters: a plain word where somebody
@@ -1172,5 +1183,25 @@ describe('the keyboard hint', () => {
 		expect(document.activeElement).toBe(field());
 		expect(host.querySelector('.search .shortcut'), 'the hint stayed over a box in use').toBeNull();
 		expect(searchBox.open, 'the press put the list away again on its way past').toBe(true);
+	});
+});
+
+describe('the list as wide as its rows', () => {
+	it('is sized by its rows under the bar', async () => {
+		const box = await ready();
+		await offering(box, { filters: [PEOPLE_FILTER], replace_from: 0 });
+		await vi.waitFor(() => expect(box.querySelector('.popover.wide')).not.toBeNull());
+	});
+
+	it('moves back inside the window by what it would overhang, never past the start', () => {
+		expect(shiftInto(448, 600, 224, 1008)).toBe(-40);
+		expect(shiftInto(448, 200, 224, 1008)).toBe(0);
+		expect(shiftInto(100, 2000, 224, 1008)).toBe(124);
+		expect(shiftInto(200, 200, 224, 1008)).toBe(24);
+	});
+
+	it('keeps the key hint out until it fits beside the typing room the floor leaves', () => {
+		const shown = Number(/@container search-field \(max-width: (\d+)px\)/.exec(source)?.[1]);
+		expect(shown).toBeGreaterThanOrEqual(FIELD_FLOOR - 18 + 59);
 	});
 });

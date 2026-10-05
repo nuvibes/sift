@@ -34,4 +34,4 @@ Click **More** at the end of a folder's row, or right-click the row, to choose o
 - **Don't swap** or **Allow swapping**: keeps the folder's files out of a swap, or lets them be sent again.
 - **Remove**: takes the folder out of your library. You confirm first, and your files stay on the disk.
 
-Nothing on this pane is a stored setting: everything on it acts when you press it.
+Nothing on this pane is a stored setting.

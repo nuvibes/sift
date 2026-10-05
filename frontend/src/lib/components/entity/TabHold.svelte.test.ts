@@ -7,6 +7,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { flushSync, mount, tick, unmount } from 'svelte';
 import TabHoldHarness from './TabHoldHarness.svelte';
+import assetGrid from '../AssetGrid.svelte?raw';
+import relatedWall from './RelatedWall.svelte?raw';
 
 let host: HTMLElement;
 let instance: Record<string, unknown> | null = null;
@@ -110,5 +112,51 @@ describe('a tab on another wall', () => {
 		arrivals.get('files')?.();
 		await settle();
 		expect(layers()).toEqual(['files held', 'people']);
+	});
+});
+
+describe('the top bar while a wall is held', () => {
+	/** Each wall's tab, and whether it is told it is the one being left. */
+	function told(): string[] {
+		return [...host.querySelectorAll('.wall')].map(
+			(wall) =>
+				`${wall.getAttribute('data-tab')} ${wall.querySelector('.probe')?.getAttribute('data-held')}`
+		);
+	}
+
+	it('is left to the new wall: only the wall being left is told it is held', () => {
+		const { props, arrivals } = draw('files');
+		arrivals.get('files')?.();
+		expect(told()).toEqual(['files false']);
+
+		props.tab = 'people';
+		flushSync();
+
+		expect(told()).toEqual(['files true', 'people false']);
+	});
+
+	it('is taken back by a held wall pressed again', () => {
+		const { props, arrivals } = draw('files');
+		arrivals.get('files')?.();
+		props.tab = 'people';
+		flushSync();
+		props.tab = 'files';
+		flushSync();
+
+		expect(told()).toEqual(['files false']);
+	});
+});
+
+describe('a wall that publishes to the top bar', () => {
+	/* A held wall that published again would take the bar back, and then empty it when it goes. */
+	const guarded =
+		/if \(leaving\(\)\) return;\s*(const chosen = order;\s*)?screenBar\.publish\(mine/;
+
+	it('AssetGrid says nothing while it is held', () => {
+		expect(assetGrid).toMatch(guarded);
+	});
+
+	it('RelatedWall says nothing while it is held', () => {
+		expect(relatedWall).toMatch(guarded);
 	});
 });

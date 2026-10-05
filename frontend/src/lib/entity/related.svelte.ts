@@ -21,6 +21,10 @@
 
 import { api, type ApiPath } from '$lib/api/client';
 import { fieldOf } from '$lib/components/shell/facet-labels';
+import { LOOP_WORDS, WallWords, WORDS, wordsIn } from '$lib/components/shell/wall-words';
+import { ARTIST_ORDER, ENTITY_OPINION_SORTS, UNIVERSAL_SORTS } from '$lib/grid/sort-state.svelte';
+import { WallSort } from '$lib/grid/wall-sort.svelte';
+import { page } from '$app/state';
 import type { IconName } from '$lib/design/icons';
 import type { Pinnable } from '$lib/library/pinning.svelte';
 import type { components } from '$lib/api/schema';
@@ -734,47 +738,89 @@ export class TabCounts {
 	}
 }
 
-/* How many rows one page of a related wall holds, before the wall has been laid out and measured.
- *
- * The same fallback the four entity walls carry. It is a first page, not a ceiling: a tab with
- * more than this many rows pages on rather than stopping here under a heading counting all of
- * them. See `RelatedWall`, which measures.
- */
+/* How many rows one page of a related wall holds before the wall is measured; see `RelatedWall`. */
 export const RELATED_PER_PAGE = 60;
 
+/** The orders a card tab offers: its top-level wall's, read from the shared lists. */
+export function ordersFor(showing: RelatedKind): readonly { value: string; label: string }[] {
+	const shared = [...UNIVERSAL_SORTS, ...ENTITY_OPINION_SORTS];
+	return showing === 'songs' ? [...shared, ARTIST_ORDER] : shared;
+}
+
+/** What a card tab is in until somebody chooses: the walls' own default, most files first. */
+const TAB_DEFAULT_SORT = 'largest';
+
+const tabSorts = new Map<string, WallSort>();
+
+/** The remembered order for one kind of card tab, kept per wall like the walls' own. */
+export function tabSort(showing: RelatedKind): WallSort {
+	const wall = (SPECS[showing].path ?? `/${showing}`).slice(1);
+	let held = tabSorts.get(wall);
+	if (!held) {
+		const known = ordersFor(showing).map((one) => one.value);
+		held = new WallSort(`sift.related.${wall}.sort`, TAB_DEFAULT_SORT, known);
+		tabSorts.set(wall, held);
+	}
+	return held;
+}
+
+/** Where a box searching names keeps its words: never `q`, which the bar reads as a query. */
+export const NAME_WORDS = LOOP_WORDS;
+
 /**
- * One page of a related wall.
+ * A tab's search box: its words live in the address under `name`, which the tab links never
+ * carry, so every tab starts empty. Made while a component starts, since it follows the address.
+ */
+export class TabWords {
+	/** What the box shows. */
+	term = $state('');
+	readonly #name: string;
+	readonly #words: WallWords;
+	/** The words in the address: what the tab is asked by. */
+	asked = $derived.by(() => wordsIn(page.url, this.#name));
+
+	constructor(name: string = WORDS) {
+		this.#name = name;
+		this.#words = new WallWords(name);
+		// Words arriving another way (the chip's cross, Back, a link) go in the box; its own echo does not.
+		$effect(() => {
+			const arrived = this.asked;
+			if (!this.#words.echoed(arrived)) this.term = arrived;
+		});
+	}
+
+	write(typed: string): void {
+		this.#words.write(page.url, typed);
+	}
+}
+
+/**
+ * One page of a related wall, and its total, which is also the tab's count.
  *
- * Every wall answers with `items` and `total` already, so there is one reader rather than six. The
- * total it returns is what fills the tab's count: the same request, so the number beside the word
- * and the cards under it cannot come from two different questions.
+ * `words` go as `prefix` anywhere in the name, the walls' own search.
  */
 export async function loadRelated(
 	on: EntityKind,
 	id: string,
 	showing: RelatedKind,
-	{ limit = 60, offset = 0 }: { limit?: number; offset?: number } = {}
+	{
+		limit = 60,
+		offset = 0,
+		words = '',
+		sort
+	}: { limit?: number; offset?: number; words?: string; sort?: string } = {}
 ): Promise<RelatedPage> {
 	const path = SPECS[showing].path as ApiPath | undefined;
 	if (!path) throw new Error(`${showing} has no wall of its own; the media grid fetches it`);
-	// The filtering as plain values, handed to the client rather than glued onto the address. The
-	// generated `ApiPath` is one of the server's own paths and nothing else, which is what stops a
-	// hand-built query string from quietly naming a route that does not exist.
 	const query: Record<string, string | number> = { limit, offset };
-	// WHICH NUMBER EACH CARD IS ABOUT, off the same fact that decides where the card leads. A press
-	// that carries this page as a filter opens the two of them together, so the card has to count
-	// the two of them together; a plain press opens the whole thing and the card counts the whole.
-	// Read off `SPECS` rather than decided here, because a second answer is how a card would come to
-	// say six over a wall of two. See `relatedHref`.
-	//
-	// !! ONLY THE PEOPLE WALL READS IT SO FAR. The tags, Photo Sets and Sites listings ignore a
-	// parameter they do not declare, so their cards still print the whole count over a press that
-	// filters. That is the same disagreement, on three more walls, written down here rather than
-	// left to be rediscovered. Asking every carrying wall for it here is deliberate: the day
-	// one of those listings learns the parameter, its cards are right with nothing to change on this
-	// side, and the alternative is a second table saying which walls may be asked.
+	// A carrying card counts the two together, as its press opens them (`relatedHref`).
 	if (SPECS[showing].carries) query.count = 'narrowed';
+	if (words) {
+		query.prefix = words;
+		query.anywhere = 'true';
+	}
+	if (sort) query.sort = sort;
 	for (const [key, value] of narrowingFor(on, id, showing)) query[key] = value;
-	const page = await api.get<RelatedPage>(path, { query });
-	return { items: page.items ?? [], total: page.total ?? 0 };
+	const answer = await api.get<RelatedPage>(path, { query });
+	return { items: answer.items ?? [], total: answer.total ?? 0 };
 }

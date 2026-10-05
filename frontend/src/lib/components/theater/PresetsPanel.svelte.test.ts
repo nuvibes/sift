@@ -20,7 +20,8 @@ vi.mock('$lib/theater/presets.svelte', () => {
 		items: [KEPT],
 		ensure: vi.fn(async () => {}),
 		reload: vi.fn(async () => {}),
-		save: vi.fn(async (name: string) => ({ id: 'w2', name }))
+		save: vi.fn(async (name: string) => ({ id: 'w2', name })),
+		ask: vi.fn()
 	};
 	return { presets, NameTaken };
 });
@@ -77,25 +78,13 @@ it('lets go when the row is taken away under the pointer', () => {
 	(presets as unknown as { items: unknown[] }).items = [KEPT];
 });
 
-/*
- * "SAVE AS NEW" PUTS THE CARET IN THE NAME, AND ENTER KEEPS IT, as the rename form beside it
- * does. With the caret left nowhere, a name typed after the press would go to whatever had focus.
- */
-it('puts the caret in the new name and keeps it on Enter', async () => {
+/* Saving asks in the screen's dialog: the panel shuts when the pointer leaves for it. */
+it('opens the save dialog for a new one', () => {
 	draw();
 	const open = [...host.querySelectorAll('button')].find((one) => wordsOn(one) === 'Save as new');
 	open!.click();
 	flushSync();
 
-	const field = host.querySelector<HTMLInputElement>(
-		'input[aria-label="A name for this Layout Preset"]'
-	);
-	expect(field, 'no name field opened').not.toBeNull();
-	expect(document.activeElement, 'the caret was left somewhere else').toBe(field);
-
-	field!.value = 'Evening wall';
-	field!.dispatchEvent(new Event('input', { bubbles: true }));
-	field!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
-	await vi.waitFor(() => expect(vi.mocked(presets.save)).toHaveBeenCalledOnce());
-	expect(vi.mocked(presets.save).mock.calls[0][0]).toBe('Evening wall');
+	expect(vi.mocked(presets.ask)).toHaveBeenCalledWith();
+	expect(host.querySelector('input'), 'a name box opened inside the panel').toBeNull();
 });

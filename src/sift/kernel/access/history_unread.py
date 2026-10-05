@@ -5,12 +5,12 @@ from __future__ import annotations
 
 from sift.kernel.access import sentences as say
 from sift.kernel.access.history_actors import _names_of, _Who
-from sift.kernel.access.history_boxes import kept_events
+from sift.kernel.access.history_boxes import kept_events, shown_of
 from sift.kernel.access.history_folds import EPISODE_GAP, episodes
 from sift.kernel.access.history_line import Actor, Event, by_of
 from sift.kernel.access.history_presses import _LEFT_OUT, NOBODY_PRESSED, Pressers, by_pressed
 from sift.kernel.access.history_reads import _seconds
-from sift.kernel.access.sentences import SIFT, Piece
+from sift.kernel.access.sentences import A_THING, SIFT, Part, Piece
 from sift.kernel.access.viewer import Viewer
 from sift.kernel.db import Database, Row, point_read
 
@@ -19,12 +19,8 @@ from sift.kernel.db import Database, Row, point_read
 # Nine tables, each carrying a moment for an act on the file: Sift downloaded it, read a watermark
 # off it, built a preview for it, had a face taken off it, hid it from the person looking.
 #
-# **What this costs.** A pane is twenty-one point reads, and the count on the tab runs the same
-# assembly a second time. Every one of them is a seek that
-# runs ON the event loop rather than through a thread (which is what `point_read` is a claim about),
-# so the addition is tens of microseconds each rather than the cost of a handoff. The
-# alternative shape, one statement per feature fetched in parallel, buys nothing at that size and
-# would put a `gather` between this read and the rules it is built on.
+# **What this costs.** A pane is twenty-one point reads, run again for the tab's count, each a seek
+# on the event loop (`point_read`): tens of microseconds each, less than a thread handoff.
 
 #: Whether a look for a watermark found one. `found = 0` is the interesting half: a file nothing was
 #: read off looks exactly like a file nobody ever looked at, which is a distinction somebody opens
@@ -55,19 +51,12 @@ _WATERMARK_REFUSED = point_read(
     "SELECT created_at FROM watermark_refusals WHERE asset_id = ?",
 )
 
-#: Where a downloaded file came from: the most useful line such a file can carry, and the one it
-#: never had: everything else in its history explains what was decided about it afterwards.
-#:
-#: `ix_downloads_asset` is what makes it a point read; without it this is a walk of every download
-#: ever made. That index is version 16 of the download component, added with this read.
-#:
-#: The FINISHED moment where there is one, because that is when the file existed. A download that
-#: never finished has no asset to be in the history of, so the fallback is for a row mid-flight.
-#:
-#: The SITE ROW it was filed under rides along, by id, for the link: see `_named_site`.
+#: Where a downloaded file came from; `ix_downloads_asset` makes it a point read. The FINISHED
+#: moment where there is one, because that is when the file existed. The Site rides along by id,
+#: for the link (`_named_site`).
 _DOWNLOADED = point_read(
     "history.downloaded",
-    "SELECT COALESCE(s.name, d.site) AS site, d.username AS username,"
+    "SELECT d.id AS id, COALESCE(s.name, d.site) AS site, d.username AS username,"
     " d.created_at AS created_at, d.finished_at AS finished_at, d.state AS state,"
     " s.id AS site_id, d.requested_by AS requested_by"
     " FROM downloads d LEFT JOIN sites s ON s.id = d.site_id WHERE d.asset_id = ?"
@@ -304,6 +293,36 @@ async def _watermark_events(
     return events
 
 
+_USERNAME_ON = "SELECT id FROM usernames WHERE name = ? COLLATE NOCASE AND site_id = ?"
+_SITE_CALLED = "SELECT id FROM sites WHERE name = ? COLLATE NOCASE"
+
+
+async def _told_where(
+    database: Database, viewer: Viewer, rows: list[Row]
+) -> dict[str, tuple[Part, object]]:
+    """Each download's Site and username, by row, as a viewer who is not an admin may be told them:
+    a Site they may not be shown is nameless, and a username is said only where they may be."""
+    told: dict[str, tuple[Part, object]] = {}
+    for row in rows:
+        sites = (
+            [str(row["site_id"])]
+            if row["site_id"]
+            # Written before a download kept its Site's id: a Site of that name may still be one.
+            else [str(one["id"]) for one in await database.fetch_all(_SITE_CALLED, (row["site"],))]
+        )
+        # A name no Site here answers to is a Site that was deleted: nameless too.
+        if not sites or set(sites) - await shown_of(database, viewer, "site", sites):
+            told[str(row["id"])] = (A_THING["site"], None)
+            continue
+        # The same two reads whether a username was kept, is in the library or may be shown.
+        found = await database.fetch_all(_USERNAME_ON, (row["username"] or "", row["site_id"]))
+        named = [str(one["id"]) for one in found]
+        seen = await shown_of(database, viewer, "username", named or [""])
+        shown = bool(named) and set(named) <= seen
+        told[str(row["id"])] = (_named_site(row) or row["site"], row["username"] if shown else None)
+    return told
+
+
 async def _download_events(
     database: Database,
     viewer: Viewer,
@@ -316,6 +335,7 @@ async def _download_events(
     if "downloads" in here:
         landing = True
         downloads = list(await database.fetch_all(_DOWNLOADED, (asset_id,)))
+        told = {} if viewer.is_admin else await _told_where(database, viewer, downloads)
         # WHO ASKED FOR IT (download v33): the one line here that names a user, so the one place
         # this function reads a name. "You downloaded this file from ..." for the viewer's own paste.
         asked = _Who(
@@ -341,6 +361,9 @@ async def _download_events(
                 if row["requested_by"] is None
                 else asked.of(str(row["requested_by"]))
             )
+            site, username = told.get(
+                str(row["id"]), (_named_site(row) or row["site"], row["username"])
+            )
             events.append(
                 Event(
                     at=min(moment, arrived[0]) if landed and arrived is not None else moment,
@@ -348,8 +371,8 @@ async def _download_events(
                     actor_name=actor_name,
                     kind="downloaded",
                     pieces=say.downloaded(
-                        _named_site(row) or row["site"],
-                        row["username"],
+                        site,
+                        username,
                         arrived[1] if landed and arrived is not None else None,
                         by=by_of(actor, actor_name),
                     ),

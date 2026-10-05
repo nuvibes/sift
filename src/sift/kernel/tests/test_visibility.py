@@ -1003,3 +1003,86 @@ async def test_the_library_total_says_the_size_of_what_it_counts(
     assert (shut.total, shut.total_bytes) == (2, 320_000)
     opened = await access.visible_assets(replace(admin, show_hidden=True), limit=1)
     assert (opened.total, opened.total_bytes) == (3, 321_000)
+
+
+_STORED_TIME = (
+    "SELECT permitted_ms, concealed_ms FROM viewer_entity_counts"
+    " WHERE user_id = ? AND kind = ? AND object_id = ?"
+)
+
+
+async def _timed(temp_db: Database, user: str, kind: str, object_id: str) -> tuple[int, int]:
+    rows = await temp_db.fetch_all(_STORED_TIME, (user, kind, object_id))
+    return (int(rows[0]["permitted_ms"]), int(rows[0]["concealed_ms"])) if rows else (0, 0)
+
+
+async def test_the_stored_running_time_is_of_exactly_the_files_counted(
+    temp_db: Database, world: World, actors: Actors
+) -> None:
+    """A time written after the file was counted moves the sums, a Site adds a file once, the
+    vault holds back its share, and a file with no time adds nothing."""
+    admin = actors.admin.id
+    for asset, ms in ((world.solo, 1_000), (world.twin, 20_000)):
+        await temp_db.execute("UPDATE assets SET duration_ms = ? WHERE id = ?", (ms, asset))
+    await _nothing_differs(temp_db)
+    assert await _timed(temp_db, admin, "person", world.person) == (1_000, 0)
+
+    label = await _a_site(temp_db, "label")
+    for name in ("first", "second"):
+        username = await _a_username(temp_db, label, name)
+        await temp_db.execute(
+            "INSERT INTO asset_usernames (asset_id, username_id) VALUES (?, ?)",
+            (world.twin, username),
+        )
+    await _nothing_differs(temp_db)
+    assert await _timed(temp_db, admin, "site", label) == (20_000, 0)
+
+    await hide(temp_db, "asset", world.solo, admin)
+    await _nothing_differs(temp_db)
+    assert await _timed(temp_db, admin, "person", world.person) == (1_000, 1_000)
+
+    await temp_db.execute("UPDATE assets SET duration_ms = NULL WHERE id = ?", (world.solo,))
+    await _nothing_differs(temp_db)
+    assert await _timed(temp_db, admin, "person", world.person) == (0, 0)
+
+    mark = new_id()
+    await temp_db.execute("UPDATE assets SET duration_ms = 3000 WHERE id = ?", (world.solo,))
+    await temp_db.execute(_CUT_A_MARK, (mark, world.solo))
+    await _nothing_differs(temp_db)
+    assert await _timed(temp_db, admin, "loop", mark) == (0, 0)
+
+
+async def test_a_library_at_version_fourteen_is_given_its_running_times(
+    temp_db: Database, world: World, actors: Actors, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The version 15 step on a library with rows: the two columns added, every count given its
+    time from the stored rows, the triggers rewritten, and the verdict rows left as they were."""
+    await hide(temp_db, "asset", world.solo, actors.admin.id)
+    async with temp_db.write() as connection:
+        await visibility._drop_triggers(connection)
+        for column in ("permitted_ms", "concealed_ms"):
+            # Fixed names from the loop above: nothing from outside reaches the text.
+            # nosemgrep: sift-no-string-built-sql
+            await connection.execute(f"ALTER TABLE viewer_entity_counts DROP COLUMN {column}")
+    for asset, ms in ((world.solo, 7_000), (world.twin, 2_000)):
+        await temp_db.execute("UPDATE assets SET duration_ms = ? WHERE id = ?", (ms, asset))
+    stored = await temp_db.fetch_all("SELECT * FROM viewer_assets ORDER BY user_id, asset_id")
+
+    async def no_rebuild(_connection: object) -> None:
+        raise AssertionError("the step rebuilt the stored answers")
+
+    monkeypatch.setattr(visibility, "refresh_everything", no_rebuild)
+    for _ in range(2):
+        async with temp_db.write() as connection:
+            await visibility.initialize(connection, 14)
+    monkeypatch.undo()
+    after = await temp_db.fetch_all("SELECT * FROM viewer_assets ORDER BY user_id, asset_id")
+    assert [tuple(row) for row in after] == [tuple(row) for row in stored]
+    wanted = {name: visibility._body_of(ddl) for name, _t, ddl in visibility.triggers()}
+    assert _present(await temp_db.fetch_all(_VIS_TRIGGERS)) == wanted
+    await _nothing_differs(temp_db)
+    admin = actors.admin.id
+    assert await _timed(temp_db, admin, "person", world.person) == (7_000, 7_000)
+    assert await _timed(temp_db, admin, "folder", world.leaf) == (9_000, 7_000)
+    await temp_db.execute("UPDATE assets SET duration_ms = 9000 WHERE id = ?", (world.solo,))
+    await _nothing_differs(temp_db)

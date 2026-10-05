@@ -43,10 +43,8 @@ from typing import IO, Any
 
 _READ_CHUNK = 1 << 16  # 64 KiB per read
 
-# The most of a tool's stdout or stderr this keeps. `communicate()` would buffer all of it, so a
-# file that made a decoder emit gigabytes of JSON, or a run that spilled an endless error stream,
-# could exhaust memory. The captured streams are bounded; anything past the cap is read and thrown
-# away so the tool never blocks on a full pipe, but it is not held.
+# The most of a tool's stdout or stderr this keeps. Past the cap it is read and thrown away, so the
+# tool never blocks on a full pipe and an endless stream cannot exhaust memory.
 _MAX_OUTPUT_BYTES = 16 * 1024 * 1024
 
 
@@ -56,6 +54,24 @@ class SubprocessError(Exception):
     Distinct from a tool that ran and reported a failure: that comes back as a non-zero exit code
     for the caller to interpret. This is the process itself never producing one.
     """
+
+
+#: The statuses Windows ends a program with when it could not be started at all: a file it needs
+#: in use, a library missing, not a program for this machine, a library that would not initialise.
+_NEVER_STARTED = frozenset({0xC0000043, 0xC0000135, 0xC000007B, 0xC0000142})
+
+#: What a caller says of such a tool in place of the words it never wrote.
+NEVER_STARTED = "it couldn't start: a file it needs is in use or missing"
+
+
+def could_not_start(returncode: int) -> bool:
+    """Whether this exit status is Windows saying the program never started."""
+    return returncode & 0xFFFFFFFF in _NEVER_STARTED
+
+
+def unsaid(returncode: int) -> str:
+    """What to say of a tool that ended badly and wrote nothing."""
+    return NEVER_STARTED if could_not_start(returncode) else "no detail"
 
 
 @dataclass(frozen=True, slots=True)
@@ -68,22 +84,14 @@ class SubprocessResult:
 
 
 class Priority(StrEnum):
-    """How much of the machine a spawned tool is allowed to take.
+    """How much of the machine a spawned tool may take: whether anybody is waiting for it, not
+    how heavy it is.
 
-    The distinction is not how heavy the work is: it is whether anybody is waiting for it. A
-    segment being transcoded for someone watching and a scrub strip being built for nobody are the
-    same ffmpeg doing the same kind of work, and only one of them has a person looking at a spinner.
+    About the CHILD, not Sift's own threads: a thread cannot be put below its process, and the
+    heavy work all happens in children. The per-type job caps decide how much runs at once.
 
-    This is deliberately about the CHILD, not about Sift's own threads. A thread cannot be put below
-    the process it is in, so the in-process job workers stay at normal priority, which is right,
-    they only orchestrate. The heavy CPU and disk work all happens in these children, and a child
-    CAN be put below everything else, so that is where the setting belongs. The per-type job caps
-    are the other half of the same idea and remain unaffected: this decides how the machine shares
-    itself out between what is running, the caps decide how much runs at once.
-
-    On Windows the child is created in the below-normal priority class, which keeps foreground
-    work at its own pace for little encoding lost. Not the idle class: a busy foreground starves
-    it outright, and a library would never finish its pictures while a game ran.
+    On Windows a background child is created below normal, not idle: a busy foreground starves
+    the idle class outright, and a library would never finish its pictures while a game ran.
     """
 
     NORMAL = "normal"
@@ -94,14 +102,11 @@ class Priority(StrEnum):
     and takes as long as it takes, which for a thumbnail nobody has scrolled to is free."""
 
 
-#: How far below normal a background child is put on the processor. 19 is the largest value Linux
-#: takes and means "run when there is nothing better to do", which is exactly right here, because
-#: the alternative to a sprite sheet finishing later is playback stuttering now.
+#: How far below normal a background child is put on the processor: the most Linux takes.
 _BACKGROUND_NICE = "19"
 
-#: The idle disk-scheduling class. This is the half that matters most on a media library: the work
-#: is reading whole video files, and a background scan can make an unrelated read wait behind its
-#: queue no matter how low its processor share is. It needs no privileges to ask for.
+#: The idle disk-scheduling class, the half that matters most where the work is reading whole
+#: video files. It needs no privileges to ask for.
 _IDLE_IO_CLASS = "3"
 
 
@@ -113,28 +118,11 @@ _UNIX_PRIORITY_TOOLS = sys.platform != "win32"
 
 @cache
 def _priority_tools() -> tuple[str | None, str | None]:
-    """Where `nice` and `ionice` are on this machine, if they are anywhere.
+    """Where `nice` and `ionice` are on this machine, if they are anywhere. Looked up once.
 
-    Looked up once. Whether a binary exists cannot change while Sift runs, and this is asked on
-    every background child.
-
-    Either being missing is tolerated rather than fatal, and each is applied on its own. This is a
-    scheduling preference: a machine without `ionice` should still get the processor half, and a
-    build that refused to make thumbnails because a utility was absent would have turned a hint
-    into a dependency.
-
-    NOT LOOKED FOR AT ALL ON WINDOWS, and that is the important half. These are Unix tools, so
-    anything answering to those names there came from some other toolchain that happens to be on
-    PATH: Git for Windows ships a `nice.EXE`, and where that is installed `which` finds it. What
-    follows is not "the work runs at a lower priority": the prefix REPLACES the process that gets
-    launched, which is what the kill and the reaping below are aimed at, and a foreign build of a
-    Unix utility handed Windows arguments re-parses them: it eats the backslash escaping a comma
-    inside an ffmpeg filter, and every thumbnail fails with "No such filter": an error that names
-    the filtergraph and says nothing about a wrapper being in front of the tool.
-
-    Windows lowers priority by setting a class on the process at creation instead. See
-    `creation_flags`, which is the other half of `launch_prefix` and the only half that applies
-    there.
+    Either missing costs only its own half. Never looked for on Windows: Git for Windows ships a
+    `nice.EXE`, and a foreign `nice` re-parses ffmpeg's escaped filter arguments. Windows sets a
+    priority class at creation instead (`creation_flags`).
     """
     if not _UNIX_PRIORITY_TOOLS:
         return None, None
@@ -146,14 +134,8 @@ _BACKGROUND_CLASS = getattr(subprocess, "BELOW_NORMAL_PRIORITY_CLASS", 0)
 
 
 def creation_flags(priority: Priority) -> int:
-    """What a child is created with on Windows to run at `priority`. Zero everywhere else.
-
-    The Windows half of the pair `launch_prefix` is the Unix half of. Set at creation rather than
-    after it, so there is no moment in which the tool has started at full priority and no second
-    process for the kill and the reaping to be aimed at: the process that ends up running is the
-    tool itself, at the class it was asked for. Zero at normal priority, so the ordinary path is
-    byte-for-byte what it was.
-    """
+    """What a child is created with on Windows to run at `priority`, zero everywhere else. Given
+    at creation, so the tool never runs a moment at full priority."""
     if priority is not Priority.BACKGROUND or _UNIX_PRIORITY_TOOLS:
         return 0
     return _BACKGROUND_CLASS
@@ -374,48 +356,13 @@ async def run(
 ) -> SubprocessResult:
     """Run `argv` to completion and return its result. Raise `SubprocessError` if it will not run.
 
-    The arguments go to `create_subprocess_exec` as a list, so there is no shell and an argument is
-    only ever an argument. A run that exceeds `time_limit` is killed rather than waited on; a run
-    whose caller is cancelled while it is in flight is killed too, so nothing is left fetching or
-    decoding in the background after the work it belonged to was abandoned.
-
-    `capture_stdout` keeps stdout as bytes; when False it is sent to the void, for a tool run only
-    for its exit code. stderr is always captured, for the detail a failure leaves there.
-
-    `stdin` is bytes to hand the tool on its input, for the tools that are given data rather than a
-    filename. It is written and the input closed, so a tool waiting for more never hangs; without
-    it the input is closed immediately, because a tool started by a server has no business reading
-    the server's own.
-
-    `priority` decides how the machine shares itself out while this runs. See `Priority`, and one
-    consequence worth knowing: at background priority the thing actually launched is `nice`, which
-    then becomes the tool. So a tool that is not installed comes back as a non-zero exit with the
-    reason on stderr rather than as `SubprocessError`: `nice` started perfectly well, it was what
-    it was asked to become that did not exist. Both callers of this at that priority turn either
-    into the same failure, so nothing downstream can tell the two apart or needs to.
-
-    `on_line` is told each line of output as it arrives, for a tool that reports on itself while it
-    works. Everything else is unchanged: the output is still collected and still returned, still
-    bounded, and **stderr is untouched**, which matters, because a failure is read from stderr and
-    must not be affected by a caller elsewhere wanting progress from stdout.
-
-    Lines are split on carriage returns as well as newlines, for a tool that draws a progress bar;
-    see `_lines`.
-
-    `extra_env` is variables set for the tool ON TOP of Sift's own environment, never instead of
-    it, because a tool started with only what one caller thought of loses the PATH, the system root
-    and everything else it quietly needs. The download slice uses it to point a tool's temporary
-    directory into the download's own workspace.
-
-    **THE KILL TAKES THE WHOLE TREE ON WINDOWS.** A tool that is itself a launcher (a one-file
-    build unpacks itself and runs the real program as a CHILD) would lose only the launcher to a
-    kill, while the child went on downloading with nobody holding it. See `_contain`.
-
-    **The tool is started on a thread, and its pipes are read a piece at a time on threads of its
-    own (see `_collect`), so none of it holds the event loop.** The loop's own subprocess support runs
-    the operating system's process creation synchronously on the loop, which on Windows is not
-    cheap, and a probe is dozens of launches per file. From a thread a launch costs the loop
-    nothing at all.
+    A list, never a shell. Past `time_limit`, or when the caller is cancelled, the tool is killed,
+    on Windows with everything it started (`_contain`). `capture_stdout` False discards stdout;
+    stderr is always kept for a failure's detail. `stdin` is handed over and the input closed.
+    At background priority on Unix the launch is `nice`, so a missing tool is a non-zero exit, not
+    `SubprocessError`. `on_line` is told each line (split on carriage returns too) as it arrives.
+    `extra_env` is added to Sift's own environment, never instead of it. The launch and the reads
+    run on threads (`_collect`), because process creation on the loop would hold it.
     """
     process = await _spawn(
         argv, priority, stdin=stdin is not None, stdout=capture_stdout, extra_env=extra_env
@@ -497,16 +444,10 @@ async def _spawn(
 # signal reaches). yt-dlp and gallery-dl are the publishers' one-file builds: launchers that unpack a
 # Python runtime and run the real program as a child, so `process.kill()` on the launcher leaves the
 # child downloading with its pipes open and nothing in Sift holding it: cancelled, but not stopped.
-# A job object is the tool Windows gives for exactly this. Every process started by a process in a
-# job is in the job too, and a job made with `KILL_ON_JOB_CLOSE` ends everything still in it,
-# however deep, when its last handle closes. That is `_release` after every run (an ordinary exit,
-# a timeout and a cancellation alike) and also Sift itself exiting, crashed or not: the operating
-# system closes the handle then, and no tool outlives the process that started it.
-# One residual window, named rather than hidden: the tool is assigned to its job just AFTER it
-# starts, because `subprocess` offers no way in between. A child started in that instant would be
-# outside the job. A launcher spends it unpacking tens of megabytes before it starts anything, so
-# the window is far shorter than anything that could fall into it; closing it outright would mean
-# creating the tool suspended and resuming its thread by hand, which `subprocess` does not expose.
+# A job made with `KILL_ON_JOB_CLOSE` holds every process the tool starts and ends them all when its
+# last handle closes: `_release` after every run, or Sift itself exiting, crashed or not. The tool is
+# assigned just after it starts (`subprocess` offers no way in between), a window far shorter than
+# a launcher's unpacking.
 
 #: `JOBOBJECT_EXTENDED_LIMIT_INFORMATION.BasicLimitInformation.LimitFlags`: end every process in
 #: the job when the last handle to it closes.
@@ -577,6 +518,14 @@ def _job_api() -> Any:
     ]
     kernel32.TerminateJobObject.restype = wintypes.BOOL
     kernel32.TerminateJobObject.argtypes = [wintypes.HANDLE, wintypes.UINT]
+    kernel32.QueryInformationJobObject.restype = wintypes.BOOL
+    kernel32.QueryInformationJobObject.argtypes = [
+        wintypes.HANDLE,
+        ctypes.c_int,
+        ctypes.c_void_p,
+        wintypes.DWORD,
+        ctypes.c_void_p,
+    ]
     return kernel32
 
 
@@ -728,7 +677,11 @@ def _close_job(api: Any, job: int, key: int | None) -> None:
         if watch is not None:
             watch.forget(key)
     # Under the rate's lock, so `hold_background` never sets a rate on a handle closed beside it.
+    global _tools_ended
     with _RATE_LOCK:
+        if job in _LIVE_JOBS:
+            _LIVE_JOBS.discard(job)
+            _tools_ended += _job_time(api, job)
         api.CloseHandle(job)
 
 
@@ -843,6 +796,8 @@ def _contain(
         _close_job(api, job, key)
         return
     _JOBS[process] = weakref.finalize(process, _close_job, api, job, key)
+    with _RATE_LOCK:
+        _LIVE_JOBS.add(job)
     if background:
         # Registered and given the rate in force under one lock, so a rate moved at this moment
         # reaches this tool either way.
@@ -850,6 +805,82 @@ def _contain(
             _BACKGROUND.add(process)
             if _background_rate is not None:
                 _set_rate(api, job, _background_rate)
+
+
+# --- the processor time Sift's tools have used, for `kernel.device_load` ------------------------
+
+#: The job handles still open, read under `_RATE_LOCK` so none is closed while it is asked.
+_LIVE_JOBS: set[int] = set()
+#: Processor time of the tools whose jobs have closed, in 100 ns units.
+_tools_ended = 0
+#: `JOBOBJECT_BASIC_ACCOUNTING_INFORMATION` and `JOBOBJECT_BASIC_PROCESS_ID_LIST`.
+_ACCOUNTING = 1
+_PROCESS_IDS = 3
+#: How many process ids one tool's job is asked for: a tool and a helper or two.
+_IDS_ASKED = 32
+
+
+@cache
+def _job_records() -> tuple[Any, Any]:
+    """The two job records read back: basic accounting, and the process id list."""
+    import ctypes
+    from ctypes import wintypes
+
+    class Accounting(ctypes.Structure):
+        _fields_ = (
+            ("TotalUserTime", ctypes.c_int64),
+            ("TotalKernelTime", ctypes.c_int64),
+            ("ThisPeriodTotalUserTime", ctypes.c_int64),
+            ("ThisPeriodTotalKernelTime", ctypes.c_int64),
+            ("TotalPageFaultCount", wintypes.DWORD),
+            ("TotalProcesses", wintypes.DWORD),
+            ("ActiveProcesses", wintypes.DWORD),
+            ("TotalTerminatedProcesses", wintypes.DWORD),
+        )
+
+    class Ids(ctypes.Structure):
+        _fields_ = (
+            ("NumberOfAssignedProcesses", wintypes.DWORD),
+            ("NumberOfProcessIdsInList", wintypes.DWORD),
+            ("ProcessIdList", ctypes.c_size_t * _IDS_ASKED),
+        )
+
+    return Accounting, Ids
+
+
+def _job_time(api: Any, job: int) -> int:
+    """Every process's processor time in the job, ended ones included; 0 when unreadable."""
+    import ctypes
+
+    info = _job_records()[0]()
+    if not api.QueryInformationJobObject(
+        job, _ACCOUNTING, ctypes.byref(info), ctypes.sizeof(info), None
+    ):
+        return 0
+    return int(info.TotalUserTime + info.TotalKernelTime)
+
+
+def _job_ids(api: Any, job: int) -> list[int]:
+    """The ids of the processes in the job now, up to `_IDS_ASKED`."""
+    import ctypes
+
+    held = _job_records()[1]()
+    # A job with more processes than asked for fails the call but still fills the list it was given.
+    api.QueryInformationJobObject(job, _PROCESS_IDS, ctypes.byref(held), ctypes.sizeof(held), None)
+    listed = min(_IDS_ASKED, int(held.NumberOfProcessIdsInList))
+    return [int(one) for one in held.ProcessIdList[:listed]]
+
+
+def tools_time() -> tuple[int, frozenset[int]]:
+    """The processor time every tool has used, in 100 ns units, and the ids of those running."""
+    api = _job_api()
+    if api is None:
+        return 0, frozenset()
+    with _RATE_LOCK:
+        jobs = list(_LIVE_JOBS)
+        used = _tools_ended + sum(_job_time(api, job) for job in jobs)
+        ids = frozenset(one for job in jobs for one in _job_ids(api, job))
+    return used, ids
 
 
 def _release(process: subprocess.Popen[bytes]) -> None:
@@ -862,18 +893,9 @@ def _release(process: subprocess.Popen[bytes]) -> None:
 
 # --- a child that runs for as long as Sift does ---------------------------------------------------
 #
-# Everything above is for a tool that finishes: started, read to the end, reaped, its job closed. A
-# few children are the opposite (a tunnel client runs for as long as the tunnel is on, hours) and
-# need the same guarantee by another road: nothing reads them to the end, so nothing closes the job.
-# The job object gives the guarantee for free: made to kill on close, its only handle held by THIS
-# process, so when this process ends (an orderly stop, a crash, a hard kill, a restart) Windows
-# closes the handle and ends the child. A tunnel client outside any job would survive every hard
-# stop of Sift, holding its ports and VPN session, and the next boot would have to guess whose it was.
-# Off Windows this is a plain child and nothing is added. The Unix equivalent (a parent-death
-# signal) is Linux-only and fires when the THREAD that started the child exits rather than the
-# process, and these are started from a worker thread, which would end the child at once. A
-# container's children die with it anyway; a hard-killed Sift on a Linux or Mac desktop can still
-# leave one behind, and it is left alone rather than guessed about (see the tunnel client).
+# A child nothing reads to the end (a tunnel client) is held in a kill-on-close job whose only
+# handle is this process's, so Windows ends it however Sift stops. Off Windows it is a plain child:
+# a parent-death signal fires when the starting THREAD exits, which here is a worker thread.
 
 
 class LongLivedChild:
@@ -967,30 +989,9 @@ async def capture(
 ) -> bytes:
     """Run `argv` to completion in a thread and hand back everything it wrote, uncapped.
 
-    **This exists because of the output, not because of the launch.** `run` above keeps at most
-    `_MAX_OUTPUT_BYTES` and reads the rest into the void, which is right for a tool whose output is
-    a few lines of JSON and wrong for one whose output IS the work: a decoder asked for every frame
-    of a GIF at 1280 across produces hundreds of megabytes of raw colour, and taking the
-    first sixteen of them would hand back a shorter list of perfectly valid pictures with nothing
-    anywhere saying the rest were dropped. There is no cap here, so that cannot happen.
-
-    Running on a thread follows from that rather than the other way round: holding the whole output
-    means the caller waits for the end regardless, and a plain blocking read collects it without
-    the loop having to shuttle every chunk.
-
-    Anything that genuinely streams (a transcode feeding a player, a download being written as it
-    arrives) keeps `stream` below, which holds no thread at all.
-
-    **A thread here is held for the whole run of the tool**, which for a decode is minutes. That
-    is the one expensive property of this function, and it is why the reads behind a video have a
-    pool of their own that this cannot reach. See `sift.kernel.threads`.
-
-    A non-zero exit raises, the way the streaming version does. A decoder handed a file it cannot
-    open writes nothing and exits non-zero, and handing back an empty list instead would turn an
-    unreadable file into a file with nothing in it, which reads as a perfectly good answer.
-
-    stderr is discarded rather than captured: a caller that wanted the detail on a failure wants
-    `run`, and this one is for a tool whose output IS the answer.
+    For a tool whose output IS the work (every frame of a GIF), where `run`'s cap would silently
+    hand back a short answer. Holds a thread for the whole run. A non-zero exit raises, so an
+    unreadable file is not read as an empty one; stderr is discarded.
     """
 
     def go() -> bytes:
@@ -1223,30 +1224,9 @@ async def stream(
 ) -> AsyncGenerator[bytes]:
     """Run a tool and hand back its output in fixed-size pieces as it arrives.
 
-    The other runner in this module keeps a tool's output in memory, capped. That is right for
-    everything that reports (a probe's JSON, an error stream) and wrong for a tool whose output
-    IS the work: a decoder asked for sixty frames of a picture produces far more than the cap, and
-    what a cap does there is silently hand back a short answer rather than fail. Reading it in
-    pieces instead keeps memory at one piece, whatever the tool produces.
-
-    `frame_bytes` is how big each piece is. The caller knows it because it asked for output of a
-    fixed shape; a trailing part-piece (which is what a tool killed mid-write leaves) is
-    dropped rather than handed over as a piece with rubbish on the end.
-
-    The time limit covers the whole run, not each read: a tool that produces one piece a second for
-    an hour is working, and a tool that has produced nothing for an hour is not, and only the total
-    tells them apart here.
-
-    Declared as a generator rather than as a plain iterator because closing it is part of what this
-    offers: a caller that has seen enough closes it, and closing kills the tool. Without that it
-    carries on decoding into a pipe nobody is reading, which on a long file is minutes of work
-    nobody wanted.
-
-    This is the one runner that still launches on the loop, and it may: what streams is work a
-    person is waiting on, one tool at a time, and the loop's own pipes are what make handing the
-    pieces over as they arrive cheap. The launch holds the loop once per tool. `run` above is
-    launched from a thread because it is called dozens of times per file across a whole library;
-    this one is not.
+    Memory stays at one piece of `frame_bytes`; a trailing part-piece is dropped. The time limit
+    covers the whole run. Closing the generator kills the tool. It launches on the loop, once per
+    tool, because what streams is one tool a person is waiting on.
     """
     process, held = await _launch_streaming(argv, priority, stdin=stdin)
     feeding = asyncio.ensure_future(_pump(process, stdin))

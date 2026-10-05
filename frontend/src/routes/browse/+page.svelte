@@ -12,7 +12,8 @@
 	 */
 	import { onMount } from 'svelte';
 	import { ANCHOR } from '$lib/grid/anchor';
-	import { bareWord, questionIn } from './question';
+	import { bareWord, cleared, filteredBy, questionIn } from './question';
+	import { clearWallSays, emptyWallSays } from '$lib/components/shell/wall-words';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import AssetGrid from '$lib/components/AssetGrid.svelte';
@@ -269,7 +270,13 @@
 
 	/* The strip belongs on the unfiltered library and nowhere else. Under a filtered view it would
 	 * be a row of things that do not match what was asked for, sitting above the things that do. */
-	const filtered = $derived(Object.keys(query).length > 0);
+	const typedWords = $derived((query.q ?? '').trim());
+	const filters = $derived(filteredBy(query));
+	const filtered = $derived(typedWords !== '' || filters);
+	const clearedTo = $derived.by(() => {
+		const kept = `${cleared(page.url.searchParams, { words: typedWords !== '', filters }, [EXPLORER])}`;
+		return kept ? `/browse?${kept}` : '/browse';
+	});
 
 	/*
 	 * WHETHER THE LIBRARY HAS NEVER BEEN READ, which is not "this page came back empty".
@@ -495,7 +502,7 @@
 			: unread
 				? "Sift has your folders and hasn't read them yet."
 				: filtered
-					? 'Nothing here matches.'
+					? emptyWallSays('files', typedWords, filters, 'Nothing here matches.')
 					: folderless
 						? 'Sift has no folders yet. Add one and its files will appear here.'
 						: session.isAdmin
@@ -542,9 +549,8 @@
      passed whatever the condition beside it says, so the offer would appear on a library that has
      no folders to scan. -->
 {#snippet clearSearch()}
-	<!-- The one action that ends a filtered wall with nothing on it: the address without its
-	     filters is the whole of Browse again. -->
-	<Button onclick={() => void goto('/browse')}>Clear the search</Button>
+	<!-- Clears what its words name; the order and the rest of the address stay. -->
+	<Button onclick={() => void goto(clearedTo)}>{clearWallSays(typedWords, filters)}</Button>
 {/snippet}
 
 {#snippet addFirstFolder()}

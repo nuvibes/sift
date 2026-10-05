@@ -1,15 +1,5 @@
-/* The tab set six entity pages share, and the filtering each tab sends.
- *
- * This module is small and every part of it is a rule that is wrong in a way nothing else would
- * notice. A tab that lists its own kind reads as a page linking to itself. A person's "Seen with"
- * wall filtered by `person` rather than `with_person` comes back holding that person, so the wall
- * that exists to say who ELSE turns up opens with them at the front. A tab whose address carries
- * `?show=` for the wall that is the plain page makes the back button step through two addresses
- * for one screen.
- *
- * None of those fails anywhere else: they are addresses and query parameters, and a screen built
- * from a wrong one draws perfectly and answers the wrong question.
- */
+/* The tab set six entity pages share, and the filtering each tab sends: addresses and query
+ * parameters, which draw perfectly when wrong and answer the wrong question. */
 
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -20,6 +10,8 @@ import {
 	kindOf,
 	loadRelated,
 	narrowingFor,
+	ordersFor,
+	tabSort,
 	iconOf,
 	pageOf,
 	relatedHref,
@@ -359,6 +351,38 @@ describe('the narrowing a wall is asked for', () => {
 
 		expect(answered.items).toEqual([]);
 		expect(answered.total).toBe(0);
+	});
+});
+
+describe('a tab searched and ordered', () => {
+	it('asks the words anywhere in the name, and nothing of the kind with none', async () => {
+		await loadRelated('person', 'p1', 'tags', { words: 'bea' });
+		expect(mocked.get.mock.calls[0][1]?.query).toMatchObject({ prefix: 'bea', anywhere: 'true' });
+
+		await loadRelated('person', 'p1', 'tags');
+		expect(mocked.get.mock.calls[1][1]?.query).not.toHaveProperty('prefix');
+		expect(mocked.get.mock.calls[1][1]?.query).not.toHaveProperty('anywhere');
+	});
+
+	it('asks for the order chosen', async () => {
+		await loadRelated('person', 'p1', 'sites', { sort: 'name_az' });
+		expect(mocked.get.mock.calls[0][1]?.query).toMatchObject({ sort: 'name_az' });
+	});
+
+	it("offers a tab its wall's orders, and a Music tab the order by artist besides", () => {
+		const tags = ordersFor('tags').map((one) => one.value);
+		expect(tags).toEqual(expect.arrayContaining(['largest', 'largest_total', 'name_az', 'rating']));
+		expect(tags).not.toContain('artist');
+		expect(ordersFor('songs').map((one) => one.value)).toContain('artist');
+	});
+
+	it('remembers one order per wall, refusing one the wall does not offer', () => {
+		expect(tabSort('tags').value).toBe('largest');
+		tabSort('tags').set('name_za');
+		expect(tabSort('tags_within').value).toBe('name_za');
+		expect(tabSort('people').value).toBe('largest');
+		tabSort('people').set('artist');
+		expect(tabSort('people').value).toBe('largest');
 	});
 });
 

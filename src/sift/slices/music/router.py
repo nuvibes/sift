@@ -130,10 +130,10 @@ class LookupState(Wire):
     #: press of the lookup task on Settings > Tasks (`LookupStarter.owed`). Nought while the lookup
     #: is off or has no key.
     owed: int = 0
-    #: How many files AcoustID was asked about and did not know (`LookupStarter.not_known`): asked
-    #: and answered, so never asked again by the lookup's own press and never counted in `owed`.
+    #: How many files AcoustID did not know, counted as Ask again counts (a file set to Don't
+    #: enrich left out) and never counted in `owed`.
     not_known: int = 0
-    #: How many of those a press of Ask again would ask about now (`LookupStarter.asks_again`):
+    #: How many of those a press of Ask again would ask about now (`LookupStarter.plan_again`):
     #: last asked more than `ask_again_after_days` ago and still with no song. Nought while the
     #: lookup is off or has no key.
     ask_again: int = 0
@@ -184,12 +184,13 @@ def _starter(request: Request) -> LookupStarter:
 
 async def _state(lookup: LookupSettings, starter: LookupStarter, key: bytes | None) -> LookupState:
     """What every one of these routes answers with: the settings, and the count beside the press."""
+    again = await starter.plan_again()
     return LookupState.model_validate(
         {
             **await lookup.state(key),
             "owed": await starter.owed(),
-            "not_known": await starter.not_known(),
-            "ask_again": await starter.asks_again(),
+            "not_known": again.not_known,
+            "ask_again": again.files,
             "ready": await starter.cannot_run() is None,
         }
     )

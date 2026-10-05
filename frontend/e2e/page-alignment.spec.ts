@@ -1,4 +1,4 @@
-import { expect, test, type Locator } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 import { SIZE_STEPS } from '../src/lib/grid/justify';
 import { signInAsAdmin } from './admin';
 
@@ -681,17 +681,15 @@ test('pointing at a link does not change the page you are on', async ({ page }) 
 /*
  * THE TRAIL ON THE TOP BAR, AND ONE FIRST LINE FOR EVERY SCREEN.
  *
- * On a desk the breadcrumbs stand in the top bar, on the search box's line, and no band above a
- * screen's header pushes it down: a title with a trail stands exactly where a title without one
- * does, and both stand where Theater's does (a screen with no frame, which insets its own title by
- * the page's inset). `PageFrame.svelte` says so in those words; this checks it, because the test
- * above measures TOP-LEVEL pages and not one of them has a trail.
+ * On a desk the breadcrumbs stand in the top bar, so a title with a trail stands where one without
+ * does, and both where Theater's does. Where the screen's own row is drawn (the menus moved off the
+ * top bar) the title stands lower by that row's height and nothing else, and it is not carried
+ * down as the row arrives: the row is the menus' place at that width.
  */
 test('a trail leaves the title exactly where an untrailed one and Theater sit', async ({
 	page
 }) => {
 	await signInAsAdmin(page);
-	await page.setViewportSize({ width: 1400, height: 900 });
 
 	/* The person has to be answered or the page draws "not found" and has no title to measure. The
 	   rest of what that screen reads is left to the real server: empty answers still draw a header,
@@ -713,48 +711,86 @@ test('a trail leaves the title exactly where an untrailed one and Theater sit', 
 		})
 	);
 
-	/**
-	 * Where this screen's title sits inside `main`, and whether a trail stands on the top bar.
-	 *
-	 * WHERE THE WORD STARTS, not where the element's box starts: a padded box would read its
-	 * padding as a shift.
-	 */
-	const textEdge = (where: Locator) =>
-		where.evaluate((element) => {
-			const box = element.getBoundingClientRect();
-			return box.x + (parseFloat(getComputedStyle(element).paddingInlineStart) || 0);
-		});
+	/* Every line the title stands on, frame by frame from the first paint. */
+	await page.addInitScript(() => {
+		const lines: number[] = [];
+		Object.assign(window, { titleLines: lines });
+		const look = () => {
+			const title = document.querySelector('main h1');
+			const y = title ? Math.round(title.getBoundingClientRect().top) : null;
+			if (y !== null && y !== lines.at(-1)) lines.push(y);
+			requestAnimationFrame(look);
+		};
+		requestAnimationFrame(look);
+	});
 
+	/* Read in one frame once the layout is still: two boxes read apart can straddle a row arriving. */
 	async function measure(path: string) {
 		await page.goto(path);
-		const title = page.getByRole('heading', { level: 1 }).first();
-		await title.waitFor();
-		const box = (await title.boundingBox())!;
-		const main = (await page.locator('main').boundingBox())!;
-		const trail = page.locator('header.topbar nav[aria-label="Breadcrumb"] a').first();
+		await page.getByRole('heading', { level: 1 }).first().waitFor();
+		const at = await page.evaluate(async () => {
+			const frame = () => new Promise<number>((done) => requestAnimationFrame(done));
+			const row = document.querySelector('.screenbar')!;
+			const top = (selector: string) => document.querySelector(selector)!.getBoundingClientRect();
+			let still = 0;
+			let last = Number.NaN;
+			for (let i = 0; i < 600 && still < 12; i++) {
+				await frame();
+				const now = top('main h1').top;
+				still = now === last && row.getAnimations({ subtree: true }).length === 0 ? still + 1 : 0;
+				last = now;
+			}
+			return {
+				title: top('main h1').top,
+				main: top('main').top,
+				row: row.getBoundingClientRect().height,
+				lines: (window as unknown as { titleLines: number[] }).titleLines
+			};
+		});
 		return {
-			y: Math.round(box.y - main.y),
-			x: Math.round((await textEdge(title)) - main.x),
-			inBar: (await trail.count()) > 0,
+			inMain: Math.round(at.title - at.main),
+			fromTop: Math.round(at.title),
+			row: Math.round(at.row),
+			lines: at.lines,
+			inBar: (await page.locator('header.topbar nav[aria-label="Breadcrumb"] a').count()) > 0,
 			banded: (await page.locator('.frame-trail').count()) > 0
 		};
 	}
 
-	const bare = await measure('/people');
-	expect(bare.inBar, 'a top-level wall drew a trail, which it has nowhere to go from').toBe(false);
+	/* 1400: only Theater's menus leave the top bar. 1024: every screen's do. */
+	for (const [width, height] of [
+		[1400, 900],
+		[1024, 768]
+	]) {
+		await page.setViewportSize({ width, height });
+		const bare = await measure('/people');
+		expect(bare.inBar, 'a top-level wall drew a trail, which it has nowhere to go from').toBe(
+			false
+		);
 
-	const trailed = await measure('/people/p1');
-	expect(trailed.inBar, 'a person page drew no trail on the top bar').toBe(true);
-	expect(trailed.banded, 'a desk frame drew a trail band of its own').toBe(false);
+		const trailed = await measure('/people/p1');
+		/* At 1024 with the sidebar open the trail has folded to its press, which is not a link. */
+		if (width === 1400)
+			expect(trailed.inBar, 'a person page drew no trail on the top bar').toBe(true);
+		expect(trailed.banded, 'a desk frame drew a trail band of its own').toBe(false);
 
-	const theater = await measure('/theater');
+		const theater = await measure('/theater');
 
-	expect(
-		Math.abs(trailed.y - bare.y),
-		`the trail moved the title down: ${JSON.stringify({ bare, trailed })}`
-	).toBeLessThanOrEqual(2);
-	expect(
-		Math.abs(theater.y - bare.y),
-		`a framed title and Theater's stand on different lines: ${JSON.stringify({ bare, theater })}`
-	).toBeLessThanOrEqual(2);
+		for (const [name, one] of Object.entries({ bare, trailed, theater })) {
+			const seen = JSON.stringify({ width, bare, [name]: one });
+			expect(
+				Math.abs(one.inMain - bare.inMain),
+				`${name}'s title is off the line: ${seen}`
+			).toBeLessThanOrEqual(2);
+			expect(
+				Math.abs(one.fromTop - bare.fromTop - (one.row - bare.row)),
+				`${name}'s title moved by more than the screen's row: ${seen}`
+			).toBeLessThanOrEqual(2);
+			/* The line before the menus' home is known, and the line under the row: never between. */
+			expect(
+				one.lines.length,
+				`${name}'s title slid as the row came in: ${seen}`
+			).toBeLessThanOrEqual(2);
+		}
+	}
 });

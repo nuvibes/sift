@@ -74,6 +74,7 @@ vi.mock('$lib/api/client', () => ({
 vi.mock('$lib/shell/session.svelte', () => ({ session: { isAdmin: true } }));
 
 const FilterBar = (await import('./FilterBar.svelte')).default;
+const { goto } = await import('$app/navigation');
 const { api } = await import('$lib/api/client');
 const { screenBar, FILTERS_PANEL, PHONE_SHEET } = await import('./screen-bar.svelte');
 const { phoneWidth } = await import('$lib/components/common/phone-width.svelte');
@@ -346,6 +347,26 @@ describe('one chip per value', () => {
 		host?.querySelectorAll<HTMLElement>('.filters .chip .body')[1]?.click();
 		flushSync();
 		expect(tagsIn(held.gone[0])).toEqual(['runway', '-Edited']);
+	});
+
+	it('refuses a value where its facet stood, ahead of the facets after it', () => {
+		draw('?tags=a|b&people=c');
+		host?.querySelector<HTMLElement>('.filters .chip .body')?.click();
+		flushSync();
+		expect([...new URL(held.gone[0], 'http://x').searchParams]).toEqual([
+			['tags', 'b'],
+			['tags', '-a'],
+			['people', 'c']
+		]);
+		expect(vi.mocked(goto).mock.lastCall?.[1]).toEqual({ keepFocus: true });
+	});
+
+	it('says a presence filter whole, and a press swaps Has for No', () => {
+		draw('?tags=any');
+		expect(barChips()).toEqual(['tags: Has tags']);
+		host?.querySelector<HTMLElement>('.filters .chip .body')?.click();
+		flushSync();
+		expect(tagsIn(held.gone[0])).toEqual(['none']);
 	});
 
 	it('keeps a value refused on its own when any-or-all is switched', () => {
@@ -1271,6 +1292,49 @@ describe('a chip naming a thing by its id', () => {
 
 		expect(vi.mocked(api.get).mock.calls.some(([path]) => path === `/sites/${NETWORK}`)).toBe(true);
 		expect(barChips()).toEqual(['Network: Harbour Network']);
+	});
+});
+
+describe('a chip on a wall of files naming a thing by its id', () => {
+	async function drawnWith(at: string, answer: (path: string) => unknown) {
+		const usual = vi.mocked(api.get).getMockImplementation()!;
+		vi.mocked(api.get).mockImplementation(async (path, options) => {
+			const said = answer(path);
+			return said === undefined ? usual(path, options) : (said as never);
+		});
+		try {
+			draw(at);
+			for (let turn = 0; turn < 4; turn += 1) await Promise.resolve();
+			flushSync();
+			return barChips().join(' ');
+		} finally {
+			vi.mocked(api.get).mockImplementation(usual);
+		}
+	}
+
+	it.each([
+		['people', '/people/', '01ARZ3NDEKTSV4RRFFQ69G5FC0'],
+		['tags', '/tags/', '01ARZ3NDEKTSV4RRFFQ69G5FC1'],
+		['sites', '/sites/', '01ARZ3NDEKTSV4RRFFQ69G5FC2'],
+		['collections', '/collections/', '01ARZ3NDEKTSV4RRFFQ69G5FC3'],
+		['photo_sets', '/photo-sets/', '01ARZ3NDEKTSV4RRFFQ69G5FC4'],
+		['songs', '/songs/', '01ARZ3NDEKTSV4RRFFQ69G5FC5']
+	])('draws %s by the name its own read gives', async (facet, read, id) => {
+		const chips = await drawnWith(`?${facet}=${id}`, (path) =>
+			path === `${read}${id}` ? { name: 'Esme Wrenfield' } : undefined
+		);
+		expect(chips).toContain('Esme Wrenfield');
+		expect(chips).not.toContain(id);
+	});
+
+	it('says a thing whose read answers 404 no longer exists', async () => {
+		const GONE = '01ARZ3NDEKTSV4RRFFQ69G5FC6';
+		const chips = await drawnWith(`?people=${GONE}`, (path) => {
+			if (path === `/people/${GONE}`) throw Object.assign(new Error('gone'), { status: 404 });
+			return undefined;
+		});
+		expect(chips).toContain('a person who no longer exists');
+		expect(chips).not.toContain(GONE);
 	});
 });
 

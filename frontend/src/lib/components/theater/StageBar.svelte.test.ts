@@ -6,15 +6,7 @@ import StageBar from './StageBar.svelte';
 import stageBarSource from './StageBar.svelte?raw';
 import { applyStyles, removeStyles } from '$lib/design/testing-styles';
 
-/*
- * The bar a filled screen rises from the bottom edge, and the three states it has.
- *
- * A shared primitive. What is worth pinning is not how it looks
- * (a computed style can answer that) but the difference between the two ways it can be away.
- * Shut, it draws nothing at all rather than an empty strip; quiet, it is still mounted and faded,
- * and it must be UNREACHABLE while it is, or the screen has an invisible row of buttons across it
- * that the keyboard can still get to and a screen reader still announces.
- */
+/* The bar a filled screen rises from: shut draws nothing, and quiet is mounted but unreachable. */
 
 const words = (text: string) => createRawSnippet(() => ({ render: () => `<span>${text}</span>` }));
 
@@ -81,16 +73,20 @@ it('is reachable again the moment it is not quiet', () => {
 	draw({});
 
 	const bar = host.querySelector('.stage-bar');
-	/* Falsy rather than `false`: jsdom does not implement `inert` at all, so the property is only
-	   there because the component set it, and not setting it leaves `undefined`, which is the
-	   right answer here and is not the same value. The test above is the one that binds. */
+	// Falsy: jsdom has no `inert`, so an unset one reads `undefined`.
 	expect((bar as HTMLElement).inert).toBeFalsy();
 	expect(bar?.getAttribute('aria-hidden')).toBe('false');
 });
 
+it('is visible at once on the way up, so the Tab that raises it can enter it', () => {
+	const source = stageBarSource.replace(/\t/g, '');
+	expect(source, 'the bar stayed hidden while it faded in').toContain(
+		'transition:\ntranslate var(--dur-slow) var(--ease),\nopacity var(--dur-slow) var(--ease);\n}'
+	);
+	expect(source).toContain('visibility var(--dur-slow) var(--ease-in);');
+});
+
 it('puts the picker before the controls, because they are read in that order', () => {
-	// "Do this" after "to what". A bar that put them the other way round would be answering the
-	// second question first.
 	draw({ lead: words('cell two') });
 
 	// The scope hash rides on every class here, so the names are read off the front of each.
@@ -135,5 +131,23 @@ it('stands the picker in the transport row, which the controls share', () => {
 	const controls = host.querySelector('.controls') as HTMLElement;
 	expect(getComputedStyle(controls).gridTemplateRows).toBe('subgrid');
 	expect(getComputedStyle(controls).gridRow).toBe('1 / -1');
+	removeStyles();
+});
+
+/* Content-width columns, so the space either side of the transport is the one gap whatever the
+   picker holds; a phone's row is the shared bar's own. */
+it('gives the transport the same gap on both sides', () => {
+	const row = createRawSnippet(() => ({
+		render: () =>
+			'<div class="bar player-bar"><div class="row"></div><div class="row phone"></div></div>'
+	}));
+	draw({ children: row });
+	applyStyles(stageBarSource, host.querySelector('.stage-bar'));
+	const [wide, phone] = [...host.querySelectorAll('.row')] as HTMLElement[];
+	expect(getComputedStyle(wide).gridTemplateColumns).toBe(
+		'minmax(0, max-content) auto minmax(0, max-content)'
+	);
+	expect(getComputedStyle(wide).columnGap).toBe('var(--space-4)');
+	expect(getComputedStyle(phone).gridTemplateColumns).not.toContain('max-content');
 	removeStyles();
 });

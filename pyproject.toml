@@ -1,7 +1,7 @@
 [project]
 name = "sift"
 version = "0.2.0"
-description = "A self-hosted media browser and downloader"
+description = "Sift is a feature-rich, intelligent media manager that lets you browse, download, watch, and organize your content."
 readme = "README.md"
 license = "AGPL-3.0-or-later"
 license-files = ["LICENSE", "NOTICE"]

@@ -187,7 +187,7 @@ class FilterCompiler:
         described = await self.constrain(viewer, raw, match_text=False)
 
         async def ask(reach: int) -> tuple[AssetFilter, int] | None:
-            neighbours = await semantic.neighbours(words, limit=reach)
+            neighbours = await semantic.neighbours(words, limit=reach, asker=viewer)
             if neighbours is None:
                 return None
             return _with_neighbours(described, neighbours), len(neighbours)
@@ -278,7 +278,9 @@ class FilterCompiler:
             ):
                 found[value] = ()
                 continue
-            found[value] = tuple(await self._semantic.lookalikes(subject, limit=reach))
+            found[value] = tuple(
+                await self._semantic.lookalikes(subject, limit=reach, asker=viewer)
+            )
         return found
 
     # --- resolving names ---------------------------------------------------------------------

@@ -82,7 +82,8 @@ from sift.kernel.access.history import (
 # about which user may be named. Written again here they would be two accounts of one thing, and
 # the way that fails is silent: a person's page would go on offering an Undo the workbench had
 # already learnt to refuse, or stop naming a user the file's page still names.
-from sift.kernel.access.history_boxes import linked_line
+from sift.kernel.access.history_boxes import linked_line, unshown_said
+from sift.kernel.access.history_entity import NAMES_A_FILE
 from sift.kernel.access.history_events import NOTHING_HIDDEN, verdict_of
 from sift.kernel.access.history_folds import (
     NO_RECEIPT,
@@ -294,8 +295,7 @@ SELECT b.name AS box, l.box_id AS box_id, l.fetched_at AS at,
 #: lands here, and read straight out, an event would draw as a bulk judgement with an Undo on it:
 #: a person's own arrival a second time on their thread, settled at a workbench nobody went to,
 #: offering a button the workbench refuses because an event under `LEDGER_QUEUE` belongs to no queue
-#: and has no reverser. The word is
-#: reserved so that no queue may claim it, which makes this exclusion exact rather than a guess. An
+#: and has no reverser. The word is reserved so that no queue may claim it: the exclusion is exact. An
 #: event that carries a RECEIPT is written under that receipt's own queue and still draws, which is
 #: right: it is a decision and it can be taken back.
 #:
@@ -316,9 +316,11 @@ SELECT d.id AS id, d.title AS title, d.queue AS queue, d.user_id AS user_id,
   FROM workbench_decision_subjects s
   JOIN workbench_decisions d ON d.id = s.decision_id
  WHERE s.kind = 'person' AND s.subject_id = :subject AND d.queue <> :ledger
+{{NAMES_A_FILE}}
 {{NOTHING_HIDDEN}}
  ORDER BY d.decided_at ASC, d.id ASC
 """,
+    NAMES_A_FILE=NAMES_A_FILE,
     NOTHING_HIDDEN=NOTHING_HIDDEN,
 )
 
@@ -436,14 +438,15 @@ async def history_of_person(
         await _person_named_events(database, viewer, access, person_id, present, seen, cards)
     )
     events.extend(await _person_face_answers(database, person_id, here, seen))
-    # Kept apart until the ledger is read: a box whose presses the ledger draws one by one does not
-    # also get the link table's latest-run line. See `history.runs_not_drawn`.
+    # Held until the ledger is read: a box it draws press by press loses its latest-run line.
     linked: list[Event] = []
     if {"person_stash_box_links", "stash_boxes"} <= here:
         for row in await database.fetch_all(_LINKED, (person_id,)):
             # "their": the one word this sentence differs by between a person's thread and an
             # entity's (see `history_boxes.thing_linked`).
-            linked.append(await linked_line(database, Subject.PERSON, person_id, row, "their"))
+            linked.append(
+                await linked_line(database, Subject.PERSON, person_id, row, "their", viewer)
+            )
     events.extend(await _person_runs(database, person_id, here, seen))
     ledger = await _person_ledger(
         database, viewer, person_id, person, kept=kept, box_said=bool(linked)
@@ -452,12 +455,11 @@ async def history_of_person(
     events.extend(ledger)
     # A stash-box answer kept and the receipt of that press are one line (`one_line_per_kept`).
     events = one_line_per_kept(events)
-    # And a Yes or a No and its receipt are one line (`one_line_per_face_answer`): a day's line
-    # that the receipts account for only in part is said again for the faces they do not.
+    # A Yes or a No and its receipt are one line; a day's line the receipts only partly account
+    # for is said again for the rest (`one_line_per_face_answer`).
     events = one_line_per_face_answer(events, reword=_faces_left)
 
-    events = ordered(events)
-    return events[-kept:]
+    return await unshown_said(database, access, viewer, ordered(events)[-kept:])
 
 
 async def _person_added(
@@ -690,14 +692,12 @@ async def _the_one_folder(
         return None
     folder_id = str(answered[0]["id"])
     path, name = str(answered[0]["path"]), str(answered[0]["name"])
-    if not path:
-        return folder_id, name
     if access is None:
         return None
     seen = await _folders_seen(access, viewer)
     if folder_said(path, seen=seen.get(str(answered[0]["root_id"]), frozenset())) != path:
         return None
-    return folder_id, path
+    return folder_id, path or name
 
 
 def _faces_agreed(person_id: str, faces: int) -> Line:

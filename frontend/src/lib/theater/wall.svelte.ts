@@ -11,6 +11,8 @@ import { TheaterSession, type WallFacts } from './session';
    only it knows which wall is its own. */
 import { fetchSettingValues, onSettingsSaved } from '$lib/settings-ui/settings';
 import { vault } from '$lib/shell/vault.svelte';
+import { session as signedIn } from '$lib/shell/session.svelte';
+import { storeWall, takeStoredWall, type KeptWall } from './kept';
 import { loudness } from '$lib/player/loudness.svelte';
 import type { InsidePiece } from '$lib/player/inside';
 import {
@@ -42,34 +44,17 @@ import {
 const LAYOUT_KEY = 'theater.layout';
 const AUTOPLAY_KEY = 'theater.autoplay';
 const TIMER_KEY = 'theater.timer_seconds';
-/* Which of Center Stage's two modes this account is in: `pick`, where a preview comes up when it is
-   pressed, or `newest`, where a preview that starts something new comes up on its own. */
+/* Center Stage's two modes: `pick`, a preview comes up when it is double-clicked, or `newest`, it
+   comes up on its own when it starts something new. */
 const CENTER_STAGE_KEY = 'theater.center_stage';
 /* Whether leaving Theater keeps the wall for the way back. See `KeptWall`. */
 const RESUME_KEY = 'theater.resume';
 
-/*
- * How loud the ordinary player is set to, which is what a cell opens at: the same preference, not
- * a second one. Read with the wall's one preferences round trip and handed to `loudness`, and
- * applied while a cell is still muted, since it is what the sound comes back at.
- */
+/* The ordinary player's volume, which a cell opens at: one preference, not a second. */
 const PLAYER_VOLUME_KEY = 'playback.volume';
 
 /** How long the marks on the audible cell stay lit after the sound last moved. */
 export const AUDIBLE_MARK_MS = 4000;
-
-/**
- * A wall put away when Theater was left, taken up again on the way back. In memory only: a restart
- * or a reload begins a new wall. The saved-wall shape (`preset`), plus each cell's file, place and
- * shuffle.
- */
-interface KeptWall {
-	preset: { layout: string; shape: StoredShape; strip: number; cells: SavedCell[] };
-	playing: ({ file: Playable; at: number; seed: number | null } | null)[];
-	focused: number;
-	/* Whether the vault was open. A wall kept over an open vault is not taken up once it has shut. */
-	vaultOpen: boolean;
-}
 
 export class Wall {
 	/**
@@ -231,13 +216,7 @@ export class Wall {
 	 */
 	toggleMaster(): void {
 		this.masterMuted = !this.masterMuted;
-		/*
-		 * LETTING IT BACK UNMUTES EVERY CELL, which is what "unmute all" means.
-		 *
-		 * Every cell starts muted on its own, so touching only the wall's flag would leave silence.
-		 * Keeping some cells' own mutes would make one control do two things on state nobody sees.
-		 * Silencing writes nothing into the cells, as `togglePause` does not.
-		 */
+		// Letting it back unmutes every cell, since each starts muted; silencing writes nothing.
 		if (!this.masterMuted) {
 			// The operating system is told about one: the cell the keyboard is on.
 			this.audible ??= this.focused;
@@ -324,10 +303,14 @@ export class Wall {
 		this.solo(index);
 	}
 
+	/** The wall place last in focus, where a preview brought up lands once a press chose the preview. */
+	#lastPlace = 0;
+
 	/** Move the keyboard to a cell without touching the sound. */
 	focus(index: number): void {
 		if (index < 0 || index >= this.cells.length) return;
 		this.focused = index;
+		if (index < this.shape.slots.length) this.#lastPlace = index;
 		this.everyCell = false;
 		this.keyed = true;
 	}
@@ -502,7 +485,7 @@ export class Wall {
 
 	/**
 	 * Whether a preview that starts a new file takes the focus place by itself: the two modes of
-	 * Center Stage, a wall you drive and a wall of the freshest. A press promotes in both.
+	 * Center Stage, a wall you drive and a wall of the freshest. A double press promotes in both.
 	 */
 	newestTakesFocus = $state(false);
 
@@ -575,12 +558,14 @@ export class Wall {
 	 * Bring a preview up into the focus half, and send what was there down in its place.
 	 *
 	 * A SWAP of sources, not of cells: the strip and the grid are different parents, so a moved
-	 * picture would rebuild its element anyway. It lands where the keyboard is, or the first place
-	 * when the whole wall is addressed or the focus is a preview.
+	 * picture would rebuild its element anyway. It lands on the wall place last in focus, or the
+	 * first place when the whole wall is addressed.
 	 */
 	sendToFocus(index: number): void {
 		if (!this.isPreview(index)) return;
-		const place = !this.everyCell && this.focused < this.shape.slots.length ? this.focused : 0;
+		const places = this.shape.slots.length;
+		const last = this.focused < places ? this.focused : this.#lastPlace;
+		const place = !this.everyCell && last < places ? last : 0;
 		const preview = this.at(index);
 		const big = this.at(place);
 		if (preview === undefined || big === undefined) return;
@@ -654,7 +639,9 @@ export class Wall {
 		return {
 			preset: this.preset,
 			playing: this.cells.map((cell) =>
-				cell.playing === null ? null : { file: cell.playing, at: cell.position, seed: cell.seed }
+				cell.playing === null
+					? null
+					: { id: cell.playing.id, file: cell.playing, at: cell.position, seed: cell.seed }
 			),
 			focused: this.focused,
 			vaultOpen: vault.unlocked
@@ -677,7 +664,9 @@ export class Wall {
 		kept.preset.cells.slice(0, wanted.length).forEach((saved, at) => {
 			const was = kept.playing[at] ?? null;
 			const cell = wanted[at];
-			void cell.takeOver(saved, was?.file ?? null, was?.at ?? 0);
+			// A wall read back from the tab's storage has only ids, so each cell asks for its file.
+			if (was !== null && was.file === undefined) void cell.resumeOn(saved, was.id, was.at);
+			else void cell.takeOver(saved, was?.file ?? null, was?.at ?? 0);
 			// The same shuffle carries on past the file on screen, rather than a fresh one.
 			if (was !== null && was.seed !== null && cell.sort === RANDOM) cell.seed = was.seed;
 		});
@@ -778,14 +767,8 @@ export class Wall {
 	}
 
 	/*
-	 * ARRIVING FROM NOTHING: each cell opens somewhere else in the library.
-	 *
-	 * Without a draw every evening would open on the newest files. The draw is ONE page of a fresh
-	 * seeded permutation per distinct filter, all asked at once: its rows cannot repeat each other,
-	 * where a draw per cell would be serial and only avoid the one before. Each cell draws under its
-	 * own filter, so nothing is drawn and thrown back. Cells with different filters may still meet
-	 * on one file, a fact about the library. Only cells still EMPTY, so a loaded wall is as saved.
-	 * `/assets/random` stays the player's, which has nothing to line a file up against.
+	 * Arriving from nothing, each cell still EMPTY opens somewhere else in the library: one page of a
+	 * fresh seeded shuffle per distinct filter, all asked at once, so the rows cannot repeat.
 	 */
 	async #openSomewhere(): Promise<void> {
 		const waiting = this.cells.filter((cell) => cell.state === 'empty');
@@ -956,13 +939,15 @@ class Showing {
 	#kept: KeptWall | null = null;
 
 	/**
-	 * The wall, made if there is not one yet, and the one put away taken up again if there is.
-	 * Making one begins its session; the page going away ends it.
+	 * The wall, made if there is not one yet, and the one put away taken up again if there is:
+	 * from memory, or after a reload from the tab's storage. Making one begins its session.
 	 */
 	ensure(): Wall {
 		if (this.wall === null) {
 			this.wall = new Wall();
-			const kept = this.#kept;
+			const account = signedIn.viewer?.id ?? null;
+			const stored = account === null ? null : takeStoredWall(account);
+			const kept = this.#kept ?? stored;
 			this.#kept = null;
 			if (kept !== null && (vault.unlocked || !kept.vaultOpen)) this.wall.resume(kept);
 			this.wall.beginSession();
@@ -978,6 +963,7 @@ class Showing {
 	drop(stillDrawn: boolean): void {
 		if (stillDrawn || this.wall === null) return;
 		this.#kept = this.wall.resumes ? this.wall.kept : null;
+		this.#store(this.#kept);
 		this.wall.endSession();
 		this.wall.close();
 		this.wall = null;
@@ -986,7 +972,15 @@ class Showing {
 	/** The setting moved. Turned off, whatever was put away goes. */
 	resumeChanged(on: boolean): void {
 		if (this.wall !== null) this.wall.resumes = on;
-		if (!on) this.#kept = null;
+		if (on) return;
+		this.#kept = null;
+		this.#store(null);
+	}
+
+	/** Write the kept wall for whoever is signed in, or forget it. */
+	#store(kept: KeptWall | null): void {
+		const account = signedIn.viewer?.id;
+		if (account) storeWall(account, kept);
 	}
 
 	#listening = false;
@@ -998,7 +992,11 @@ class Showing {
 	#listen(): void {
 		if (this.#listening || typeof window === 'undefined') return;
 		this.#listening = true;
-		window.addEventListener('pagehide', () => this.wall?.endSession());
+		window.addEventListener('pagehide', () => {
+			// A reload never runs the screen's teardown, so the wall is written down here.
+			if (this.wall?.resumes) this.#store(this.wall.kept);
+			this.wall?.endSession();
+		});
 		window.addEventListener('pageshow', (event) => {
 			if (event.persisted) this.wall?.beginSession();
 		});

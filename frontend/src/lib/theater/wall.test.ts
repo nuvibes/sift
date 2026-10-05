@@ -13,6 +13,7 @@ import { MOST_CELLS, writeShape, type Shape } from './layouts';
 import { Cell, type Playable } from './cell.svelte';
 import { showing, Wall } from './wall.svelte';
 import { vault } from '$lib/shell/vault.svelte';
+import { session, type Viewer } from '$lib/shell/session.svelte';
 
 /* A saved custom wall of six, two rows of three: past the top of the ladder, so the one kind of wall
    a removal still leaves with a hole to heal. */
@@ -449,6 +450,25 @@ describe('Center stage', () => {
 			'was in focus'
 		);
 		expect(wall.focused, 'the keyboard stays on the place, not on the cell').toBe(1);
+	});
+
+	/* A press on a preview chooses it, so the keyboard is on the strip when its double press
+	   brings it up: it still lands on the place last in focus. */
+	it('lands on the place last in focus when the preview itself was chosen first', () => {
+		const wall = new Wall();
+		wall.setLayout('center_stage');
+		wall.setLayout('side_by_side');
+		wall.addPreview();
+		wall.inFocus[1].source = 'was in focus';
+		const preview = wall.inFocus.length;
+		wall.previews[0].source = 'was waiting';
+		wall.focus(1);
+		wall.focus(preview);
+
+		wall.sendToFocus(preview);
+
+		expect(wall.inFocus[1].source, 'the preview landed on the first place').toBe('was waiting');
+		expect(wall.focused).toBe(1);
 	});
 
 	/*
@@ -1306,9 +1326,19 @@ describe('building the wall', () => {
 
 	it('falls back to the preset when a stored shape cannot be drawn', () => {
 		const wall = new Wall();
-		wall.adopt({ layout: 'stacked', shape: { rows: 1, cols: 1, slots: 'nonsense' }, cells: [] });
+		wall.adopt({ layout: 'grid', shape: { rows: 1, cols: 1, slots: 'nonsense' }, cells: [] });
 
-		expect(wall.cells).toHaveLength(3);
+		expect(wall.cells).toHaveLength(4);
+		expect(wall.layout).toBe('grid');
+	});
+
+	it('opens a wall saved stacked as two cells, one over the other', () => {
+		const wall = new Wall();
+		wall.adopt({ layout: 'stacked', cells: [] });
+
+		expect(wall.cells).toHaveLength(2);
+		expect([wall.shape.rows, wall.shape.cols]).toEqual([2, 1]);
+		expect(wall.layout).toBe('stacked');
 	});
 });
 
@@ -1423,6 +1453,81 @@ describe('leaving Theater and coming back', () => {
 
 		expect(takeOver).not.toHaveBeenCalled();
 		showing.drop(false);
+	});
+
+	describe('across a reload', () => {
+		const STORED = 'sift.theater.kept.account-a';
+
+		beforeEach(() => {
+			session.viewer = { id: 'account-a' } as Viewer;
+			sessionStorage.clear();
+		});
+
+		afterEach(() => {
+			session.viewer = undefined;
+			sessionStorage.clear();
+		});
+
+		it('writes the wall to the tab by file id, never by name', () => {
+			const named = { ...FILE, original_filename: 'holiday.mp4' } as Playable;
+			const wall = showing.ensure();
+			wall.setLayout('side_by_side');
+			wall.cells[0].playing = named;
+			wall.cells[0].position = 40;
+			wall.resumes = true;
+
+			window.dispatchEvent(new Event('pagehide'));
+
+			const raw = sessionStorage.getItem(STORED) ?? '';
+			expect(JSON.parse(raw).playing[0]).toEqual({
+				id: 'clip-1',
+				at: 40,
+				seed: wall.cells[0].seed
+			});
+			expect(raw, 'a file name was written into the browser').not.toContain('holiday');
+			showing.drop(false);
+		});
+
+		it('takes the stored wall up once, each cell asking for its file by id', () => {
+			const resumeOn = vi.spyOn(Cell.prototype, 'resumeOn').mockResolvedValue();
+			leave(true);
+			const stored = sessionStorage.getItem(STORED);
+			expect(stored, 'leaving Theater wrote nothing to the tab').not.toBeNull();
+			// A reload: the page's memory is gone and only the tab's storage is left.
+			showing.resumeChanged(false);
+			sessionStorage.setItem(STORED, stored as string);
+
+			const back = showing.ensure();
+
+			expect(back.cells).toHaveLength(2);
+			expect(back.focused).toBe(1);
+			expect(resumeOn.mock.calls[0].slice(1)).toEqual(['clip-1', 40]);
+			expect(sessionStorage.getItem(STORED), 'the stored wall was taken up twice').toBeNull();
+			showing.drop(false);
+		});
+
+		it("never gives one account another's wall", () => {
+			const resumeOn = vi.spyOn(Cell.prototype, 'resumeOn').mockResolvedValue();
+			leave(true);
+			const stored = sessionStorage.getItem(STORED) as string;
+			showing.resumeChanged(false);
+			sessionStorage.setItem(STORED, stored);
+			session.viewer = { id: 'account-b' } as Viewer;
+
+			showing.ensure();
+
+			expect(resumeOn).not.toHaveBeenCalled();
+			showing.drop(false);
+		});
+
+		it('forgets the stored wall when the setting is turned off', () => {
+			leave(true);
+			expect(sessionStorage.getItem(STORED)).not.toBeNull();
+
+			showing.resumeChanged(false);
+
+			expect(sessionStorage.getItem(STORED)).toBeNull();
+		});
 	});
 
 	it('does not bring back a wall kept over an open vault once the vault has shut', () => {

@@ -172,14 +172,32 @@ def _members(archive: Path):
     return zipped, zipped.namelist(), zipped.open
 
 
+def refuse_while_in_use(*, checking_only: bool) -> None:
+    """Stop before anything is replaced while a program in vendor/ is running: Windows will not
+    open one for writing, and a fetch stopped part way leaves a mixture of two releases."""
+    held: list[str] = []
+    programs = [] if checking_only else sorted(VENDOR.rglob("*"))
+    for path in programs:
+        if path.suffix.lower() not in (".exe", ".dll", ".pyd") or not path.is_file():
+            continue
+        try:
+            with path.open("r+b"):
+                pass
+        except OSError:
+            held.append(path.relative_to(VENDOR).as_posix())
+    if held:
+        raise SystemExit(
+            f"\n  in use, so nothing was changed: {', '.join(held[:5])}\n"
+            "  Stop every Sift running from this folder, then fetch again.\n"
+        )
+
+
 def unpack(archive: Path, mapping: dict[str, str]) -> None:
     """Pull named members out of the archive. Patterns are matched, never trusted paths.
 
     A destination ending in `/` takes EVERY match into that directory, under each member's own
-    filename. That is for the shared ffmpeg build, which is one executable and eight libraries whose
-    names carry their soversion (`avcodec-61.dll`): listing them one by one would put the soversion
-    in the manifest, so a rebuild of the same ffmpeg release against a newer library would fail here
-    with "contains nothing matching" rather than shipping.
+    filename: the shared ffmpeg build is one executable and eight libraries whose names carry
+    their soversion (`avcodec-61.dll`), which would otherwise have to be in the manifest.
 
     Every other destination is exactly one file and stays ambiguous-is-an-error, which is what keeps
     a single-file pattern from quietly picking the first of several.
@@ -386,11 +404,15 @@ def check_wheel(
     path = VENDOR / str(wheel["file"])
     recipe = ROOT / str(wheel["recipe"])
     seed = os.environ.get("VENDOR_SEED")
-    if not path.is_file() and seed and (Path(seed) / path.name).is_file() and not verify_only:
-        # A wheel built before, from the seed folder, held below exactly as one the recipe made.
-        print(f"    seeded  {path.name}")
-        path.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(Path(seed) / path.name, path)
+    seeded = Path(seed) / path.name if seed else None
+    if not path.is_file() and seeded and seeded.is_file() and not verify_only:
+        # A seed is a copy of the pinned wheel, so any other is passed over and the recipe builds.
+        if digest(seeded) == wheel["sha256"]:
+            print(f"    seeded  {path.name}")
+            path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(seeded, path)
+        else:
+            print(f"    seeded copy has the WRONG hash, not used  {path.name}")
     if not path.is_file() and build_missing and not verify_only:
         run_recipe(recipe, {"OUT": str(path.parent), "SOURCES": str(VENDOR / "bin" / "sources")})
     if not path.is_file():
@@ -417,11 +439,14 @@ def check_wheel(
         )
     print(f"    verified  {path.name}")
     if not verify_only:
-        # The recipe ships beside the sources: the scripts that control compilation are part of
-        # the source a library under the LGPL travels with.
+        # The recipe and the files it reads ship beside the sources: the scripts that control
+        # compilation are part of the source a library under the LGPL travels with.
         dest = VENDOR / "bin" / "sources" / recipe.name
         dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(recipe, dest)
+        inputs = wheel.get("recipe_inputs")
+        for one in inputs if isinstance(inputs, list) else []:
+            shutil.copyfile(ROOT / str(one), dest.parent / Path(str(one)).name)
         print(f"    -> {dest.relative_to(VENDOR).as_posix()}")
 
 
@@ -496,6 +521,7 @@ def main() -> int:
     if args.verify_only and args.build_missing:
         ap.error("--verify-only checks what is here and builds nothing")
 
+    refuse_while_in_use(checking_only=args.verify_only)
     manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
     for tool in manifest["tools"]:
         print(f"\n{tool['name']} {tool['version']}")

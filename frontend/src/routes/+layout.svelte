@@ -485,7 +485,7 @@
 			<div class="screen-box" bind:this={stageBox}>
 				<!--
 					The controls that filter, order and describe whatever screen is on, drawn once as one
-					row (at the BOTTOM while the window is filled; see the stage). No scroll region around
+					row (at the top while the window is filled too). No scroll region around
 					it: the panel it drops is absolutely positioned and an `overflow: hidden` ancestor
 					would clip it to nothing; a tall panel scrolls inside itself.
 				-->
@@ -707,28 +707,21 @@
 	 */
 	.screen-box:fullscreen .screenbar {
 		z-index: 20;
-		/* One shrinkable `auto` row, so the ceiling bounds the region inside. */
+		/* One fraction row, which eases against `.sent`'s, under the ceiling. */
 		display: grid;
-		grid-template-rows: minmax(0, auto);
+		grid-template-rows: minmax(0, 1fr);
 		max-block-size: 50vh;
-		/* `--dur-ambient`, the longest there is, for the biggest change of state the app has; the
-		   wall settles on the same token (`TheaterWall`). Not `.sent`'s idle clock, which runs
-		   often and must not read as lag. */
+		/* Arriving on the wall's own token (`TheaterWall`), not `.sent`'s clock, which must not lag. */
 		animation: descend var(--dur-ambient) var(--ease);
-		/* And it goes back the way it came. See `.sent`. */
 		transition:
 			translate var(--dur-slow) var(--ease),
-			opacity var(--dur-slow) var(--ease);
+			opacity var(--dur-slow) var(--ease),
+			grid-template-rows var(--dur-slow) var(--ease);
 	}
 
-	/*
-	 * Gone quiet: SLID BACK UP off its own edge, and out of the tab order with it. The row collapses
-	 * so the wall gets the space back; `visibility` rather than `display: none`, because it holds
-	 * until the slide is done.
-	 */
+	/* Gone quiet: slid back up and out of the tab order, its row given to the wall; `visibility`
+	   holds until the slide is done. `0fr` alone would floor the row at its content. */
 	.screen-box:fullscreen .screenbar.sent {
-		/* `minmax(0, 0fr)`, not `0fr`, which floors the row at its content and leaves the wall a
-		   bar's height short of the top. */
 		grid-template-rows: minmax(0, 0fr);
 		translate: 0 -100%;
 		opacity: 0;

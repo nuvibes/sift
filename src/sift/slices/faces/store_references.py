@@ -8,9 +8,12 @@ import json
 from collections.abc import Sequence
 from pathlib import Path
 
+from sift.kernel.access import Viewer
+from sift.kernel.access.ranked import VIEWER_FILES, ranked_among
 from sift.kernel.db import Connection, Row, in_clause
 from sift.kernel.ids import new_id
 from sift.kernel.paging import MAX_PAGE_SIZE
+from sift.kernel.sorting import sort_key
 from sift.kernel.sql_splice import splice
 from sift.slices.faces import recognize
 from sift.slices.faces.models import (
@@ -47,6 +50,13 @@ _LIBRARY_FACES = (
 )
 _LIBRARY_FACES_ALL = splice(_LIBRARY_FACES, SCOPE="")
 _LIBRARY_FACES_OF_FILE = splice(_LIBRARY_FACES, SCOPE="WHERE t.asset_id = ? ")
+
+#: A person's references a viewer may count: on no file, or on one of their files.
+_REFERENCES_SEEN = splice(
+    "SELECT COUNT(*) AS n FROM face_references WHERE person_id = :person AND origin != 'seed'"
+    " AND (asset_id IS NULL OR asset_id IN ({{VIEWER_FILES}}))",
+    VIEWER_FILES=VIEWER_FILES,
+)
 
 
 class ReferencesStore(ModelsStore):
@@ -369,6 +379,31 @@ class ReferencesStore(ModelsStore):
         )
         return [(str(row["entry_id"]), bytes(row["embedding"])) for row in rows]
 
+    async def held_for_export(self, recognizer: str) -> list[Row]:
+        """Every entry on the waiting list with a face `recognizer` made, by name: what a facial
+        fingerprints file carries besides People. Declined entries too, since the list shows them."""
+        rows = await self._db.fetch_all(
+            "SELECT e.id AS entry_id, e.name AS name, e.aliases AS aliases, e.links AS links,"
+            " e.confirmed AS confirmed FROM pack_entries e JOIN face_packs p ON p.id = e.pack_id"
+            " WHERE e.claimed_person_id IS NULL AND substr(p.name, 1, ?) != ?"
+            " AND EXISTS (SELECT 1 FROM pack_entry_faces f"
+            "  WHERE f.entry_id = e.id AND f.recognizer = ?)",
+            (len(self.SWAPPED_PACKS), self.SWAPPED_PACKS, recognizer),
+        )
+        return sorted(rows, key=lambda row: (sort_key(str(row["name"])), str(row["entry_id"])))
+
+    async def people_named(self, names: Sequence[str]) -> dict[str, list[str]]:
+        """Every person called one of these names, ignoring case, keyed by the folded name."""
+        if not names:
+            return {}
+        sql, params = in_clause(
+            "SELECT id, name FROM people WHERE name COLLATE NOCASE IN (?*) ORDER BY id", names
+        )
+        found: dict[str, list[str]] = {}
+        for row in await self._db.fetch_all(sql, tuple(params)):
+            found.setdefault(str(row["name"]).casefold(), []).append(str(row["id"]))
+        return found
+
     async def fingerprints_stamp(self) -> tuple[int, int, int]:
         """What the held entries look like now, cheaply: how many are waiting, how many faces are
         held, and the newest entry. A cached description of them is good while this is unchanged:
@@ -513,8 +548,7 @@ class ReferencesStore(ModelsStore):
         claim is DEAD; with two confirmed appearances of one person in a file, whichever is put
         back first claims the orphans.
         """
-        # On the WRITE connection: a write through a borrowed read connection collides with the
-        # writer.
+        # On the WRITE connection: a write through a borrowed read one collides with the writer.
         async with self._db.write() as connection:
             rows = list(
                 await connection.execute_fetchall(
@@ -662,16 +696,21 @@ class ReferencesStore(ModelsStore):
                 gone += len(rows)
         return gone
 
-    async def reference_count(self, person_id: str) -> int:
+    async def reference_count(self, person_id: str, *, viewer: Viewer | None = None) -> int:
         """How many reference faces one person has. What matching's reliability rests on.
 
         Her OWN: a starter picture is not counted, in use or retired. It lends no strength (it may
         only make Sift ask), and counted here it would say Sift knows her from pictures of
         somebody a stash-box gave the same name. See `starters_of` for what her page says instead.
         """
-        row = await self._db.fetch_one(
-            "SELECT COUNT(*) AS n FROM face_references WHERE person_id = ? AND origin != 'seed'",
-            (person_id,),
+        among = None if viewer is None else await ranked_among(self._db, viewer)
+        row = await (
+            self._db.fetch_one(
+                "SELECT COUNT(*) AS n FROM face_references WHERE person_id = ? AND origin != 'seed'",
+                (person_id,),
+            )
+            if among is None
+            else self._db.fetch_one(_REFERENCES_SEEN, {**among, "person": person_id})
         )
         return 0 if row is None else int(row["n"])
 

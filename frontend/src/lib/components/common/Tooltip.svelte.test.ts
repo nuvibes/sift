@@ -179,3 +179,22 @@ it('counts an arrow as a press only on a control that opens something', async ()
 	key(control, 'ArrowDown');
 	expect(document.querySelector('[role="tooltip"]'), 'an arrow that opens a list').toBeNull();
 });
+
+it('shows the label while its owner holds it, with no pointer or focus, and hides it on letting go', async () => {
+	host = document.createElement('div');
+	document.body.append(host);
+	const probe = mount(TooltipProbe, { target: host }) as { hold: (next: boolean) => void };
+	mounted = probe as unknown as Record<string, unknown>;
+	flushSync();
+	expect(document.querySelector('[role="tooltip"]'), 'shown with nothing holding it').toBeNull();
+
+	probe.hold(true);
+	await vi.waitFor(() => {
+		flushSync();
+		if (!document.querySelector('[role="tooltip"]')) throw new Error('not shown while held');
+	});
+
+	probe.hold(false);
+	flushSync();
+	expect(document.querySelector('[role="tooltip"]'), 'left up after letting go').toBeNull();
+});

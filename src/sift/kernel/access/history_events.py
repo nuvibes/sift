@@ -51,10 +51,7 @@ from sift.kernel.db import Database, Row, in_clause
 from sift.kernel.sql_splice import splice
 from sift.kernel.vocabulary import LEDGER_QUEUE, SubjectKind
 
-#: How many events one read hands back unless the caller says otherwise.
-#:
-#: The same number `history.DEFAULT_LIMIT` uses, and for the same reason: a pane is a column of
-#: lines somebody reads down, and a thousand of them is not a longer answer but an unusable one.
+#: How many events one read hands back unless asked otherwise, as `history.DEFAULT_LIMIT`.
 DEFAULT_LIMIT = 200
 
 #: The most any read will hand back, whatever is asked for. A cap rather than a suggestion: this is
@@ -591,6 +588,25 @@ async def subjects_of(database: Database, event_ids: Sequence[str]) -> dict[str,
             )
         )
     return named
+
+
+_OWN_FILTERS = (
+    "SELECT s.subject_id AS id, json_extract(d.payload, '$.called') AS name"
+    " FROM workbench_decision_subjects s JOIN workbench_decisions d ON d.id = s.decision_id"
+    " WHERE s.kind = 'saved_filter' AND json_valid(d.payload)"
+    " AND json_extract(d.payload, '$.of') = ? AND s.subject_id IN (?*)"
+)
+
+
+async def own_filters(
+    database: Database, viewer: Viewer, ids: Sequence[str]
+) -> dict[tuple[str, str], str]:
+    """The names of the saved filters among these that were the viewer's, the one reader of them."""
+    if not ids:
+        return {}
+    statement, values = in_clause(_OWN_FILTERS, sorted(set(ids)))
+    rows = await database.fetch_all(statement, [viewer.id, *values])
+    return {("saved_filter", str(row["id"])): str(row["name"]) for row in rows}
 
 
 #: Every stash-box's `enriched` events about one thing, oldest first. See `first_presses`.

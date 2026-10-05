@@ -29,7 +29,7 @@ const PRESSES: { pane: string; press: string }[] = [
 	{ pane: 'Sites', press: 'action={COPY.cookies.edit}' },
 	{ pane: 'Profile', press: 'action={SIGN_OUT.action}' },
 	{ pane: 'Appearance', press: 'action="Reset"' },
-	{ pane: 'Performance', press: '{selfTest.finished ? COPY.measure.again : COPY.measure.run}' },
+	{ pane: 'Performance', press: '? COPY.measure.again : COPY.measure.run}' },
 	{ pane: 'DatabaseSwitcher', press: '>{COPY.create}</Button' },
 	{ pane: 'DatabaseSwitcher', press: 'action={DUPLICATE.begin}' },
 	{ pane: 'DatabaseSwitcher', press: 'action={COPY.chooseFile}' },

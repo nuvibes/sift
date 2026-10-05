@@ -15,30 +15,8 @@
 	 * WHY NOT BITS-UI: there is no split button in it. This is two of the shared Buttons, which are
 	 * the library's behaviour already, joined at the corner; the join is shape only.
 	 *
-	 * One button with a second, narrower action joined to its end: one control to look at and two
-	 * to press, for a second action not important enough for its own button and not unimportant
-	 * enough to be deep in a menu.
-	 *
-	 * Two real buttons, not one with a hit test: each is separately focusable, has its own name,
-	 * gets Enter and Space, and is announced as its own thing to do. Splitting one button by where
-	 * the pointer landed would be unreachable from a keyboard.
-	 *
-	 * In `common/` because more than one screen uses the shape (the Add button, and the Importing
-	 * pane's "Generate now / tonight" row).
-	 *
-	 * It composes the shared Button, so tones, sizes, hover register, focus ring and disabled
-	 * semantics are the shared one's. The only addition is the join: the two inner corners are
-	 * flattened and a hairline is drawn between the halves, so the pair reads as one object.
-	 *
-	 * The trailing half as a door. Handed `menu`, the trailing half becomes the app's own
-	 * `MenuButton`, drawn as the same shared Button so the join holds, with the caller's rows: a
-	 * main act and a chevron dropping the rarer ones (a face card's "Add as person", with Ignore
-	 * and Remove behind it).
-	 *
-	 * Both halves as doors. The main half takes `leadMenu` the same way; a file's own screen uses
-	 * it, the main half opening the places a file can be put and the trailing half everything else.
-	 * Two menus about one file are one control. The second door is the same `MenuButton`; only
-	 * which corners are flattened and where the hairline sits differ.
+	 * Two real buttons, not one with a hit test, so each half is reachable from a keyboard. Either
+	 * half can be a door (`leadMenu`, `menu`) through the app's own `MenuButton`.
 	 */
 	import type { Snippet } from 'svelte';
 	import type { HTMLButtonAttributes } from 'svelte/elements';
@@ -48,10 +26,7 @@
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
 	import type { IconName } from '$lib/design/icons';
 
-	/* `class` is deliberately not accepted. The join (the flattened inner corners and the hairline
-	   between the halves) is what makes the pair one control, and a caller restyling either half
-	   would be undoing the only thing this component adds. It is also what the shared Button's own
-	   props say: it narrows `class` to a plain string where the site type allows anything. */
+	/* No `class`: a caller restyling a half would undo the join, the only thing this adds. */
 	interface Props extends Omit<HTMLButtonAttributes, 'class'> {
 		/** How loud the pair is. Both halves take it, so they read as one control. */
 		tone?: ButtonTone;
@@ -80,13 +55,7 @@
 		 * "Add as person" is the picker, which is why this is answered rather than assumed.
 		 */
 		leadMenuScrolls?: boolean;
-		/**
-		 * What the main half's menu is called, for anybody who cannot see it open.
-		 *
-		 * Required alongside `leadMenu` and enforced below rather than by the type: the words on the
-		 * button are a snippet, so there is nothing here that could be read as a default, and a menu
-		 * surface with no name is announced as "menu" and nothing else.
-		 */
+		/** What the main half's menu is called; required with `leadMenu`, enforced below. */
 		leadMenuLabel?: string;
 		/**
 		 * The glyph on the trailing half. Icon-only by design: the whole point of the shape is that
@@ -128,6 +97,8 @@
 		trailingDisabled?: boolean;
 		/** Fills the width it is given: the main half grows, the chevron keeps its square. */
 		full?: boolean;
+		/** The main half's act is running: its arc turns and the pair takes no second press. */
+		busy?: boolean;
 	}
 
 	let {
@@ -147,13 +118,11 @@
 		trailingDisabled = false,
 		full = false,
 		leadDisabled = false,
+		busy = false,
 		...rest
 	}: Props = $props();
 
-	/* A door with no name is announced as "menu" and nothing else. Inside an effect rather than at
-	   the top of the component for the reason the same guard in `Chip` is: a prop read out here is
-	   captured on the first render and never looked at again, so the check would pass for ever
-	   after one good one. */
+	/* In an effect, as in `Chip`: a prop read at the top is checked on the first render only. */
 	$effect(() => {
 		if (leadMenu !== undefined && !leadMenuLabel) {
 			throw new Error('A main half that opens a menu has to name it. See `leadMenuLabel`.');
@@ -182,11 +151,11 @@
 			     press doing two things, which is the rule the trailing half already follows. -->
 			<MenuButton
 				label={leadMenuLabel ?? ''}
-				disabled={leadDisabled || rest.disabled === true}
+				disabled={leadDisabled || busy || rest.disabled === true}
 				scrolls={leadMenuScrolls}
 			>
 				{#snippet trigger({ props })}
-					<Button {...props} {tone} {size} {icon} {full} type="button"
+					<Button {...props} {tone} {size} {icon} {full} {busy} type="button"
 						>{#if children}{@render children()}{/if}</Button
 					>
 				{/snippet}
@@ -198,6 +167,7 @@
 				{size}
 				{icon}
 				{full}
+				{busy}
 				{...rest}
 				disabled={leadDisabled || rest.disabled === true}
 				>{#if children}{@render children()}{/if}</Button
@@ -211,7 +181,10 @@
 		{#if menu}
 			<!-- The same door every menu in the app opens through, with this half as its trigger.
 			     Named by a tooltip like the plain half: a glyph alone always is. -->
-			<MenuButton label={trailingLabel} disabled={trailingDisabled || rest.disabled === true}>
+			<MenuButton
+				label={trailingLabel}
+				disabled={trailingDisabled || busy || rest.disabled === true}
+			>
 				{#snippet trigger({ props })}
 					<Tooltip label={trailingLabel} placement="bottom">
 						<Button
@@ -235,7 +208,7 @@
 					{size}
 					icon={trailingIcon}
 					type="button"
-					disabled={trailingDisabled || rest.disabled}
+					disabled={trailingDisabled || busy || rest.disabled}
 					aria-label={trailingLabel}
 					onclick={ontrailing}
 					onmouseenter={ontrailingenter}
@@ -250,15 +223,7 @@
 	.split {
 		display: inline-flex;
 		align-items: stretch;
-		/*
-		 * It can never be wider than what it is in. Both halves are the shared Button,
-		 * `white-space: nowrap` and `inline-size: fit-content`, sized by their words and unable to
-		 * give width back. In a card narrower than the words the pair would draw past the edge, and
-		 * a row that ends its children (`justify-content: flex-end`) puts that overflow on the
-		 * leading side, over the gutter and the next card. So the control is capped at its
-		 * container and the lead half gives way (see the two rules below). With room, nothing
-		 * changes: a flex item only shrinks when there is not enough.
-		 */
+		/* Never wider than its container; the lead half gives way (see below). */
 		max-inline-size: 100%;
 	}
 
@@ -267,19 +232,7 @@
 		display: inline-flex;
 	}
 
-	/*
-	 * Which half gives way when there is not enough room: the one with the words, never the
-	 * chevron.
-	 *
-	 * `min-inline-size: 0` lets a flex item go under its content width at all; the default floor is
-	 * the content, which is why a nowrap button cannot be squeezed. The words wrap rather than
-	 * being clipped: a half out of room grows a second line and stays whole, where `overflow:
-	 * hidden` would cut a word in half. The button's height is a minimum (`min-block-size`), so it
-	 * grows to hold them.
-	 *
-	 * The trailing half is fixed: an icon-only square the size of the control height, the only way
-	 * to the rest of the acts, and a clipped chevron is the failure to avoid.
-	 */
+	/* Out of room, the words wrap onto a second line rather than clip; the chevron never shrinks. */
 	/* Filling the width it is given: the main half takes the room, the chevron keeps its square. */
 	.split.full {
 		display: flex;
@@ -304,17 +257,7 @@
 		flex: 0 0 auto;
 	}
 
-	/*
-	 * The join.
-	 *
-	 * `:global` on the inner part because `.btn` is the shared Button's own class and a scoped rule
-	 * written here would never reach it. Anchored on this component's own `.lead` / `.trail`, so it
-	 * can only ever reach the two halves of a split button and never a button somewhere else.
-	 *
-	 * Two hooks deep, which beats the shared `.btn` radius outright rather than depending on which
-	 * stylesheet the bundler happened to write first: an override at the same specificity as the
-	 * rule it overrides is a coin toss, and one that lands right in development.
-	 */
+	/* The join, two hooks deep so it beats the shared `.btn` radius whatever the stylesheet order. */
 	.lead :global(.btn) {
 		border-start-end-radius: 0;
 		border-end-end-radius: 0;
@@ -323,10 +266,7 @@
 	.trail :global(.btn) {
 		border-start-start-radius: 0;
 		border-end-start-radius: 0;
-		/* The hairline. Mixed from the ink rather than from a fixed line colour, so it holds against
-		   every tone: a primary is light ink on a saturated ground and a ghost is the page's own,
-		   and one grey would disappear into one of them. Faint, because it is a seam and not a
-		   border: at full strength the pair reads as two controls that happen to be touching. */
+		/* A faint seam mixed from the ink, so it holds against every tone. */
 		border-inline-start: 1px solid color-mix(in oklab, currentColor 28%, transparent);
 	}
 

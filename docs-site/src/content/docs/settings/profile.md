@@ -21,4 +21,4 @@ Nothing on this pane is a stored setting. It draws these groups, in this order:
 - <a id="profile.pin"></a>**PIN**: six digits that unlock Hidden, and a locked Sift. Enter your password and the new PIN, then choose **Save PIN**.
 - <a id="profile.sign-out"></a>**Sign out**: **Sign out** signs this browser out. Anywhere else you're signed in isn't affected.
 
-Nothing on this pane is a stored setting: everything on it acts when you press it.
+Nothing on this pane is a stored setting.

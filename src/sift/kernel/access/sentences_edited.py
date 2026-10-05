@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping, Sequence
+from typing import TYPE_CHECKING
 
 from sift.kernel.access.field_changed import field_changed
 from sift.kernel.access.sentences_downloads import KIND_BEFORE
@@ -29,6 +30,9 @@ from sift.kernel.access.sentences_pieces import (
 )
 from sift.kernel.text import non_empty_str
 from sift.kernel.vocabulary import UPDATE_TO
+
+if TYPE_CHECKING:
+    from sift.kernel.settings_registry import Setting
 
 #: Payload keys that are the reader's own words rather than a field an edit moved.
 _NOT_A_FIELD = frozenset(
@@ -167,11 +171,10 @@ def _edited_line(
 def _value_said(stored: object, key: object = None) -> str | None:
     """A setting's stored value as somebody reads it, or None where it is not a plain value.
 
-    Stored as JSON text. A switch is "on" or "off". A choice is the word its menu shows ("GPU",
-    never the stored `nvidia`), a whole number carries the unit its control shows ("70%", "30 MB")
-    and a zero that means "work it out" says so, all read off the setting's own declaration
-    (`settings_registry`), so the line and the control cannot disagree. A list or an object is not
-    said: a line reading out a structure is the machine talking.
+    Stored as JSON text. A switch is "on" or "off"; a choice, a unit and a zero meaning "work it
+    out" are said in the words of the setting's declaration (`settings_registry`), so the line and
+    the control cannot disagree. Never a tunnel's id (its name comes as `before_said` /
+    `after_said`), a list or an object: that is the machine talking.
     """
     import json
 
@@ -188,6 +191,8 @@ def _value_said(stored: object, key: object = None) -> str | None:
     except ValueError:
         return None
     declared = get_registered(key) if isinstance(key, str) else None
+    if declared is not None and declared.names_a_tunnel:
+        return None
     if isinstance(value, bool):
         return "on" if value else "off"
     if declared is not None and declared.choices and declared.choice_labels:
@@ -195,17 +200,22 @@ def _value_said(stored: object, key: object = None) -> str | None:
             if choice == value:
                 return label
     if isinstance(value, int):
-        if value == 0 and declared is not None and declared.automatic_label:
-            return declared.automatic_label
-        unit = declared.unit if declared is not None else None
-        if unit:
-            return f"{value:,}{unit}" if unit == "%" else f"{value:,} {unit}"
-        return f"{value:,}"
+        return _number_said(value, declared)
     if isinstance(value, float):
         return f"{value:g}"
     if isinstance(value, str):
         return value or None
     return None
+
+
+def _number_said(value: int, declared: Setting | None) -> str:
+    """A whole number in its declaration's words: the name of its zero, or its unit."""
+    if value == 0 and declared is not None and declared.automatic_label:
+        return declared.automatic_label
+    unit = declared.unit if declared is not None else None
+    if unit:
+        return f"{value:,}{unit}" if unit == "%" else f"{value:,} {unit}"
+    return f"{value:,}"
 
 
 def setting_changed(by: str, setting: Piece, payload: Mapping[str, object]) -> Line:

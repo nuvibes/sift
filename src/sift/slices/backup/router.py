@@ -195,6 +195,7 @@ async def _schedule_view(service: BackupService) -> ScheduleView:
         keep_days=keep_days_from(await service.setting(KEEP_DAYS_KEY)),
         folder=folder,
         beside_sift_data=not folder.strip(),
+        working=service.working,
     )
 
 

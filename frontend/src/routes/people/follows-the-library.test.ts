@@ -16,7 +16,9 @@ import { goto } from '$app/navigation';
 import { libraryChanges } from '$lib/library/changes.svelte';
 import { PeopleSearch, people, type Person } from '$lib/people/people.svelte';
 
-const server = vi.hoisted(() => ({ roster: [] as { id: string; name: string }[] }));
+const server = vi.hoisted(() => ({
+	roster: [] as { id: string; name: string; gender?: string }[]
+}));
 const at = vi.hoisted(() => ({ url: new URL('http://localhost/people') }));
 
 function row(one: { id: string; name: string }) {
@@ -50,7 +52,13 @@ vi.mock('$lib/api/client', () => ({
 			const query = options?.query ?? {};
 			if (path !== '/people') return { items: [], total: 0, limit: 50, offset: 0 };
 			const typed = String(query.prefix ?? '').toLowerCase();
-			const found = server.roster.filter((one) => one.name.toLowerCase().includes(typed));
+			const refused = ([] as string[])
+				.concat((query.gender as string[] | undefined) ?? [])
+				.filter((one) => one.startsWith('-'))
+				.map((one) => one.slice(1));
+			const found = server.roster.filter(
+				(one) => one.name.toLowerCase().includes(typed) && !refused.includes(one.gender ?? '')
+			);
 			return { items: found.map(row), total: found.length, limit: 50, offset: 0 };
 		}),
 		post: vi.fn(async () => undefined),
@@ -82,7 +90,8 @@ beforeEach(() => {
 	server.roster = [
 		{ id: 'jane', name: 'Jane' },
 		{ id: 'janedoe', name: 'Jane Doe' },
-		{ id: 'ada', name: 'Ada Lovelace' }
+		{ id: 'ada', name: 'Ada Lovelace' },
+		{ id: 'janek', name: 'Jane Someone', gender: 'MALE' }
 	];
 	people.forget();
 	people.loading = false;
@@ -145,6 +154,13 @@ describe('the words a People wall is searched by', () => {
 });
 
 describe('a People wall narrowed by a search', () => {
+	it('lists only the people its filter chips allow', async () => {
+		wallAt('/people?gender=-MALE&q=jane');
+		await settle();
+
+		expect([drawn('jane'), drawn('janedoe'), drawn('janek')]).toEqual([true, true, false]);
+	});
+
 	it('drops somebody merged away when the library bell rings', async () => {
 		/* The search's words are in the address, which is where the box writes them. */
 		wallAt('/people?q=jane');

@@ -73,6 +73,11 @@ const LABELS: Record<string, Record<string, string>> = {
 	loops: { any: 'Has Loops', none: 'No Loops' },
 	// Said whole, for the reason the Loops row above is.
 	songs: { any: 'Has a song', none: 'No song' },
+	tags: { any: 'Has tags', none: 'No tags' },
+	people: { any: 'Has people', none: 'No people' },
+	sites: { any: 'Has a Site', none: 'No Site' },
+	collections: { any: 'In a collection', none: 'In no collection' },
+	photo_sets: { any: 'In a Photo Set', none: 'In no Photo Set' },
 	// What Sift could not make for a file, in the words the rest of Sift names each product by.
 	left_out: {
 		thumbnails: 'Thumbnails',
@@ -241,14 +246,12 @@ export function rememberFacetNames(facet: string, values: readonly FacetValue[])
 
 /*
  * The mark a value wears, where a word is not enough to tell the authors apart at a glance.
- *
- * Only Enriched by and Created by, whose rows are different authors; every named box wears the
- * stash-box glyph in its own colour (`boxColour`). `facet-labels.test.ts` holds the list to two.
+ * Only Enriched by and Created by, whose rows are authors; each box Sift knows wears its own glyph.
  */
 const BOX_ICONS: Record<string, IconName> = {
 	stashdb: 'inventory_2',
-	pmvstash: 'inventory_2',
-	fansdb: 'inventory_2'
+	pmvstash: 'movie',
+	fansdb: 'person_celebrate'
 };
 
 const VALUE_ICONS: Record<string, Record<string, IconName>> = {
@@ -362,22 +365,9 @@ export function madeLabel(via: string, act?: string | null): string {
 	);
 }
 
-/*
- * What a stash-box's mark is painted in: one entry per box Sift has a word for.
- *
- * Boxes may disagree about who is in a scene, so the question is which service said so: Sift's
- * own marks are the plain accent and each box wears its own colour, keyed on the slug. An unknown
- * box wears the accent. Token names only; `contrast.test.ts` holds their legibility in `app.css`.
- */
-const BOX_COLOURS: Record<string, string> = {
-	stashdb: 'var(--sift-box-stashdb)',
-	pmvstash: 'var(--sift-box-pmvstash)',
-	fansdb: 'var(--sift-box-fansdb)'
-};
-
-/** What one stash-box's mark is painted in, or nothing for a box Sift has no colour for. */
-export function boxColour(box: string | null | undefined): string | undefined {
-	return box ? BOX_COLOURS[box] : undefined;
+/** One stash-box's own glyph, by slug, or nothing for a box Sift has no word for. */
+export function boxIcon(box: string | null | undefined): IconName | undefined {
+	return box ? BOX_ICONS[box] : undefined;
 }
 
 /**
@@ -670,13 +660,13 @@ const PERSON_FACETS: readonly Facet[] = [
 	/* The glyph of the mark beside their name, so the column, the chip and the badge are one. */
 	{ key: 'pmv_creator', label: 'PMV creator', icon: 'cinematic_blur' },
 	{ key: 'tags', label: 'Tags', icon: 'shoppingmode', names: 'tag' },
-	/* One row per box that wrote to this row, each in its colour, since boxes may disagree.
+	/* One row per box that wrote to this row, each with its glyph, since boxes may disagree.
 	   `linked` is kept only as an address word (`LINKED_FACET`). */
 	{ key: 'enriched', label: 'Enriched by', icon: 'backlight_low' },
 	/* The nearest picture glyph; the Files wall's Photo Sets glyph, never on one panel with this. */
 	{ key: 'cover', label: 'Has a cover photo', icon: 'photo_library' },
 	/* Which box MADE the row, apart from which described it since: one many boxes know may have
-	   been typed in by hand. Each box in its colour (`boxColour`). */
+	   been typed in by hand. */
 	{ key: 'created', label: 'Created by', icon: 'inventory_2' },
 	SHARING_FACET,
 	/* Last and admin-only on all three walls: settling one is an admin's to do. The History tab

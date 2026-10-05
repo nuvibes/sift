@@ -41,12 +41,10 @@
 	let open = $state(false);
 
 	let url = $state('');
-	// '' is the default download folder; any other value is a folder the file lands in instead.
+	/* The chooser's value: the default row, or a folder while it is being made the default. */
 	let dest = $state('');
 
-	/* The folders a download can go to, as the chooser lists them: the SAME list the Downloads
-	   screen's "Download folder" draws, from one module, so the two cannot come to name the default or order
-	   the folders differently. See `$lib/library/destinations.svelte`. */
+	/* The same list the Downloads screen's "Download folder" draws, so the two cannot differ. */
 	const destinations = new Destinations();
 	destinations.follow();
 
@@ -95,26 +93,24 @@
 		}
 	}
 
-	/* Every way out of this panel that NAMES a folder records it, and the three of them do it
-	   through one line. What is not recorded is a download that named none: a drop onto the window
-	   goes wherever the default says, and remembering the default as a recent choice would put a
-	   row nobody picked at the top of this list. */
-	function landedIn(folderId: string) {
+	/* A folder picked here becomes the default, so every way in from this panel sends none. */
+	async function chooseFolder(folderId: string) {
+		if (!folderId) return;
 		noteFolderUse(folderId);
+		await destinations.makeDefault(folderId);
+		dest = '';
 	}
 
 	function start(link: string) {
 		const trimmed = link.trim();
 		if (!trimmed) return;
-		void capture.submitUrl(trimmed, dest || null);
-		landedIn(dest);
+		void capture.submitUrl(trimmed, null);
 		url = '';
 		open = false;
 	}
 
 	function addFiles(files: File[]) {
-		for (const file of files) void capture.submitFile(file, dest || null);
-		landedIn(dest);
+		for (const file of files) void capture.submitFile(file, null);
 		open = false;
 	}
 
@@ -125,8 +121,7 @@
 	const canPaste = canReadClipboard();
 
 	async function pasteIn() {
-		await capture.pasteFromClipboard(dest || null);
-		landedIn(dest);
+		await capture.pasteFromClipboard(null);
 		open = false;
 	}
 	/* Whether a link from outside is being held over Add. See the markup: this is the same offer the
@@ -250,9 +245,19 @@
 			{#if destinations.folders.length > 0}
 				<Field label="Download folder">
 					{#snippet control({ id, describedBy })}
-						<Select {id} {describedBy} bind:value={dest} options={destinations.options} />
+						<Select
+							{id}
+							{describedBy}
+							bind:value={dest}
+							options={destinations.options}
+							onValueChange={(chosen: string) => void chooseFolder(chosen)}
+						/>
 					{/snippet}
 				</Field>
+			{:else if destinations.foldersRead === 'read'}
+				<p class="hint">
+					Sift has no folder to save a download in yet. Add a folder to your library first.
+				</p>
 			{/if}
 
 			<!-- The panel's last row: its own choosing on the left, and swap mode at the bottom right,
@@ -293,6 +298,12 @@
 	.add.taking {
 		border-radius: var(--radius-md);
 		box-shadow: 0 0 0 2px var(--sift-accent);
+	}
+
+	.hint {
+		margin: 0;
+		color: var(--sift-ink-3);
+		font: var(--text-body-sm);
 	}
 
 	.url-row {

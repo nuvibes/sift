@@ -1,13 +1,7 @@
 <script lang="ts">
 	/*
-	 * Performance's settings: Concurrency, and the step back with its share.
-	 *
-	 * Concurrency is how many things Sift works on at the same time, and how much of this device
-	 * face recognition may use. Rarely changed, so it is one row and the numbers are a page behind
-	 * its Edit; every label, sentence and bound on it is the setting's own declaration. The step
-	 * back lowers those numbers while somebody works, so the two are one group, under the benchmark
-	 * whose Apply writes them. One panel reads and writes all of it; a deep link to any number on
-	 * the page opens the page first.
+	 * Performance's settings: Concurrency (one row, its numbers a page behind Edit), and the step
+	 * back's two causes with its share, which lower those numbers. One group, one panel.
 	 */
 	import { onMount } from 'svelte';
 	import { Button, LabelledRow, SettingLink } from '$lib/components/common';
@@ -25,7 +19,11 @@
 		'performance.scan_limit',
 		'performance.share_reads_at_once'
 	] as const;
-	const STEP_BACK = ['performance.step_back_while_used', 'performance.step_back_share'];
+	const STEP_BACK = [
+		'performance.step_back_while_used',
+		'performance.step_back_while_busy',
+		'performance.step_back_share'
+	];
 
 	const panel = new SettingsPanel();
 	onMount(() => void panel.load());

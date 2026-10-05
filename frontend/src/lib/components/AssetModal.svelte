@@ -41,7 +41,7 @@
 	 * open, closing on Escape, and the fact that closing goes back in history rather than to a fixed
 	 * address, so the grid reappears exactly where it was.
 	 */
-	import { onMount, untrack } from 'svelte';
+	import { onDestroy, onMount, untrack } from 'svelte';
 	import { keystrokeIsUnanswered } from '$lib/shell/layers';
 	import { fromPlace } from '$lib/shell/motion.svelte';
 	import { stageTransition, takePlace } from '$lib/components/player/motion';
@@ -55,6 +55,8 @@
 		canStepBack,
 		canStepForward,
 		dismissingAsset,
+		dropAhead,
+		lookAhead,
 		playOn as playOnFrom,
 		runGoesOn,
 		showAsset,
@@ -64,6 +66,8 @@
 		stepForward
 	} from '$lib/player/asset-view';
 	import { dwell } from '$lib/player/dwell.svelte';
+	import { mini } from '$lib/player/mini.svelte';
+	import { run } from '$lib/player/run.svelte';
 	import { ACTS } from '$lib/player/acts';
 
 	interface Props {
@@ -114,7 +118,7 @@
 	 * same one. So Back is offered whenever the run can step back, which with Shuffle on is the
 	 * file just watched.
 	 *
-	 * Empty when the modal was not opened from a list; the buttons do not render.
+	 * Empty when the modal was not opened from a list; the buttons dim.
 	 */
 	const forward = $derived(canStepForward(id));
 	const back = $derived(canStepBack(id));
@@ -128,21 +132,31 @@
 	 */
 	const playOn = $derived(runGoesOn(id, { pictures: dwell.pictures }));
 
-	/**
-	 * Where to go, asked at the moment the clip ends. With Shuffle on it is the SAME walk the Next
-	 * button moves, so letting a run play and pressing Next are one order rather than two.
-	 *
-	 * A run steps OVER photographs, because a photograph has no end to reach and the run would stop
-	 * dead on it, unless the account asked for pictures to be held for a few seconds, which is
-	 * exactly what makes them part of a run.
-	 *
-	 * Falls back to the file that just finished: repeating is a better
-	 * answer than a black screen when there is genuinely nothing else to play.
-	 */
+	/** Where the run goes at the end, by the walk Next moves; the same file when nowhere else. */
 	async function nextInRun(): Promise<string> {
-		// Under Stop at the end the shuffled walk stops where the list runs out, and the file that
-		// just finished stays: the same file handed back is no step at all.
-		return (await playOnFrom(id, { pictures: dwell.pictures, wraps: !dwell.stopsAtTheEnd })) ?? id;
+		return (await playOnFrom(id, endRule())) ?? id;
+	}
+
+	function endRule() {
+		return { pictures: dwell.pictures, wraps: !dwell.stopsAtTheEnd };
+	}
+
+	/* The next file is found while this one plays, so its end waits only on the media. */
+	function started(): void {
+		if (playOn && run.movesOnAfter(dwell.mode)) lookAhead(id, endRule());
+	}
+	onDestroy(() => {
+		if (!toCorner) dropAhead();
+	});
+
+	/* The file the run itself brought up, the one a picture rests on; a press clears it. */
+	let reachedByRun = $state<string | null>(null);
+
+	function playedThrough(): void {
+		void nextInRun().then((to) => {
+			reachedByRun = to;
+			showAsset(to);
+		});
 	}
 
 	/* Only for the dialog's name. A screen reader announcing "dialog" and nothing else leaves
@@ -161,9 +175,8 @@
 	 * The tile is the one pressed as this opened. Closing goes back to the same tile while the viewer
 	 * still shows the file it opened on and the tile is still on the screen; after a step to another
 	 * file, or with the tile scrolled away, there is nowhere honest to shrink to, and the viewer
-	 * shrinks a little where it is as it fades. On a desktop it is a player's screen changing and
-	 * moves as every one of those does (`stageTransition`): out of the corner panel it was sent
-	 * back up from, or from a little smaller than itself, and it fades one pace quicker as it goes.
+	 * shrinks a little where it is as it fades. On a desktop it moves as every player's screen does
+	 * (`stageTransition`), shrinking back as it leaves except on its way down to the corner.
 	 */
 	const openedOn = untrack(() => id);
 	const tile = takePressedTile();
@@ -176,12 +189,21 @@
 		return onScreen ? place : null;
 	}
 
+	/* Noted as it happens: the corner clears its hand-over in the same moment this starts to leave. */
+	let toCorner = false;
+	$effect(() => {
+		if (mini.handover) toCorner = true;
+	});
+
 	function comes(node: Element) {
 		/* `takePlace` is asked only by an ARRIVAL: the viewer leaving as a file goes down to the corner
 		   must not take the place that file is handed on with. */
 		return phoneWidth.yes
 			? fromPlace(node, { from: () => (id === openedOn ? tilePlace() : null) })
-			: stageTransition(node, { from: takePlace });
+			: stageTransition(node, {
+					from: takePlace,
+					leave: () => (toCorner ? 'fade' : 'shrink')
+				});
 	}
 
 	/*
@@ -194,6 +216,7 @@
 	function stepped(to: string | null, way: SwipeWay): void {
 		if (to === null) return;
 		stepping = phoneWidth.yes ? { to, way } : null;
+		reachedByRun = null;
 		showAsset(to);
 	}
 
@@ -269,6 +292,7 @@
 			dismiss();
 			return;
 		}
+		reachedByRun = null;
 		showAsset(to);
 	}
 
@@ -349,8 +373,13 @@
 				onloaded={loaded}
 				onnext={forward ? () => void stepForward(id).then((to) => stepped(to, 'next')) : undefined}
 				onprevious={back ? () => stepped(stepBack(id), 'previous') : undefined}
-				onplayedthrough={playOn ? () => void nextInRun().then(showAsset) : undefined}
-				onopen={(other, runs) => showStranger(other, id, runs)}
+				onplayedthrough={playOn ? playedThrough : undefined}
+				reachedByRun={reachedByRun === id}
+				onstarted={started}
+				onopen={(other, runs) => {
+					reachedByRun = null;
+					showStranger(other, id, runs);
+				}}
 				ongone={(deleted) => void gone(deleted)}
 				onclose={dismiss}
 			/>
@@ -406,9 +435,11 @@
 		 * note at the top of `MediaStage`.
 		 */
 		--sheet-gutter: 10px;
-		--stage-height: min(
-			75vh,
-			calc((var(--sheet-width) - 2 * var(--space-4) - var(--sheet-gutter)) * 9 / 16)
+		/* Down to a whole pixel, so the stage's rounded clip does not end inside one. */
+		--stage-height: round(
+			down,
+			min(75vh, calc((var(--sheet-width) - 2 * var(--space-4) - var(--sheet-gutter)) * 9 / 16)),
+			1px
 		);
 		/* A grid with one `1fr` row, so the scrolling region inside resolves to a definite height.
 		   With the cap alone the region would lay out at its content height and overflow the box that

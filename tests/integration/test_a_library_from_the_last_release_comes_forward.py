@@ -101,10 +101,9 @@ _SEEDS: tuple[tuple[str, tuple[object, ...]], ...] = (
 
 _ANSWER = json.dumps([{"fields": {"people": ["Wren Halloway"]}}])
 
-#: What each one-time step this test can feed needs to have something to do, by the component and
-#: the version that brings the step. A step the released library already took is neither fed nor
-#: asserted (that release ran it), so a new release's fixture never turns this red; a step of a
-#: newer build is added here with its rows.
+#: What each one-time step this test can feed needs, by the component and the version that brings
+#: it. A step the released library already took is neither fed nor asserted (that release ran it),
+#: so a new release's fixture never turns this red.
 _STEPS: dict[tuple[str, int], tuple[tuple[str, tuple[object, ...]], ...]] = {
     # A stash-box answer refused with its filings left behind.
     ("stash_boxes", 19): (
@@ -147,6 +146,25 @@ _STEPS: dict[tuple[str, int], tuple[tuple[str, tuple[object, ...]], ...]] = {
                 "Harbour Lights",
                 ARTISTS_JOINED_BY.join(["Example Band", "Low Tide"]),
             ),
+        ),
+    ),
+    # Rows whose parent went while foreign keys were off, beside rows that must stay as they are.
+    ("catalog", 90): (
+        ("INSERT INTO asset_usernames (asset_id, username_id) VALUES (?, ?)", ("gone", "u")),
+        (
+            "INSERT INTO collections (id, name, owner_id, created_at) VALUES (?, ?, ?, 0)",
+            ("c-gone", "Gone", "nobody"),
+        ),
+        ("INSERT INTO collections (id, name, created_at) VALUES (?, ?, 0)", ("c-shared", "Shared")),
+        (
+            "INSERT INTO tags (id, name, cover_asset_id, parent_id, created_at)"
+            " VALUES (?, ?, ?, ?, 0)",
+            ("t-left", "Harbour", "gone", "t-gone"),
+        ),
+        (
+            "INSERT INTO tags (id, name, cover_asset_id, parent_id, created_at)"
+            " VALUES (?, ?, ?, ?, 0)",
+            ("t-kept", "Lights", "f", "t-left"),
         ),
     ),
 }
@@ -214,6 +232,19 @@ async def test_a_library_from_the_last_release_comes_forward_in_one_boot(tmp_pat
                 " WHERE c.song_id = 'song' ORDER BY c.position"
             )
             assert [str(one["name"]) for one in credited] == ["Example Band", "Low Tide"]
+        assert await database.fetch_all("SELECT * FROM pragma_foreign_key_check") == []
+        if "catalog" in fed:
+            filed = await database.fetch_all("SELECT asset_id, username_id FROM asset_usernames")
+            assert [tuple(one) for one in filed] == [("f", "u")]
+            kept = await database.fetch_all("SELECT id FROM collections ORDER BY id")
+            assert [str(one["id"]) for one in kept] == ["c-shared"]
+            tags = await database.fetch_all(
+                "SELECT id, cover_asset_id, parent_id FROM tags WHERE id LIKE 't-%' ORDER BY id"
+            )
+            assert [tuple(one) for one in tags] == [
+                ("t-kept", "f", "t-left"),
+                ("t-left", None, None),
+            ]
     finally:
         await database.close()
 

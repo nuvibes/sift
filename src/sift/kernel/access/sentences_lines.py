@@ -295,6 +295,10 @@ def _said_from_template(
     template = _template(
         verb, object_kind, first, has_object, payload, object_is_page=from_object, by=by
     )
+    if from_object and count is None:
+        template = _kind_once(template, "subjects", first, others)
+    elif not from_object and obj is not None:
+        template = _kind_once(template, "object", object_kind, [obj])
     was = non_empty_str(payload.get("before"))
     if verb == "renamed":
         template = FEED["renamed"].line if was else FEED["renamed"].alone or template
@@ -411,6 +415,7 @@ def _feed_own_words(
     """The acts whose line is said by a builder of its own, before anything is counted."""
     if verb in FOLDER_REFUSALS and len(kept) == 1 and kept[0][0] == "folder":
         before, after = FOLDER_REFUSALS[verb]
+        before = _kind_once(f"{before}{{x}}", "x", "folder", pieces).removesuffix("{x}")
         return Said(said(by, before, pieces[0], after) if after else said(by, before, pieces[0]))
     if verb == "decided":
         return Said(said(today_words(title) or "A decision was taken"), groups=_grouped(subjects))
@@ -465,6 +470,23 @@ def _feed_own_words(
     return None
 
 
+def _by_its_kind(kind: str | None, one: Piece | None) -> bool:
+    """A thing with no name, said by its kind ("a tag"): never "the tag a tag"."""
+    return kind is not None and one is not None and one.text == A_THING.get(kind)
+
+
+def _kind_before(kind: str, one: Piece) -> str:
+    if _by_its_kind(kind, one) or not (one.kind is not None or one.text):
+        return ""
+    return KIND_BEFORE.get(kind, "")
+
+
+def _kind_once(template: str, slot: str, kind: str | None, things: Sequence[Piece]) -> str:
+    if len(things) != 1 or kind is None or not _by_its_kind(kind, things[0]):
+        return template
+    return template.replace(f"the {A_THING[kind].split(' ', 1)[-1]} {{{slot}}}", f"{{{slot}}}")
+
+
 def _feed_built_lines(
     *,
     verb: str,
@@ -493,10 +515,7 @@ def _feed_built_lines(
         took = f" and the names it added to {files(count)}" if count else ""
         return Said(said(by, " deleted everything in ", feature, took))
     if verb == "deleted":
-        gone_ones = [
-            said(KIND_BEFORE.get(kind, "") if one.kind is not None or one.text else "", one)
-            for kind, one in kept
-        ]
+        gone_ones = [said(_kind_before(kind, one), one) for kind, one in kept]
         about = counted_line(count, "files") if count is not None else listed(gone_ones)
         return Said(
             _with_task(
@@ -567,6 +586,10 @@ def _feed_template_line(
     template = _template(
         verb, object_kind, kept[0][0] if kept else None, object_piece is not None, payload, by=by
     )
+    if count is None:
+        template = _kind_once(template, "subjects", kept[0][0] if kept else None, pieces)
+    if object_piece is not None:
+        template = _kind_once(template, "object", object_kind, [object_piece])
     was = non_empty_str(payload.get("before"))
     if verb == "renamed":
         template = FEED["renamed"].line if was else FEED["renamed"].alone or template

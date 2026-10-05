@@ -446,6 +446,56 @@ describe('a row with a second line', () => {
 	});
 });
 
+describe('a row that says more when pointed at', () => {
+	const PAIR = [
+		{ value: 'side_by_side', label: '1x2 (P)', tooltip: 'Portrait' },
+		{ value: 'grid', label: '2x2' }
+	];
+
+	it('shows its words beside the row, and keeps the row its own name', async () => {
+		show({ options: PAIR });
+		open();
+
+		const rows = [...document.querySelectorAll<HTMLElement>('.ui-select-item')];
+		rows[0]
+			.querySelector('.wrap')
+			?.dispatchEvent(new PointerEvent('pointermove', { bubbles: true }));
+		await vi.waitFor(() => {
+			flushSync();
+			expect(document.querySelector('[role="tooltip"]')?.textContent?.trim()).toBe('Portrait');
+		});
+		expect(rows[0].textContent?.trim()).toBe('1x2 (P)');
+	});
+
+	it('shows them for the row the keyboard highlights, and gives way to the pointer', async () => {
+		show({ options: PAIR, value: 'grid' });
+		open();
+		const list = host.querySelector<HTMLElement>('.ui-select')!;
+		const pair = () => document.querySelector('.ui-select-item')!;
+		for (const key of ['ArrowDown', 'Home']) {
+			list.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }));
+			flushSync();
+		}
+		expect(pair().hasAttribute('data-highlighted'), 'the arrows never reached the row').toBe(true);
+		await vi.waitFor(() => {
+			flushSync();
+			expect(document.querySelector('[role="tooltip"]')?.textContent?.trim()).toBe('Portrait');
+		});
+
+		window.dispatchEvent(new PointerEvent('pointermove', { bubbles: true }));
+		flushSync();
+		expect(document.querySelector('[role="tooltip"]'), 'held up under a moving pointer').toBeNull();
+	});
+
+	it('draws nothing extra on a row without one', () => {
+		show({ options: PAIR });
+		open();
+
+		const rows = [...document.querySelectorAll('.ui-select-item')];
+		expect(rows.map((one) => one.querySelector('.wrap') !== null)).toEqual([true, false]);
+	});
+});
+
 describe('a list whose words have to be looked at rather than read', () => {
 	/* The appearance pane's two font menus. A list of typeface names set in one face tells you
 	   what they are called, which the reader already had; what the choice is about is what each one

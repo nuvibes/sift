@@ -346,6 +346,7 @@ The Folders
 The Generate
 The Hidden
 The History
+The Scan
 The Identified
 The Identify
 The Importing
@@ -497,10 +498,16 @@ User Management
 The Vale
 Created Wren Halloway
 Install Sift
-Layout Preset
-Layout Presets
-Saved Layout Presets
+Saved Layout
+Saved Layouts
 The Faces
 The Loop
 With Generate
 With Permissive
+Files History
+Files Tags History
+Internal Server Error
+One User
+One Loop
+Refusing Has
+The Has

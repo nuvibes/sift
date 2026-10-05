@@ -6,9 +6,8 @@
  * would destroy the `<input type=file>` whose dialog is still on screen, discarding the files
  * somebody picked.
  *
- * The panel's life belongs to the library's `Popover`: nothing here closes it because a pointer
- * left, and a pointer down or a focus inside it marks it as in use. The first test below is that
- * property.
+ * The panel's life belongs to the library's `Popover`: a pointer down or a focus inside it marks it
+ * as in use, and the first test below is that property.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -23,10 +22,21 @@ import topBarSource from './TopBar.svelte?raw';
 
 vi.mock('$lib/shell/session.svelte', () => ({ session: { isAdmin: true } }));
 vi.mock('$lib/api/client', () => ({
-	api: { get: vi.fn(async () => ({ folders: [] })), post: vi.fn(async () => ({})) },
+	api: {
+		get: vi.fn(async () => ({ folders: [] })),
+		post: vi.fn(async () => ({})),
+		put: vi.fn(async () => undefined)
+	},
 	request: vi.fn(async () => ({})),
 	ApiError: class extends Error {}
 }));
+
+/* jsdom has no pointer capture, and the chooser's primitive releases it on the way down. */
+for (const name of ['setPointerCapture', 'releasePointerCapture', 'hasPointerCapture'] as const) {
+	if (!(name in Element.prototype)) {
+		Object.defineProperty(Element.prototype, name, { value: () => false, writable: true });
+	}
+}
 
 let host: HTMLElement;
 
@@ -198,6 +208,54 @@ describe('the folder chooser', () => {
 		});
 	});
 
+	it('makes a picked folder the default, so the downloads after it send none', async () => {
+		const row = { scope: '*default*', naming: '{site}', dest_folder_id: 'f1', downloader: null };
+		vi.mocked(api.get).mockImplementation(async (path: string) =>
+			path === '/site-options'
+				? { default: row, sites: [], tokens: {}, downloaders: [] }
+				: {
+						folders: [
+							{ id: 'f1', name: 'Sift Downloads', rel_path: 'Sift Downloads' },
+							{ id: 'f2', name: 'Clips', rel_path: 'Clips' }
+						]
+					}
+		);
+		const submit = vi.spyOn(capture, 'submitUrl').mockResolvedValue();
+		render();
+		await vi.waitFor(() => {
+			flushSync();
+			expect(panel()?.querySelector('.ui-select-value')?.textContent).toContain('(default)');
+		});
+
+		// The primitive opens and picks on the pointer, as `Select.svelte.test.ts` drives it.
+		const press = (one: HTMLElement) => {
+			one.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, button: 0 }));
+			one.dispatchEvent(new MouseEvent('pointerup', { bubbles: true, button: 0 }));
+			one.click();
+			flushSync();
+		};
+		press(panel()!.querySelector<HTMLElement>('.ui-select')!);
+		const clips = await vi.waitFor(() => {
+			const found = [...document.querySelectorAll<HTMLElement>('.ui-select-item')].find(
+				(one) => one.textContent?.trim() === 'Clips'
+			);
+			expect(found).toBeTruthy();
+			return found!;
+		});
+		press(clips);
+
+		await vi.waitFor(() =>
+			expect(api.put).toHaveBeenCalledWith('/site-options/' + '*default*', {
+				body: { naming: '{site}', dest_folder_id: 'f2', downloader: null }
+			})
+		);
+		const box = panel()!.querySelector<HTMLInputElement>('input[type="url"]')!;
+		box.value = 'https://example.com/a-clip';
+		box.dispatchEvent(new Event('input', { bubbles: true }));
+		box.form!.requestSubmit();
+		expect(submit).toHaveBeenCalledWith('https://example.com/a-clip', null);
+	});
+
 	it('says nothing it cannot know when the default has never been set', async () => {
 		// A folder has to exist for the chooser to be drawn at all: an add panel with nowhere to put
 		// anything offers no destination row.
@@ -245,6 +303,38 @@ describe("the panel's words and its last row", () => {
 			expect(panel()?.textContent).toContain('Download folder');
 		});
 		expect(panel()?.textContent).not.toContain('Where it goes');
+	});
+
+	it("says the paste box's sentence once the list holds no folder Sift may write to", async () => {
+		let answer: (body: unknown) => void = () => {};
+		vi.mocked(api.get).mockImplementationOnce(() => new Promise((done) => (answer = done)));
+		render();
+		expect(panel()?.textContent).not.toContain('Sift has no folder');
+		answer({ folders: [{ id: 'f1', name: 'Clips', rel_path: 'Clips', writable: false }] });
+		await vi.waitFor(() => {
+			flushSync();
+			expect(panel()?.textContent).toContain(
+				'Sift has no folder to save a download in yet. Add a folder to your library first.'
+			);
+		});
+		expect(panel()?.textContent).not.toContain('Download folder');
+	});
+
+	it('says nothing new when the folder list could not be read', async () => {
+		let defaultAsked = false;
+		vi.mocked(api.get).mockImplementationOnce(async () => {
+			throw new Error('unreachable');
+		});
+		vi.mocked(api.get).mockImplementationOnce(async () => {
+			defaultAsked = true;
+			return { default: { dest_folder_id: null }, sites: [] };
+		});
+		render();
+		await vi.waitFor(() => expect(defaultAsked).toBe(true));
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		flushSync();
+		expect(panel()?.textContent).not.toContain('Sift has no folder');
+		expect(panel()?.textContent).not.toContain('Download folder');
 	});
 
 	it('puts swap mode at the bottom right, after Choose files, and closes to show the drawer', async () => {

@@ -66,6 +66,7 @@ from sift.slices.faces.service import (
     FaceService,
     next_remeasure_page,
 )
+from sift.slices.faces.store_left_out import LeftOutStore
 
 log = get_logger(__name__)
 
@@ -876,6 +877,7 @@ def register_handlers(
     service: FaceService,
     door: BoxPicturesSeam | None = None,
     regroup_settles_into: Sequence[str] = (),
+    left_out: LeftOutStore | None = None,
 ) -> None:
     register_handler(
         FACE_SCAN,
@@ -952,15 +954,12 @@ def register_handlers(
         FACE_STARTERS,
         lambda context: starters(context, service=service, door=door),
         name="Adding starter pictures from stash-boxes",
-        # Not a pass over files, so not Identify's: counted as one, History would say "You ran
-        # Identify in 22 s: 1 file" and Identify's pace, which the time left is divided by, would
-        # count picture checks as a file read. What the press did is said by its own receipt ("Sift
-        # added 4 starter pictures from FansDB for 3 people", `StarterRecords`).
+        # Not a pass over files: as Identify, its pace would count picture checks as files read.
         family=Family.OTHER,
         # One at a time: two runs over the same People would fetch the same pictures twice.
         alone=True,
     )
-    _register_one_at_a_time(service)
+    _register_one_at_a_time(service, left_out)
 
 
 async def _fingerprints_now(queue: JobQueue) -> None:
@@ -968,7 +967,7 @@ async def _fingerprints_now(queue: JobQueue) -> None:
     await ask_for_fingerprints(queue, delay=0)
 
 
-def _register_one_at_a_time(service: FaceService) -> None:
+def _register_one_at_a_time(service: FaceService, left_out: LeftOutStore | None) -> None:
     register_handler(
         FACE_FORGET,
         lambda context: forget(context, service=service),
@@ -977,7 +976,9 @@ def _register_one_at_a_time(service: FaceService) -> None:
     )
     register_handler(
         FACE_FOLDER_IMPORT,
-        lambda context: import_folder(context, service=service, ask=_fingerprints_now),
+        lambda context: import_folder(
+            context, service=service, ask=_fingerprints_now, left_out=left_out
+        ),
         name="Importing a folder of people",
         # Not a pass over library files: it reads a folder of pictures that never join the library.
         family=Family.OTHER,

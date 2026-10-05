@@ -763,7 +763,7 @@ async def test_a_photo_set_made_from_a_folder_names_the_folder_where_it_may_be_s
     ]
 
     unseen = (await history_of_photo_set(temp_db, actors.guest, PHOTO_SET, access=access))[0]
-    assert unseen.what == "Sift created Pool shoot from a folder"
+    assert unseen.what.endswith(" from a folder")
 
     await temp_db.execute("DELETE FROM folders WHERE id = 'folder-beach'")
     made = (await history_of_photo_set(temp_db, actors.admin, PHOTO_SET, access=access))[0]

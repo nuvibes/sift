@@ -10,6 +10,7 @@ what. A cut that no longer puts the statement back together fails the import.
 
 from __future__ import annotations
 
+from sift.kernel.access.constraints import SEES_EVERY_FILE
 from sift.kernel.access.repository.asset_facets import ADMIN_FACETS as ADMIN_FACETS
 from sift.kernel.access.repository.asset_facets import FACET_LABELS as FACET_LABELS
 from sift.kernel.access.repository.asset_facets import FACETS as FACETS
@@ -42,52 +43,21 @@ from sift.kernel.sql_splice import splice
 _VISIBLE_ASSETS_HEAD = splice(
     """
 WITH RECURSIVE
--- `in:` names a folder and means everything in it, so each named folder is expanded to its whole
--- subtree here. `grp` rides along so the groups stay separate: two `in:` terms are two constraints
--- and both have to be satisfied, which a single flat set of folder ids could not express.
---
--- UNION rather than UNION ALL, and that is what makes a hand-edited or restored database with a
--- parent loop terminate instead of recursing forever: a folder already in the set is not added a
--- second time, so the recursion runs out of new rows.
---
--- When no folder is named the parameter is NULL, `json_each` over NULL yields no rows, and the
--- whole CTE is empty for the cost of nothing.
---
--- `:folder_depth_direct` is how a CONTROL asks for the folder and not what is under it: a file
--- manager walking into a folder, where a typed `in:` means the whole subtree. Said as whether to
--- descend at all rather than as a number of levels, and that is the loop property above again: a
--- depth column would make the same folder a NEW row at each depth, so UNION would stop
--- deduplicating and a parent loop would recurse forever. Nobody has asked for two levels.
+-- Each `in:` folder expanded to its subtree, one group per term. UNION, not UNION ALL, so a parent
+-- loop runs out of new rows; a depth column would defeat that, hence a yes or no to descend.
 in_scope(grp, folder_id) AS (
   SELECT g.key, v.value FROM json_each(:folder_ids_groups) g, json_each(g.value) v
   UNION
   SELECT s.grp, f.id FROM folders f JOIN in_scope s ON f.parent_id = s.folder_id
     WHERE :folder_depth_direct = 0
 ),
--- How well each file matches the words that were typed, for the relevance order.
---
--- What it measures is worth being straight about, because the number is not what the name
--- suggests. The index indexes runs of three characters rather than words, which is what makes
--- typing the middle of a filename work, so this ranks by how many of those runs matched and how
--- rare they are against how much text the row has, not by how meaningful a word is. It does put
--- the closer matches first, and it cannot tell that a whole word is a stronger signal than the
--- same letters sitting inside a longer one.
---
--- The match expression arrives through `json_each` rather than as a parameter tested for NULL, and
--- that shape is load-bearing rather than decorative. A NULL match expression is not "no rows" to
--- FTS5, it is a syntax error and a 500 on any search with no free text in it, and a `MATCH` term
--- guarded by an ordinary `IS NOT NULL` beside it is only as safe as the order the planner happens
--- to evaluate them in, which is nothing to rely on. Driving the match from a row
--- source that is EMPTY when nothing was typed means MATCH is never reached at all: `json_each` over
--- NULL yields no rows, so the loop that would call it does not run.
---
--- Left as a join rather than a subquery in the ORDER BY: `asset_id` is UNINDEXED, so looking a
--- row up by it is a scan of the whole index, and once per candidate row is not affordable. As a
--- joined result the planner indexes it once.
+-- How well each file matches the words, for a viewer who sees every file: bm25 reads every match.
+-- From `json_each`, empty when nothing was typed, as FTS5 refuses a NULL match.
 relevance(asset_id, score) AS (
   SELECT assets_fts.asset_id, bm25(assets_fts)
-    FROM json_each(:text_rank) rank
+    FROM users u CROSS JOIN json_each(:text_rank) rank
     JOIN assets_fts ON assets_fts MATCH rank.value
+   WHERE {{SEES_EVERY_FILE}}
 ),
 -- How near each file sat to what was typed, when a model was asked rather than the word index.
 --
@@ -238,6 +208,7 @@ SELECT a.*,
 """,
     ANY_COPY_MISSING=ANY_COPY_MISSING,
     CONCEALED_BY_THIS_FILE=CONCEALED_BY_THIS_FILE,
+    SEES_EVERY_FILE=SEES_EVERY_FILE,
 )
 
 # Everything from the concealment rules down: what decides which rows a viewer is SHOWN is fixed
@@ -423,6 +394,18 @@ def facet_query(where: str, *, joins: str, value: str, label: str = "", extra: s
     )
 
 
+#: The orders an index walks, so a page stops at its last row; no index holds the shuffle's key.
+_INDEX_ORDERED = SEEKABLE_SORTS - {"random"}
+
+#: Where a page that sorts every row reads its columns: the ids it kept, and no others.
+_PAGED_IDS = "a.id IN (SELECT paged_id FROM paged)"
+
+
+def _sorts_ids_first(sort: str, *, arranged: bool) -> bool:
+    """Whether a page sorts every row, so it sorts their ids and reads its own rows after."""
+    return arranged or sort not in _INDEX_ORDERED
+
+
 def assets_query(
     sort: str,
     where: str,
@@ -431,29 +414,43 @@ def assets_query(
     counted: bool = True,
     drive: str = DRIVE_LIBRARY,
     continued: bool = False,
+    outer: str | None = None,
 ) -> str:
     """The visible-assets statement, filtered by `where` and ordered by `sort`.
 
-    The fixed resolve, the filter in its parentheses, then the permission rules and the page
-    window, so a filter can narrow the answer and never widen it. `drive` names the side walked
-    first (`drive_for`); both answer the same rows. `continued` starts after the row bound as
-    `:after_key` and `:after_id`, added here so the count, which takes `where` alone, never does.
+    The resolve, the filter in its parentheses, then the permission rules and the window, so a
+    filter can only narrow. `drive` names the side walked first (`drive_for`). `continued` starts
+    after `:after_key` and `:after_id`, here so the count, which takes `where` alone, never does.
+    An order no index walks sorts the ids first, then reads those rows alone under `outer` (by
+    default `where`), as the first step applied all of it.
     """
     columns = _COLUMNS if counted else _COLUMNS.replace(_TOTAL_COLUMN, "")
     from_at, joins = _DRIVES[drive]
     narrowing = where + _SEEK_OPEN + _SEEK_AFTER[sort] + _SEEK_CLOSE if continued else where
+    ordered = _ordered_by(sort, arranged=arranged)
+    walked = (
+        from_at + joins + _WHERE_AT + _WHERE_OPEN + narrowing + _CONDITIONS + ordered + _PAGE_TAIL
+    )
+    if counted or not _sorts_ids_first(sort, arranged=arranged):
+        return _CTES + _COLUMNS_AT + columns + walked
+    # The second read keeps every rule and the order, so it can only drop a row, never add one.
     return (
         _CTES
+        + ",\npaged(paged_id) AS (\nSELECT a.id"
+        + walked
+        + ")"
         + _COLUMNS_AT
         + columns
-        + from_at
-        + joins
+        + _FROM_AT
+        + _JOINS
         + _WHERE_AT
         + _WHERE_OPEN
-        + narrowing
+        + (where if outer is None else outer)
+        + _SEEK_OPEN
+        + _PAGED_IDS
+        + _SEEK_CLOSE
         + _CONDITIONS
-        + _ordered_by(sort, arranged=arranged)
-        + _PAGE_TAIL
+        + ordered
     )
 
 

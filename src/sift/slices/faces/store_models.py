@@ -193,16 +193,26 @@ class ModelsStore(PicturesStore):
         )
 
     async def record_pack(
-        self, *, name: str, version: str, recognizer: str, dimension: int, digest: str
+        self,
+        *,
+        name: str,
+        version: str,
+        recognizer: str,
+        dimension: int,
+        digest: str,
+        library: str | None = None,
     ) -> str:
-        """Record a pack, keyed by name, and hand back its id.
+        """Record a pack, keyed by the library that made it or else by its name; hand back its id.
 
-        **The same pack again** (same digest) changes nothing. **A later edition** (same name,
-        other contents) replaces what the earlier one brought. Its references go **before** the
-        pack row: the database removes them with the pack, and the pictures behind them, which only
-        this side can delete, would stay on the disk for ever.
+        The same file again changes nothing. A later edition replaces what the earlier one brought,
+        its pictures first, since the database cannot delete those.
         """
-        existing = await self.pack_by_name(name)
+        if library is None:
+            existing = await self.pack_by_name(name)
+        else:
+            existing = await self._db.fetch_one(
+                "SELECT * FROM face_packs WHERE library = ?", (library,)
+            )
         if existing is not None:
             if str(existing["digest"]) == digest:
                 return str(existing["id"])
@@ -217,12 +227,26 @@ class ModelsStore(PicturesStore):
             await asyncio.to_thread(lambda: _remove_pictures(self._resolve_all(stored)))
             await self._db.execute("DELETE FROM face_packs WHERE id = ?", (str(existing["id"]),))
         pack_id = new_id()
+        # A library's pack gets a key no file's name can take, so the name never decides.
+        key = name if library is None else f"{self._FROM_A_LIBRARY}{pack_id}"
         await self._db.execute(
             "INSERT INTO face_packs (id, name, version, recognizer, dimension, digest, "
-            "installed_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (pack_id, name, version, recognizer, dimension, digest, now_ms()),
+            "installed_at, library) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (pack_id, key, version, recognizer, dimension, digest, now_ms(), library),
         )
         return pack_id
+
+    #: Where a pack from a named library keeps its key; its entries carry the file's name.
+    _FROM_A_LIBRARY = "library "
+
+    async def own_library(self) -> str:
+        """This library's id for the files it makes, minted the first time it is asked for."""
+        async with self._db.write() as connection:
+            await connection.execute(
+                "INSERT OR IGNORE INTO face_own_library (one, id) VALUES (1, ?)", (new_id(),)
+            )
+            rows = await connection.execute_fetchall("SELECT id FROM face_own_library", ())
+        return str(next(iter(rows))[0])
 
     #: The standing entry that holds what a FOLDER import could not place: one row to hang entries
     #: off, so `UNIQUE(pack_id, name)` merges two folders for the same person into one entry.
@@ -247,11 +271,8 @@ class ModelsStore(PicturesStore):
     _SWAPPED = "swap "
 
     async def waiting_entries(self) -> list[Row]:
-        """Everybody a facial fingerprints file or a folder brought who is nobody here yet, newest
-        first: the entry, its name, how many faces it holds, the file or folder it came from
-        (`source`: the entry's own folder where a folder import gave one, the pack's name
-        otherwise), how many confirmed faces the file said they had (`confirmed`, None where it
-        said nothing) and when it was taken in."""
+        """Everybody a file or a folder brought who is nobody here yet, newest first, with their
+        faces, where they came from (`source`), the confirmed count a file gave and when."""
         return await self._db.fetch_all(
             "SELECT e.id AS entry_id, e.name AS name, e.created_at AS added_at,"
             " COALESCE(e.source, p.name) AS source, e.confirmed AS confirmed,"

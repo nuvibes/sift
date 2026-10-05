@@ -42,7 +42,8 @@ const TOP = {
 	shared: false,
 	shared_here: false,
 	keep_local: false,
-	keep_from_swaps: false
+	keep_from_swaps: false,
+	writable: null
 };
 
 function siteOptions(folder: string | null) {

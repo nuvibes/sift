@@ -5,8 +5,9 @@ Admin-only. It works the machine hard for about a minute and it hands back recom
 instance-wide settings; neither is a guest's business, and hiding the panel in the client is a
 courtesy rather than the control.
 
-Starting is separate from reading because the test takes far longer than a request should. The last
-run is kept per hardware profile (`rates`), so a changed machine is offered nothing stale.
+Starting is separate from reading because the test takes far longer than a request should: a start
+queues the benchmark job, which has the queue to itself. The last run is kept per hardware profile
+(`rates`), so a changed machine is offered nothing stale.
 
 Nothing here writes a setting. A recommendation names a setting and the value it should have;
 applying it goes through the ordinary settings route, with its validation and its History line.
@@ -22,6 +23,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
 from sift.kernel import lifecycle
 from sift.kernel.access import Viewer
+from sift.kernel.jobs import JobState
 from sift.kernel.jobs.ledger import report_text
 from sift.kernel.log import get_logger
 from sift.kernel.machine_acts import record_act
@@ -38,8 +40,10 @@ from sift.kernel.wiring import (
 from sift.slices import performance
 from sift.slices.auth import csrf_protect, require_admin
 from sift.slices.performance import selftest
-from sift.slices.performance.benchmark import FIRST_BENCHMARK, HELD
+from sift.slices.performance.benchmark import BENCHMARK, FIRST_BENCHMARK, HELD
 from sift.slices.performance.jobs import ACCEL_INSTALL
+from sift.slices.performance.measure_encoder import CardCurve
+from sift.slices.performance.measure_models import ModelCurve
 from sift.slices.performance.models import (
     AcceleratorTestView,
     AcceleratorView,
@@ -56,6 +60,8 @@ from sift.slices.performance.models import (
     SelfTestView,
     StorageCurveView,
     StorageLevelView,
+    card_view,
+    model_views,
 )
 from sift.slices.performance.runner import SELF_TEST_RUNNER, current_settings
 
@@ -64,71 +70,56 @@ log = get_logger(__name__)
 router = APIRouter(tags=["performance"])
 
 
+def _storage_view(curve: selftest.StorageCurve, folders: dict[str, str]) -> StorageCurveView:
+    return StorageCurveView(
+        storage=curve.storage,
+        label=curve.name,
+        folders=folders.get(curve.storage, ""),
+        remote=curve.remote,
+        failed=curve.failed,
+        best_at_once=curve.best.at_once if curve.best is not None else None,
+        levels=[
+            StorageLevelView(
+                at_once=level.at_once,
+                seconds=round(level.seconds, 2),
+                megabytes=round(level.bytes_read / 1_000_000, 1),
+                megabytes_per_second=round(level.megabytes_per_second, 1),
+            )
+            for level in curve.levels
+        ],
+    )
+
+
 def _view(
     state: selftest.SelfTest,
     *,
     current: dict[str, int],
     rounds: int,
     measured: bool,
+    waiting: bool = False,
+    notes: list[str] | None = None,
+    card: CardCurve | None = None,
+    models: tuple[ModelCurve, ...] = (),
+    caused: tuple[int, int] = (0, 0),
+    progress: selftest.Measurement | None = None,
+    folders: dict[str, str] | None = None,
 ) -> SelfTestView:
-    """The run, in the shape the client depends on.
-
-    Built field by field rather than splatted from the dataclass, so a field reaches the wire only
-    when it is added here.
-
-    `current` is read now, not when the test ran, so an applied recommendation reads as one that
-    changes nothing and the screen stops offering it.
-    """
+    """The run, built field by field so a field reaches the wire only when added here. `current`
+    is read now, so an applied recommendation stops being offered; `waiting` is a queued run."""
     measurement = state.measurement
     return SelfTestView(
-        running=state.running,
+        running=state.running or waiting,
+        progress=None if progress is None else _measurement_view(progress, folders or {}),
+        held_while_measuring=caused[0],
+        full_while_measuring=caused[1],
+        notes=[*(notes or ()), *(measurement.not_measured() if measurement is not None else ())],
         finished=state.finished_at is not None,
         measured=measured,
         rounds=rounds,
         share_reads_now=performance.resolve_share_reads(
             current.get(performance.SHARE_READS_KEY, 0)
         ),
-        measurement=None
-        if measurement is None
-        else MeasurementView(
-            cores=measurement.cores,
-            failed=measurement.failed,
-            levels=[
-                LevelView(
-                    at_once=level.at_once,
-                    seconds=round(level.seconds, 2),
-                    finished=level.finished,
-                    per_second=round(level.throughput, 3),
-                    responsive=level.responsive,
-                )
-                for level in measurement.levels
-            ],
-            storages=[
-                StorageCurveView(
-                    storage=curve.storage,
-                    label=curve.label,
-                    remote=curve.remote,
-                    failed=curve.failed,
-                    best_at_once=curve.best.at_once if curve.best is not None else None,
-                    levels=[
-                        StorageLevelView(
-                            at_once=level.at_once,
-                            seconds=round(level.seconds, 2),
-                            megabytes=round(level.bytes_read / 1_000_000, 1),
-                            megabytes_per_second=round(level.megabytes_per_second, 1),
-                        )
-                        for level in curve.levels
-                    ],
-                )
-                for curve in measurement.storages
-            ],
-            decode=None
-            if measurement.decode is None
-            else DecodeView(
-                frames_per_second=round(measurement.decode.frames_per_second, 1),
-                seek_seconds=round(measurement.decode.seek_seconds, 4),
-            ),
-        ),
+        measurement=None if measurement is None else _measurement_view(measurement, folders or {}),
         recommendations=[
             RecommendationView(
                 key=one.key,
@@ -140,12 +131,35 @@ def _view(
             )
             for one in state.recommendations
         ],
+        card=card_view(card),
+        models=model_views(models),
     )
 
 
-def _state(request: Request) -> selftest.SelfTest:
-    """The one run there may be at a time: the runner's, which the Build shares."""
-    return part_of(request, SELF_TEST_RUNNER).state
+def _measurement_view(
+    measurement: selftest.Measurement, folders: dict[str, str]
+) -> MeasurementView:
+    return MeasurementView(
+        cores=measurement.cores,
+        failed=measurement.failed,
+        levels=[
+            LevelView(
+                at_once=level.at_once,
+                seconds=round(level.seconds, 2),
+                finished=level.finished,
+                per_second=round(level.throughput, 3),
+                responsive=level.responsive,
+            )
+            for level in measurement.levels
+        ],
+        storages=[_storage_view(curve, folders) for curve in measurement.storages],
+        decode=None
+        if measurement.decode is None
+        else DecodeView(
+            frames_per_second=round(measurement.decode.frames_per_second, 1),
+            seek_seconds=round(measurement.decode.seek_seconds, 4),
+        ),
+    )
 
 
 async def _current_settings(request: Request) -> dict[str, int]:
@@ -158,27 +172,40 @@ def _rounds(request: Request) -> int:
     return len(selftest.planned_levels(part_of(request, HARDWARE).cpu_count))
 
 
-@router.post(
-    "/performance/self-test", response_model=SelfTestView, status_code=status.HTTP_202_ACCEPTED
-)
-async def start(
-    request: Request,
-    _admin: Annotated[Viewer, Depends(require_admin)],
-    _csrf: Annotated[None, Depends(csrf_protect)],
-) -> SelfTestView:
-    """Begin measuring. Answers straight away; the result is read back below.
-
-    A second request while one is running is not an error and does not start a second test: it
-    answers with the run already in flight. Two of these at once would measure each other.
-    """
+async def _read(request: Request) -> SelfTestView:
+    """The run as the screen reads it, a queued run counted as going."""
     runner = part_of(request, SELF_TEST_RUNNER)
-    runner.start()
+    newest = await part_of(request, QUEUE).newest_of(BENCHMARK, limit=3)
     return _view(
         runner.state,
         current=await _current_settings(request),
         rounds=_rounds(request),
         measured=await runner.measured(),
+        waiting=any(job.state in (JobState.QUEUED, JobState.RUNNING) for job in newest),
+        notes=runner.notes,
+        card=runner.card,
+        models=runner.models,
+        caused=runner.caused,
+        progress=runner.progress,
+        folders=await runner.folders(),
     )
+
+
+@router.post(
+    "/performance/self-test", response_model=SelfTestView, status_code=status.HTTP_202_ACCEPTED
+)
+async def start(
+    request: Request,
+    admin: Annotated[Viewer, Depends(require_admin)],
+    _csrf: Annotated[None, Depends(csrf_protect)],
+) -> SelfTestView:
+    """Queue a run that suggests. Answers straight away; the result is read back below.
+
+    A second request while one is coming is not an error and queues nothing: two runs at once
+    would measure each other.
+    """
+    await part_of(request, SELF_TEST_RUNNER).ask(admin.id)
+    return await _read(request)
 
 
 @router.get("/performance/self-test", response_model=SelfTestView)
@@ -186,17 +213,9 @@ async def result(
     request: Request,
     _admin: Annotated[Viewer, Depends(require_admin)],
 ) -> SelfTestView:
-    """What the last run found, or that one is still going. Never blocks on the run.
-
-    After a restart, the last run kept for this hardware. See `SelfTestRunner.recall`.
-    """
+    """What the last run found, or the one kept after a restart, and the run going if one is."""
     await part_of(request, SELF_TEST_RUNNER).recall()
-    return _view(
-        _state(request),
-        current=await _current_settings(request),
-        rounds=_rounds(request),
-        measured=await part_of(request, SELF_TEST_RUNNER).measured(),
-    )
+    return await _read(request)
 
 
 @router.get("/performance/benchmark", response_model=FirstBenchmarkView)

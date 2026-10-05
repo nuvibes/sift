@@ -10,13 +10,10 @@
  * and nothing about what it consents to would pass every unit test in the tree.
  */
 import { expect, test, type Page } from '@playwright/test';
-/* The phrases below are matched with `\s+` between words rather than a plain space, and that is
- * not fussiness. Playwright does not normalise whitespace when a locator is given a regular
- * expression, and the formatter reflows prose freely, so an assertion written with plain spaces
- * passes until somebody adds a word to the sentence above it and the line wraps in a new place.
- * The failure then names the wrong thing entirely: the copy is fine and the test says it is
- * missing. */
+/* Phrases are matched with `\s+` between words: Playwright does not normalise whitespace for a
+ * regular expression, and the formatter reflows the prose they are read from. */
 import { signInAsAdmin } from './admin';
+import { pressCrumb } from './trail';
 
 /* Put the feature in a known position before the page is opened.
  *
@@ -289,10 +286,7 @@ test('a tab pressed on a person does not lose the wall the trail comes back to',
 
 	/* The queue's crumb: the trail is Organize, the group, the queue, then the person, and the
 	   queue is the one to press. By its name, since the group's crumb sits between. */
-	await page
-		.locator('nav[aria-label="Breadcrumb"]')
-		.getByRole('link', { name: 'People Sift can recognize' })
-		.click();
+	await pressCrumb(page, 'People Sift can recognize');
 
 	await expect(page).toHaveURL(/\/organize\/known-people(\?|$)/);
 	await expect(intoWren).toBeVisible();

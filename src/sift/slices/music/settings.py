@@ -93,4 +93,5 @@ register_setting(
     section=_SECTION,
     label="Connect to AcoustID through",
     help="A tunnel you added under Sites, or nothing to connect directly.",
+    names_a_tunnel=True,
 )

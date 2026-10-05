@@ -71,10 +71,24 @@ def _tag_id(client: TestClient, name: str) -> str:
     return str(found[0])
 
 
-def _facets(client: TestClient, facet: str, **params: str) -> dict[str, int]:
+#: The named-thing columns led by "Has" and "No" rows (`any`, `none`).
+_HEADED = frozenset({"tags", "people", "sites", "collections", "photo_sets", "songs"})
+
+
+def _column(client: TestClient, facet: str, **params: str) -> list[tuple[str, int]]:
     answer = client.get("/api/assets/facets", params={"facet": facet, **params})
     assert answer.status_code == 200, answer.text
-    return {row["value"]: row["count"] for row in answer.json()["values"]}
+    return [(row["value"], row["count"]) for row in answer.json()["values"]]
+
+
+def _facets(client: TestClient, facet: str, **params: str) -> dict[str, int]:
+    """A column's own values, without the "Has" and "No" rows `_heads` reads."""
+    rows = _column(client, facet, **params)
+    return {value: n for value, n in rows if facet not in _HEADED or value not in ("any", "none")}
+
+
+def _heads(client: TestClient, facet: str, **params: str) -> dict[str, int]:
+    return {value: n for value, n in _column(client, facet, **params) if value in ("any", "none")}
 
 
 def _reachable(client: TestClient, **params: str) -> int:
@@ -213,6 +227,33 @@ def test_the_counts_are_narrowed_by_the_query_they_describe(
 
     assert _facets(client, "tags") == {"beach": 1, "city": 1}
     assert _facets(client, "tags", q="tags:beach") == {"beach": 1}
+
+
+def test_has_and_no_lead_each_named_column_and_open_what_they_counted(
+    client: TestClient, library: Library
+) -> None:
+    """ "Has tags" and "No tags" first, counted from the filter they write, never at nought."""
+    _tag(client, library.shared, "beach")
+    _tag(client, library.shared, "None")
+    sign_in(client, "admin")
+
+    assert _column(client, "tags")[:2] == [("any", 1), ("none", 1)]
+    # A name spelled as a presence word cannot be filtered to by name, so it is not listed.
+    assert _facets(client, "tags") == {"beach": 1}
+    for facet in _HEADED:
+        heads = _heads(client, facet)
+        assert sum(heads.values()) == _reachable(client), facet
+        for value, count in heads.items():
+            assert _reachable(client, q=f"{facet}:{value}") == count, f"{facet}:{value}"
+    assert _heads(client, "people") == {"none": 2}
+
+    # Narrowed by another filter, the rest of the wall is counted by its own statement.
+    assert _heads(client, "tags", q="tags:beach") == {"any": 1}
+    guest = sign_in(client, "guest")
+    sign_in(client, "admin")
+    share(client, library.private, guest)
+    sign_in(client, "guest")
+    assert _heads(client, "tags") == {"none": 1}
 
 
 def test_a_facet_nobody_offers_is_refused(client: TestClient, library: Library) -> None:
@@ -1019,6 +1060,27 @@ def test_a_network_counts_every_label_under_it_and_carries_its_name(
     assert _reachable(client, q=f"network:{network}") == 2
 
 
+def test_two_people_with_one_name_are_two_rows_each_counting_its_own_wall(
+    client: TestClient, library: Library
+) -> None:
+    """A person's row is their id with the name beside it, so a namesake never adds to it."""
+    sign_in(client, "admin")
+    busy = _a_person(client, "Esme Wrenfield")
+    namesake = _a_person(client, "Esme Wrenfield")
+    _filed_by(client, library.shared, busy, "folder")
+    _filed_by(client, library.private, busy, "folder")
+    _filed_by(client, library.private, namesake, "folder")
+
+    rows = [row for row in _facet_rows(client, "people") if row["value"] not in ("any", "none")]
+
+    assert rows == [
+        {"value": busy, "count": 2, "label": "Esme Wrenfield"},
+        {"value": namesake, "count": 1, "label": "Esme Wrenfield"},
+    ]
+    for row in rows:
+        assert _reachable(client, people=str(row["value"])) == row["count"]
+
+
 def test_a_site_with_nothing_within_it_is_no_network(client: TestClient, library: Library) -> None:
     """A Site with no Site within it and none above it is not a network, and the column does not
     list it as one. A file filed only under it is under no network, as a file with no Site is."""
@@ -1137,7 +1199,7 @@ def _row_selects_what_it_counted(client: TestClient, facet: str) -> None:
     number, because it looks like one. Asked over the HTTP surface both halves really use, so the
     band expression, the parser and the permission rule are all the real ones.
     """
-    counted = _facets(client, facet)
+    counted = dict(_column(client, facet))
     assert counted, f"the {facet} column produced no rows to check"
     for value, count in counted.items():
         assert _reachable(client, q=f"{facet}:{value}") == count, f"{facet}:{value}"

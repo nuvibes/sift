@@ -9,6 +9,8 @@ for, and that what comes back on the wire is the shape a client was promised.
 
 from __future__ import annotations
 
+import importlib
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -311,3 +313,43 @@ def test_the_file_carries_its_disagreement_count_for_the_history_tabs_mark(
     detail = client.get(f"/api/assets/{library.shared}").json()
     assert detail["disagreements"] == 0
     assert detail["disagreement_boxes"] == []
+
+
+def test_a_line_naming_a_site_or_folder_a_guest_may_not_be_shown_leaves_it_nameless(
+    client: TestClient, library: Library, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from sift.kernel.access import sentences as say
+    from sift.kernel.access.history_line import Actor, Event
+
+    module = importlib.import_module("sift.slices.browse.router")
+
+    site = new_id()
+    write(
+        db_path(client), [("INSERT INTO sites (id, name) VALUES (?, 'Pier Nine Media')", (site,))]
+    )
+    line = say.said(
+        "Sift filed this under ",
+        say.thing("site", site, "Pier Nine Media"),
+        " from the folder ",
+        say.folder_named(library.folder, "clips"),
+    )
+    real = module.history_of_asset
+
+    async def with_a_line(*args: object, **kwargs: object) -> list[Event]:
+        every = await real(*args, **kwargs)
+        return [
+            *every,
+            Event(at=_EPOCH, actor=Actor.SIFT, actor_name=None, kind="filed", pieces=line),
+        ]
+
+    monkeypatch.setattr(module, "history_of_asset", with_a_line)
+    guest = sign_in(client, "guest")
+    share(client, library.shared, guest)
+    said = client.get(f"/api/assets/{library.shared}/history").json()["items"][-1]
+    assert said["what"] == "Sift filed this under a Site from a folder"
+    assert [one["id"] for one in said["pieces"]] == [None]
+
+    sign_in(client, "admin")
+    said = client.get(f"/api/assets/{library.shared}/history").json()["items"][-1]
+    assert said["what"] == "Sift filed this under Pier Nine Media from the folder clips"
+    assert [one["id"] for one in said["pieces"] if one["id"]] == [site, library.folder]

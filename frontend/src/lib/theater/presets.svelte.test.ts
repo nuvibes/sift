@@ -19,7 +19,7 @@ vi.mock('$lib/api/client', async (importOriginal) => ({
 import { ApiError } from '$lib/api/client';
 import { presets, NameTaken } from './presets.svelte';
 
-const WALL = { layout: 'four', shape: { rows: 2, columns: 2 } as never, cells: [] };
+const WALL = { layout: 'four', shape: { rows: 2, columns: 2 } as never, strip: 0, cells: [] };
 const KEPT = { id: 'w-1', name: 'Evening', ...WALL };
 const OTHER = { id: 'w-2', name: 'Morning', ...WALL };
 
@@ -81,19 +81,27 @@ it('refuses a name already used rather than overwriting the wall under it', asyn
 	// The whole difference from a saved search. A wall is four sources, four sets of behaviour and
 	// a shape, and losing one because the name matched is noticed much later than it happened.
 	mocks.post.mockRejectedValue(
-		new ApiError(409, 'That request was not valid.', 'You already have a preset called Evening.')
+		new ApiError(
+			409,
+			'That request was not valid.',
+			'You already have a Saved Layout called Evening.'
+		)
 	);
 
 	await expect(presets.save('Evening', WALL)).rejects.toBeInstanceOf(NameTaken);
 });
 
-it('carries the sentence the server wrote, which names the preset', async () => {
+it('carries the sentence the server wrote, which names the Saved Layout', async () => {
 	mocks.post.mockRejectedValue(
-		new ApiError(409, 'That request was not valid.', 'You already have a preset called Evening.')
+		new ApiError(
+			409,
+			'That request was not valid.',
+			'You already have a Saved Layout called Evening.'
+		)
 	);
 
 	await expect(presets.save('Evening', WALL)).rejects.toThrow(
-		'You already have a preset called Evening.'
+		'You already have a Saved Layout called Evening.'
 	);
 });
 
@@ -126,6 +134,32 @@ it('refuses a rename onto a name already used, through the same door', async () 
 	);
 
 	await expect(presets.update('w-1', 'Morning', WALL)).rejects.toBeInstanceOf(NameTaken);
+});
+
+it('renames a wall with a strip by sending the strip back with it', async () => {
+	// Without it the server reads a strip of 0 and refuses every Center stage wall.
+	const staged = { ...KEPT, strip: 5, cells: Array(9).fill({}) };
+
+	await presets.rename(staged as never, 'Late show');
+
+	expect(mocks.patch).toHaveBeenCalledWith('/theater/arrangements/w-1', {
+		body: {
+			name: 'Late show',
+			layout: staged.layout,
+			shape: staged.shape,
+			strip: 5,
+			cells: staged.cells
+		}
+	});
+});
+
+it('opens the save dialog for a new wall, or over the one being updated', () => {
+	presets.ask();
+	expect(presets.asking).toEqual({ over: null });
+
+	presets.ask(KEPT as never);
+	expect(presets.asking).toEqual({ over: KEPT });
+	presets.asking = null;
 });
 
 it('takes a wall out at once and tells the server after', async () => {

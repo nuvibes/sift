@@ -268,6 +268,29 @@ async def test_no_run_and_no_history_is_no_estimate(ledger: Ledger) -> None:
     assert await ledger.rate_per_minute(Family.SEMANTIC) is None
 
 
+async def _benchmark_prices() -> dict[str, float]:
+    return {"identify": 12.0}
+
+
+async def test_with_no_history_the_benchmarks_price_is_a_floor(ledger: Ledger) -> None:
+    ledger.first_prices = _benchmark_prices
+    alone = await ledger.estimate(Family.IDENTIFY, ["face_scan"], left=100, at_once=4)
+    assert alone is not None and alone.floor
+    assert (alone.quick_seconds, alone.slow_seconds, alone.items) == (300, 300, 0)
+
+    mixed = {"video": 25.0, "image": 75.0}
+    by_kind = await ledger.estimate(
+        Family.IDENTIFY, ["face_scan"], left=100, at_once=4, kinds=mixed
+    )
+    assert by_kind is not None and by_kind.quick_seconds == 75, "only the videos are priced"
+
+    stills = await ledger.estimate(
+        Family.IDENTIFY, ["face_scan"], left=100, at_once=4, kinds={"image": 1.0}
+    )
+    assert stills is None
+    assert await ledger.estimate(Family.SEMANTIC, ["embed"], left=100, at_once=4) is None
+
+
 async def test_the_report_is_plain_text_a_person_can_paste(ledger: Ledger) -> None:
     ledger.started("probe")
     token = CURRENT_FAMILY.set(Family.SCAN)
@@ -919,9 +942,8 @@ async def _run_row(
 async def test_a_run_over_videos_is_not_priced_from_a_run_over_photos(
     ledger: Ledger, temp_db: Database
 ) -> None:
-    """The newest run read photographs at a twentieth of a second each; the videos before it cost
-    six seconds each, in a run that was stopped: what it finished still prices videos. Forty
-    videos are priced at the videos' price, forty photographs at theirs, a mix by its shares."""
+    """Photographs at a twentieth of a second from the newest run, videos at six seconds from a
+    stopped one before it: each kind at its own price, a mix by its shares."""
     await _run_row(temp_db, files={"video": (30, 180_000)}, seconds=20, started=1_000, stopped=True)
     await _run_row(temp_db, files={"image": (200, 10_000)}, seconds=2, started=2_000)
 
@@ -1091,6 +1113,104 @@ async def test_each_kind_is_priced_from_the_newest_runs_that_did_enough_of_it(
     assert prices.busy is None
 
 
+async def test_a_kind_keeps_its_price_however_many_runs_of_other_kinds_follow(
+    ledger: Ledger,
+) -> None:
+    ledger.finished("thumbnail", duration_ms=20_000, ok=True, media_type="gif", units=20)
+    older = ledger.open_run(Family.GENERATE)
+    assert older is not None
+    older.started_at -= 1000
+    await ledger.settle({}, settings={})
+    for _ in range(ledger_module.KIND_OVER_RUNS + 1):
+        ledger.finished("thumbnail", duration_ms=1_000, ok=True, media_type="video", units=1)
+        await ledger.settle({}, settings={})
+
+    prices = await ledger.kind_prices(Family.GENERATE, at_once=1, kinds=["gif", "video"])
+    found = await ledger.estimate(
+        Family.GENERATE, ["thumbnail"], left=10, at_once=1, kinds={"gif": 10}
+    )
+
+    assert prices.paces["gif"].items == 20
+    assert prices.paces["video"].items == ledger_module.KIND_OVER_RUNS
+    assert found is not None and found.quick_seconds == 10
+
+
+async def test_a_runs_report_says_what_its_failed_jobs_ended_with(ledger: Ledger) -> None:
+    gone = "The folder stopped answering partway through the scan, so nothing in it was marked."
+    ledger.finished("scan", duration_ms=3_000, ok=False, units=9, failed_with=gone)
+    for name in ("one.mp4", "two.mp4"):
+        ledger.finished("probe", duration_ms=10, ok=False, failed_with=f"FileNotFoundError: {name}")
+    ledger.finished("probe", duration_ms=10, ok=False)
+    await ledger.settle({}, settings={})
+
+    (run,) = await ledger.recent(limit=1)
+    said = report_text(run).splitlines()
+
+    assert said[said.index("Jobs: 0 done, 4 failed") + 1 :][:2] == [
+        "Why 2 failed: A file it needed wasn't there. It may have been moved or deleted, or its"
+        " drive isn't connected.",
+        "Why 1 failed: A folder stopped answering partway through the scan. Scan it again once"
+        " it's back.",
+    ]
+
+
+async def test_a_walks_report_says_no_kind_or_size_it_never_learned(ledger: Ledger) -> None:
+    ledger.finished("scan", duration_ms=7_000, ok=False, units=168, failed_with="gone")
+    ledger.finished("probe", duration_ms=40, ok=True, media_type="image", size_bytes=1_000_000)
+    await ledger.settle({}, settings={})
+
+    (run,) = await ledger.recent(limit=1)
+    said = report_text(run)
+
+    assert "Files: 1 image (1 MB)" in said
+    assert "unknown" not in said and "0 bytes" not in said
+
+
+async def test_a_done_scan_that_left_a_folder_unread_says_so_in_its_report(
+    ledger: Ledger,
+) -> None:
+    unread = (
+        "1 folder stopped answering partway through, so nothing in it was marked missing or"
+        " unreadable."
+    )
+    ledger.finished("scan", duration_ms=3_000, ok=True, units=48, noted=unread)
+    ledger.finished("scan", duration_ms=3_000, ok=True, units=9, noted="9 files to read.")
+    run = ledger.open_run(Family.SCAN)
+    assert run is not None
+    run.started_at -= 60
+    await ledger.settle({}, settings={})
+
+    (record,) = await ledger.recent(limit=1)
+    said = report_text(record).splitlines()
+
+    assert said[said.index("Jobs: 2 done, 0 failed") + 1 :][:2] == [
+        f"Ended with: {unread}",
+        "Pace: 2.0 jobs/min",
+    ]
+    assert not any("files to read" in line for line in said)
+    assert "Files:" not in "\n".join(said) and "bytes/min" not in "\n".join(said)
+
+
+@pytest.mark.integration
+async def test_a_ledger_from_before_the_endings_gets_the_column_and_keeps_its_runs(
+    temp_db: Database,
+) -> None:
+    before = ledger_module._CREATE_TABLE.split("  made_for     TEXT,")[0] + "  made_for     TEXT\n)"
+    assert "ended_with" not in before
+    async with temp_db.write() as connection:
+        await connection.execute("DROP TABLE IF EXISTS work_runs")
+        await connection.execute(before)  # nosemgrep: sift-no-string-built-sql
+        await connection.execute(
+            "INSERT INTO work_runs (id, family, started_at, updated_at, finished_at, jobs_failed)"
+            " VALUES ('R1', 'scan', 1, 2, 2, 1)"
+        )
+        await ledger_module.initialize(connection, on_disk=5)
+
+    record = await Ledger(temp_db).get("R1")
+    assert record is not None and record.jobs_failed == 1 and record.ended_with == {}
+    assert "Why" not in report_text(record)
+
+
 async def test_nothing_left_is_no_estimate(ledger: Ledger) -> None:
     assert await ledger.estimate(Family.GENERATE, ["thumbnail"], left=0, at_once=4) is None
 
@@ -1255,3 +1375,52 @@ def test_a_quantile_is_a_cost_that_was_measured_weighted_by_items(
     sample: list[tuple[float, int]], at: float, cost: float
 ) -> None:
     assert ledger_module._quantile(sample, at) == cost
+
+
+async def test_a_run_mostly_stepped_back_is_kept_with_its_seconds_and_not_priced_from(
+    ledger: Ledger,
+) -> None:
+    """Its pace was a share's, so a price from it would read every later estimate dearer."""
+    await ledger.settle({}, settings={}, stepped_back=True)
+    ledger.started("thumbnail")
+    shared = ledger.open_run(Family.GENERATE)
+    assert shared is not None
+    shared.started_at -= 100
+    shared.began -= 100
+    assert ledger._ticked is not None
+    ledger._ticked -= 80
+    for _ in range(50):
+        ledger.finished("thumbnail", duration_ms=300, ok=True, media_type="video")
+    await ledger.settle({}, settings={"jobs at once": 8}, stepped_back=False)
+
+    (kept,) = await ledger.recent()
+    assert kept.settings["jobs at once"] == 8
+    assert 79 <= int(kept.settings[ledger_module.STEPPED_BACK]) <= 81  # type: ignore[call-overload]
+    assert await ledger.pace(Family.GENERATE, []) is None
+    assert (await ledger.kind_prices(Family.GENERATE, at_once=1)).paces == {}
+    assert await ledger.rate_per_minute(Family.GENERATE) is None
+
+    for _ in range(50):
+        ledger.finished("thumbnail", duration_ms=300, ok=True, media_type="video")
+    await ledger.settle({}, settings={"jobs at once": 8})
+    found = await ledger.pace(Family.GENERATE, [])
+    assert found is not None and found.items == 50, "a run at the full count is priced"
+
+
+def _last_end(ledger: Ledger) -> int | None:
+    return ledger._spans[-1][1]
+
+
+async def test_jobs_inside_a_stepped_back_stretch_are_left_out_of_the_price(
+    ledger: Ledger, temp_db: Database
+) -> None:
+    await ledger.settle({}, settings={}, stepped_back=True)
+    assert _last_end(ledger) is None, "a stretch is open while the work is stepped back"
+    await ledger.settle({}, settings={}, stepped_back=False)
+    assert _last_end(ledger) is not None
+    ledger._spans.append([10_000, 11_000])
+    await _job_rows(temp_db, "face_scan", costs=[20] * 20)
+    assert await ledger.pace(Family.IDENTIFY, ["face_scan"]) is None, "only ten are full speed"
+    await _job_rows(temp_db, "face_scan", costs=[20] * 10, started=20_000)
+    found = await ledger.pace(Family.IDENTIFY, ["face_scan"])
+    assert found is not None and found.items == 20

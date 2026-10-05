@@ -1,26 +1,6 @@
-/* Whether a run plays in order or at random, and, when it is at random, WHICH order.
- *
- * Held for this sitting and written down nowhere. It is the same call the A-B loop makes and for
- * the same reason: a shuffle set once and forgotten looks like a player that has lost track of
- * where it is, and there would be nothing on screen to say otherwise days later.
- *
- * What it shuffles is what you opened the file from (the search, the collection, the folder)
- * rather than the whole library. Leaving what you chose to look at is what the randomize control
- * does, deliberately and one press at a time.
- *
- * ## Shuffle is ONE FIXED ORDER, not a draw per press
- *
- * A fresh random draw on every Next (a block at a random offset of a long list, `Math.random`
- * with no memory on a short one) would send Back to the file beside this one in the LIST rather
- * than to the one just watched (or nowhere, when the draw had come from off the page), bring
- * files round again while others never came, and leave the corner player out of it.
- *
- * A shuffled playlist is what everybody already knows, so that is what this is: the list is put
- * in one random order when the first step is taken, and Next and Back walk it. `Walk` below holds
- * it. The file that was open when the walk began is where it starts (position -1), so Back from
- * the first shuffled file returns to it; nothing comes round again until everything has played;
- * and both players (the full-size one and the corner) ask the one walk, through `asset-view`.
- */
+/* Whether a run plays in order or shuffled, held for this sitting only. Shuffle is one fixed
+ * order of the list the file was opened from, walked by Next and Back (`Walk`), so Back returns
+ * to the file just watched and nothing comes round twice until everything has played. */
 
 import { mintSeed } from '$lib/grid/sort-state.svelte';
 import { shuffled } from '$lib/player/shuffle';
@@ -163,6 +143,20 @@ export class Walk {
 		return step;
 	}
 
+	/** What `next` would answer, moving neither the cursor, the seen set nor the detour. */
+	peek(
+		id: string,
+		{ pictures, wraps = true }: { pictures: boolean; wraps?: boolean }
+	): Promise<string | null> {
+		const step = this.#queue.then(async () => {
+			const from = this.detour === id ? this.cursor : (this.#positionOf(id) ?? this.cursor);
+			const to = await this.#after(from, pictures, wraps);
+			return to === null ? null : this.#idAt(to.at);
+		});
+		this.#queue = step.catch(() => undefined);
+		return step;
+	}
+
 	/** Whether a file in this walk plays on its own, or null when the walk does not hold it. */
 	runsOf(id: string): boolean | null {
 		if (id === this.start.id) return this.start.runs;
@@ -178,34 +172,34 @@ export class Walk {
 	async #next(id: string, pictures: boolean, wraps: boolean): Promise<string | null> {
 		this.#standOn(id);
 		this.detour = null;
-		let at = this.cursor + 1;
-		for (;;) {
+		const to = await this.#after(this.cursor, pictures, wraps);
+		if (to === null) return null;
+		if (to.wraps) this.#seen = new Set([to.at]);
+		else this.#seen.add(to.at);
+		this.cursor = to.at;
+		return this.current;
+	}
+
+	/* Where a step from `from` lands, reading more as needed; at the end a new pass from the start
+	   file, never onto the file just finished while anything else qualifies. Moves nothing. */
+	async #after(
+		from: number,
+		pictures: boolean,
+		wraps: boolean
+	): Promise<{ at: number; wraps: boolean } | null> {
+		for (let at = from + 1; ;) {
 			for (; at < this.#order.length; at += 1) {
-				if (this.#fits(this.#order[at], pictures)) return this.#land(at);
+				if (this.#fits(this.#order[at], pictures)) return { at, wraps: false };
 			}
 			if (!(await this.#readMore())) break;
 		}
-		return wraps ? this.#wrap(pictures) : null;
-	}
-
-	/* The end of the order. A new pass, over the same order, from the start file, and never onto
-	   the file just finished while anything else qualifies, which would be repeating it. */
-	#wrap(pictures: boolean): string | null {
-		const finished = this.current;
+		if (!wraps) return null;
+		const finished = this.#idAt(from);
 		const candidates = [-1, ...this.#order.keys()].filter((at) =>
 			this.#fits(at < 0 ? this.start : this.#order[at], pictures)
 		);
 		const to = candidates.find((at) => this.#idAt(at) !== finished) ?? candidates[0];
-		if (to === undefined) return null;
-		this.#seen = new Set([to]);
-		this.cursor = to;
-		return this.current;
-	}
-
-	#land(at: number): string {
-		this.#seen.add(at);
-		this.cursor = at;
-		return this.current;
+		return to === undefined ? null : { at: to, wraps: true };
 	}
 
 	#fits(step: Step, pictures: boolean): boolean {

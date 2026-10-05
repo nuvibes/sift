@@ -7,7 +7,8 @@
     "ffmpeg is GPL-3.0-or-later as built (--enable-gpl --enable-version3), so its source ships the same way: the exact commit the binary reports, the GPL encoders compiled into it, and the build recipe that names every other library in it. scripts/release.py refuses a tool whose licence is GPL and that ships no source archive named for its pinned version.",
     "The libraries are the ones inside a Python wheel the release installs rather than programs laid out in bin/: libheif and libde265, which the HEIF door reads a photograph with. Both are LGPL-3.0, so the release archive of each ships under bin/sources/ the way ffmpeg's source does, and the same rule in scripts/release.py refuses a pack without them.",
     "The wheels are Python packages the release installs in place of the published ones, pinned by the SHA-256 of the file this repository's recipe built. There is no address to fetch them from: scripts/fetch_vendor.py checks the file in vendor/wheels and, when it is missing or different, says to build it and pin the new digest in one commit.",
-    "The built entries are programs this repository builds from a pinned source revision with a recipe and patches kept in the repository, pinned by the SHA-256 of the program the recipe makes. The same toolchain and inputs make the same file byte for byte, so the recipe refuses to install anything else, scripts/fetch_vendor.py checks the file in vendor/bin and says how to build it when it is missing or different, and scripts/release.py refuses a pack whose copy is not the pinned one."
+    "The built entries are programs this repository builds from a pinned source revision with a recipe and patches kept in the repository, pinned by the SHA-256 of the program the recipe makes. The same toolchain and inputs make the same file byte for byte, so the recipe refuses to install anything else, scripts/fetch_vendor.py checks the file in vendor/bin and says how to build it when it is missing or different, and scripts/release.py refuses a pack whose copy is not the pinned one.",
+    "Each entry's `inside` lists every library compiled or bundled into it: its version, licence, the file that licence was read from, and where its source is. scripts/release.py writes them into bin/THIRD-PARTY-NOTICES.txt and refuses a signed build while any has no licence recorded."
   ],
   "tools": [
     {
@@ -55,6 +56,1240 @@
         "--enable-libwebp"
       ],
       "licence": "GPL-3.0-or-later (this is the gpl build; --enable-version3 is set)",
+      "inside": [
+        {
+          "name": "mingw-std-threads (headers)",
+          "version": "c931bac289dd431f1dd30fc4a5d1a7be36668073",
+          "source": "https://github.com/meganz/mingw-std-threads.git",
+          "licence": "BSD-2-Clause",
+          "licence_from": "https://raw.githubusercontent.com/meganz/mingw-std-threads/c931bac289dd431f1dd30fc4a5d1a7be36668073/LICENSE"
+        },
+        {
+          "name": "mingw-w64",
+          "version": "5ea8e9facd013b815f5f29f20ef26a566319a3de",
+          "source": "https://git.code.sf.net/p/mingw-w64/mingw-w64.git",
+          "licence": "ZPL-2.1, with parts under ISC, BSD-2-Clause, MIT, LGPL-2.1-or-later and the gdtoa and Sun math notices (runtime); MIT and BSD-3-Clause (winpthreads)",
+          "licence_from": "https://sourceforge.net/p/mingw-w64/mingw-w64/ci/5ea8e9facd013b815f5f29f20ef26a566319a3de/tree/COPYING.MinGW-w64-runtime/COPYING.MinGW-w64-runtime.txt?format=raw and https://sourceforge.net/p/mingw-w64/mingw-w64/ci/5ea8e9facd013b815f5f29f20ef26a566319a3de/tree/mingw-w64-libraries/winpthreads/COPYING?format=raw"
+        },
+        {
+          "name": "libiconv",
+          "version": "5e517e5bf0e1b4575ad431e81d7a4750fa2b284e",
+          "source": "https://git.savannah.gnu.org/git/libiconv.git",
+          "licence": "LGPL-2.1-or-later",
+          "licence_from": "https://git.savannah.gnu.org/cgit/libiconv.git/plain/README?id=5e517e5bf0e1b4575ad431e81d7a4750fa2b284e (Copyright) and https://git.savannah.gnu.org/cgit/libiconv.git/plain/lib/iconv.c?id=5e517e5bf0e1b4575ad431e81d7a4750fa2b284e"
+        },
+        {
+          "name": "gnulib",
+          "version": "09b1597470c456aeac7e7d19b214821d4526934d",
+          "source": "https://git.savannah.gnu.org/git/gnulib.git",
+          "licence": "GPL-3.0-or-later and LGPL-2.1-or-later, per module",
+          "licence_from": "https://raw.githubusercontent.com/coreutils/gnulib/09b1597470c456aeac7e7d19b214821d4526934d/doc/gnulib-readme.texi (Gnulib licensing) and https://raw.githubusercontent.com/coreutils/gnulib/09b1597470c456aeac7e7d19b214821d4526934d/modules/ (the License field of each module libiconv imports)"
+        },
+        {
+          "name": "zlib",
+          "version": "e3dc0a85b7032e98380dec011bc8f2c2ee0d8fca",
+          "source": "https://github.com/madler/zlib.git",
+          "licence": "Zlib",
+          "licence_from": "https://raw.githubusercontent.com/madler/zlib/e3dc0a85b7032e98380dec011bc8f2c2ee0d8fca/LICENSE"
+        },
+        {
+          "name": "fftw3",
+          "version": "93ed4c786934aec9946f8dda4b4e3eb08f8be41c",
+          "source": "https://github.com/FFTW/fftw3.git",
+          "licence": "GPL-2.0-or-later",
+          "licence_from": "https://raw.githubusercontent.com/FFTW/fftw3/93ed4c786934aec9946f8dda4b4e3eb08f8be41c/COPYRIGHT"
+        },
+        {
+          "name": "fribidi",
+          "version": "04a8cb7a3674717e509c79cd6ee3e127d0c75f4c",
+          "source": "https://github.com/fribidi/fribidi.git",
+          "licence": "LGPL-2.1-or-later",
+          "licence_from": "https://raw.githubusercontent.com/fribidi/fribidi/04a8cb7a3674717e509c79cd6ee3e127d0c75f4c/lib/fribidi.c"
+        },
+        {
+          "name": "gmp",
+          "version": "9994908f090c694f8a152d660dc6852e0c48557a",
+          "source": "https://github.com/BtbN/gmplib.git",
+          "licence": "LGPL-3.0-or-later or GPL-2.0-or-later",
+          "licence_from": "https://raw.githubusercontent.com/BtbN/gmplib/9994908f090c694f8a152d660dc6852e0c48557a/README"
+        },
+        {
+          "name": "libogg",
+          "version": "06a5e0262cdc28aa4ae6797627a783b5010440f0",
+          "source": "https://github.com/xiph/ogg.git",
+          "licence": "BSD-3-Clause",
+          "licence_from": "https://raw.githubusercontent.com/xiph/ogg/06a5e0262cdc28aa4ae6797627a783b5010440f0/COPYING"
+        },
+        {
+          "name": "libxml2",
+          "version": "c63248941708bc1d2e3a4292954593312212f6ca",
+          "source": "https://github.com/GNOME/libxml2.git",
+          "licence": "MIT",
+          "licence_from": "https://raw.githubusercontent.com/GNOME/libxml2/c63248941708bc1d2e3a4292954593312212f6ca/Copyright"
+        },
+        {
+          "name": "openssl",
+          "version": "openssl-3.6.3",
+          "source": "https://github.com/openssl/openssl.git",
+          "licence": "Apache-2.0",
+          "licence_from": "https://raw.githubusercontent.com/openssl/openssl/openssl-3.6.3/LICENSE.txt"
+        },
+        {
+          "name": "xz",
+          "version": "c8b8ab2ef1eb0a0217ad2027d7f5d242ceb944d3",
+          "source": "https://github.com/tukaani-project/xz.git",
+          "licence": "0BSD",
+          "licence_from": "https://raw.githubusercontent.com/tukaani-project/xz/c8b8ab2ef1eb0a0217ad2027d7f5d242ceb944d3/COPYING (liblzma)"
+        },
+        {
+          "name": "freetype",
+          "version": "9e9d3b73f31367dbb4261f93c727a277f6632c77",
+          "source": "https://gitlab.freedesktop.org/freetype/freetype.git",
+          "licence": "FTL or GPL-2.0-or-later",
+          "licence_from": "https://gitlab.freedesktop.org/freetype/freetype/-/raw/9e9d3b73f31367dbb4261f93c727a277f6632c77/LICENSE.TXT"
+        },
+        {
+          "name": "fontconfig",
+          "version": "d32a1911248576d01583557efcfe4b48fb2d0a5e",
+          "source": "https://gitlab.freedesktop.org/fontconfig/fontconfig.git",
+          "licence": "HPND-sell-variant, with parts under MIT, MIT-Modern-Variant, the Unicode terms and Public Domain",
+          "licence_from": "https://gitlab.freedesktop.org/fontconfig/fontconfig/-/raw/d32a1911248576d01583557efcfe4b48fb2d0a5e/COPYING"
+        },
+        {
+          "name": "harfbuzz",
+          "version": "d8dabe2594596c656b54c3b0072f3aa3093f30a9",
+          "source": "https://github.com/harfbuzz/harfbuzz.git",
+          "licence": "MIT-Modern-Variant",
+          "licence_from": "https://raw.githubusercontent.com/harfbuzz/harfbuzz/d8dabe2594596c656b54c3b0072f3aa3093f30a9/COPYING"
+        },
+        {
+          "name": "libsamplerate",
+          "version": "2ccde9568cca73c7b32c97fefca2e418c16ae5e3",
+          "source": "https://github.com/libsndfile/libsamplerate.git",
+          "licence": "BSD-2-Clause",
+          "licence_from": "https://raw.githubusercontent.com/libsndfile/libsamplerate/2ccde9568cca73c7b32c97fefca2e418c16ae5e3/COPYING"
+        },
+        {
+          "name": "libudfread",
+          "version": "0151d9d61e5f832664f502608d41a77c28846efa",
+          "source": "https://code.videolan.org/videolan/libudfread.git",
+          "licence": "LGPL-2.1-or-later",
+          "licence_from": "https://code.videolan.org/videolan/libudfread/-/raw/0151d9d61e5f832664f502608d41a77c28846efa/src/udfread.c"
+        },
+        {
+          "name": "libunibreak",
+          "version": "3ce4bfa3129ff3738046a44a6db533d2ce25af2b",
+          "source": "https://github.com/adah1972/libunibreak.git",
+          "licence": "Zlib",
+          "licence_from": "https://raw.githubusercontent.com/adah1972/libunibreak/3ce4bfa3129ff3738046a44a6db533d2ce25af2b/LICENCE"
+        },
+        {
+          "name": "libvorbis",
+          "version": "1b75110b5a2754ba1931d82dd83cb822b266a21d",
+          "source": "https://github.com/xiph/vorbis.git",
+          "licence": "BSD-3-Clause",
+          "licence_from": "https://raw.githubusercontent.com/xiph/vorbis/1b75110b5a2754ba1931d82dd83cb822b266a21d/COPYING"
+        },
+        {
+          "name": "OpenCL-Headers (headers)",
+          "version": "c9c8ccfab584f9f7610057c4633dbd3df7e012cc",
+          "source": "https://github.com/KhronosGroup/OpenCL-Headers.git",
+          "licence": "Apache-2.0",
+          "licence_from": "https://raw.githubusercontent.com/KhronosGroup/OpenCL-Headers/c9c8ccfab584f9f7610057c4633dbd3df7e012cc/LICENSE and https://raw.githubusercontent.com/KhronosGroup/OpenCL-Headers/c9c8ccfab584f9f7610057c4633dbd3df7e012cc/CL/cl.h"
+        },
+        {
+          "name": "OpenCL-ICD-Loader",
+          "version": "18fdcd58286376124f938948aa8ed156079c1c16",
+          "source": "https://github.com/KhronosGroup/OpenCL-ICD-Loader.git",
+          "licence": "Apache-2.0",
+          "licence_from": "https://raw.githubusercontent.com/KhronosGroup/OpenCL-ICD-Loader/18fdcd58286376124f938948aa8ed156079c1c16/LICENSE"
+        },
+        {
+          "name": "libvmaf",
+          "version": "e80d6c593e6e2327687dccd00b7cc9c91036d79f",
+          "source": "https://github.com/Netflix/vmaf.git",
+          "licence": "BSD-2-Clause-Patent",
+          "licence_from": "https://raw.githubusercontent.com/Netflix/vmaf/e80d6c593e6e2327687dccd00b7cc9c91036d79f/LICENSE"
+        },
+        {
+          "name": "vulkan-headers (headers)",
+          "version": "v1.4.359",
+          "source": "https://github.com/KhronosGroup/Vulkan-Headers.git",
+          "licence": "Apache-2.0 or MIT",
+          "licence_from": "https://raw.githubusercontent.com/KhronosGroup/Vulkan-Headers/v1.4.359/LICENSE.md and https://raw.githubusercontent.com/KhronosGroup/Vulkan-Headers/v1.4.359/include/vulkan/vulkan_core.h"
+        },
+        {
+          "name": "vulkan-loader",
+          "version": "65b3936528cd92eb4ea3de485d03f858a3850484",
+          "source": "https://github.com/BtbN/Vulkan-Shim-Loader.git",
+          "licence": "MIT",
+          "licence_from": "https://raw.githubusercontent.com/BtbN/Vulkan-Shim-Loader/65b3936528cd92eb4ea3de485d03f858a3850484/LICENSE"
+        },
+        {
+          "name": "shaderc",
+          "version": "7060a6615a1c6e2515e696651eea685524ecadb5",
+          "source": "https://github.com/google/shaderc.git",
+          "licence": "Apache-2.0",
+          "licence_from": "https://raw.githubusercontent.com/google/shaderc/7060a6615a1c6e2515e696651eea685524ecadb5/LICENSE"
+        },
+        {
+          "name": "glslang (inside shaderc)",
+          "version": "2ee090f606ace31e07f584b1c1b9ddf4909ce202",
+          "source": "https://github.com/KhronosGroup/glslang.git",
+          "licence": "BSD-3-Clause and BSD-2-Clause and MIT and Apache-2.0 and GPL-3.0-or-later WITH Bison-exception-2.2 (the generated parser) and MIT-Khronos-old and the NVIDIA notice (the preprocessor)",
+          "licence_from": "https://raw.githubusercontent.com/KhronosGroup/glslang/2ee090f606ace31e07f584b1c1b9ddf4909ce202/LICENSE.txt and https://raw.githubusercontent.com/KhronosGroup/glslang/2ee090f606ace31e07f584b1c1b9ddf4909ce202/glslang/MachineIndependent/glslang_tab.cpp (the revision https://raw.githubusercontent.com/google/shaderc/7060a6615a1c6e2515e696651eea685524ecadb5/DEPS pins; https://raw.githubusercontent.com/google/shaderc/7060a6615a1c6e2515e696651eea685524ecadb5/libshaderc/CMakeLists.txt links it into shaderc_combined)"
+        },
+        {
+          "name": "SPIRV-Tools (inside shaderc)",
+          "version": "f589ef005c49f6f19c8e78eb5269104ba293beb4",
+          "source": "https://github.com/KhronosGroup/SPIRV-Tools.git",
+          "licence": "Apache-2.0",
+          "licence_from": "https://raw.githubusercontent.com/KhronosGroup/SPIRV-Tools/f589ef005c49f6f19c8e78eb5269104ba293beb4/LICENSE (the revision https://raw.githubusercontent.com/google/shaderc/7060a6615a1c6e2515e696651eea685524ecadb5/DEPS pins; https://raw.githubusercontent.com/google/shaderc/7060a6615a1c6e2515e696651eea685524ecadb5/libshaderc/CMakeLists.txt links it into shaderc_combined)"
+        },
+        {
+          "name": "SPIRV-Headers (inside shaderc, headers and grammar)",
+          "version": "942fe4b988359a0750b79f0ae7ed735994d3147d",
+          "source": "https://github.com/KhronosGroup/SPIRV-Headers.git",
+          "licence": "MIT-Khronos-old",
+          "licence_from": "https://raw.githubusercontent.com/KhronosGroup/SPIRV-Headers/942fe4b988359a0750b79f0ae7ed735994d3147d/LICENSE (Files: All files; the revision https://raw.githubusercontent.com/google/shaderc/7060a6615a1c6e2515e696651eea685524ecadb5/DEPS pins)"
+        },
+        {
+          "name": "spirv-cross",
+          "version": "9c3c8e2cefdd8194b193bb8ed2fdff4d5527e382",
+          "source": "https://github.com/KhronosGroup/SPIRV-Cross.git",
+          "licence": "Apache-2.0 or MIT",
+          "licence_from": "https://raw.githubusercontent.com/KhronosGroup/SPIRV-Cross/9c3c8e2cefdd8194b193bb8ed2fdff4d5527e382/spirv_cross.cpp (SPDX-License-Identifier)"
+        },
+        {
+          "name": "spirv-headers (headers)",
+          "version": "f0bf307f7c49d26484db596185cece53c37701fc",
+          "source": "https://github.com/KhronosGroup/SPIRV-Headers.git",
+          "licence": "MIT-Khronos-old",
+          "licence_from": "https://raw.githubusercontent.com/KhronosGroup/SPIRV-Headers/f0bf307f7c49d26484db596185cece53c37701fc/include/spirv/unified1/spirv.h and https://raw.githubusercontent.com/KhronosGroup/SPIRV-Headers/f0bf307f7c49d26484db596185cece53c37701fc/LICENSE"
+        },
+        {
+          "name": "amf (headers)",
+          "version": "c35f613aea2e5057a688c979e75b1cf24253297e",
+          "source": "https://github.com/GPUOpen-LibrariesAndSDKs/AMF.git",
+          "licence": "MIT",
+          "licence_from": "https://raw.githubusercontent.com/GPUOpen-LibrariesAndSDKs/AMF/c35f613aea2e5057a688c979e75b1cf24253297e/LICENSE.txt"
+        },
+        {
+          "name": "aom",
+          "version": "95f420511f698ea201e8928464704dc30da4b568",
+          "source": "https://aomedia.googlesource.com/aom",
+          "licence": "BSD-2-Clause",
+          "licence_from": "https://aomedia.googlesource.com/aom/+/95f420511f698ea201e8928464704dc30da4b568/LICENSE?format=TEXT"
+        },
+        {
+          "name": "libpng",
+          "version": "d1d0abeffede1cc898ddc3d0e600839cf026d749",
+          "source": "https://github.com/glennrp/libpng.git",
+          "licence": "libpng-2.0",
+          "licence_from": "https://raw.githubusercontent.com/glennrp/libpng/d1d0abeffede1cc898ddc3d0e600839cf026d749/LICENSE.md"
+        },
+        {
+          "name": "aribb24",
+          "version": "5e9be272f96e00f15a2f3c5f8ba7e124862aec38",
+          "source": "https://github.com/nkoriyama/aribb24.git",
+          "licence": "LGPL-2.1-or-later",
+          "licence_from": "https://raw.githubusercontent.com/nkoriyama/aribb24/5e9be272f96e00f15a2f3c5f8ba7e124862aec38/src/aribb24.c (its COPYING carries the LGPL-3.0 text)"
+        },
+        {
+          "name": "avisynth (headers)",
+          "version": "de1d1fc0d69e6d308235491b24b8e9b26ac023ff",
+          "source": "https://github.com/AviSynth/AviSynthPlus.git",
+          "licence": "GPL-2.0-or-later with the AviSynth C interface linking exception",
+          "licence_from": "https://raw.githubusercontent.com/AviSynth/AviSynthPlus/de1d1fc0d69e6d308235491b24b8e9b26ac023ff/avs_core/include/avisynth_c.h and https://raw.githubusercontent.com/AviSynth/AviSynthPlus/de1d1fc0d69e6d308235491b24b8e9b26ac023ff/avs_core/include/avs/capi.h"
+        },
+        {
+          "name": "chromaprint",
+          "version": "aed8eba2202dd9d7b3b0a56c77904cc805490d72",
+          "source": "https://github.com/acoustid/chromaprint.git",
+          "licence": "MIT and LGPL-2.1-or-later",
+          "licence_from": "https://raw.githubusercontent.com/acoustid/chromaprint/aed8eba2202dd9d7b3b0a56c77904cc805490d72/LICENSE.md and https://raw.githubusercontent.com/acoustid/chromaprint/aed8eba2202dd9d7b3b0a56c77904cc805490d72/src/avresample/resample2.c (built by default)"
+        },
+        {
+          "name": "dav1d",
+          "version": "54706fc6bc0cdecab7e9593974a4039cc038fca7",
+          "source": "https://code.videolan.org/videolan/dav1d.git",
+          "licence": "BSD-2-Clause",
+          "licence_from": "https://code.videolan.org/videolan/dav1d/-/raw/54706fc6bc0cdecab7e9593974a4039cc038fca7/COPYING"
+        },
+        {
+          "name": "davs2",
+          "version": "b41cf117452e2d73d827f02d3e30aa20f1c721ac",
+          "source": "https://github.com/pkuvcl/davs2.git",
+          "licence": "GPL-2.0-or-later",
+          "licence_from": "https://raw.githubusercontent.com/pkuvcl/davs2/b41cf117452e2d73d827f02d3e30aa20f1c721ac/source/davs2.h"
+        },
+        {
+          "name": "libdvdcss",
+          "version": "811ce97a1d4d1c9d936f4b2707f533a9ef768251",
+          "source": "https://code.videolan.org/videolan/libdvdcss.git",
+          "licence": "GPL-2.0-or-later",
+          "licence_from": "https://code.videolan.org/videolan/libdvdcss/-/raw/811ce97a1d4d1c9d936f4b2707f533a9ef768251/src/libdvdcss.c"
+        },
+        {
+          "name": "libdvdread",
+          "version": "ce9bdb7775601f4e6b95136b875bc72a53c5ba7d",
+          "source": "https://code.videolan.org/videolan/libdvdread.git",
+          "licence": "GPL-2.0-or-later",
+          "licence_from": "https://code.videolan.org/videolan/libdvdread/-/raw/ce9bdb7775601f4e6b95136b875bc72a53c5ba7d/src/dvd_reader.c"
+        },
+        {
+          "name": "libdvdnav",
+          "version": "2ffc50b5c37a6ddc086829203fc44e95588198dd",
+          "source": "https://code.videolan.org/videolan/libdvdnav.git",
+          "licence": "GPL-2.0-or-later",
+          "licence_from": "https://code.videolan.org/videolan/libdvdnav/-/raw/2ffc50b5c37a6ddc086829203fc44e95588198dd/src/dvdnav.c"
+        },
+        {
+          "name": "nv-codec-headers (headers)",
+          "version": "833faee5f7b8d3f56444347c587f4aed11ee213f",
+          "source": "https://github.com/FFmpeg/nv-codec-headers.git",
+          "licence": "MIT",
+          "licence_from": "https://raw.githubusercontent.com/FFmpeg/nv-codec-headers/833faee5f7b8d3f56444347c587f4aed11ee213f/include/ffnvcodec/nvEncodeAPI.h"
+        },
+        {
+          "name": "frei0r (headers)",
+          "version": "253addfd4bea3c90b0bf765589ca28ea18f3ddc0",
+          "source": "https://github.com/dyne/frei0r.git",
+          "licence": "GPL-2.0 (frei0r.h carries no notice; the README says GPL and names no version)",
+          "licence_from": "https://raw.githubusercontent.com/dyne/frei0r/253addfd4bea3c90b0bf765589ca28ea18f3ddc0/COPYING and https://raw.githubusercontent.com/dyne/frei0r/253addfd4bea3c90b0bf765589ca28ea18f3ddc0/README.md"
+        },
+        {
+          "name": "game-music-emu",
+          "version": "fe8da4b6d3876d7542c2fb69d94487e19836d678",
+          "source": "https://github.com/libgme/game-music-emu.git",
+          "licence": "LGPL-2.1-or-later",
+          "licence_from": "https://raw.githubusercontent.com/libgme/game-music-emu/fe8da4b6d3876d7542c2fb69d94487e19836d678/gme/Music_Emu.cpp and https://raw.githubusercontent.com/libgme/game-music-emu/fe8da4b6d3876d7542c2fb69d94487e19836d678/CMakeLists.txt (the default Nuked YM2612 emulator, LGPL-2.1-or-later)"
+        },
+        {
+          "name": "kvazaar",
+          "version": "d6815293f34a094e26ba6c50b8644660ddc13e09",
+          "source": "https://github.com/ultravideo/kvazaar.git",
+          "licence": "BSD-3-Clause",
+          "licence_from": "https://raw.githubusercontent.com/ultravideo/kvazaar/d6815293f34a094e26ba6c50b8644660ddc13e09/LICENSE"
+        },
+        {
+          "name": "libaribcaption",
+          "version": "c64c23b8905ba514b87c9789269e9f66f949ffe0",
+          "source": "https://github.com/xqq/libaribcaption.git",
+          "licence": "MIT",
+          "licence_from": "https://raw.githubusercontent.com/xqq/libaribcaption/c64c23b8905ba514b87c9789269e9f66f949ffe0/LICENSE"
+        },
+        {
+          "name": "libass",
+          "version": "3087d2b2ffda76602a17f9b09d25cb8addc8d313",
+          "source": "https://github.com/libass/libass.git",
+          "licence": "ISC",
+          "licence_from": "https://raw.githubusercontent.com/libass/libass/3087d2b2ffda76602a17f9b09d25cb8addc8d313/COPYING"
+        },
+        {
+          "name": "libbluray",
+          "version": "065247e5ef40ccf39857db81e2c1368354a23ef8",
+          "source": "https://code.videolan.org/videolan/libbluray.git",
+          "licence": "LGPL-2.1-or-later",
+          "licence_from": "https://code.videolan.org/videolan/libbluray/-/raw/065247e5ef40ccf39857db81e2c1368354a23ef8/src/libbluray/bluray.c"
+        },
+        {
+          "name": "brotli",
+          "version": "8e10eeb3378f6c459dbaf033ca6727e9816afccb",
+          "source": "https://github.com/google/brotli.git",
+          "licence": "MIT",
+          "licence_from": "https://raw.githubusercontent.com/google/brotli/8e10eeb3378f6c459dbaf033ca6727e9816afccb/LICENSE"
+        },
+        {
+          "name": "lcms2",
+          "version": "a5b898c7e3985550aab846a2abb4ae08904a857f",
+          "source": "https://github.com/mm2/Little-CMS.git",
+          "licence": "MIT",
+          "licence_from": "https://raw.githubusercontent.com/mm2/Little-CMS/a5b898c7e3985550aab846a2abb4ae08904a857f/LICENSE"
+        },
+        {
+          "name": "libjxl",
+          "version": "d089091afeb7b00b3d0fec6f019d35eaa3b2b410",
+          "source": "https://github.com/libjxl/libjxl.git",
+          "licence": "BSD-3-Clause",
+          "licence_from": "https://raw.githubusercontent.com/libjxl/libjxl/d089091afeb7b00b3d0fec6f019d35eaa3b2b410/LICENSE"
+        },
+        {
+          "name": "highway (inside libjxl)",
+          "version": "457c891775a7397bdb0376bb1031e6e027af1c48",
+          "source": "https://github.com/google/highway",
+          "licence": "Apache-2.0 or BSD-3-Clause",
+          "licence_from": "https://raw.githubusercontent.com/google/highway/457c891775a7397bdb0376bb1031e6e027af1c48/README.md and its LICENSE and LICENSE-BSD3 (the submodule commit libjxl d089091afeb7 pins at third_party/highway, read through https://api.github.com/repos/libjxl/libjxl/contents/third_party/highway?ref=d089091afeb7b00b3d0fec6f019d35eaa3b2b410)"
+        },
+        {
+          "name": "lame",
+          "version": "svn revision 6761",
+          "source": "https://svn.code.sf.net/p/lame/svn/trunk/lame",
+          "licence": "LGPL-2.0-or-later",
+          "licence_from": "https://svn.code.sf.net/p/lame/svn/trunk/lame/COPYING?p=6761 and https://svn.code.sf.net/p/lame/svn/trunk/lame/libmp3lame/lame.c?p=6761"
+        },
+        {
+          "name": "opus",
+          "version": "3da9f7a6db1c05c3996cb363a9d1931a978bf1be",
+          "source": "https://github.com/xiph/opus.git",
+          "licence": "BSD-3-Clause",
+          "licence_from": "https://raw.githubusercontent.com/xiph/opus/3da9f7a6db1c05c3996cb363a9d1931a978bf1be/COPYING"
+        },
+        {
+          "name": "libplacebo",
+          "version": "22ee762e8e0890fc54068beb670310f0edce7263",
+          "source": "https://code.videolan.org/videolan/libplacebo.git",
+          "licence": "LGPL-2.1-or-later",
+          "licence_from": "https://code.videolan.org/videolan/libplacebo/-/raw/22ee762e8e0890fc54068beb670310f0edce7263/README.md (License)"
+        },
+        {
+          "name": "fast_float (inside libplacebo, header only)",
+          "version": "97b54ca9e75f5303507699d27c6b4f4efe4641a1",
+          "source": "https://github.com/fastfloat/fast_float.git",
+          "licence": "Apache-2.0 or MIT or BSL-1.0",
+          "licence_from": "https://raw.githubusercontent.com/fastfloat/fast_float/97b54ca9e75f5303507699d27c6b4f4efe4641a1/README.md (License; the submodule commit libplacebo 22ee762e8e08 pins at 3rdparty/fast_float, read through https://code.videolan.org/api/v4/projects/videolan%2Flibplacebo/repository/tree?path=3rdparty&ref=22ee762e8e0890fc54068beb670310f0edce7263)"
+        },
+        {
+          "name": "mbedtls",
+          "version": "v4.2.0",
+          "source": "https://github.com/ARMmbed/mbedtls.git",
+          "licence": "Apache-2.0 or GPL-2.0-or-later",
+          "licence_from": "https://raw.githubusercontent.com/ARMmbed/mbedtls/v4.2.0/LICENSE"
+        },
+        {
+          "name": "TF-PSA-Crypto (inside mbedtls)",
+          "version": "73c5da561c8e5253db7b1fb440eda86fde8d8024",
+          "source": "https://github.com/Mbed-TLS/TF-PSA-Crypto.git",
+          "licence": "Apache-2.0 or GPL-2.0-or-later, with drivers/everest under Apache-2.0",
+          "licence_from": "https://raw.githubusercontent.com/Mbed-TLS/TF-PSA-Crypto/73c5da561c8e5253db7b1fb440eda86fde8d8024/LICENSE and https://raw.githubusercontent.com/Mbed-TLS/TF-PSA-Crypto/73c5da561c8e5253db7b1fb440eda86fde8d8024/README.md (Third-party code included in TF-PSA-Crypto; the submodule commit mbedtls v4.2.0 pins, read through https://api.github.com/repos/ARMmbed/mbedtls/contents/tf-psa-crypto?ref=v4.2.0)"
+        },
+        {
+          "name": "mldsa-native (inside TF-PSA-Crypto)",
+          "version": "5772b4f4a0105694b1203abb582273f78fa951b7",
+          "source": "https://github.com/Mbed-TLS/mldsa-native",
+          "licence": "Apache-2.0 or ISC or MIT",
+          "licence_from": "https://raw.githubusercontent.com/Mbed-TLS/mldsa-native/5772b4f4a0105694b1203abb582273f78fa951b7/LICENSE (the submodule commit TF-PSA-Crypto 73c5da561c8e pins at drivers/pqcp/mldsa-native, which https://raw.githubusercontent.com/Mbed-TLS/TF-PSA-Crypto/73c5da561c8e5253db7b1fb440eda86fde8d8024/drivers/CMakeLists.txt builds)"
+        },
+        {
+          "name": "librist",
+          "version": "4f45ef8f78983892d52ccd52d9f675435b23738f",
+          "source": "https://code.videolan.org/rist/librist.git",
+          "licence": "BSD-2-Clause",
+          "licence_from": "https://code.videolan.org/rist/librist/-/raw/4f45ef8f78983892d52ccd52d9f675435b23738f/COPYING"
+        },
+        {
+          "name": "libssh",
+          "version": "1dc52926c54b59ea7a3350a59a476bb76da3ff33",
+          "source": "https://gitlab.com/libssh/libssh-mirror.git",
+          "licence": "LGPL-2.1-or-later, with an OpenSSL linking exception",
+          "licence_from": "https://gitlab.com/libssh/libssh-mirror/-/raw/1dc52926c54b59ea7a3350a59a476bb76da3ff33/COPYING and https://gitlab.com/libssh/libssh-mirror/-/raw/1dc52926c54b59ea7a3350a59a476bb76da3ff33/src/session.c"
+        },
+        {
+          "name": "libtheora",
+          "version": "28fd5ec77f0ad0e07a371cef1047828116f6bd8a",
+          "source": "https://github.com/xiph/theora.git",
+          "licence": "BSD-3-Clause",
+          "licence_from": "https://raw.githubusercontent.com/xiph/theora/28fd5ec77f0ad0e07a371cef1047828116f6bd8a/COPYING"
+        },
+        {
+          "name": "libvpx",
+          "version": "9cc8e1c18024d6b64422ecb7fdd7a43c8e873908",
+          "source": "https://chromium.googlesource.com/webm/libvpx",
+          "licence": "BSD-3-Clause",
+          "licence_from": "https://chromium.googlesource.com/webm/libvpx/+/9cc8e1c18024d6b64422ecb7fdd7a43c8e873908/LICENSE?format=TEXT"
+        },
+        {
+          "name": "libwebp",
+          "version": "ba8358578ecbc4c75f0723163275de00dec0c704",
+          "source": "https://chromium.googlesource.com/webm/libwebp",
+          "licence": "BSD-3-Clause",
+          "licence_from": "https://chromium.googlesource.com/webm/libwebp/+/ba8358578ecbc4c75f0723163275de00dec0c704/COPYING?format=TEXT"
+        },
+        {
+          "name": "libzmq",
+          "version": "46493370217ac135246617fa2f6ac819d8b61bfc",
+          "source": "https://github.com/zeromq/libzmq.git",
+          "licence": "MPL-2.0",
+          "licence_from": "https://raw.githubusercontent.com/zeromq/libzmq/46493370217ac135246617fa2f6ac819d8b61bfc/LICENSE"
+        },
+        {
+          "name": "lv2 (headers)",
+          "version": "3c57dae600a5ad8d05acd53ee3490f7d91cb7be6",
+          "source": "https://github.com/lv2/lv2.git",
+          "licence": "ISC",
+          "licence_from": "https://raw.githubusercontent.com/lv2/lv2/3c57dae600a5ad8d05acd53ee3490f7d91cb7be6/COPYING"
+        },
+        {
+          "name": "serd",
+          "version": "b6053bb2a4533e6a8e3821c1061f140d5e666938",
+          "source": "https://github.com/drobilla/serd.git",
+          "licence": "ISC",
+          "licence_from": "https://raw.githubusercontent.com/drobilla/serd/b6053bb2a4533e6a8e3821c1061f140d5e666938/COPYING"
+        },
+        {
+          "name": "zix",
+          "version": "17d632393f5addb6fa24dda2927b96515407cca7",
+          "source": "https://github.com/drobilla/zix.git",
+          "licence": "ISC",
+          "licence_from": "https://raw.githubusercontent.com/drobilla/zix/17d632393f5addb6fa24dda2927b96515407cca7/COPYING"
+        },
+        {
+          "name": "sord",
+          "version": "4b5232bb91e7f2f1b84df384494d073fabbcd312",
+          "source": "https://github.com/drobilla/sord.git",
+          "licence": "ISC",
+          "licence_from": "https://raw.githubusercontent.com/drobilla/sord/4b5232bb91e7f2f1b84df384494d073fabbcd312/COPYING"
+        },
+        {
+          "name": "sratom",
+          "version": "9e8ee84eed502e6030ce8bb49694fd28542b08fc",
+          "source": "https://github.com/lv2/sratom.git",
+          "licence": "ISC",
+          "licence_from": "https://raw.githubusercontent.com/lv2/sratom/9e8ee84eed502e6030ce8bb49694fd28542b08fc/COPYING"
+        },
+        {
+          "name": "lilv",
+          "version": "4b8f30055fa5cb4134a2eb45fc1555bc04289314",
+          "source": "https://github.com/lv2/lilv.git",
+          "licence": "ISC",
+          "licence_from": "https://raw.githubusercontent.com/lv2/lilv/4b8f30055fa5cb4134a2eb45fc1555bc04289314/COPYING"
+        },
+        {
+          "name": "libvpl",
+          "version": "674d015bcb294bc39fa276e99a652ea045423e82",
+          "source": "https://github.com/intel/libvpl.git",
+          "licence": "MIT",
+          "licence_from": "https://raw.githubusercontent.com/intel/libvpl/674d015bcb294bc39fa276e99a652ea045423e82/LICENSE"
+        },
+        {
+          "name": "openal-soft",
+          "version": "c157b87cb9eb58d747748e49f82ee4a64d1dcf8b",
+          "source": "https://github.com/kcat/openal-soft.git",
+          "licence": "LGPL-2.0-or-later, with parts under Apache-2.0 (the default HRTF data), BSD-3-Clause and the PFFFT notice",
+          "licence_from": "https://raw.githubusercontent.com/kcat/openal-soft/c157b87cb9eb58d747748e49f82ee4a64d1dcf8b/README.md (License) and its COPYING, LICENSE.Apache-2.0.txt, LICENSE.BSD-3-Clause.txt and LICENSE-pffft"
+        },
+        {
+          "name": "opencore-amr",
+          "version": "7dba8c32238418ce0b316a852b2224df586ca896",
+          "source": "https://git.code.sf.net/p/opencore-amr/code",
+          "licence": "Apache-2.0",
+          "licence_from": "https://sourceforge.net/p/opencore-amr/code/ci/7dba8c32238418ce0b316a852b2224df586ca896/tree/LICENSE?format=raw and https://sourceforge.net/p/opencore-amr/code/ci/7dba8c32238418ce0b316a852b2224df586ca896/tree/README?format=raw"
+        },
+        {
+          "name": "openh264",
+          "version": "98bc7cbbeb7381c94ef8f9a5d158327abbf6b8b9",
+          "source": "https://github.com/cisco/openh264.git",
+          "licence": "BSD-2-Clause",
+          "licence_from": "https://raw.githubusercontent.com/cisco/openh264/98bc7cbbeb7381c94ef8f9a5d158327abbf6b8b9/LICENSE"
+        },
+        {
+          "name": "openjpeg",
+          "version": "402ef5862195b177ea0a7788f2a6ef2804e62285",
+          "source": "https://github.com/uclouvain/openjpeg.git",
+          "licence": "BSD-2-Clause",
+          "licence_from": "https://raw.githubusercontent.com/uclouvain/openjpeg/402ef5862195b177ea0a7788f2a6ef2804e62285/LICENSE"
+        },
+        {
+          "name": "openmpt",
+          "version": "1b000d4bca071364157b5d35940efe4feecd2e0a",
+          "source": "https://github.com/OpenMPT/openmpt.git",
+          "licence": "BSD-3-Clause",
+          "licence_from": "https://raw.githubusercontent.com/OpenMPT/openmpt/1b000d4bca071364157b5d35940efe4feecd2e0a/LICENSE"
+        },
+        {
+          "name": "rav1e",
+          "version": "564ae3b0007ae2b06893fd7166bf88c5a84c5b63",
+          "source": "https://github.com/xiph/rav1e.git",
+          "licence": "BSD-2-Clause",
+          "licence_from": "https://raw.githubusercontent.com/xiph/rav1e/564ae3b0007ae2b06893fd7166bf88c5a84c5b63/LICENSE"
+        },
+        {
+          "name": "aligned (Rust crate inside rav1e)",
+          "version": "0.4.2",
+          "source": "https://static.crates.io/crates/aligned/aligned-0.4.2.crate",
+          "licence": "MIT or Apache-2.0",
+          "licence_from": "https://static.crates.io/crates/aligned/aligned-0.4.2.crate (Cargo.toml license, LICENSE-APACHE, LICENSE-MIT; the archive's SHA-256 is the one https://raw.githubusercontent.com/xiph/rav1e/564ae3b0007ae2b06893fd7166bf88c5a84c5b63/Cargo.lock pins)"
+        },
+        {
+          "name": "aligned-vec (Rust crate inside rav1e)",
+          "version": "0.6.4",
+          "source": "https://static.crates.io/crates/aligned-vec/aligned-vec-0.6.4.crate",
+          "licence": "MIT",
+          "licence_from": "https://static.crates.io/crates/aligned-vec/aligned-vec-0.6.4.crate (Cargo.toml license, LICENSE; the archive's SHA-256 is the one https://raw.githubusercontent.com/xiph/rav1e/564ae3b0007ae2b06893fd7166bf88c5a84c5b63/Cargo.lock pins)"
+        },
+        {
+          "name": "anstream (Rust crate inside rav1e)",
+          "version": "0.6.19",
+          "source": "https://static.crates.io/crates/anstream/anstream-0.6.19.crate",
+          "licence": "MIT or Apache-2.0",
+          "licence_from": "https://static.crates.io/crates/anstream/anstream-0.6.19.crate (Cargo.toml license, LICENSE-APACHE, LICENSE-MIT; the archive's SHA-256 is the one https://raw.githubusercontent.com/xiph/rav1e/564ae3b0007ae2b06893fd7166bf88c5a84c5b63/Cargo.lock pins)"
+        },
+        {
+          "name": "anstyle (Rust crate inside rav1e)",
+          "version": "1.0.11",
+          "source": "https://static.crates.io/crates/anstyle/anstyle-1.0.11.crate",
+          "licence": "MIT or Apache-2.0",
+          "licence_from": "https://static.crates.io/crates/anstyle/anstyle-1.0.11.crate (Cargo.toml license, LICENSE-APACHE, LICENSE-MIT; the archive's SHA-256 is the one https://raw.githubusercontent.com/xiph/rav1e/564ae3b0007ae2b06893fd7166bf88c5a84c5b63/Cargo.lock pins)"
+        },
+        {
+          "name": "anstyle-parse (Rust crate inside rav1e)",
+          "version": "0.2.7",
+          "source": "https://static.crates.io/crates/anstyle-parse/anstyle-parse-0.2.7.crate",
+          "licence": "MIT or Apache-2.0",
+          "licence_from": "https://static.crates.io/crates/anstyle-parse/anstyle-parse-0.2.7.crate (Cargo.toml license, LICENSE-APACHE, LICENSE-MIT; the archive's SHA-256 is the one https://raw.githubusercontent.com/xiph/rav1e/564ae3b0007ae2b06893fd7166bf88c5a84c5b63/Cargo.lock pins)"
+        },
+        {
+          "name": "anstyle-query (Rust crate inside rav1e)",
+          "version": "1.1.3",
+          "source": "https://static.crates.io/crates/anstyle-query/anstyle-query-1.1.3.crate",
+          "licence": "MIT or Apache-2.0",
+          "licence_from": "https://static.crates.io/crates/anstyle-query/anstyle-query-1.1.3.crate (Cargo.toml license, LICENSE-APACHE, LICENSE-MIT; the archive's SHA-256 is the one https://raw.githubusercontent.com/xiph/rav1e/564ae3b0007ae2b06893fd7166bf88c5a84c5b63/Cargo.lock pins)"
+        },
+        {
+          "name": "anstyle-wincon (Rust crate inside rav1e)",
+          "version": "3.0.9",
+          "source": "https://static.crates.io/crates/anstyle-wincon/anstyle-wincon-3.0.9.crate",
+          "licence": "MIT or Apache-2.0",
+          "licence_from": "https://static.crates.io/crates/anstyle-wincon/anstyle-wincon-3.0.9.crate (Cargo.toml license, LICENSE-APACHE, LICENSE-MIT; the archive's SHA-256 is the one https://raw.githubusercontent.com/xiph/rav1e/564ae3b0007ae2b06893fd7166bf88c5a84c5b63/Cargo.lock pins)"
+        },
+        {
+          "name": "anyhow (Rust crate inside rav1e)",
+          "version": "1.0.98",
+          "source": "https://static.crates.io/crates/anyhow/anyhow-1.0.98.crate",
+          "licence": "MIT or Apache-2.0",
+          "licence_from": "https://static.crates.io/crates/anyhow/anyhow-1.0.98.crate (Cargo.toml license, LICENSE-APACHE, LICENSE-MIT; the archive's SHA-256 is the one https://raw.githubusercontent.com/xiph/rav1e/564ae3b0007ae2b06893fd7166bf88c5a84c5b63/Cargo.lock pins)"
+        },
+        {
+          "name": "arrayvec (Rust crate inside rav1e)",
+          "version": "0.7.6",
+          "source": "https://static.crates.io/crates/arrayvec/arrayvec-0.7.6.crate",
+          "licence": "MIT or Apache-2.0",
+          "licence_from": "https://static.crates.io/crates/arrayvec/arrayvec-0.7.6.crate (Cargo.toml license, LICENSE-APACHE, LICENSE-MIT; the archive's SHA-256 is the one https://raw.githubusercontent.com/xiph/rav1e/564ae3b0007ae2b06893fd7166bf88c5a84c5b63/Cargo.lock pins)"
+        },
+        {
+          "name": "as-slice (Rust crate inside rav1e)",
+          "version": "0.2.1",
+          "source": "https://static.crates.io/crates/as-slice/as-slice-0.2.1.crate",
+          "licence": "MIT or Apache-2.0",
+          "licence_from": "https://static.crates.io/crates/as-slice/as-slice-0.2.1.crate (Cargo.toml license, LICENSE-APACHE, LICENSE-MIT; the archive's SHA-256 is the one https://raw.githubusercontent.com/xiph/rav1e/564ae3b0007ae2b06893fd7166bf88c5a84c5b63/Cargo.lock pins)"
+        },
+        {
+          "name": "av-metrics (Rust crate inside rav1e)",
+          "version": "0.9.1",
+          "source": "https://static.crates.io/crates/av-metrics/av-metrics-0.9.1.crate",
+          "licence": "MIT",
+          "licence_from": "https://static.crates.io/crates/av-metrics/av-metrics-0.9.1.crate (Cargo.toml license; the archive's SHA-256 is the one https://raw.githubusercontent.com/xiph/rav1e/564ae3b0007ae2b06893fd7166bf88c5a84c5b63/Cargo.lock pins)"
+        },
+        {
+          "name": "av-scenechange (Rust crate inside rav1e)",
+          "version": "0.14.1",
+          "source": "https://static.crates.io/crates/av-scenechange/av-scenechange-0.14.1.crate",
+          "licence": "MIT",
+          "licence_from": "https://static.crates.io/crates/av-scenechange/av-scenechange-0.14.1.crate (Cargo.toml license, LICENSE; the archive's SHA-256 is the one https://raw.githubusercontent.com/xiph/rav1e/564ae3b0007ae2b06893fd7166bf88c5a84c5b63/Cargo.lock pins)"
+        },
+        {
+          "name": "av1-grain (Rust crate inside rav1e)",
+          "version": "0.2.4",
+          "source": "https://static.crates.io/crates/av1-grain/av1-grain-0.2.4.crate",
+          "licence": "BSD-2-Clause",
+          "licence_from": "https://static.crates.io/crates/av1-grain/av1-grain-0.2.4.crate (Cargo.toml license, LICENSE; the archive's SHA-256 is the one https://raw.githubusercontent.com/xiph/rav1e/564ae3b0007ae2b06893fd7166bf88c5a84c5b63/Cargo.lock pins)"
+        },
+        {
+          "name": "bitstream-io (Rust crate inside rav1e)",
+          "version": "4.2.0",
+          "source": "https://static.crates.io/crates/bitstream-io/bitstream-io-4.2.0.crate",
+          "licence": "MIT or Apache-2.0",
+          "licence_from": "https://static.crates.io/crates/bitstream-io/bitstream-io-4.2.0.crate (Cargo.toml license, LICENSE-APACHE, LICENSE-MIT; the archive's SHA-256 is the one https://raw.githubusercontent.com/xiph/rav1e/564ae3b0007ae2b06893fd7166bf88c5a84c5b63/Cargo.lock pins)"
+        },
+        {
+          "name": "cfg-if (Rust crate inside rav1e)",
+          "version": "1.0.1",
+          "source": "https://static.crates.io/crates/cfg-if/cfg-if-1.0.1.crate",
+          "licence": "MIT or Apache-2.0",
+          "licence_from": "https://static.crates.io/crates/cfg-if/cfg-if-1.0.1.crate (Cargo.toml license, LICENSE-APACHE, LICENSE-MIT; the archive's SHA-256 is the one https://raw.githubusercontent.com/xiph/rav1e/564ae3b0007ae2b06893fd7166bf88c5a84c5b63/Cargo.lock pins)"
+        },
+        {
+          "name": "clap (Rust crate inside rav1e)",
+          "version": "4.5.40",
+          "source": "https://static.crates.io/crates/clap/clap-4.5.40.crate",
+          "licence": "MIT or Apache-2.0",
+          "licence_from": "https://static.crates.io/crates/clap/clap-4.5.40.crate (Cargo.toml license, LICENSE-APACHE, LICENSE-MIT; the archive's SHA-256 is the one https://raw.githubusercontent.com/xiph/rav1e/564ae3b0007ae2b06893fd7166bf88c5a84c5b63/Cargo.lock pins)"
+        },
+        {
+          "name": "clap_builder (Rust crate inside rav1e)",
+          "version": "4.5.40",
+          "source": "https://static.crates.io/crates/clap_builder/clap_builder-4.5.40.crate",
+          "licence": "MIT or Apache-2.0",
+          "licence_from": "https://static.crates.io/crates/clap_builder/clap_builder-4.5.40.crate (Cargo.toml license, LICENSE-APACHE, LICENSE-MIT; the archive's SHA-256 is the one https://raw.githubusercontent.com/xiph/rav1e/564ae3b0007ae2b06893fd7166bf88c5a84c5b63/Cargo.lock pins)"
+        },
+        {
+          "name": "clap_complete (Rust crate inside rav1e)",
+          "version": "4.5.54",
+          "source": "https://static.crates.io/crates/clap_complete/clap_complete-4.5.54.crate",
+          "licence": "MIT or Apache-2.0",
+          "licence_from": "https://static.crates.io/crates/clap_complete/clap_complete-4.5.54.crate (Cargo.toml license, LICENSE-APACHE, LICENSE-MIT; the archive's SHA-256 is the one https://raw.githubusercontent.com/xiph/rav1e/564ae3b0007ae2b06893fd7166bf88c5a84c5b63/Cargo.lock pins)"
+        },
+        {
+          "name": "clap_lex (Rust crate inside rav1e)",
+          "version": "0.7.5",
+          "source": "https://static.crates.io/crates/clap_lex/clap_lex-0.7.5.crate",
+          "licence": "MIT or Apache-2.0",
+          "licence_from": "https://static.crates.io/crates/clap_lex/clap_lex-0.7.5.crate (Cargo.toml license, LICENSE-APACHE, LICENSE-MIT; the archive's SHA-256 is the one https://raw.githubusercontent.com/xiph/rav1e/564ae3b0007ae2b06893fd7166bf88c5a84c5b63/Cargo.lock pins)"
+        },
+        {
+          "name": "colorchoice (Rust crate inside rav1e)",
+          "version": "1.0.4",
+          "source": "https://static.crates.io/crates/colorchoice/colorchoice-1.0.4.crate",
+          "licence": "MIT or Apache-2.0",
+          "licence_from": "https://static.crates.io/crates/colorchoice/colorchoice-1.0.4.crate (Cargo.toml license, LICENSE-APACHE, LICENSE-MIT; the archive's SHA-256 is the one https://raw.githubusercontent.com/xiph/rav1e/564ae3b0007ae2b06893fd7166bf88c5a84c5b63/Cargo.lock pins)"
+        },
+        {
+          "name": "console (Rust crate inside rav1e)",
+          "version": "0.15.11",
+          "source": "https://static.crates.io/crates/console/console-0.15.11.crate",
+          "licence": "MIT",
+          "licence_from": "https://static.crates.io/crates/console/console-0.15.11.crate (Cargo.toml license, LICENSE; the archive's SHA-256 is the one https://raw.githubusercontent.com/xiph/rav1e/564ae3b0007ae2b06893fd7166bf88c5a84c5b63/Cargo.lock pins)"
+        },
+        {
+          "name": "core2 (Rust crate inside rav1e)",
+          "version": "0.4.0",
+          "source": "https://static.crates.io/crates/core2/core2-0.4.0.crate",
+          "licence": "Apache-2.0 or MIT",
+          "licence_from": "https://static.crates.io/crates/core2/core2-0.4.0.crate (Cargo.toml license, LICENSE-APACHE, LICENSE-MIT; the archive's SHA-256 is the one https://raw.githubusercontent.com/xiph/rav1e/564ae3b0007ae2b06893fd7166bf88c5a84c5b63/Cargo.lock pins)"
+        },
+        {
+          "name": "crossbeam (Rust crate inside rav1e)",
+          "version": "0.8.4",
+          "source": "https://static.crates.io/crates/crossbeam/crossbeam-0.8.4.crate",
+          "licence": "MIT or Apache-2.0",
+          "licence_from": "https://static.crates.io/crates/crossbeam/crossbeam-0.8.4.crate (Cargo.toml license, LICENSE-APACHE, LICENSE-MIT; the archive's SHA-256 is the one https://raw.githubusercontent.com/xiph/rav1e/564ae3b0007ae2b06893fd7166bf88c5a84c5b63/Cargo.lock pins)"
+        },
+        {
+          "name": "crossbeam-channel (Rust crate inside rav1e)",
+          "version": "0.5.15",
+          "source": "https://static.crates.io/crates/crossbeam-channel/crossbeam-channel-0.5.15.crate",
+          "licence": "MIT or Apache-2.0",
+          "licence_from": "https://static.crates.io/crates/crossbeam-channel/crossbeam-channel-0.5.15.crate (Cargo.toml license, LICENSE-APACHE, LICENSE-MIT, LICENSE-THIRD-PARTY; the archive's SHA-256 is the one https://raw.githubusercontent.com/xiph/rav1e/564ae3b0007ae2b06893fd7166bf88c5a84c5b63/Cargo.lock pins)"
+        },
+        {
+          "name": "crossbeam-deque (Rust crate inside rav1e)",
+          "version": "0.8.6",
+          "source": "https://static.crates.io/crates/crossbeam-deque/crossbeam-deque-0.8.6.crate",
+          "licence": "MIT or Apache-2.0",
+          "licence_from": "https://static.crates.io/crates/crossbeam-deque/crossbeam-deque-0.8.6.crate (Cargo.toml license, LICENSE-APACHE, LICENSE-MIT; the archive's SHA-256 is the one https://raw.githubusercontent.com/xiph/rav1e/564ae3b0007ae2b06893fd7166bf88c5a84c5b63/Cargo.lock pins)"
+        },
+        {
+          "name": "crossbeam-epoch (Rust crate inside rav1e)",
+          "version": "0.9.18",
+          "source": "https://static.crates.io/crates/crossbeam-epoch/crossbeam-epoch-0.9.18.crate",
+          "licence": "MIT or Apache-2.0",
+          "licence_from": "https://static.crates.io/crates/crossbeam-epoch/crossbeam-epoch-0.9.18.crate (Cargo.toml license, LICENSE-APACHE, LICENSE-MIT; the archive's SHA-256 is the one https://raw.githubusercontent.com/xiph/rav1e/564ae3b0007ae2b06893fd7166bf88c5a84c5b63/Cargo.lock pins)"
+        },
+        {
+          "name": "crossbeam-queue (Rust crate inside rav1e)",
+          "version": "0.3.12",
+          "source": "https://static.crates.io/crates/crossbeam-queue/crossbeam-queue-0.3.12.crate",
+          "licence": "MIT or Apache-2.0",
+          "licence_from": "https://static.crates.io/crates/crossbeam-queue/crossbeam-queue-0.3.12.crate (Cargo.toml license, LICENSE-APACHE, LICENSE-MIT; the archive's SHA-256 is the one https://raw.githubusercontent.com/xiph/rav1e/564ae3b0007ae2b06893fd7166bf88c5a84c5b63/Cargo.lock pins)"
+        },
+        {
+          "name": "crossbeam-utils (Rust crate inside rav1e)",
+          "version": "0.8.21",
+          "source": "https://static.crates.io/crates/crossbeam-utils/crossbeam-utils-0.8.21.crate",
+          "licence": "MIT or Apache-2.0",
+          "licence_from": "https://static.crates.io/crates/crossbeam-utils/crossbeam-utils-0.8.21.crate (Cargo.toml license, LICENSE-APACHE, LICENSE-MIT; the archive's SHA-256 is the one https://raw.githubusercontent.com/xiph/rav1e/564ae3b0007ae2b06893fd7166bf88c5a84c5b63/Cargo.lock pins)"
+        },
+        {
+          "name": "either (Rust crate inside rav1e)",
+          "version": "1.15.0",
+          "source": "https://static.crates.io/crates/either/either-1.15.0.crate",
+          "licence": "MIT or Apache-2.0",
+          "licence_from": "https://static.crates.io/crates/either/either-1.15.0.crate (Cargo.toml license, LICENSE-APACHE, LICENSE-MIT; the archive's SHA-256 is the one https://raw.githubusercontent.com/xiph/rav1e/564ae3b0007ae2b06893fd7166bf88c5a84c5b63/Cargo.lock pins)"
+        },
+        {
+          "name": "encode_unicode (Rust crate inside rav1e)",
+          "version": "1.0.0",
+          "source": "https://static.crates.io/crates/encode_unicode/encode_unicode-1.0.0.crate",
+          "licence": "Apache-2.0 or MIT",
+          "licence_from": "https://static.crates.io/crates/encode_unicode/encode_unicode-1.0.0.crate (Cargo.toml license, LICENSE-APACHE, LICENSE-MIT; the archive's SHA-256 is the one https://raw.githubusercontent.com/xiph/rav1e/564ae3b0007ae2b06893fd7166bf88c5a84c5b63/Cargo.lock pins)"
+        },
+        {
+          "name": "equator (Rust crate inside rav1e)",
+          "version": "0.4.2",
+          "source": "https://static.crates.io/crates/equator/equator-0.4.2.crate",
+          "licence": "MIT",
+          "licence_from": "https://static.crates.io/crates/equator/equator-0.4.2.crate (Cargo.toml license, LICENSE; the archive's SHA-256 is the one https://raw.githubusercontent.com/xiph/rav1e/564ae3b0007ae2b06893fd7166bf88c5a84c5b63/Cargo.lock pins)"
+        },
+        {
+          "name": "fern (Rust crate inside rav1e)",
+          "version": "0.7.1",
+          "source": "https://static.crates.io/crates/fern/fern-0.7.1.crate",
+          "licence": "MIT",
+          "licence_from": "https://static.crates.io/crates/fern/fern-0.7.1.crate (Cargo.toml license, LICENSE; the archive's SHA-256 is the one https://raw.githubusercontent.com/xiph/rav1e/564ae3b0007ae2b06893fd7166bf88c5a84c5b63/Cargo.lock pins)"
+        },
+        {
+          "name": "is_terminal_polyfill (Rust crate inside rav1e)",
+          "version": "1.70.1",
+          "source": "https://static.crates.io/crates/is_terminal_polyfill/is_terminal_polyfill-1.70.1.crate",
+          "licence": "MIT or Apache-2.0",
+          "licence_from": "https://static.crates.io/crates/is_terminal_polyfill/is_terminal_polyfill-1.70.1.crate (Cargo.toml license, LICENSE-APACHE, LICENSE-MIT; the archive's SHA-256 is the one https://raw.githubusercontent.com/xiph/rav1e/564ae3b0007ae2b06893fd7166bf88c5a84c5b63/Cargo.lock pins)"
+        },
+        {
+          "name": "itertools (Rust crate inside rav1e)",
+          "version": "0.10.5",
+          "source": "https://static.crates.io/crates/itertools/itertools-0.10.5.crate",
+          "licence": "MIT or Apache-2.0",
+          "licence_from": "https://static.crates.io/crates/itertools/itertools-0.10.5.crate (Cargo.toml license, LICENSE-APACHE, LICENSE-MIT; the archive's SHA-256 is the one https://raw.githubusercontent.com/xiph/rav1e/564ae3b0007ae2b06893fd7166bf88c5a84c5b63/Cargo.lock pins)"
+        },
+        {
+          "name": "itertools (Rust crate inside rav1e)",
+          "version": "0.14.0",
+          "source": "https://static.crates.io/crates/itertools/itertools-0.14.0.crate",
+          "licence": "MIT or Apache-2.0",
+          "licence_from": "https://static.crates.io/crates/itertools/itertools-0.14.0.crate (Cargo.toml license, LICENSE-APACHE, LICENSE-MIT; the archive's SHA-256 is the one https://raw.githubusercontent.com/xiph/rav1e/564ae3b0007ae2b06893fd7166bf88c5a84c5b63/Cargo.lock pins)"
+        },
+        {
+          "name": "ivf (Rust crate inside rav1e)",
+          "version": "0.1.4",
+          "source": "https://github.com/xiph/rav1e/tree/564ae3b0007ae2b06893fd7166bf88c5a84c5b63/ivf",
+          "licence": "BSD-2-Clause",
+          "licence_from": "https://raw.githubusercontent.com/xiph/rav1e/564ae3b0007ae2b06893fd7166bf88c5a84c5b63/ivf/Cargo.toml (license) and https://raw.githubusercontent.com/xiph/rav1e/564ae3b0007ae2b06893fd7166bf88c5a84c5b63/LICENSE"
+        },
+        {
+          "name": "lab (Rust crate inside rav1e)",
+          "version": "0.11.0",
+          "source": "https://static.crates.io/crates/lab/lab-0.11.0.crate",
+          "licence": "MIT",
+          "licence_from": "https://static.crates.io/crates/lab/lab-0.11.0.crate (Cargo.toml license, LICENSE; the archive's SHA-256 is the one https://raw.githubusercontent.com/xiph/rav1e/564ae3b0007ae2b06893fd7166bf88c5a84c5b63/Cargo.lock pins)"
+        },
+        {
+          "name": "libc (Rust crate inside rav1e)",
+          "version": "0.2.172",
+          "source": "https://static.crates.io/crates/libc/libc-0.2.172.crate",
+          "licence": "MIT or Apache-2.0",
+          "licence_from": "https://static.crates.io/crates/libc/libc-0.2.172.crate (Cargo.toml license, LICENSE-APACHE, LICENSE-MIT; the archive's SHA-256 is the one https://raw.githubusercontent.com/xiph/rav1e/564ae3b0007ae2b06893fd7166bf88c5a84c5b63/Cargo.lock pins)"
+        },
+        {
+          "name": "log (Rust crate inside rav1e)",
+          "version": "0.4.27",
+          "source": "https://static.crates.io/crates/log/log-0.4.27.crate",
+          "licence": "MIT or Apache-2.0",
+          "licence_from": "https://static.crates.io/crates/log/log-0.4.27.crate (Cargo.toml license, LICENSE-APACHE, LICENSE-MIT; the archive's SHA-256 is the one https://raw.githubusercontent.com/xiph/rav1e/564ae3b0007ae2b06893fd7166bf88c5a84c5b63/Cargo.lock pins)"
+        },
+        {
+          "name": "maybe-rayon (Rust crate inside rav1e)",
+          "version": "0.1.1",
+          "source": "https://static.crates.io/crates/maybe-rayon/maybe-rayon-0.1.1.crate",
+          "licence": "MIT",
+          "licence_from": "https://static.crates.io/crates/maybe-rayon/maybe-rayon-0.1.1.crate (Cargo.toml license, LICENSE; the archive's SHA-256 is the one https://raw.githubusercontent.com/xiph/rav1e/564ae3b0007ae2b06893fd7166bf88c5a84c5b63/Cargo.lock pins)"
+        },
+        {
+          "name": "memchr (Rust crate inside rav1e)",
+          "version": "2.7.5",
+          "source": "https://static.crates.io/crates/memchr/memchr-2.7.5.crate",
+          "licence": "Unlicense or MIT",
+          "licence_from": "https://static.crates.io/crates/memchr/memchr-2.7.5.crate (Cargo.toml license, COPYING, LICENSE-MIT, UNLICENSE; the archive's SHA-256 is the one https://raw.githubusercontent.com/xiph/rav1e/564ae3b0007ae2b06893fd7166bf88c5a84c5b63/Cargo.lock pins)"
+        },
+        {
+          "name": "minimal-lexical (Rust crate inside rav1e)",
+          "version": "0.2.1",
+          "source": "https://static.crates.io/crates/minimal-lexical/minimal-lexical-0.2.1.crate",
+          "licence": "MIT or Apache-2.0",
+          "licence_from": "https://static.crates.io/crates/minimal-lexical/minimal-lexical-0.2.1.crate (Cargo.toml license, LICENSE-APACHE, LICENSE-MIT and the LICENSE Markdown file; the archive's SHA-256 is the one https://raw.githubusercontent.com/xiph/rav1e/564ae3b0007ae2b06893fd7166bf88c5a84c5b63/Cargo.lock pins)"
+        },
+        {
+          "name": "new_debug_unreachable (Rust crate inside rav1e)",
+          "version": "1.0.6",
+          "source": "https://static.crates.io/crates/new_debug_unreachable/new_debug_unreachable-1.0.6.crate",
+          "licence": "MIT",
+          "licence_from": "https://static.crates.io/crates/new_debug_unreachable/new_debug_unreachable-1.0.6.crate (Cargo.toml license, LICENSE-MIT; the archive's SHA-256 is the one https://raw.githubusercontent.com/xiph/rav1e/564ae3b0007ae2b06893fd7166bf88c5a84c5b63/Cargo.lock pins)"
+        },
+        {
+          "name": "nom (Rust crate inside rav1e)",
+          "version": "7.1.3",
+          "source": "https://static.crates.io/crates/nom/nom-7.1.3.crate",
+          "licence": "MIT",
+          "licence_from": "https://static.crates.io/crates/nom/nom-7.1.3.crate (Cargo.toml license, LICENSE; the archive's SHA-256 is the one https://raw.githubusercontent.com/xiph/rav1e/564ae3b0007ae2b06893fd7166bf88c5a84c5b63/Cargo.lock pins)"
+        },
+        {
+          "name": "nom (Rust crate inside rav1e)",
+          "version": "8.0.0",
+          "source": "https://static.crates.io/crates/nom/nom-8.0.0.crate",
+          "licence": "MIT",
+          "licence_from": "https://static.crates.io/crates/nom/nom-8.0.0.crate (Cargo.toml license, LICENSE; the archive's SHA-256 is the one https://raw.githubusercontent.com/xiph/rav1e/564ae3b0007ae2b06893fd7166bf88c5a84c5b63/Cargo.lock pins)"
+        },
+        {
+          "name": "num-bigint (Rust crate inside rav1e)",
+          "version": "0.4.6",
+          "source": "https://static.crates.io/crates/num-bigint/num-bigint-0.4.6.crate",
+          "licence": "MIT or Apache-2.0",
+          "licence_from": "https://static.crates.io/crates/num-bigint/num-bigint-0.4.6.crate (Cargo.toml license, LICENSE-APACHE, LICENSE-MIT; the archive's SHA-256 is the one https://raw.githubusercontent.com/xiph/rav1e/564ae3b0007ae2b06893fd7166bf88c5a84c5b63/Cargo.lock pins)"
+        },
+        {
+          "name": "num-integer (Rust crate inside rav1e)",
+          "version": "0.1.46",
+          "source": "https://static.crates.io/crates/num-integer/num-integer-0.1.46.crate",
+          "licence": "MIT or Apache-2.0",
+          "licence_from": "https://static.crates.io/crates/num-integer/num-integer-0.1.46.crate (Cargo.toml license, LICENSE-APACHE, LICENSE-MIT; the archive's SHA-256 is the one https://raw.githubusercontent.com/xiph/rav1e/564ae3b0007ae2b06893fd7166bf88c5a84c5b63/Cargo.lock pins)"
+        },
+        {
+          "name": "num-rational (Rust crate inside rav1e)",
+          "version": "0.4.2",
+          "source": "https://static.crates.io/crates/num-rational/num-rational-0.4.2.crate",
+          "licence": "MIT or Apache-2.0",
+          "licence_from": "https://static.crates.io/crates/num-rational/num-rational-0.4.2.crate (Cargo.toml license, LICENSE-APACHE, LICENSE-MIT; the archive's SHA-256 is the one https://raw.githubusercontent.com/xiph/rav1e/564ae3b0007ae2b06893fd7166bf88c5a84c5b63/Cargo.lock pins)"
+        },
+        {
+          "name": "num-traits (Rust crate inside rav1e)",
+          "version": "0.2.19",
+          "source": "https://static.crates.io/crates/num-traits/num-traits-0.2.19.crate",
+          "licence": "MIT or Apache-2.0",
+          "licence_from": "https://static.crates.io/crates/num-traits/num-traits-0.2.19.crate (Cargo.toml license, LICENSE-APACHE, LICENSE-MIT; the archive's SHA-256 is the one https://raw.githubusercontent.com/xiph/rav1e/564ae3b0007ae2b06893fd7166bf88c5a84c5b63/Cargo.lock pins)"
+        },
+        {
+          "name": "once_cell (Rust crate inside rav1e)",
+          "version": "1.21.3",
+          "source": "https://static.crates.io/crates/once_cell/once_cell-1.21.3.crate",
+          "licence": "MIT or Apache-2.0",
+          "licence_from": "https://static.crates.io/crates/once_cell/once_cell-1.21.3.crate (Cargo.toml license, LICENSE-APACHE, LICENSE-MIT; the archive's SHA-256 is the one https://raw.githubusercontent.com/xiph/rav1e/564ae3b0007ae2b06893fd7166bf88c5a84c5b63/Cargo.lock pins)"
+        },
+        {
+          "name": "once_cell_polyfill (Rust crate inside rav1e)",
+          "version": "1.70.1",
+          "source": "https://static.crates.io/crates/once_cell_polyfill/once_cell_polyfill-1.70.1.crate",
+          "licence": "MIT or Apache-2.0",
+          "licence_from": "https://static.crates.io/crates/once_cell_polyfill/once_cell_polyfill-1.70.1.crate (Cargo.toml license, LICENSE-APACHE, LICENSE-MIT; the archive's SHA-256 is the one https://raw.githubusercontent.com/xiph/rav1e/564ae3b0007ae2b06893fd7166bf88c5a84c5b63/Cargo.lock pins)"
+        },
+        {
+          "name": "profiling (Rust crate inside rav1e)",
+          "version": "1.0.16",
+          "source": "https://static.crates.io/crates/profiling/profiling-1.0.16.crate",
+          "licence": "MIT or Apache-2.0",
+          "licence_from": "https://static.crates.io/crates/profiling/profiling-1.0.16.crate (Cargo.toml license; the archive's SHA-256 is the one https://raw.githubusercontent.com/xiph/rav1e/564ae3b0007ae2b06893fd7166bf88c5a84c5b63/Cargo.lock pins)"
+        },
+        {
+          "name": "rayon (Rust crate inside rav1e)",
+          "version": "1.10.0",
+          "source": "https://static.crates.io/crates/rayon/rayon-1.10.0.crate",
+          "licence": "MIT or Apache-2.0",
+          "licence_from": "https://static.crates.io/crates/rayon/rayon-1.10.0.crate (Cargo.toml license, LICENSE-APACHE, LICENSE-MIT; the archive's SHA-256 is the one https://raw.githubusercontent.com/xiph/rav1e/564ae3b0007ae2b06893fd7166bf88c5a84c5b63/Cargo.lock pins)"
+        },
+        {
+          "name": "rayon-core (Rust crate inside rav1e)",
+          "version": "1.12.1",
+          "source": "https://static.crates.io/crates/rayon-core/rayon-core-1.12.1.crate",
+          "licence": "MIT or Apache-2.0",
+          "licence_from": "https://static.crates.io/crates/rayon-core/rayon-core-1.12.1.crate (Cargo.toml license, LICENSE-APACHE, LICENSE-MIT; the archive's SHA-256 is the one https://raw.githubusercontent.com/xiph/rav1e/564ae3b0007ae2b06893fd7166bf88c5a84c5b63/Cargo.lock pins)"
+        },
+        {
+          "name": "scan_fmt (Rust crate inside rav1e)",
+          "version": "0.2.6",
+          "source": "https://static.crates.io/crates/scan_fmt/scan_fmt-0.2.6.crate",
+          "licence": "MIT",
+          "licence_from": "https://static.crates.io/crates/scan_fmt/scan_fmt-0.2.6.crate (Cargo.toml license, LICENSE; the archive's SHA-256 is the one https://raw.githubusercontent.com/xiph/rav1e/564ae3b0007ae2b06893fd7166bf88c5a84c5b63/Cargo.lock pins)"
+        },
+        {
+          "name": "stable_deref_trait (Rust crate inside rav1e)",
+          "version": "1.2.0",
+          "source": "https://static.crates.io/crates/stable_deref_trait/stable_deref_trait-1.2.0.crate",
+          "licence": "MIT or Apache-2.0",
+          "licence_from": "https://static.crates.io/crates/stable_deref_trait/stable_deref_trait-1.2.0.crate (Cargo.toml license, LICENSE-APACHE, LICENSE-MIT; the archive's SHA-256 is the one https://raw.githubusercontent.com/xiph/rav1e/564ae3b0007ae2b06893fd7166bf88c5a84c5b63/Cargo.lock pins)"
+        },
+        {
+          "name": "terminal_size (Rust crate inside rav1e)",
+          "version": "0.4.2",
+          "source": "https://static.crates.io/crates/terminal_size/terminal_size-0.4.2.crate",
+          "licence": "MIT or Apache-2.0",
+          "licence_from": "https://static.crates.io/crates/terminal_size/terminal_size-0.4.2.crate (Cargo.toml license, LICENSE-APACHE, LICENSE-MIT; the archive's SHA-256 is the one https://raw.githubusercontent.com/xiph/rav1e/564ae3b0007ae2b06893fd7166bf88c5a84c5b63/Cargo.lock pins)"
+        },
+        {
+          "name": "thiserror (Rust crate inside rav1e)",
+          "version": "1.0.69",
+          "source": "https://static.crates.io/crates/thiserror/thiserror-1.0.69.crate",
+          "licence": "MIT or Apache-2.0",
+          "licence_from": "https://static.crates.io/crates/thiserror/thiserror-1.0.69.crate (Cargo.toml license, LICENSE-APACHE, LICENSE-MIT; the archive's SHA-256 is the one https://raw.githubusercontent.com/xiph/rav1e/564ae3b0007ae2b06893fd7166bf88c5a84c5b63/Cargo.lock pins)"
+        },
+        {
+          "name": "thiserror (Rust crate inside rav1e)",
+          "version": "2.0.12",
+          "source": "https://static.crates.io/crates/thiserror/thiserror-2.0.12.crate",
+          "licence": "MIT or Apache-2.0",
+          "licence_from": "https://static.crates.io/crates/thiserror/thiserror-2.0.12.crate (Cargo.toml license, LICENSE-APACHE, LICENSE-MIT; the archive's SHA-256 is the one https://raw.githubusercontent.com/xiph/rav1e/564ae3b0007ae2b06893fd7166bf88c5a84c5b63/Cargo.lock pins)"
+        },
+        {
+          "name": "unicode-width (Rust crate inside rav1e)",
+          "version": "0.2.1",
+          "source": "https://static.crates.io/crates/unicode-width/unicode-width-0.2.1.crate",
+          "licence": "MIT or Apache-2.0",
+          "licence_from": "https://static.crates.io/crates/unicode-width/unicode-width-0.2.1.crate (Cargo.toml license, LICENSE-APACHE, LICENSE-MIT; the archive's SHA-256 is the one https://raw.githubusercontent.com/xiph/rav1e/564ae3b0007ae2b06893fd7166bf88c5a84c5b63/Cargo.lock pins)"
+        },
+        {
+          "name": "utf8parse (Rust crate inside rav1e)",
+          "version": "0.2.2",
+          "source": "https://static.crates.io/crates/utf8parse/utf8parse-0.2.2.crate",
+          "licence": "Apache-2.0 or MIT",
+          "licence_from": "https://static.crates.io/crates/utf8parse/utf8parse-0.2.2.crate (Cargo.toml license, LICENSE-APACHE, LICENSE-MIT; the archive's SHA-256 is the one https://raw.githubusercontent.com/xiph/rav1e/564ae3b0007ae2b06893fd7166bf88c5a84c5b63/Cargo.lock pins)"
+        },
+        {
+          "name": "v_frame (Rust crate inside rav1e)",
+          "version": "0.3.9",
+          "source": "https://static.crates.io/crates/v_frame/v_frame-0.3.9.crate",
+          "licence": "BSD-2-Clause",
+          "licence_from": "https://static.crates.io/crates/v_frame/v_frame-0.3.9.crate (Cargo.toml license, LICENSE; the archive's SHA-256 is the one https://raw.githubusercontent.com/xiph/rav1e/564ae3b0007ae2b06893fd7166bf88c5a84c5b63/Cargo.lock pins)"
+        },
+        {
+          "name": "windows-sys (Rust crate inside rav1e)",
+          "version": "0.59.0",
+          "source": "https://static.crates.io/crates/windows-sys/windows-sys-0.59.0.crate",
+          "licence": "MIT or Apache-2.0",
+          "licence_from": "https://static.crates.io/crates/windows-sys/windows-sys-0.59.0.crate (Cargo.toml license, license-apache-2.0, license-mit; the archive's SHA-256 is the one https://raw.githubusercontent.com/xiph/rav1e/564ae3b0007ae2b06893fd7166bf88c5a84c5b63/Cargo.lock pins)"
+        },
+        {
+          "name": "windows-targets (Rust crate inside rav1e)",
+          "version": "0.52.6",
+          "source": "https://static.crates.io/crates/windows-targets/windows-targets-0.52.6.crate",
+          "licence": "MIT or Apache-2.0",
+          "licence_from": "https://static.crates.io/crates/windows-targets/windows-targets-0.52.6.crate (Cargo.toml license, license-apache-2.0, license-mit; the archive's SHA-256 is the one https://raw.githubusercontent.com/xiph/rav1e/564ae3b0007ae2b06893fd7166bf88c5a84c5b63/Cargo.lock pins)"
+        },
+        {
+          "name": "windows_x86_64_gnu (Rust crate inside rav1e)",
+          "version": "0.52.6",
+          "source": "https://static.crates.io/crates/windows_x86_64_gnu/windows_x86_64_gnu-0.52.6.crate",
+          "licence": "MIT or Apache-2.0",
+          "licence_from": "https://static.crates.io/crates/windows_x86_64_gnu/windows_x86_64_gnu-0.52.6.crate (Cargo.toml license, license-apache-2.0, license-mit; the archive's SHA-256 is the one https://raw.githubusercontent.com/xiph/rav1e/564ae3b0007ae2b06893fd7166bf88c5a84c5b63/Cargo.lock pins)"
+        },
+        {
+          "name": "y4m (Rust crate inside rav1e)",
+          "version": "0.8.0",
+          "source": "https://static.crates.io/crates/y4m/y4m-0.8.0.crate",
+          "licence": "MIT",
+          "licence_from": "https://static.crates.io/crates/y4m/y4m-0.8.0.crate (Cargo.toml license, LICENSE; the archive's SHA-256 is the one https://raw.githubusercontent.com/xiph/rav1e/564ae3b0007ae2b06893fd7166bf88c5a84c5b63/Cargo.lock pins)"
+        },
+        {
+          "name": "Rust standard library (core, alloc, std, panic_unwind, unwind, std_detect, inside rav1e)",
+          "version": "1.97.1 (rustc 8bab26f4f68e0e26f0bb7960be334d5b520ea452)",
+          "source": "https://github.com/rust-lang/rust/tree/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library",
+          "licence": "MIT or Apache-2.0",
+          "licence_from": "https://raw.githubusercontent.com/rust-lang/rust/8bab26f4f68e0e26f0bb7960be334d5b520ea452/COPYRIGHT and https://raw.githubusercontent.com/rust-lang/rust/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/std/Cargo.toml (license; core, alloc, panic_unwind, unwind and std_detect say the same in their own Cargo.toml)"
+        },
+        {
+          "name": "compiler_builtins (Rust runtime inside rav1e)",
+          "version": "0.1.160 (rustc 8bab26f4f68e0e26f0bb7960be334d5b520ea452)",
+          "source": "https://github.com/rust-lang/rust/tree/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/compiler-builtins",
+          "licence": "MIT and Apache-2.0 WITH LLVM-exception and (MIT or Apache-2.0)",
+          "licence_from": "https://raw.githubusercontent.com/rust-lang/rust/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/compiler-builtins/compiler-builtins/Cargo.toml (license)"
+        },
+        {
+          "name": "addr2line (Rust crate in the Rust standard library inside rav1e)",
+          "version": "0.25.1",
+          "source": "https://static.crates.io/crates/addr2line/addr2line-0.25.1.crate",
+          "licence": "Apache-2.0 or MIT",
+          "licence_from": "https://static.crates.io/crates/addr2line/addr2line-0.25.1.crate (Cargo.toml license, LICENSE-APACHE, LICENSE-MIT; the archive's SHA-256 is the one https://raw.githubusercontent.com/rust-lang/rust/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/Cargo.lock pins)"
+        },
+        {
+          "name": "adler2 (Rust crate in the Rust standard library inside rav1e)",
+          "version": "2.0.1",
+          "source": "https://static.crates.io/crates/adler2/adler2-2.0.1.crate",
+          "licence": "0BSD or MIT or Apache-2.0",
+          "licence_from": "https://static.crates.io/crates/adler2/adler2-2.0.1.crate (Cargo.toml license, LICENSE-0BSD, LICENSE-APACHE, LICENSE-MIT; the archive's SHA-256 is the one https://raw.githubusercontent.com/rust-lang/rust/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/Cargo.lock pins)"
+        },
+        {
+          "name": "cfg-if (Rust crate in the Rust standard library inside rav1e)",
+          "version": "1.0.4",
+          "source": "https://static.crates.io/crates/cfg-if/cfg-if-1.0.4.crate",
+          "licence": "MIT or Apache-2.0",
+          "licence_from": "https://static.crates.io/crates/cfg-if/cfg-if-1.0.4.crate (Cargo.toml license, LICENSE-APACHE, LICENSE-MIT; the archive's SHA-256 is the one https://raw.githubusercontent.com/rust-lang/rust/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/Cargo.lock pins)"
+        },
+        {
+          "name": "gimli (Rust crate in the Rust standard library inside rav1e)",
+          "version": "0.32.3",
+          "source": "https://static.crates.io/crates/gimli/gimli-0.32.3.crate",
+          "licence": "MIT or Apache-2.0",
+          "licence_from": "https://static.crates.io/crates/gimli/gimli-0.32.3.crate (Cargo.toml license, LICENSE-APACHE, LICENSE-MIT; the archive's SHA-256 is the one https://raw.githubusercontent.com/rust-lang/rust/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/Cargo.lock pins)"
+        },
+        {
+          "name": "hashbrown (Rust crate in the Rust standard library inside rav1e)",
+          "version": "0.17.1",
+          "source": "https://static.crates.io/crates/hashbrown/hashbrown-0.17.1.crate",
+          "licence": "MIT or Apache-2.0",
+          "licence_from": "https://static.crates.io/crates/hashbrown/hashbrown-0.17.1.crate (Cargo.toml license, LICENSE-APACHE, LICENSE-MIT; the archive's SHA-256 is the one https://raw.githubusercontent.com/rust-lang/rust/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/Cargo.lock pins)"
+        },
+        {
+          "name": "libc (Rust crate in the Rust standard library inside rav1e)",
+          "version": "0.2.185",
+          "source": "https://static.crates.io/crates/libc/libc-0.2.185.crate",
+          "licence": "MIT or Apache-2.0",
+          "licence_from": "https://static.crates.io/crates/libc/libc-0.2.185.crate (Cargo.toml license, LICENSE-APACHE, LICENSE-MIT; the archive's SHA-256 is the one https://raw.githubusercontent.com/rust-lang/rust/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/Cargo.lock pins)"
+        },
+        {
+          "name": "memchr (Rust crate in the Rust standard library inside rav1e)",
+          "version": "2.7.6",
+          "source": "https://static.crates.io/crates/memchr/memchr-2.7.6.crate",
+          "licence": "Unlicense or MIT",
+          "licence_from": "https://static.crates.io/crates/memchr/memchr-2.7.6.crate (Cargo.toml license, COPYING, LICENSE-MIT, UNLICENSE; the archive's SHA-256 is the one https://raw.githubusercontent.com/rust-lang/rust/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/Cargo.lock pins)"
+        },
+        {
+          "name": "miniz_oxide (Rust crate in the Rust standard library inside rav1e)",
+          "version": "0.8.9",
+          "source": "https://static.crates.io/crates/miniz_oxide/miniz_oxide-0.8.9.crate",
+          "licence": "MIT or Zlib or Apache-2.0",
+          "licence_from": "https://static.crates.io/crates/miniz_oxide/miniz_oxide-0.8.9.crate (Cargo.toml license, LICENSE, and the LICENSE-APACHE, LICENSE-MIT and LICENSE-ZLIB Markdown files; the archive's SHA-256 is the one https://raw.githubusercontent.com/rust-lang/rust/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/Cargo.lock pins)"
+        },
+        {
+          "name": "object (Rust crate in the Rust standard library inside rav1e)",
+          "version": "0.37.3",
+          "source": "https://static.crates.io/crates/object/object-0.37.3.crate",
+          "licence": "Apache-2.0 or MIT",
+          "licence_from": "https://static.crates.io/crates/object/object-0.37.3.crate (Cargo.toml license, LICENSE-APACHE, LICENSE-MIT; the archive's SHA-256 is the one https://raw.githubusercontent.com/rust-lang/rust/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/Cargo.lock pins)"
+        },
+        {
+          "name": "rustc-demangle (Rust crate in the Rust standard library inside rav1e)",
+          "version": "0.1.27",
+          "source": "https://static.crates.io/crates/rustc-demangle/rustc-demangle-0.1.27.crate",
+          "licence": "MIT or Apache-2.0",
+          "licence_from": "https://static.crates.io/crates/rustc-demangle/rustc-demangle-0.1.27.crate (Cargo.toml license, LICENSE-APACHE, LICENSE-MIT; the archive's SHA-256 is the one https://raw.githubusercontent.com/rust-lang/rust/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/Cargo.lock pins)"
+        },
+        {
+          "name": "rubberband",
+          "version": "e4296ac80b1170018a110bc326fd0d45a0eb27d6",
+          "source": "https://github.com/breakfastquay/rubberband.git",
+          "licence": "GPL-2.0-or-later",
+          "licence_from": "https://raw.githubusercontent.com/breakfastquay/rubberband/e4296ac80b1170018a110bc326fd0d45a0eb27d6/README.md (Licence)"
+        },
+        {
+          "name": "SDL2",
+          "version": "a2e7c76bda17c853ba93c7d2c9fdddf8a9d621d1",
+          "source": "https://github.com/libsdl-org/SDL.git",
+          "licence": "Zlib",
+          "licence_from": "https://raw.githubusercontent.com/libsdl-org/SDL/a2e7c76bda17c853ba93c7d2c9fdddf8a9d621d1/LICENSE.txt"
+        },
+        {
+          "name": "snappy",
+          "version": "747488a9f3d0daf9b639b6704d7188fba48af179",
+          "source": "https://github.com/google/snappy.git",
+          "licence": "BSD-3-Clause",
+          "licence_from": "https://raw.githubusercontent.com/google/snappy/747488a9f3d0daf9b639b6704d7188fba48af179/COPYING"
+        },
+        {
+          "name": "soxr",
+          "version": "945b592b70470e29f917f4de89b4281fbbd540c0",
+          "source": "https://git.code.sf.net/p/soxr/code",
+          "licence": "LGPL-2.1-or-later",
+          "licence_from": "https://sourceforge.net/p/soxr/code/ci/945b592b70470e29f917f4de89b4281fbbd540c0/tree/LICENCE?format=raw"
+        },
+        {
+          "name": "srt",
+          "version": "fcae57145c000a9e7b72aa777adb8f85c2463242",
+          "source": "https://github.com/Haivision/srt.git",
+          "licence": "MPL-2.0",
+          "licence_from": "https://raw.githubusercontent.com/Haivision/srt/fcae57145c000a9e7b72aa777adb8f85c2463242/LICENSE"
+        },
+        {
+          "name": "SVT-AV1",
+          "version": "fb0ed7e5999caef1c4b51b7b4c8dc2c8c10f9291",
+          "source": "https://gitlab.com/AOMediaCodec/SVT-AV1.git",
+          "licence": "BSD-3-Clause-Clear",
+          "licence_from": "https://gitlab.com/AOMediaCodec/SVT-AV1/-/raw/fb0ed7e5999caef1c4b51b7b4c8dc2c8c10f9291/LICENSE.md and https://gitlab.com/AOMediaCodec/SVT-AV1/-/raw/fb0ed7e5999caef1c4b51b7b4c8dc2c8c10f9291/README.md (License)"
+        },
+        {
+          "name": "twolame",
+          "version": "6fced852d4d5cfad58cf9dbe3ea619b08e87d398",
+          "source": "https://github.com/njh/twolame.git",
+          "licence": "LGPL-2.1-or-later",
+          "licence_from": "https://raw.githubusercontent.com/njh/twolame/6fced852d4d5cfad58cf9dbe3ea619b08e87d398/libtwolame/twolame.h"
+        },
+        {
+          "name": "uavs3d",
+          "version": "0e20d2c291853f196c68922a264bcd8471d75b68",
+          "source": "https://github.com/uavs3/uavs3d.git",
+          "licence": "BSD-3-Clause",
+          "licence_from": "https://raw.githubusercontent.com/uavs3/uavs3d/0e20d2c291853f196c68922a264bcd8471d75b68/COPYING"
+        },
+        {
+          "name": "libva",
+          "version": "6b07f7100512817f736967e899b8c26313c20623",
+          "source": "https://github.com/intel/libva.git",
+          "licence": "MIT",
+          "licence_from": "https://raw.githubusercontent.com/intel/libva/6b07f7100512817f736967e899b8c26313c20623/COPYING"
+        },
+        {
+          "name": "vid.stab",
+          "version": "c9985e75303da2ba1a78b37083a2bec2ed5baebc",
+          "source": "https://github.com/georgmartius/vid.stab.git",
+          "licence": "LGPL-2.1-or-later",
+          "licence_from": "https://raw.githubusercontent.com/georgmartius/vid.stab/c9985e75303da2ba1a78b37083a2bec2ed5baebc/LICENSE and https://raw.githubusercontent.com/georgmartius/vid.stab/c9985e75303da2ba1a78b37083a2bec2ed5baebc/src/libvidstab.h"
+        },
+        {
+          "name": "vvenc",
+          "version": "0f2e874451d6b194615e5dfefdc96796a7da00f4",
+          "source": "https://github.com/fraunhoferhhi/vvenc.git",
+          "licence": "BSD-3-Clause-Clear",
+          "licence_from": "https://raw.githubusercontent.com/fraunhoferhhi/vvenc/0f2e874451d6b194615e5dfefdc96796a7da00f4/LICENSE.txt"
+        },
+        {
+          "name": "x264",
+          "version": "0480cb05fa188d37ae87e8f4fd8f1aea3711f7ee",
+          "source": "https://code.videolan.org/videolan/x264.git",
+          "licence": "GPL-2.0-or-later",
+          "licence_from": "bin/sources/x264-0480cb05fa18.tar.gz (x264.c)"
+        },
+        {
+          "name": "x265",
+          "version": "b81f650e21e8aacbe6a9ad04ce14aefc05b932c0",
+          "source": "https://bitbucket.org/multicoreware/x265_git.git",
+          "licence": "GPL-2.0-or-later",
+          "licence_from": "bin/sources/x265-4.2-37-b81f650e21e8.tar.gz (source/encoder/encoder.cpp)"
+        },
+        {
+          "name": "xavs2",
+          "version": "eae1e8b9d12468059bdd7dee893508e470fa83d8",
+          "source": "https://github.com/pkuvcl/xavs2.git",
+          "licence": "GPL-2.0-or-later",
+          "licence_from": "https://raw.githubusercontent.com/pkuvcl/xavs2/eae1e8b9d12468059bdd7dee893508e470fa83d8/source/xavs2.h"
+        },
+        {
+          "name": "xvid",
+          "version": "svn revision 2204",
+          "source": "https://svn.xvid.org/trunk/xvidcore",
+          "licence": "GPL-2.0-or-later",
+          "licence_from": "https://svn.xvid.org/trunk/xvidcore/LICENSE?p=2204 and https://svn.xvid.org/trunk/xvidcore/src/xvid.h?p=2204 (the project's anonymous read access)"
+        },
+        {
+          "name": "zimg",
+          "version": "f6cc75ad23db1bb9c53673c15523e6b6e960ffc6",
+          "source": "https://github.com/sekrit-twc/zimg.git",
+          "licence": "WTFPL",
+          "licence_from": "https://raw.githubusercontent.com/sekrit-twc/zimg/f6cc75ad23db1bb9c53673c15523e6b6e960ffc6/COPYING"
+        },
+        {
+          "name": "graphengine (inside zimg)",
+          "version": "cb5b2ce13384ec2491f0c37256ea210034799f69",
+          "source": "https://github.com/sekrit-twc/graphengine.git",
+          "licence": "WTFPL",
+          "licence_from": "https://raw.githubusercontent.com/sekrit-twc/graphengine/cb5b2ce13384ec2491f0c37256ea210034799f69/COPYING (the submodule commit zimg f6cc75ad23db1bb9c53673c15523e6b6e960ffc6 pins, read through https://api.github.com/repos/sekrit-twc/zimg/contents/graphengine?ref=f6cc75ad23db1bb9c53673c15523e6b6e960ffc6)"
+        },
+        {
+          "name": "zvbi",
+          "version": "d3a5ee9f2b047bf16cd1ee5ccf6ec05ee75409d0",
+          "source": "https://github.com/zapping-vbi/zvbi",
+          "licence": "LGPL-2.0-or-later and GPL-2.0-only (src/packet-830 and src/pdc) and LGPL-2.1-or-later and MIT and (GPL-2.0-or-later or BSD-3-Clause)",
+          "licence_from": "https://raw.githubusercontent.com/zapping-vbi/zvbi/d3a5ee9f2b047bf16cd1ee5ccf6ec05ee75409d0/COPYING.md and https://raw.githubusercontent.com/zapping-vbi/zvbi/d3a5ee9f2b047bf16cd1ee5ccf6ec05ee75409d0/src/pdc.c"
+        },
+        {
+          "name": "libgcc and libstdc++ (GCC runtime)",
+          "version": "15.2.0",
+          "source": "GCC 15.2.0, as images/base-win64/ct-ng-config in bin/sources/FFmpeg-Builds-590a6612d7d9.tar.gz names it",
+          "licence": "GPL-3.0-with-GCC-exception",
+          "licence_from": "https://gcc.gnu.org/git/?p=gcc.git;a=blob_plain;f=libgcc/libgcc2.c;hb=refs/tags/releases/gcc-15.2.0 and https://gcc.gnu.org/git/?p=gcc.git;a=blob_plain;f=libstdc%2B%2B-v3/src/c%2B%2B11/functexcept.cc;hb=refs/tags/releases/gcc-15.2.0"
+        },
+        {
+          "name": "libgomp (GCC runtime)",
+          "version": "15.2.0",
+          "source": "GCC 15.2.0, as images/base-win64/ct-ng-config in bin/sources/FFmpeg-Builds-590a6612d7d9.tar.gz names it",
+          "licence": "GPL-3.0-with-GCC-exception",
+          "licence_from": "https://gcc.gnu.org/git/?p=gcc.git;a=blob_plain;f=libgomp/libgomp.h;hb=refs/tags/releases/gcc-15.2.0"
+        }
+      ],
       "note": "The SHARED build, not the static one. ffmpeg and ffprobe are 0.4 MB and 0.2 MB beside eight libraries they both use, where the static build compiles every codec into BOTH: 160 MB against 278 MB for the same capability. That is 118 MB off every install and off every update download, because an update is a whole installer. ffplay is not extracted: Sift never runs it. BtbN prunes old autobuild releases (see 'When the URL 404s' in fetch_vendor.py)."
     },
     {
@@ -76,6 +1311,23 @@
         }
       ],
       "licence": "BSD-3-Clause",
+      "source": "https://github.com/webmproject/libwebp/tree/v1.5.0",
+      "inside": [
+        {
+          "name": "libpng (inside anim_dump.exe)",
+          "version": "1.4.12",
+          "source": "https://github.com/pnggroup/libpng",
+          "licence": "Libpng",
+          "licence_from": "https://raw.githubusercontent.com/pnggroup/libpng/v1.4.12/LICENSE"
+        },
+        {
+          "name": "zlib (inside anim_dump.exe)",
+          "version": "1.2.8",
+          "source": "https://github.com/madler/zlib",
+          "licence": "Zlib",
+          "licence_from": "https://raw.githubusercontent.com/madler/zlib/v1.2.8/README (Copyright notice)"
+        }
+      ],
       "note": "ffmpeg can WRITE an animated WebP and has never been able to READ one. webpinfo reports canvas size and frame count; anim_dump writes the frames out. Animated-WebP import depends on these two entirely."
     },
     {
@@ -105,6 +1357,240 @@
         }
       ],
       "licence": "The Unlicense (public domain). The executable bundles CPython and third-party libraries under their own licences, listed in bin/_internal/THIRD_PARTY_LICENSES.txt.",
+      "source": "https://github.com/yt-dlp/yt-dlp/tree/2026.08.19",
+      "inside": [
+        {
+          "name": "CPython",
+          "version": "3.10.11",
+          "source": "https://github.com/python/cpython",
+          "licence": "PSF-2.0",
+          "licence_from": "bin/_internal/THIRD_PARTY_LICENSES.txt (Python)"
+        },
+        {
+          "name": "Microsoft Visual C++ and Universal C runtimes (vcruntime140, ucrtbase, api-ms-win-*)",
+          "version": "as built into yt-dlp 2026.08.19",
+          "source": "not published: Microsoft redistributable code",
+          "licence": "Microsoft Distributable Code terms",
+          "licence_from": "https://raw.githubusercontent.com/python/cpython/v3.10.11/PC/crtlicense.txt"
+        },
+        {
+          "name": "OpenSSL",
+          "version": "1.1.1t (libcrypto-1_1, libssl-1_1)",
+          "source": "https://github.com/openssl/openssl",
+          "licence": "OpenSSL",
+          "licence_from": "https://raw.githubusercontent.com/python/cpython-source-deps/openssl-1.1.1t/LICENSE (1.1.1t, the version https://raw.githubusercontent.com/python/cpython/v3.10.11/PCbuild/get_externals.bat pins and both DLLs report)"
+        },
+        {
+          "name": "libffi",
+          "version": "3.3.0 (libffi-7.dll)",
+          "source": "https://github.com/libffi/libffi",
+          "licence": "MIT",
+          "licence_from": "https://raw.githubusercontent.com/python/cpython-source-deps/libffi-3.3.0/LICENSE (libffi 3.3.0, the version https://raw.githubusercontent.com/python/cpython/v3.10.11/PCbuild/get_externals.bat pins)"
+        },
+        {
+          "name": "SQLite",
+          "version": "3.40.1 (source id 2022-12-28 14:03:47 df5c253c0b3d)",
+          "source": "https://sqlite.org/src",
+          "licence": "Public Domain",
+          "licence_from": "https://raw.githubusercontent.com/python/cpython-source-deps/sqlite-3.40.1.0/sqlite3.h (3.40.1, the version https://raw.githubusercontent.com/python/cpython/v3.10.11/PCbuild/get_externals.bat pins; its source id is the DLL's)"
+        },
+        {
+          "name": "liblzma (XZ Utils)",
+          "version": "5.2.5",
+          "source": "https://github.com/tukaani-project/xz",
+          "licence": "Public Domain",
+          "licence_from": "https://raw.githubusercontent.com/python/cpython-source-deps/xz-5.2.5/COPYING (xz 5.2.5, the version https://raw.githubusercontent.com/python/cpython/v3.10.11/PCbuild/get_externals.bat pins for the CPython 3.10.11 this build carries; the publisher's bin/_internal/THIRD_PARTY_LICENSES.txt instead quotes another XZ Utils release's COPYING, which puts liblzma under 0BSD)"
+        },
+        {
+          "name": "mpdecimal",
+          "version": "as built into yt-dlp 2026.08.19",
+          "source": "https://www.bytereef.org/mpdecimal/",
+          "licence": "BSD-2-Clause",
+          "licence_from": "bin/_internal/THIRD_PARTY_LICENSES.txt (mpdecimal)"
+        },
+        {
+          "name": "zlib",
+          "version": "1.2.13 (in python310.dll)",
+          "source": "https://github.com/madler/zlib",
+          "licence": "Zlib",
+          "licence_from": "https://raw.githubusercontent.com/python/cpython-source-deps/zlib-1.2.13/README (1.2.13, the version https://raw.githubusercontent.com/python/cpython/v3.10.11/PCbuild/get_externals.bat pins and python310.dll reports)"
+        },
+        {
+          "name": "Expat",
+          "version": "as built into yt-dlp 2026.08.19",
+          "source": "https://github.com/libexpat/libexpat",
+          "licence": "MIT",
+          "licence_from": "bin/_internal/THIRD_PARTY_LICENSES.txt (Expat)"
+        },
+        {
+          "name": "bzip2",
+          "version": "as built into yt-dlp 2026.08.19",
+          "source": "https://sourceware.org/bzip2/",
+          "licence": "bzip2-1.0.6",
+          "licence_from": "bin/_internal/THIRD_PARTY_LICENSES.txt (bzip2)"
+        },
+        {
+          "name": "curl_cffi",
+          "version": "0.16.0",
+          "source": "https://pypi.org/project/curl_cffi/",
+          "licence": "MIT",
+          "licence_from": "bin/_internal/THIRD_PARTY_LICENSES.txt (curl_cffi)"
+        },
+        {
+          "name": "curl-impersonate",
+          "version": "as built into yt-dlp 2026.08.19",
+          "source": "https://github.com/lexiforest/curl-impersonate",
+          "licence": "MIT",
+          "licence_from": "bin/_internal/THIRD_PARTY_LICENSES.txt (curl-impersonate)"
+        },
+        {
+          "name": "curl",
+          "version": "8.21.0",
+          "source": "https://github.com/curl/curl",
+          "licence": "curl",
+          "licence_from": "bin/_internal/THIRD_PARTY_LICENSES.txt (curl)"
+        },
+        {
+          "name": "BoringSSL",
+          "version": "as built into yt-dlp 2026.08.19",
+          "source": "https://boringssl.googlesource.com/boringssl",
+          "licence": "Apache-2.0",
+          "licence_from": "bin/_internal/THIRD_PARTY_LICENSES.txt (BoringSSL)"
+        },
+        {
+          "name": "nghttp2",
+          "version": "as built into yt-dlp 2026.08.19",
+          "source": "https://github.com/nghttp2/nghttp2",
+          "licence": "MIT",
+          "licence_from": "bin/_internal/THIRD_PARTY_LICENSES.txt (nghttp2)"
+        },
+        {
+          "name": "ngtcp2",
+          "version": "as built into yt-dlp 2026.08.19",
+          "source": "https://github.com/ngtcp2/ngtcp2",
+          "licence": "MIT",
+          "licence_from": "bin/_internal/THIRD_PARTY_LICENSES.txt (ngtcp2)"
+        },
+        {
+          "name": "nghttp3",
+          "version": "as built into yt-dlp 2026.08.19",
+          "source": "https://github.com/ngtcp2/nghttp3",
+          "licence": "MIT",
+          "licence_from": "bin/_internal/THIRD_PARTY_LICENSES.txt (nghttp3)"
+        },
+        {
+          "name": "zstd",
+          "version": "as built into yt-dlp 2026.08.19",
+          "source": "https://github.com/facebook/zstd",
+          "licence": "BSD-3-Clause",
+          "licence_from": "bin/_internal/THIRD_PARTY_LICENSES.txt (zstd)"
+        },
+        {
+          "name": "Brotli",
+          "version": "as built into yt-dlp 2026.08.19",
+          "source": "https://github.com/google/brotli",
+          "licence": "MIT",
+          "licence_from": "bin/_internal/THIRD_PARTY_LICENSES.txt (brotli)"
+        },
+        {
+          "name": "cffi",
+          "version": "as built into yt-dlp 2026.08.19",
+          "source": "https://pypi.org/project/cffi/",
+          "licence": "MIT-0",
+          "licence_from": "bin/_internal/THIRD_PARTY_LICENSES.txt (cffi)"
+        },
+        {
+          "name": "pycparser",
+          "version": "as built into yt-dlp 2026.08.19",
+          "source": "https://pypi.org/project/pycparser/",
+          "licence": "BSD-3-Clause",
+          "licence_from": "bin/_internal/THIRD_PARTY_LICENSES.txt (pycparser)"
+        },
+        {
+          "name": "mutagen",
+          "version": "1.48.1",
+          "source": "https://pypi.org/project/mutagen/",
+          "licence": "GPL-2.0-or-later",
+          "licence_from": "bin/_internal/THIRD_PARTY_LICENSES.txt (mutagen, the same version)"
+        },
+        {
+          "name": "pycryptodomex",
+          "version": "as built into yt-dlp 2026.08.19",
+          "source": "https://pypi.org/project/pycryptodomex/",
+          "licence": "Public Domain and BSD-2-Clause",
+          "licence_from": "bin/_internal/THIRD_PARTY_LICENSES.txt (PyCryptodome)"
+        },
+        {
+          "name": "certifi",
+          "version": "2026.07.22",
+          "source": "https://pypi.org/project/certifi/",
+          "licence": "MPL-2.0",
+          "licence_from": "bin/_internal/THIRD_PARTY_LICENSES.txt (certifi)"
+        },
+        {
+          "name": "requests",
+          "version": "2.34.2",
+          "source": "https://pypi.org/project/requests/",
+          "licence": "Apache-2.0",
+          "licence_from": "bin/_internal/THIRD_PARTY_LICENSES.txt (requests)"
+        },
+        {
+          "name": "charset-normalizer",
+          "version": "3.5.0",
+          "source": "https://pypi.org/project/charset-normalizer/",
+          "licence": "MIT",
+          "licence_from": "bin/_internal/THIRD_PARTY_LICENSES.txt (charset-normalizer)"
+        },
+        {
+          "name": "idna",
+          "version": "3.18",
+          "source": "https://pypi.org/project/idna/",
+          "licence": "BSD-3-Clause",
+          "licence_from": "bin/_internal/THIRD_PARTY_LICENSES.txt (idna)"
+        },
+        {
+          "name": "urllib3",
+          "version": "2.7.0",
+          "source": "https://pypi.org/project/urllib3/",
+          "licence": "MIT",
+          "licence_from": "bin/_internal/THIRD_PARTY_LICENSES.txt (urllib3)"
+        },
+        {
+          "name": "websockets",
+          "version": "16.1.1",
+          "source": "https://pypi.org/project/websockets/",
+          "licence": "BSD-3-Clause",
+          "licence_from": "bin/_internal/THIRD_PARTY_LICENSES.txt (websockets)"
+        },
+        {
+          "name": "typing_extensions",
+          "version": "4.16.0",
+          "source": "https://pypi.org/project/typing-extensions/",
+          "licence": "PSF-2.0",
+          "licence_from": "https://raw.githubusercontent.com/python/typing_extensions/4.16.0/LICENSE (4.16.0, the version https://raw.githubusercontent.com/yt-dlp/yt-dlp/2026.08.19/pyproject.toml pins for this build)"
+        },
+        {
+          "name": "yt-dlp-ejs",
+          "version": "0.8.0",
+          "source": "https://pypi.org/project/yt-dlp-ejs/",
+          "licence": "Unlicense",
+          "licence_from": "https://raw.githubusercontent.com/yt-dlp/ejs/0.8.0/LICENSE"
+        },
+        {
+          "name": "Meriyah (inside yt-dlp-ejs)",
+          "version": "as built into yt-dlp 2026.08.19",
+          "source": "https://github.com/meriyah/meriyah",
+          "licence": "ISC",
+          "licence_from": "bin/_internal/THIRD_PARTY_LICENSES.txt (Meriyah)"
+        },
+        {
+          "name": "Astring (inside yt-dlp-ejs)",
+          "version": "as built into yt-dlp 2026.08.19",
+          "source": "https://github.com/davidbonnet/astring",
+          "licence": "MIT",
+          "licence_from": "bin/_internal/THIRD_PARTY_LICENSES.txt (Astring)"
+        }
+      ],
       "note": "The ONE-FOLDER build (yt-dlp_win.zip), not the one-file yt-dlp.exe, and that is measured rather than preferred. The one-file build is a launcher that unpacks itself to %TEMP% and runs the real program as a CHILD process: Sift stops a tool by killing the process it started, and killing the one-file launcher leaves the child running and downloading, and leaves its 23 MB unpacked copy in %TEMP% for ever. The one-folder build is one process with nothing to unpack, and starts in 0.3 s instead of 0.8. Its _internal folder must sit beside yt-dlp.exe. The JavaScript engine yt-dlp runs YouTube's challenge in (qjs.exe) is found by being in the SAME folder as yt-dlp.exe, which is yt-dlp's documented Windows rule and is checked by fetch_vendor.py after every fetch."
     },
     {
@@ -131,6 +1617,218 @@
         }
       ],
       "licence": "GPL-2.0-only. The executable also bundles CPython and third-party libraries (requests, urllib3, certifi, yt-dlp, mutagen and others) under their own licences.",
+      "inside": [
+        {
+          "name": "CPython",
+          "version": "3.14.6",
+          "source": "https://github.com/python/cpython",
+          "licence": "PSF-2.0",
+          "licence_from": "https://raw.githubusercontent.com/python/cpython/v3.14.6/LICENSE"
+        },
+        {
+          "name": "Microsoft Visual C++ runtime (vcruntime140, vcruntime140_1)",
+          "version": "as shipped with CPython 3.14.6",
+          "source": "not published: Microsoft redistributable code",
+          "licence": "Microsoft Distributable Code terms",
+          "licence_from": "https://raw.githubusercontent.com/python/cpython/v3.14.6/PC/crtlicense.txt"
+        },
+        {
+          "name": "OpenSSL",
+          "version": "3.5.7",
+          "source": "https://github.com/openssl/openssl",
+          "licence": "Apache-2.0",
+          "licence_from": "https://raw.githubusercontent.com/openssl/openssl/openssl-3.5.7/LICENSE.txt"
+        },
+        {
+          "name": "libffi",
+          "version": "3.4.4 (libffi-8.dll)",
+          "source": "https://github.com/libffi/libffi",
+          "licence": "MIT",
+          "licence_from": "https://raw.githubusercontent.com/python/cpython-source-deps/libffi-3.4.4/LICENSE (libffi 3.4.4, the version https://raw.githubusercontent.com/python/cpython/v3.14.6/PCbuild/get_externals.bat pins)"
+        },
+        {
+          "name": "SQLite",
+          "version": "source id 2025-07-30 19:33:53 4d8adfb30e03",
+          "source": "https://sqlite.org/src",
+          "licence": "Public Domain",
+          "licence_from": "https://raw.githubusercontent.com/python/cpython-source-deps/sqlite-3.50.4.0/sqlite3.h"
+        },
+        {
+          "name": "liblzma (XZ Utils)",
+          "version": "5.2.5",
+          "source": "https://github.com/tukaani-project/xz",
+          "licence": "Public Domain",
+          "licence_from": "https://raw.githubusercontent.com/python/cpython-source-deps/xz-5.2.5/COPYING (xz 5.2.5, the version https://raw.githubusercontent.com/python/cpython/v3.14.6/PCbuild/get_externals.bat pins)"
+        },
+        {
+          "name": "mpdecimal",
+          "version": "4.0.0",
+          "source": "https://www.bytereef.org/mpdecimal/",
+          "licence": "BSD-2-Clause",
+          "licence_from": "https://raw.githubusercontent.com/python/cpython-source-deps/mpdecimal-4.0.0/COPYRIGHT.txt"
+        },
+        {
+          "name": "zlib-ng",
+          "version": "2.2.4",
+          "source": "https://github.com/zlib-ng/zlib-ng",
+          "licence": "Zlib",
+          "licence_from": "https://raw.githubusercontent.com/zlib-ng/zlib-ng/2.2.4/LICENSE.md"
+        },
+        {
+          "name": "Expat",
+          "version": "2.8.1",
+          "source": "https://github.com/libexpat/libexpat",
+          "licence": "MIT",
+          "licence_from": "https://raw.githubusercontent.com/libexpat/libexpat/R_2_8_1/expat/COPYING"
+        },
+        {
+          "name": "bzip2",
+          "version": "1.0.8",
+          "source": "https://sourceware.org/bzip2/",
+          "licence": "bzip2-1.0.6",
+          "licence_from": "https://raw.githubusercontent.com/python/cpython-source-deps/bzip2-1.0.8/LICENSE"
+        },
+        {
+          "name": "zstd",
+          "version": "1.5.7",
+          "source": "https://github.com/facebook/zstd",
+          "licence": "BSD-3-Clause",
+          "licence_from": "https://raw.githubusercontent.com/facebook/zstd/v1.5.7/LICENSE (dual BSD-3-Clause or GPL-2.0, README.md; BSD-3-Clause taken)"
+        },
+        {
+          "name": "Brotli",
+          "version": "as bundled in gallery-dl 1.32.13",
+          "source": "https://github.com/google/brotli",
+          "licence": "MIT",
+          "licence_from": "bin/_internal/THIRD_PARTY_LICENSES.txt (brotli)"
+        },
+        {
+          "name": "LibYAML",
+          "version": "0.2.5",
+          "source": "https://github.com/yaml/libyaml",
+          "licence": "MIT",
+          "licence_from": "https://raw.githubusercontent.com/yaml/libyaml/0.2.5/License"
+        },
+        {
+          "name": "PyYAML",
+          "version": "6.0.3",
+          "source": "https://pypi.org/project/PyYAML/",
+          "licence": "MIT",
+          "licence_from": "https://raw.githubusercontent.com/yaml/pyyaml/6.0.3/LICENSE"
+        },
+        {
+          "name": "requests",
+          "version": "2.34.2",
+          "source": "https://pypi.org/project/requests/",
+          "licence": "Apache-2.0",
+          "licence_from": "bin/gallery-dl.exe (requests/__version__.py, __license__)"
+        },
+        {
+          "name": "urllib3",
+          "version": "2.7.0",
+          "source": "https://pypi.org/project/urllib3/",
+          "licence": "MIT",
+          "licence_from": "bin/_internal/THIRD_PARTY_LICENSES.txt (urllib3 2.7.0)"
+        },
+        {
+          "name": "certifi",
+          "version": "2026.07.22",
+          "source": "https://pypi.org/project/certifi/",
+          "licence": "MPL-2.0",
+          "licence_from": "bin/_internal/THIRD_PARTY_LICENSES.txt (certifi 2026.07.22)"
+        },
+        {
+          "name": "idna",
+          "version": "3.19",
+          "source": "https://pypi.org/project/idna/",
+          "licence": "BSD-3-Clause",
+          "licence_from": "https://raw.githubusercontent.com/kjd/idna/v3.19/LICENSE.md"
+        },
+        {
+          "name": "charset-normalizer",
+          "version": "3.5.1",
+          "source": "https://pypi.org/project/charset-normalizer/",
+          "licence": "MIT",
+          "licence_from": "https://raw.githubusercontent.com/jawah/charset_normalizer/3.5.1/LICENSE"
+        },
+        {
+          "name": "websockets",
+          "version": "16.0",
+          "source": "https://pypi.org/project/websockets/",
+          "licence": "BSD-3-Clause",
+          "licence_from": "bin/gallery-dl.exe (websockets-16.0.dist-info/licenses/LICENSE)"
+        },
+        {
+          "name": "MarkupSafe",
+          "version": "3.0.3",
+          "source": "https://pypi.org/project/MarkupSafe/",
+          "licence": "BSD-3-Clause",
+          "licence_from": "bin/gallery-dl.exe (markupsafe-3.0.3.dist-info/licenses/LICENSE.txt)"
+        },
+        {
+          "name": "Jinja2",
+          "version": "3.1.6",
+          "source": "https://pypi.org/project/Jinja2/",
+          "licence": "BSD-3-Clause",
+          "licence_from": "https://raw.githubusercontent.com/pallets/jinja/3.1.6/LICENSE.txt"
+        },
+        {
+          "name": "PySocks",
+          "version": "1.7.1",
+          "source": "https://pypi.org/project/PySocks/",
+          "licence": "BSD-3-Clause",
+          "licence_from": "https://files.pythonhosted.org/packages/bd/11/293dd436aea955d45fc4e8a35b6ae7270f5b8e00b53cf6c024c83b657a11/PySocks-1.7.1.tar.gz (PySocks-1.7.1/LICENSE)"
+        },
+        {
+          "name": "truststore",
+          "version": "0.10.4",
+          "source": "https://pypi.org/project/truststore/",
+          "licence": "MIT",
+          "licence_from": "https://raw.githubusercontent.com/sethmlarson/truststore/v0.10.4/LICENSE"
+        },
+        {
+          "name": "pycryptodomex",
+          "version": "3.23.0",
+          "source": "https://pypi.org/project/pycryptodomex/",
+          "licence": "Public Domain and BSD-2-Clause",
+          "licence_from": "bin/_internal/THIRD_PARTY_LICENSES.txt (PyCryptodome)"
+        },
+        {
+          "name": "mutagen",
+          "version": "1.48.1",
+          "source": "https://pypi.org/project/mutagen/",
+          "licence": "GPL-2.0-or-later",
+          "licence_from": "bin/_internal/THIRD_PARTY_LICENSES.txt (mutagen, the same version)"
+        },
+        {
+          "name": "yt-dlp",
+          "version": "2026.08.19",
+          "source": "https://github.com/yt-dlp/yt-dlp",
+          "licence": "Unlicense",
+          "licence_from": "bin/yt-dlp-LICENSE (the same version)"
+        },
+        {
+          "name": "yt-dlp-ejs",
+          "version": "0.8.0",
+          "source": "https://pypi.org/project/yt-dlp-ejs/",
+          "licence": "Unlicense",
+          "licence_from": "https://raw.githubusercontent.com/yt-dlp/ejs/0.8.0/LICENSE"
+        },
+        {
+          "name": "Meriyah (inside yt-dlp-ejs)",
+          "version": "as bundled in yt-dlp-ejs 0.8.0",
+          "source": "https://github.com/meriyah/meriyah",
+          "licence": "ISC",
+          "licence_from": "bin/_internal/THIRD_PARTY_LICENSES.txt (Meriyah)"
+        },
+        {
+          "name": "Astring (inside yt-dlp-ejs)",
+          "version": "as bundled in yt-dlp-ejs 0.8.0",
+          "source": "https://github.com/davidbonnet/astring",
+          "licence": "MIT",
+          "licence_from": "bin/_internal/THIRD_PARTY_LICENSES.txt (Astring)"
+        }
+      ],
       "note": "The publisher's own Windows build and the ONLY Windows build it publishes, which is a one-file launcher: it unpacks itself to %TEMP% and runs the program as a child process. Killing the launcher does not kill that child, so Sift has to stop the whole process tree. Development moved from GitHub to Codeberg in 2026; the GitHub releases after 1.31.10 carry no files. Pinned by the SHA-256 the publisher lists in SHA256SUMS."
     },
     {
@@ -151,6 +1849,23 @@
         }
       ],
       "licence": "MIT",
+      "source": "https://github.com/quickjs-ng/quickjs/tree/v0.17.0",
+      "inside": [
+        {
+          "name": "MinGW-w64 runtime (as linked by MSYS2's GCC 16.1.0)",
+          "version": "as built into quickjs-ng 0.17.0",
+          "source": "https://github.com/mingw-w64/mingw-w64",
+          "licence": "ZPL-2.1, with parts under ISC, BSD-2-Clause, MIT, LGPL-2.1-or-later and the gdtoa and Sun math notices (the program does not record the runtime's revision; read at the revision named below)",
+          "licence_from": "https://sourceforge.net/p/mingw-w64/mingw-w64/ci/5ea8e9facd013b815f5f29f20ef26a566319a3de/tree/COPYING.MinGW-w64-runtime/COPYING.MinGW-w64-runtime.txt?format=raw"
+        },
+        {
+          "name": "libgcc (GCC runtime)",
+          "version": "16.1.0",
+          "source": "https://gcc.gnu.org/git/gcc.git",
+          "licence": "GPL-3.0-with-GCC-exception",
+          "licence_from": "https://gcc.gnu.org/git/?p=gcc.git;a=blob_plain;f=libgcc/libgcc2.c;hb=refs/tags/releases/gcc-16.1.0"
+        }
+      ],
       "note": "The JavaScript engine yt-dlp runs a site's challenge script in: the `--js-runtimes quickjs` the download command already asks for, which on Windows found nothing ('JS runtimes: none'). QuickJS-NG rather than the original QuickJS: this is one statically linked file whose hash GitHub publishes, where the original's Windows zip carries a 2016 MinGW threading DLL with no licence text and no published hash. yt-dlp supports every QuickJS-NG release and wants 0.12.0 or later for speed. It must be named qjs.exe and sit beside yt-dlp.exe: that is how yt-dlp finds it on Windows."
     }
   ],
@@ -189,8 +1904,11 @@
       "package": "pillow-heif",
       "version": "1.8.0",
       "file": "wheels/pillow_heif-1.8.0-cp313-cp313-win_amd64.whl",
-      "sha256": "312ee106a332c39f978bb742cee2ddf54e39c441eb226c7bb11760241ffe7fd8",
+      "sha256": "779a770045398e61ee1d1648c0071895f6809a83e659da0e4909e797fd9d3cc2",
       "recipe": "scripts/build_pillow_heif.bat",
+      "recipe_inputs": [
+        "scripts/pillow_heif_LICENSES_bundled.txt"
+      ],
       "carries": [
         "heif",
         "libde265"
@@ -199,6 +1917,16 @@
         "libx265"
       ],
       "licence": "BSD-3-Clause (pillow-heif itself; the libraries in it are listed under libraries)",
+      "source": "https://files.pythonhosted.org/packages/bb/4c/d5319a1f276c70528ff97893afc42a300ff28029e27ca8de89bb3b271680/pillow_heif-1.8.0.tar.gz",
+      "inside": [
+        {
+          "name": "Microsoft Visual C++ runtime (msvcp140)",
+          "version": "as built into the pillow-heif 1.8.0 wheel",
+          "source": "not published: Microsoft redistributable code",
+          "licence": "Microsoft Distributable Code terms",
+          "licence_from": "https://learn.microsoft.com/en-us/visualstudio/releases/2022/redistribution (Visual C++ Runtime Files; the wheel's msvcp140.dll is 14.44.35228.0, Visual Studio 2022)"
+        }
+      ],
       "note": "The published Windows wheel links the x265 HEVC encoder (libx265, 22.6 MB, GPL-2.0-or-later), which Sift never calls: it reads HEIF photographs and never writes one. This wheel is the same pillow-heif, libheif and libde265 built with MSVC and WITH_X265=OFF, so the encoder, its source obligation and the three MinGW runtime DLLs are gone, and the wheel is 1.0 MB. It decodes a photograph to the same pixels as the published wheel (measured on one HEIC, byte for byte). Development environments and CI keep the published wheel; only the runtime the release packs is given this one, and the release refuses a runtime whose pillow-heif carries anything named in refuses."
     }
   ],
@@ -258,6 +1986,120 @@
         "GO-2026-5932"
       ],
       "licence": "ISC (wireproxy itself). Compiled into it, each under its own licence: gVisor (Apache-2.0) and wireguard-go (MIT), whose texts ship beside it, and smaller modules under MIT, BSD-3-Clause, Apache-2.0 and ISC.",
+      "inside": [
+        {
+          "name": "Go standard library",
+          "version": "go1.27.0",
+          "source": "https://go.googlesource.com/go",
+          "licence": "BSD-3-Clause",
+          "licence_from": "LICENSE of the go1.27.0 toolchain the recipe pins"
+        },
+        {
+          "name": "github.com/MakeNowJust/heredoc/v2",
+          "version": "v2.0.1",
+          "source": "https://github.com/MakeNowJust/heredoc/v2",
+          "licence": "MIT",
+          "licence_from": "the module's LICENSE in the Go module cache the recipe builds from (github.com/MakeNowJust/heredoc/v2@v2.0.1)"
+        },
+        {
+          "name": "github.com/akamensky/argparse",
+          "version": "v1.4.0",
+          "source": "https://github.com/akamensky/argparse",
+          "licence": "MIT",
+          "licence_from": "the module's LICENSE in the Go module cache the recipe builds from (github.com/akamensky/argparse@v1.4.0)"
+        },
+        {
+          "name": "github.com/go-ini/ini",
+          "version": "v1.67.0",
+          "source": "https://github.com/go-ini/ini",
+          "licence": "Apache-2.0",
+          "licence_from": "the module's LICENSE in the Go module cache the recipe builds from (github.com/go-ini/ini@v1.67.0)"
+        },
+        {
+          "name": "github.com/google/btree",
+          "version": "v1.1.2",
+          "source": "https://github.com/google/btree",
+          "licence": "Apache-2.0",
+          "licence_from": "the module's LICENSE in the Go module cache the recipe builds from (github.com/google/btree@v1.1.2)"
+        },
+        {
+          "name": "github.com/landlock-lsm/go-landlock",
+          "version": "v0.6.0",
+          "source": "https://github.com/landlock-lsm/go-landlock",
+          "licence": "MIT",
+          "licence_from": "the module's LICENSE in the Go module cache the recipe builds from (github.com/landlock-lsm/go-landlock@v0.6.0)"
+        },
+        {
+          "name": "github.com/things-go/go-socks5",
+          "version": "v0.0.5",
+          "source": "https://github.com/things-go/go-socks5",
+          "licence": "MIT",
+          "licence_from": "the module's LICENSE in the Go module cache the recipe builds from (github.com/things-go/go-socks5@v0.0.5)"
+        },
+        {
+          "name": "golang.org/x/crypto",
+          "version": "v0.56.0",
+          "source": "https://golang.org/x/crypto",
+          "licence": "BSD-3-Clause",
+          "licence_from": "the module's LICENSE in the Go module cache the recipe builds from (golang.org/x/crypto@v0.56.0)"
+        },
+        {
+          "name": "golang.org/x/exp",
+          "version": "v0.0.0-20250711185948-6ae5c78190dc",
+          "source": "https://golang.org/x/exp",
+          "licence": "BSD-3-Clause",
+          "licence_from": "the module's LICENSE in the Go module cache the recipe builds from (golang.org/x/exp@v0.0.0-20250711185948-6ae5c78190dc)"
+        },
+        {
+          "name": "golang.org/x/net",
+          "version": "v0.57.0",
+          "source": "https://golang.org/x/net",
+          "licence": "BSD-3-Clause",
+          "licence_from": "the module's LICENSE in the Go module cache the recipe builds from (golang.org/x/net@v0.57.0)"
+        },
+        {
+          "name": "golang.org/x/sys",
+          "version": "v0.47.0",
+          "source": "https://golang.org/x/sys",
+          "licence": "BSD-3-Clause",
+          "licence_from": "the module's LICENSE in the Go module cache the recipe builds from (golang.org/x/sys@v0.47.0)"
+        },
+        {
+          "name": "golang.org/x/time",
+          "version": "v0.15.0",
+          "source": "https://golang.org/x/time",
+          "licence": "BSD-3-Clause",
+          "licence_from": "the module's LICENSE in the Go module cache the recipe builds from (golang.org/x/time@v0.15.0)"
+        },
+        {
+          "name": "golang.zx2c4.com/wintun",
+          "version": "v0.0.0-20230126152724-0fa3db229ce2",
+          "source": "https://golang.zx2c4.com/wintun",
+          "licence": "MIT",
+          "licence_from": "the module's LICENSE in the Go module cache the recipe builds from (golang.zx2c4.com/wintun@v0.0.0-20230126152724-0fa3db229ce2)"
+        },
+        {
+          "name": "golang.zx2c4.com/wireguard",
+          "version": "v0.0.0-20250521234502-f333402bd9cb",
+          "source": "https://golang.zx2c4.com/wireguard",
+          "licence": "MIT",
+          "licence_from": "the module's LICENSE in the Go module cache the recipe builds from (golang.zx2c4.com/wireguard@v0.0.0-20250521234502-f333402bd9cb)"
+        },
+        {
+          "name": "gvisor.dev/gvisor",
+          "version": "v0.0.0-20261001051044-03e83cf5cce1",
+          "source": "https://gvisor.dev/gvisor",
+          "licence": "Apache-2.0",
+          "licence_from": "the module's LICENSE in the Go module cache the recipe builds from (gvisor.dev/gvisor@v0.0.0-20261001051044-03e83cf5cce1)"
+        },
+        {
+          "name": "suah.dev/protect",
+          "version": "v1.2.3",
+          "source": "https://suah.dev/protect",
+          "licence": "ISC",
+          "licence_from": "the module's LICENSE in the Go module cache the recipe builds from (suah.dev/protect@v1.2.3)"
+        }
+      ],
       "note": "The userspace WireGuard client every tunnel runs as its own process. Vendored because nothing on Windows puts it on PATH, and a tunnel whose client cannot be found fails with an error that names nothing. BUILT HERE FROM SOURCE, NOT DOWNLOADED: the recipe builds wireproxy at the pinned commit with the pinned Go release and the two patches beside it, and refuses any output whose digest is not this one. The upstream release pins a gVisor whose TCP loss detection misreads Windows' coarse clock and treats every acknowledgement as a loss, which holds one upload through a tunnel to a few megabytes a second; 01-gomod.patch moves gVisor to the revision named under modules, which carries the upstream repair, with the golang.org/x/time and golang.org/x/exp it needs, and moves golang.org/x/crypto and golang.org/x/net to the releases that fix the advisories below (golang.org/x/sys moves with them). 02-stack.patch gives the stack CUBIC, a fine-grained clock on Windows and 16 MiB buffer limits, and repairs four faults in gVisor's TCP sender that cut the window under reordering. THE UPSTREAM REPOSITORY HAS CHANGED HANDS FOUR TIMES: the source is pinned by commit, and another handover means reading the diff before moving the pin rather than bumping it. The toolchain is Go 1.27.0, and `go version -m` on the built file lists every module compiled into it with its version. KNOWN FINDINGS: govulncheck v1.1.4 in binary mode, against the Go vulnerability database when this digest was pinned, reports one, GO-2026-5932: golang.org/x/crypto's openpgp package is unmaintained, and the advisory names no fixed release. The upstream release (Go 1.26.5, golang.org/x/crypto v0.52.0, golang.org/x/net v0.55.0) carries twelve; the eleven others are fixed by Go 1.27.0, golang.org/x/crypto v0.56.0 (GO-2026-6355, GO-2026-6354, GO-2026-6303) and golang.org/x/net v0.57.0 (GO-2026-5942)."
     }
   ]

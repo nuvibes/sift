@@ -98,8 +98,9 @@ def test_the_workflows_shards_end_together() -> None:
     than a sixth, unless one gate alone is: a gate cannot be split, so it is the floor."""
     n = _matrix_width()
     recorded = _recorded()
-    loads = [sum(recorded[label] for label in _shard(k, n)) for k in range(1, n + 1)]
-    even = sum(recorded.values()) / n
+    middle = sorted(recorded.values())[len(recorded) // 2]
+    loads = [sum(recorded.get(label, middle) for label in _shard(k, n)) for k in range(1, n + 1)]
+    even = sum(loads) / n
     assert max(loads) <= max(max(recorded.values()), even * 7 / 6), loads
 
 

@@ -94,13 +94,15 @@ async def test_ask_again_takes_only_the_unknown_files_asked_long_enough_ago(
         off = LookupStarter(names, _Settings({}), enqueue=enqueue, clock=lambda: _NOW)
         with pytest.raises(LookupNotReady):
             await off.start_again(requested_by="u-1")
-        assert await off.asks_again() == 0
+        assert (await off.plan_again()).files == 0
+        # Said beside the press whatever its age, and while the lookup is off.
+        assert await off.not_known() == 2
         starter = LookupStarter(
             names, _Settings({LOOKUP_KEY: True}), enqueue=enqueue, clock=lambda: _NOW
         )
         # Counted before anything starts: the file not known a month ago, never the one not known
         # yesterday or the one AcoustID named.
-        assert await starter.asks_again() == 1
+        assert (await starter.plan_again()).files == 1
         assert await starter.start_again(requested_by="u-1") == ("walk", 1)
         [(job_type, payload, options)] = queued
         assert (job_type, payload, options["requested_by"]) == (
@@ -139,7 +141,8 @@ async def test_a_file_kept_local_since_it_was_not_known_is_never_asked_again(
     tmp_path: Path,
 ) -> None:
     """Kept local means nothing about the file leaves this device: a file AcoustID did not know
-    long ago and that is kept local now is not counted by Ask again, and a press queues nothing."""
+    long ago and that is kept local now is not counted by Ask again or in the "didn't know" line,
+    and a press queues nothing."""
     names = NameStore(await _library(tmp_path))
     queued: list[str] = []
 
@@ -156,7 +159,9 @@ async def test_a_file_kept_local_since_it_was_not_known_is_never_asked_again(
         starter = LookupStarter(
             names, _Settings({LOOKUP_KEY: True}), enqueue=enqueue, clock=lambda: _NOW
         )
-        assert await starter.asks_again() == 0
+        assert (await starter.plan_again()).files == 0
+        assert await starter.not_known() == 0
+        assert (await starter.plan_again()).not_known == 0
         assert await starter.start_again(requested_by="u-1") == (None, 0)
         assert queued == []
     finally:

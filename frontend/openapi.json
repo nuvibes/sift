@@ -2522,6 +2522,109 @@
         "title": "CaptureAccepted",
         "type": "object"
       },
+      "CardLevelView": {
+        "description": "Previews built on the GPU at one width, with the command previews use.",
+        "properties": {
+          "at_once": {
+            "title": "At Once",
+            "type": "integer"
+          },
+          "busy": {
+            "default": false,
+            "title": "Busy",
+            "type": "boolean"
+          },
+          "card_megabytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Card Megabytes"
+          },
+          "finished": {
+            "title": "Finished",
+            "type": "integer"
+          },
+          "per_second": {
+            "title": "Per Second",
+            "type": "number"
+          },
+          "responsive": {
+            "title": "Responsive",
+            "type": "boolean"
+          },
+          "seconds": {
+            "title": "Seconds",
+            "type": "number"
+          }
+        },
+        "required": [
+          "at_once",
+          "seconds",
+          "finished",
+          "per_second",
+          "responsive",
+          "busy",
+          "card_megabytes"
+        ],
+        "title": "CardLevelView",
+        "type": "object"
+      },
+      "CardView": {
+        "properties": {
+          "best_at_once": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Best At Once"
+          },
+          "decodes_on_card": {
+            "title": "Decodes On Card",
+            "type": "boolean"
+          },
+          "encoder": {
+            "title": "Encoder",
+            "type": "string"
+          },
+          "failed": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failed"
+          },
+          "levels": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/CardLevelView"
+            },
+            "title": "Levels",
+            "type": "array"
+          }
+        },
+        "required": [
+          "encoder",
+          "decodes_on_card",
+          "levels",
+          "failed",
+          "best_at_once"
+        ],
+        "title": "CardView",
+        "type": "object"
+      },
       "CarryResult": {
         "description": "What a carry did.\n\n`files` counts FILES and not rows, because a file that gained two attributions is one file that\nchanged and one thing to take back: the same grain the receipts are written at.",
         "properties": {
@@ -6239,6 +6342,12 @@
       "FamilyOfWork": {
         "description": "One of the long passes as a whole: which job types it is, and how it is going.\n\nThe families are declared where each handler is registered, so the screen draws whatever the\nserver says the families are rather than keeping a list of its own: a list kept on the screen\ncan leave a stage in no family, and a stage that takes a worker continuously is then invisible\non the screen that answers \"what is Sift doing\".",
         "properties": {
+          "at_least": {
+            "default": false,
+            "description": "The time left is the least the work takes, priced from the benchmark before any run of this pass.",
+            "title": "At Least",
+            "type": "boolean"
+          },
           "at_once": {
             "default": 0,
             "description": "How many workers this family can occupy, which the estimate divides by. It travels with the figure because the figure assumes it.",
@@ -6251,9 +6360,39 @@
             "title": "Done",
             "type": "integer"
           },
+          "failed": {
+            "default": 0,
+            "description": "This pass's failed runs in the Failed list that a person can still act on: none over a folder no longer in the library, and none a later run made good.",
+            "title": "Failed",
+            "type": "integer"
+          },
+          "for_task": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "How many files wait for their task's own run, in one sentence said after the time left, or null: while only arriving files run, the time left is theirs alone.",
+            "title": "For Task"
+          },
           "label": {
             "title": "Label",
             "type": "string"
+          },
+          "last_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why the newest of them failed, in plain words, or null while none stands.",
+            "title": "Last Error"
           },
           "on": {
             "default": true,
@@ -6266,6 +6405,18 @@
             "description": "Jobs of this family's own kinds still queued or running, PLUS every task of a product-carrying kind whose products belong to this family, so a Build narrowed to one product counts as that product's family, whatever its task is called. The screen reads this rather than summing `work` by type, which would put a pressed Smart Search under Identify.",
             "title": "Outstanding",
             "type": "integer"
+          },
+          "pace": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What sets the pace of the read, in one sentence, or null: the network share whose readers waited most of the last minute, named by its library folders.",
+            "title": "Pace"
           },
           "parts": {
             "description": "Each kind of this family's work that has a count of its own, in the order the family's types are listed. `done` and `total` above are these added together; a screen drawing more than one part draws each on its own line rather than the sum.",
@@ -6317,6 +6468,12 @@
             "description": "Why this pass is not running, in one sentence, or null while it is. Said here rather than worked out on the screen: only the server knows whether a family's types are capped to nothing for the night or held behind another pass.",
             "title": "Reason"
           },
+          "running": {
+            "default": 0,
+            "description": "How many of this pass's tasks are running now.",
+            "title": "Running",
+            "type": "integer"
+          },
           "sample": {
             "default": 0,
             "description": "How many finished items the estimate was priced from. Nought is no estimate, and it is the honest answer rather than a whole library priced from one file.",
@@ -6346,6 +6503,18 @@
             ],
             "description": "The task this pass IS on the Tasks screen, by its id (where it is run and when it runs is chosen), or null for a pass that is more than one task (Identify is faces and watermarks) or none.",
             "title": "Task"
+          },
+          "time_unknown": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The sentence the time left says instead of a time, or null: while a folder waits to be counted, nothing after the walk has a total to price.",
+            "title": "Time Unknown"
           },
           "total": {
             "default": 0,
@@ -6377,13 +6546,20 @@
           "problem",
           "quick_seconds",
           "slow_seconds",
+          "at_least",
           "sample",
           "at_once",
           "done",
           "total",
           "parts",
           "reason",
-          "task"
+          "task",
+          "time_unknown",
+          "pace",
+          "for_task",
+          "failed",
+          "last_error",
+          "running"
         ],
         "title": "FamilyOfWork",
         "type": "object"
@@ -7385,13 +7561,25 @@
           "label": {
             "title": "Label",
             "type": "string"
+          },
+          "set_from": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Set From"
           }
         },
         "required": [
           "field",
           "label",
           "hint",
-          "example"
+          "example",
+          "set_from"
         ],
         "title": "FilterOut",
         "type": "object"
@@ -7799,6 +7987,31 @@
         "title": "FolderImportStarted",
         "type": "object"
       },
+      "FolderLeftOut": {
+        "description": "Which pictures a folder import left out, most common reason first, and the near copies it\nkept. Each path is inside the chosen folder.",
+        "properties": {
+          "left_out": {
+            "items": {
+              "$ref": "#/components/schemas/LeftOutFiles"
+            },
+            "title": "Left Out",
+            "type": "array"
+          },
+          "near_copies": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Near Copies",
+            "type": "array"
+          }
+        },
+        "required": [
+          "left_out",
+          "near_copies"
+        ],
+        "title": "FolderLeftOut",
+        "type": "object"
+      },
       "FolderList": {
         "description": "Every folder, and which switches may be answered per folder.\n\n`keys` comes from the same map that gates the jobs, so the screen cannot offer a switch that\nnothing reads or miss one that something does.",
         "properties": {
@@ -7992,6 +8205,17 @@
             "default": false,
             "title": "Shared Here",
             "type": "boolean"
+          },
+          "writable": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Writable"
           }
         },
         "required": [
@@ -8006,7 +8230,8 @@
           "restricted_here",
           "hidden",
           "keep_local",
-          "keep_from_swaps"
+          "keep_from_swaps",
+          "writable"
         ],
         "title": "FolderView",
         "type": "object"
@@ -9042,29 +9267,6 @@
         "title": "HeldFile",
         "type": "object"
       },
-      "Hint": {
-        "properties": {
-          "name": {
-            "enum": [
-              "organize_empty",
-              "first_pile",
-              "first_insights"
-            ],
-            "title": "Name",
-            "type": "string"
-          },
-          "seen": {
-            "title": "Seen",
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "name",
-          "seen"
-        ],
-        "title": "Hint",
-        "type": "object"
-      },
       "HistoryAway": {
         "description": "A way OUT of Sift from a History line: its words and the address, opened in a new tab.",
         "properties": {
@@ -9993,6 +10195,22 @@
             "title": "Password Wanted",
             "type": "integer"
           },
+          "step_back_for": {
+            "anyOf": [
+              {
+                "enum": [
+                  "input",
+                  "others"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why the work steps back while `stepping_back` is true: somebody at this device (input) or other programs busy (others).",
+            "title": "Step Back For"
+          },
           "step_back_share": {
             "default": 25,
             "description": "The share of this device, in percent, background work keeps to while it steps back (Settings > Performance). What the leaf and the Activity line say.",
@@ -10040,6 +10258,7 @@
           "stepping_back",
           "full_amount",
           "step_back_share",
+          "step_back_for",
           "password_wanted"
         ],
         "title": "JobsPage",
@@ -10861,6 +11080,33 @@
           "files"
         ],
         "title": "LeftOut",
+        "type": "object"
+      },
+      "LeftOutFiles": {
+        "description": "The pictures a folder import left out for one reason.",
+        "properties": {
+          "files": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Files",
+            "type": "array"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "words": {
+            "title": "Words",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason",
+          "words",
+          "files"
+        ],
+        "title": "LeftOutFiles",
         "type": "object"
       },
       "LeftoversView": {
@@ -12822,6 +13068,147 @@
         "title": "MissingView",
         "type": "object"
       },
+      "ModelLevelView": {
+        "properties": {
+          "at_once": {
+            "title": "At Once",
+            "type": "integer"
+          },
+          "busy": {
+            "default": false,
+            "title": "Busy",
+            "type": "boolean"
+          },
+          "card_megabytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Card Megabytes"
+          },
+          "failed": {
+            "default": 0,
+            "title": "Failed",
+            "type": "integer"
+          },
+          "files_per_second": {
+            "title": "Files Per Second",
+            "type": "number"
+          },
+          "megabytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Megabytes"
+          }
+        },
+        "required": [
+          "at_once",
+          "files_per_second",
+          "failed",
+          "busy",
+          "megabytes",
+          "card_megabytes"
+        ],
+        "title": "ModelLevelView",
+        "type": "object"
+      },
+      "ModelView": {
+        "properties": {
+          "best_at_once": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Best At Once"
+          },
+          "card_megabytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Card Megabytes"
+          },
+          "device": {
+            "title": "Device",
+            "type": "string"
+          },
+          "failed": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failed"
+          },
+          "levels": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ModelLevelView"
+            },
+            "title": "Levels",
+            "type": "array"
+          },
+          "megabytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Megabytes"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "seconds_per_file": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seconds Per File"
+          }
+        },
+        "required": [
+          "name",
+          "device",
+          "levels",
+          "failed",
+          "best_at_once",
+          "seconds_per_file",
+          "megabytes",
+          "card_megabytes"
+        ],
+        "title": "ModelView",
+        "type": "object"
+      },
       "ModelsFetchStarted": {
         "description": "The job now downloading the models.\n\nThe id only: the screen watches the bar and cancel every job already has.",
         "properties": {
@@ -13791,8 +14178,15 @@
         "type": "object"
       },
       "PackExportRequest": {
-        "description": "Which People to put in a pack, and whether to include their pictures.\n\nPictures are opt-in rather than opt-out. Without them a pack is numbers alone: far smaller,\nstill able to recognize everybody in it, and carrying no photographs of anybody off this\nmachine, which is the right default for something being handed to somebody else.",
+        "description": "Which People and which people waiting for a matching face go in the file, and whether\ntheir pictures do: both lists empty is everybody. Pictures are opt-in, so by default no\nphotograph of anybody leaves this machine.",
         "properties": {
+          "entry_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Entry Ids",
+            "type": "array"
+          },
           "include_pictures": {
             "default": false,
             "title": "Include Pictures",
@@ -14214,15 +14608,8 @@
         "type": "object"
       },
       "Path": {
-        "description": "Get to know Sift: every path this User can walk, and the three hints.",
+        "description": "Get to know Sift: every path this User can walk.",
         "properties": {
-          "hints": {
-            "items": {
-              "$ref": "#/components/schemas/Hint"
-            },
-            "title": "Hints",
-            "type": "array"
-          },
           "paths": {
             "items": {
               "$ref": "#/components/schemas/LearningPath"
@@ -14232,8 +14619,7 @@
           }
         },
         "required": [
-          "paths",
-          "hints"
+          "paths"
         ],
         "title": "Path",
         "type": "object"
@@ -19175,6 +19561,17 @@
           "keep_days": {
             "title": "Keep Days",
             "type": "integer"
+          },
+          "working": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Working"
           }
         },
         "required": [
@@ -19183,7 +19580,8 @@
           "keep",
           "keep_days",
           "folder",
-          "beside_sift_data"
+          "beside_sift_data",
+          "working"
         ],
         "title": "ScheduleView",
         "type": "object"
@@ -19816,9 +20214,29 @@
       },
       "SelfTestView": {
         "properties": {
+          "card": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CardView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "finished": {
             "title": "Finished",
             "type": "boolean"
+          },
+          "full_while_measuring": {
+            "default": 0,
+            "title": "Full While Measuring",
+            "type": "integer"
+          },
+          "held_while_measuring": {
+            "default": 0,
+            "title": "Held While Measuring",
+            "type": "integer"
           },
           "measured": {
             "default": false,
@@ -19826,6 +20244,32 @@
             "type": "boolean"
           },
           "measurement": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MeasurementView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "models": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ModelView"
+            },
+            "title": "Models",
+            "type": "array"
+          },
+          "notes": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Notes",
+            "type": "array"
+          },
+          "progress": {
             "anyOf": [
               {
                 "$ref": "#/components/schemas/MeasurementView"
@@ -19861,11 +20305,17 @@
         "required": [
           "running",
           "measurement",
+          "progress",
           "recommendations",
           "finished",
           "rounds",
           "measured",
-          "share_reads_now"
+          "share_reads_now",
+          "notes",
+          "card",
+          "models",
+          "held_while_measuring",
+          "full_while_measuring"
         ],
         "title": "SelfTestView",
         "type": "object"
@@ -22257,7 +22707,7 @@
         "type": "object"
       },
       "StorageCurveView": {
-        "description": "How one storage behaved as more files were read from it at once.\n\n`best_at_once` is the widest level still worth having, or None where nothing was measured.",
+        "description": "One storage as more files were read at once; `best_at_once` None where nothing was.",
         "properties": {
           "best_at_once": {
             "anyOf": [
@@ -22280,6 +22730,11 @@
               }
             ],
             "title": "Failed"
+          },
+          "folders": {
+            "default": "",
+            "title": "Folders",
+            "type": "string"
           },
           "label": {
             "title": "Label",
@@ -22305,6 +22760,7 @@
         "required": [
           "storage",
           "label",
+          "folders",
           "remote",
           "levels",
           "failed",
@@ -25868,6 +26324,11 @@
             "title": "Entry Id",
             "type": "string"
           },
+          "exportable": {
+            "default": false,
+            "title": "Exportable",
+            "type": "boolean"
+          },
           "faces": {
             "title": "Faces",
             "type": "integer"
@@ -25887,7 +26348,8 @@
           "faces",
           "confirmed",
           "source",
-          "added_at"
+          "added_at",
+          "exportable"
         ],
         "title": "WaitingEntry",
         "type": "object"
@@ -25895,6 +26357,11 @@
       "WaitingFingerprints": {
         "description": "Every waiting entry, newest first.",
         "properties": {
+          "exportable": {
+            "default": 0,
+            "title": "Exportable",
+            "type": "integer"
+          },
           "items": {
             "default": [],
             "items": {
@@ -25905,7 +26372,8 @@
           }
         },
         "required": [
-          "items"
+          "items",
+          "exportable"
         ],
         "title": "WaitingFingerprints",
         "type": "object"
@@ -26103,14 +26571,15 @@
         "type": "object"
       },
       "sift__slices__collections__models__ItemsWrite": {
-        "description": "Adding to, removing from, or rearranging a collection.\n\nOne body with a named action, so add, remove and reorder cannot drift in what they accept. For\n`reorder`, `asset_ids` is the new order.",
+        "description": "Adding to, removing from, or rearranging a collection.\n\nOne body with a named action, so add, remove and reorder cannot drift in what they accept. For\n`reorder`, `asset_ids` is the new order; `move` names one file and its `direction`.",
         "properties": {
           "action": {
             "default": "add",
             "enum": [
               "add",
               "remove",
-              "reorder"
+              "reorder",
+              "move"
             ],
             "title": "Action",
             "type": "string"
@@ -26123,6 +26592,21 @@
             "minItems": 1,
             "title": "Asset Ids",
             "type": "array"
+          },
+          "direction": {
+            "anyOf": [
+              {
+                "enum": [
+                  "earlier",
+                  "later"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Direction"
           }
         },
         "required": [
@@ -26801,7 +27285,7 @@
     }
   },
   "info": {
-    "description": "A self-hosted media browser and downloader.",
+    "description": "Sift is a feature-rich, intelligent media manager that lets you browse, download, watch, and organize your content.",
     "title": "Sift",
     "version": "0.1.0"
   },
@@ -29261,7 +29745,7 @@
     },
     "/api/assets/{asset_id}/similar": {
       "get": {
-        "description": "What else looks like this file.\n\n**Not admin-only, unlike everything else here**, and the difference is the point: this is a way\nof browsing rather than a control over the install. Anybody signed in may ask it.\n\nWhich is why the answer goes back through the ordinary read. The lookalikes are found without\nany notion of who is asking (it is arithmetic over numbers), so what comes out of that is a\nlist of candidates and not a result. Handing it to the read that decides visibility narrows it\nto what this user may actually see, in one statement, the same one every other screen uses.\nFiltering afterwards here would be a second opinion about concealment, in the one place it must\nnot be.\n\nA file the viewer cannot see answers with nothing found rather than refusing, for the same\nreason every per-asset route does: a refusal that differs from an empty answer is a way to ask\nwhether a file exists.\n\nThat answer is given HERE, before the lookalikes are worked out at all, and the order is the\nwhole of it. Asking first and resolving afterwards narrows the RESULTS correctly and still\nanswers the question that was asked: the arithmetic runs on a file the caller may not have, and\na populated page comes back for it while an invented id comes back empty. Those two replies\ndiffer, so the pair of them is an existence oracle, and the page itself says which of the\nfiles this user CAN see resemble one it cannot, which is a description of the concealed file\nassembled out of visible ones.\n\n`can_view` and not `get_asset`, so a concealed subject answers nothing while Hidden is shut.\nThat is the same rule the results are filtered by below; asking it of the subject by a looser\ntest would let the placeholder tile be used to describe what it is a placeholder for.",
+        "description": "What else looks like this file.\n\n**Not admin-only, unlike everything else here**, and the difference is the point: this is a way\nof browsing rather than a control over the install. Anybody signed in may ask it.\n\nWhich is why the lookalikes are ranked among this user's own files, so a hidden one can neither\nfill the strip nor shorten it, and the answer still goes back through the ordinary read, the\none opinion about concealment every other screen uses.\n\nA file the viewer cannot see answers with nothing found rather than refusing, for the same\nreason every per-asset route does: a refusal that differs from an empty answer is a way to ask\nwhether a file exists.\n\nThat answer is given HERE, before the lookalikes are worked out at all, and the order is the\nwhole of it. Asking first and resolving afterwards narrows the RESULTS correctly and still\nanswers the question that was asked: the arithmetic runs on a file the caller may not have, and\na populated page comes back for it while an invented id comes back empty. Those two replies\ndiffer, so the pair of them is an existence oracle, and the page itself says which of the\nfiles this user CAN see resemble one it cannot, which is a description of the concealed file\nassembled out of visible ones.\n\n`can_view` and not `get_asset`, so a concealed subject answers nothing while Hidden is shut.\nThat is the same rule the results are filtered by below; asking it of the subject by a looser\ntest would let the placeholder tile be used to describe what it is a placeholder for.",
         "operationId": "find_similar_api_assets__asset_id__similar_get",
         "parameters": [
           {
@@ -31612,7 +32096,7 @@
     },
     "/api/collections/{collection_id}/items": {
       "get": {
-        "description": "A collection's contents, in the arranged order, scoped to this viewer.\n\nThe order is the collection's own, not the grid's: a collection is a sequence somebody put\ntogether, and showing it newest-first is showing something else. What this user has PINNED\ncomes above that sequence, which is the same thing the pin does on every other wall that offers\nit; each item carries its stored position so that rearranging still works off the sequence\nrather than off what happens to be drawn.\n\nThe rows and the total come from one statement in the access layer, so the count is the number\nof items on the screen and never the number of rows in the table.\n\n**Narrowed by the cards picked on the collection's tabs.** `people`, `tags`, `sites`,\n`collections`, `photo_sets` and `songs` (the Music tab) are the query language's own fields, each a name as the language\nwrites one, given once per pick and combined with AND, read by the same engine and the same\nparser the grid reads them with, so a pick narrows a collection's Files tab exactly as it narrows\na person's. The narrowing goes into the same statement as the scoping and the order, so the\ntotal counts the narrowed set and the arranged order is kept within it. Declared rather than\nread off the raw address, so a name this route does not take is visibly not taken: the rest of\nthe query language (a rating, a date) is the grid's, and this wall offers no bar to write it.",
+        "description": "A collection's contents, in the arranged order, scoped to this viewer.\n\nThe order is the collection's own, not the grid's: a collection is a sequence somebody put\ntogether, and showing it newest-first is showing something else. What this user has PINNED\ncomes above that sequence, which is the same thing the pin does on every other wall that offers\nit; each item carries its stored position so that rearranging still works off the sequence\nrather than off what happens to be drawn.\n\nThe rows and the total come from one statement in the access layer, so the count is the number\nof items on the screen and never the number of rows in the table.\n\n**Filtered by the query language, read off the raw address as `/assets` reads it**: the words\nin `q` and the cards picked on the tabs narrow a collection's Files tab exactly as they narrow a\nperson's, inside the same statement as the scoping and the order, so the total counts the\nnarrowed set and the arranged order is kept within it.",
         "operationId": "collection_items_api_collections__collection_id__items_get",
         "parameters": [
           {
@@ -31645,6 +32129,22 @@
               "minimum": 0,
               "title": "Offset",
               "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
             }
           },
           {
@@ -31790,7 +32290,7 @@
         ]
       },
       "post": {
-        "description": "Add to, remove from, or rearrange a collection.\n\n**No file is moved.** This writes rows in the join table and nothing else: every path, every\nbyte and every location row is exactly as it was. That is the promise the storage model makes,\nand the test asserting it is the one worth keeping.\n\nAdding and removing SKIP an asset that cannot be resolved, and the reply says how many were\nleft out and why. Rearranging does not, and the difference is not an oversight: an order is a\nwhole list, and applying a partial one silently rewrites the positions of files nobody moved.\nA locked vault cannot produce that call anyway, because a client that cannot see a file does\nnot send its id in the order.\n\nAn asset can still go between being resolved and being written: two requests, one adding a file\nand one deleting it. The membership row's foreign key catches that and the answer is the same\n404 the resolve would have given a moment later, rather than the 500 an uncaught constraint\nwould surface. It is the same answer for the same reason: the asset is not there.",
+        "description": "Add to, remove from, or rearrange a collection, or move one file a place either way.\n\n**No file is moved.** This writes rows in the join table and nothing else: every path, every\nbyte and every location row is exactly as it was. That is the promise the storage model makes,\nand the test asserting it is the one worth keeping.\n\nAdding and removing SKIP an asset that cannot be resolved, and the reply says how many were\nleft out and why. Rearranging does not, and the difference is not an oversight: an order is a\nwhole list, and applying a partial one silently rewrites the positions of files nobody moved.\nA locked vault cannot produce that call anyway, because a client that cannot see a file does\nnot send its id in the order.\n\nAn asset can still go between being resolved and being written: two requests, one adding a file\nand one deleting it. The membership row's foreign key catches that and the answer is the same\n404 the resolve would have given a moment later, rather than the 500 an uncaught constraint\nwould surface. It is the same answer for the same reason: the asset is not there.",
         "operationId": "edit_items_api_collections__collection_id__items_post",
         "parameters": [
           {
@@ -34243,7 +34743,7 @@
     },
     "/api/faces/fingerprints/waiting": {
       "get": {
-        "description": "Everybody a facial fingerprints file or a folder brought whom no face here matches yet,\nnewest first, with how many faces and where each came from. Admin-only, as the pane is; read\nwith recognition off too, since what is held stays held.",
+        "description": "Everybody a facial fingerprints file or a folder brought whom no face here matches yet,\nnewest first, with how many faces, where each came from and whether an export carries them.\nAdmin-only, as the pane is; read with recognition off too, since what is held stays held.",
         "operationId": "waiting_fingerprints_api_faces_fingerprints_waiting_get",
         "responses": {
           "200": {
@@ -35294,7 +35794,7 @@
     },
     "/api/faces/packs/export": {
       "post": {
-        "description": "Build a pack from People already here, and hand it back as a file.\n\nPictures are optional; without them a pack is numbers alone, the right default for one going\nto somebody else. **Held to the People wall**, as `known_people` is: nobody a shut Hidden holds\nback leaves in a file, and an empty list is refused in words, never read as \"everybody\".",
+        "description": "Build a facial fingerprints file from People here and the people waiting for a matching\nface, and hand it back. Loads no model: the numbers are stored. Held to the People wall and to\nwhat a swap refuses (`_carried`); nobody to carry is refused in words.",
         "operationId": "export_pack_api_faces_packs_export_post",
         "requestBody": {
           "content": {
@@ -35575,6 +36075,49 @@
           }
         },
         "summary": "Import Reference Folder By Path",
+        "tags": [
+          "faces"
+        ]
+      }
+    },
+    "/api/faces/references/folder/{job_id}/left-out": {
+      "get": {
+        "description": "The files behind each count of a folder import's report. Only the latest import has any.",
+        "operationId": "folder_left_out_api_faces_references_folder__job_id__left_out_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FolderLeftOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Folder Left Out",
         "tags": [
           "faces"
         ]
@@ -36570,7 +37113,7 @@
     },
     "/api/insights/path": {
       "get": {
-        "description": "Get to know Sift, judged now: every learning path with its goals, and the hints.",
+        "description": "Get to know Sift, judged now: every learning path with its goals.",
         "operationId": "read_path_api_insights_path_get",
         "responses": {
           "200": {
@@ -36585,44 +37128,6 @@
           }
         },
         "summary": "Read Path",
-        "tags": [
-          "insights"
-        ]
-      }
-    },
-    "/api/insights/path/hints/{name}/seen": {
-      "post": {
-        "description": "Remember a hint was shown, so it is not shown again.",
-        "operationId": "hint_seen_api_insights_path_hints__name__seen_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "name",
-            "required": true,
-            "schema": {
-              "maxLength": 40,
-              "minLength": 1,
-              "title": "Name",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Hint Seen",
         "tags": [
           "insights"
         ]
@@ -36773,7 +37278,7 @@
     },
     "/api/jobs": {
       "get": {
-        "description": "A page of the queue, newest first: of every row, or with `fold`, of every family.\n\nThe bounds are DECLARED rather than checked in the body, which is the same enforcement and a\ntruthful schema. Written out by hand they would be invisible to anything reading what this\nroute accepts, and a client generated from the schema would have nothing to respect.\n\nONE ROUTE, TWO ANSWERS, chosen by the caller and never guessed: without `fold` a page is rows\n(every step its own row, the file name on each); with it a page is families. A folded page\nfiltered by state reads the state the family's row shows (`folded_state`: a family with a\nfailed step in it IS a failed family, so folding hides no failure), which puts every family\nunder exactly one state. The choice between a failed family and a family with a failed step\nis `folded_state`'s, made once for the row, and a state's tab that listed steps instead would\ncount a universe its All does not (`_tallies`).",
+        "description": "A page of the queue, newest first: of every row, or with `fold`, of every family.\n\nThe bounds are declared rather than checked in the body, so the schema says them. A folded page\nfiltered by state reads the state the family's row shows (`folded_state`: a family with a\nfailed step is a failed family), so every family is under exactly one state (`_tallies`).",
         "operationId": "list_jobs_api_jobs_get",
         "parameters": [
           {
@@ -36902,7 +37407,7 @@
     },
     "/api/jobs/cancel-all": {
       "post": {
-        "description": "Stop every job that has not finished.\n\nFor the queue that got away: a folder that turned out to hold far more than anybody meant to\npoint at, a setting switched on that queued work for the whole library, an import worth hours\nthat is no longer wanted. Fifty thousand rows is not something anybody cancels one at a time,\nand without this the only way to stop it is to close the application.\n\nRunning work is stopped along with waiting work, and it has to be. What is in the queue was put\nthere by something that is still running (a scan hands out a probing job per file, and each\nof those hands out a thumbnail, a preview and a sprite), so calling off only the waiting rows\nwould leave the producer walking and the queue would refill behind the press.\n\nNothing is deleted. The rows stay and can be read afterwards, and a file that was taken into\nthe library but never looked at is picked up by the next scan of its folder. Nothing to stop is\na success with a zero, the same as retrying nothing.",
+        "description": "Stop every job that has not finished, running work included: what runs keeps queueing\nmore (a scan hands out a read per file).\n\nNothing is deleted, and the next scan of a folder picks up what was never read. Nothing to stop\nis a success with a zero.",
         "operationId": "cancel_everything_api_jobs_cancel_all_post",
         "responses": {
           "200": {
@@ -36924,7 +37429,7 @@
     },
     "/api/jobs/clear-canceled": {
       "post": {
-        "description": "Throw away everything that was stopped.\n\nThe pile `clear-failed` does not touch, and the one that actually accumulates: a stop is one\npress that cancels the whole queue, so a library-sized import leaves a library-sized heap of\nstopped rows behind, often beside a handful of failures.\n\nThe rows are only ever swept a week after they were stopped, which is the right pace for\nhousekeeping and no answer to somebody looking at a screen made of them today.\n\nFinished work is left alone. It is the record of what the library actually has, and `retry-\ncanceled` beside this is the other thing to do with a stopped job. This is for when the answer\nis that the work is not wanted at all.",
+        "description": "Throw away everything that was stopped, the pile a stopped import leaves behind.\n\nFinished work is left alone. Nothing to clear is a success with a zero.",
         "operationId": "clear_canceled_jobs_api_jobs_clear_canceled_post",
         "responses": {
           "200": {
@@ -36946,7 +37451,7 @@
     },
     "/api/jobs/clear-failed": {
       "post": {
-        "description": "Throw away everything that failed.\n\nThe companion to retrying, and the answer to failures that cannot succeed however often they\nare offered again: a graphics card that was not installed at the time, a drive that has gone,\na run made under settings nobody uses now. Without it the only way to shift them would be to\nretry every one and watch it fail a second time.\n\nCancelled and finished work is left alone: one is somebody's decision and the other ages out by\nitself. Nothing to clear is a success with a zero, the same as retrying nothing.",
+        "description": "Throw away everything that failed, for the failures no retry can fix.\n\nCanceled and finished work is left alone. Nothing to clear is a success with a zero.",
         "operationId": "clear_failed_jobs_api_jobs_clear_failed_post",
         "responses": {
           "200": {
@@ -36968,7 +37473,7 @@
     },
     "/api/jobs/full-amount": {
       "post": {
-        "description": "Use the full amount of this device although it is in use, or step back again.\n\nThe press behind the leaf on the sidebar. An admin's, as the queue is: the pool is the whole\ninstallation's. Answered with the state as asked for; the pool reaches it at its next\nreconfigure, a few seconds later, finishing the task in each retiring worker's hand first.\n\nHeld in memory and not stored: see `kernel.attention` for why a press is a moment and the\nsetting is the standing choice. Pressing what is already on is a success that changes nothing.",
+        "description": "Use the full amount of this device although it is in use, or step back again.\n\nHeld in memory, not stored; the pool reaches it at its next reconfigure, a few seconds later.",
         "operationId": "press_full_amount_api_jobs_full_amount_post",
         "requestBody": {
           "content": {
@@ -37030,7 +37535,7 @@
         ]
       },
       "post": {
-        "description": "Bring every hover clip in the library up to the shape that is set.\n\nOne sweep job rather than one job per file from here, which is the opposite of what the\nthumbnail rebuild beside it does and is deliberate: the work of finding which clips are out of\ndate is a query that belongs with the job, and doing it inside a request would hold the\nconnection open while a large library is read. The sweep queues one encode per file once it has\nthe list, so the dashboard still shows the real work rather than one opaque row.\n\n`enqueue_when_settled` rather than `enqueue`, so a rebuild asked for in the middle of an import\nwaits for the import to stop arriving instead of competing with it for the encoders.",
+        "description": "Bring every hover clip in the library up to the shape that is set.\n\nOne sweep job that queues an encode per file, asked for once an import stops arriving.",
         "operationId": "rebuild_previews_api_jobs_rebuild_previews_post",
         "responses": {
           "200": {
@@ -37072,7 +37577,7 @@
         ]
       },
       "post": {
-        "description": "Make every picture again, for the whole library.\n\nThe answer to a change nothing else can see. A thumbnail is made once, when a file arrives, and\nnothing ever revisits it, so a library that was imported before a sizing was fixed, or on a\nmachine whose ffmpeg was producing something wrong, keeps those pictures for ever. A rescan does\nnot help: a scan skips any file whose path, size and mtime are unchanged, which is exactly what\nmakes a rescan quick.\n\nOne sweep job, not a walk in the request: on a hundred-thousand-file library that would be a\nhundred thousand enqueues on the one write connection, with every job waiting behind them to\nrecord its progress, a browser holding the request open, and nothing stoppable until it ended.\n\nThe sweep hands out the same per-file rows, paced and cancellable, from a worker instead of\nfrom a request: the shape `rebuild-previews` next door uses.\n`enqueue_when_settled` for the reason it gives: a rebuild asked for in the middle of an import\nwaits for the import to stop arriving rather than competing with it for the encoders.",
+        "description": "Make every picture again, for the whole library: a scan never revisits a made one.\n\nOne sweep job that hands out the per-file rows, asked for once an import stops arriving.",
         "operationId": "rebuild_thumbnails_api_jobs_rebuild_thumbnails_post",
         "responses": {
           "200": {
@@ -37094,7 +37599,7 @@
     },
     "/api/jobs/retry-canceled": {
       "post": {
-        "description": "Start everything that was stopped, again.\n\nThe other half of `cancel-all`: stopping an import that got away is one press, and without\nthis the only route back to the same work would be to scan the folders again, which re-walks\nevery file to rediscover the ones it already knew about. What was stopped is still in the\ntable with its payload; it can simply be offered again.\n\nFailures are left where they are, and that is not tidiness. Stopped and failed are two\ndifferent situations wearing the same \"unfinished\" label: one is a decision somebody made and\nis taking back, the other is work that broke and will likely break again more expensively.\n`retry-failed` beside this is the button for the second, and it says so.\n\nNothing to start is a success with a zero, the same as retrying nothing.",
+        "description": "Start everything that was stopped, again: the other half of `cancel-all`.\n\nFailures are left alone; `retry-failed` is for them. Nothing to start is a success with a zero.",
         "operationId": "retry_canceled_jobs_api_jobs_retry_canceled_post",
         "responses": {
           "200": {
@@ -37116,7 +37621,7 @@
     },
     "/api/jobs/retry-failed": {
       "post": {
-        "description": "Put everything that failed back in the queue.\n\nFailures come in batches (a fix to how a kind of file is read, a drive that was unplugged and\nis back), and retrying them one row at a time is not something anybody does. Cancelled work is\nleft alone: somebody stopped it on purpose.\n\nNothing to retry is a success with a zero, not a 404. The button was pressed and the queue now\nholds no failures, which is what was asked for.",
+        "description": "Put everything that failed back in the queue; canceled work is left alone.\n\nNothing to retry is a success with a zero, not a 404.",
         "operationId": "retry_failed_jobs_api_jobs_retry_failed_post",
         "responses": {
           "200": {
@@ -37174,7 +37679,7 @@
     },
     "/api/jobs/{job_id}/retry": {
       "post": {
-        "description": "Put a failed job back in the queue, with its attempts reset.\n\n404 for a job that is not there and for one that cannot be retried alike: a job that is\nalready running is not a thing to say \"no\" to twice.",
+        "description": "Put a failed job back in the queue, its attempts reset; 404 for one that is not there or\ncannot be retried.",
         "operationId": "retry_job_api_jobs__job_id__retry_post",
         "parameters": [
           {
@@ -37210,7 +37715,7 @@
     },
     "/api/jobs/{job_id}/steps": {
       "get": {
-        "description": "The steps folded under one top row, a page at a time, asked for when somebody opens it.\n\nEvery job the top started, however deep, in the order they were handed out: a download's\nprobing, then the seven steps it started. Each is a whole row, named, so a step reads on its\nown.\n\n404 for a job that is not there AND for one that heads no family (it has a parent): its steps\nare its top's, asked of the top. One answer for both, like `retry`, since neither has steps.",
+        "description": "The steps folded under one top row, however deep, in the order they were handed out.\n\n404 for a job that is not there and for one that heads no family: neither has steps.",
         "operationId": "list_steps_api_jobs__job_id__steps_get",
         "parameters": [
           {
@@ -37877,7 +38382,7 @@
     },
     "/api/library/folders": {
       "get": {
-        "description": "The folder tree, flat, and only what this viewer may see.\n\nWith no parameters this is every folder in every library, which is what the browser opens on\nand builds its tree from. Flat rather than nested, and all at once rather than a level at a\ntime: folders are cheap where files are not, and the alternative is a request per row or a\nsecond statement answering \"has children the viewer may see\", which is the scoping rule\nwritten twice, and two copies of that rule can disagree.\n\nRoots themselves are never listed here. A root is a path on somebody's disk; the folder row\nstanding for it is the same place with none of that attached, so a guest shown one folder of\none library learns nothing about where any of it lives.\n\n`parent` narrows to one folder's direct children, `root` to one library. A folder somebody may\nnot see is absent, not a 403, which would confirm that it exists.\n\nBoth are handed down together rather than one being chosen between. They are narrowings of one\nread, and passing them as such means a request naming a folder in a library it is not in gets\nthe honest empty answer instead of having half of what it asked silently dropped.",
+        "description": "The folder tree, flat, and only what this viewer may see.\n\nWith no parameters this is every folder in every library, which is what the browser opens on\nand builds its tree from. Flat rather than nested, and all at once rather than a level at a\ntime: folders are cheap where files are not, and the alternative is a request per row or a\nsecond statement answering \"has children the viewer may see\", which is the scoping rule\nwritten twice, and two copies of that rule can disagree.\n\nRoots themselves are never listed here. A root is a path on somebody's disk; the folder row\nstanding for it is the same place with none of that attached, so a guest shown one folder of\none library learns nothing about where any of it lives.\n\n`parent` narrows to one folder's direct children, `root` to one library. A folder somebody may\nnot see is absent, not a 403, which would confirm that it exists.\n\nBoth are handed down together rather than one being chosen between. They are narrowings of one\nread, and passing them as such means a request naming a folder in a library it is not in gets\nthe honest empty answer instead of having half of what it asked silently dropped.\n\n`writable` asks the disk which folders Sift may write in, for a chooser of where files land;\nthe tree does not ask, so a share that has gone silent never slows it.",
         "operationId": "list_folders_api_library_folders_get",
         "parameters": [
           {
@@ -37910,6 +38415,16 @@
                 }
               ],
               "title": "Parent"
+            }
+          },
+          {
+            "in": "query",
+            "name": "writable",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Writable",
+              "type": "boolean"
             }
           }
         ],
@@ -42060,7 +42575,7 @@
     },
     "/api/performance/self-test": {
       "get": {
-        "description": "What the last run found, or that one is still going. Never blocks on the run.\n\nAfter a restart, the last run kept for this hardware. See `SelfTestRunner.recall`.",
+        "description": "What the last run found, or the one kept after a restart, and the run going if one is.",
         "operationId": "result_api_performance_self_test_get",
         "responses": {
           "200": {
@@ -42080,7 +42595,7 @@
         ]
       },
       "post": {
-        "description": "Begin measuring. Answers straight away; the result is read back below.\n\nA second request while one is running is not an error and does not start a second test: it\nanswers with the run already in flight. Two of these at once would measure each other.",
+        "description": "Queue a run that suggests. Answers straight away; the result is read back below.\n\nA second request while one is coming is not an error and queues nothing: two runs at once\nwould measure each other.",
         "operationId": "start_api_performance_self_test_post",
         "responses": {
           "202": {

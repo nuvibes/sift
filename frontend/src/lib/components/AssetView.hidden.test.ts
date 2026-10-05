@@ -178,6 +178,25 @@ describe('a hidden file reached by stepping', () => {
 		expect(host.querySelector('[aria-label="Previous"]')).not.toBeNull();
 	});
 
+	it('keeps the whole bar with nowhere to step, every press dimmed with the reason', async () => {
+		served.detail = detail({ concealed: true });
+		await show({});
+
+		const play = host.querySelector('.player-bar button.play') as HTMLButtonElement | null;
+		expect(play?.disabled).toBe(true);
+		expect(play?.getAttribute('aria-label')).toBe('This one is hidden');
+		const hidden = host.querySelectorAll('.player-bar button[aria-label="This one is hidden"]');
+		expect(hidden.length).toBeGreaterThanOrEqual(5);
+		expect([...hidden].every((one) => (one as HTMLButtonElement).disabled)).toBe(true);
+		const steps = ['Nothing before this', 'Nothing after this'];
+		const reasons = new Set(
+			[...host.querySelectorAll('.player-bar button:disabled')]
+				.map((one) => one.getAttribute('aria-label'))
+				.filter((words) => !steps.includes(words ?? ''))
+		);
+		expect([...reasons]).toEqual(['This one is hidden']);
+	});
+
 	it('says nothing else about it: no controls, no rows, no record', async () => {
 		// There is nothing to say about a file this account may not see, and every control would be
 		// one the server refuses. That is the point of the vault rather than a limit of this screen.

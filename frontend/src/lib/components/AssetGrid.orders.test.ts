@@ -85,6 +85,7 @@ describe('the Favorites orders', () => {
 		expect(labelOf('favorited_oldest')).toBe('Oldest favorited');
 		// The whole vocabulary is still there beside them.
 		expect(labelOf('newest')).toBe('Newest first');
+		expect(labelOf('favorite')).toBeUndefined();
 	});
 
 	it('are asked for from the address, so a link carries the order', async () => {

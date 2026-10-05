@@ -320,28 +320,8 @@ def test_the_settings_route_says_how_many_files_want_a_look_and_why(client: Test
     assert body["scanned_under_older_rules"] == 0
 
 
-def test_a_pack_cannot_be_built_before_the_models_are_installed(client: TestClient) -> None:
-    """Refused in words rather than raised.
-
-    A pack records which model produced its numbers, so building one needs that model present.
-    Switching recognition on installs nothing (Sift ships no models), so "none yet" is an
-    ordinary state on a fresh install, and a stack trace is the wrong way to say so.
-    """
-    turn_on(client)
-    sign_in(client, "admin")
-
-    refused = client.post(
-        "/api/faces/packs/export",
-        json={"name": "My People", "person_ids": [], "include_pictures": False},
-    )
-
-    assert refused.status_code == 409
-    assert "installed" in refused.json()["detail"]
-
-
 def test_an_empty_pack_is_still_refused_rather_than_crashing(client: TestClient) -> None:
-    """Nothing to export is not a reason to answer differently: the model stamp is needed either
-    way, and the answer has to be the same sentence rather than a different failure."""
+    """Nobody to carry is said in words, never read as everybody."""
     turn_on(client)
     sign_in(client, "admin")
 

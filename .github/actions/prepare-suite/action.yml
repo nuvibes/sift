@@ -39,12 +39,12 @@ runs:
           !vendor/wheels
         key: vendor-${{ runner.os }}-${{ hashFiles('scripts/vendor_manifest.json', 'scripts/vendor_build/**') }}
 
-    # The HEIF wheel, keyed on its recipe: the runner's compiler makes it, and it is rebuilt only
-    # when the recipe changes.
+    # The HEIF wheel, keyed on its recipe and the file it reads: the runner's compiler makes it,
+    # and it is rebuilt only when either changes.
     - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
       with:
         path: vendor/wheels
-        key: wheels-${{ runner.os }}-${{ hashFiles('scripts/build_pillow_heif.bat') }}
+        key: wheels-${{ runner.os }}-${{ hashFiles('scripts/build_pillow_heif.bat', 'scripts/pillow_heif_LICENSES_bundled.txt') }}
 
     # Needed only on a miss, when the fetch below builds the tunnel client. The Go release is the
     # manifest's `go`, and a gate holds the two equal (tests/gates/test_vendored_tools.py).

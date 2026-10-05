@@ -11,15 +11,13 @@
 import { untrack } from 'svelte';
 import { capture } from '$lib/capture/capture.svelte';
 import type { Grid, PageStart, RowSource } from '$lib/grid/grid.svelte';
-import { arrivals, jobChanges, whenChanged } from '$lib/library/changes.svelte';
+import { arrivals, whenChanged } from '$lib/library/changes.svelte';
 import { imports } from '$lib/library/imports.svelte';
 import type { WallMedia } from './wall-media.svelte';
 import type { WallOrder } from './wall-order.svelte';
 
 /** How long a few arrivals wait for more before coming in on their own. */
 const SETTLED_MS = 1500;
-/** At most one re-read a second for a moving queue. */
-const JOBS_READ_MS = 1000;
 
 /** What a wall's re-reads read and touch. */
 interface WallParts {
@@ -37,8 +35,6 @@ export class WallCatchUp {
 	   when it can be: dropped, a hidden window would go on showing deleted files. */
 	private owed = false;
 	private settling: ReturnType<typeof setTimeout> | undefined;
-	private jobsHeld: ReturnType<typeof setTimeout> | null = null;
-	private jobsOwed = false;
 	private settledWas: number;
 
 	constructor(wall: WallParts) {
@@ -82,15 +78,10 @@ export class WallCatchUp {
 				}
 			});
 		});
-		/* Files entered the library, left it or moved: a folder fills in while somebody watches. */
+		/* Files entered the library, left it, moved or gained a picture; the queue changes no tile. */
 		whenChanged(arrivals, () => {
 			void this.catchUp();
 			wall.media().rearm();
-		});
-		/* A task moved, so a file here may have gained a picture, which neither bell rings for. */
-		whenChanged(jobChanges, () => this.followTheQueue());
-		$effect(() => () => {
-			if (this.jobsHeld !== null) clearTimeout(this.jobsHeld);
 		});
 	}
 
@@ -145,7 +136,8 @@ export class WallCatchUp {
 		const grid = this.wall.grid;
 		clearTimeout(this.settling);
 		this.settling = undefined;
-		if (grid.newer === 0 || !this.atTheTop()) return;
+		// Never over a page somebody asked for that is still on its way.
+		if (grid.newer === 0 || grid.loading || !this.atTheTop()) return;
 		if (grid.newer >= this.aRowsWorth()) {
 			this.takeTheNewOnes();
 			return;
@@ -153,23 +145,7 @@ export class WallCatchUp {
 		this.settling = setTimeout(() => {
 			this.settling = undefined;
 			// Asked again: a page can be turned or scrolled in the wait.
-			if (grid.newer > 0 && this.atTheTop()) this.takeTheNewOnes();
+			if (grid.newer > 0 && !grid.loading && this.atTheTop()) this.takeTheNewOnes();
 		}, SETTLED_MS);
-	}
-
-	/* A moving queue re-reads at once and then at most once a second, never dropping the last. */
-	private followTheQueue(): void {
-		if (this.jobsHeld !== null) {
-			this.jobsOwed = true;
-			return;
-		}
-		void this.catchUp();
-		this.wall.media().rearm();
-		this.jobsHeld = setTimeout(() => {
-			this.jobsHeld = null;
-			if (!this.jobsOwed) return;
-			this.jobsOwed = false;
-			this.followTheQueue();
-		}, JOBS_READ_MS);
 	}
 }

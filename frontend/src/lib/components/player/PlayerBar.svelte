@@ -3,23 +3,11 @@
 	   on the picture, and whether it is visible, are the stage's business rather than the bar's. */
 
 	/*
-	 * The bar along the bottom of a picture: the scrubber, the transport, and the drawer.
-	 *
-	 * One of these, used by the player and by every cell of a wall. A cell's bar is judged against
-	 * the player's, the bar somebody has already learned, so they must be the same.
-	 *
-	 * The shape is here: the scrub line along the top (the time so far at its start, the length at
-	 * its end), and under it the presses, with the transport in the middle of the bar (Shuffle,
-	 * Previous, Play, Next, Repeat), what the caller leads with at the start,
-	 * and the sound, the drawer and the ways out at the end. What goes in the drawer is the caller's, the one part that genuinely differs: a
-	 * player has a loop mode, a shuffle and a stats panel; a cell has its source, its own settings
-	 * and its A-B.
-	 *
-	 * The drawer's contents arrive as a snippet, which is compiled where it is written and styled
-	 * where it is rendered, so a bare element a caller puts in the drawer would arrive without its
-	 * scoped rules. Every control here and in every caller's drawer is `Button`, which carries its
-	 * own styles wherever it is rendered. What is left below is only what is about this bar: the
-	 * two sizes that differ, and the layout around them.
+	 * The bar along the bottom of a picture, one for the player and every cell of a wall: the scrub
+	 * line on top, and under it what the caller leads with, the transport, then the sound, the
+	 * drawer and the ways out at the end. Every press is always drawn, dimmed when it cannot act.
+	 * The drawer's contents are the caller's snippet, so every control in it is `Button`, which
+	 * carries its own styles wherever it is rendered.
 	 */
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
 	import type { Snippet } from 'svelte';
@@ -31,6 +19,7 @@
 	import ScrubLine from './ScrubLine.svelte';
 	import Transport, { type RepeatControl, type ShuffleControl } from './Transport.svelte';
 	import { phoneWidth } from '$lib/components/common/phone-width.svelte';
+	import { finger } from './finger.svelte';
 	import type { SpriteSheet } from '$lib/player/trickplay';
 	import { ACTS, keyOf, type Keyboard } from '$lib/player/acts';
 
@@ -61,27 +50,15 @@
 		 * changes under it every few seconds.
 		 */
 		seekable?: boolean;
-		/** Whether there is any sound to control. A photograph and a GIF have none. */
+		/** Whether there is any sound to control, and why not: a photograph and a GIF have none. */
 		sound?: boolean;
+		soundWhy?: string;
 
 		/* --- the transport --------------------------------------------------------------------- */
 		playing: boolean;
 		onplay: () => void;
-		/**
-		 * Whether there is anything to play at all.
-		 *
-		 * Play over a photograph can never apply (it is not "not yet", it is not a thing a picture
-		 * has), so the button is not drawn and the two step arrows either side close up. The
-		 * dimmed-rather-than-gone rule still holds where it means something: the volume beside it,
-		 * which a file with sound lights straight back up.
-		 */
+		/** Whether there is anything to play: false dims Play with `playWhy` (see `Transport`). */
 		playable?: boolean;
-		/**
-		 * Why Play is not live yet, where it is a thing this file has: a picture in a run, which
-		 * plays through on one answer of what happens at the end and rests on the others. Given,
-		 * the press is drawn dimmed with these words as its label, so changing the answer keeps the
-		 * bar one shape; absent, nothing to play draws no press (see `playable`).
-		 */
 		playWhy?: string;
 		/**
 		 * Whether there is a clock worth reading.
@@ -93,26 +70,14 @@
 		 * time to report.
 		 */
 		timed?: boolean;
-		/**
-		 * The pair either side of Play: the file before this one, and the file after it.
-		 *
-		 * The same two glyphs on every bar (a player steps through the list it was opened from, a
-		 * cell through its run), so the row reads the same whichever picture is above it. The
-		 * five-second step is the arrow keys' (`player.back` / `theater.back`), not a button.
-		 * Undefined when there is nowhere to step: the button is not drawn rather than dimmed,
-		 * because a list of one has no next to wait for.
-		 */
+		/** The file before this one and the one after; undefined dims the press. */
 		onback?: () => void;
 		onforward?: () => void;
 		backLabel?: string;
 		forwardLabel?: string;
-		/**
-		 * Shuffle and Repeat, either side of the step pair: on the bar, out of the drawer, because they
-		 * decide what Previous and Next do. The caller says what each press
-		 * acts on; absent, the press is not drawn.
-		 */
-		shuffle?: ShuffleControl;
-		repeat?: RepeatControl;
+		/** Repeat and Shuffle, either side of the step pair, because they decide what the steps do. */
+		shuffle: ShuffleControl;
+		repeat: RepeatControl;
 		/** Whose keys this bar's player answers, so every tooltip on it shows the key the act table
 		 *  gives that keyboard (`keyOf`), and none where it has none. */
 		keyboard?: Keyboard;
@@ -163,6 +128,8 @@
 		tray?: Snippet;
 		/** What the drawer is called. A player's holds things about the FILE; a cell's about the cell. */
 		trayLabel?: string;
+		/** Why there is no drawer, said on its dimmed button. */
+		trayWhy?: string;
 		/** Drawn at the end of the row, outside the drawer. */
 		trailing?: Snippet;
 		/** A panel the caller opens from its own drawer item, drawn under the bar. */
@@ -186,6 +153,7 @@
 		scrubberLabel = 'Position',
 		seekable = true,
 		sound = true,
+		soundWhy = 'No sound in this',
 		playing,
 		onplay,
 		playable = true,
@@ -208,6 +176,7 @@
 		lead,
 		tray,
 		trayLabel = 'This file',
+		trayWhy = 'No more controls for this',
 		trailing,
 		below,
 		onhold,
@@ -366,14 +335,8 @@
 	 * Five controls times four handlers is twenty lines that have to stay identical, and the one that
 	 * drifts is the control that lights a cell and never puts it out again. One object cannot drift.
 	 *
-	 * Empty when the caller wants none of it, so the ordinary player's bar carries no listeners at
-	 * all rather than four that call nothing, and a control ADDED to this row is silent until
-	 * somebody spreads this on it, which is the right default: a new control is not automatically a
-	 * verb about what the caller is pointing at.
-	 *
-	 * Both halves of the pair, deliberately: `mouseleave` alone leaves the mark lit when the button
-	 * disappears from under the pointer, and these do disappear, since the outer pair is only drawn
-	 * while there is somewhere to step.
+	 * Empty when the caller wants none of it, so the ordinary player's bar carries no listeners, and
+	 * a control added to this row is silent until somebody spreads this on it.
 	 */
 	const aims = $derived(
 		onaim
@@ -450,20 +413,17 @@
 		label={scrubberLabel}
 		timed={!compact && timed}
 		keepRoom={!compact && variant === 'theater'}
+		keepHeight={!compact}
 	/>
 
-	<!--
-		The presses, in three columns: what the caller leads with at the start, the transport in the
-		MIDDLE of the bar, and the sound, the drawer and the ways out at the end. The two outer columns
-		share what is left equally, which is what keeps the transport on the bar's centre line, under
-		the middle of the timeline, however wide either end happens to be. At a phone's width the
-		transport takes a row of its own above the two ends: a finger's nine targets do not fit one
-		row of a phone.
-	-->
-	<div class="row" class:phone={phoneWidth.yes}>
-		<div class="side start">
-			{@render lead?.()}
-		</div>
+	<!-- What the caller leads with, the transport, and at the end the sound, the drawer and the ways
+	     out. At a phone's width the transport takes a centred row of its own above the two ends. -->
+	<div class="row" class:phone={phoneWidth.yes} class:led={lead !== undefined}>
+		{#if lead}
+			<div class="side start">
+				{@render lead()}
+			</div>
+		{/if}
 
 		<!--
 			Every control here says what it is and which key does it: an id is looked up in the act
@@ -481,6 +441,7 @@
 				{forwardLabel}
 				{shuffle}
 				{repeat}
+				steps={!(phoneWidth.yes && finger.yes)}
 				{keyboard}
 				{aims}
 			/>
@@ -515,13 +476,13 @@
 					<!-- The key is named only while the control can do something. A tooltip offering M over a
 				     button that is refused is a shortcut that does nothing when it is pressed. -->
 					<Tooltip
-						label={sound ? (muted ? ACTS.unmute : ACTS.mute) : 'No sound in this'}
+						label={sound ? (muted ? ACTS.unmute : ACTS.mute) : soundWhy}
 						shortcut={sound ? keyOf(muted ? 'unmute' : 'mute', keyboard) : undefined}
 					>
 						<Button
 							tone="ghost"
 							icon={muted || volume === 0 || !sound ? 'volume_off' : 'volume_up'}
-							aria-label={sound ? (muted ? ACTS.unmute : ACTS.mute) : 'No sound in this'}
+							aria-label={sound ? (muted ? ACTS.unmute : ACTS.mute) : soundWhy}
 							disabled={!sound}
 							onclick={onmute}
 						/>
@@ -546,13 +507,7 @@
 			{/if}
 
 			{#if tray}
-				<!--
-				Everything about the clip rather than about the playhead, behind one control.
-
-				Sixteen things on one row is not a bar, it is a menu laid flat, and the ones here are
-				the ones somebody sets once and then watches. They open under the pointer, as a grid of
-				icons, and each says what it is on hover.
-			-->
+				<!-- Everything about the file rather than the playhead, opening under the pointer. -->
 				<div
 					class="tray"
 					role="group"
@@ -587,6 +542,10 @@
 						</div>
 					{/if}
 				</div>
+			{:else}
+				<Tooltip label={trayWhy}>
+					<Button tone="ghost" icon="home_storage" aria-label={trayWhy} disabled />
+				</Tooltip>
 			{/if}
 
 			{@render trailing?.()}
@@ -614,29 +573,26 @@
 			var(--sift-scrim) 80%,
 			var(--sift-scrim-none)
 		);
-		/* Round its own bottom corners to the frame's radius. A backdrop-filter element is NOT
-		   clipped by an ancestor's rounded `overflow: hidden` in Chromium, so square corners would
-		   poke past the frame and read as sharp the moment the bar appeared. */
-		border-end-start-radius: var(--stage-radius, var(--radius-xl));
-		border-end-end-radius: var(--stage-radius, var(--radius-xl));
 	}
 
-	/*
-	 * Three columns: the middle as wide as the transport, the two ends sharing what is left equally,
-	 * which keeps the transport on the bar's centre line. `minmax(0, 1fr)`: a bare `1fr` floors each
-	 * end at its content, so the row could never be narrower than twice its wider end.
-	 */
+	/* The transport at the start, after any lead; the end takes the rest. `minmax(0, 1fr)` lets the
+	   row shrink below its content. A caller may set these columns (Theater's bar does). */
 	.row {
 		position: relative;
 		display: grid;
-		grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
-		grid-template-areas: 'start middle end';
+		grid-template-columns: auto minmax(0, 1fr);
+		grid-template-areas: 'middle end';
 		align-items: center;
 		gap: var(--space-2);
 		min-inline-size: 0;
 	}
 
-	/* A phone: the transport on a row of its own, centred, and the two ends under it. */
+	.row.led {
+		grid-template-columns: auto auto minmax(0, 1fr);
+		grid-template-areas: 'start middle end';
+	}
+
+	/* After `.led`, so a phone's rows win: the transport alone and centred, the two ends under it. */
 	.row.phone {
 		grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
 		grid-template-areas:
@@ -663,6 +619,9 @@
 	.middle {
 		grid-area: middle;
 		display: flex;
+	}
+
+	.row.phone .middle {
 		justify-content: center;
 	}
 
@@ -673,16 +632,9 @@
 		flex: none;
 	}
 
-	/*
-	 * Nothing to hear, and saying so.
-	 *
-	 * The same 0.5 the shared button takes when it is disabled and the same 0.5 the tile-size slider
-	 * on the top bar takes: two controls sitting on one screen dimmed by different amounts for one
-	 * meaning is what that rule was written to stop. The controls inside are separately refused, so
-	 * this is only the look; the dimming alone would leave a slider somebody could still drag.
-	 */
+	/* Nothing to hear: the shared button's dimmed look. The controls inside are refused on their own. */
 	.volume.off {
-		opacity: 0.5;
+		opacity: var(--disabled-opacity);
 	}
 
 	.level-pop {

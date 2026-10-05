@@ -297,6 +297,15 @@ describe('what is stored', () => {
 		expect(named(layout('grid').shape)).toBe('grid');
 		expect(named(remove(SIX, 0))).toBeNull();
 	});
+
+	it('files a stacked pair as the landscape pair, so a wall saved stacked opens stacked', () => {
+		expect(picture(layout('stacked').shape)).toEqual(['1', '2']);
+		expect(named(layout('stacked').shape)).toBe('stacked');
+		expect([layout('side_by_side').tooltip, layout('stacked').tooltip]).toEqual([
+			'Portrait',
+			'Landscape'
+		]);
+	});
 });
 
 describe('what CSS is handed', () => {

@@ -125,6 +125,7 @@ export class WallOrder {
 	/** Whether this wall understands an order. */
 	offers(key: string): boolean {
 		const source = this.wall.source();
+		if (source.drops?.includes(key)) return false;
 		if (source.sorts !== null) return source.sorts.includes(key);
 		return !WALL_ONLY_ORDERS.has(key) || (source.adds ?? []).includes(key);
 	}

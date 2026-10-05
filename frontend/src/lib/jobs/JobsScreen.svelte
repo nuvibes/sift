@@ -368,14 +368,11 @@
 	 * "Downloading, 8 steps: 7 done, 1 running" (a middle dot between). The doing is dropped when it is already the first
 	 * line (whole-library work names no file, so it leads with what it is).
 	 *
-	 * A RUNNING job's own note goes beside it: the words the job writes about itself while it
-	 * works ("Swap with device ABCD-EFGH", "40 MB of 200 MB"), scrubbed on the way into the queue.
-	 * Every job that writes one gets it, rather than each kind filling its subject a second way; a
-	 * finished job's note is its result, which this line does not carry.
+	 * A running or done job's own note goes beside it: what it is doing, or what it ended with.
 	 */
 	function doingOf(job: Job, steps: string | null): string | null {
 		const doing = job.subject || job.steps?.subject ? job.name : null;
-		const note = job.state === 'running' ? job.note : null;
+		const note = job.state === 'running' || job.state === 'done' ? job.note : null;
 		const said = [doing, note, steps].filter((one): one is string => Boolean(one));
 		return said.length > 0 ? said.join(' \u00b7 ') : null;
 	}
@@ -385,10 +382,10 @@
 		confirmOpen = true;
 	}
 
-	/* How many of its steps a cancel calls off, so the question can say so: on a folded row the
-	   server counted them; on a step it is not known here, and the server's cancel takes whatever
-	   the step started with it either way. */
+	/* What a cancel calls off: a folded row's steps as the server counted them. */
 	function consequenceFor(job: Job): string {
+		if (job.type === 'performance_benchmark')
+			return "The tasks it paused start again, and the last benchmark's result stays. You can run it again afterwards.";
 		const kids = stepsLeft(job.steps);
 		const work = kids === 1 ? '1 task' : `${kids.toLocaleString()} tasks`;
 		return kids > 0
@@ -762,16 +759,8 @@
 	{:else}
 		<Problem message={queue.problem} />
 
-		<!--
-	ONE LIST FOR PASSES AND HOUSEKEEPING, on the columns the tab declares once (`ACTIVITY_COLUMNS`).
-
-	One DataRows, so every status stands at one x: a heading row over the columns, a group heading
-	row per group, a pass of several kinds as one indented sub-row per kind, and one action (the
-	link to the task's row on Tasks) laid over the row's end on hover.
-
-	Every pass and chore is listed whether or not it has work, so the rows do not jump about
-	underneath somebody reading them as queues empty and fill.
--->
+		<!-- One list for passes and housekeeping on the tab's columns (`ACTIVITY_COLUMNS`), so every
+		     status stands at one x; every row is listed, work or not, so none jumps as queues fill. -->
 		<!-- On a phone the same list as cards (`ACTIVITY_CARD`): a list reads its columns once, when
 		     it is made, so it is made again when the window crosses the phone's width. -->
 		{#key phoneWidth.yes}
@@ -861,11 +850,21 @@
 					     date is done's, waiting on something is blocked's, work under way is the In
 					     progress chip the job rows under it wear (blue, its mark turning), anything else
 					     is quiet. -->
-						<!-- On the app's tooltip as well: a column narrower than the words cuts them short
-					     inside the pill (`Badge`), and the hover says the whole of them. -->
-						{#snippet nowWord()}<Tooltip label={one.now} stretch
-								><Badge state={nowState(one.tone)} label={one.now} /></Tooltip
-							>{/snippet}
+						<!-- On the app's tooltip as well, as a column can cut the pill's words short; a failed
+					     pass's hover says why, and pressed it opens the failed ones below. -->
+						{#snippet nowWord()}
+							{#if line.kind === 'pass' && line.pass.why}
+								<Tooltip label={COPY.failedWhy(line.pass.why)} stretch>
+									<Button tone="quiet" onclick={showFailed}
+										><Badge state={nowState(one.tone)} label={one.now} /></Button
+									>
+								</Tooltip>
+							{:else}
+								<Tooltip label={one.now} stretch
+									><Badge state={nowState(one.tone)} label={one.now} /></Tooltip
+								>
+							{/if}
+						{/snippet}
 						<!-- An estimate, or the reason there is not going to be one: "it cannot start" is an
 					     answer to "when will it be done". A switched-off pass links to where it is
 					     switched on. -->
@@ -965,21 +964,9 @@
 			<!-- The pile's actions at the end of the strip that chooses the pile, the way every
 			     row's actions stand at its end, rather than alone above the list. -->
 			<!--
-				EVERY BULK ACTION BEHIND ONE DOOR, and the reason is the width of what they say.
-
-				Each one names its pile and its number ("Clear the 120,000 canceled"), so that no
-				"Clear them" means something the reader cannot see. But a header laying four of
-				those across a row is four labels that grow with the queue, and on a large library
-				they grow past the page and the last of them is cut off the end.
-
-				A menu is a column, so a label that is long is only long, never lost, which is why
-				this is the door and not a narrower wording. The same door a file's own screen and
-				every entity page wears, off the same component, so nothing here is a second kind of
-				menu.
-
-				The rows still follow the pile: `offeredFor` decides, and an action for failures is
-				offered while looking at failures or at everything and never while looking at some
-				other pile.
+				EVERY BULK ACTION BEHIND ONE DOOR: each names its pile and number ("Clear the 120,000
+				canceled"), and four such labels across a header grow past the page, while a menu's
+				column never cuts one. `offeredFor` decides which rows the pile shown offers.
 			-->
 			<!-- ALWAYS DRAWN. It always holds at least the density row, so there is always
 			     something behind it: a menu button that opened on nothing would read as a

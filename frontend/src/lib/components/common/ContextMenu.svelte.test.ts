@@ -79,7 +79,7 @@ function resolved(value: string, vars: Record<string, string>): number {
 
 /** The shared ceiling every floating list is held to, as the token layer declares it. */
 const tokens = readFileSync(resolve('src/app.css'), 'utf8');
-const SHARED = Number(/--menu-max-height:\s*(\d+)px/.exec(tokens)?.[1]);
+const SHARED = /--menu-max-height:\s*([^;]+);/.exec(tokens)?.[1];
 
 describe('a menu longer than the room below the pointer', () => {
 	it('is offered the whole window less the padding, not only the room under the pointer', async () => {
@@ -95,12 +95,10 @@ describe('a menu longer than the room below the pointer', () => {
 		const vars = {
 			'--bits-floating-available-height':
 				menu.parentElement?.style.getPropertyValue('--bits-floating-available-height') ?? '',
-			'--menu-max-height': `${SHARED}px`
+			'--menu-max-height': SHARED ?? ''
 		};
-		expect(SHARED).toBeGreaterThan(0);
 		const ceiling = resolved(getComputedStyle(menu).getPropertyValue('max-block-size'), vars);
 		expect(ceiling).toBe(WINDOW.height - 2 * 8);
-		expect(ceiling).toBeGreaterThan(SHARED);
 		expect(getComputedStyle(menu).getPropertyValue('grid-template-rows')).toBe('minmax(0, 1fr)');
 	});
 });

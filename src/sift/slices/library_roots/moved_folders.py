@@ -188,7 +188,12 @@ async def _plan_folders(
         for path, row in known.items()
         if path not in on_disk
     }
-    appeared = {path: listed.get(path, set()) for path in on_disk if path not in known}
+    unlisted = {prefix + one for one in walk.unlisted}
+    appeared = {
+        path: listed.get(path, set())
+        for path in on_disk
+        if path not in known and path not in unlisted
+    }
 
     pairs = _pair_up(
         vanished,

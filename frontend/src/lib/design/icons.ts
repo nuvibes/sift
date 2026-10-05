@@ -1,17 +1,5 @@
-/* The icons the app is allowed to use.
- *
- * This list is the whole reason the icon font is 4 KB instead of 5.2 MB: the build reads it and cuts
- * the font down to exactly these glyphs.
- *
- * `as const` is load-bearing, not decoration. It makes `IconName` the union of these exact strings,
- * so asking for an icon that is not here is a type error while you are typing it. Written as data in
- * a .json file the type would widen to `string` and the mistake would survive to runtime, where a
- * missing glyph looks like a font that failed to load.
- *
- * Adding one: put the name here. The next build finds its glyph, or fails saying it could not:
- * a name the font does not know renders as its own letters, which is how a typo ships looking like
- * a decision.
- */
+/* The icons the app is allowed to use: the build cuts the icon font down to exactly these, and
+ * `as const` makes a name that is not here a type error. */
 export const ICON_NAMES = [
 	/* The Settings sections' own glyphs. A section's icon is the only thing telling them apart
 	   at a glance in a list of thirteen, so the nearest general-purpose glyph (a tuning slider
@@ -23,6 +11,9 @@ export const ICON_NAMES = [
 	'mop',
 	'settings_backup_restore',
 	'video_settings',
+	'menu_book',
+	/* A newer Sift waiting, on the desktop app's title bar. */
+	'browser_updated',
 	/* A Theater cell's drawer says what it plays and when it moves on with icons rather than words:
 	   a row of three selectors is most of the drawer, and the words in them are longer than the
 	   controls beside them. */
@@ -65,6 +56,9 @@ export const ICON_NAMES = [
 	   pen (`drive_file_rename_outline`): there is a glyph for reading, and a pen on a page is
 	   the one thing this pass never does. Nothing is renamed by it. */
 	'inventory_2',
+	/* PMVStash's and FansDB's own marks, so each stash-box is told apart by its glyph. */
+	'movie',
+	'person_celebrate',
 	/* The two marks a face card wears at its foot. `face` says Sift recognizes this person BY
 	   this picture: a face, because that is what it is; the four-pointed spark means "clever"
 	   and is the search box's word. `help` is the face nobody has answered for yet: a question
@@ -118,9 +112,9 @@ export const ICON_NAMES = [
 	/* The handle at the foot of a wall in a window: a sliver of the bar's surface with this on it,
 	   saying the controls are down here and come up when you point at them. */
 	'expand_circle_up',
-	/* Also the rail's bolt: background work using the full amount of this device although it is in
-	   use, because somebody pressed for it. The same event-shaped glyph, the same meaning: now. */
 	'bolt',
+	/* The rail's bolt: the full amount of this device, pressed for although it is in use. */
+	'bolt_boost',
 	/* The rail's leaf, its other state: background work using less of this device because it is in
 	   use. A leaf for consideration rather than a gauge for a number: what it says is that Sift is
 	   keeping out of the way, not by how much. */
@@ -206,16 +200,8 @@ export const ICON_NAMES = [
 	/* The Paste button in the Add panel. Its twin above, so the pair of them read as one idea:
 	   a clipboard glyph beside a copy glyph would have looked like two unrelated verbs. */
 	'content_paste',
-	/* The editor's five verbs.
-	 *
-	 * `content_cut` is the scissors, for dropping the ends off a video, and `movie` is taking a
-	 * clip out of the middle: two glyphs for what is one operation underneath, because they are
-	 * two different intentions and a person picks between them by what they are trying to do.
-	 * A half turn deliberately has none: every glyph for it reads as a mirror instead.
-	 *
-	 * The scissors do second duty on a copy's own page, where the line says what the copy was made
-	 * out of. The same picture for "this file was cut from another one" as for the verb that cut
-	 * it. */
+	/* The editor's five verbs: trimming the ends and taking out the middle are two intentions, so
+	 * two glyphs; a half turn has none, since every glyph for it reads as a mirror. */
 	'crop',
 	/* On the corner panel: make the panel exactly the shape of what is in it, so there are no bars
 	   down the sides. The one control there whose whole meaning is a rectangle. */
@@ -356,21 +342,8 @@ export const ICON_NAMES = [
 	   price-tag outline rather than the bookmark-shaped one: it reads as a thing attached to
 	   something else, which is what a tag is, and it is not mistaken for a saved item. */
 	'shoppingmode',
-	/*
-	 * THE SEARCH DROPDOWN'S FIELD MARKS: one glyph per kind of filter the query language has.
-	 *
-	 * A row on that list is offering a FILTER, and the whole point of the mark is to say which one
-	 * before the words are read. A field with no glyph falls through to the tag price-tag, so
-	 * `filetype:`, `resolution:`, `vcodec:` and the rest would all arrive as tags, which is the one
-	 * thing they are not. These are the marks no other part of the app has; the rest of the fields
-	 * reuse a mark the app already has for that thing (a person, a folder, a photo set, Loops,
-	 * sharing, the enriching wand) rather than acquiring a second.
-	 *
-	 * Each says what the field IS rather than decorating it: a roll of film for the kind of media,
-	 * a named format for the container, a date with a clock on it for when something arrived, the
-	 * resolution and the codec written into the glyph, an eye for having watched it, a turning
-	 * handset for which way up the picture is.
-	 */
+	/* THE SEARCH DROPDOWN'S FIELD MARKS: one glyph per kind of filter, so a field does not fall
+	 * through to the tag's mark; the other fields reuse a mark the app already has. */
 	'camera_roll',
 	'file_png',
 	'calendar_clock',
@@ -458,6 +431,8 @@ export const ICON_NAMES = [
 	   Stacked bookmarks for the list of what was kept, a stop for a preview toggle that is
 	   already running, and two window shapes for the Theater's layout and its saved ones. */
 	'save',
+	/* Export: a copy sent out of Sift, which a disk (written here) does not say. */
+	'publish',
 	'bookmark_stacks',
 	'autostop',
 	'view_array',

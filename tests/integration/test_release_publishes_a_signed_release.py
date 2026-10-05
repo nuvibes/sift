@@ -138,9 +138,10 @@ def test_the_dry_run_plans_a_new_release_and_sends_nothing(
     )
 
     assert gh.writes() == []
-    [(create, notes)] = steps
-    assert create[:6] == ["release", "create", TAG, "--repo", REPOSITORY, "--verify-tag"]
+    [(create, notes), (publish, _notes)] = steps
+    assert create[:7] == ["release", "create", TAG, "--repo", REPOSITORY, "--verify-tag", "--draft"]
     assert "--prerelease" not in create
+    assert publish[:2] == ["release", "edit"] and publish[-1] == "--draft=false"
     assert sorted(create[-6:]) == sorted(one.name for one in files)
     assert notes == "### What changed for you\n\n- **Theater** keeps its place"
     shown = capsys.readouterr().out
@@ -158,11 +159,12 @@ def test_a_publish_creates_the_release_with_the_notes_on_standard_input(
         pre_release=True, dry_run=False, gh=gh, folder=tmp_path, changelog=_changelog(tmp_path)
     )
 
-    [create] = gh.writes()
-    assert "--prerelease" in create
+    create, publish = gh.writes()
+    assert "--prerelease" in create and "--draft" in create
+    assert "--draft=false" in publish
     assert [stdin for args, stdin in gh.calls if args[0] == "release"] == [
         "### What changed for you\n\n- **Theater** keeps its place"
-    ]
+    ] * 2
 
 
 def test_an_existing_release_gains_only_what_it_lacks(tmp_path: Path, signer: Signer) -> None:
@@ -274,6 +276,9 @@ def test_the_command_line_dry_run_builds_nothing(
     # The clone this runs in is whatever state somebody left it in; whether a tree may be
     # released is `test_release_builds_only_a_pushed_commit.py`'s question, asked of a clone it makes.
     monkeypatch.setattr(release, "check_the_tree", lambda **_kwargs: None)
+    monkeypatch.setattr(release, "check_the_notices", lambda: None)
+    monkeypatch.setattr(release, "_git", lambda _repo, *_args: _Head())
+    gh.documents[release.release_gates.runs_path(REPOSITORY, COMMIT)] = _runs(_run())
 
     assert release.main(["--publish", "--dry-run"]) == 0
     assert gh.writes() == []
@@ -285,3 +290,102 @@ def test_the_github_cli_is_the_one_release_gh_names(monkeypatch: pytest.MonkeyPa
     monkeypatch.setenv("RELEASE_GH", "a-program-nobody-has")
     with pytest.raises(release.ReleaseFailed, match="RELEASE_GH"):
         release.gh_program()
+
+
+COMMIT = "c0ffee" * 6 + "c0ff"
+
+
+class _Head:
+    returncode = 0
+    stdout = f"{COMMIT}\n"
+    stderr = ""
+
+
+def _run(**given: Any) -> dict[str, Any]:
+    run = {"id": 7, "head_sha": COMMIT, "status": "completed", "conclusion": "success"}
+    return {**run, "html_url": f"https://github.com/{REPOSITORY}/actions/runs/{run['id']}", **given}
+
+
+def _runs(*runs: dict[str, Any]) -> dict[str, Any]:
+    return {"total_count": len(runs), "workflow_runs": list(runs)}
+
+
+def _suite(answer: dict[str, Any] | None) -> FakeGh:
+    return FakeGh({release.release_gates.runs_path(REPOSITORY, COMMIT): answer})
+
+
+def test_a_commit_the_suite_passed_may_be_published(signer: Signer) -> None:
+    gh = _suite(_runs(_run(id=3, conclusion="failure"), _run(id=9)))
+
+    release.check_the_suite(gh, COMMIT)
+
+    [(read, _stdin)] = gh.calls
+    assert read == [
+        "api",
+        f"repos/{REPOSITORY}/actions/workflows/suite.yml/runs?head_sha={COMMIT}&per_page=100",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("answer", "said"),
+    [
+        (_runs(), "has no run on c0ffeec0ffee"),
+        (_runs(_run(head_sha="0" * 40)), "has no run on"),
+        (_runs(_run(status="in_progress", conclusion=None)), "is still running"),
+        (_runs(_run(conclusion="failure")), "concluded failure"),
+        (_runs(_run(id=9, conclusion="cancelled"), _run(id=3)), "concluded cancelled"),
+        (None, "no workflow suite.yml"),
+    ],
+)
+def test_a_commit_the_suite_has_not_passed_is_refused(
+    signer: Signer, answer: dict[str, Any] | None, said: str
+) -> None:
+    with pytest.raises(release.ReleaseFailed, match=said):
+        release.check_the_suite(_suite(answer), COMMIT)
+
+
+def test_a_publish_stops_before_it_builds_when_the_suite_is_red(
+    tmp_path: Path, signer: Signer, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    gh = _suite(_runs(_run(conclusion="failure")))
+    monkeypatch.setattr(release, "run_gh", lambda args, stdin, **_kwargs: gh(args, stdin))
+    monkeypatch.setattr(release, "_git", lambda _repo, *_args: _Head())
+    monkeypatch.setattr(release, "check_the_changelog", lambda **_kwargs: "")
+    monkeypatch.setattr(release, "check_the_tree", lambda **_kwargs: None)
+    monkeypatch.setattr(release, "check_the_notices", lambda: None)
+    monkeypatch.setattr(release.sys, "platform", "win32")
+    monkeypatch.setattr(release, "build", lambda **_kwargs: pytest.fail("built an ungreen commit"))
+    monkeypatch.setattr(release, "publish", lambda **_kwargs: pytest.fail("published it"))
+
+    assert release.main(["--publish"]) == 1
+    assert gh.writes() == []
+
+
+def test_a_build_for_this_device_never_asks_the_suite(monkeypatch: pytest.MonkeyPatch) -> None:
+    built: list[bool] = []
+    monkeypatch.setattr(release, "check_the_changelog", lambda **_kwargs: "")
+    monkeypatch.setattr(release, "check_the_tree", lambda **_kwargs: None)
+    monkeypatch.setattr(release, "check_the_suite", lambda: pytest.fail("asked the suite"))
+    monkeypatch.setattr(release, "check_the_notices", lambda: pytest.fail("asked the notices"))
+    monkeypatch.setattr(release.sys, "platform", "win32")
+    monkeypatch.setattr(release, "build", lambda **given: built.append(given["no_sign"]))
+
+    assert release.main(["--no-sign"]) == 0
+    assert built == [True]
+
+
+def test_a_signed_build_stops_before_it_builds_while_a_licence_is_unrecorded(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def unrecorded() -> None:
+        raise release.ReleaseFailed("records no licence or source for tool 1.0: libunknown")
+
+    monkeypatch.setattr(release, "check_the_changelog", lambda **_kwargs: "")
+    monkeypatch.setattr(release, "check_the_tree", lambda **_kwargs: None)
+    monkeypatch.setattr(release, "check_the_notices", unrecorded)
+    monkeypatch.setattr(release.sys, "platform", "win32")
+    monkeypatch.setattr(
+        release, "build", lambda **_kwargs: pytest.fail("built without its notices")
+    )
+
+    assert release.main([]) == 1

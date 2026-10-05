@@ -62,7 +62,7 @@ from sift.kernel.db import Database
 from sift.kernel.ledger import Actor
 from sift.kernel.paging import resume_at
 from sift.kernel.reach import BulkWriteDone, require_reachable
-from sift.kernel.seams import StillSeam
+from sift.kernel.seams import ForgetGoneSeam, StillSeam
 from sift.kernel.serving import face_version
 from sift.kernel.wire import (
     FacetCounts,
@@ -446,11 +446,13 @@ async def delete_photo_set(
     photo_set_id: str,
     service: Annotated[PhotoSetService, Depends(_service)],
     access: Annotated[Repository, Depends(wiring.access)],
+    forgets: Annotated[ForgetGoneSeam, Depends(wiring.forget_gone)],
     viewer: Annotated[Viewer, Depends(require_admin)],
 ) -> Response:
     """Delete the set. The pictures stay exactly where they are: a set is a grouping."""
-    await _require_set(access, viewer, photo_set_id)
+    photo_set = await _require_set(access, viewer, photo_set_id)
     await service.delete(photo_set_id, actor=Actor.user(viewer.id))
+    await forgets.forget_gone("photo_set", photo_set_id, name=photo_set.name, by=viewer)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 

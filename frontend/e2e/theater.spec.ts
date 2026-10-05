@@ -328,6 +328,39 @@ test('the bar goes quiet while filled, and reaching for it brings it back', asyn
 	await expect(layout).toBeVisible();
 });
 
+test('the cells ease down with the top bar rather than jump', async ({ page }) => {
+	await page.goto('/theater');
+	await expect(cells(page)).toHaveCount(2);
+	await page.keyboard.press('f');
+	await expect.poll(() => page.evaluate(() => document.fullscreenElement !== null)).toBe(true);
+	const layout = page.getByRole('button', { name: 'Layouts', exact: true });
+	await page.keyboard.press('b');
+	await expect(layout).toBeHidden();
+	await settled(page);
+	await stopped(page, cells(page).first());
+
+	const sampling = page.evaluate(
+		() =>
+			new Promise<number[]>((resolve) => {
+				const tops: number[] = [];
+				const frame = () => {
+					const cell = document.querySelector('section[aria-label^="Cell "]')!;
+					tops.push(cell.getBoundingClientRect().top);
+					const moved = tops.some((top) => top !== tops[0]);
+					const still = moved && tops.slice(-30).every((top) => top === tops.at(-1));
+					if (still || tops.length > 600) resolve(tops);
+					else requestAnimationFrame(frame);
+				};
+				requestAnimationFrame(frame);
+			})
+	);
+	await reachFor(page, 'top', layout);
+	const tops = await sampling;
+
+	const moves = tops.filter((top, at) => at > 0 && top !== tops[at - 1]).length;
+	expect(moves, 'the cells jumped to their place in one frame').toBeGreaterThan(5);
+});
+
 test('a panel goes OVER the wall rather than pushing it down', async ({ page }) => {
 	/*
 	 * Panels open over the top of the wall, and this is the measurement that tells that apart from
@@ -352,7 +385,7 @@ test('a panel goes OVER the wall rather than pushing it down', async ({ page }) 
 	/* Cell Groups rather than Layout, because Layout is a MENU, and a menu is not what this
 	   rule is about. What has to stay out of the flow is a panel: a drawer the width of the row that
 	   is open while somebody works in it. Theater has two and this is its own. */
-	await page.getByRole('button', { name: 'Layout Presets', exact: true }).click();
+	await page.getByRole('button', { name: 'Saved Layouts', exact: true }).click();
 	const panel = page.locator('.drawer').first();
 	await expect(panel).toBeVisible();
 	// The panel animates in, and a measurement taken mid-animation is the first frame rather than
@@ -394,16 +427,17 @@ test('a layout is chosen from the menu and applies at once', async ({ page }) =>
 
 	await expect(cells(page)).toHaveCount(4);
 	// And it goes back, which is what a list you pick one of has to be able to do.
-	await chooseLayout(page, '1x2');
+	await chooseLayout(page, '1x2 (P)');
 	await expect(cells(page)).toHaveCount(2);
 
-	/* Three shapes in the picker. The retired shapes are still ACCEPTED by the server, because
-	   saved walls are filed under them. See the gate that holds those two lists apart. */
+	/* The retired shapes are still ACCEPTED by the server, because saved walls are filed under
+	   them. See the gate that holds those two lists apart. */
 	await page.getByRole('button', { name: 'Layouts', exact: true }).click();
 	for (const gone of ['One', 'Stacked', 'Stacked three', 'One above two', 'Two above one']) {
 		await expect(page.getByRole('option', { name: gone, exact: true })).toHaveCount(0);
 	}
 	await expect(page.getByRole('option', { name: '2x2', exact: true })).toBeVisible();
+	await expect(page.getByRole('option', { name: '1x2 (L)', exact: true })).toBeVisible();
 });
 
 test('the whole wall goes to the corner, not one cell of it', async ({ page }) => {
@@ -605,19 +639,16 @@ test('a cell bar is the player bar, at the player size', async ({ page }) => {
 });
 
 /*
- * PORTRAIT FEEDS REACH THE FOOT OF A FILLED SCREEN, AND THE BAR RISES OVER THEM.
+ * PORTRAIT FEEDS REACH THE FOOT OF A FILLED SCREEN, AND STOP 8PX ABOVE THE BAR WHILE IT IS UP.
  *
- * The grid reserves nothing for the stage bar and the bar is an overlay: with the chrome hidden a
- * filled 1x3 of portrait clips reaches the bottom of the screen, and the bar's arrival must not
- * move a single picture. A grid that held the bar's band open whenever the window was wide enough
- * (while the bar is faded rather than unmounted) would leave a reserved band with nothing in
- * it.
+ * Without a strip the grid holds the bar's band only while the bar is up, so with the chrome
+ * hidden nothing is reserved.
  *
  * Wide enough that three 9:16 feeds are limited by the HEIGHT, not the width. At 1400 across they
  * would come down to fit the width, and a wall that is width-limited never reaches the foot of the
  * screen whatever the bar does, which would make this pass or fail for the wrong reason.
  */
-test('portrait feeds reach the foot of a filled wall, with the bar rising over them', async ({
+test('portrait feeds reach the foot of a filled wall, and stop 8px above the bar while it is up', async ({
 	page
 }) => {
 	const PORTRAIT = { ...CLIP, width: 1080, height: 1920 };
@@ -663,11 +694,17 @@ test('portrait feeds reach the foot of a filled wall, with the bar rising over t
 		).toBeLessThanOrEqual(1);
 	}
 
-	/* And the bar coming back is an OVERLAY: nothing on the wall moves to make room for it. */
 	await reachFor(page, 'bottom', page.locator('.stage-bar'));
-	await stopped(page, page.locator('.stage-bar'));
+	await page.locator('.stage-bar').hover();
+	await stopped(page, cells(page).first());
+	const barTop = (await page.locator('.stage-bar').boundingBox())!.y;
 	const up = await bottoms();
-	expect(up.cells, 'the wall moved when the bar came up').toEqual(hidden.cells);
+	for (const [at, bottom] of up.cells.entries()) {
+		expect(
+			Math.abs(barTop - bottom - 8),
+			`cell ${at + 1} stops ${(barTop - bottom).toFixed(1)}px above the bar`
+		).toBeLessThanOrEqual(1);
+	}
 });
 
 test('a cell is the shape of its own picture, so nothing is padded or cropped', async ({
@@ -754,8 +791,8 @@ test('a bar on a narrow cell stays on that cell', async ({ page }) => {
 /*
  * A PRESS ON A CELL HAS TO WORK EVERYWHERE ON THE CELL.
  *
- * A press chooses a feed, and a press on a preview swaps it into the wall, both handled by the
- * picture. The number badge and the `you are hearing this` glyph sit over that picture's top-left
+ * A press chooses a feed or a preview, and a double press on a preview brings it up into the wall,
+ * all handled by the picture. The number badge and the `you are hearing this` glyph sit over that picture's top-left
  * corner and must not take the pointer, or every press that lands on them reaches nothing: no mark,
  * no sound, no cell chosen, nothing on screen to say why.
  *
@@ -988,4 +1025,80 @@ test('pointing at a facet value washes the cell it will narrow, and only that on
 	// Off the columns, and the wash goes with the pointer.
 	await page.mouse.move(1, 1);
 	await expect(cells(page).nth(0).locator('.aimed')).toHaveCount(0);
+});
+
+test('at a laptop width the screen row holds the menus, drawn and pressable with the pointer off the wall', async ({
+	page
+}) => {
+	await page.setViewportSize({ width: 1366, height: 768 });
+	await page.goto('/theater');
+	await expect(cells(page)).toHaveCount(2);
+	await page.mouse.move(1361, 5);
+
+	const sort = page.getByRole('button', { name: 'Sort by' });
+	await expect(sort).toBeVisible();
+	await sort.click({ timeout: 3000 });
+	await expect(page.getByRole('listbox')).toBeVisible();
+});
+
+test('the keyboard is told Portrait and Landscape, as the pointer is', async ({ page }) => {
+	await page.goto('/theater');
+	await expect(cells(page)).toHaveCount(2);
+	await page.mouse.move(1, 1);
+
+	await page.getByRole('button', { name: 'Layouts', exact: true }).focus();
+	await page.keyboard.press('Enter');
+	await page.keyboard.press('Home');
+	const highlighted = page.locator('[role=option][data-highlighted]');
+	await page.keyboard.press('ArrowDown');
+	await expect(highlighted).toContainText('1x2 (P)');
+	await expect(page.getByRole('tooltip').filter({ hasText: 'Portrait' })).toBeVisible();
+
+	await page.keyboard.press('ArrowDown');
+	await expect(highlighted).toContainText('1x2 (L)');
+	await expect(page.getByRole('tooltip').filter({ hasText: 'Landscape' })).toBeVisible();
+});
+
+test('a filled 1x1 Portrait cell rises as the bars leave and never dips first', async ({
+	page
+}) => {
+	await page.goto('/theater');
+	await expect(cells(page)).toHaveCount(2);
+	await chooseLayout(page, '1x1');
+	await expect(cells(page)).toHaveCount(1);
+	await cells(page).first().click({ button: 'right' });
+	await page.getByRole('menuitem', { name: 'Shape' }).hover();
+	await page
+		.getByRole('menuitem', { name: /Portrait/ })
+		.first()
+		.click();
+
+	await page.keyboard.press('f');
+	await expect.poll(() => page.evaluate(() => document.fullscreenElement !== null)).toBe(true);
+	await reachFor(page, 'top', page.getByRole('button', { name: 'Layouts', exact: true }));
+	await settled(page);
+	await stopped(page, cells(page).first());
+
+	const sampling = page.evaluate(
+		() =>
+			new Promise<number[]>((resolve) => {
+				const tops: number[] = [];
+				const frame = () => {
+					const cell = document.querySelector('section[aria-label="Cell 1"]')!;
+					tops.push(cell.getBoundingClientRect().top);
+					const moved = tops.some((top) => top !== tops[0]);
+					const still = moved && tops.slice(-30).every((top) => top === tops.at(-1));
+					if (still || tops.length > 600) resolve(tops);
+					else requestAnimationFrame(frame);
+				};
+				requestAnimationFrame(frame);
+			})
+	);
+	await page.keyboard.press('b');
+	const tops = await sampling;
+
+	const end = tops.at(-1)!;
+	expect(end, 'the cell did not move when the bars left').toBeLessThan(tops[0]);
+	const away = Math.max(...tops) - tops[0];
+	expect(away, `the cell went ${away.toFixed(1)}px down before rising`).toBeLessThanOrEqual(0.5);
 });

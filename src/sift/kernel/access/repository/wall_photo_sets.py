@@ -13,6 +13,7 @@ from sift.kernel.access.repository.walls import (
     _wall,
     _with_stored_counts,
     locked_tile,
+    shown,
 )
 from sift.kernel.sql_splice import splice
 
@@ -65,9 +66,10 @@ in_scope(grp, folder_id) AS (
 -- that have already been through every rule and closed as their own CTE, so no arrangement of ORs
 -- inside it can reach a permission rule at all.
 --
-counted(photo_set_id, item_count, size_bytes) AS (
+counted(photo_set_id, item_count, size_bytes, duration_ms) AS (
   SELECT psi.photo_set_id, COUNT(*),
-         COALESCE(SUM(CASE WHEN :reveal_named = 1 OR v.concealed = 0 THEN a.size_bytes END), 0)
+         COALESCE(SUM(CASE WHEN :reveal_named = 1 OR v.concealed = 0 THEN a.size_bytes END), 0),
+         COALESCE(SUM(CASE WHEN :reveal_named = 1 OR v.concealed = 0 THEN a.duration_ms END), 0)
     FROM photo_set_items psi
     CROSS JOIN viewer_assets v ON v.asset_id = psi.asset_id AND v.user_id = :viewer
     JOIN assets a ON a.id = psi.asset_id
@@ -94,9 +96,10 @@ counted(photo_set_id, item_count, size_bytes) AS (
 -- share unless `:reveal`), and which carries the SIZE of those files beside it. Summed live, the
 -- size would walk every membership of every row on the wall. Read here it costs one range of the
 -- stored rows, and the number and the size come off one row, so they cannot describe different files.
-whole(photo_set_id, item_count, size_bytes) AS (
+whole(photo_set_id, item_count, size_bytes, duration_ms) AS (
   SELECT c.object_id, c.permitted - CASE WHEN :reveal = 1 THEN 0 ELSE c.concealed END,
-         c.permitted_bytes - CASE WHEN :reveal_named = 1 THEN 0 ELSE c.concealed_bytes END
+         c.permitted_bytes - CASE WHEN :reveal_named = 1 THEN 0 ELSE c.concealed_bytes END,
+         c.permitted_ms - CASE WHEN :reveal_named = 1 THEN 0 ELSE c.concealed_ms END
     FROM viewer_entity_counts c
    WHERE c.user_id = :viewer AND c.kind = 'photo_set'
 )
@@ -169,7 +172,7 @@ SELECT ps.id, CASE WHEN {{LOCKED}} THEN '' ELSE ps.name END AS name,
    -- The name, where a picker or a box is narrowing the list to what somebody is typing.
    -- Plain prefix matching on the name alone: these two carry no other names to match against,
    -- unlike a tag or a person, so there is nothing here to report having matched INSTEAD.
-   AND (:prefix = '' OR ps.name LIKE :like ESCAPE '\\')
+   AND (:prefix = '' OR ({{SHOWN}} AND ps.name LIKE :like ESCAPE '\\'))
    AND (:reveal_named = 1 OR COALESCE(h.hidden, 0) = 0)
    AND (:list_empty = 1 OR COALESCE(n.item_count, 0) > 0)
    -- A LOCKED TILE matches no typed word: a box that finds a padlock has said the name. See
@@ -202,19 +205,30 @@ SELECT ps.id, CASE WHEN {{LOCKED}} THEN '' ELSE ps.name END AS name,
           CASE :entity_sort WHEN 'edited' THEN CASE WHEN {{LOCKED}} THEN NULL ELSE ps.edited_at END END DESC NULLS LAST,
           CASE :entity_sort WHEN 'edited' THEN ps.id END DESC,
           CASE :entity_sort WHEN 'oldest' THEN ps.id END ASC,
-          -- The SAME expression the card prints, `:count_narrowed` and all. A wall ordered by
-          -- size that orders on the other tally puts its cards out of the order their own numbers
-          -- read in, which looks like a broken sort and is a second answer to one question.
+          -- The number and the size the card prints, so the cards read in the order asked.
           CASE :entity_sort WHEN 'largest' THEN
             COALESCE(CASE WHEN :count_narrowed = 1 THEN n.item_count ELSE w.item_count END, 0)
           END DESC,
           CASE :entity_sort WHEN 'smallest' THEN
             COALESCE(CASE WHEN :count_narrowed = 1 THEN n.item_count ELSE w.item_count END, 0)
           END ASC,
+          CASE :entity_sort WHEN 'largest_total' THEN
+            COALESCE(CASE WHEN :count_narrowed = 1 THEN n.size_bytes ELSE w.size_bytes END, 0)
+          END DESC,
+          CASE :entity_sort WHEN 'smallest_total' THEN
+            COALESCE(CASE WHEN :count_narrowed = 1 THEN n.size_bytes ELSE w.size_bytes END, 0)
+          END ASC,
+          CASE :entity_sort WHEN 'longest_total' THEN
+            NULLIF(CASE WHEN :count_narrowed = 1 THEN n.duration_ms ELSE w.duration_ms END, 0)
+          END DESC NULLS LAST,
+          CASE :entity_sort WHEN 'shortest_total' THEN
+            NULLIF(CASE WHEN :count_narrowed = 1 THEN n.duration_ms ELSE w.duration_ms END, 0)
+          END ASC NULLS LAST,
           CASE WHEN {{LOCKED}} THEN NULL ELSE COALESCE(ps.name_sort, ps.name) END ASC NULLS LAST, ps.id ASC
  LIMIT :limit OFFSET :offset
 """,
     LOCKED=locked_tile("photo_set", "ps"),
+    SHOWN=shown("photo_set", "ps"),
 )
 
 #: The photo-sets wall in pieces, cut once. The facet counts read it and so does the position

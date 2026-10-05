@@ -114,7 +114,7 @@ Automatic lets scans share the tasks above, and use all of them when nothing els
 
 Limits how many files Sift opens at the same time from each network share. A share slows down when too many are read together.
 
-Automatic is two, the number a home network share keeps up with. A local drive is never limited by this. Benchmarking this device can set it for you.
+Automatic reads each share at the number the benchmark measured for it, and two from a share not measured yet. A number here is used for every share instead. A local drive is never limited by this.
 
 - **Path**: [Settings > Performance > Files read per share](/settings/performance#performance.share_reads_at_once)
 - **Default**: Automatic
@@ -131,6 +131,18 @@ Sift checks every few seconds. Once nobody has touched the keyboard or mouse for
 
 - **Path**: [Settings > Performance > Use less system resources while you're working](/settings/performance#performance.step_back_while_used)
 - **Default**: On
+- **Who sets it**: an admin, for everyone on this Sift
+
+<a id="performance.step_back_while_busy"></a>
+
+### Use less system resources while other programs are busy
+
+While other programs keep this device busy, Sift uses only a share of it for background tasks.
+
+Sift checks every few seconds how busy the CPU and GPU are with other programs, not counting its own work. Once they have been quiet for a minute, it goes back to its usual number of tasks. This works only on Windows.
+
+- **Path**: [Settings > Performance > Use less system resources while other programs are busy](/settings/performance#performance.step_back_while_busy)
+- **Default**: Off
 - **Who sets it**: an admin, for everyone on this Sift
 
 <a id="performance.step_back_share"></a>

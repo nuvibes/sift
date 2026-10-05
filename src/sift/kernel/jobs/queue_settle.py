@@ -4,7 +4,14 @@
 from __future__ import annotations
 
 from sift.kernel.jobs.queue_handoffs import HandOffs
-from sift.kernel.jobs.queue_rows import PAUSE_WITHDRAWN, Beat, JobState, _fetch, _for_the_record
+from sift.kernel.jobs.queue_rows import (
+    PAUSE_WITHDRAWN,
+    STOP_TO_PAUSE,
+    Beat,
+    JobState,
+    _fetch,
+    _for_the_record,
+)
 from sift.kernel.log import get_logger
 from sift.kernel.presses import Pressed, record_pressed
 
@@ -26,21 +33,29 @@ UPDATE jobs
 RETURNING id, parent_id, type, started_at, note, requested_by
 """
 
+#: A benchmark's pause, kept on the paused row so a boot after a run cut short resumes it.
+PAUSED_FOR_BENCHMARK = "benchmark"
+
+#: Rows paused or started again for a benchmark per write, so no other writer waits long.
+PAUSE_CHUNK = 2_000
+
 # Retry or give up, decided in the statement rather than a read-then-write. A pause that was asked
 # for wins over both, read from the row rather than the worker's memory so a pause asked between the
 # last heartbeat and the raise counts; its attempt goes back and its error goes.
 _FAIL = """
 UPDATE jobs
    SET state = CASE
-           WHEN stop_wanted = 'pause' THEN 'paused'
+           WHEN stop_wanted IN ('pause', 'benchmark') THEN 'paused'
            WHEN attempts >= max_attempts THEN 'failed'
            ELSE 'queued'
        END,
        claimed_by = NULL,
        heartbeat_at = NULL,
-       attempts = CASE WHEN stop_wanted = 'pause' THEN MAX(attempts - 1, 0) ELSE attempts END,
-       error = CASE WHEN stop_wanted = 'pause' THEN NULL ELSE ? END,
-       stop_wanted = NULL,
+       attempts = CASE
+           WHEN stop_wanted IN ('pause', 'benchmark') THEN MAX(attempts - 1, 0) ELSE attempts
+       END,
+       error = CASE WHEN stop_wanted IN ('pause', 'benchmark') THEN NULL ELSE ? END,
+       stop_wanted = CASE WHEN stop_wanted = 'benchmark' THEN stop_wanted END,
        updated_at = ?
  WHERE id = ? AND state = 'running' AND claimed_by = ?
 RETURNING state, id, parent_id, type, started_at, note, requested_by, error
@@ -78,10 +93,10 @@ RETURNING id
 # before `run_after`. A pause asked for meanwhile wins, as it does over a failure.
 _HOLD = """
 UPDATE jobs
-   SET state = CASE WHEN stop_wanted = 'pause' THEN 'paused' ELSE 'queued' END,
+   SET state = CASE WHEN stop_wanted IN ('pause', 'benchmark') THEN 'paused' ELSE 'queued' END,
        claimed_by = NULL,
        heartbeat_at = NULL,
-       stop_wanted = NULL,
+       stop_wanted = CASE WHEN stop_wanted = 'benchmark' THEN stop_wanted END,
        error = ?,
        attempts = MAX(attempts - 1, 0),
        run_after = ?,
@@ -90,18 +105,18 @@ UPDATE jobs
 RETURNING id
 """
 
-# Pausing a job nobody has started. It goes at once: there is no handler to ask and nothing
-# half-written to look after, so the row simply stops being claimable.
+# Pausing a job nobody has started: at once, as there is no handler to ask.
 _PAUSE_QUEUED = (
-    "UPDATE jobs SET state = 'paused', stop_wanted = NULL, updated_at = ? "
+    "UPDATE jobs SET state = 'paused', stop_wanted = ?, updated_at = ? "
     "WHERE id = ? AND state = 'queued' RETURNING id"
 )
 
-# Pausing a RUNNING job is a request beside the row, not a write to its state: flipping the state
-# under a live worker is what a cancel does, and drops the bytes a pause exists to keep.
+# Pausing a RUNNING job is a request beside the row, not a write to its state, which is what a
+# cancel does. A benchmark's word never replaces a person's pause.
 _ASK_TO_PAUSE = (
-    "UPDATE jobs SET stop_wanted = 'pause', updated_at = ? "
-    "WHERE id = ? AND state = 'running' RETURNING id"
+    "UPDATE jobs SET stop_wanted = ?, updated_at = ? "
+    "WHERE id = ? AND state = 'running' AND (? = 'pause' OR COALESCE(stop_wanted, '') <> 'pause')"
+    " RETURNING id"
 )
 
 # The landing, fenced on the claim, its attempt handed back for `_BLOCK`'s reason: `paused`, unless
@@ -111,26 +126,30 @@ UPDATE jobs
    SET state = CASE WHEN stop_wanted = 'resume' THEN 'queued' ELSE 'paused' END,
        claimed_by = NULL,
        heartbeat_at = NULL,
-       stop_wanted = NULL,
+       stop_wanted = CASE WHEN stop_wanted = 'benchmark' THEN stop_wanted END,
        attempts = MAX(attempts - 1, 0),
        updated_at = ?
  WHERE id = ? AND state = 'running' AND claimed_by = ?
 RETURNING id
 """
 
-# Starting it again: the same job, its payload, attempts and priority kept. `run_after` and the
-# interrupted attempt's `error` are cleared, so a resumed row neither goes on waiting nor reads as
-# broken.
+# Starting it again: payload, attempts and priority kept; `run_after` and the old `error` cleared.
 _RESUME = (
     "UPDATE jobs SET state = 'queued', error = NULL, stop_wanted = NULL, run_after = NULL, "
     "updated_at = ? WHERE id = ? AND state = 'paused' RETURNING id, parent_id"
+)
+
+_RESUME_AFTER_BENCHMARK = (
+    "UPDATE jobs SET state = 'queued', error = NULL, stop_wanted = NULL, run_after = NULL, "
+    "updated_at = ? WHERE id IN (SELECT id FROM jobs WHERE state = 'paused' "
+    "AND stop_wanted = 'benchmark' LIMIT ?) RETURNING id, parent_id"
 )
 
 # Resuming a job whose pause has not landed yet withdraws the request; the handler then runs on or
 # lands as queued (`_PAUSE_RUNNING`).
 _UNASK_PAUSE = (
     "UPDATE jobs SET stop_wanted = 'resume', updated_at = ? "
-    "WHERE id = ? AND state = 'running' AND stop_wanted = 'pause' RETURNING id"
+    "WHERE id = ? AND state = 'running' AND stop_wanted IN ('pause', 'benchmark') RETURNING id"
 )
 
 #: The type is bound TWICE, both the same value: positional binding has no other way to say "every
@@ -140,8 +159,7 @@ _UNBLOCK = (
     "WHERE state = 'blocked' AND (? IS NULL OR type = ?) RETURNING id"
 )
 
-# The heartbeat also answers whether anybody is asking the job to stop, at no extra cost: a pause
-# leaves the row running, and this is the only channel a request reaches the handler by.
+# The heartbeat also answers whether anybody is asking the job to stop: the only channel there is.
 _HEARTBEAT = (
     "UPDATE jobs SET heartbeat_at = ?, updated_at = ? "
     "WHERE id = ? AND state = 'running' AND claimed_by = ? RETURNING stop_wanted"
@@ -167,11 +185,11 @@ _SET_NOTE = (
 # The two WHEREs are one predicate written twice and must stay so; a test asserts they agree.
 _RECLAIM_EXHAUSTED = """
 UPDATE jobs
-   SET state = CASE WHEN stop_wanted = 'pause' THEN 'paused' ELSE 'failed' END,
+   SET state = CASE WHEN stop_wanted IN ('pause', 'benchmark') THEN 'paused' ELSE 'failed' END,
        claimed_by = NULL,
        heartbeat_at = NULL,
-       stop_wanted = NULL,
-       error = CASE WHEN stop_wanted = 'pause' THEN error ELSE ? END,
+       stop_wanted = CASE WHEN stop_wanted = 'benchmark' THEN stop_wanted END,
+       error = CASE WHEN stop_wanted IN ('pause', 'benchmark') THEN error ELSE ? END,
        updated_at = ?
  WHERE state = 'running'
    AND (? IS NULL OR heartbeat_at IS NULL OR heartbeat_at < ?)
@@ -179,23 +197,19 @@ UPDATE jobs
 RETURNING id, parent_id
 """
 
-# Handing work back on an orderly shutdown, which is not a reclaim: an attempt is counted at the
-# claim, so a restart would otherwise charge the running job for an interruption the process caused
-# itself. A crash still goes through boot recovery, which charges it. Clearing `claimed_by` fences.
-#: What a job handed back by an orderly shutdown says about itself, so a queue full of them after a
-#: restart reads as interrupted rather than as unexplained.
+# Handing work back on an orderly shutdown without charging an attempt; a crash still charges one.
 _HANDED_BACK = "Interrupted by a restart and queued again. This did not count as an attempt."
 
 # A job ASKED TO PAUSE lands `paused` here and in both reclaims, so "pause it, then quit" does not
 # come back running, and its note is left alone.
 _RELEASE_RUNNING = """
 UPDATE jobs
-   SET state = CASE WHEN stop_wanted = 'pause' THEN 'paused' ELSE 'queued' END,
+   SET state = CASE WHEN stop_wanted IN ('pause', 'benchmark') THEN 'paused' ELSE 'queued' END,
        claimed_by = NULL,
        heartbeat_at = NULL,
-       stop_wanted = NULL,
+       stop_wanted = CASE WHEN stop_wanted = 'benchmark' THEN stop_wanted END,
        attempts = MAX(attempts - 1, 0),
-       note = CASE WHEN stop_wanted = 'pause' THEN note ELSE ? END,
+       note = CASE WHEN stop_wanted IN ('pause', 'benchmark') THEN note ELSE ? END,
        updated_at = ?
  WHERE state = 'running'
 RETURNING id
@@ -203,10 +217,10 @@ RETURNING id
 
 _RECLAIM_REQUEUE = """
 UPDATE jobs
-   SET state = CASE WHEN stop_wanted = 'pause' THEN 'paused' ELSE 'queued' END,
+   SET state = CASE WHEN stop_wanted IN ('pause', 'benchmark') THEN 'paused' ELSE 'queued' END,
        claimed_by = NULL,
        heartbeat_at = NULL,
-       stop_wanted = NULL,
+       stop_wanted = CASE WHEN stop_wanted = 'benchmark' THEN stop_wanted END,
        updated_at = ?
  WHERE state = 'running'
    AND (? IS NULL OR heartbeat_at IS NULL OR heartbeat_at < ?)
@@ -323,20 +337,22 @@ class Settling(HandOffs):
             log.info("job.unblocked", job_count=len(released), job_type=job_type)
         return released
 
-    async def pause(self, job_id: str) -> bool:
+    async def pause(self, job_id: str, *, for_benchmark: bool = False) -> bool:
         """Stop a job somebody means to start again. False when there was nothing to stop.
 
-        A waiting job is paused outright. A RUNNING one is asked (`_ASK_TO_PAUSE`) and its handler
-        winds itself up; the row lands `paused` when the attempt ends. A handler that ignores
-        `stopping()` costs only time: it finishes (done), raises (paused, not failed), or is ended
-        by a restart or the watchdog (paused). One row, not a tree.
+        A waiting job is paused outright; a RUNNING one is asked (`_ASK_TO_PAUSE`) and lands
+        `paused` when its attempt ends, or done if it ignores `stopping()`. One row, not a tree.
+        `for_benchmark` marks the row (`PAUSED_FOR_BENCHMARK`).
         """
         now = self._now()
+        word = PAUSED_FOR_BENCHMARK if for_benchmark else STOP_TO_PAUSE
         async with self._writing() as connection:
-            rows = await _fetch(connection, _PAUSE_QUEUED, (now, job_id))
+            rows = await _fetch(
+                connection, _PAUSE_QUEUED, (word if for_benchmark else None, now, job_id)
+            )
             asked = False
             if not rows:
-                rows = await _fetch(connection, _ASK_TO_PAUSE, (now, job_id))
+                rows = await _fetch(connection, _ASK_TO_PAUSE, (word, now, job_id, word))
                 asked = bool(rows)
 
         if not rows:
@@ -381,6 +397,17 @@ class Settling(HandOffs):
         log.info("job.resumed", job_id=job_id)
         return True
 
+    async def resume_after_benchmark(self, *, chunk: int = PAUSE_CHUNK) -> list[str]:
+        """Start again every row a benchmark paused, after it or at the boot after it. Their ids."""
+        resumed: list[str] = []
+        while True:
+            async with self._writing() as connection:
+                rows = await _fetch(connection, _RESUME_AFTER_BENCHMARK, (self._now(), chunk))
+                await self._roll_up(connection, [row["parent_id"] for row in rows])
+            resumed += [str(row["id"]) for row in rows]
+            if len(rows) < chunk:
+                return resumed
+
     async def beat(self, job_id: str, worker_id: str) -> Beat | None:
         """Say the job is still alive, and hear back whether anything is asking it to stop.
 
@@ -394,7 +421,10 @@ class Settling(HandOffs):
             return None
         stop = rows[0]["stop_wanted"]
         # A withdrawn pause is not a request; the handler that never noticed it simply carries on.
-        return Beat(stop=None if stop is None or stop == PAUSE_WITHDRAWN else str(stop))
+        if stop is None or stop == PAUSE_WITHDRAWN:
+            return Beat(stop=None)
+        # A handler hears a benchmark's pause as any pause.
+        return Beat(stop=STOP_TO_PAUSE if stop == PAUSED_FOR_BENCHMARK else str(stop))
 
     async def heartbeat(self, job_id: str, worker_id: str) -> bool:
         """Whether the job is still this worker's. `beat` above, for a caller that only asks that."""

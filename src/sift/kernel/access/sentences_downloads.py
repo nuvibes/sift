@@ -27,6 +27,7 @@ KIND_BEFORE: Mapping[str, str] = {
     "collection": "the Collection ",
     "photo_set": "the Photo Set ",
     "song": "the song ",
+    "saved_filter": "the saved filter ",
 }
 
 #: What a download says on a page away from its file.

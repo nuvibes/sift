@@ -21,10 +21,12 @@ describe('the Now tab', () => {
 	});
 
 	it('says a pass state as a pill, the shape Done and Failed wear', () => {
-		const said = markup.slice(markup.indexOf('{#snippet nowWord()}'));
+		const from = markup.indexOf('{#snippet nowWord()}');
+		const said = markup.slice(from, markup.indexOf('{/snippet}', from));
 		// The pill inside the app's tooltip, which says the whole of words the column cuts short.
-		expect(said.slice(0, 120)).toMatch(
-			/^\{#snippet nowWord\(\)\}<Tooltip label=\{one\.now\} stretch\s*><Badge/
+		expect(said).toMatch(/<Tooltip label=\{one\.now\} stretch\s*><Badge/);
+		expect(said).toMatch(
+			/label=\{COPY\.failedWhy\(line\.pass\.why\)\} stretch>\s*<Button[^>]*>\s*<Badge/
 		);
 		expect(style).not.toMatch(/\.pass-now/);
 	});

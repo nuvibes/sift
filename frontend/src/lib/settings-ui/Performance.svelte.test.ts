@@ -422,10 +422,21 @@ describe('is Sift keeping up', () => {
 		});
 
 		expect(verdict()).toBe(
-			'Yes. Since it started, Sift stopped responding 4 times; the longest pause was 1.8 seconds.'
+			'Not always. Since it started, Sift stopped responding 4 times; the longest pause was 1.8 seconds.'
 		);
 		// History, not a fault happening now: the sentence is not marked.
 		expect(block()?.querySelectorAll('.verdict.bad')).toHaveLength(0);
+	});
+
+	it("leaves the benchmark's own stalls out of the count and says how many it caused", async () => {
+		fetchSelfTest.mockResolvedValue({ ...MEASURED, held_while_measuring: 21 });
+		await show({ ...QUIET, loop: { worstLagSeconds: 3.6, heldCount: 52 } });
+		await vi.waitFor(() => expect(verdict()).toContain('Not counted'));
+
+		expect(verdict()).toBe(
+			'Not always. Since it started, Sift stopped responding 31 times; the longest pause was 3.6 seconds. ' +
+				'Not counted: 21 times the benchmark pushed Sift until it fell behind, which is how it measures.'
+		);
 	});
 
 	it('picks the longest wait, not the most frequent', async () => {
@@ -525,7 +536,13 @@ const MEASURED: SelfTest = {
 	rounds: 5,
 	finished: true,
 	measured: true,
+	progress: null,
 	share_reads_now: 0,
+	held_while_measuring: 0,
+	full_while_measuring: 0,
+	notes: [],
+	card: null,
+	models: [],
 	measurement: {
 		cores: 8,
 		levels: [{ at_once: 2, seconds: 4, finished: 2, per_second: 0.5, responsive: true }],
@@ -546,10 +563,12 @@ const MEASURED: SelfTest = {
 };
 
 describe('testing this machine', () => {
-	async function withTest(state: SelfTest | null) {
+	type Said = Omit<SelfTest, 'measurement' | 'progress'> &
+		Partial<Pick<SelfTest, 'measurement' | 'progress'>>;
+	async function withTest(state: Said | null) {
 		fetchHealth.mockResolvedValue(null);
 		if (state === null) fetchSelfTest.mockRejectedValue(new Error('not an admin'));
-		else fetchSelfTest.mockResolvedValue(state);
+		else fetchSelfTest.mockResolvedValue({ measurement: null, progress: null, ...state });
 		await render();
 		flushSync();
 		await vi.waitFor(() => expect(fetchSelfTest).toHaveBeenCalled());
@@ -586,6 +605,11 @@ describe('testing this machine', () => {
 			finished: false,
 			measured: false,
 			share_reads_now: 0,
+			held_while_measuring: 0,
+			full_while_measuring: 0,
+			notes: [],
+			card: null,
+			models: [],
 			measurement: null,
 			recommendations: []
 		});
@@ -610,6 +634,11 @@ describe('testing this machine', () => {
 			finished: false,
 			measured: false,
 			share_reads_now: 0,
+			held_while_measuring: 0,
+			full_while_measuring: 0,
+			notes: [],
+			card: null,
+			models: [],
 			measurement: null,
 			recommendations: []
 		});
@@ -626,6 +655,11 @@ describe('testing this machine', () => {
 			finished: false,
 			measured: true,
 			share_reads_now: 0,
+			held_while_measuring: 0,
+			full_while_measuring: 0,
+			notes: [],
+			card: null,
+			models: [],
 			measurement: null,
 			recommendations: []
 		});
@@ -642,6 +676,11 @@ describe('testing this machine', () => {
 			finished: false,
 			measured: false,
 			share_reads_now: 0,
+			held_while_measuring: 0,
+			full_while_measuring: 0,
+			notes: [],
+			card: null,
+			models: [],
 			measurement: null,
 			recommendations: []
 		});
@@ -664,7 +703,12 @@ describe('testing this machine', () => {
 			finished: false,
 			measured: false,
 			share_reads_now: 0,
-			measurement: {
+			held_while_measuring: 0,
+			full_while_measuring: 0,
+			notes: [],
+			card: null,
+			models: [],
+			progress: {
 				cores: 16,
 				failed: null,
 				levels: [
@@ -697,6 +741,11 @@ describe('testing this machine', () => {
 			finished: false,
 			measured: false,
 			share_reads_now: 0,
+			held_while_measuring: 0,
+			full_while_measuring: 0,
+			notes: [],
+			card: null,
+			models: [],
 			measurement: null,
 			recommendations: []
 		});
@@ -728,7 +777,12 @@ describe('testing this machine', () => {
 			finished: false,
 			measured: false,
 			share_reads_now: 0,
-			measurement: {
+			held_while_measuring: 0,
+			full_while_measuring: 0,
+			notes: [],
+			card: null,
+			models: [],
+			progress: {
 				cores: 24,
 				failed: null,
 				levels: [rung(1), rung(2), rung(4), rung(8), rung(16)],
@@ -757,7 +811,12 @@ describe('testing this machine', () => {
 			finished: false,
 			measured: false,
 			share_reads_now: 0,
-			measurement: {
+			held_while_measuring: 0,
+			full_while_measuring: 0,
+			notes: [],
+			card: null,
+			models: [],
+			progress: {
 				cores: 24,
 				failed: null,
 				levels: [rung(1), rung(2), rung(4, false)],
@@ -772,6 +831,34 @@ describe('testing this machine', () => {
 		expect(said).toContain('Encoding rounds done: 3 of up to 5');
 	});
 
+	/* Right after a press the run is queued or pausing work: no rung of it is measured yet, and the
+	   last result stays on screen under the same press, never its rungs read as this run's. */
+	it('starts a pressed run at round one and keeps the last result under it', async () => {
+		await withTest({ ...MEASURED, running: true });
+
+		const said = panel()?.querySelector('[data-testid="self-test-rounds"]')?.textContent ?? '';
+		expect(said).toContain('Round 1 of up to 5');
+		const bar = panel()?.querySelector(
+			'[role="progressbar"][aria-label="Benchmarking this device"]'
+		);
+		expect(bar?.getAttribute('aria-valuenow')).toBe('0');
+		expect(panel()?.textContent).toContain('How many previews are built at once');
+		expect(panel()?.textContent).toContain(COPY.measure.again);
+	});
+
+	it('calls the press Run it again on a device measured before this start', async () => {
+		await withTest({
+			...MEASURED,
+			running: true,
+			finished: false,
+			measurement: null,
+			recommendations: []
+		});
+
+		expect(panel()?.textContent).toContain(COPY.measure.again);
+		expect(panel()?.textContent).not.toContain(COPY.measure.run);
+	});
+
 	it('shows what it found, and changes nothing by itself', async () => {
 		await withTest(MEASURED);
 
@@ -782,7 +869,14 @@ describe('testing this machine', () => {
 
 	it('groups the frames a second it measured, the way every other count on screen is grouped', () => {
 		// Never a bare run of digits beside a count that is grouped.
-		expect(COPY.measure.decode(1480, 27)).toContain(`about ${(1480).toLocaleString()} frames`);
+		expect(COPY.measure.decode(1480, 27, false)).toContain(
+			`about ${(1480).toLocaleString()} frames`
+		);
+	});
+
+	it('says what the decoder means for a share only where a share was measured', () => {
+		expect(COPY.measure.decode(1480, 27, false)).not.toContain('share');
+		expect(COPY.measure.decode(1480, 27, true)).toContain('On a network share');
 	});
 
 	it("wraps each suggestion's reason at the pane's one reading measure", async () => {
@@ -857,6 +951,11 @@ describe('testing this machine', () => {
 			finished: true,
 			measured: true,
 			share_reads_now: 0,
+			held_while_measuring: 0,
+			full_while_measuring: 0,
+			notes: [],
+			card: null,
+			models: [],
 			measurement: {
 				cores: 8,
 				levels: [],
@@ -890,7 +989,8 @@ describe('testing this machine', () => {
 			storages: [
 				{
 					storage: '\\\\nas\\media\\',
-					label: 'Clips',
+					label: '\\\\nas\\media',
+					folders: 'Clips, Trips',
 					remote: true,
 					failed: null,
 					best_at_once: 1,
@@ -917,7 +1017,105 @@ describe('testing this machine', () => {
 			panel()?.querySelector('[data-testid="self-test-storages"]')?.textContent ?? ''
 		).replace(/\s+/g, ' ');
 		expect(curve).toContain('Quickest at 1 at a time.');
-		expect(curve).toContain('Sift is reading 2 at a time.');
+		expect(curve).toContain(
+			'Quickest at 1 at a time. Files read per share is set to 2, so 2 are read at a time here.'
+		);
+		expect(curve).toContain('\\\\nas\\media Library folders on it: Clips, Trips.');
+	});
+
+	it('says the share setting under a share and never under a local drive beside it', async () => {
+		const share = ON_A_SHARE.measurement?.storages?.[0];
+		await withTest({
+			...ON_A_SHARE,
+			measurement: {
+				...ON_A_SHARE.measurement,
+				storages: [share, { ...share, storage: 'C:\\', label: 'drive C:', remote: false }]
+			}
+		} as unknown as SelfTest);
+
+		const [onShare, onDrive] = [
+			...(panel()?.querySelectorAll('[data-testid="self-test-storages"] .storage') ?? [])
+		].map((one) => (one.textContent ?? '').replace(/\s+/g, ' '));
+		expect(onShare).toContain('Files read per share is set to 2');
+		expect(onDrive).toContain('Quickest at 1 at a time.');
+		expect(onDrive).not.toContain('Files read per share');
+	});
+
+	it('says nothing of the share setting where only a local drive was measured', async () => {
+		const share = ON_A_SHARE.measurement?.storages?.[0];
+		await withTest({
+			...ON_A_SHARE,
+			measurement: { ...ON_A_SHARE.measurement, storages: [{ ...share, remote: false }] }
+		} as unknown as SelfTest);
+
+		expect(panel()?.querySelector('[data-testid="self-test-share-reads"]')).toBeNull();
+	});
+
+	it("says what the run could not measure and what it paused, in the server's words", async () => {
+		const notes = [
+			'No library folder yet, so no network share was measured.',
+			'Sift paused 2 tasks while it measured, waited 3 s for them to stop, and started them again after.'
+		];
+		await withTest({ ...MEASURED, notes });
+
+		const said = [...(panel()?.querySelectorAll('[data-testid="self-test-note"]') ?? [])].map(
+			(one) => one.textContent
+		);
+		expect(said).toEqual(notes);
+	});
+
+	it('lists the previews built on the GPU and each measured model, not the ones it did not', async () => {
+		await withTest({
+			...MEASURED,
+			card: {
+				encoder: 'h264_nvenc',
+				decodes_on_card: true,
+				failed: null,
+				best_at_once: 4,
+				levels: [
+					{
+						at_once: 4,
+						seconds: 3.2,
+						finished: 4,
+						per_second: 1.257,
+						responsive: true,
+						busy: false
+					},
+					{ at_once: 8, seconds: 6.2, finished: 8, per_second: 1.293, responsive: true, busy: true }
+				]
+			},
+			models: [
+				{
+					name: 'Faces',
+					device: 'nvidia',
+					failed: null,
+					best_at_once: 4,
+					seconds_per_file: 11.46,
+					megabytes: 1257,
+					card_megabytes: 596,
+					levels: [{ at_once: 4, files_per_second: 0.349, failed: 0, busy: true }]
+				},
+				{ name: 'Watermarks', device: 'cpu', failed: 'not installed', levels: [] }
+			]
+		} as unknown as SelfTest);
+
+		const card = (
+			panel()?.querySelector('[data-testid="self-test-card"]')?.textContent ?? ''
+		).replace(/\s+/g, ' ');
+		expect(card).toContain('Previews on your GPU');
+		expect(card).toContain('4 at the same time: 1.26 previews a second');
+		expect(panel()?.querySelector('[data-testid="self-test-card"] li.best')?.textContent).toContain(
+			'4 at'
+		);
+		const models = (
+			panel()?.querySelector('[data-testid="self-test-models"]')?.textContent ?? ''
+		).replace(/\s+/g, ' ');
+		expect(models).toContain('Faces on the GPU');
+		expect(models).toContain('4 at the same time: 0.35 files a second');
+		expect(models).toContain(
+			'About 11.5 seconds of one task for each file. Loading it took 1,257 MB of memory and 596 MB on the GPU.'
+		);
+		expect(models).not.toContain('Watermarks');
 	});
 
 	it('says nothing about a number the server did not send', async () => {

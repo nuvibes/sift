@@ -129,6 +129,8 @@ def test_an_unsigned_build_carries_no_manifest(
     # So has the refusal of a tree that is not a pushed commit, which a signed build meets first;
     # left in, this case would answer for whatever the working tree holds today.
     monkeypatch.setattr(release, "check_the_tree", lambda **_kwargs: None)
+    monkeypatch.setattr(release, "check_the_notices", lambda: None)
+    monkeypatch.setattr(release, "VENDOR", tmp_path / "vendor")
     monkeypatch.setattr(release, "pack", lambda: installer)
     monkeypatch.setattr(release, "prune_old_releases", lambda: 0)
     monkeypatch.setattr(
@@ -143,6 +145,7 @@ def test_an_unsigned_build_carries_no_manifest(
 
     argv = ["--skip-vendor", *(["--no-sign"] if unsigned else [])]
     assert release.main(argv) == 0
+    assert (tmp_path / "vendor" / "THIRD-PARTY-NOTICES.txt").is_file()
 
     manifest = tmp_path / f"{installer.name}.manifest.json"
     if unsigned:

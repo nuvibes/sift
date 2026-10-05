@@ -73,12 +73,14 @@ Smart Search needs its model, and Sift describes each file first. Turn it on in 
 
 Each value you choose appears as a chip on the bar. Click a chip to choose how it matches: **any of**, **all of**, **none of**, **has any** or **has none**. Click its cross to remove it, or **Clear all** to remove every chip.
 
+The **Tags**, **People**, **Sites**, **Collections**, **Photo Sets** and **Music** columns each start with two rows, such as **Has tags** and **No tags**. Click one to see only the files that have any, or none. Click its chip to swap one for the other. On the **People**, **Sites**, **Collections** and **Photo Sets** pages, the **Tags** column starts the same way, with **Has tags** and **No tags**.
+
 ## Save a filter
 
 A saved filter keeps what is filtering the wall under a name, so one click puts it back:
 
 1. Filter the wall the way you want it.
-2. Click the bookmark at the end of the chips, **Add to saved filters**.
+2. Click **Add to saved filters** at the end of the filters bar.
 3. Enter a name and click **Save**.
 
 Your saved filters are at the foot of the filter panel. Click one to apply it. Its menu holds:
@@ -87,6 +89,8 @@ Your saved filters are at the foot of the filter panel. Click one to apply it. I
 - **Rename**: gives it another name.
 - **Update from current filters**: keeps what is filtering the wall now under the same name.
 - **Delete**: deletes the saved filter. Your files don't change.
+
+When you delete the last thing a saved filter names and it holds nothing else, Sift deletes the saved filter too. This works for a tag, person, Site, collection, Photo Set, song or folder, and App History says so. A saved filter that also holds something else keeps the deleted one, and its chip says it doesn't exist.
 
 ## Sort the wall
 
@@ -101,6 +105,8 @@ Your saved filters are at the foot of the filter panel. Click one to apply it. I
 - **Largest file** and **Smallest file**: by how much room a file takes.
 - **Recently viewed** and **Most viewed**: by when, or how often, you opened a file.
 - **Highest O count**: the files you pressed the O counter on most first.
+- **Favorites first**: the files in your Favorites first, newest first among them, then the rest.
+- **Highest rated**: the files with the most stars first, and the unrated last.
 - **Random**: a shuffled order that holds while you page. **Shuffle again** draws a new one.
 
 Sift keeps the order you choose for every wall of files. On [Favorites](/favorites), the menu adds **Recently favorited** and **Oldest favorited**, by when you added each file there.
@@ -168,7 +174,7 @@ Under the picture or video are the file's name, the heart, the stars, the O coun
 
 ## The player
 
-A video plays on the file page. Its bar has the scrub line along the top, with the time so far at its start and the video's length at its end. Under it, **Previous**, **Play** and **Next** stand in the middle of the bar. **Shuffle** is on their left, and the repeat control (**Play through**, **Repeat this** or **Stop at the end**) on their right. The sound and the ways to a smaller player are at the bar's end, and **More controls** opens the rest. Every control says its name when you point at it:
+A video plays on the file page. Its bar has the scrub line along the top, with the time so far at its start and the video's length at its end. At the start of the bar, under it, are the repeat control, **Previous**, **Play**, **Next** and **Shuffle**. The sound and the ways to a smaller player are at the bar's end, and **More controls** opens the rest. A control with nothing to do is dimmed and says why when you point at it. Every control says its name when you point at it:
 
 - **Play** and **Pause**: start and stop the video. Press **Space**.
 - **Previous** and **Next**: open the file before or after this one on the wall.
@@ -191,6 +197,6 @@ A video plays on the file page. Its bar has the scrub line along the top, with t
 
 The mini player keeps a video playing in a corner while you browse, search or open another screen. Drag it by its top edge, and resize it from its edges. **Back to full size** returns to the file page, and **Close** stops it.
 
-The audio player keeps only the sound playing, in a bar at the foot of the page. It has the same shape as the file page's bar, with the scrub line and its two times along the top. Under it, the video's small picture and name are at the far left. **Shuffle**, **Previous**, **Play**, **Next** and the repeat control stand in the middle. The sound, **Open mini player**, **Back to full size** and **Close** are at the end. On a phone it stands above the tabs with the picture, the name, **Play**, **Back to full size** and **Close**.
+The audio player keeps only the sound playing, in a bar at the foot of the page. It has the same shape as the file page's bar, with the scrub line and its two times along the top. Under it, the repeat control, **Previous**, **Play**, **Next** and **Shuffle** are at the start. The video's small picture is in the middle. The sound, **Open mini player**, **Back to full size** and **Close** are at the end. On a phone it stands above the tabs with the picture, the name, **Play**, **Back to full size** and **Close**.
 
 [Settings > Playback > Remember where you left off](/settings/playback#playback.resume_enabled) decides whether a video you open again starts where you stopped.

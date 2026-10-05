@@ -232,11 +232,12 @@
 		color: var(--sift-accent-text);
 	}
 
-	/* A word rather than a digit, so it is wider than the squares beside it, and fixed, for the
-	   same reason they are: the row must not move when it is pressed. */
+	/* A word, wider than the squares, drawn from its start so the time above stands over it. */
 	.numbers :global(.pick.every) {
 		min-inline-size: 44px;
 		inline-size: 44px;
+		justify-content: flex-start;
+		padding-inline-start: var(--space-2);
 	}
 
 	/*

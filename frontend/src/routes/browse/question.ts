@@ -1,8 +1,4 @@
-/*
- * What the Browse address ASKS, as against where in the answer it stands.
- *
- * Pure and apart from the page so the rule can be held by a test without mounting the whole wall.
- */
+/* What the Browse address ASKS, as against where in the answer it stands. */
 import { ANCHOR, NEAR } from '$lib/grid/anchor';
 
 /** Parameters that say where the wall is, never what it is asked. */
@@ -18,12 +14,34 @@ export function questionIn(
 	);
 }
 
+/** Parameters that order the answer, turn its page or say how its words are read. */
+const NOT_A_FILTER: readonly string[] = ['q', 'sort', 'seed', 'offset', 'meaning', 'depth'];
+
+/** Whether the question carries a filter beside its words. */
+export function filteredBy(question: Record<string, string>): boolean {
+	return Object.keys(question).some((name) => !NOT_A_FILTER.includes(name));
+}
+
+const PLACE: readonly string[] = [...POSITION, 'offset'];
+
+/** The address with its words, its filters or both taken off; `also` names neither (the explorer). */
+export function cleared(
+	params: URLSearchParams,
+	take: { words: boolean; filters: boolean },
+	also: readonly string[] = []
+): URLSearchParams {
+	const kept = new URLSearchParams();
+	for (const [name, value] of params) {
+		const filter = name === 'depth' || (!NOT_A_FILTER.includes(name) && !also.includes(name));
+		const gone = PLACE.includes(name) || (take.words && name === 'q') || (take.filters && filter);
+		if (!gone) kept.append(name, value);
+	}
+	return kept;
+}
+
 /*
- * The bare word being searched for, or empty when the question is anything more than one.
- *
- * Bare is decided by the ABSENCE of a colon and a leading minus rather than by parsing, because the
- * client has no parser and must never grow one; the worst this can be wrong about is drawing a band
- * that comes back empty, which draws nothing.
+ * The bare word searched for, or empty for anything more. Bare is the absence of a colon and a
+ * minus, since the client has no parser; a wrong guess draws a band that comes back empty.
  */
 export function bareWord(question: Record<string, string>): string {
 	const word = (question.q ?? '').trim();

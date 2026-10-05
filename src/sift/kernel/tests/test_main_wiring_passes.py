@@ -7,6 +7,7 @@ from __future__ import annotations
 # The NAME only, never a connection, for the same reason `wiring/lifespan.py` carries this. `sqlite3.Error`
 # is what the settings converger catches, and the test below proves that arm is load-bearing by
 # raising one; nothing here opens a database.
+from functools import partial
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
@@ -20,6 +21,7 @@ from sift.kernel.access import Role, Viewer
 from sift.kernel.content import Lack
 from sift.kernel.jobs import BACKGROUND_PRIORITY
 from sift.kernel.jobs.switchboard import Readiness
+from sift.kernel.jobs.work_ahead import Split
 from sift.kernel.ledger import Actor
 from sift.kernel.tests.test_main_wiring import (
     _CatchUpContent,
@@ -160,6 +162,28 @@ async def test_a_queued_PAGE_weighs_nothing_of_its_own() -> None:
     """The task counter beside it carries the files, and a queued page counted as well would be the
     same files twice: a bar that read double and an estimate to match."""
     assert await work_ahead._nothing_ahead() == 0
+
+
+async def test_the_walks_asked_what_they_have_left_are_the_scans_never_its_probes() -> None:
+    from sift.kernel.jobs import register_handler
+    from sift.kernel.jobs.families import Family
+    from sift.kernel.jobs.queue_rows import FilesToRead
+
+    asked: list[str] = []
+
+    class Queue:
+        async def files_to_read(self, types: list[str]) -> FilesToRead:
+            asked.extend(types)
+            return FilesToRead(by_kind={"video": 3.0})
+
+    async def nothing(_context: object) -> None:
+        return None
+
+    register_handler("walking", nothing, name="Walking", family=Family.SCAN)
+    register_handler("each_file", nothing, name="Each file", family=Family.SCAN, by_itself=True)
+
+    assert (await work_ahead._walks_to_read(cast(Any, Queue()))).by_kind == {"video": 3.0}
+    assert "walking" in asked and "each_file" not in asked
 
 
 async def test_generate_left_is_split_by_the_kind_of_every_file_it_is_waiting_on() -> None:
@@ -305,18 +329,22 @@ class _Registry:
 
 
 class _Lacking:
-    """The content store's count of what is lacking: three files that have been read."""
+    """The content store's count of what is lacking: three read files, one of them under way."""
 
     async def count_lacking(
         self, lacks: list[Any], *, ticked: list[bool], roots: list[str] | None = None
     ) -> Any:
         return SimpleNamespace(each=[3] * len(lacks), files=3 if lacks else 0)
 
+    async def count_lacking_by_kind(self, lacks: list[Any], *, among: list[str]) -> Any:
+        assert len(lacks) == 1 and among == ["f1"]
+        return {"video": SimpleNamespace(files=1)}
+
 
 async def test_a_products_count_on_activity_takes_in_the_files_still_to_be_read() -> None:
     """A count of what is lacking that read only files already read would count a first import's
-    every unread file as done, a thumbnail count near the whole library while few had one.
-    The files still to be read lack it as surely, and Activity counts them."""
+    every unread file as done. The files still to be read lack it as surely, and Activity counts
+    them; of the read ones, those no live job is about wait for their task."""
 
     async def lack() -> Lack:
         return Lack("(1 = 1)")
@@ -327,8 +355,9 @@ async def test_a_products_count_on_activity_takes_in_the_files_still_to_be_read(
     coming = SimpleNamespace(key="thumbnails", lack=lack, coming=five)
     read_only = SimpleNamespace(key="thumbnails", lack=lack, coming=None)
 
-    assert await work_ahead._product_left(_Registry(coming), _Lacking(), "thumbnails") == 8  # type: ignore[arg-type]
-    assert await work_ahead._product_left(_Registry(read_only), _Lacking(), "thumbnails") == 3  # type: ignore[arg-type]
+    left = partial(work_ahead._product_left, content=cast(Any, _Lacking()), key="thumbnails")
+    assert await left(_Registry(coming), live=["f1"]) == Split(8, 2, {"video": 1})  # type: ignore[arg-type]
+    assert await left(_Registry(read_only), live=[]) == Split(3, 3, {})  # type: ignore[arg-type]
 
 
 # --- the small answers main gives the features that may not ask each other --------------------
@@ -688,7 +717,16 @@ async def test_the_first_benchmark_reads_the_application_only_when_it_runs(
     queue.off = True
     await then_scan._scan("r2", None)
     assert queue.enqueued == [
-        (library_roots.SCAN, {"root_id": "r1"}, {"dedupe": True, "requested_by": "u1"})
+        (
+            library_roots.SCAN,
+            {"root_id": "r1"},
+            {"dedupe": True, "priority": 100, "requested_by": "u1"},
+        ),
+        (
+            library_roots.SCAN_COUNT,
+            {"scan_id": "job-1"},
+            {"dedupe": True, "priority": 50, "at": "now"},
+        ),
     ]
 
     handed: dict[str, Any] = {}

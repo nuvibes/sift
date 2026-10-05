@@ -43,6 +43,7 @@
 	import Shortcuts from './Shortcuts.svelte';
 	import Profile from './Profile.svelte';
 	import Updates from './Updates.svelte';
+	import Documentation from './Documentation.svelte';
 	import DrilldownPage from './DrilldownPage.svelte';
 	import SettingsTitle from './SettingsTitle.svelte';
 	import { drilldown } from './drilldown.svelte';
@@ -161,6 +162,8 @@
 			<Backup />
 		{:else if showing === 'updates'}
 			<Updates />
+		{:else if showing === 'documentation'}
+			<Documentation />
 		{:else if showing === 'users'}
 			<Users />
 		{:else if showing === 'profile'}
@@ -191,11 +194,7 @@
 	 * `display: none` rather than a visual trick: it takes the pane out of the tab order and out of
 	 * the accessibility tree, so nothing behind the sub-page can be reached by keyboard or read out.
 	 */
-	/* `section-body` and not `pane`: the settings SHELL puts `class="pane"` on the scrolling
-	   section this sits inside, so a second `.pane` would match two nested elements on every
-	   settings screen, and an e2e check measuring the scrolling box's own edge would stop
-	   resolving to one thing. Styles are not at risk (Svelte scopes them); the DOM is shared,
-	   and a class name is part of it. */
+	/* Not `.pane`: the shell's scrolling section already is one, and an e2e locator needs one match. */
 	.section-body.away {
 		display: none;
 	}

@@ -37,6 +37,7 @@ from sift.slices import (
     watermarks,
     workbench,
 )
+from sift.slices.faces.store_left_out import LeftOutStore
 from sift.slices.swap.landed_folders import folders_made
 from sift.wiring.built import Storage, Understanding
 from sift.wiring.stash_doors import stash_doors
@@ -195,6 +196,7 @@ def _build_faces(
         door=box_pictures,
         # A full regroup gives rebuilt groups new ids; the folder pass proposes them again.
         regroup_settles_into=(suggestions.SUGGESTION_SCAN,),
+        left_out=LeftOutStore(store.database),
     )
     # Creating a person with a name a pack already knew hands them the faces it was holding. Wired
     # here because the slice that creates a person must not know recognition exists, and wrapped,
@@ -498,7 +500,7 @@ def _build_semantic(
         # The cheap tier of "what looks like this": the fingerprints every file already carries,
         # read through the one interface the content layer offers for them. Handed in rather than
         # reached for, which is what keeps this feature unable to read those tables any other way.
-        similar=semantic.SimilarFinder(DuplicateReads(store.database)),
+        similar=semantic.SimilarFinder(DuplicateReads(store.database), store.database),
         preferences=hub,
         settings=settings,
         hardware=hardware,

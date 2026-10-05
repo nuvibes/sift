@@ -122,6 +122,9 @@ NOTHING_TO_ASK_AGAIN = "No file is waiting to be asked about again."
 #: few seconds name nothing).
 SHORTEST_MS = 30_000
 
+#: Later than any answer, for a walk of the not-known files whatever their age.
+_ANY_AGE = 2**62
+
 
 class FingerprintOf(Protocol):
     """The fingerprint kept for one file (`MusicStore.fingerprint_of`)."""
@@ -148,6 +151,8 @@ class LookupPlan:
     files: int
     #: The first of them, by id, in the order the walk meets them.
     first: tuple[str, ...] = ()
+    #: Ask again's walk only: the files AcoustID did not know at any age, less the kept-local ones.
+    not_known: int = 0
 
 
 def lengths_for(duration_ms: int) -> tuple[int, ...]:
@@ -239,31 +244,30 @@ class LookupStarter:
         return (await self.plan(first=0)).files
 
     async def not_known(self) -> int:
-        """How many files AcoustID was asked about and did not know. Never asked again by a press."""
-        return await self._names.not_known()
-
-    async def asks_again(self) -> int:
-        """How many files a press of Ask again would ask AcoustID about: not known, last asked more
-        than `ASK_AGAIN_AFTER_DAYS` ago, and still with no song. Nought while the lookup is off or
-        has no key. Said beside the press on Settings > Music before anything starts."""
-        return (await self.plan_again()).files
+        """How many files AcoustID did not know, counted as Ask again counts them (`plan_again`)."""
+        return (await self.plan_again()).not_known
 
     async def plan_again(self) -> LookupPlan:
-        """The walk a press of Ask again takes, with nothing queued and nothing sent."""
-        if not await self._ready():
-            return LookupPlan(files=0)
-        files = 0
+        """The walk a press of Ask again takes, with nothing queued and nothing sent: the files it
+        would ask about, and every not-known file it would leave alone only for its age."""
+        ready = await self._ready()
+        files = unknown = 0
         after = ""
         before = self.asked_before()
         while True:
             page = await self._names.not_known_page(
-                after=after, limit=CATCH_UP_PAGE, shortest_ms=SHORTEST_MS, before=before
+                after=after, limit=CATCH_UP_PAGE, shortest_ms=SHORTEST_MS, before=_ANY_AGE
             )
             for asset_id in page.files:
-                if await self._worth_asking_again(asset_id, before=before):
+                if await kept_local_over(self._names.database, asset_id):
+                    continue
+                unknown += 1
+                if ready and await self._names.wants_asking_again(
+                    asset_id, shortest_ms=SHORTEST_MS, before=before
+                ):
                     files += 1
             if page.last is None:
-                return LookupPlan(files=files)
+                return LookupPlan(files=files, not_known=unknown)
             after = page.last
 
     async def start_again(self, *, requested_by: str) -> tuple[str | None, int]:

@@ -9,7 +9,7 @@ Come here to save a backup before a big change, or to restore one. A backup hold
 The pane draws these groups, in this order:
 
 - <a id="backup.now"></a>**Save a backup now**: **Save a backup** saves your whole library as one file in the backup folder. Sift never deletes it by itself.
-- **Automatic backups**: how many to keep, how long to keep them, and the backup folder. **Save** saves these settings together. How often they run is chosen in [Settings > Tasks and Activity](/settings/tasks#tasks.backup.when).
+- **Automatic backups**: how many to keep, how long to keep them, and the backup folder. Each saves the moment it changes. How often they run is chosen in [Settings > Tasks and Activity](/settings/tasks#tasks.backup.when).
 - <a id="backup.restore"></a>**Restore from a backup**: **Choose a backup file** replaces your whole Sift library with what is in the file. Your media files aren't touched.
 - <a id="backup.switcher"></a>**Libraries**: Sift opens one library at a time. **Open** restarts Sift on another library, for everyone using it.
 

@@ -86,6 +86,7 @@ async def test_a_queue_from_before_the_counted_line_gets_the_wider_claim_index(
     async with temp_db.write() as connection:
         await connection.execute("DROP TABLE IF EXISTS jobs")
         await jobs_schema.initialize(connection, on_disk=0)
+        await connection.execute("ALTER TABLE jobs DROP COLUMN to_read")
         await connection.execute("DROP INDEX ix_jobs_claim_by_id")
         await connection.execute("CREATE INDEX ix_jobs_claim_by_id ON jobs(state, priority, id)")
         await connection.execute(

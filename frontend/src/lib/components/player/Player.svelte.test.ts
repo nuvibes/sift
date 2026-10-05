@@ -786,15 +786,15 @@ describe('the grid of controls behind one button', () => {
 		expect(panel.querySelector('[aria-label="Play something else"]')).toBeNull();
 	});
 
-	it('stands Shuffle and Repeat on the bar either side of the transport, out of the drawer', async () => {
-		/* They decide what Previous and Next do, so they stand beside them:
-		   Shuffle first, what happens at the end last, the step pair and Play between. */
+	it('stands Repeat and Shuffle on the bar either side of the transport, out of the drawer', async () => {
+		/* They decide what Previous and Next do, so they stand beside them: what happens at the end
+		   first, Shuffle last, the step pair and Play between. */
 		await render();
 		const transport = [...host.querySelectorAll('.player-bar .middle button')].map((one) =>
 			one.getAttribute('aria-label')
 		);
-		expect(transport[0]).toBe('Shuffle');
-		expect(transport.at(-1)).toBe('Play through');
+		expect(transport[0]).toBe('Play through');
+		expect(transport.at(-1)).toBe('Shuffle');
 		expect(transport).toContain('Play');
 
 		openTray();
@@ -1167,6 +1167,36 @@ describe('A, for audio only', () => {
 		expect(press.defaultPrevented).toBe(true);
 		expect(mini.asset?.id).toBe('asset-1');
 		expect(mini.bar).toBe(true);
+	});
+});
+
+describe('handing over to the corner', () => {
+	afterEach(() => mini.close());
+
+	function handOver() {
+		const press = host.querySelector('.bar [aria-label="Open mini player"]');
+		(press?.closest('button') as HTMLElement).click();
+		flushSync();
+	}
+
+	it('hands over playing before the first frame, since nobody paused it', async () => {
+		await render();
+
+		handOver();
+
+		expect(mini.asset?.id).toBe('asset-1');
+		expect(mini.asset?.paused).toBe(false);
+	});
+
+	it('hands over held once the person has paused it', async () => {
+		await render();
+		announceLength(30);
+		const video = host.querySelector('video') as HTMLVideoElement;
+		Object.defineProperty(video, 'paused', { configurable: true, value: true });
+
+		handOver();
+
+		expect(mini.asset?.paused).toBe(true);
 	});
 });
 

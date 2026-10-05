@@ -161,3 +161,21 @@ describe('Escape', () => {
 		expect(props.open).toBe(false);
 	});
 });
+
+describe('where it is drawn', () => {
+	it('is drawn inside the box it is handed, which is what shows while a screen fills the window', () => {
+		const filled = document.createElement('section');
+		document.body.append(filled);
+
+		const { sheet } = render({ portalTo: filled });
+
+		expect(filled.contains(sheet), 'the sheet was drawn outside the filled box').toBe(true);
+	});
+
+	it('is drawn at the end of the document when handed nothing', () => {
+		const { sheet } = render();
+
+		expect(host.contains(sheet)).toBe(false);
+		expect(sheet.parentElement?.closest('section')).toBeNull();
+	});
+});

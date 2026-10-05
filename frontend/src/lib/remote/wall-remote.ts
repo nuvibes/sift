@@ -153,7 +153,7 @@ export function wallState(wall: Wall): Partial<ScreenState> {
 		askedForPresets = true;
 		void presets.ensure().catch(() => {
 			// Nothing to do: a wall whose presets could not be read offers none to the phone, and
-			// the Presets panel asks again when it is opened.
+			// the Saved Layouts panel asks again when it is opened.
 		});
 	}
 	const cell = drawn(wall);

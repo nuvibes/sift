@@ -6,12 +6,13 @@ that the library's faces place later (`service_fingerprints`).
 from __future__ import annotations
 
 import asyncio
+import json
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
 
 from sift.kernel.log import get_logger
 from sift.slices.faces import crop as cropping
-from sift.slices.faces import packs, weights
+from sift.slices.faces import packs, recognize, weights
 from sift.slices.faces.models import Origin
 from sift.slices.faces.recognize import Recognizer
 from sift.slices.faces.service_weights import WeightsMixin
@@ -47,37 +48,64 @@ class PackOutcome:
     alias_clashes: list[AliasClash]
 
 
+@dataclass(frozen=True, slots=True)
+class HeldEntry:
+    """Somebody waiting for a matching face whom a facial fingerprints file can carry."""
+
+    entry_id: str
+    name: str
+
+
 class PacksMixin(WeightsMixin):
     """Making and taking in face packs."""
+
+    async def _catalog_model(self) -> weights.Weight:
+        """The face model in use, read from the catalog: the stored numbers need no model loaded."""
+        configured = await self.configuration()
+        return weights.pairing(configured.family)[1]
 
     async def shareable_people(self) -> list[str]:
         """Everybody Sift can recognize by a face somebody chose: who "Share everyone" means.
 
-        Every one of them, whoever is asking. Which of them this viewer may be shown is the
-        caller's question (the route holds the list to the People wall), because this layer has no
-        viewer and a shut Hidden is about who is looking.
+        Whoever is asking: which of them a viewer may be shown is the route's question.
         """
         await self._require_enabled()
-        configured = await self.configuration()
-        _, recognizer = await self._models(configured)
-        return await self._store.people_with_chosen_references(recognizer.revision)
+        model = await self._catalog_model()
+        return await self._store.people_with_chosen_references(model.revision)
+
+    async def held_for_export(self) -> list[HeldEntry]:
+        """Everybody waiting for a matching face who has a face the model in use made, by name."""
+        model = await self._catalog_model()
+        return [
+            HeldEntry(entry_id=str(row["entry_id"]), name=str(row["name"]))
+            for row in await self._store.held_for_export(model.revision)
+        ]
+
+    async def people_named(self, names: Sequence[str]) -> dict[str, list[str]]:
+        """The People called each of these names, ignoring case, keyed by the folded name."""
+        return await self._store.people_named(names)
 
     async def export_pack(
-        self, *, name: str, version: str, person_ids: Sequence[str], include_pictures: bool
+        self,
+        *,
+        name: str,
+        version: str,
+        person_ids: Sequence[str],
+        include_pictures: bool,
+        entry_ids: Sequence[str] = (),
     ) -> bytes:
-        """Make a pack from People already in this library.
+        """Make a pack from People here and from the people waiting for a matching face.
 
-        A confirmed face is already a clean single-face picture with numbers attached, which is
-        exactly what a pack is made of, so building one is choosing People and pressing export.
-        No People named means everybody Sift can recognize by a face somebody chose, which is what
-        the one export button on the Faces pane asks for.
+        Neither list named means everybody Sift can recognize and everybody waiting. A person and
+        an entry of one name are one person in the file.
         """
         await self._require_enabled()
-        configured = await self.configuration()
-        _, recognizer = await self._models(configured)
-        chosen = list(person_ids) or await self._store.people_with_chosen_references(
-            recognizer.revision
-        )
+        model = await self._catalog_model()
+        chosen = list(person_ids)
+        wanted = list(entry_ids)
+        if not chosen and not wanted:
+            chosen = await self._store.people_with_chosen_references(model.revision)
+            wanted = [one.entry_id for one in await self.held_for_export()]
 
         people: list[packs.PackedPerson] = []
         for person_id in chosen:
@@ -117,14 +145,59 @@ class PacksMixin(WeightsMixin):
                     confirmed=len(references),
                 )
             )
+        people = await self._with_entries(people, wanted, model.revision, include_pictures)
         return packs.build(
             name=name,
             version=version,
-            recognizer=recognizer.revision,
-            dimension=recognizer.dimension,
+            recognizer=model.revision,
+            dimension=model.dimension,
             people=people,
             include_pictures=include_pictures,
+            library=await self._store.own_library(),
         )
+
+    async def _with_entries(
+        self,
+        people: list[packs.PackedPerson],
+        entry_ids: Sequence[str],
+        recognizer: str,
+        include_pictures: bool,
+    ) -> list[packs.PackedPerson]:
+        """`people` with each of these waiting entries added, joined to anybody of the same name."""
+        held = {str(row["entry_id"]): row for row in await self._store.held_for_export(recognizer)}
+        rows = list(people)
+        at = {person.name.casefold(): index for index, person in reversed(list(enumerate(rows)))}
+        for entry_id in entry_ids:
+            entry = held.get(entry_id)
+            if entry is None:
+                continue
+            faces = [
+                packs.PackedFace(
+                    digest=str(face["crop_digest"]),
+                    quality=float(face["quality"]),
+                    vector=recognize.unpack(bytes(face["embedding"])),
+                    picture=(
+                        await self._store.picture_bytes(face["crop_path"])
+                        if include_pictures
+                        else None
+                    ),
+                )
+                for face in await self._store.entry_faces(entry_id)
+                if face["recognizer"] == recognizer
+            ]
+            waiting = packs.PackedPerson(
+                name=str(entry["name"]),
+                aliases=tuple(json.loads(entry["aliases"] or "[]")),
+                links=tuple(json.loads(entry["links"] or "[]")),
+                faces=tuple(faces),
+                confirmed=entry["confirmed"],
+            )
+            index = at.setdefault(waiting.name.casefold(), len(rows))
+            if index == len(rows):
+                rows.append(waiting)
+            else:
+                rows[index] = _joined(rows[index], waiting)
+        return rows
 
     async def descriptions_for_swap(
         self, person_ids: Sequence[str]
@@ -197,9 +270,11 @@ class PacksMixin(WeightsMixin):
         and the name, and each face by its picture. A later edition replaces the earlier one.
         """
         pack, pack_id = await self._take_in(raw, other_model=other_model, while_off=while_off)
+        # A library's pack is keyed by its id, so each entry says the file's name.
+        source = pack.name if pack.library else None
         added = 0
         for person in pack.people:
-            added += await self._keep_unplaced(pack_id, person)
+            added += await self._keep_unplaced(pack_id, person, source=source)
         log.info("faces.pack.imported", added=added, held=len(pack.people))
         return PackOutcome(
             added=added, held=[person.name for person in pack.people], alias_clashes=[]
@@ -264,6 +339,7 @@ class PacksMixin(WeightsMixin):
             recognizer=pack.recognizer,
             dimension=pack.dimension,
             digest=pack.digest,
+            library=pack.library,
         )
         return pack, pack_id
 
@@ -303,17 +379,17 @@ class PacksMixin(WeightsMixin):
             people=tuple(people),
         )
 
-    async def _keep_unplaced(self, pack_id: str, person: packs.PackedPerson) -> int:
+    async def _keep_unplaced(
+        self, pack_id: str, person: packs.PackedPerson, *, source: str | None = None
+    ) -> int:
         """Hold somebody a pack named as an entry, with every face and every other name they
-        answer to, because nothing about them is decided now. Re-importing the same pack writes
-        nothing: the entry is matched on the pack and the name, and each face on its picture.
-        Returns how many faces were held new.
-        """
+        answer to; re-importing the same pack writes nothing. Returns how many faces were new."""
         entry_id = await self._store.keep_pack_entry(
             pack_id=pack_id,
             name=person.name,
             aliases=person.aliases,
             links=person.links,
+            source=source,
             confirmed=person.confirmed,
         )
         recognizer = await self._recognizer_of(pack_id)
@@ -362,3 +438,20 @@ class PacksMixin(WeightsMixin):
                 continue
             await self._store.add_alias(person_id, alias)
         return clashes
+
+
+def _joined(person: packs.PackedPerson, more: packs.PackedPerson) -> packs.PackedPerson:
+    """One person from two of the same name: faces by picture, other names and links merged, and
+    the first one's confirmed count."""
+    digests = {face.digest for face in person.faces}
+    own = person.name.casefold()
+    return replace(
+        person,
+        aliases=tuple(
+            dict.fromkeys(
+                alias for alias in (*person.aliases, *more.aliases) if alias.casefold() != own
+            )
+        ),
+        links=tuple(dict.fromkeys((*person.links, *more.links))),
+        faces=(*person.faces, *(face for face in more.faces if face.digest not in digests)),
+    )

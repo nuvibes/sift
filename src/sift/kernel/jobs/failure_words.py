@@ -49,6 +49,16 @@ KINDS: tuple[FailureKind, ...] = (
         "This kind of work no longer exists in this version of Sift.",
     ),
     _kind(
+        "stopped-answering",
+        r"stopped answering partway through",
+        "A folder stopped answering partway through the scan. Scan it again once it's back.",
+    ),
+    _kind(
+        "library-unreachable",
+        r"the library folder did\snot answer",
+        "The library folder didn't answer, so nothing was changed. Scan it again once it's back.",
+    ),
+    _kind(
         "disk-full",
         r"no space left on device|not enough space on the disk|\[errno 28\]|\[winerror 112\]",
         "The disk ran out of room. Free some space, then run it again.",
@@ -66,6 +76,12 @@ KINDS: tuple[FailureKind, ...] = (
         r"|\[winerror 5\]|\[errno 13\]",
         "Sift wasn't allowed to write a file. The folder may be read-only, or another program "
         "may be holding the file.",
+    ),
+    _kind(
+        "never-started",
+        r"it couldn't start: a file it needs",
+        "A tool Sift runs couldn't start, because a file it needs was in use or missing. Run it "
+        "again; if it keeps happening, another program may be holding Sift's files.",
     ),
     _kind(
         "unreadable",

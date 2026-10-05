@@ -86,3 +86,18 @@ it('keeps a long figure and its press on one line, the column growing to hold bo
 		removeStyles();
 	}
 });
+
+it('turns its arc while busy, on a plain press and on a split one', () => {
+	glyphOf({ action: 'Save a backup', icon: 'save', busy: true });
+	expect(host!.querySelector('button .spinner')).not.toBeNull();
+	unmount(instance as Record<string, unknown>);
+	instance = undefined;
+	glyphOf({
+		action: 'Generate now',
+		busy: true,
+		trailingIcon: 'schedule',
+		trailingLabel: 'Tonight',
+		ontrailing: () => {}
+	});
+	expect(host!.querySelector('.half.lead button .spinner')).not.toBeNull();
+});

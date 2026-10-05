@@ -325,6 +325,7 @@ def test_the_release_knows_every_vendored_program_from_the_manifest() -> None:
     } <= notices
     assert any(rel.startswith("sources/gallery_dl-") for rel in notices)
     assert f"sources/ffmpeg-{_tools()['ffmpeg']['version']}.tar.gz" in notices
+    assert "THIRD-PARTY-NOTICES.txt" in notices
 
 
 def test_skip_vendor_refuses_a_vendor_folder_from_before_the_downloaders(tmp_path: Path) -> None:
@@ -416,6 +417,9 @@ def _manifest() -> dict[str, object]:
     return loaded
 
 
+_RECIPE = ("sources/build_pillow_heif.bat", "sources/pillow_heif_LICENSES_bundled.txt")
+
+
 def _heif_wheel() -> dict[str, object]:
     wheels = _manifest()["wheels"]
     assert isinstance(wheels, list)
@@ -456,23 +460,42 @@ def test_the_heif_wheel_is_pinned_with_its_recipe_and_refuses_the_encoder() -> N
     for archive in ("libde265-1.1.3.tar.gz", "libheif-1.23.4.tar.gz"):
         assert archive in recipe
     assert "-DWITH_X265=OFF" in recipe and "-DWITH_X265=ON" not in recipe
+    read = {f"scripts/{name}" for name in re.findall(r"%~dp0(\w[\w.]*)", recipe)}
+    assert sorted(read) == wheel["recipe_inputs"] == ["scripts/pillow_heif_LICENSES_bundled.txt"]
 
 
 def test_the_release_refuses_a_pack_without_the_heif_sources_or_the_recipe(tmp_path: Path) -> None:
     release = _load("release")
     _executables, _folders, notices = release._vendored_files()
 
-    wanted = {"sources/libheif-1.23.4.tar.gz", "sources/libde265-1.1.3.tar.gz"}
-    assert wanted | {"sources/build_pillow_heif.bat"} <= notices
+    wanted = {"sources/libheif-1.23.4.tar.gz", "sources/libde265-1.1.3.tar.gz", *_RECIPE}
+    assert wanted <= notices
     # A vendor folder holding every program but not these is refused, naming them.
     with pytest.raises(release.ReleaseFailed) as refused:
         release._check_the_vendored_tools_are_in(tmp_path, "the packed application")
-    for missing in (*wanted, "sources/build_pillow_heif.bat"):
+    for missing in wanted:
         assert missing in str(refused.value), missing
     # And an LGPL library declared with no source of its version is refused outright.
     libheif = {"name": "libheif", "version": "1.23.4", "licence": "LGPL-3.0-or-later"}
     with pytest.raises(release.ReleaseFailed, match="no source archive"):
         release._check_a_gpl_tool_declares_its_source(libheif, ["sources/libheif-1.23.3.tar.gz"])
+
+
+def test_the_release_refuses_a_pack_whose_recipe_lacks_the_file_it_reads(tmp_path: Path) -> None:
+    release = _load("release")
+    executables, folders, notices = release._vendored_files()
+    for name in (*executables, *notices, *(f"{folder}/x" for folder in folders)):
+        (tmp_path / name).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / name).write_bytes(b"MZ")
+    (tmp_path / _RECIPE[1]).unlink()
+
+    with pytest.raises(
+        release.ReleaseFailed, match=r"missing sources/pillow_heif_LICENSES_bundled"
+    ):
+        release._check_the_vendored_tools_are_in(tmp_path, "the packed application")
+    (tmp_path / _RECIPE[1]).write_bytes(b"x")
+    with pytest.raises(release.ReleaseFailed, match=r"wireproxy\.exe that is not the one"):
+        release._check_the_vendored_tools_are_in(tmp_path, "the packed application")
 
 
 def _installed(packages: Path, dlls: list[str]) -> Path:
@@ -525,7 +548,9 @@ def test_the_fetch_refuses_a_heif_wheel_that_carries_the_encoder(
     members = {f"pillow_heif-1.8.0.data/platlib/{dll}": b"MZ" for dll in _REBUILT_DLLS}
     built = _zip(tmp_path / "vendor" / "wheels" / "pillow_heif.whl", members)
     fetcher.check_wheel({**wheel, "sha256": fetcher.digest(built)}, verify_only=False)
-    assert (tmp_path / "vendor" / "bin" / "sources" / "build_pillow_heif.bat").is_file()
+    for name in _RECIPE:
+        shipped = tmp_path / "vendor" / "bin" / name
+        assert shipped.read_bytes() == (REPO / "scripts" / Path(name).name).read_bytes(), name
     with pytest.raises(SystemExit, match="SHA-256 MISMATCH"):
         fetcher.check_wheel({**wheel, "sha256": "0" * 64}, verify_only=True)
 
@@ -548,16 +573,15 @@ class _Recipe:
             _zip(self.dest, self.members)
 
 
-def test_a_seeded_wheel_is_read_as_any_other_and_the_recipe_is_not_run(
+def test_a_seeded_wheel_at_the_pinned_digest_is_taken_and_the_recipe_is_not_run(
     fetcher: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A wheel built before, taken from the seed folder, is held to its libraries or its digest
-    exactly as one the recipe just made; a seed carrying the encoder is refused the same way."""
+    """A seed is a copy of the pinned wheel, still read for its libraries like any other."""
     wheel = {**_heif_wheel(), "file": "wheels/pillow_heif.whl"}
     dest = tmp_path / "vendor" / "wheels" / "pillow_heif.whl"
     seed = tmp_path / "seed"
     seed.mkdir()
-    _zip(
+    seeded = _zip(
         seed / "pillow_heif.whl",
         {f"pillow_heif-1.8.0.data/platlib/{dll}": b"MZ" for dll in _REBUILT_DLLS},
     )
@@ -565,16 +589,40 @@ def test_a_seeded_wheel_is_read_as_any_other_and_the_recipe_is_not_run(
     recipe = _Recipe(dest, None)
     monkeypatch.setattr(fetcher, "run_recipe", recipe)
 
-    fetcher.check_wheel(wheel, verify_only=False, build_missing=True, by_contents=True)
+    pinned = {**wheel, "sha256": fetcher.digest(seeded)}
+    fetcher.check_wheel(pinned, verify_only=False, build_missing=True)
     assert dest.is_file() and recipe.ran == [], "the recipe ran although the seed had the wheel"
 
     dest.unlink()
-    _zip(
+    seeded = _zip(
         seed / "pillow_heif.whl",
         {f"pillow_heif-1.8.0.data/platlib/{dll}": b"MZ" for dll in _PUBLISHED_DLLS},
     )
     with pytest.raises(SystemExit, match="libx265-217"):
-        fetcher.check_wheel(wheel, verify_only=False, build_missing=True, by_contents=True)
+        fetcher.check_wheel({**wheel, "sha256": fetcher.digest(seeded)}, verify_only=False)
+
+
+def test_a_seeded_wheel_at_another_digest_is_passed_over_for_the_recipe(
+    fetcher: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A stale seed never stands in for the recipe, even where a wheel is held to its libraries."""
+    wheel = {**_heif_wheel(), "file": "wheels/pillow_heif.whl", "sha256": "0" * 64}
+    dest = tmp_path / "vendor" / "wheels" / "pillow_heif.whl"
+    seed = tmp_path / "seed"
+    seed.mkdir()
+    clean = {f"pillow_heif-1.8.0.data/platlib/{dll}": b"MZ" for dll in _REBUILT_DLLS}
+    _zip(seed / "pillow_heif.whl", {**clean, "stale.txt": b"an older build"})
+    monkeypatch.setenv("VENDOR_SEED", str(seed))
+    recipe = _Recipe(dest, clean)
+    monkeypatch.setattr(fetcher, "run_recipe", recipe)
+
+    with pytest.raises(SystemExit, match="is missing"):
+        fetcher.check_wheel(wheel, verify_only=False, by_contents=True)
+    assert not dest.exists()
+
+    fetcher.check_wheel(wheel, verify_only=False, build_missing=True, by_contents=True)
+    assert len(recipe.ran) == 1, "the seed stood in for the recipe"
+    assert dest.read_bytes() != (seed / "pillow_heif.whl").read_bytes()
 
 
 def test_the_fetch_builds_a_missing_wheel_and_reads_it_as_any_other(
@@ -690,7 +738,10 @@ def test_the_suite_builds_what_its_caches_lack() -> None:
     action = (REPO / ".github" / "actions" / "prepare-suite" / "action.yml").read_text("utf-8")
     fetches = [line.strip() for line in action.splitlines() if "fetch_vendor.py" in line]
     assert fetches == ["uv run python scripts/fetch_vendor.py --build-missing --wheel-by-contents"]
-    assert "hashFiles('scripts/build_pillow_heif.bat')" in action
+    assert (
+        "hashFiles('scripts/build_pillow_heif.bat', 'scripts/pillow_heif_LICENSES_bundled.txt')"
+        in action
+    )
     assert "hashFiles('scripts/vendor_manifest.json', 'scripts/vendor_build/**')" in action
     assert "!vendor/wheels" in action
 
@@ -933,3 +984,122 @@ def test_the_release_refuses_a_pack_whose_tunnel_client_is_not_the_built_one(
 
     built = {**_tunnel_entry(), "sha256": release._sha256(tmp_path / "wireproxy.exe")}
     release.prove_the_built_programs_are_pinned(tmp_path, "the packed application", [built])
+
+
+# --- every library inside a shipped program is named, with its licence and its source ----------
+
+
+def _inside() -> list[tuple[str, dict[str, Any]]]:
+    gates = _load("release_gates")
+    manifest = gates.read_manifest(MANIFEST)
+    return [
+        (gates._title(one), lib) for one in gates._programs(manifest) for lib in gates._inside(one)
+    ]
+
+
+def test_every_library_inside_a_shipped_program_says_where_its_source_is() -> None:
+    inside = _inside()
+    named = {program for program, _lib in inside}
+    assert {
+        f"ffmpeg {_tools()['ffmpeg']['version']}",
+        "gallery-dl 1.32.13",
+        "wireproxy 1.1.3+sift.1",
+    } <= named
+    assert len(inside) >= 170
+    assert [
+        f"{program}: {lib.get('name')}" for program, lib in inside if not lib.get("source")
+    ] == []
+
+
+def test_a_recorded_licence_names_the_file_it_was_read_from() -> None:
+    unread = [
+        lib.get("name")
+        for _program, lib in _inside()
+        if lib.get("licence") and not lib.get("licence_from")
+    ]
+    assert unread == []
+
+
+def _manifest_with(inside: list[dict[str, Any]]) -> dict[str, Any]:
+    tool = {
+        "name": "tool",
+        "version": "1.0",
+        "licence": "MIT",
+        "source": "https://example.org/tool",
+        "inside": inside,
+    }
+    return {"tools": [tool]}
+
+
+def test_the_notice_names_each_library_with_its_licence_and_source(tmp_path: Path) -> None:
+    gates = _load("release_gates")
+    manifest = tmp_path / "manifest.json"
+    lib = {
+        "name": "libexample",
+        "version": "2.1",
+        "licence": "Zlib",
+        "source": "https://example.org/lib",
+    }
+    manifest.write_text(json.dumps(_manifest_with([lib])), encoding="utf-8")
+
+    written = gates.write_notice(manifest, tmp_path / "bin")
+
+    assert written == tmp_path / "bin" / "THIRD-PARTY-NOTICES.txt"
+    text = written.read_text(encoding="utf-8")
+    assert "tool 1.0\n  licence: MIT\n  source:  https://example.org/tool\n" in text
+    assert (
+        "  - libexample, 2.1\n      licence: Zlib\n      source:  https://example.org/lib\n" in text
+    )
+    assert gates.notice(gates.read_manifest(MANIFEST)).count("\n  - ") == len(_inside())
+
+
+def test_a_signed_build_is_refused_while_a_library_has_no_licence(tmp_path: Path) -> None:
+    release = _load("release")
+    manifest = tmp_path / "manifest.json"
+    known = {
+        "name": "libknown",
+        "version": "1",
+        "licence": "MIT",
+        "source": "https://example.org/a",
+    }
+    unknown = {
+        "name": "libunknown",
+        "version": "2",
+        "licence": None,
+        "source": "https://example.org/b",
+    }
+    manifest.write_text(json.dumps(_manifest_with([known, unknown])), encoding="utf-8")
+
+    with pytest.raises(release.ReleaseFailed, match=r"tool 1\.0: libunknown\. Read each"):
+        release.check_the_notices(manifest)
+
+    manifest.write_text(json.dumps(_manifest_with([known])), encoding="utf-8")
+    release.check_the_notices(manifest)
+
+
+def test_a_fetch_refuses_before_changing_anything_while_a_program_is_in_use(
+    fetcher: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    held = tmp_path / "vendor" / "bin" / "avcodec-61.dll"
+    held.parent.mkdir(parents=True)
+    held.write_bytes(b"library")
+    held.with_name("ffmpeg.exe").write_bytes(b"program")
+    opened = Path.open
+
+    def refusing(self: Path, *args: Any, **kwargs: Any) -> Any:
+        if self == held:
+            raise PermissionError(13, "in use")
+        return opened(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", refusing)
+    with pytest.raises(SystemExit, match=r"bin/avcodec-61\.dll"):
+        fetcher.refuse_while_in_use(checking_only=False)
+    fetcher.refuse_while_in_use(checking_only=True)
+
+
+def test_a_fetch_goes_ahead_when_no_program_is_in_use(fetcher: ModuleType, tmp_path: Path) -> None:
+    program = tmp_path / "vendor" / "bin" / "ffmpeg.exe"
+    program.parent.mkdir(parents=True)
+    program.write_bytes(b"program")
+    fetcher.refuse_while_in_use(checking_only=False)
+    assert program.read_bytes() == b"program"

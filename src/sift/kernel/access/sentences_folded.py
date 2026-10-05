@@ -301,7 +301,7 @@ def _folded_from_template(
         why = (
             f" with fewer than {many(floor)} photos"
             if isinstance(floor, int) and not isinstance(floor, bool)
-            else deleted_where(payload)
+            else deleted_where(payload, several=acts > 1)
         )
         line = said(by, " deleted ", subject_line, why)
         if isinstance(floor, int) and not isinstance(floor, bool):
@@ -350,6 +350,7 @@ _GROUP_WORDS: Mapping[str, tuple[str, str]] = {
     "pile": ("group of faces", "groups of faces"),
     "download": ("download", "downloads"),
     "swap": ("swap", "swaps"),
+    "saved_filter": ("saved filter", "saved filters"),
 }
 
 

@@ -346,22 +346,25 @@ class SemanticService:
             return False
         return await self._records.describes_anything(revision)
 
-    async def similar_to(self, asset_id: str, *, limit: int = CANDIDATES) -> Similar:
-        """What else looks like this file, by whichever tier can answer.
+    async def similar_to(
+        self, asset_id: str, *, limit: int = CANDIDATES, asker: Viewer | None = None
+    ) -> Similar:
+        """What else looks like this file, by whichever tier can answer, ranked only among what
+        `asker` may see.
 
         The better tier first, and it is skipped rather than failed when it cannot answer, which
         is the ordinary state for a file the background pass has not reached yet, not an error. The
         cheap tier then answers the same question with what every file already carries.
 
-        Which one answered comes back with the result. They are not interchangeable, and a screen
-        that presented them as the same thing would have somebody comparing "nearly the same
-        picture" against "a model thinks these resemble each other" without knowing.
+        Which one answered comes back with the result: the two are not interchangeable.
         """
         revision = await self._reading() if self._store.available else None
         if revision is not None:
             vector = await self._frames_of(asset_id, revision)
             if vector:
-                found = await self._store.nearest(vector, revision=revision, limit=limit)
+                found = await self._store.nearest(
+                    vector, revision=revision, limit=limit, asker=asker
+                )
                 return Similar(
                     tier=Tier.LOOKS,
                     neighbours=tuple(
@@ -373,16 +376,17 @@ class SemanticService:
                 )
         if self._similar is None:
             return Similar(tier=Tier.MATCHES, neighbours=())
-        return await self._similar.perceptual(asset_id, limit=limit)
+        return await self._similar.perceptual(asset_id, limit=limit, asker=asker)
 
-    async def nearest(self, vector: list[float], *, limit: int) -> list[Neighbour]:
-        """The files whose frames sit nearest these numbers, among those the model in use
-        described. The numbers came from that model (see `describe_query`), and only its own
-        frames can be near them."""
+    async def nearest(
+        self, vector: list[float], *, limit: int, asker: Viewer | None = None
+    ) -> list[Neighbour]:
+        """The files `asker` may see whose frames sit nearest these numbers, among those the model
+        in use described, as only its own frames can be near them (see `describe_query`)."""
         revision = await self._reading()
         if revision is None:
             return []
-        return await self._store.nearest(vector, revision=revision, limit=limit)
+        return await self._store.nearest(vector, revision=revision, limit=limit, asker=asker)
 
     async def describe_frames(self, asset_id: str, frames: list[tuple[int, np.ndarray]]) -> int:
         """Describe one file's sampled frames and keep them. Returns how many were kept.

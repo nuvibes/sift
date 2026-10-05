@@ -35,6 +35,7 @@
     "backup.switcher",
     "backup.unmarked"
   ],
+  "documentation": [],
   "downloads": [
     "download.at_once",
     "download.backoff_seconds",
@@ -149,6 +150,7 @@
     "performance.scan_limit",
     "performance.share_reads_at_once",
     "performance.step_back_share",
+    "performance.step_back_while_busy",
     "performance.step_back_while_used",
     "performance.worker_count"
   ],

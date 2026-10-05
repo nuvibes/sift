@@ -13,6 +13,7 @@ from sift.kernel.access.repository.walls import (
     _wall,
     _with_stored_counts,
     locked_tile,
+    shown,
 )
 from sift.kernel.access.sites import SITE_CONCEALED, SITE_REACH
 from sift.kernel.sql_splice import splice
@@ -91,9 +92,10 @@ in_scope(grp, folder_id) AS (
 -- that have already been through every rule and closed as their own CTE, so no arrangement of ORs
 -- inside it can reach a permission rule at all.
 --
-counted(person_id, asset_count, size_bytes) AS (
+counted(person_id, asset_count, size_bytes, duration_ms) AS (
   SELECT ap.person_id, COUNT(*),
-         COALESCE(SUM(CASE WHEN :reveal_named = 1 OR v.concealed = 0 THEN a.size_bytes END), 0)
+         COALESCE(SUM(CASE WHEN :reveal_named = 1 OR v.concealed = 0 THEN a.size_bytes END), 0),
+         COALESCE(SUM(CASE WHEN :reveal_named = 1 OR v.concealed = 0 THEN a.duration_ms END), 0)
     FROM asset_people ap
     CROSS JOIN viewer_assets v ON v.asset_id = ap.asset_id AND v.user_id = :viewer
     JOIN assets a ON a.id = ap.asset_id
@@ -127,9 +129,10 @@ counted(person_id, asset_count, size_bytes) AS (
 -- number on it has to be the size of THAT wall or it describes a set the press cannot reach. The rule is one sentence (a card's number is the
 -- count of the wall its press opens), and only the caller knows what the press carries, which is
 -- why it is bound rather than decided here. See the projection below.
-whole(person_id, asset_count, size_bytes) AS (
+whole(person_id, asset_count, size_bytes, duration_ms) AS (
   SELECT c.object_id, c.permitted - CASE WHEN :reveal = 1 THEN 0 ELSE c.concealed END,
-         c.permitted_bytes - CASE WHEN :reveal_named = 1 THEN 0 ELSE c.concealed_bytes END
+         c.permitted_bytes - CASE WHEN :reveal_named = 1 THEN 0 ELSE c.concealed_bytes END,
+         c.permitted_ms - CASE WHEN :reveal_named = 1 THEN 0 ELSE c.concealed_ms END
     FROM viewer_entity_counts c
    WHERE c.user_id = :viewer AND c.kind = 'person'
 )
@@ -239,11 +242,11 @@ SELECT p.id, CASE WHEN {{LOCKED}} THEN '' ELSE p.name END AS name,
  -- findable by all three, as `resolve_alias_targets` says. Matching only the first would leave a
  -- search box offering nothing for a username somebody typed off one of Sift's own screens: the
  -- files findable, the person not.
- WHERE (:prefix = '' OR p.name LIKE :like ESCAPE '\\'
+ WHERE (:prefix = '' OR ({{SHOWN}} AND (p.name LIKE :like ESCAPE '\\'
         OR EXISTS (SELECT 1 FROM people_aliases al
                     WHERE al.person_id = p.id AND al.alias LIKE :like ESCAPE '\\')
         OR EXISTS (SELECT 1 FROM usernames ac
-                    WHERE ac.person_id = p.id AND ac.name LIKE :like ESCAPE '\\'))
+                    WHERE ac.person_id = p.id AND ac.name LIKE :like ESCAPE '\\'))))
    AND (:person_id IS NULL OR p.id = :person_id)
    -- A SET of people, for a caller holding a list of ids that needs a name for each of them.
    --
@@ -322,25 +325,32 @@ SELECT p.id, CASE WHEN {{LOCKED}} THEN '' ELSE p.name END AS name,
           CASE :entity_sort WHEN 'edited' THEN CASE WHEN {{LOCKED}} THEN NULL ELSE p.edited_at END END DESC NULLS LAST,
           CASE :entity_sort WHEN 'edited' THEN p.id END DESC,
           CASE :entity_sort WHEN 'oldest' THEN p.id END ASC,
-          -- How much of the library this one covers. `largest` is the same expression the
-          -- ordinary order already ends on, so it is the default said out loud; `smallest` is the
-          -- only new direction, and it needs its own arm because a term carries one direction.
-          --
-          -- The SAME expression the card prints, `:count_narrowed` and all. A wall ordered by size
-          -- whose cards say a different size reads as sorted wrongly, and nobody looking at it
-          -- could tell which of the two numbers was the one being obeyed.
+          -- The number and the size the card prints, so the cards read in the order asked.
           CASE :entity_sort WHEN 'largest' THEN
             COALESCE(CASE WHEN :count_narrowed = 1 THEN c.asset_count ELSE w.asset_count END, 0)
           END DESC,
           CASE :entity_sort WHEN 'smallest' THEN
             COALESCE(CASE WHEN :count_narrowed = 1 THEN c.asset_count ELSE w.asset_count END, 0)
           END ASC,
+          CASE :entity_sort WHEN 'largest_total' THEN
+            COALESCE(CASE WHEN :count_narrowed = 1 THEN c.size_bytes ELSE w.size_bytes END, 0)
+          END DESC,
+          CASE :entity_sort WHEN 'smallest_total' THEN
+            COALESCE(CASE WHEN :count_narrowed = 1 THEN c.size_bytes ELSE w.size_bytes END, 0)
+          END ASC,
+          CASE :entity_sort WHEN 'longest_total' THEN
+            NULLIF(CASE WHEN :count_narrowed = 1 THEN c.duration_ms ELSE w.duration_ms END, 0)
+          END DESC NULLS LAST,
+          CASE :entity_sort WHEN 'shortest_total' THEN
+            NULLIF(CASE WHEN :count_narrowed = 1 THEN c.duration_ms ELSE w.duration_ms END, 0)
+          END ASC NULLS LAST,
           COALESCE(c.asset_count, 0) DESC, CASE WHEN {{LOCKED}} THEN NULL ELSE COALESCE(p.name_sort, p.name) END ASC NULLS LAST, p.id ASC
  LIMIT :limit OFFSET :offset
 """,
     SITE_REACH=SITE_REACH,
     A_USERNAME_SHOWS_ITS_PERSON=_A_USERNAME_SHOWS_ITS_PERSON.format(u="un"),
     LOCKED=locked_tile("person", "p"),
+    SHOWN=shown("person", "p"),
 )
 
 

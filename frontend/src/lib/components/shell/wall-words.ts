@@ -79,11 +79,8 @@ export class WallWords {
 }
 
 /**
- * What an empty wall says, by why it is empty.
- *
- * A wall filtered to nothing is not an empty library: "No Sites yet" under a search reads as if
- * every Site had gone. So the words, then the bar's filters, are named before the wall's own
- * first-run sentence.
+ * What an empty wall says: what is in force before its first-run sentence, since "No Sites yet"
+ * under a search reads as if every Site had gone.
  */
 export function emptyWallSays(
 	plural: string,
@@ -91,7 +88,14 @@ export function emptyWallSays(
 	filtered: boolean,
 	otherwise: string
 ): string {
+	if (words && filtered) return `No ${plural} match "${words}" with these filters.`;
 	if (words) return `No ${plural} match "${words}".`;
 	if (filtered) return `No ${plural} match these filters.`;
 	return otherwise;
+}
+
+/** The press that empties what `emptyWallSays` named, in the same terms. */
+export function clearWallSays(words: string, filtered: boolean): string {
+	if (words && filtered) return 'Clear the search and filters';
+	return words ? 'Clear the search' : 'Clear the filters';
 }

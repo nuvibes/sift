@@ -3,6 +3,7 @@ import { flushSync, mount, tick } from 'svelte';
 import NamingTemplate from './NamingTemplate.svelte';
 import { ApiError } from '$lib/api/client';
 import { toasts } from '$lib/shell/toasts.svelte';
+import { movable } from '$lib/library/movable.svelte';
 
 /*
  * What downloaded files are called and where they land.
@@ -281,6 +282,43 @@ describe('the download folder, not set', () => {
 		const row = host.querySelector('[aria-label="Download folder"]');
 		expect(row?.textContent).toContain('Not set, so each download asks');
 		expect(row?.textContent?.trim()).not.toBe('Sift');
+	});
+});
+
+describe('the download folder, when the folders are not read', () => {
+	async function withFolders(answer: () => Promise<unknown>) {
+		get.mockImplementation((path: string) => {
+			if (path === '/site-options') {
+				const held = stored();
+				return Promise.resolve({ ...held, default: { ...held.default, dest_folder_id: null } });
+			}
+			if (path === '/supported-sites') return Promise.resolve(SITES);
+			return answer();
+		});
+		movable.forget();
+		host = document.createElement('div');
+		document.body.append(host);
+		mount(NamingTemplate, { target: host });
+		for (let turn = 0; turn < 4; turn += 1) {
+			flushSync();
+			await tick();
+		}
+	}
+
+	it('says it could not load them rather than offer only Not set', async () => {
+		await withFolders(() => Promise.reject(new ApiError(500, 'Internal Server Error')));
+		const row = host.querySelector('[id="downloads.default_folder"]');
+		expect(row?.textContent).toContain("Couldn't load these settings.");
+		expect(row?.querySelector('[aria-label="Download folder"]')).toBeNull();
+	});
+
+	it('offers Not set to an account the folders are refused to, as before', async () => {
+		await withFolders(() => Promise.reject(new ApiError(403, 'Forbidden')));
+		const row = host.querySelector('[id="downloads.default_folder"]');
+		expect(row?.textContent).not.toContain("Couldn't load");
+		expect(row?.querySelector('[aria-label="Download folder"]')?.textContent).toContain(
+			'Not set, so each download asks'
+		);
 	});
 });
 

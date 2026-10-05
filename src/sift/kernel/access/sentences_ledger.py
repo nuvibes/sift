@@ -97,6 +97,7 @@ A_THING: Mapping[str, str] = {
     "swap": "a swap",
     "database_file": "a database file",
     "computer": "the computer running Sift",
+    "saved_filter": "a saved filter",
 }
 
 #: THE SAME, FOR SOMETHING THAT IS NOT THERE ANY MORE and never had its name written down. Only

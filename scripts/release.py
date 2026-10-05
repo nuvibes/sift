@@ -32,9 +32,8 @@ not on the user's disk; the vendored tools are verified before they are packaged
     9  the signature         minisign, over the hash file and the manifest, in one call
 
 The packer is told `--publish never`: publishing is this script's own last step, taken only with
-`--publish` and only for a signed release that CHANGELOG.md describes (see `publish`). `--no-sign`
-builds everything but the manifest and the two signatures, for an install on this device; the
-desktop application installs no update without a signed manifest.
+`--publish`, for a signed release CHANGELOG.md describes, on a commit the hosted suite passed.
+`--no-sign` builds all but the manifest and the two signatures, for an install on this device.
 
 A signed build and a publish refuse a working tree with changes in it and a HEAD that is not on
 `origin/main` (see `check_the_tree`): what anybody else installs is exactly a commit the project
@@ -65,7 +64,12 @@ from typing import NamedTuple
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+import release_gates
+
 ROOT = Path(__file__).resolve().parents[1]
+MANIFEST = ROOT / "scripts" / "vendor_manifest.json"
 FRONTEND = ROOT / "frontend"
 DESKTOP = ROOT / "desktop"
 RUNTIME = ROOT / "build" / "runtime"
@@ -553,7 +557,7 @@ def prove_the_runtime_ships_the_site_icons() -> None:
 
 def _pinned_wheels() -> list[dict[str, object]]:
     """The wheels scripts/vendor_manifest.json says the runtime gets in place of the published ones."""
-    declared = json.loads((ROOT / "scripts" / "vendor_manifest.json").read_text(encoding="utf-8"))
+    declared = json.loads(MANIFEST.read_text(encoding="utf-8"))
     wheels = declared.get("wheels", []) if isinstance(declared, dict) else []
     return [one for one in wheels if isinstance(one, dict)] if isinstance(wheels, list) else []
 
@@ -561,7 +565,7 @@ def _pinned_wheels() -> list[dict[str, object]]:
 def _built_programs() -> list[dict[str, object]]:
     """The programs scripts/vendor_manifest.json says this repository builds, each pinned by the
     digest of the file its recipe makes."""
-    declared = json.loads((ROOT / "scripts" / "vendor_manifest.json").read_text(encoding="utf-8"))
+    declared = json.loads(MANIFEST.read_text(encoding="utf-8"))
     built = declared.get("built", []) if isinstance(declared, dict) else []
     return [one for one in built if isinstance(one, dict)] if isinstance(built, list) else []
 
@@ -1369,16 +1373,19 @@ def publish_steps(
 ) -> list[tuple[list[str], str | None]]:
     """The GitHub CLI calls that publish `files`, each with what goes to its standard input.
 
-    A release that is not there is created, against the tag already on GitHub (`--verify-tag`), so
-    the CLI never tags whatever commit the remote holds. One that is there keeps every file whose
+    A release that is not there is created as a draft against the tag already on GitHub
+    (`--verify-tag`), then published with every file on it. One that is there keeps every file whose
     bytes match, gains the ones it lacks and takes the changelog's notes; a file there with other
     bytes stops everything, because somebody may already have checked the one published.
     """
     tag, title, target = f"v{VERSION}", f"Sift {VERSION}", ["--repo", repository]
+    edit = ["release", "edit", tag, *target, "--title", title, "--notes-file", "-"]
+    edit.append(f"--prerelease={'true' if pre_release else 'false'}")
     if existing is None:
-        create = ["release", "create", tag, *target, "--verify-tag", "--title", title]
+        # A draft first: an immutable release takes no file once it is published.
+        create = ["release", "create", tag, *target, "--verify-tag", "--draft", "--title", title]
         create += ["--notes-file", "-", *(["--prerelease"] if pre_release else [])]
-        return [([*create, *(one.name for one in files)], notes)]
+        return [([*create, *(one.name for one in files)], notes), ([*edit, "--draft=false"], notes)]
 
     held: dict[str, dict[str, object]] = {}
     assets = existing.get("assets")
@@ -1410,8 +1417,6 @@ def publish_steps(
     steps: list[tuple[list[str], str | None]] = []
     if missing:
         steps.append((["release", "upload", tag, *target, *missing], None))
-    edit = ["release", "edit", tag, *target, "--title", title, "--notes-file", "-"]
-    edit.append(f"--prerelease={'true' if pre_release else 'false'}")
     if existing.get("draft") is True:
         edit.append("--draft=false")
     steps.append((edit, notes))
@@ -1466,6 +1471,31 @@ def publish(
             raise ReleaseFailed(f"gh {args[1]} failed ({done.exit_code}):\n{done.error.strip()}")
     print(f"  Published: https://github.com/{repository}/releases/tag/{tag}\n")
     return steps
+
+
+def check_the_suite(gh: Gh | None = None, commit: str | None = None) -> None:
+    """Refuse to publish a commit the hosted suite has not passed."""
+    call: Gh = gh if gh is not None else (lambda args, stdin: run_gh(args, stdin, where=ROOT))
+    if commit is None:
+        head = _git(ROOT, "rev-parse", "HEAD")
+        if head.returncode != 0:
+            raise ReleaseFailed(f"git could not name HEAD: {head.stderr.strip()}")
+        commit = head.stdout.strip()
+    runs = _github(call, release_gates.runs_path(release_repository(), commit))
+    found = release_gates.suite_verdict(runs, commit)
+    if found is not None:
+        raise ReleaseFailed(f"A release is published only from a commit the suite passed: {found}")
+
+
+def check_the_notices(manifest: Path = MANIFEST) -> None:
+    """Refuse a signed build while a library inside a shipped program has no licence or source."""
+    missing = release_gates.unrecorded(release_gates.read_manifest(manifest))
+    if missing:
+        more = f" and {len(missing) - 8} more" if len(missing) > 8 else ""
+        raise ReleaseFailed(
+            f"{manifest.name} records no licence or source for {', '.join(missing[:8])}{more}. "
+            "Read each from the library's own files and record it under `inside`."
+        )
 
 
 def _git(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
@@ -1524,7 +1554,8 @@ def build(*, skip_vendor: bool, no_sign: bool) -> None:
     build_client(with_gallery=no_sign)
     if not skip_vendor:
         fetch_vendor()
-    else:
+    release_gates.write_notice(MANIFEST, VENDOR)
+    if skip_vendor:
         _check_the_vendored_tools_are_in(VENDOR, "--skip-vendor reuses vendor/bin, and it")
     build_runtime()
     write_upgrade_fixture()
@@ -1605,16 +1636,19 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 1
 
-    stage = "built"
+    stage = "published" if args.publish else "built"
     try:
         # First, so a release the changelog does not describe, or one built from a tree the
         # project does not hold, stops in a second, not after a build.
         check_the_changelog(signed=not args.no_sign)
         check_the_tree(signed=args.publish or not args.no_sign)
+        if not args.no_sign:
+            check_the_notices()
+        if args.publish:
+            check_the_suite()
         if building:
             build(skip_vendor=args.skip_vendor, no_sign=args.no_sign)
         if args.publish:
-            stage = "published"
             publish(pre_release=args.pre_release, dry_run=args.dry_run)
         return 0
     except ReleaseFailed as failure:
@@ -1622,30 +1656,14 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
 
-#: The biggest the application's own code may be. It is a few megabytes of compiled TypeScript and a
-#: package.json; the interpreter, the vendored tools and the addon all arrive as extraResources and
-#: are NOT in here. Twenty is generous by two orders of magnitude and still catches the fault it
-#: exists for: a `files` glob that has quietly started sweeping something enormous.
+#: The biggest the application's own code may be: a few megabytes of compiled TypeScript, so twenty
+#: still catches a `files` glob that has started sweeping something enormous.
 MAX_APP_BUNDLE_MB = 20
 
 
 def _check_the_vendored_tools_are_in_it() -> None:
-    """Refuse a build that packed without one of the vendored tools.
-
-    **THE FAULT THIS CATCHES REPORTS SUCCESS.** An antivirus can quarantine `wireproxy.exe` out of
-    the staged tree while electron-builder is copying it; when the file is simply not there as the
-    copy runs, the packer archives a tree without it, exits 0, and produces an installer a few
-    megabytes smaller with no tunnel binary in it. The only symptom is a number in a log nobody is
-    comparing against the last one, which is the same sentence `_check_the_bundle_is_sane` is
-    written under.
-
-    An installer missing a vendored tool is worse than a build that fails, because it installs. The
-    feature that needs the tool then fails at the moment somebody reaches for it, on their machine,
-    with nothing to say why.
-
-    Read from the MANIFEST rather than from a list here, so a tool added there cannot be forgotten
-    here, the same reason the interpreter and the version are each declared once.
-    """
+    """Refuse a pack missing a vendored tool: an antivirus quarantining one mid-copy leaves the
+    packer exiting 0 with an installer that installs and then fails when the tool is reached for."""
     _check_the_vendored_tools_are_in(
         ARTIFACTS / "win-unpacked" / "resources" / "vendor" / "bin", "the packed application"
     )
@@ -1653,21 +1671,12 @@ def _check_the_vendored_tools_are_in_it() -> None:
 
 def _check_the_vendored_tools_are_in(folder: Path, what: str) -> None:
     """Refuse unless every tool the manifest declares is in `folder`, and each program built here
-    is the file its recipe makes.
-
-    Two callers and one list. The packed application is checked after the build; `--skip-vendor`
-    is checked BEFORE it, because reusing a vendor/bin from before a tool was added would otherwise
-    build for ten minutes and then fail here.
-    """
+    is the file its recipe makes. `--skip-vendor` is checked before the build, the pack after it."""
     executables, folders, notices = _vendored_files()
     missing = sorted(name for name in executables if not (folder / name).is_file())
-    # The licence texts and the source archives are checked as hard as the programs. A GPL program
-    # shipped without the source that travels with it is not a smaller installer, it is one that
-    # breaks the terms it is distributed under, and nothing on anybody's machine would ever say so.
+    # A GPL program shipped without its source breaks the terms it is distributed under.
     missing += sorted(rel for rel in notices if not (folder / rel).is_file())
-    # A folder a program loads its libraries from (yt-dlp's `_internal`) is checked for having
-    # something in it. Its file list belongs to the publisher and changes every release, so naming
-    # the files here would be a second copy of their build to keep in step.
+    # Only non-empty: the publisher's file list changes every release.
     missing += sorted(f"{name}/" for name in folders if not any((folder / name).glob("*")))
     if missing:
         raise ReleaseFailed(
@@ -1684,19 +1693,13 @@ def _check_the_vendored_tools_are_in(folder: Path, what: str) -> None:
 def _vendored_files() -> tuple[set[str], set[str], set[str]]:
     """What the manifest says vendor/bin holds: the executables and the program folders by name,
     and the licence texts and source archives by their path under bin/."""
-    declared = json.loads((ROOT / "scripts" / "vendor_manifest.json").read_text(encoding="utf-8"))
-    # The EXECUTABLES only. A destination ending in `/` is a directory the archive's DLLs are poured
-    # into (ffmpeg ships eight beside two small exes), and a licence text is not a tool: neither
-    # has a name this can check for, and inventing one would make the message name a file that was
-    # never supposed to exist.
+    declared = json.loads(MANIFEST.read_text(encoding="utf-8"))
+    # Executables only: a `bin/` destination takes DLLs by pattern and has no one name to look for.
     wanted: set[str] = set()
     folders: set[str] = set()
     notices: set[str] = set()
     for tool_entry in _every_tool(declared):
-        # A manifest entry is read as `object`, because that is all JSON promises. Each shape is
-        # checked before it is walked rather than assumed: a hand-edited manifest that put a string
-        # where a list belongs would otherwise raise something that names neither the file nor the
-        # field, at the last step of a release.
+        # Each shape is checked before it is walked: a hand-edited manifest can hold anything.
         extract = tool_entry.get("extract")
         if isinstance(extract, dict):
             for where in extract:
@@ -1721,10 +1724,9 @@ def _vendored_files() -> tuple[set[str], set[str], set[str]]:
                     notices.add(str(dest)[len("bin/") :])
                     declared_here.append(str(dest)[len("bin/") :])
         _check_a_gpl_tool_declares_its_source(tool_entry, declared_here)
-    # The recipe a pinned wheel was built by ships beside the libraries' sources, because the
-    # scripts that control compilation are part of the source the LGPL asks them to travel with.
-    for wheel in _pinned_wheels():
-        notices.add(f"sources/{Path(str(wheel.get('recipe', ''))).name}")
+    # A wheel's recipe and the files it reads are part of the source the LGPL asks for.
+    notices.update(release_gates.recipe_files(_pinned_wheels()))
+    notices.add(release_gates.NOTICE)
     if not wanted:
         raise ReleaseFailed(
             "no vendored tools were found in scripts/vendor_manifest.json, so this check cannot "
@@ -1739,17 +1741,8 @@ _SOURCE_LICENCE = re.compile(r"^[A-Z]?GPL-")
 
 
 def _check_a_gpl_tool_declares_its_source(tool: dict[str, object], shipped: list[str]) -> None:
-    """Refuse a GPL tool whose manifest entry ships no source archive of THIS version.
-
-    The file check above refuses a source archive that is declared and missing. This refuses the
-    one that was never declared: a new GPL tool added without one, or a pin bumped with the old
-    version's source left in place, which would ship a binary beside somebody else's source. Named
-    for the pinned version so the two cannot drift apart unnoticed: ffmpeg's source is
-    `sources/ffmpeg-<version>.tar.gz`, gallery-dl's `sources/gallery_dl-<version>.tar.gz`.
-
-    Read from the licence the manifest gives each tool rather than from a list of names here, so a
-    GPL tool added there is covered here without anybody remembering to.
-    """
+    """Refuse a GPL tool whose manifest entry ships no source archive named for THIS version, so a
+    bumped pin cannot ship beside the old version's source."""
     licence = str(tool.get("licence", ""))
     if not _SOURCE_LICENCE.match(licence):
         return

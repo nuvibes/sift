@@ -114,7 +114,8 @@ export const KINDS: Record<string, { many: string }> = {
 	swap: { many: 'Swaps' },
 	backup: { many: 'Backups' },
 	database_file: { many: 'Database files' },
-	computer: { many: 'The computer running Sift' }
+	computer: { many: 'The computer running Sift' },
+	saved_filter: { many: 'Saved filters' }
 };
 
 /**

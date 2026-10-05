@@ -10,6 +10,12 @@ from sift.kernel.access.visibility import (
 )
 from sift.kernel.sql_splice import splice
 
+#: Whether the tag asked about is on the Loop itself or on its video.
+_TAGGED = (
+    "(EXISTS (SELECT 1 FROM loop_tags g WHERE g.loop_id = l.id AND g.tag_id = :loop_tag)"
+    " OR EXISTS (SELECT 1 FROM asset_tags t WHERE t.asset_id = l.asset_id AND t.tag_id = :loop_tag))"
+)
+
 #: Loops this viewer may see: a stretch of a video, and the video's own shape beside it.
 #:
 #: The resolver is written out here rather than shared, for the reason given in full above
@@ -145,38 +151,24 @@ SELECT l.id, l.asset_id, l.name, l.start_ms, l.end_ms, l.created_at, l.created_b
   LEFT JOIN asset_user_state h ON h.asset_id = l.asset_id AND h.user_id = :viewer
  WHERE (:loop_id IS NULL OR l.id = :loop_id)
    AND (:loop_asset_id IS NULL OR l.asset_id = :loop_asset_id)
-   -- The wall's search box asks after what the tile is CALLED, anywhere in it: the Loop's own
-   -- name, or the name of the file it is cut from (the title somebody typed, the name it arrived
-   -- under, or a name it has on the disk now). A Loop with no name of its own is drawn under its
-   -- file's name, so a box that read only the Loop's name could never find it by the words on it.
+   -- The search box asks after what the tile is CALLED: the Loop's own name, or a name of its file
+   -- (a Loop with no name is drawn under its file's). Read through `v`, so a Loop of a file the
+   -- viewer may not see is never asked, whatever the join order.
    AND (:loop_called IS NULL
-        OR l.name LIKE :loop_called ESCAPE '\\'
+        OR v.asset_id = l.asset_id AND (
+           l.name LIKE :loop_called ESCAPE '\\'
         OR a.title LIKE :loop_called ESCAPE '\\'
         OR a.original_filename LIKE :loop_called ESCAPE '\\'
         OR EXISTS (SELECT 1 FROM asset_locations fl
                     WHERE fl.asset_id = l.asset_id
-                      AND fl.filename LIKE :loop_called ESCAPE '\\'))
+                      AND fl.filename LIKE :loop_called ESCAPE '\\')))
    AND (:reveal = 1 OR v.concealed = 0)
    AND 1 = 1
      -- The wall's own narrowing is spliced in here. See `_filtered`.
-   -- A tag reaches a Loop two ways, and this is the ONE wall in Sift where that is true.
-   --
-   -- Everywhere else a related list narrows to the files an entity reaches, and that is the whole
-   -- of it. A Loop is different because a Loop can be tagged in its own right: twenty seconds of a
-   -- long video is one thing while the video is many, which is the entire reason `Tag this loop`
-   -- exists as a separate verb from `Tag`. So "the loops this tag reaches" is honestly BOTH
-   -- statements (the Loops carrying it, and the Loops cut from videos carrying it), and nobody
-   -- remembers weeks later which kind of tag they used.
-   --
-   -- Per LOOP rather than per video, which is the part that is easy to get wrong. A video with two
-   -- Loops where only one is tagged must show one row, not two, so this is the WHOLE of the tag
-   -- narrowing on this wall, and the tag is kept out of the file filter above. See `loops_query`
-   -- for why it is not a widening of that filter.
-   AND (:loop_tag IS NULL
-        OR EXISTS (SELECT 1 FROM loop_tags g
-                    WHERE g.loop_id = l.id AND g.tag_id = :loop_tag)
-        OR EXISTS (SELECT 1 FROM asset_tags t
-                    WHERE t.asset_id = l.asset_id AND t.tag_id = :loop_tag))
+   -- A tag reaches a Loop two ways, answered per Loop and kept out of the file filter (see
+   -- `loops_query`). Through `v` as the name is; an admin's own term still narrows before `v`.
+   AND (:loop_tag IS NULL OR :is_admin = 0 OR {{TAGGED}})
+   AND (:loop_tag IS NULL OR :is_admin = 1 OR v.asset_id = l.asset_id AND {{TAGGED}})
  -- The wall's chosen order: the same words every other wall is ordered by, so somebody who has
  -- learned `Newest first` on one screen has learned it everywhere. `largest` and `smallest` read
  -- the loop's LENGTH, which is this wall's size in the way an item count is another wall's.
@@ -208,6 +200,7 @@ SELECT l.id, l.asset_id, l.name, l.start_ms, l.end_ms, l.created_at, l.created_b
 """,
     ANY_COPY_MISSING=ANY_COPY_MISSING,
     CONCEALED_BY_THIS_FILE=CONCEALED_BY_THIS_FILE,
+    TAGGED=_TAGGED,
 )
 _LOOPS_HEAD, _LOOPS_ACCESS = _cut(_VISIBLE_LOOPS, "_VISIBLE_LOOPS")
 #: The loops wall in pieces. The one of the five with no ROW filter seam (a Loop has no facets

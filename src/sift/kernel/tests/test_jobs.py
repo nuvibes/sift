@@ -40,6 +40,7 @@ from sift.kernel.jobs import (
 )
 from sift.kernel.jobs import schema as jobs_schema
 from sift.kernel.jobs.queue import _check_payload, _for_the_record
+from sift.kernel.jobs.quiet_hours import AT_NOW
 from sift.kernel.jobs.tuning import (
     MAX_ATTEMPTS_CEILING,
     PRIORITY_MAX,
@@ -962,3 +963,79 @@ async def test_a_paused_type_does_not_run_even_with_nothing_of_it_running(
 async def test_a_pool_needs_a_worker(job_queue: JobQueue) -> None:
     with pytest.raises(ValueError, match="at least one worker"):
         WorkerPool(job_queue, concurrency=0)
+
+
+async def _a_read_and_its_work(job_queue: JobQueue) -> tuple[str, str]:
+    for kind in ("walk", "per_file", "elsewhere"):
+        noop_handler(kind)
+    walk = await job_queue.enqueue("walk")
+    assert await job_queue.claim(WORKER) is not None
+    per_file = await job_queue.enqueue("per_file", parent_id=walk)
+    return walk, per_file
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("limits", [None, {"capped": 0}])
+async def test_a_held_family_waits_while_other_work_runs(
+    job_queue: JobQueue, limits: dict[str, int] | None
+) -> None:
+    walk, per_file = await _a_read_and_its_work(job_queue)
+    elsewhere = await job_queue.enqueue("elsewhere")
+    await job_queue.hold_family(walk, spared=["walk"])
+
+    first = await job_queue.claim(OTHER_WORKER, limits=limits)
+    assert first is not None and first.id == elsewhere
+    assert await job_queue.claim(OTHER_WORKER, limits=limits) is None
+
+    assert job_queue.lift_hold(walk) and not job_queue.lift_hold(walk)
+    after = await job_queue.claim(OTHER_WORKER, limits=limits)
+    assert after is not None and after.id == per_file
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("limits", [None, {"capped": 0}])
+async def test_a_row_pressed_now_and_the_holders_own_kinds_pass_a_hold(
+    job_queue: JobQueue, limits: dict[str, int] | None
+) -> None:
+    walk, _ = await _a_read_and_its_work(job_queue)
+    pressed = await job_queue.enqueue("per_file", {"n": 2}, parent_id=walk, at=AT_NOW)
+    sibling = await job_queue.enqueue("walk", {"n": 3}, parent_id=walk)
+    await job_queue.hold_family(walk, spared=["walk"])
+
+    taken = [await job_queue.claim(OTHER_WORKER, limits=limits) for _ in range(3)]
+
+    assert [None if one is None else one.id for one in taken] == [pressed, sibling, None]
+
+
+@pytest.mark.integration
+async def test_held_work_is_not_demand_and_says_which_job_holds_it(job_queue: JobQueue) -> None:
+    walk, _ = await _a_read_and_its_work(job_queue)
+    await job_queue.enqueue("elsewhere")
+    assert await job_queue.holder_of(["per_file"]) is None
+    assert await job_queue.held_for_family_by_type() == {}
+
+    await job_queue.hold_family(walk, spared=["walk"])
+
+    assert await job_queue.demand_by_type() == {"walk": 1, "elsewhere": 1}
+    assert await job_queue.held_for_family_by_type() == {"per_file": 1}
+    assert await job_queue.holder_of(["per_file", "thumbnail"]) == walk
+    assert await job_queue.holder_of(["elsewhere"]) is None
+
+
+@pytest.mark.integration
+async def test_a_hold_ends_with_its_job_however_the_handler_ends(job_queue: JobQueue) -> None:
+    walk, per_file = await _a_read_and_its_work(job_queue)
+    job = await job_queue.get(walk)
+    assert job is not None
+    context = JobContext(job=job, worker_id=WORKER, queue=job_queue)
+
+    async def handler(context: JobContext) -> None:
+        await context.hold_own_family(spared=["walk"])
+        raise RuntimeError("the read failed")
+
+    with pytest.raises(RuntimeError):
+        await WorkerPool(job_queue, concurrency=1)._invoke(handler, context)
+
+    assert not context.lift_own_hold()
+    after = await job_queue.claim(OTHER_WORKER)
+    assert after is not None and after.id == per_file

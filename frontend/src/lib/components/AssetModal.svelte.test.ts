@@ -9,6 +9,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { flushSync, mount, unmount } from 'svelte';
 
 import { reactiveProps } from '$lib/design/testing.svelte';
+import { mini } from '$lib/player/mini.svelte';
+
+const ahead = vi.hoisted(() => ({ drop: vi.fn() }));
 
 vi.mock('$lib/components/AssetView.svelte', async () => ({
 	default: (await import('./AssetModalStub.test.svelte')).default
@@ -17,6 +20,8 @@ vi.mock('$lib/player/asset-view', () => ({
 	canStepBack: () => false,
 	canStepForward: () => false,
 	dismissingAsset: () => {},
+	dropAhead: ahead.drop,
+	lookAhead: () => {},
 	playOn: async () => null,
 	runGoesOn: () => false,
 	showAsset: () => {},
@@ -81,5 +86,30 @@ describe('leaving the file panel', () => {
 		veil.click();
 
 		expect(onclose).toHaveBeenCalledTimes(2);
+	});
+});
+
+describe('what was found ahead', () => {
+	it('is dropped when the panel closes', () => {
+		ahead.drop.mockClear();
+		open('file-one');
+
+		unmount(instance!);
+		instance = null;
+
+		expect(ahead.drop).toHaveBeenCalledTimes(1);
+	});
+
+	it('is kept for the corner the file goes down to', () => {
+		ahead.drop.mockClear();
+		open('file-one');
+		mini.handover = true;
+		flushSync();
+
+		unmount(instance!);
+		instance = null;
+		mini.left();
+
+		expect(ahead.drop).not.toHaveBeenCalled();
 	});
 });

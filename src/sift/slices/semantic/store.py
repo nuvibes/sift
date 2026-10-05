@@ -35,11 +35,14 @@ import struct
 from collections.abc import Sequence
 from dataclasses import dataclass
 
+from sift.kernel.access.ranked import VIEWER_FILES, ranked_among
+from sift.kernel.access.viewer import Viewer
 from sift.kernel.audience import EVERY_ADMIN
 from sift.kernel.changes import About, announce
 from sift.kernel.db import Database, in_clause
 from sift.kernel.forgetting import register_forgetting
 from sift.kernel.log import get_logger
+from sift.kernel.sql_splice import splice
 from sift.kernel.wiring import Part
 
 log = get_logger(__name__)
@@ -65,12 +68,10 @@ DIMENSION = 768
 # no symptom. So the scaling happens where the numbers are made, in the embedder, and the pooled
 # description of a whole file is scaled again after averaging for the same reason.
 
-#: How many neighbours to ask for beyond what the caller wants.
+#: How many frames to ask for beyond the files the caller wants.
 #:
-#: The lookup runs before any permission rule does: it is arithmetic over numbers, and it knows
-#: nothing about who is asking, so some of what it returns will be filtered out afterwards, and
-#: several frames of one file collapse into one result. Asking for exactly a page of neighbours
-#: therefore returns less than a page. This is the margin, and the caller is told when it was not
+#: Several frames of one file collapse into one result, so asking for exactly a page of frames
+#: returns less than a page of files. This is the margin, and the caller is told when it was not
 #: enough rather than being handed a short page that looks complete.
 OVERSAMPLE = 8
 
@@ -165,6 +166,15 @@ CLEAR_BATCH = 500
 _NEAREST = (
     "SELECT asset_id, at_ms, distance FROM semantic_frames "
     "WHERE embedding MATCH ? AND k = ? AND revision = ? ORDER BY distance"
+)
+# Only the asker's own files are ranked, so a hidden file can neither fill the page nor shorten it.
+# By rowid: the index tests a text IN against every listed file per frame, a rowid IN by search.
+_NEAREST_AMONG = splice(
+    "SELECT asset_id, at_ms, distance FROM semantic_frames"
+    " WHERE embedding MATCH :vector AND k = :k AND revision = :revision"
+    " AND rowid IN (SELECT f.rowid FROM semantic_frames f WHERE f.revision = :revision"
+    " AND +f.asset_id IN ({{VIEWER_FILES}})) ORDER BY distance",
+    VIEWER_FILES=VIEWER_FILES,
 )
 
 
@@ -319,13 +329,17 @@ class VectorStore:
             await connection.execute(_FORGET_POOLED, (asset_id,))
 
     async def nearest(
-        self, vector: Sequence[float], *, revision: str, limit: int
+        self,
+        vector: Sequence[float],
+        *,
+        revision: str,
+        limit: int,
+        asker: Viewer | None = None,
     ) -> list[Neighbour]:
-        """The closest frames to this one, nearest first, at most one per file.
+        """The closest frames to this one, nearest first, at most one per file, among the files
+        `asker` may see; every file for a pass with no asker.
 
-        Among the frames `revision` described and no others: the question is that model's
-        numbers, and another model's are the same length and mean nothing to it. A file the
-        previous model described is simply not in the answer until it has been described again.
+        Among `revision`'s frames only: another model's numbers mean nothing to this one.
 
         Collapsed here rather than by the caller: thirty frames of one video are thirty
         neighbours, and a page of results made of the same file thirty times is not a page of
@@ -337,7 +351,12 @@ class VectorStore:
             # not a table brought into existence by somebody searching.
             return []
         wanted = min(limit * OVERSAMPLE, K_LIMIT)
-        rows = await self._database.fetch_all(_NEAREST, (_pack(vector), wanted, revision))
+        among = None if asker is None else await ranked_among(self._database, asker)
+        if among is None:
+            rows = await self._database.fetch_all(_NEAREST, (_pack(vector), wanted, revision))
+        else:
+            asked = {"vector": _pack(vector), "k": wanted, "revision": revision, **among}
+            rows = await self._database.fetch_all(_NEAREST_AMONG, asked)
 
         best: dict[str, Neighbour] = {}
         for row in rows:

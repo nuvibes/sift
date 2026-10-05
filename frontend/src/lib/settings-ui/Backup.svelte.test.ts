@@ -1,8 +1,4 @@
-/* Backup and restore, as far as the Database Switcher concerns it.
- *
- * The switcher is drawn on THIS pane, after putting a backup back, so a settings search for it,
- * which opens this section and rings `backup.switcher`, finds a heading to ring.
- */
+/* Backup and restore. The Database Switcher is drawn on this pane, so a search for it finds a heading. */
 
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { flushSync, mount } from 'svelte';
@@ -42,6 +38,9 @@ const unmarkedNow = vi.hoisted(() => ({
 	bin: false
 }));
 const deleteUnmarked = vi.hoisted(() => vi.fn(async () => {}));
+const saveRules = vi.hoisted(() => vi.fn(async () => {}));
+/* Each pane's view, newest last, so a test reads the one it drew. */
+const made = vi.hoisted(() => [] as { load: () => Promise<void> }[]);
 
 /* The two rows about the FILE, declared only when a test asks for them. */
 const declared = vi.hoisted(() => ({ rows: false }));
@@ -58,32 +57,47 @@ vi.mock('$lib/api/client', () => ({
 vi.mock('./backup-state.svelte', () => ({
 	// The database switcher's copy is watched by its job type, read from the same module.
 	DUPLICATE_JOB: 'library_duplicate',
-	Backup: class {
-		keep = 3;
-		keepDays = 7;
-		folder = '';
-		parts = parts.now;
-		unmarked = unmarkedNow.list;
-		recycleBin = unmarkedNow.bin;
-		problem = null;
-		done = null;
-		busy = false;
-		loading = false;
-		loaded = true;
-		besideSiftData = false;
-		async load() {}
-		async loadContents() {}
-		async loadUnmarked() {}
-		deleteUnmarked = deleteUnmarked;
-		saved = savedNow.backup;
-		copyOf(name: string) {
-			savedNow.copied.push(name);
-		}
-		async exportNow() {}
-		async saveSchedule() {}
-		async restore() {}
+	SAVING: 'backup',
+	get backup() {
+		return new FakeBackup();
 	}
 }));
+
+const FakeBackup = vi.hoisted(
+	() =>
+		class {
+			keep = 3;
+			keepDays = 7;
+			folder = '';
+			parts = parts.now;
+			unmarked = unmarkedNow.list;
+			recycleBin = unmarkedNow.bin;
+			problem = null;
+			done = null;
+			busy = backupRow.saving;
+			exporting = backupRow.saving;
+			working = backupRow.working;
+			loading = false;
+			loaded = true;
+			besideSiftData = false;
+			load = vi.fn(async () => {});
+			constructor() {
+				made.push(this);
+			}
+			async loadContents() {}
+			async loadUnmarked() {}
+			deleteUnmarked = deleteUnmarked;
+			saved = savedNow.backup;
+			copyOf(name: string) {
+				savedNow.copied.push(name);
+			}
+			async exportNow() {}
+			async saveSchedule() {}
+			saveRules = saveRules;
+			async restore() {}
+			arrive() {}
+		}
+);
 
 vi.mock('./panel.svelte', () => ({
 	SettingsPanel: class {
@@ -109,13 +123,19 @@ vi.mock('$lib/settings-ui/settings-view', () => ({ showSettingsSection: vi.fn() 
 /* The backup task's row reads the shared task list; nothing here fetches it. Its last run is
    filled only by the test that asks about it. */
 const backupRow = vi.hoisted(() => ({
-	last: null as null | { ended_at: number; outcome: string; said: string | null }
+	last: null as null | { ended_at: number; outcome: string; said: string | null },
+	running: false,
+	saving: false,
+	/* What the server says runs. */
+	working: null as string | null
 }));
 
 vi.mock('$lib/jobs/tasks.svelte', () => ({
 	taskList: {
 		row: (id: string) =>
-			id === 'backup' && backupRow.last ? { id, last: backupRow.last } : undefined,
+			id === 'backup' && (backupRow.last || backupRow.running)
+				? { id, last: backupRow.last, running: backupRow.running }
+				: undefined,
 		pressing: {},
 		failed: false,
 		ensure: async () => {},
@@ -138,6 +158,9 @@ afterEach(() => {
 	unmarkedNow.bin = false;
 	declared.rows = false;
 	backupRow.last = null;
+	backupRow.running = false;
+	backupRow.saving = false;
+	backupRow.working = null;
 	savedNow.backup = null;
 	savedNow.copied = [];
 	canShowInFolder.mockReturnValue(false);
@@ -206,6 +229,23 @@ it('draws how many to keep and where, editable, while the cadence under Tasks is
 		expect(row?.querySelector('input:disabled, button:disabled')).toBeNull();
 	}
 	expect(host.textContent).toContain('Choose how often backups run under');
+});
+
+it('saves a rule the moment it changes, with no Save press after it', async () => {
+	declared.rows = true;
+	await draw();
+
+	const box = host.querySelector<HTMLInputElement>('[id="backup.keep"] input')!;
+	box.value = '5';
+	box.dispatchEvent(new Event('input', { bubbles: true }));
+	flushSync();
+	box.dispatchEvent(new FocusEvent('blur'));
+	flushSync();
+
+	expect(saveRules).toHaveBeenCalledWith({ keep: 5 });
+	const presses = [...host.querySelectorAll('button')].map((one) => one.textContent?.trim());
+	expect(presses).not.toContain('Save');
+	expect(host.textContent).not.toContain('Save backup settings');
 });
 
 it('says when the last automatic backup ran, from the task on record, beside where to set it', async () => {
@@ -288,6 +328,27 @@ it('lists the backups no rule deletes, each with its size and a Delete behind a 
 	);
 });
 
+it('says where a deleted backup went in a toast, beside the press, as well as atop the pane', async () => {
+	const name = 'sift-backup-20260918-030012-0.1.198.zip';
+	unmarkedNow.list = [{ name, taken_at: 1789714812, size_bytes: 412_381_118 }];
+	deleteUnmarked.mockImplementationOnce(async function (this: { done: string | null }) {
+		this.done = `${name} is in the Recycle Bin.`;
+	});
+	await draw();
+	const { toasts } = await import('$lib/shell/toasts.svelte');
+	const said = vi.spyOn(toasts, 'show');
+	try {
+		host.querySelector<HTMLButtonElement>('button[aria-label^="Delete the backup from "]')?.click();
+		flushSync();
+		[...document.querySelectorAll('button')]
+			.find((one) => one.textContent?.trim() === 'Delete backup')
+			?.click();
+		await vi.waitFor(() => expect(said).toHaveBeenCalledWith(`${name} is in the Recycle Bin.`));
+	} finally {
+		said.mockRestore();
+	}
+});
+
 /* SAVE A BACKUP SAYS WHERE IT WENT. The press writes into the backup folder on the computer
  * running Sift; the pane says that folder, and offers the one way this device has to reach it. */
 const SAVED = {
@@ -324,4 +385,49 @@ it('shows the folder itself in the Sift app on the computer running Sift', async
 	show?.click();
 	expect(showInFolder).toHaveBeenCalledWith(SAVED.path);
 	expect(host.textContent).not.toContain('Download a copy');
+});
+
+it.each([
+	['a save pressed on an earlier visit', 'saving'],
+	["the backup task's own run", 'running']
+] as const)('draws Save a backup busy from the first frame during %s', async (_name, what) => {
+	backupRow[what] = true;
+	await draw();
+
+	const press = [...host.querySelectorAll('button')].find((one) =>
+		one.textContent?.includes('Save a backup')
+	);
+	expect(press?.getAttribute('aria-busy')).toBe('true');
+	expect(press?.disabled).toBe(true);
+});
+
+it("takes the window's one view, so a save outlives the pane that pressed it", async () => {
+	const { readFileSync } = await import('node:fs');
+	expect(readFileSync('src/lib/settings-ui/Backup.svelte', 'utf8')).toContain(
+		'const view = backup;'
+	);
+});
+
+it('draws a save pressed in another window busy, and refuses a restore during any such work', async () => {
+	backupRow.working = 'backup';
+	await draw();
+
+	const press = [...host.querySelectorAll('button')].find((one) =>
+		one.textContent?.includes('Save a backup')
+	);
+	expect(press?.getAttribute('aria-busy')).toBe('true');
+	expect(press?.disabled).toBe(true);
+	expect(host.querySelector<HTMLInputElement>('input[type="file"]')?.disabled).toBe(true);
+});
+
+it('reads the schedule again when the server says a save started or ended', async () => {
+	const { settingChanges } = await import('$lib/library/changes.svelte');
+	await draw();
+	const view = made.at(-1);
+	vi.mocked(view!.load).mockClear();
+
+	settingChanges.changed();
+	flushSync();
+
+	expect(view?.load).toHaveBeenCalledOnce();
 });

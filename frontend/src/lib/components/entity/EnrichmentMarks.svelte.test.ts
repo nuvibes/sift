@@ -88,3 +88,26 @@ it('draws the Created by mark in the glyph and words of the act that made the ro
 		drawn = null;
 	}
 });
+
+it("draws each stash-box's own glyph, all in the one paint the marks share", () => {
+	drawn = mount(EnrichmentMarks, {
+		target: host,
+		props: {
+			sources: [
+				{ via: 'stash', name: 'StashDB', box: 'stashdb' },
+				{ via: 'stash', name: 'PMVStash', box: 'pmvstash' },
+				{ via: 'stash', name: 'FansDB', box: 'fansdb' },
+				{ via: 'stash', name: 'Example box', box: 'example' }
+			]
+		}
+	}) as Record<string, unknown>;
+	flushSync();
+	const marks = [...host.querySelectorAll('.mark')];
+	expect(marks.map((one) => one.querySelector('.icon')?.textContent)).toEqual(
+		['inventory_2', 'movie', 'person_celebrate', 'inventory_2'].map((glyph) =>
+			String.fromCodePoint(parseInt(codepoints[glyph], 16))
+		)
+	);
+	for (const one of marks) expect(one.getAttribute('style')).toBeNull();
+	expect(declared(marksSource, '.mark', 'color')).toBe('var(--sift-accent-text)');
+});

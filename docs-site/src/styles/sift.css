@@ -111,3 +111,11 @@ site-search button[data-open-modal],
 	color: var(--p-ink);
 	background-color: var(--p-accent-bg);
 }
+
+/* "Link copied", beside the heading link that was clicked (src/components/MarkdownContent.astro). */
+.sl-markdown-content .link-copied {
+	margin-inline-start: 0.5rem;
+	font-size: var(--sl-text-sm);
+	font-weight: normal;
+	color: var(--sl-color-accent-high);
+}

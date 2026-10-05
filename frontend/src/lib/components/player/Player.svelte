@@ -1,9 +1,6 @@
 <script lang="ts">
 	import { Button, Separator } from '$lib/components/common';
-	/* The player: it asks the server how this browser should play this file, attaches what the
-	   answer says, and draws Sift's own controls. Play through is the default, since a library of
-	   short clips that stops at every end is a press every few seconds; and a file Sift cannot
-	   convert as fast as it plays says so before it starts. */
+	/* The player: asks the server how this browser plays the file, attaches it, draws the controls. */
 	import { onMount, untrack } from 'svelte';
 	import { api, ApiError } from '$lib/api/client';
 	import { fetchSettingValues, saveSettings } from '$lib/settings-ui/settings';
@@ -55,7 +52,7 @@
 	import { handover, mini } from '$lib/player/mini.svelte';
 	import { beforeNavigate } from '$app/navigation';
 	import { page } from '$app/state';
-	import { takeDismissal, toggleShuffle } from '$lib/player/asset-view';
+	import { takeDismissal, takePlan, toggleShuffle } from '$lib/player/asset-view';
 	import { popoutLeavesToMini } from '$lib/shell/interface-state.svelte';
 	/* Aliased: this file's `watching` is the clip being watched; the store is whether any player runs. */
 	import { watching as playback } from '$lib/player/watching.svelte';
@@ -105,6 +102,8 @@
 		seekTo?: { ms: number } | null;
 		/** Whether it is playing, reported as it changes, for a frame drawing its own play control. */
 		onplaystate?: (playing: boolean) => void;
+		/** The file's first frame is playing, once per file. */
+		onstarted?: () => void;
 		/** How long the clip is, once the element knows. For a frame drawing its own progress line. */
 		ondurationknown?: (seconds: number) => void;
 		/** Open held: a clip handed between the two players while paused stays paused. */
@@ -126,6 +125,7 @@
 		onprogress,
 		onplan,
 		onplaystate,
+		onstarted,
 		ondurationknown,
 		favorite = false,
 		rating = null,
@@ -220,6 +220,7 @@
 	);
 	/* Whether the plan's starting point has been applied: once, on the first metadata. */
 	let resumed = false;
+	let started = false;
 
 	/** The plan is only acted on once it says the file will actually play, or once overruled. A
 	    file Sift has not read has nothing to act on, whatever anybody presses. */
@@ -264,6 +265,7 @@
 			sittingPlace = place;
 			watch.restart();
 			resumed = false;
+			started = false;
 			position = 0;
 			duration = 0;
 			problem = null;
@@ -289,9 +291,7 @@
 		if (plan?.route === 'unread') void load();
 	});
 
-	/* A player torn down while it is playing never fires `pause`, so the count of running players
-	   would never come back down, and the idle timers would believe somebody was watching for the
-	   rest of the session. Closing the panel mid-play is the ordinary way this happens. */
+	/* Torn down mid-play fires no `pause`, so the count of running players is brought down here. */
 	onMount(() => () => {
 		if (playing) playback.stopped();
 	});
@@ -322,7 +322,7 @@
 		unasked = false;
 		replanned = false;
 		try {
-			const answer = await planFor(wanted);
+			const answer = takePlan(wanted) ?? (await planFor(wanted));
 			// A slower answer for a clip already moved on from must not attach itself to this one.
 			if (wanted !== watching) return;
 			plan = answer;
@@ -446,6 +446,12 @@
 		onplaystate?.(true);
 	}
 
+	function onPlaying() {
+		if (started) return;
+		started = true;
+		onstarted?.();
+	}
+
 	function onPause() {
 		if (playing) playback.stopped();
 		playing = false;
@@ -539,9 +545,10 @@
 		return muted;
 	}
 
-	/** Whether it is paused right now, for a frame handing this clip on somewhere else. */
+	/** Whether the person paused it: a clip still loading is on its way to playing. */
 	export function isPaused(): boolean {
-		return video?.paused ?? true;
+		if (!video) return true;
+		return resumed ? video.paused : startPaused;
 	}
 
 	/* Go to a moment, from a frame drawing its own timeline. */
@@ -661,7 +668,7 @@
 		/* Silenced rather than stopped: the panel starts before this view goes, and a muted second
 		   voice keeps both pictures moving through the handover. */
 		video.muted = true;
-		const held = video.paused;
+		const held = isPaused();
 		// Where the picture stands, for the corner panel to grow out of (`stageTransition`).
 		handPlace(frame?.element?.getBoundingClientRect() ?? null);
 		mini.open(cornerClip(video, held), inTheWindow(), { handover: true, bar });
@@ -686,7 +693,6 @@
 		return { width: window.innerWidth, height: window.innerHeight };
 	}
 
-	/* The strip, if there is one worth reading. */
 	const strip = $derived(usable(sprite) ? sprite : null);
 
 	/* The A-B loop: two points, held in a module so a handover to the corner keeps them, and
@@ -811,6 +817,7 @@
 		style:scale={press.view.scale}
 		style:translate={press.view.offset}
 		onplay={onPlay}
+		onplaying={onPlaying}
 		onpause={onPause}
 		ontimeupdate={onTimeUpdate}
 		onended={onEnded}

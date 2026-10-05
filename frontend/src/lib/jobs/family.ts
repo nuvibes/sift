@@ -1,5 +1,5 @@
 import type { components } from '$lib/api/schema';
-import { NOT_ENOUGH_TO_SAY, sayWindow } from '$lib/shell/when';
+import { NOT_ENOUGH_TO_SAY, sayAtLeast, sayWindow } from '$lib/shell/when';
 import { sayDuration } from './labels';
 import { sayAgo } from '$lib/shell/when';
 import type { Column } from '$lib/components/common/DataRows.svelte';
@@ -36,16 +36,12 @@ export type StepsPage = components['schemas']['StepsOfJob'];
  * apart. "Time left" is words, so it is left-aligned; only the count is a number, so only the count
  * is right.
  *
- * The status column holds the longest words on the row ("12 in progress", "Waiting for
- * quiet hours"), so it takes as much of the width as the name does. At 1.4 shares against the
- * name's 3 it is narrower than a running task's pill in an ordinary window, and the pill runs on
- * under Time left; 2.2 leaves it room. A word longer than even that is cut short by
- * the pill itself (`Badge`), with the whole of it on the hover, and never drawn over the next
- * column.
+ * The status column is never narrower than "Paused while Sift benchmarks this device", the
+ * longest pill a pass wears; a longer one is cut by the pill (`Badge`), whole on the hover.
  */
 export const ACTIVITY_COLUMNS: readonly Column[] = [
 	{ id: 'name', width: 'minmax(0, 2.2fr)' },
-	{ id: 'status', label: COPY.columns.status, width: 'minmax(0, 2.2fr)' },
+	{ id: 'status', label: COPY.columns.status, width: 'minmax(17rem, 2.2fr)' },
 	{ id: 'left', label: COPY.columns.left, width: 'minmax(0, 1.4fr)' },
 	{ id: 'bar', label: COPY.columns.progress, width: 'minmax(0, 1fr)' },
 	{ id: 'count', label: COPY.columns.done, width: 'minmax(0, 1.4fr)', align: 'end' }
@@ -200,6 +196,8 @@ export interface Pass {
 	task: string | null;
 	/** Whether this pass is allowed to do anything: switched on, and able to run here. */
 	allowed: boolean;
+	/** Why its last run failed, while that failure stands and nothing runs, or null. */
+	why: string | null;
 }
 
 /**
@@ -268,24 +266,20 @@ export function passes(page: JobsPage | null): Pass[] {
 		const ready = declared.ready !== false;
 		const total = declared.total ?? 0;
 		const finished = Math.min(declared.done ?? 0, total);
-		const range = standsAlone(sayWindow(declared.quick_seconds, declared.slow_seconds));
-		const idle = waiting === 0 && outstanding === 0;
+		const range = standsAlone(
+			declared.at_least
+				? sayAtLeast(declared.quick_seconds)
+				: sayWindow(declared.quick_seconds, declared.slow_seconds)
+		);
+		const idle = waiting === 0 && outstanding === 0 && !declared.time_unknown;
+		const { failed, why } = failureOf(declared, { on, ready, outstanding });
 		return [
 			{
 				id: family,
 				title: declared.label,
-				now: nowWord(declared, { on, ready, outstanding, idle }),
-				tone: nowTone({ on, ready, outstanding, idle, reason: declared.reason ?? null }),
-				// The reason a pass cannot run belongs in this column: it is the column somebody
-				// reads to find out when the work will be done, and "it cannot start" is an answer
-				// to that question rather than a different subject.
-				when: !on
-					? CHANGE_IN_IMPORTING
-					: !ready
-						? (declared.problem ?? WAITING_FOR_RUNTIME)
-						: idle
-							? NOTHING_WAITING
-							: range,
+				now: nowWord(declared, { on, ready, outstanding, idle, failed }),
+				tone: nowTone({ on, ready, outstanding, idle, failed, reason: declared.reason ?? null }),
+				when: timeLeft(declared, { on, ready, idle }, range),
 				settingLink: !on,
 				// Done over what wants doing, from the library, so a finished library is full.
 				progress: total > 0 ? (finished / total) * 100 : 0,
@@ -293,10 +287,33 @@ export function passes(page: JobsPage | null): Pass[] {
 					total > 0 ? `${finished.toLocaleString()} of ${total.toLocaleString()}` : NOTHING_WAITING,
 				parts: partsOf(declared),
 				task: taskOf(declared),
-				allowed: on && ready
+				allowed: on && ready,
+				why
 			}
 		];
 	});
+}
+
+/** When the work will be done, "it cannot start" included, then what waits and the read's pace. */
+function timeLeft(
+	declared: NonNullable<JobsPage['families']>[string],
+	how: { on: boolean; ready: boolean; idle: boolean },
+	range: string
+): string {
+	if (!how.on) return CHANGE_IN_IMPORTING;
+	if (!how.ready) return declared.problem ?? WAITING_FOR_RUNTIME;
+	let when = how.idle ? NOTHING_WAITING : (declared.time_unknown ?? range);
+	for (const then of [declared.for_task, declared.pace])
+		if (then) when = `${when.replace(/\.$/, '')}. ${then}`;
+	return when;
+}
+
+function failureOf(
+	declared: NonNullable<JobsPage['families']>[string],
+	how: { on: boolean; ready: boolean; outstanding: number }
+): { failed: number; why: string | null } {
+	const failed = how.on && how.ready && how.outstanding === 0 ? (declared.failed ?? 0) : 0;
+	return { failed, why: failed > 0 ? (declared.last_error ?? null) : null };
 }
 
 /** The parts a row draws on their own lines: two or more, or none. See `Pass.parts`. */
@@ -319,6 +336,7 @@ interface How {
 	ready: boolean;
 	outstanding: number;
 	idle: boolean;
+	failed: number;
 }
 
 /**
@@ -353,12 +371,9 @@ function nowWord(declared: JobsPage['families'][string], how: How): string {
 	// it describes, so the two columns do not say one thing twice.
 	if (declared.reason && declared.reason !== NOTHING_WAITING)
 		return declared.reason.replace(/\.$/, '');
-	if (how.outstanding > 0) {
-		const at = declared.at_once ?? 0;
-		return inProgress(at);
-	}
-	// Files lack the work and nothing is queued for it: nothing happens until somebody presses
-	// Run now or a scan brings new files. "Waiting" promised otherwise.
+	if (how.outstanding > 0) return inProgress(declared.running ?? 0);
+	if (how.failed > 0) return failedWord(how.failed);
+	// Nothing happens until somebody presses Run now or a scan brings files: not "Waiting".
 	return how.idle ? 'Up to date' : 'Not started';
 }
 
@@ -370,8 +385,9 @@ function nowTone(how: How & { reason: string | null }): PassTone {
 	   the opposite of its own word. The same tone a held pass with nothing queued yet has below. */
 	if (how.outstanding > 0 && how.reason && how.reason !== NOTHING_WAITING) return 'warn';
 	if (how.outstanding > 0) return 'accent';
+	if (how.failed > 0) return 'warn';
 	if (how.idle) return 'good';
-	return how.reason ? 'warn' : 'plain';
+	return how.reason && how.reason !== NOTHING_WAITING ? 'warn' : 'plain';
 }
 
 /* ---------------------------------------------------------------------------------------------

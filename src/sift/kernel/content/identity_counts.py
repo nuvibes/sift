@@ -65,6 +65,9 @@ def _roots_bound(roots: Sequence[str] | None) -> tuple[Any, ...]:
     return () if roots is None else (json.dumps(sorted(set(roots))),)
 
 
+_AMONG = " AND a.id IN (SELECT value FROM json_each(?))"
+
+
 def _term_params(lacks: Sequence[Lack]) -> list[Any]:
     """Every term's values in `_lacking_statement`'s `?` order: condition, `within`, product."""
     params: list[Any] = []
@@ -100,9 +103,17 @@ SELECT a.id FROM assets a
     PRESENT=HAS_A_PRESENT_COPY,
 )
 
-_COUNT_ASSETS = "SELECT COUNT(*) AS total FROM assets a"
+#: Browse's files: a removed folder's keep their rows and no place.
+_HAS_A_PLACE = "EXISTS (SELECT 1 FROM asset_locations l WHERE l.asset_id = a.id)"
 
-_COUNT_WITH_AUDIO = "SELECT COUNT(*) AS total FROM assets a WHERE a.acodec IS NOT NULL"
+_COUNT_ASSETS = splice("SELECT COUNT(*) AS total FROM assets a WHERE {{PLACE}}", PLACE=_HAS_A_PLACE)
+
+_COUNT_PLACED = "SELECT COUNT(DISTINCT asset_id) AS total FROM asset_locations"
+
+_COUNT_WITH_AUDIO = splice(
+    "SELECT COUNT(*) AS total FROM assets a WHERE {{PLACE}} AND a.acodec IS NOT NULL",
+    PLACE=_HAS_A_PLACE,
+)
 
 #: `_MADE_FOR` before a file is read: its kind is known, its running time is not, so an unread
 #: video counts as wanting a strip.
@@ -116,10 +127,8 @@ _COMING = """(a.probed_at IS NULL
       AND NOT EXISTS (SELECT 1 FROM file_verdicts pv
                        WHERE pv.asset_id = a.id AND pv.product = ? AND pv.transient = 0))"""
 
-# Both ends of a product's bar on Activity range over ONE set, the set `_COUNT_LACKING` reads:
-# files with a present copy, not given up on, that the work is made for (read ones by `_MADE_FOR`,
-# unread ones by `_MADE_FOR_UNREAD`, and those lack it). Binds the read's verdict product, then
-# this product's.
+# Both ends of a product's bar range over the set `_COUNT_LACKING` reads: files with a present copy,
+# not given up on, that the work is made for, read or not. Binds the read's verdict, then this one's.
 _COUNT_WANTING = """
 SELECT COUNT(*) AS total FROM assets a
  WHERE {{PRESENT}}
@@ -256,7 +265,7 @@ _COUNT_LACKING_BY_KIND = splice(
 SELECT kind, <<EACH>>, COALESCE(SUM(<<ANY>>), 0) AS files
 FROM (SELECT a.media_type AS kind, <<TERMS>> FROM assets a
       WHERE a.probed_at IS NOT NULL
-        AND {{PRESENT}}<<IN_ROOTS>>)
+        AND {{PRESENT}}<<IN_ROOTS>><<AMONG>>)
 GROUP BY kind
 """,
     PRESENT=HAS_A_PRESENT_COPY,
@@ -298,6 +307,7 @@ def _lacking_statement(
     *,
     statement: str = _COUNT_LACKING,
     roots: Sequence[str] | None = None,
+    among: Sequence[str] | None = None,
 ) -> str:
     """`_COUNT_LACKING` (or a variant) with these terms, numbered by position. Only each term's
     constant condition goes in as text; every value binds, `roots`' after every term's.
@@ -316,6 +326,7 @@ def _lacking_statement(
     any_ticked = " OR ".join(f"t{n}" for n, on in enumerate(ticked) if on) or "0"
     return (
         _in_roots(statement, roots)
+        .replace("<<AMONG>>", "" if among is None else _AMONG)
         .replace("<<TERMS>>", terms)
         .replace("<<EACH>>", each)
         .replace("<<ANY>>", any_ticked)
@@ -328,7 +339,7 @@ class Counts(StoreCore):
     async def asset_count(self, within: Within | None = None) -> int:
         """How many files the library holds (of those `within` wants): the denominator for a
         feature that may not query the asset table itself."""
-        return await self._count_within(_COUNT_ASSETS, within)
+        return await self._count_within(_COUNT_PLACED if within is None else _COUNT_ASSETS, within)
 
     async def with_audio_count(self, within: Within | None = None) -> int:
         """How many files carry a sound track: the music fingerprint's denominator."""
@@ -423,15 +434,19 @@ class Counts(StoreCore):
         *,
         ticked: Sequence[bool] | None = None,
         roots: Sequence[str] | None = None,
+        among: Sequence[str] | None = None,
     ) -> dict[str, Lacking]:
-        """`count_lacking` split by media kind, for an estimate that prices each kind apart."""
+        """`count_lacking` split by media kind, for an estimate that prices each kind apart;
+        `among` counts only those files."""
         if not lacks:
             return {}
         flags = [True] * len(lacks) if ticked is None else list(ticked)
         if len(flags) != len(lacks):
             raise ValueError("count_lacking needs one tick per term")
-        statement = _lacking_statement(lacks, flags, statement=_COUNT_LACKING_BY_KIND, roots=roots)
-        params = [*_term_params(lacks), *_roots_bound(roots)]
+        statement = _lacking_statement(
+            lacks, flags, statement=_COUNT_LACKING_BY_KIND, roots=roots, among=among
+        )
+        params = [*_term_params(lacks), *_roots_bound(roots), *_roots_bound(among)]
         rows = await self._db.fetch_all(statement, params)
         return {
             str(row["kind"]): Lacking(

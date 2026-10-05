@@ -205,7 +205,7 @@ describe('the heart and the stars', () => {
 });
 
 describe('the orders this wall offers', () => {
-	it('are the seven every wall shares, then the two that need an opinion', () => {
+	it('are the eleven every wall shares, then the two that need an opinion', () => {
 		expect(TAG_ORDERS.map((one) => one.value)).toEqual([
 			'newest',
 			'oldest',
@@ -214,6 +214,10 @@ describe('the orders this wall offers', () => {
 			'name_za',
 			'largest',
 			'smallest',
+			'largest_total',
+			'smallest_total',
+			'longest_total',
+			'shortest_total',
 			'favorite',
 			'rating'
 		]);

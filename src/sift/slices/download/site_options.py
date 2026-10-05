@@ -201,6 +201,8 @@ _SAID: Mapping[str, tuple[str, str]] = {
 #: History feed links to the Downloads pane (`workbench.router.setting_href`).
 SITE_OPTIONS_KEY = "site_options.{scope}.{field}"
 
+DOWNLOAD_FOLDER = "Download folder"
+
 
 def _whose(scope: str) -> str:
     """Whose setting it is, as a line says it: "Instagram's"."""
@@ -234,11 +236,12 @@ async def _say_changes(
         if before == after:
             continue
         key = SITE_OPTIONS_KEY.format(scope=scope, field=field)
-        name = (
-            f"The {words} for other addresses"
-            if scope == DEFAULT_SCOPE
-            else f"{_whose(scope)} {words}"
-        )
+        if scope != DEFAULT_SCOPE:
+            name = f"{_whose(scope)} {words}"
+        elif field == "dest_folder_id":
+            name = DOWNLOAD_FOLDER
+        else:
+            name = f"The {words} for other addresses"
 
         await record_event(
             connection,
@@ -271,7 +274,7 @@ def _naming(typed: str | None, site_key: str, for_all_sites: str | None) -> str 
     return for_all_sites
 
 
-__all__ = ["DEFAULT_SCOPE", "SITE_OPTIONS_KEY", "SiteOptionStore", "SiteOptions"]
+__all__ = ["DEFAULT_SCOPE", "DOWNLOAD_FOLDER", "SITE_OPTIONS_KEY", "SiteOptionStore", "SiteOptions"]
 
 
 #: What each site does differently: what its files are called, and where they land.

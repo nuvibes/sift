@@ -64,9 +64,8 @@ export interface Pick {
  * rows. A file comes from one site, so this site and a site inside it is nearly always an empty
  * wall, and a pick there would empty the screen. Its cards stay plain links.
  *
- * A collection's page picks like every other: its contents route takes the five fields
- * (`narrowingOf`, `collections.contents`) in the collection's own arranged order. Which page the
- * wall is on decides nothing.
+ * A collection's page picks like every other: its contents route reads the address's filters
+ * (`contentsAsked`) in the collection's own arranged order.
  */
 export function pickFieldOf(showing: RelatedKind): PickField | null {
 	if (showing === 'sites_within' || showing === 'tags_within') return null;
@@ -130,8 +129,8 @@ export function picksOf(url: URL): Pick[] {
  * Typed values too, and that is the same rule `carryPicks` follows: a filter somebody put on these
  * fields is in force where the picks are, and the bar draws a chip for it: a chip whose filter the
  * listing silently dropped would be a filter in force on the bar and nowhere else. The collection
- * page hands this to `collections.contents`; the other entity pages' Files tabs read the same
- * parameters through the media grid (`AssetGrid`'s `fromAddress`).
+ * page sends the whole address's filters (`contentsAsked`); the other entity pages' Files tabs read
+ * the same parameters through the media grid (`AssetGrid`'s `fromAddress`).
  */
 export function narrowingOf(url: URL): Record<string, string[]> {
 	const asked: Record<string, string[]> = {};
@@ -223,10 +222,9 @@ export function tabsCarryingPicks<Tab extends { href: string }>(
  * joined the same way (`bothNarrowings`), one row, so the strip and the tab cannot disagree. Null
  * where nothing is picked: the record's own count is then right and costs nothing.
  *
- * For the four pages whose Files tab is the media grid over `/assets`. A collection's page does not
- * call this: its Files tab is the collection's own listing (`collections.contents`), fetched
- * filtered on every tab, so the strip's number is that answer's rows with no second request. Asking
- * `/assets` would count the files carrying the collection's name, a different question.
+ * For the four pages whose Files tab is the media grid over `/assets`. A collection's strip number
+ * is its own listing's total, asked once more with the picks alone while words or a bar filter are
+ * in force. Asking `/assets` would count the files carrying the collection's name instead.
  */
 export async function narrowedFilesTotal(
 	url: URL,

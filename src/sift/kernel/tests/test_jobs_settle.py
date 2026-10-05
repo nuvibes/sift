@@ -557,6 +557,24 @@ async def test_only_the_owning_worker_may_say_how_many_files(job_queue: JobQueue
 
 
 @pytest.mark.integration
+async def test_a_waiting_job_is_told_its_files_and_a_claimed_one_is_not(
+    job_queue: JobQueue,
+) -> None:
+    """A count ahead of a scan writes onto the scan while it waits; once claimed it counts itself."""
+    job_type = noop_handler("scan")
+    job_id = await job_queue.enqueue(job_type)
+
+    assert await job_queue.set_waiting_units(job_id, 120) is True
+    summary = await job_queue.work_summary()
+    assert summary.run[job_type].left_units == pytest.approx(120.0)
+
+    await job_queue.claim(WORKER)
+    assert await job_queue.set_waiting_units(job_id, 7) is False
+    job = await job_queue.get(job_id)
+    assert job is not None and job.units == 120
+
+
+@pytest.mark.integration
 @pytest.mark.parametrize(("given_", "stored"), [(-1.0, 0.0), (2.0, 1.0), (0.5, 0.5)])
 async def test_progress_stays_between_nothing_and_everything(
     job_queue: JobQueue, given_: float, stored: float

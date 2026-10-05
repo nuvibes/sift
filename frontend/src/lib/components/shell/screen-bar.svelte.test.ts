@@ -14,7 +14,9 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { page } from '$app/state';
 import { screenBar } from './screen-bar.svelte';
+import { stage } from './stage.svelte';
 
 const FILTERS = 'filters';
 /* Two ids the bar really uses. The order is a menu on the row rather than a panel, but what these
@@ -403,8 +405,25 @@ describe('the room on the top bar', () => {
 		vi.unstubAllGlobals();
 		// The store is a module singleton, so a width left set here would be the next test's answer.
 		screenBar.roomOnTopBar = true;
-		screenBar.trailGives = 0;
+		screenBar.barEnd = 0;
+		screenBar.sizeOnBar = true;
+		Reflect.deleteProperty(page, 'route');
 	});
+
+	/** A bar whose end group is parts this wide; their sum is what each side of the centre keeps. */
+	function barWithEnds(...widths: number[]): { bar: HTMLElement; parts: HTMLElement[] } {
+		const bar = document.createElement('header');
+		const actions = document.createElement('div');
+		actions.className = 'actions';
+		const parts = widths.map((width) => {
+			const part = document.createElement('div');
+			part.getBoundingClientRect = () => ({ width }) as DOMRect;
+			return part;
+		});
+		actions.append(...parts);
+		bar.append(actions);
+		return { bar, parts };
+	}
 
 	/** Say the bar's content box is this wide, the way the browser would. */
 	function barIs(inlineSize: number): void {
@@ -417,42 +436,59 @@ describe('the room on the top bar', () => {
 			);
 	}
 
-	it('keeps them up here while the bar has room for them beside the field', () => {
-		screenBar.watchRoom(document.createElement('header'));
-		barIs(780);
+	/* Ends of 100 and 204: each side keeps 304, so the sum is 2 * 304 + 88 + 227 = 923. */
+	it('keeps them up here while the bar holds both ends, the menus and the field floor', () => {
+		screenBar.watchRoom(barWithEnds(100, 204).bar);
+		barIs(923);
 
+		expect(screenBar.barEnd).toBe(304);
 		expect(screenBar.roomOnTopBar).toBe(true);
 	});
 
 	it('sends them down when the bar has less, however wide the WINDOW is', () => {
-		/* The distinction this rule is about. Nothing here touches `matchMedia`, and the
-		   answer still moves, because a rail 208px wide and 138px of caption buttons come out of
-		   this bar without the window changing size at all. */
-		screenBar.watchRoom(document.createElement('header'));
-		barIs(646);
+		/* Nothing here touches `matchMedia`: the rail and the caption buttons come out of this bar
+		   without the window changing size at all. */
+		screenBar.watchRoom(barWithEnds(100, 204).bar);
+		barIs(922);
 
 		expect(screenBar.roomOnTopBar).toBe(false);
 	});
 
 	it('reads the CONTENT box, which is what the padding for the caption buttons comes out of', () => {
-		/* A border box of 806 with 170px of padding is a content box of 636, and it is the 636 that
-		   the three columns have to share. Reading the wrong one is the same fault as reading the
-		   window, one level down. */
-		screenBar.watchRoom(document.createElement('header'));
-		barIs(636);
+		screenBar.watchRoom(barWithEnds(100, 204).bar);
+		for (const report of reporters)
+			report(
+				[
+					{ contentBoxSize: [{ inlineSize: 900, blockSize: 56 }], contentRect: { width: 1000 } }
+				] as unknown as ResizeObserverEntry[],
+				null as unknown as ResizeObserver
+			);
 
 		expect(screenBar.roomOnTopBar).toBe(false);
 	});
 
 	it('falls back to `contentRect` where an engine fills in nothing else', () => {
-		screenBar.watchRoom(document.createElement('header'));
+		screenBar.watchRoom(barWithEnds(100, 204).bar);
 		for (const report of reporters)
 			report(
-				[{ contentRect: { width: 640 } } as unknown as ResizeObserverEntry],
+				[{ contentRect: { width: 900 } } as unknown as ResizeObserverEntry],
 				null as unknown as ResizeObserver
 			);
 
 		expect(screenBar.roomOnTopBar).toBe(false);
+	});
+
+	it('measures the end group again when a screen adds to it, and needs more room', () => {
+		const { bar, parts } = barWithEnds(100, 204);
+		screenBar.watchRoom(bar);
+		barIs(1000);
+		expect(screenBar.roomOnTopBar).toBe(true);
+
+		// Theater's controls about the whole window widen the end by 88.
+		parts[0].getBoundingClientRect = () => ({ width: 188 }) as DOMRect;
+		barIs(1000);
+		expect(screenBar.barEnd).toBe(392);
+		expect(screenBar.roomOnTopBar, 'the menus stayed up beside a wider end').toBe(false);
 	});
 
 	it("keeps them up here at a phone's width, where the bar is the search box and squares", () => {
@@ -463,7 +499,7 @@ describe('the room on the top bar', () => {
 			addEventListener: () => {},
 			removeEventListener: () => {}
 		}));
-		screenBar.watchRoom(document.createElement('header'));
+		screenBar.watchRoom(barWithEnds(100, 204).bar);
 		barIs(358);
 
 		expect(screenBar.roomOnTopBar).toBe(true);
@@ -496,36 +532,82 @@ describe('the room on the top bar', () => {
 		expect(screenBar.roomOnTopBar).toBe(true);
 	});
 
-	/*
-	 * The trail's room is held on every screen, and at 1280 it would leave Theater's field short of
-	 * its floor: the menus would go down to a row of their own and Theater's title would stand a
-	 * row lower than every other screen's. The room gives way first, down to its least.
-	 */
-	it("takes what the field is short of from the trail's room before sending the menus down", () => {
-		const bar = document.createElement('header');
-		const trail = document.createElement('div');
-		trail.className = 'trail';
-		const field = document.createElement('form');
-		field.className = 'search';
-		bar.append(trail, field);
-		// The two share one row: what the room gives up, the field gains.
-		let fieldLeft = 175;
-		trail.getBoundingClientRect = () => ({ width: 210 - screenBar.trailGives }) as DOMRect;
-		field.getBoundingClientRect = () => ({ width: fieldLeft + screenBar.trailGives }) as DOMRect;
+	/** Ends of 100 and a part holding the tile size (122) beside Add (66), 16 apart: 304 in all. */
+	function barWithSize(beside = true): { bar: HTMLElement; size: { standing: boolean } } {
+		const { bar, parts } = barWithEnds(100, 0);
+		const size = { standing: true };
+		const slider = document.createElement('label');
+		slider.className = 'size';
+		slider.getBoundingClientRect = () => ({ width: size.standing ? 122 : 0 }) as DOMRect;
+		parts[1].append(slider);
+		if (beside) parts[1].append(document.createElement('div'));
+		parts[1].style.columnGap = '16px';
+		const room = beside ? 66 : 0;
+		parts[1].getBoundingClientRect = () =>
+			({ width: room + (size.standing ? 122 + (beside ? 16 : 0) : 0) }) as DOMRect;
+		return { bar, size };
+	}
+
+	/* Each side keeps the whole 304 beside the field's floor: 2 * 304 + 227 = 835. */
+	it('takes the tile size off before the centre group would slide, and back at the same width', () => {
+		const { bar, size } = barWithSize();
 		screenBar.watchRoom(bar);
 
-		barIs(1048);
-		expect(screenBar.trailGives, 'the room gave up what the field was short of').toBe(52);
-		expect(screenBar.roomOnTopBar, 'the menus left the bar over a room that could give').toBe(true);
+		barIs(835);
+		expect(screenBar.sizeOnBar).toBe(true);
+		barIs(834);
+		expect(screenBar.sizeOnBar, 'the group slid with the tile size still up').toBe(false);
 
-		// More short than the room has above its least: it gives all it can, and the menus go down.
-		fieldLeft = 23;
-		barIs(1048);
-		expect(screenBar.trailGives).toBe(146);
-		expect(screenBar.roomOnTopBar).toBe(false);
+		size.standing = false;
+		barIs(834);
+		expect(screenBar.barEnd, 'the centre is capped by what is drawn').toBe(166);
+		expect(screenBar.sizeOnBar).toBe(false);
+		barIs(835);
+		expect(screenBar.sizeOnBar, 'the tile size came back late').toBe(true);
+	});
 
-		screenBar.publish(Symbol('browse'), {});
-		expect(screenBar.trailGives, 'another screen inherited what this one took').toBe(0);
+	it('moves no threshold of the menus by leaving', () => {
+		const { bar, size } = barWithSize();
+		screenBar.watchRoom(bar);
+		barIs(834);
+		size.standing = false;
+		barIs(900);
+
+		expect(screenBar.roomOnTopBar, 'the menus came up beside a narrower end').toBe(false);
+		barIs(923);
+		expect(screenBar.roomOnTopBar).toBe(true);
+	});
+
+	it('counts the gap with it only where something stands beside it', () => {
+		/* A guest's: no Add, so the tile size frees its own width and no gap. */
+		const { bar, size } = barWithSize(false);
+		screenBar.watchRoom(bar);
+		barIs(670);
+		expect(screenBar.sizeOnBar).toBe(false);
+		size.standing = false;
+		barIs(671);
+		expect(screenBar.sizeOnBar, 'the tile size came back late').toBe(true);
+	});
+
+	it("offers the tile size on the screen's own row while it is off the top bar", () => {
+		const home = { id: 'tile-size', icon: 'grid_view' as const, label: 'Tile size', content: {} };
+		screenBar.sizeHome = home as unknown as typeof screenBar.sizeHome;
+		const owner = Symbol('a wall');
+		screenBar.publish(owner, {});
+		try {
+			expect(screenBar.tools.panels).toBeUndefined();
+			screenBar.sizeOnBar = false;
+			expect(screenBar.tools.panels).toEqual([home]);
+			stage.filling = true;
+			expect(
+				screenBar.tools.panels,
+				'offered in a filled screen, where the top bar is not'
+			).toBeUndefined();
+		} finally {
+			stage.filling = false;
+			screenBar.release(owner);
+			screenBar.sizeHome = null;
+		}
 	});
 
 	it('starts a new screen from the sum again', () => {
@@ -543,6 +625,58 @@ describe('the room on the top bar', () => {
 		fieldWidth = 400;
 		screenBar.publish(Symbol('browse'), {});
 		expect(screenBar.roomOnTopBar, 'Browse inherited what Theater needed').toBe(true);
+	});
+
+	it('puts a screen met again in its home at once, decided on the width the bar has now', () => {
+		const bar = document.createElement('header');
+		const field = document.createElement('form');
+		field.className = 'search';
+		bar.append(field);
+		let fieldWidth = 150;
+		field.getBoundingClientRect = () => ({ width: fieldWidth }) as DOMRect;
+		screenBar.watchRoom(bar);
+		const onto = (id: string) => {
+			Object.assign(page, { route: { id } });
+			screenBar.publish(Symbol(id), {});
+		};
+
+		onto('/theater');
+		barIs(864);
+		expect(screenBar.roomOnTopBar).toBe(false);
+		fieldWidth = 400;
+		onto('/browse');
+		expect(screenBar.roomOnTopBar).toBe(true);
+
+		onto('/theater');
+		expect(screenBar.roomOnTopBar, 'the menus stood on the top bar until measured again').toBe(
+			false
+		);
+
+		// The window widened while another screen was on.
+		onto('/browse');
+		barIs(2000);
+		onto('/theater');
+		expect(screenBar.roomOnTopBar, 'an old width kept the menus down').toBe(true);
+	});
+
+	it("decides the tile size on a screen met again by that screen's own end group", () => {
+		const { bar, parts } = barWithEnds(100, 204);
+		screenBar.watchRoom(bar);
+		const onto = (id: string) => {
+			Object.assign(page, { route: { id } });
+			screenBar.publish(Symbol(id), {});
+		};
+
+		onto('/theater');
+		barIs(800);
+		expect(screenBar.sizeOnBar).toBe(false);
+		parts[0].getBoundingClientRect = () => ({ width: 10 }) as DOMRect;
+		onto('/browse');
+		barIs(800);
+		expect(screenBar.sizeOnBar).toBe(true);
+
+		onto('/theater');
+		expect(screenBar.sizeOnBar, "the last screen's end decided until measured").toBe(false);
 	});
 
 	it('gives back a teardown that stops watching', () => {

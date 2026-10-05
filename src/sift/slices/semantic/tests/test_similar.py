@@ -24,6 +24,7 @@ from typing import Any
 
 import pytest
 
+from sift.kernel.access import Role, Viewer
 from sift.kernel.content import perceptual
 from sift.slices.semantic import similar
 from sift.slices.semantic.similar import SimilarFinder, Tier
@@ -51,7 +52,7 @@ class Reads:
 
 
 def finder(*fingerprints: Fingerprint) -> SimilarFinder:
-    return SimilarFinder(Reads(*fingerprints))  # type: ignore[arg-type]
+    return SimilarFinder(Reads(*fingerprints), None)  # type: ignore[arg-type]
 
 
 async def test_the_nearest_fingerprints_come_back_closest_first() -> None:
@@ -152,11 +153,20 @@ async def test_only_as_many_as_were_asked_for_come_back() -> None:
     assert len(found.neighbours) == 3
 
 
+async def test_an_asker_is_ranked_nothing_when_their_files_cannot_be_read() -> None:
+    lookalikes = finder(Fingerprint("mine", phash="0" * 16), Fingerprint("other", phash="0" * 16))
+
+    assert (await lookalikes.perceptual("mine", asker=Viewer("u", Role.GUEST))).neighbours == ()
+    assert (await lookalikes.perceptual("mine")).neighbours == (("other", 0.0),)
+
+
 async def test_the_comparison_leaves_the_loop_free(monkeypatch: pytest.MonkeyPatch) -> None:
     """One comparison per fingerprinted file is a whole library's worth: on the loop it would hold
     every page and video while "Similar to this" was asked."""
 
-    def slow(fingerprints: Any, asset_id: str, limit: int) -> tuple[tuple[str, float], ...]:
+    def slow(
+        fingerprints: Any, asset_id: str, limit: int, among: Any
+    ) -> tuple[tuple[str, float], ...]:
         time.sleep(0.3)
         return ()
 

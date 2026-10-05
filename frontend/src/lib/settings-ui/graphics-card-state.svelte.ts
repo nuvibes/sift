@@ -21,6 +21,8 @@ type Accelerator = components['schemas']['AcceleratorView'];
  * machine takes, and the cost of being wrong is a screen saying it failed when it did not. */
 const RESTART_LIMIT_MS = 90_000;
 const RESTART_POLL_MS = 500;
+/* Just past the server's own two minutes for the test, so its sentence arrives first. */
+const TEST_LIMIT_MS = 150_000;
 
 export class GraphicsCardState {
 	/* Named `accel`, not `state`: a field called `state` reads as the `$state` rune beside it. */
@@ -47,8 +49,7 @@ export class GraphicsCardState {
 	 * the button saying "Restarting" for ever and the panel showing the state of the process that
 	 * had just been stopped: a restart that happened in two seconds, invisible on screen.
 	 *
-	 * The waiting is on the BOOT ID rather than on "does it answer". A server that is about to stop
-	 * still answers, so a poll for a reply decides it has come back before it has left.
+	 * It waits on the BOOT ID, not on an answer: a server about to stop still answers.
 	 */
 	async restart(): Promise<void> {
 		this.restarting = true;
@@ -98,8 +99,7 @@ export class GraphicsCardState {
 		return false;
 	}
 
-	/** Read the card again when a setting moves (the device recognition runs on, chosen in another
-	 *  window). Called by the screen that holds this, while it sets up. */
+	/** Read the card again when a setting moves; called by the screen that holds this. */
 	follow(): void {
 		whenChanged(settingChanges, () => void this.read());
 	}
@@ -131,12 +131,18 @@ export class GraphicsCardState {
 		this.testing = true;
 		try {
 			this.tested = await api.post<components['schemas']['AcceleratorTestView']>(
-				'/performance/accelerator/test'
+				'/performance/accelerator/test',
+				{ signal: AbortSignal.timeout(TEST_LIMIT_MS) }
 			);
 		} catch (error) {
 			this.tested = {
 				works: false,
-				problem: error instanceof ApiError && error.detail ? error.detail : COPY.test.failed
+				problem:
+					error instanceof DOMException && error.name === 'TimeoutError'
+						? COPY.test.noAnswer
+						: error instanceof ApiError && error.detail
+							? error.detail
+							: COPY.test.failed
 			};
 		} finally {
 			this.testing = false;

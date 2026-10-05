@@ -136,3 +136,54 @@ describe("the header at a phone's width", () => {
 		expect(row.querySelector('.count')?.nextElementSibling).toBe(controls);
 	});
 });
+
+/* The unit environment answers only a plain `screen` rule, so the desk rule is read as one. */
+describe('a row of tabs with a search box beside it', () => {
+	afterEach(removeStyles);
+
+	it('gives the controls only what the tabs leave, so the box narrows before the tabs wrap', () => {
+		render({
+			title: 'Tags',
+			titleHidden: true,
+			beside: markup('<nav>Files Tags History</nav>'),
+			controls: markup('<input placeholder="Search tags" />')
+		});
+		const row = host.querySelector('.row') as HTMLElement;
+		const desk = '@media (min-width: 768px)';
+		expect(headerSource, 'the header has no desk rule').toContain(desk);
+		applyStyles(headerSource.replace(desk, '@media screen'), row);
+
+		const controls = host.querySelector('.controls') as HTMLElement;
+		expect(getComputedStyle(controls).flexGrow).toBe('1');
+		expect(parseFloat(getComputedStyle(controls).flexBasis)).toBe(0);
+		expect(getComputedStyle(controls).minBlockSize).toBe('var(--control-height)');
+	});
+
+	it("keeps the box's room on a tab with no box, so the tabs wrap the same on every tab", () => {
+		render({ title: 'History', titleHidden: true, beside: markup('<nav>Files History</nav>') });
+		const row = host.querySelector('.row') as HTMLElement;
+		applyStyles(headerSource.replace('@media (min-width: 768px)', '@media screen'), row);
+
+		const controls = host.querySelector('.controls') as HTMLElement;
+		expect(getComputedStyle(controls).minInlineSize).toBe('var(--tab-box-floor)');
+		expect(getComputedStyle(controls).minBlockSize).toBe('var(--control-height)');
+	});
+
+	it("keeps the box's line on a phone too", () => {
+		render({ title: 'History', titleHidden: true, beside: markup('<nav>Files History</nav>') });
+		const row = host.querySelector('.row') as HTMLElement;
+		applyStyles(headerSource.replace('@media (max-width: 767px)', '@media screen'), row);
+
+		const controls = host.querySelector('.controls') as HTMLElement;
+		expect(getComputedStyle(controls).display).toBe('flex');
+		expect(getComputedStyle(controls).minBlockSize).toBe('var(--control-height)');
+	});
+
+	it('leaves a titled row to size its controls by what they hold', () => {
+		render({ title: 'Downloads', controls: markup('<button>Edit cookies</button>') });
+		const row = host.querySelector('.row') as HTMLElement;
+		applyStyles(headerSource.replace('@media (min-width: 768px)', '@media screen'), row);
+
+		expect(getComputedStyle(host.querySelector('.controls') as HTMLElement).flexGrow).not.toBe('1');
+	});
+});

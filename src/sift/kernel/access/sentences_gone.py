@@ -11,8 +11,7 @@ from sift.kernel.text import non_empty_str
 #: How many of the things a deleted file was on its own line names before it counts the rest.
 MOST_ON = 2
 
-#: What a delete says on the page of something the file was on, after the file's name; a person
-#: HAS files, said before the name instead ("their file d0dd.jpg").
+#: A delete on the page of what the file was on, after its name; a person's says "their file".
 DELETED_ON: Mapping[str, str] = {
     "tag": ", which had this tag",
     "site": ", which was filed under it",
@@ -27,8 +26,7 @@ DELETED_FROM: Mapping[str, str] = {
     "sift": " from Sift only",
 }
 
-#: A PICTURE INSIDE AN ARCHIVE, removed from Sift (`{"archive": true}`): its bytes stay in the
-#: archive, which Sift does not change, and the scan leaves it out from then on.
+#: A picture inside an archive, removed from Sift (`{"archive": true}`); the archive is unchanged.
 DELETED_FROM_ARCHIVE = " from Sift only and kept it out of later scans; its ZIP file wasn't changed"
 
 #: WHY SIFT DELETED A PERSON OR A SITE, by the payload's `why`: the one reason there is today is a
@@ -38,9 +36,24 @@ DELETED_WHY: Mapping[str, str] = {
 }
 
 
-def deleted_where(payload: Mapping[str, object]) -> str:
-    """ " from the disk", " from Sift only", or nothing; a floor task's Photo Set, and a person or
-    Site deleted for a reason, say why instead (`DELETED_WHY`)."""
+#: The thing a saved filter deleted with it had named, by the payload's `named`.
+NAMED_GONE: Mapping[str, str] = {
+    "tag": "the tag",
+    "person": "the person",
+    "site": "the Site",
+    "collection": "the Collection",
+    "photo_set": "the Photo Set",
+    "song": "the song",
+    "folder": "the folder",
+}
+
+
+def deleted_where(payload: Mapping[str, object], *, several: bool = False) -> str:
+    """ " from the disk", " from Sift only", or nothing; a floor task's Photo Set, a person or
+    Site deleted for a reason, and a saved filter, say why instead."""
+    named = NAMED_GONE.get(non_empty_str(payload.get("named")) or "")
+    if named:
+        return f": {named} {'they' if several else 'it'} named was deleted"
     floor = payload.get("under_floor")
     if isinstance(floor, int) and not isinstance(floor, bool):
         return f" because it had fewer than {many(floor)} photos"

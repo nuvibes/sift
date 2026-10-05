@@ -154,8 +154,7 @@ _DIMENSION: dict[Field, str] = {
 }
 
 
-#: The fields that can be asked whether they are there AT ALL: `-tags`, `tags:none`, `tags:any`.
-#: `in:` is absent because every file is somewhere, so a bare `-in` falls through to being text.
+#: The fields `-tags`, `tags:none` and `tags:any` ask about; not `in:`, since every file is somewhere.
 PRESENCE_FIELDS = frozenset(
     {
         Field.TAGS,
@@ -164,7 +163,6 @@ PRESENCE_FIELDS = frozenset(
         Field.COLLECTIONS,
         Field.PHOTO_SETS,
         Field.SONGS,
-        # Presence and nothing else, and that is a real distinction rather than a gap.
         Field.LOOPS,
         Field.RATING,
         Field.VIEWED,
@@ -300,9 +298,12 @@ def group(op: Op, parts: tuple[Node, ...]) -> Node:
 def _ordering(node: Node) -> tuple[object, ...]:
     """A total order over nodes, so a group's parts have one spelling."""
     if isinstance(node, Term):
-        return (0, _FIELD_ORDER[node.field], node.value)
+        return (0, _FIELD_ORDER[node.field], node.value, 0)
     if isinstance(node, Presence):
         return (1, _FIELD_ORDER[node.field], int(node.present))
+    # A refused value sits beside the value it refuses, so its chip does not move when it turns.
+    if isinstance(node, Negated) and isinstance(node.part, Term):
+        return (0, _FIELD_ORDER[node.part.field], node.part.value, 1)
     if isinstance(node, Negated):
         return (2, _ordering(node.part))
     return (3, node.op.value, tuple(_ordering(part) for part in node.parts))

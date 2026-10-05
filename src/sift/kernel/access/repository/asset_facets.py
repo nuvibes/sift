@@ -4,7 +4,13 @@ whose own row is concealed is kept out of the counts."""
 
 from __future__ import annotations
 
-from sift.kernel.access.constraints import AGE_YEARS, FILE_MADE_BY, HEIGHT_BAND, KEPT_LOCAL_HERE
+from sift.kernel.access.constraints import (
+    AGE_YEARS,
+    FILE_MADE_BY,
+    HEIGHT_BAND,
+    KEPT_LOCAL_HERE,
+    only_shown,
+)
 from sift.kernel.access.sites import SITE_CONCEALED
 from sift.kernel.content.identity import VerdictProduct
 from sift.kernel.content.user_state import RESUMING
@@ -14,10 +20,8 @@ from sift.kernel.content.user_state import RESUMING
 ADMIN_FACETS = frozenset({"sharing"})
 
 
-#: What each facet column groups by, and what it joins to in order to. Chosen by a validated key,
-#: as the sort tails are, so nothing a caller typed reaches the statement text. Every value is the
-#: query language's own, so clicking a row writes the filter that finds exactly the files it
-#: counted. The alias prefix is `fx`, clear of the resolver's own.
+#: What each facet column joins and groups by, chosen by a validated key; every value is the query
+#: language's own, so a row's click finds exactly what it counted. Aliases start `fx`.
 FACETS: dict[str, tuple[str, str]] = {
     "tags": (
         "\n  JOIN asset_tags fxa ON fxa.asset_id = a.id"
@@ -31,7 +35,7 @@ FACETS: dict[str, tuple[str, str]] = {
         "\n  JOIN asset_people fxa ON fxa.asset_id = a.id"
         "\n  JOIN people fx ON fx.id = fxa.person_id"
         "\n  LEFT JOIN person_user_state fxh ON fxh.person_id = fx.id AND fxh.user_id = :viewer",
-        "fx.name",
+        "fx.id",
     ),
     # No `fxh` join: a Site is concealed by anything above it as well, so `_CONCEALED_SITE` walks
     # the chain rather than reading one row.
@@ -55,10 +59,9 @@ FACETS: dict[str, tuple[str, str]] = {
         " AND fxh.user_id = :viewer",
         "fx.name",
     ),
-    # No per-user state: nothing hides a song, and a song reaches this column only through a file
-    # this viewer may see.
     "songs": (
-        "\n  JOIN song_files fxa ON fxa.asset_id = a.id\n  JOIN songs fx ON fx.id = fxa.song_id",
+        "\n  JOIN song_files fxa ON fxa.asset_id = a.id\n  JOIN songs fx ON fx.id = fxa.song_id"
+        "\n  LEFT JOIN song_user_state fxh ON fxh.song_id = fx.id AND fxh.user_id = :viewer",
         "fx.name",
     ),
     # By the folder's NAME, not its path, because the name is what `in:` reads back: two "2024"
@@ -74,9 +77,9 @@ FACETS: dict[str, tuple[str, str]] = {
     "filetype": ("", "LOWER(a.container)"),
     "vcodec": ("", "LOWER(a.vcodec)"),
     "acodec": ("", "LOWER(a.acodec)"),
-    # The track a file is set to. The search box offers a track name from this facet, so a name is
-    # proposed only from files the asker may see. Not lowered: a track name is a name.
-    "music": ("", "a.music"),
+    # The track a file is set to, as a name: not lowered, and a locked tile counts under none, as
+    # its track can name a hidden song.
+    "music": ("", "CASE WHEN :reveal_named = 1 OR v.concealed = 0 THEN a.music END"),
     # What was decided on THIS FILE, the question `sharing:` asks of the same table. A file shared
     # with one user and withheld from another is under both rows; `COUNT(DISTINCT a.id)` counts it
     # once in each. Admin-only, at the route (`ADMIN_FACETS`).
@@ -290,6 +293,26 @@ FACETS: dict[str, tuple[str, str]] = {
     ),
 }
 
+#: The named-thing columns that also count `any` and `none`: the link `tags:any` reads, joined bare,
+#: and the same test of what it may count, so a row counts the wall it opens.
+FACET_PRESENCE: dict[str, tuple[str, str]] = {
+    name: (join, "\n   AND " + only_shown(name))
+    for name, join in {
+        "tags": "\n  JOIN asset_tags fxa ON fxa.asset_id = a.id",
+        "people": "\n  JOIN asset_people fxa ON fxa.asset_id = a.id",
+        "sites": (
+            "\n  JOIN asset_usernames fxa ON fxa.asset_id = a.id"
+            "\n  JOIN usernames fxc ON fxc.id = fxa.username_id"
+        ),
+        "collections": "\n  JOIN collection_items fxa ON fxa.asset_id = a.id",
+        "photo_sets": "\n  JOIN photo_set_items fxa ON fxa.asset_id = a.id",
+        "songs": "\n  JOIN song_files fxa ON fxa.asset_id = a.id",
+    }.items()
+}
+
+#: A name spelled as a presence word cannot be filtered to by name (`tags:none` asks presence).
+PRESENCE_WORDS = frozenset({"any", "none"})
+
 #: The other spellings a dimension answers to: whatever its filter answers to. The kernel may not
 #: import the search slice's own table, so `test_a_renamed_facet_agrees_with_the_renamed_token`
 #: holds the two together.
@@ -300,12 +323,14 @@ FACETS_RENAMED: dict[str, str] = {
     "audio_codec": "acodec",
 }
 
-#: The dimensions whose value is an ID, and the expression that names it. The label is the name on
-#: the row whose primary key IS the value, so the grouping never has two answers to choose from.
-FACET_LABELS: dict[str, str] = {"network": "fx.root_name"}
+#: The dimensions whose value is an ID, since two networks or two people may share a name, and the
+#: name on the row whose primary key IS the value, so the grouping never has two answers.
+FACET_LABELS: dict[str, str] = {"network": "fx.root_name", "people": "fx.name"}
 
 #: Which facets hide a value whose own row this viewer may not be told about. A scalar has no row.
-_NAMED_FACETS = frozenset({"tags", "people", "sites", "collections", "photo_sets", "in", "network"})
+_NAMED_FACETS = frozenset(
+    {"tags", "people", "sites", "collections", "photo_sets", "songs", "in", "network"}
+)
 
 #: Leaves a concealed name out of the grouping, off the per-user state each joins as `fxh`.
 _CONCEALED_VALUE = "\n   AND (:reveal_named = 1 OR COALESCE(fxh.hidden, 0) = 0)"

@@ -27,6 +27,7 @@ from sift.slices.music.lookup import (
     NOT_READY,
     NOTHING_TO_ASK_AGAIN,
     LookupNotReady,
+    LookupPlan,
 )
 from sift.slices.music.router import router
 from sift.slices.music.service import SERVICE, MusicService
@@ -118,11 +119,8 @@ class _Starter:
     async def owed(self) -> int:
         return 7
 
-    async def not_known(self) -> int:
-        return 2
-
-    async def asks_again(self) -> int:
-        return 1
+    async def plan_again(self) -> LookupPlan:
+        return LookupPlan(files=1, not_known=2)
 
     async def cannot_run(self) -> str | None:
         return None if self.starts else NOT_READY

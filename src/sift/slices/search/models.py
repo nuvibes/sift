@@ -27,9 +27,7 @@ class SuggestionOut(Wire):
     #: Which thing this is, so picking goes straight to it: a name is not an identity, and looking
     #: it back up would be a second query that can disagree. None for a folder, whose path is it.
     id: str | None = None
-    #: What a cover address carries to be KEPT by the browser (the user's token, which cover, or a
-    #: Site's shipped logo token `icon`), spelled as every entity view spells them so a chip draws
-    #: like a card (`entityPicture` in `lib/entity/entity-picture.ts`). Only on kinds with a cover.
+    #: A cover address's parts, spelled as every entity view spells them; only on kinds with one.
     art: str | None = None
     cover_asset_id: str | None = None
     cover_upload_id: str | None = None
@@ -47,12 +45,14 @@ class FilterOut(Wire):
     that only does free text.
     """
 
-    #: The token, without the colon. What gets typed into the box when this row is chosen.
+    #: The token, without the colon: what choosing the row types.
     field: str
     #: Its name in the interface, which is not always the token (People, `people`).
     label: str
     hint: str
     example: str
+    #: Where a filter that takes an id is set, drawn after its bare token.
+    set_from: str | None = None
 
 
 class Suggestions(Wire):

@@ -45,6 +45,7 @@ from sift.kernel.access.history import (
     count_of_asset_history,
     history_of_asset,
 )
+from sift.kernel.access.history_boxes import unshown_said
 from sift.kernel.access.search_index import INDEXED_RECORD_FIELDS
 from sift.kernel.content import (
     Asset,
@@ -764,15 +765,12 @@ async def get_history(
     """What happened to this file, oldest first: the newest `limit` lines and the total."""
     resolved = await require_reachable(access, viewer, asset_id, _missing)
     final = [one.name for one in workbench.reversers if not one.reversible]
-    # The whole thread is assembled once and the newest `limit` kept, so the total and the lines
-    # come from one read and can never disagree.
+    # Assembled once and the newest `limit` kept, so the total and the lines cannot disagree.
     every = await history_of_asset(
         database, access, viewer, resolved, limit=MAX_LIMIT, final_queues=final, bench=workbench
     )
-    # Through the kernel's own translation, like the person's history and the queue's.
-    return FileHistoryPage(
-        items=[history_event(event) for event in every[-limit:]], total=len(every)
-    )
+    page = await unshown_said(database, access, viewer, every[-limit:])
+    return FileHistoryPage(items=[history_event(event) for event in page], total=len(every))
 
 
 @router.get("/assets/{asset_id}/thumb")

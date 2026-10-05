@@ -21,19 +21,21 @@ _INTERRUPTED = "Sift was restarted while this job was running"
 
 
 async def recover(queue: JobQueue) -> tuple[list[str], list[str]]:
-    """Requeue everything that was running when Sift last stopped. Returns (requeued, failed).
+    """Requeue what was running when Sift stopped, and resume what a benchmark cut short paused.
+    Returns (requeued, failed). Called once, before the workers start, so nothing runs twice.
 
-    Called once, before the workers start: otherwise a worker could claim a job in the same
-    moment this is putting it back, and the job would run twice.
-
-    A job that has already used up its attempts is failed rather than requeued. It is not being
-    punished for the restart: it took an attempt each of the previous times it was claimed, and
-    a job that brings the process down every time it runs is one Sift must eventually stop
-    running, or it never starts up properly again.
+    A job out of attempts is failed: one that brings the process down every time must stop.
     """
     requeued, failed = await queue.reclaim(stale_after=None, error=_INTERRUPTED)
+    # After the reclaim, which lands a benchmark's pause still asked as a paused row.
+    resumed = await queue.resume_after_benchmark()
 
-    if requeued or failed:
-        log.info("jobs.recovered", requeued=len(requeued), failed=len(failed))
+    if requeued or failed or resumed:
+        log.info(
+            "jobs.recovered",
+            requeued=len(requeued),
+            failed=len(failed),
+            resumed_after_benchmark=len(resumed),
+        )
 
     return requeued, failed

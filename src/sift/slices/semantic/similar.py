@@ -33,16 +33,16 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 
+from sift.kernel.access import Viewer
+from sift.kernel.access.ranked import VIEWER_FILES, ranked_among
 from sift.kernel.content import perceptual
 from sift.kernel.content.duplicates import DuplicateReads, Fingerprint
+from sift.kernel.db import Database
 from sift.kernel.log import get_logger
 
 log = get_logger(__name__)
 
-#: How many files to consider before anything is filtered for who may see it.
-#:
-#: The comparison runs before any permission rule does, so some of what it finds is filtered out
-#: afterwards. Generous against any page the app shows.
+#: How many files to rank. Generous against any page the app shows.
 CANDIDATES = 200
 
 
@@ -72,38 +72,58 @@ class Similar:
 class SimilarFinder:
     """Answers "what else looks like this", by whichever tier can."""
 
-    def __init__(self, reads: DuplicateReads) -> None:
+    def __init__(self, reads: DuplicateReads, database: Database | None) -> None:
         self._reads = reads
+        # Without it an asker's files cannot be read, so an asker is ranked nothing.
+        self._database = database
 
-    async def perceptual(self, asset_id: str, *, limit: int = CANDIDATES) -> Similar:
-        """The cheap tier: files whose stored fingerprints sit nearest this one's.
+    async def perceptual(
+        self, asset_id: str, *, limit: int = CANDIDATES, asker: Viewer | None = None
+    ) -> Similar:
+        """The cheap tier: the files `asker` may see whose stored fingerprints sit nearest this
+        one's; every file for a pass with no asker.
 
-        Reads every fingerprint and compares in memory, which is what the content layer offers and
-        is the same read duplicate-finding already makes. That is linear in the library, and it is
-        the honest cost of an answer that needs no index at all.
+        Reads every fingerprint and compares in memory, the read duplicate-finding makes: linear
+        in the library, the cost of an answer that needs no index.
 
         A file with no fingerprint, or one whose fingerprint cannot be compared with this one,
         which happens when the two were computed differently, contributes nothing rather than a
         made-up distance, and neither does one further apart than the content layer's edge. The
         comparison itself belongs to the content layer; this only sorts what it says.
         """
+        among = await self._among(asker)
         fingerprints = await self._reads.fingerprints()
         # On a thread: one comparison per fingerprinted file.
-        found = await asyncio.to_thread(_nearest, fingerprints, asset_id, limit)
+        found = await asyncio.to_thread(_nearest, fingerprints, asset_id, limit, among)
         return Similar(tier=Tier.MATCHES, neighbours=found)
+
+    async def _among(self, asker: Viewer | None) -> frozenset[str] | None:
+        """The files `asker` may see, or None where every file may be ranked."""
+        if asker is None:
+            return None
+        if self._database is None:
+            return frozenset()
+        binds = await ranked_among(self._database, asker)
+        if binds is None:
+            return None
+        rows = await self._database.sweep_all(VIEWER_FILES, binds, what="files to rank")
+        return frozenset(str(row["asset_id"]) for row in rows)
 
 
 def _nearest(
-    fingerprints: Sequence[Fingerprint], asset_id: str, limit: int
+    fingerprints: Sequence[Fingerprint],
+    asset_id: str,
+    limit: int,
+    among: frozenset[str] | None,
 ) -> tuple[tuple[str, float], ...]:
-    """The files nearest this one, closest first and at most `limit`, or none when this file has
-    no fingerprint among them."""
+    """The files nearest this one among `among` (every file for None), closest first and at most
+    `limit`, or none when this file has no fingerprint among them."""
     mine = next((one for one in fingerprints if one.asset_id == asset_id), None)
     if mine is None:
         return ()
     found: list[tuple[str, float]] = []
     for other in fingerprints:
-        if other.asset_id == asset_id:
+        if other.asset_id == asset_id or (among is not None and other.asset_id not in among):
             continue
         apart = _apart(mine, other)
         if apart is None or apart > perceptual.NEAR_SHARE:

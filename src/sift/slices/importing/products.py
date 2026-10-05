@@ -1,16 +1,8 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """What a Build can make for a file, declared once so the sheet and the pass agree.
 
-A product is one thing a file can lack (its pictures, its fingerprints, its faces, its meaning)
-and four questions about it: is it switched on, what does lacking it look like, which of THESE
-files lack it, and how to make it for one file. The sheet asks the first two to draw a row with a
-count: the second as a condition the content store counts the whole library against, every
-product's at once, in one statement; the pass asks the third a page at a time to decide each
-file's list; the task asks the fourth, once per product, on the one read of the file.
-
-Declared here as a shape and filled in by the composition root, because the answers live in three
-different features (pictures in `media_jobs`, faces in `faces`, meaning in `semantic`) and a
-feature never imports another. What this module knows is the shape of the question.
+A product is one thing a file can lack (pictures, fingerprints, faces, meaning) and the questions
+about it. Filled in by the composition root, as the answers live in features that import no other.
 """
 
 from __future__ import annotations
@@ -52,28 +44,19 @@ class Product:
     lacking_among: Callable[[Sequence[str]], Awaitable[set[str]]]
     """Which of these files lack it. What the pass asks a page at a time."""
     build: Callable[[JobContext], Awaitable[None]]
-    #: Which of the two passes makes it: `GENERATE` (pictures, fingerprints) or `IDENTIFY`
-    #: (faces, meaning). The run that hands this product out belongs to that family, so the
-    #: Activity screen counts and times the two separately. See `jobs.RUNS`.
-    family: Family
     """Make it for the file the context's payload names. The task calls this once per product."""
+    #: Which of the two passes makes it, `GENERATE` or `IDENTIFY`, so Activity times them apart.
+    family: Family
     frames: Callable[[FileFacts], Awaitable[Sequence[FrameRequest]]] | None = None
     """Which moments of a video it would read, so the task can read the file once for every
     product. None for a product that reads no moments, or none the kernel can prepare."""
     before_run: Callable[[], Awaitable[object]] | None = None
-    #: How many files want this product AT ALL, done or not: the denominator of its bar on
-    #: Activity, narrowed to the files the folders' answers leave wanting it (`Within`, None when
-    #: no folder refuses). None means every file in the library, which is wrong for a picture (a photo
-    #: never wants a hover preview) and for a fingerprint of the sound (a silent file never wants
-    #: one), so each of those says its own.
-    wants: Callable[[Within | None], Awaitable[int]] | None = None
     """Housekeeping once per run, before the first task: dropping what belongs to files that
     have left the library, say. None for a product with none."""
-    #: How many files not yet READ will want this product once they are, narrowed the same way.
-    #: They lack it, and the count of what is lacking cannot see them (it reads only files that
-    #: have been read), so without this the bar on Activity would count a first import's every
-    #: unread file as done, and price the time left over the few files already read. None for a product
-    #: nothing counts that way.
+    #: How many files want this product AT ALL, done or not, within `Within`: its bar's whole on
+    #: Activity. None means every file, wrong where a photo or a silent file never wants it.
+    wants: Callable[[Within | None], Awaitable[int]] | None = None
+    #: How many files not yet READ will want it, which the count of what is lacking cannot see.
     coming: Callable[[Within | None], Awaitable[int]] | None = None
     governed_by: str | None = None
     """This product's own job type: the one an arriving file's work for it is queued as. Two
@@ -125,13 +108,14 @@ class Machine(Protocol):
     """The self-test, as the Build needs it: whether this machine has been measured, and measure it.
 
     Every read a Build makes is shaped by two rates only the self-test measures (how fast this
-    machine decodes and what a seek costs it), so a Build on a machine that was never measured
-    measures it first, as its first step, rather than guessing from the core count.
+    machine decodes and what a seek costs it), so a Build on a machine never measured waits for the
+    benchmark rather than guessing from the core count.
     """
 
     async def measured(self) -> bool: ...
 
-    async def measure(self) -> None: ...
+    async def measure(self) -> None:
+        """Ask for the benchmark; it is queued, and the Build queues itself behind it."""
 
 
 class OnePass(Protocol):

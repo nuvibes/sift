@@ -13,7 +13,7 @@ import pytest
 
 from sift.kernel.settings_registry import Setting, get_registered
 from sift.slices.player.router import LOOP_MODE_KEY
-from sift.slices.theater import END_BEHAVIOURS, LAYOUT_CELLS
+from sift.slices.theater import END_BEHAVIOURS, LAYOUT_CELLS, LAYOUT_KEY
 from sift.slices.theater.service import MOST_CELLS
 
 pytestmark = [pytest.mark.gate, pytest.mark.unit]
@@ -35,6 +35,9 @@ _SLOT = re.compile(r"\bat\(")
 _STRIP = re.compile(r"strip:\s*([A-Za-z_]+|\d+)")
 #: How many previews a preset that declares one opens with.
 _MOST_PREVIEWS = re.compile(r"const MOST_PREVIEWS = (\d+);")
+
+#: A preset's name on screen.
+_LABEL = re.compile(r"label:\s*'([^']+)'")
 
 #: The browser's own ceiling, which the server has to match.
 _MOST = re.compile(r"export const MOST_CELLS = (\d+);")
@@ -73,7 +76,7 @@ def _drawn_layouts() -> dict[str, int]:
 
 
 #: Names the picker retired that the server must still take: saved walls are filed under them.
-_RETIRED = {"stacked", "stacked_three", "one_above_two", "two_above_one"}
+_RETIRED = {"stacked_three", "one_above_two", "two_above_one"}
 
 
 def test_every_preset_the_browser_offers_is_one_the_server_accepts() -> None:
@@ -86,13 +89,21 @@ def test_each_preset_holds_the_same_number_of_cells_on_both_sides() -> None:
 
 
 def test_the_server_still_takes_the_names_the_picker_stopped_offering() -> None:
-    """The server still takes the retired names, or somebody's saved wall stops opening."""
     assert set(LAYOUT_CELLS) >= _RETIRED
 
 
 def test_nothing_is_accepted_that_is_neither_offered_nor_retired() -> None:
-    """No name is accepted that is neither offered nor retired: that is a preset nobody can pick."""
     assert set(LAYOUT_CELLS) - _RETIRED == set(_drawn_layouts())
+
+
+def test_the_default_layout_setting_offers_the_pickers_list_in_its_words() -> None:
+    """Settings offers what the picker offers, in its order and its words."""
+    whole = _LAYOUTS.read_text()
+    opens = whole.index("export const LAYOUTS")
+    source = whole[opens : whole.index("\n];", opens)]
+    setting = _setting(LAYOUT_KEY)
+    assert setting.choices == tuple(_drawn_layouts())
+    assert setting.choice_labels == tuple(_LABEL.findall(source))
 
 
 def test_both_sides_stop_at_the_same_number_of_feeds() -> None:

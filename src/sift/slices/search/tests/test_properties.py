@@ -117,6 +117,8 @@ def test_every_condition_a_query_produces_can_be_written_out(typed: str) -> None
             assert name.startswith("p") or name in {
                 "text_match",
                 "text_contains",
+                "text_likes",
+                "text_globs",
                 "text_rank",
                 "semantic_rank",
                 "folder_ids_groups",

@@ -25,9 +25,8 @@ EXPECTED_SEAMS = {
     # Filing what a dropped link fetched under the thing it was dropped ON. A seam published in the
     # package's `__all__` belongs on this list too: the list is the point of the file.
     "FilingSeam",
+    "ForgetGoneSeam",
     "InferenceSeam",
-    # One User's arrangement of the interface, read and written; the settings hub answers it.
-    "InterfaceStateSeam",
     "LibraryWriteSeam",
     "PackSourceSeam",
     "PlaybackCacheSeam",

@@ -10,6 +10,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { forgetDragOrigin } from '$lib/components/common/drag-origin.svelte';
 import { flushSync, mount, unmount } from 'svelte';
 import DropOverlay from './DropOverlay.svelte';
+import { session } from '$lib/shell/session.svelte';
 import { ASSIGN_TYPE } from '$lib/components/common/drag-assign.svelte';
 
 vi.mock('$lib/shell/session.svelte', () => ({ session: { isAdmin: true } }));
@@ -270,9 +271,8 @@ describe('a box on the page that takes its own drops', () => {
 	});
 
 	/*
-	 * A drag carrying both, which is what a browser actually hands over.
-	 *
-	 * Dragging an image or a link out of a browser fills the payload with `text/uri-list` and
+	 * A drag carrying both, which is what a browser actually hands over: dragging an image or a
+	 * link out of a browser fills the payload with `text/uri-list` and
 	 * `Files` at once. The card asks `carriesALink` and lights up; this overlay must stand down for
 	 * it, or one gesture would draw two offers and a drop would start two downloads, one filed
 	 * under the card and one filed nowhere.
@@ -303,5 +303,21 @@ describe('a box on the page that takes its own drops', () => {
 		dragIn(['text/uri-list'], box);
 		expect(showing()).toBe(false);
 		box.remove();
+	});
+});
+
+describe('a guest dragging a link in', () => {
+	it("is told from the first frame that adding is an admin's, never offered the drop", () => {
+		/* The double is a plain object; the real session derives this from the sign-in. */
+		const mocked = session as { isAdmin: boolean };
+		mocked.isAdmin = false;
+		try {
+			render();
+			dragIn(['text/uri-list']);
+			expect(host.textContent).toContain('Adding media is available to admins');
+			expect(host.textContent).not.toContain('Drop to add');
+		} finally {
+			mocked.isAdmin = true;
+		}
 	});
 });

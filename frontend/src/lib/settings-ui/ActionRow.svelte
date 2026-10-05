@@ -133,7 +133,7 @@
 							icon={glyph}
 							disabled={disabled || busy}
 							leadDisabled={actDisabled}
-							aria-busy={busy}
+							{busy}
 							{onclick}
 							{trailingIcon}
 							{trailingLabel}
@@ -148,7 +148,7 @@
 							size="small"
 							icon={glyph}
 							disabled={disabled || busy}
-							aria-busy={busy}
+							{busy}
 							aria-label={actionLabel}
 							{onclick}
 						>

@@ -575,15 +575,172 @@ it('calls them facial fingerprints, never a pack, and says how many it can recog
 	expect(host.textContent).not.toMatch(/\bpacks?\b/i);
 });
 
-it('says nobody can be recognized yet, with no count, when the list is empty', async () => {
+it('says nobody can be recognized and nobody is waiting, with no count, when both are empty', async () => {
 	mocks.knownPeople.mockResolvedValue({ items: [], total: 0 });
 	await draw(true, {});
 
 	const group = host.querySelector('[id="faces.packs"]')!.closest('section')!;
-	expect(group.textContent).toContain(
-		"Sift can recognize nobody yet, so there's nothing to export."
+	await vi.waitFor(
+		() =>
+			expect(group.textContent).toContain(
+				"Sift can recognize nobody yet and nobody is waiting for a matching face, so there's nothing to export."
+			),
+		{ interval: 1 }
 	);
 	expect(group.textContent).not.toContain('recognize 0');
+	expect(exportPress().disabled).toBe(true);
+});
+
+/* The Export press on its row. */
+function exportPress(): HTMLButtonElement {
+	return [...host.querySelectorAll<HTMLButtonElement>('[id="faces.pack-export"] button')].find(
+		(one) => one.textContent?.includes('Export')
+	)!;
+}
+
+it('counts the people waiting for a matching face under Export, the server counting them', async () => {
+	mocks.knownPeople.mockResolvedValue({
+		items: [{ id: 'p1', name: 'Ada Byron', faces: 12, starters: 0 }],
+		total: 1
+	});
+	mocks.waitingFingerprints.mockResolvedValue({ items: [], exportable: 41 });
+	await draw(true, {});
+
+	const row = host.querySelector('[id="faces.pack-export"]')!;
+	await vi.waitFor(
+		() =>
+			expect(row.textContent).toContain(
+				'Sift can recognize 1 person, and 41 more are waiting for a matching face.'
+			),
+		{ interval: 1 }
+	);
+});
+
+it('exports the people waiting for a matching face from a library that recognizes nobody', async () => {
+	mocks.knownPeople.mockResolvedValue({ items: [], total: 0 });
+	mocks.waitingFingerprints.mockResolvedValue({ items: [], exportable: 3 });
+	await draw(true, {});
+
+	const row = host.querySelector('[id="faces.pack-export"]')!;
+	await vi.waitFor(
+		() =>
+			expect(row.textContent).toContain(
+				'Sift can recognize nobody yet. The file will carry the 3 people waiting for a matching face.'
+			),
+		{ interval: 1 }
+	);
+	expect(exportPress().disabled).toBe(false);
+});
+
+it('says Export waits for the switch while recognition is off, the switch a link', async () => {
+	await draw(false, {});
+
+	const row = host.querySelector('[id="faces.pack-export"]')!;
+	expect(row.textContent?.replace(/\s+/g, ' ')).toContain(
+		'Export works while Recognize faces in your library is on.'
+	);
+	expect(row.querySelector('a')?.textContent?.trim()).toBe('Recognize faces in your library');
+	expect(exportPress().disabled).toBe(true);
+});
+
+it('says the lists could not be read rather than that nobody can be recognized', async () => {
+	mocks.knownPeople.mockRejectedValue(new Error('down'));
+	await draw(true, {});
+
+	const row = host.querySelector('[id="faces.pack-export"]')!;
+	await vi.waitFor(
+		() =>
+			expect(row.textContent).toContain(
+				"Couldn't read who Sift can recognize. Reload the page to try again."
+			),
+		{ interval: 1 }
+	);
+	expect(row.textContent).not.toContain('nobody');
+	expect(exportPress().disabled).toBe(true);
+});
+
+it('reads both lists again when a folder import ends', async () => {
+	const { folderImport } = await import('$lib/people/folder-import.svelte');
+	await draw(true, {});
+	const known = mocks.knownPeople.mock.calls.length;
+	const waiting = mocks.waitingFingerprints.mock.calls.length;
+
+	folderImport.outcome = 'Imported 3 people.';
+	flushSync();
+
+	await vi.waitFor(() => expect(mocks.knownPeople.mock.calls.length).toBe(known + 1), {
+		interval: 1
+	});
+	await vi.waitFor(() => expect(mocks.waitingFingerprints.mock.calls.length).toBe(waiting + 1), {
+		interval: 1
+	});
+	folderImport.outcome = null;
+});
+
+it('lists the people waiting on the sheet and sends them apart, and refuses who a swap refuses', async () => {
+	mocks.exportWay.mockReturnValue('only');
+	const { exportPack } = await import('$lib/people/fingerprint-packs');
+	vi.mocked(exportPack).mockResolvedValue(new Blob(['zip']));
+	URL.createObjectURL = vi.fn(() => 'blob:faces');
+	URL.revokeObjectURL = vi.fn();
+	const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+	mocks.knownPeople.mockResolvedValue({
+		items: [
+			{ id: 'p1', name: 'Ada Byron', faces: 12, starters: 0 },
+			{ id: 'p2', name: 'Cass Ivory', faces: 5, starters: 0, keep_local: true },
+			{ id: 'p3', name: 'Imre Vasquez', faces: 5, starters: 0, keep_from_swaps: true }
+		],
+		total: 3
+	});
+	mocks.waitingFingerprints.mockResolvedValue({
+		items: [
+			{ entry_id: 'e1', name: 'Neve Arbor', faces: 3, source: 'x', added_at: 0, exportable: true },
+			{ entry_id: 'e2', name: 'Wren Halloway', faces: 1, source: 'x', added_at: 0 }
+		],
+		exportable: 1
+	});
+	await draw(true, {});
+	// Only the person a press of Export carries is counted, and the one entry it carries.
+	await vi.waitFor(
+		() =>
+			expect(host.querySelector('[id="faces.pack-export"]')!.textContent).toContain(
+				'Sift can recognize 1 person, and 1 more is waiting for a matching face.'
+			),
+		{ interval: 1 }
+	);
+
+	host
+		.querySelector<HTMLButtonElement>(
+			'[id="faces.pack-export"] button[aria-label="Choose people"]'
+		)!
+		.click();
+	await vi.waitFor(
+		() => expect(document.body.querySelector('[role="dialog"] .rows')).not.toBeNull(),
+		{ interval: 1 }
+	);
+	const sheet = document.body.querySelector('[role="dialog"]')!;
+	const rowOf = (name: string) =>
+		[...sheet.querySelectorAll<HTMLElement>('.rows button')].find((one) =>
+			one.textContent?.includes(name)
+		)!;
+	expect(rowOf('Neve Arbor').textContent).toContain('Waiting for a matching face');
+	expect(sheet.textContent).not.toContain('Wren Halloway');
+	expect(rowOf('Cass Ivory').textContent).toContain("Kept local, so they aren't exported");
+	expect(rowOf('Imre Vasquez').textContent).toContain("Kept out of swaps, so they aren't exported");
+	rowOf('Cass Ivory').click();
+	rowOf('Ada Byron').click();
+	rowOf('Neve Arbor').click();
+	flushSync();
+	[...sheet.querySelectorAll<HTMLButtonElement>('button')]
+		.find((one) => one.textContent?.trim() === 'Export 2 people')!
+		.click();
+	await vi.waitFor(() => expect(exportPack).toHaveBeenCalledTimes(1), { interval: 1 });
+	// The file's own name is the library's, so another library's file never replaces it.
+	expect(vi.mocked(exportPack).mock.calls[0]).toEqual([
+		'Home Movies',
+		{ personIds: ['p1'], entryIds: ['e1'], includePictures: false }
+	]);
+	click.mockRestore();
 });
 
 it('exports everyone with one press, or everyone but the people left out', async () => {
@@ -614,7 +771,11 @@ it('exports everyone with one press, or everyone but the people left out', async
 	)!;
 	everyone.click();
 	await vi.waitFor(() => expect(exportPack).toHaveBeenCalledTimes(1), { interval: 1 });
-	expect(vi.mocked(exportPack).mock.calls[0][1]).toEqual({ personIds: [], includePictures: false });
+	expect(vi.mocked(exportPack).mock.calls[0][1]).toEqual({
+		personIds: [],
+		entryIds: [],
+		includePictures: false
+	});
 	// Named for the library and the day, never one name for every export.
 	await vi.waitFor(() => expect(saved).toHaveLength(1), { interval: 1 });
 	expect(saved[0]).toMatch(/^Home Movies facial fingerprints \d{4}-\d{2}-\d{2}\.zip$/);
@@ -647,6 +808,7 @@ it('exports everyone with one press, or everyone but the people left out', async
 	await vi.waitFor(() => expect(exportPack).toHaveBeenCalledTimes(2), { interval: 1 });
 	expect(vi.mocked(exportPack).mock.calls[1][1]).toEqual({
 		personIds: ['p3'],
+		entryIds: [],
 		includePictures: false
 	});
 	click.mockRestore();
@@ -700,6 +862,7 @@ it('exports only the people picked, the other way round, and remembers the way',
 	await vi.waitFor(() => expect(exportPack).toHaveBeenCalledTimes(1), { interval: 1 });
 	expect(vi.mocked(exportPack).mock.calls[0][1]).toEqual({
 		personIds: ['p3'],
+		entryIds: [],
 		includePictures: false
 	});
 	click.mockRestore();
@@ -774,7 +937,11 @@ it('sends the face pictures only when the switch for them is turned on', async (
 		.find((one) => one.textContent?.includes('Export'))!
 		.click();
 	await vi.waitFor(() => expect(exportPack).toHaveBeenCalledTimes(1), { interval: 1 });
-	expect(vi.mocked(exportPack).mock.calls[0][1]).toEqual({ personIds: [], includePictures: true });
+	expect(vi.mocked(exportPack).mock.calls[0][1]).toEqual({
+		personIds: [],
+		entryIds: [],
+		includePictures: true
+	});
 	click.mockRestore();
 });
 

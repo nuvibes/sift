@@ -1,17 +1,11 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """How many files may be read from one storage at the same time.
 
-A network share collapses under concurrent seeking readers: on a NAS, a dozen workers reading at
-once deliver about half what two do and hold the event loop hundreds of times an hour, where two
-workers hold it never. That is congestion collapse: the share turns a dozen
-seeking readers into random I/O, and nothing about the processor's count of jobs can see it,
-because the processor sits at a quarter while it happens.
-
-So the cap belongs to the STORAGE, not to the job count and not to the job type. Every read of a
-library file (a hash, a probe, a frame, a tile) takes a place in its storage's lane first, and a
-network lane has as many places as the setting says (two by default). A local disk has no cap: it
-was never the thing that collapsed, and a cap on it would only slow a library that needed no
-slowing.
+A network share collapses under concurrent seeking readers: a dozen at once deliver about half
+what two do, while the processor sits at a quarter. So the cap belongs to the STORAGE. Every read
+of a library file takes a place in its storage's lane first, and a network lane has as many places
+as that storage measured (two until it is), or the setting's number where one is set. A local
+disk has no cap; its measured number only says how many files a reader keeps open.
 
 **The lane is taken around the read, not around the job, and that is the whole design.** A job
 that recognises faces reads a handful of frames and then computes for seconds; a job that
@@ -45,7 +39,7 @@ import contextlib
 import functools
 import time
 from collections import deque
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
@@ -56,8 +50,8 @@ from sift.kernel.log import get_logger
 
 log = get_logger(__name__)
 
-#: How many files are read at once from a network share when nobody has said otherwise: two, the
-#: number seen to work (see the module docstring), rather than a larger one nobody has shown holds.
+#: How many files are read at once from a network share nobody has measured or set: the number
+#: seen to work, rather than a larger one nobody has shown holds.
 NETWORK_READS_AT_ONCE = 2
 
 #: The most anybody may set by hand. Above this a share is being asked to do what the measurement
@@ -100,6 +94,9 @@ class Lane:
     waits: int = 0
     """How many reads had to wait at all."""
     worst_wait: float = 0.0
+    #: Seconds waited in all, by readers that asked to go first and by the rest.
+    urgent_wait: float = 0.0
+    ordinary_wait: float = 0.0
     #: Who is waiting, oldest first: those who asked to go first, and everyone else. Each is told
     #: by its future once a place has been handed to it (see the module docstring).
     _urgent: deque[asyncio.Future[None]] = field(default_factory=deque)
@@ -223,33 +220,43 @@ class Lane:
             "waiting": self.waiting,
             "waits": self.waits,
             "worst_wait_seconds": round(self.worst_wait, 3),
+            "urgent_wait_seconds": round(self.urgent_wait, 3),
+            "ordinary_wait_seconds": round(self.ordinary_wait, 3),
         }
 
 
 class StorageLanes:
     """Every storage Sift has read from since it started, and its places."""
 
-    def __init__(self, *, network_reads_at_once: int = NETWORK_READS_AT_ONCE) -> None:
+    def __init__(self, *, network_reads_at_once: int = 0) -> None:
+        #: The setting's number for every share, or 0 for each share as measured.
         self._network = network_reads_at_once
+        self._measured: dict[str, int] = {}
         self._lanes: dict[str, Lane] = {}
 
-    async def configure(self, *, network_reads_at_once: int) -> bool:
-        """Set how many files may be read at once from each network share. True when it changed.
-
-        Applied to every network lane there is and every one there will be. A lane that grew hands
-        its new places to its waiters; one that shrank simply admits nobody until enough reads
-        finish.
-        """
+    async def configure(
+        self, *, network_reads_at_once: int, measured: Mapping[str, int] | None = None
+    ) -> bool:
+        """Set the number for every share (0: each as measured) and, when given, each storage's
+        measured number. True when either changed. A lane that grew hands its new places on."""
         wanted = max(0, min(MAX_READS_AT_ONCE, network_reads_at_once))
-        if wanted == self._network:
+        known = self._measured
+        if measured is not None:
+            known = {key: max(1, min(MAX_READS_AT_ONCE, n)) for key, n in measured.items()}
+        if wanted == self._network and known == self._measured:
             return False
-        self._network = wanted
+        self._network, self._measured = wanted, known
         for lane in self._lanes.values():
             if lane.storage.remote:
-                lane.limit = wanted
+                lane.limit = self._limit(lane.storage)
                 lane.hand_on()
                 lane.hand_on_whole()
         return True
+
+    def _limit(self, storage: Storage) -> int:
+        if not storage.remote:
+            return 0
+        return self._network or self._measured.get(storage.key, NETWORK_READS_AT_ONCE)
 
     @property
     def network_reads_at_once(self) -> int:
@@ -259,10 +266,18 @@ class StorageLanes:
         storage = storage_for(path)
         lane = self._lanes.get(storage.key)
         if lane is None:
-            lane = Lane(storage=storage, limit=self._network if storage.remote else 0)
+            lane = Lane(storage=storage, limit=self._limit(storage))
             self._lanes[storage.key] = lane
             log.info("lanes.storage_seen", storage=storage.key, remote=storage.remote)
         return lane
+
+    def reads_at_once(self, path: Path) -> int:
+        """How many files a reader of `path`'s storage keeps open: the cap on a share, the
+        measured number or `LOCAL_READS_AT_ONCE` on a disk."""
+        lane = self.lane_for(path)
+        if lane.capped:
+            return lane.limit
+        return self._measured.get(lane.storage.key, LOCAL_READS_AT_ONCE)
 
     @asynccontextmanager
     async def reading(self, path: Path) -> AsyncIterator[None]:
@@ -272,15 +287,20 @@ class StorageLanes:
         if not lane.capped:
             yield
             return
-        # An ordinary read queues while anyone who asked to go first is waiting, and has every
-        # fourth place handed on (`hand_on`), so a scan's reads are never queued behind the probes
-        # its own files started and the probes are never queued behind the whole scan.
-        waited = await lane.take(_FIRST.get())
+        # An ordinary read has every fourth place handed on while a first reader waits (`hand_on`).
+        urgent = _FIRST.get()
+        waited = await lane.take(urgent)
         if waited is not None:
+            if urgent:
+                lane.urgent_wait += waited
+            else:
+                lane.ordinary_wait += waited
             if waited > lane.worst_wait:
                 lane.worst_wait = waited
             if waited >= WAIT_WARN_SECONDS:
-                log.info("lanes.waited", storage=lane.storage.key, seconds=round(waited, 3))
+                log.info(
+                    "lanes.waited", storage=lane.storage.key, seconds=round(waited, 3), first=urgent
+                )
         try:
             yield
         finally:
@@ -305,9 +325,8 @@ _LANES: StorageLanes | None = None
 #: parameter on each.
 _FIRST: ContextVar[bool] = ContextVar("lanes_first", default=False)
 
-#: How many files to read at once from a storage nothing caps: a local disk. Not the worker
-#: count: a scan reading its new files is one job, and this is how many of its files it has open
-#: at a time. Four keeps an NVMe busy and does not turn a spinning disk into a seek storm.
+#: How many files one reader keeps open on a local disk nobody has measured: enough to keep an
+#: NVMe busy without turning a spinning disk into a seek storm.
 LOCAL_READS_AT_ONCE = 4
 
 
@@ -329,13 +348,9 @@ async def first() -> AsyncIterator[None]:
 
 
 def reads_at_once(path: Path) -> int:
-    """How many files a reader of `path`'s storage should have open at once: the lane's cap on a
-    share, `LOCAL_READS_AT_ONCE` on a disk, and one where no lanes are installed at all."""
+    """How many files a reader of `path`'s storage keeps open; one where no lanes are installed."""
     lanes = _LANES
-    if lanes is None:
-        return 1
-    lane = lanes.lane_for(path)
-    return lane.limit if lane.capped else LOCAL_READS_AT_ONCE
+    return 1 if lanes is None else lanes.reads_at_once(path)
 
 
 def install(lanes: StorageLanes | None) -> None:

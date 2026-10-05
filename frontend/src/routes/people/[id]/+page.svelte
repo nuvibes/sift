@@ -54,8 +54,11 @@
 		iconOf,
 		tabsFor,
 		type RelatedKind,
-		TabCounts
+		TabCounts,
+		TabWords
 	} from '$lib/entity/related.svelte';
+	import WallControls from '$lib/components/entity/WallControls.svelte';
+	import { emptyWallSays } from '$lib/components/shell/wall-words';
 	import ShareDialog from '$lib/components/ShareDialog.svelte';
 	import VisibilityDialog from '$lib/components/VisibilityDialog.svelte';
 	import type { ShareTarget } from '$lib/library/sharing';
@@ -87,29 +90,15 @@
 
 	const personId = $derived(page.params.id ?? '');
 
-	/*
-	 * WHAT HAPPENED TO THEM is a tab and not a wall, which is why it is kept out of `tabsFor`.
-	 *
-	 * Every other tab on this page is one question (an entity wall filtered to this person's
-	 * files), answered by one shared table that a gate holds against the server's. A history is
-	 * none of that: it has no wall, no count, no filter and no page. Adding it to that table to
-	 * save writing four lines here would put a tab with no endpoint on the five OTHER pages that
-	 * read the same table.
-	 */
+	/* History has no wall behind it, so it is kept out of `tabsFor`. */
 	const HISTORY = 'history';
 
 	const asked = $derived(page.url.searchParams.get('show'));
 	const showingHistory = $derived(asked === HISTORY);
 
-	/*
-	 * Which wall this page is showing, read off the address rather than held in a variable.
-	 *
-	 * That is what makes each tab a real place: the back button steps between them, a link somebody
-	 * sends opens on the one they were looking at, and there is no second copy of "where am I" to
-	 * fall out of step with the bar. An unknown value falls through to Files rather than drawing an
-	 * empty screen: a stale link is not an error.
-	 */
+	/* The tab, read off the address so each tab is a place Back and a link reach; unknown means Files. */
 	const shown = $derived<RelatedKind>(chosenTab('person', asked));
+	const fileWords = new TabWords();
 
 	/*
 	 * THIS PERSON'S USERNAMES, filed by the Site each is on, for the Sites tab.
@@ -130,17 +119,7 @@
 		untrack(() => void usernamesHere.read({ personId: who }));
 	});
 
-	/*
-	 * The numbers beside the tab words.
-	 *
-	 * `follow` asks the server for all of them in one request the moment the page settles on
-	 * somebody, so the strip opens complete: a tab with no number looks exactly like one nobody
-	 * has opened yet.
-	 *
-	 * `saw` is what the wall on screen actually found, and it wins: it is the fresher of the two
-	 * while somebody is looking at that tab, and it keeps working if the map's request failed.
-	 * Neither is a second population: the counts route runs the same listings the walls do.
-	 */
+	/* The numbers beside the tab words: all asked at once, and a wall's own answer wins (`TabCounts`). */
 	const counts = new TabCounts();
 	$effect(() => counts.follow('person', personId));
 	/* The strip's numbers follow the library as its walls do: History has no wall to report one. */
@@ -834,7 +813,7 @@
 			{tags}
 			onfavorite={(next) => heart(next)}
 			onrate={(next) => rate(next)}
-			onuntag={(tagId) => untag(tagId)}
+			onuntag={session.isAdmin ? (tagId) => untag(tagId) : undefined}
 			ontag={session.isAdmin ? (tag) => addTag(tag) : undefined}
 			{options}
 			optionIds={[person.id]}
@@ -994,9 +973,22 @@
 						titleHidden
 						above={identity}
 						{crumbs}
-						empty="Nothing is attributed to them yet. Drag clips onto them from the library."
+						empty={emptyWallSays(
+							'files',
+							fileWords.asked,
+							false,
+							'Nothing is attributed to them yet. Drag clips onto them from the library.'
+						)}
 						pinnable
 					>
+						{#snippet tools()}
+							<WallControls
+								noun="file"
+								plural="files"
+								bind:term={fileWords.term}
+								onsettled={(typed) => fileWords.write(typed)}
+							/>
+						{/snippet}
 						{#snippet menuExtra(item)}
 							{#if session.isAdmin}
 								<ContextMenuItem
@@ -1023,8 +1015,8 @@
 						titleHidden
 						above={identity}
 						{crumbs}
-						oncount={(total) => {
-							counts.saw(tab, total);
+						oncount={(total, searched) => {
+							if (!searched) counts.saw(tab, total);
 							arrived();
 						}}
 					>

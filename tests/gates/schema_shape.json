@@ -44,6 +44,7 @@
   "ix_face_detections_track": "create index ix_face_detections_track on face_detections ( track_id )",
   "ix_face_grouping_asset": "create index ix_face_grouping_asset on face_grouping ( asset_id )",
   "ix_face_ignored_asset": "create index ix_face_ignored_asset on face_ignored ( asset_id )",
+  "ix_face_packs_library": "create unique index ix_face_packs_library on face_packs ( library ) where library is not null",
   "ix_face_pile_proposals_folder": "create index ix_face_pile_proposals_folder on face_pile_proposals ( folder_id , person_id )",
   "ix_face_piles_status": "create index ix_face_piles_status on face_piles ( status )",
   "ix_face_references_asset": "create index ix_face_references_asset on face_references ( person_id , asset_id )",
@@ -750,6 +751,17 @@
    "constraints": [],
    "options": ""
   },
+  "face_folder_left_out": {
+   "columns": {
+    "file": "text not null",
+    "job_id": "text not null",
+    "reason": "text not null"
+   },
+   "constraints": [
+    "primary key ( job_id , file )"
+   ],
+   "options": ""
+  },
   "face_grouping": {
    "columns": {
     "asset_id": "text not null references assets ( id ) on delete cascade",
@@ -776,12 +788,21 @@
    "constraints": [],
    "options": ""
   },
+  "face_own_library": {
+   "columns": {
+    "id": "text not null",
+    "one": "integer primary key check ( one = 1 )"
+   },
+   "constraints": [],
+   "options": ""
+  },
   "face_packs": {
    "columns": {
     "digest": "text not null",
     "dimension": "integer not null",
     "id": "text primary key",
     "installed_at": "integer not null",
+    "library": "text",
     "name": "text not null unique collate nocase",
     "recognizer": "text not null",
     "version": "text not null"
@@ -1183,6 +1204,7 @@
     "state": "text not null default 'queued' check ( state in ( 'queued' , 'running' , 'done' , 'failed' , 'canceled' , 'blocked' , 'paused' ) )",
     "stop_wanted": "text",
     "timing": "text",
+    "to_read": "text",
     "type": "text not null",
     "units": "integer not null default 1",
     "updated_at": "integer not null"
@@ -2466,10 +2488,12 @@
    "columns": {
     "concealed": "integer not null default 0",
     "concealed_bytes": "integer not null default 0",
+    "concealed_ms": "integer not null default 0",
     "kind": "text not null",
     "object_id": "text not null",
     "permitted": "integer not null default 0",
     "permitted_bytes": "integer not null default 0",
+    "permitted_ms": "integer not null default 0",
     "user_id": "text not null references users ( id ) on delete cascade"
    },
    "constraints": [
@@ -2580,6 +2604,7 @@
   "work_runs": {
    "columns": {
     "accelerator": "text not null default ''",
+    "ended_with": "text",
     "family": "text not null",
     "files": "text not null default '{}'",
     "finished_at": "integer",
@@ -2870,17 +2895,17 @@
  "versions": {
   "access": 5,
   "benchmarks": 3,
-  "catalog": 89,
+  "catalog": 90,
   "content": 29,
   "dedup": 4,
   "download": 37,
-  "faces": 39,
+  "faces": 41,
   "file_moves": 4,
   "identity": 4,
   "importing": 1,
   "insights": 6,
-  "jobs": 14,
-  "ledger": 5,
+  "jobs": 15,
+  "ledger": 6,
   "library": 7,
   "music": 5,
   "performance": 2,
@@ -2901,7 +2926,7 @@
   "tidy": 1,
   "tunnels": 1,
   "user_state": 6,
-  "visibility": 14,
+  "visibility": 15,
   "watermarks": 7,
   "workbench": 16
  },

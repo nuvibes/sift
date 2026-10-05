@@ -268,9 +268,7 @@ class WorkKind:
     """How many files the outstanding jobs still have in front of them: each job's units times
     the fraction it has not reported done. A kind's estimate is worked out from this where the
     library cannot be asked, so a scan holding thousands of files weighs thousands and not one."""
-    """How many finished in the recent window, expressed per minute. What an ETA is worked out
-    from, and zero where nothing has finished lately, which is a real answer meaning "no estimate
-    yet", not a rate of nought."""
+    """How many finished in the recent window, per minute; zero is "no estimate yet"."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -283,6 +281,14 @@ class WorkSummary:
     since: int | None
 
 
+@dataclass(slots=True)
+class FilesToRead:
+    """What the live walks still have to read, by media kind, and how many are not counted yet."""
+
+    by_kind: dict[str, float] = field(default_factory=dict)
+    uncounted: int = 0
+
+
 #: The states a job is still going to be worked on in.
 _UNFINISHED = frozenset(state.value for state in CANCELABLE_STATES)
 
@@ -291,8 +297,7 @@ DEFAULT_PAGE_SIZE = 50
 #: The most rows one read of the queue returns: the kernel's one page ceiling, re-exported.
 MAX_PAGE_SIZE = _MAX_PAGE_SIZE
 
-#: `folded_state` as SQL, each test a seek on `ix_jobs_family`: one expression for the tally and the
-#: page, so a state's tab and its list are one rule, held to `folded_state` by a test.
+#: `folded_state` as SQL, one expression for the tally and the page, held to it by a test.
 _FOLDED = """CASE
  WHEN EXISTS (SELECT 1 FROM jobs AS step WHERE step.root_id = jobs.id AND step.state = 'failed')
   THEN 'failed'
@@ -334,8 +339,7 @@ def _to_job(row: Row) -> Job:
     )
 
 
-# A payload carries ids, never places on disk: a path leaks into every log and export, goes stale,
-# and lets whoever can enqueue a job point it at any file. Enforced where a payload is written.
+# A payload carries ids, never places on disk: a path leaks, goes stale and can point anywhere.
 _ABSOLUTE_PATH = re.compile(r"^(/|[A-Za-z]:[\\/]|\\\\)")
 _PATH_SEPARATORS = re.compile(r"[/\\]")
 

@@ -38,6 +38,7 @@ from typing import IO, Any
 
 import numpy as np
 
+from sift.kernel import device_load
 from sift.kernel.hardware import HardwareReport
 from sift.kernel.log import get_logger, level_name, redacts_personal
 from sift.kernel.ml.runtime import _ANONYMOUS, _DEVICES, DeviceLost, DeviceUnavailable, Loaded
@@ -330,9 +331,9 @@ class ChildRunner:
             )
         except OSError as error:
             raise DeviceUnavailable(f"The model process could not be started ({error}).") from error
-        # And behind everything else on the disk and in memory, on Windows: reading a model's
-        # weights and a library's pictures is the same background read as any tool's.
+        # Behind everything else on the disk and in memory too, like any tool's reads.
         step_aside(child)
+        device_load.own_child(child)
         self._child = child
         stdin, stdout = _pipes(child)
         try:
@@ -367,9 +368,7 @@ class ChildRunner:
     def _answer(pipe: IO[bytes]) -> dict[str, Any] | None:
         """One frame off the child's pipe, or TimeoutError after `ANSWER_TIMEOUT_SECONDS`.
 
-        A pipe cannot be read with a deadline on every site, so the read is a thread and the
-        deadline is the wait for it. A read that is still going when the deadline passes is left
-        to end when the pipe does, which `_end` sees to.
+        The read is a thread so the wait for it can have a deadline; `_end` closes a late one.
         """
         box: list[dict[str, Any] | BaseException | None] = []
 
@@ -409,6 +408,7 @@ class ChildRunner:
         except subprocess.TimeoutExpired:
             child.kill()
             child.wait(timeout=5)
+        device_load.child_ended(child)
         with contextlib.suppress(OSError):
             stdout.close()
         log.info("ml.child.stopped", pid=child.pid, feature=self._feature)

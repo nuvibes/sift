@@ -28,4 +28,4 @@ The pane draws one group in a browser, and more in the Sift app:
 - <a id="general.run_setup"></a>**Run setup again**: the next time you open Sift, it asks how to set up, as it did the first time.
 - <a id="general.restart"></a>**Restart Sift**: Sift closes and opens again.
 
-Nothing on this pane is a stored setting: everything on it acts when you press it.
+Nothing on this pane is a stored setting.

@@ -15,6 +15,7 @@
 		onprevious,
 		onnext,
 		onplayedthrough,
+		reachedByRun = false,
 		mayNotDraw = false
 	}: {
 		id?: string;
@@ -27,6 +28,8 @@
 		onnext?: () => void;
 		/* Where a run goes once this picture has rested; absent, it is a picture outside a run. */
 		onplayedthrough?: () => void;
+		/* Whether the run brought this picture up, rather than a press. */
+		reachedByRun?: boolean;
 		/* A picture only some browsers draw, as the file's detail says. */
 		mayNotDraw?: boolean;
 	} = $props();
@@ -34,6 +37,15 @@
 
 <MediaStage>
 	{#snippet media()}
-		<StillView {id} {mediaType} {compact} {onprevious} {onnext} {onplayedthrough} {mayNotDraw} />
+		<StillView
+			{id}
+			{mediaType}
+			{compact}
+			{onprevious}
+			{onnext}
+			{onplayedthrough}
+			{reachedByRun}
+			{mayNotDraw}
+		/>
 	{/snippet}
 </MediaStage>

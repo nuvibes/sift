@@ -15,6 +15,7 @@ import { flushSync, mount } from 'svelte';
 import { goto } from '$app/navigation';
 
 import { ApiError } from '$lib/api/client';
+import { session, type Viewer } from '$lib/shell/session.svelte';
 import Board from './+page.svelte';
 import boardSource from './+page.svelte?raw';
 import { applyStyles, removeStyles } from '$lib/design/testing-styles';
@@ -482,12 +483,14 @@ describe('what was lately decided', () => {
 		 * Organize; the History side is `Ledger.svelte.test.ts`.
 		 */
 		mocks.board.mockResolvedValue(answer({ queues: [queue()] }));
+		session.viewer = { role: 'admin' } as Viewer;
 
 		await render();
 
 		const door = [...host.querySelectorAll<HTMLAnchorElement>('a')].find(
 			(one) => words(one) === 'Decisions'
 		);
+		session.viewer = undefined;
 		expect(door?.getAttribute('href')).toBe('/settings/tasks#activity.decisions');
 		expect(hrefs()).not.toContain('/organize/decisions');
 	});
@@ -502,6 +505,8 @@ describe('what was lately decided', () => {
 		expect(host.textContent).toContain('administrator');
 		expect(host.textContent).not.toContain('Try again in a moment');
 		expect(host.textContent).not.toContain('could not decide on its own');
+		// Nor a way into a record the guest may not open.
+		expect(host.textContent).not.toContain('Decisions');
 	});
 });
 

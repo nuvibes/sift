@@ -29,7 +29,7 @@ export const PRESS_HOLD_MS = 300;
  * How far the pointer may drift and still be holding still, in pixels: a resting hand moves, and a
  * drag or a scroll covers this in its first few pixels.
  */
-const SLOP = 8;
+export const SLOP = 8;
 
 /** Set on the pressed element while a hold is being counted, so the stylesheet can show it. */
 const HOLDING = 'data-holding';

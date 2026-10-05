@@ -136,7 +136,7 @@
 			action={card.testing ? COPY.test.testing : COPY.test.action}
 			icon="readiness_score"
 			disabled={card.testing || accel.restart_needed}
-			note={card.tested ? (card.tested.works ? COPY.test.working : COPY.test.refused) : undefined}
+			note={card.tested ? (card.tested.works ? COPY.test.passed : COPY.test.refused) : undefined}
 			onclick={() => void card.test()}
 		/>
 		{#if card.tested && !card.tested.works}

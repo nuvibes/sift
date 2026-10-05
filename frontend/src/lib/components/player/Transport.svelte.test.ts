@@ -1,6 +1,5 @@
-/* The transport every player bar draws: Shuffle, Previous, Play, Next, Repeat, in that order, with
- * the act table's words and keys, and a press with nothing to act on drawn dimmed with its reason
- * or not drawn at all, as its caller says. */
+/* The transport every player bar draws: Repeat, Previous, Play, Next, Shuffle, always all five, a
+ * press with nothing to act on dimmed with its reason. */
 
 import { afterEach, expect, it, vi } from 'vitest';
 import { flushSync, mount, unmount } from 'svelte';
@@ -18,7 +17,15 @@ afterEach(() => {
 function draw(props: Record<string, unknown>) {
 	host = document.createElement('div');
 	document.body.append(host);
-	mounted = mount(Transport, { target: host, props: { playing: false, ...props } });
+	mounted = mount(Transport, {
+		target: host,
+		props: {
+			playing: false,
+			shuffle: { on: false, onpress: () => {} },
+			repeat: { mode: 'loop_all', onpress: () => {} },
+			...props
+		}
+	});
 	flushSync();
 }
 
@@ -30,25 +37,31 @@ function presses(): string[] {
 	);
 }
 
-it('stands Shuffle left of Previous and Repeat right of Next, Play between', () => {
-	draw({
-		onplay: () => {},
-		onback: () => {},
-		onforward: () => {},
-		shuffle: { on: false, onpress: () => {} },
-		repeat: { mode: 'loop_all', onpress: () => {} }
-	});
-	expect(presses()).toEqual(['Shuffle', 'Previous', 'Play', 'Next', 'Play through']);
+it('stands Repeat left of Previous and Shuffle right of Next, Play between', () => {
+	draw({ onplay: () => {}, onback: () => {}, onforward: () => {} });
+	expect(presses()).toEqual(['Play through', 'Previous', 'Play', 'Next', 'Shuffle']);
 });
 
-it('draws a step with no handler dimmed with its reason, and none at all without one', () => {
-	draw({ onplay: () => {}, backWhy: 'Nothing before this', onforward: () => {} });
-	expect(presses()).toEqual(['Nothing before this (dimmed)', 'Play', 'Next']);
+it('draws a step with no handler dimmed, with its reason or the default words', () => {
+	draw({ onplay: () => {}, backWhy: 'Nothing to go back to', onforward: () => {} });
+	expect(presses()).toEqual([
+		'Play through',
+		'Nothing to go back to (dimmed)',
+		'Play',
+		'Next',
+		'Shuffle'
+	]);
 	unmount(mounted!);
 	host.remove();
 
 	draw({ onplay: () => {} });
-	expect(presses(), 'a list of one has no next to wait for').toEqual(['Play']);
+	expect(presses(), 'a list of one keeps all five').toEqual([
+		'Play through',
+		'Nothing before this (dimmed)',
+		'Play',
+		'Nothing after this (dimmed)',
+		'Shuffle'
+	]);
 });
 
 it('dims Shuffle, Play and Repeat with the reason their caller gives', () => {
@@ -60,7 +73,9 @@ it('dims Shuffle, Play and Repeat with the reason their caller gives', () => {
 	});
 	expect(presses()).toEqual([
 		'This one is hidden (dimmed)',
+		'Nothing before this (dimmed)',
 		'This one is hidden (dimmed)',
+		'Nothing after this (dimmed)',
 		'This one is hidden (dimmed)'
 	]);
 });
@@ -81,7 +96,17 @@ it('lights Shuffle while the order is shuffled', () => {
 	);
 });
 
-it('draws no Play where there is nothing to play and no reason given', () => {
+it('dims Play where there is nothing to play and no reason given', () => {
 	draw({ playable: false, onback: () => {} });
-	expect(presses()).toEqual(['Previous']);
+	expect(presses()[2]).toBe('Nothing after this (dimmed)');
+});
+
+it('draws Play alone on the docked strip, and no step pair where a swipe steps', () => {
+	draw({ onplay: () => {}, playOnly: true });
+	expect(presses()).toEqual(['Play']);
+	unmount(mounted!);
+	host.remove();
+
+	draw({ onplay: () => {}, onback: () => {}, onforward: () => {}, steps: false });
+	expect(presses()).toEqual(['Play through', 'Play', 'Shuffle']);
 });

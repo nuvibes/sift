@@ -160,7 +160,7 @@ def test_a_pack_says_how_many_confirmed_faces_each_person_had_and_an_older_one_i
     raw = a_pack(people=["Ada Lovelace"], confirmed=3)
     assert packs.read(raw, expect_recognizer=RECOGNISER).people[0].confirmed == 3
     with zipfile.ZipFile(BytesIO(raw)) as bundle:
-        assert json.loads(bundle.read(packs.MANIFEST))["format"] == 2
+        assert json.loads(bundle.read(packs.MANIFEST))["format"] == packs.FORMAT
 
     older = packs.read(_as_edition(raw, {"format": 1}), expect_recognizer=RECOGNISER)
     assert older.people[0].confirmed is None

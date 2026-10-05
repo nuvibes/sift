@@ -78,7 +78,7 @@ it('says nothing is kept HERE when this wall has none, with other walls full', (
 	   can usefully say, would never appear. */
 	draw({ kind: 'tag' });
 
-	expect(host.textContent).toContain('Nothing kept yet');
+	expect(host.textContent).toContain('No saved filters yet');
 });
 
 beforeEach(() => {
@@ -117,13 +117,13 @@ it('draws one pill per kept filter', () => {
 	expect(pillNames()).toEqual(['Runway clips', 'Remix']);
 });
 
-it('says where the bookmark is when nothing has been kept', () => {
-	/* A direction in a sentence is a fact about the layout and goes stale the same way a measurement
-	   does, naming a row the control has moved off. */
+it('names the control that saves a filter when nothing has been kept', () => {
 	savedSearches.items = [];
 	draw();
 
-	expect(host.querySelector('[role="status"]')?.textContent).toContain('bookmark on the chips row');
+	expect(host.querySelector('[role="status"]')?.textContent?.replace(/\s+/g, ' ').trim()).toBe(
+		'No saved filters yet. Select some filters, then press the Add to saved filters icon on the filters bar.'
+	);
 });
 
 it('draws nothing about editing until something is being edited', () => {
@@ -325,7 +325,7 @@ it('offers no Edit where the host cannot edit', () => {
 	draw({ editable: false });
 
 	expect(host.querySelector('.kept')).not.toBeNull();
-	expect(host.textContent).not.toContain('Nothing kept yet');
+	expect(host.textContent).not.toContain('No saved filters yet');
 });
 
 it('draws Everything when the draft narrows to nothing at all', () => {

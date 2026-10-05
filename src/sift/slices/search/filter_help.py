@@ -96,6 +96,8 @@ class FilterHelp:
     label: str
     hint: str
     example: str
+    #: Where a filter that takes an id is written, drawn after its bare token instead of an id.
+    set_from: str | None = None
 
     def __post_init__(self) -> None:
         """Refuse a label the parser would not take, at import."""
@@ -197,23 +199,27 @@ FILTERS: tuple[FilterHelp, ...] = (
     # The file's release date, as a year. `production_date` is a record field and not a filter;
     # see `Field.RELEASED` for why there is only one year word.
     FilterHelp(Field.RELEASED, "Released", "The year it was published", "released:2021"),
-    # Everything one network put out, however deeply its labels nest. The example is an id and
-    # honestly so: this is the one filter written by clicking rather than by typing (see
-    # `Field.NETWORK` for why a name here would only be a second spelling of `sites:`).
-    FilterHelp(Field.NETWORK, "Network", "Everything one network put out", "network:a1b2c3d4"),
-    # The files that share a song with one file. An id, written by the Same music strip's heading.
+    # The four that take an id are written by a click, so their row says where instead of an id.
+    FilterHelp(
+        Field.NETWORK,
+        "Network",
+        "Everything one network put out",
+        "network:",
+        set_from="from the Network column",
+    ),
     FilterHelp(
         Field.SAME_MUSIC,
         "Same music",
         "Files that share a song with one file",
-        "same_music:01HX0000000000000000000001",
+        "same_music:",
+        set_from="from a file",
     ),
-    # The files similar to one file. An id, written by the strip's heading and the file menu.
     FilterHelp(
         Field.LIKE,
         "Similar to this",
         "Files similar to one file",
-        "like:01HX0000000000000000000001",
+        "like:",
+        set_from="from a file",
     ),
     # The files one product gave up on. Written by the count in the Importing pane's sentence
     # ("24 files couldn't have thumbnails generated and are left out"), and typeable.
@@ -223,12 +229,12 @@ FILTERS: tuple[FilterHelp, ...] = (
         "Files Generate or Identify couldn't make something for",
         "left_out:thumbnails",
     ),
-    # Written by the line under the faces on a person's page, and typeable.
     FilterHelp(
         Field.UNNAMED_FACE,
         "Face still unnamed",
         "Files filed under one person from a folder, with a face nobody named yet",
-        "unnamed_face:01HX0000000000000000000001",
+        "unnamed_face:",
+        set_from="from a person",
     ),
     # WHAT THE PEOPLE ON A FILE ARE LIKE. Last, and in the order the person record declares them,
     # because these answer a question about somebody rather than about the file, and somebody

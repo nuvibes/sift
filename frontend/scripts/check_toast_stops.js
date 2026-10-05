@@ -98,8 +98,7 @@ const PLAIN = {
 	'lib/components/entity/wall-verbs.svelte.ts': [],
 	// A thing that was not made has no page.
 	'lib/components/common/PickDialog.svelte': ['name'],
-	// Saved presets and searches have no page; they are opened from their own panel.
-	'lib/components/theater/PresetsPanel.svelte': ['made.name', 'kept.name'],
+	// Saved filters have no page; they are opened from their own panel.
 	'lib/components/shell/SavedFilters.svelte': ['kept.name'],
 	// A user has no page; the toast is said on that user's own row.
 	'lib/settings-ui/Users.svelte': ['user.username'],

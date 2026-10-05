@@ -32,9 +32,6 @@ def build_preferences(
     hub = settings_hub.SettingsService(store.database)
     provide(app, settings_hub.SERVICE, hub)
     provide(app, wiring.SETTINGS_HUB, hub)
-    # The same hub, as the keeper of each User's arrangement of the interface (the hints Get to
-    # know Sift shows once). Published here so the type checker holds it to that shape.
-    provide(app, wiring.INTERFACE_STATE, hub)
     provide(
         app,
         update_notify.SERVICE,

@@ -24,12 +24,8 @@ id stays in the address (it filters exactly as the id did) and a note carries th
 chip to read. An id that names nothing any more is the note's other case: a thing deleted since
 the filter was kept, drawn as such and matching no file, as a name nobody has already does.
 
-The same parser reads both spellings (see `FilterCompiler._lookup`), so a filter kept by id and
-a link someone typed by name are one query language rather than two.
-
-Nothing here builds SQL or reads a table. Every lookup goes through the compiler's own scoped
-resolvers, so a name is turned into an id only where this viewer's own wall would have matched
-it, and an id is named only to a viewer who may be shown the thing.
+Nothing here builds SQL or reads a table: every lookup goes through the compiler's scoped
+resolvers, so a name becomes an id, and an id a name, only for a viewer who may be shown it.
 """
 
 from __future__ import annotations
@@ -38,7 +34,9 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from urllib.parse import parse_qsl, urlencode
 
-from sift.kernel.access import Viewer
+from starlette.datastructures import QueryParams
+
+from sift.kernel.access import ENTITY_FACETS, Viewer
 from sift.kernel.ids import is_id
 from sift.slices.search.filters import (
     ALIASES,
@@ -50,6 +48,7 @@ from sift.slices.search.filters import (
     Node,
     Presence,
     Term,
+    parse,
     parse_tokens,
     presence_word,
     write,
@@ -82,12 +81,20 @@ class Noted:
     name: str | None
 
 
+#: The facets of a wall of things that keep a thing by its id, and the field each one names.
+_WALL_IDS: Mapping[str, Mapping[str, Field]] = {
+    "person": {"tags": Field.TAGS},
+    "site": {"tags": Field.TAGS, "parent": Field.SITES},
+    "tag": {"parent": Field.TAGS},
+    "collection": {"tags": Field.TAGS},
+    "photo_set": {"tags": Field.TAGS},
+}
+
+
 def _split(raw: str) -> list[str]:
     """A parameter's value cut at its separators, the separators kept as pieces of their own.
 
-    Quote-aware, as the parser is: a quoted value may hold a comma or a pipe. Kept as written
-    rather than parsed and written back, so a filter's unchanged values keep their own spelling
-    to the character, and only the values that are swapped change.
+    Quote-aware, as the parser is; kept as written, so only the values swapped change spelling.
     """
     pieces: list[str] = []
     current: list[str] = []
@@ -305,3 +312,32 @@ async def typed_as_shown(
         return []
     shown, _ = await as_shown(compiler, viewer, _typed_query(texts))
     return _typed_texts(shown, len(texts))
+
+
+async def names_only_gone(compiler: FilterCompiler, viewer: Viewer, query: str) -> bool:
+    """Whether a kept filter over files filters by named things alone, and every one is gone."""
+    asked = parse(QueryParams(query))
+    if asked.text or asked.filings:
+        return False
+    if not all(isinstance(one, Term) and one.field in ENTITY_FIELDS for one in asked.leaves()):
+        return False
+    named = {value for values in entity_values(query).values() for value in values}
+    _, notes = await as_shown(compiler, viewer, query)
+    return bool(named) and named <= {one.value for one in notes if one.name is None}
+
+
+async def wall_names_only_gone(
+    compiler: FilterCompiler, viewer: Viewer, wall: str, query: str
+) -> bool:
+    """The same for a kept filter on a wall of things, whose facets keep ids."""
+    held = _WALL_IDS.get(wall, {})
+    named: dict[Field, set[str]] = {}
+    for key, value in parse_qsl(query):
+        if key in held:
+            named.setdefault(held[key], set()).add(value.removeprefix("-"))
+        elif key == TYPED or key in ENTITY_FACETS.get(wall, {}):
+            return False
+    for found, ids in named.items():
+        if await compiler.names_of(viewer, found, sorted(ids)):
+            return False
+    return bool(named)

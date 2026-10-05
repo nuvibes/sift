@@ -378,32 +378,13 @@ const PAIRS: Pair[] = [
 		floor: ELEMENT,
 		why: 'an enrichment mark on a card, warm end'
 	},
-	/* The marks wear the accent and the box colours below, not the wave, and the two pairs
-	   above stay, because the wave is still drawn: the spark on the search box is what it is
-	   for.
-
-	   EVERY STASH-BOX'S ONE COLOUR, on the chip surface, which is the highest ground
-	   any of these marks can be drawn on. Measured rather than assumed, and it is not a
-	   formality: StashDB's brown at 1.92:1 would fail it, and it is lifted in `app.css` until
-	   it clears it, which is why an outline is not needed. A colour that stops clearing it is
-	   either lifted again or the glyph gets one. */
+	/* The marks wear the accent's text tone, not the wave, on the chip surface: the highest ground
+	   they are drawn on. The fill is under 3:1 there. The two pairs above stay for the search spark. */
 	{
-		front: '--sift-box-stashdb',
+		front: '--sift-accent-text',
 		back: '--sift-surface-4',
 		floor: ELEMENT,
-		why: "StashDB's brown on a chip"
-	},
-	{
-		front: '--sift-box-pmvstash',
-		back: '--sift-surface-4',
-		floor: ELEMENT,
-		why: "PMVStash's orange on a chip"
-	},
-	{
-		front: '--sift-box-fansdb',
-		back: '--sift-surface-4',
-		floor: ELEMENT,
-		why: "FansDB's blue on a chip"
+		why: 'an enrichment mark on a chip'
 	},
 
 	// The scrims, over the worst picture there is. A control over media has no idea what is behind

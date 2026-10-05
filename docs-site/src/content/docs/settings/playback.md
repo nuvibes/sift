@@ -106,20 +106,20 @@ You can choose another from the wall itself.
 
 - **Path**: [Settings > Playback > Default layout when Theater opens](/settings/playback#theater.layout)
 - **Default**: 1x3
-- **Choices**: 1x1, 1x2, 1x3, 2x2, Center stage 1x1, Center stage 1x2, Center stage 1x3, Center stage 2x2
+- **Choices**: 1x1, 1x2 (P), 1x2 (L), 1x3, 2x2, Center stage 1x1, Center stage 1x2, Center stage 1x3, Center stage 2x2
 - **Who sets it**: each User, for themselves
 
 <a id="theater.center_stage"></a>
 
 ### When a preview comes up
 
-Center stage shows up to four videos in focus with previews under them. Selecting a preview always brings it into focus.
+Center stage shows up to four videos in focus with previews under them. Double-clicking a preview always brings it into focus.
 
 Something new means the next file in that preview's queue. Resuming after a pause, a seek or a stall isn't a new file, so it doesn't bring a preview into focus.
 
 - **Path**: [Settings > Playback > When a preview comes up](/settings/playback#theater.center_stage)
-- **Default**: When I press it
-- **Choices**: When I press it, As soon as it starts something new
+- **Default**: When I double-click it
+- **Choices**: When I double-click it, As soon as it starts something new
 - **Who sets it**: each User, for themselves
 
 <a id="theater.autoplay"></a>
@@ -149,7 +149,7 @@ Leave it empty to wait for each file to end.
 
 ### Pick up where you left off
 
-Coming back to Theater brings back the layout and what each cell was playing. It's remembered until Sift restarts or the page is reloaded.
+Coming back to Theater, or reloading the page, brings back the layout and what each cell was playing. It's forgotten when the window is closed.
 
 - **Path**: [Settings > Playback > Pick up where you left off](/settings/playback#theater.resume)
 - **Default**: Off

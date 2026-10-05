@@ -36,6 +36,7 @@ from sift.kernel.access.history_events import (
     actor_names,
     can_be_found,
     names_now,
+    own_filters,
     subjects_present,
 )
 from sift.kernel.access.history_feed import Press, press_of, presses_recent
@@ -328,6 +329,7 @@ SETTINGS_PANES: Mapping[str, str] = {
 #: under its "Name template" group (`NamingTemplate.svelte`), keyed `site_options.<site>.<field>`.
 SITE_OPTIONS_PREFIX = "site_options."
 _SITE_OPTIONS_ROW = "/settings/downloads#downloads.name_template"
+_DEFAULT_FOLDER = ("site_options.*default*.dest_folder_id", "Download folder")
 
 
 def setting_href(key: str) -> str | None:
@@ -606,10 +608,11 @@ def _setting_label(key: str, snapshot: str | None = None) -> str:
 
     A key the registry does not know falls back to the SNAPSHOT, then to the key. Two kinds of row
     reach that branch: a setting since retired, whose snapshot is its last label (or, on an older
-    row, the key itself); and a setting that was never a registered one, such as a Site's name
-    template (`download/schema.py` step 28 clears one and says so), where the writer kept words
-    like "Instagram's name template" rather than `site_options.instagram.naming`.
+    row, the key itself); and a Site's own setting, whose writer kept words like "Instagram's
+    name template". The default download folder is its row's name, whatever older rows kept.
     """
+    if key == _DEFAULT_FOLDER[0]:
+        return _DEFAULT_FOLDER[1]
     setting = get_registered(key)
     if setting is not None:
         return setting.label
@@ -755,9 +758,8 @@ async def ledger(
     different audiences: this one is admin-only by its nature, and that one must not be. It gets
     its own address when it is built.
     """
-    # ONE LINE PER PRESS: a task's four thousand filings are one line that opens to them, not four
-    # thousand. The fold is a reading (see
-    # `history_feed.presses_recent`) and the pager counts lines.
+    # ONE LINE PER PRESS: a task's thousands of filings are one line that opens to them, and the
+    # pager counts lines (`history_feed.presses_recent`).
     presses, total = await presses_recent(
         database, viewer, limit=limit, offset=offset, kind=kind, verb=verb, decisions=decisions
     )
@@ -767,10 +769,10 @@ async def ledger(
     # What the rows that wrote no name down are called NOW. One read per kind that needs one, and
     # none at all for a page whose rows all carry a snapshot. See `history_names.names_now`.
     called = await names_now(database, _nameless(things))
+    called |= await own_filters(database, viewer, _nameless(things).get("saved_filter", []))
     names = await actor_names(database, _acted(found))
     usernames = await _username_hrefs(database, present)
-    # How sure Sift was of each face match on the page, off the appearances: the figures the
-    # file's own line says, so a match reads one sentence here and there. See `face_sures`.
+    # How sure Sift was of each face match, as the file's own line says it. See `face_sures`.
     sures = await face_sures(database, _face_pairs(found))
     # What each stash-box press on the page filled in, every field with its values, as the thing's
     # own History says it. See `history_boxes.named_of_events`.

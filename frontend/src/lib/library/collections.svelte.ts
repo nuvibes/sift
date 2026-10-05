@@ -15,10 +15,12 @@ import { overChunks, type BulkWriteDone } from '$lib/library/bulk';
 import { api } from '$lib/api/client';
 import { recorded } from '$lib/library/changes.svelte';
 import { PICK_PAGE } from '$lib/search/frequent.svelte';
+import { FIELDS } from '$lib/search/search.svelte';
 import type { components } from '$lib/api/schema';
 import { ENTITY_OPINION_SORTS, UNIVERSAL_SORTS } from '$lib/grid/sort-state.svelte';
 import { asked } from '$lib/grid/anchor';
 import { fillHeld, type CardPaging } from '$lib/grid/cards.svelte';
+import type { RowSource } from '$lib/grid/grid.svelte';
 
 /**
  * A collection, taken from the server's own definition rather than described again here: a
@@ -29,7 +31,22 @@ export type Collection = components['schemas']['CollectionSummary'];
 
 export type CollectionItem = components['schemas']['CollectionItem'];
 
+/** The address's filters as a collection's contents take them: the words and every field. */
+export function contentsAsked(url: URL): Record<string, string[]> {
+	const asked: Record<string, string[]> = {};
+	for (const name of ['q', ...FIELDS]) {
+		const values = url.searchParams.getAll(name).filter((value) => value.trim());
+		if (values.length > 0) asked[name] = values;
+	}
+	return asked;
+}
+
 export type CollectionContents = components['schemas']['CollectionContents'];
+
+/** A collection's arrangement as a wall of files pages it; the route takes no `from` or `after`. */
+export function contentsSource(id: string): RowSource {
+	return { path: `/collections/${id}/items`, anchored: false, sorts: [], filterable: true };
+}
 
 /* How many Collections one page of the wall holds. See the People wall for the reasoning; this is
  * the fallback before the wall has been laid out and a card measured. */
@@ -256,20 +273,11 @@ export class Collections {
 		return await overChunks(assetIds, (chunk) => this.#edit(id, chunk, 'remove'));
 	}
 
-	/**
-	 * Write a new order. `assetIds` is the sequence, not a set of things to move.
-	 *
-	 * NOT SPLIT INTO CHUNKS, unlike the two above, and the difference is the whole reason this is
-	 * written out here. Adding and removing are questions about each file on its own, so five
-	 * hundred at a time gives the same answer as all of them at once. An order is a statement about
-	 * the WHOLE list: sent five hundred at a time it would renumber each batch from the top and
-	 * leave the collection shuffled into blocks.
-	 *
-	 * A collection larger than one request is therefore not reorderable, and that is the honest
-	 * state rather than a silent wrong answer. Nothing offers it: the order is set by dragging.
-	 */
-	async reorder(id: string, assetIds: string[]): Promise<BulkWriteDone> {
-		return await this.#edit(id, assetIds, 'reorder');
+	/** One file a place in the stored arrangement; nothing else changes, so nothing is reloaded. */
+	async move(id: string, assetId: string, by: -1 | 1): Promise<void> {
+		await api.post<BulkWriteDone>(`/collections/${id}/items`, {
+			body: { asset_ids: [assetId], action: 'move', direction: by < 0 ? 'earlier' : 'later' }
+		});
 	}
 
 	async #edit(id: string, assetIds: string[], action: string): Promise<BulkWriteDone> {
@@ -323,15 +331,7 @@ export class Collections {
 		return updated;
 	}
 
-	/**
-	 * What is in one collection, in its arranged order, filtered when `narrowing` names anything.
-	 *
-	 * `narrowing` is the query language's own fields (`people`, `tags`, `sites`, `collections`,
-	 * `photo_sets`), every value of each, exactly as the page's address carries them (`narrowingOf`
-	 * in `picks.ts`). Each value goes as a parameter of its own, which the server reads as AND,
-	 * never joined into one string, which would read a minus or a pipe as part of a name. The total
-	 * that comes back is the filtered one, from the same statement as the rows.
-	 */
+	/** What is in one collection, in its arranged order, filtered by the query language (`contentsAsked`). */
 	async contents(
 		id: string,
 		limit = 200,

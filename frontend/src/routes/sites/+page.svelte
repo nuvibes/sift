@@ -7,26 +7,14 @@
 	import { facetParams } from '$lib/components/shell/facet-labels';
 	import { goto } from '$app/navigation';
 	/*
-	 * Sites: where media came from, drawn the same way People is.
-	 *
-	 * The same card and the same wall, deliberately. A site and a person are different kinds of
-	 * thing (the whole slice under this exists so they never collapse into one field), but on a
-	 * list screen they are the same four facts: a picture, a name, some counts, and what you think
-	 * of it. Two screens that look alike and are built twice are two screens that stop looking
-	 * alike the first time either is touched.
-	 *
-	 * Most rows here were never typed in. A download names the site it fetched from, and the site
-	 * and the handle appear without anybody doing anything, which is the whole reason attribution
-	 * is worth modelling as three things rather than one.
-	 *
-	 * Deleting a site takes its usernames with it and moves no file and no person, which is what
-	 * its confirmation says (`delete_site` in `people/router.py`).
+	 * Sites: where media came from, on the same card and wall as People so the two stay alike.
+	 * Deleting a site takes its usernames with it and moves no file and no person.
 	 */
 	import { Selection, TileGesture, VerbMenuItems } from '$lib/components/common';
 	import EntityCard from '$lib/components/entity/EntityCard.svelte';
 	import EntitySelectionBar from '$lib/components/entity/EntitySelectionBar.svelte';
 	import { screenBar } from '$lib/components/shell/screen-bar.svelte';
-	import { UNIVERSAL_SORTS } from '$lib/grid/sort-state.svelte';
+	import { ENTITY_OPINION_SORTS, UNIVERSAL_SORTS } from '$lib/grid/sort-state.svelte';
 	import EntityWallFlows from '$lib/components/entity/EntityWallFlows.svelte';
 	import { WallVerbs } from '$lib/components/entity/wall-verbs.svelte';
 	import { menuVerbs } from '$lib/components/common/verbs';
@@ -39,13 +27,7 @@
 	import WallControls from '$lib/components/entity/WallControls.svelte';
 	import { filesSaid, filesSized, sizeOf } from '$lib/entity/entity-counts';
 	import { cardCells } from '$lib/components/entity/entity-counts';
-	import {
-		ENTITY_SORTS,
-		people,
-		SITES_PER_PAGE,
-		sites,
-		type Site
-	} from '$lib/people/people.svelte';
+	import { people, SITES_PER_PAGE, sites, type Site } from '$lib/people/people.svelte';
 	import Pager from '$lib/components/common/Pager.svelte';
 	import { CardPaging } from '$lib/grid/cards.svelte';
 	import { anchorIn, forgetAnchor, rememberAnchor } from '$lib/grid/anchor';
@@ -127,17 +109,8 @@
 
 	$effect(() => {
 		/*
-		 * `loaded` is READ here and `loading` is not, and the split is the whole of it.
-		 *
-		 * `loaded` going false is the signal to fetch again: that is exactly what `forget()` does
-		 * when the vault opens or shuts, because what is concealed never arrives and a list held
-		 * from before is wrong the moment the vault moves. Not reading it would leave this screen
-		 * deaf to that: the rows cleared, nothing asking for them again, and the wall empty until
-		 * navigated away from and back.
-		 *
-		 * `loading` is what must NOT be read. It goes true then false on every fetch, so an effect
-		 * watching it is triggered by its own work: a request loop. Reading only `loaded` cannot
-		 * loop: the load ends with it true, this runs once more, and returns.
+		 * `loaded` is read, so `forget()` on a vault change fetches again; `loading` is not, since an
+		 * effect watching it would be triggered by its own fetch.
 		 */
 		/* Named so the effect re-runs when the page moves. The page SIZE is read too: a taller window
 		   holds more rows, so a resize is a reason to re-fetch. */
@@ -229,7 +202,7 @@
 			// For everybody, not only an admin. See the People wall: the server refuses a guest
 			// nothing here, and the menu disappearing on one screen and not another is the fault
 			// this bar is for.
-			sorts: [...UNIVERSAL_SORTS, ...ENTITY_SORTS],
+			sorts: [...UNIVERSAL_SORTS, ...ENTITY_OPINION_SORTS],
 			sort: sites.sort,
 			onSort: (next) => {
 				/* A new order is a new list, so the page it was on means nothing in it, and neither
@@ -388,7 +361,7 @@
 			kind: 'asset',
 			targetId: site.id,
 			onassign: fileDropped,
-			onlink: (url, id) => void fetchOnto(url, 'site', id, site.name)
+			onlink: session.isAdmin ? (url, id) => void fetchOnto(url, 'site', id, site.name) : undefined
 		})}
 		<div
 			role="listitem"

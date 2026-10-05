@@ -36,8 +36,7 @@ if "%PYTHON%"=="" set "PYTHON=3.13"
 set "SDIST_URL=https://files.pythonhosted.org/packages/bb/4c/d5319a1f276c70528ff97893afc42a300ff28029e27ca8de89bb3b271680/pillow_heif-1.8.0.tar.gz"
 set "SDIST_SHA256=e47c27432c6fd3d66c22f0de9f27fd379383b646c947520bc485854ce72060d0"
 
-rem Windows' own tar, by its path: a tar from a Unix-style shell earlier on PATH reads the drive
-rem letter of an archive's path as a host name and extracts nothing.
+rem Windows' own tar: a Unix-style tar earlier on PATH reads the drive letter as a host name.
 set "TAR=%SystemRoot%\System32\tar.exe"
 
 rem The same compiler and inputs make the same wheel byte for byte, so a rebuild on the release
@@ -81,6 +80,8 @@ if errorlevel 1 (
   exit /b 1
 )
 "%TAR%" -xzf "%WORK%\pillow_heif-1.8.0.tar.gz" -C "%WORK%" || exit /b 1
+rem The sdist's licence list names x265 and MinGW, which this wheel lacks.
+copy /y "%~dp0pillow_heif_LICENSES_bundled.txt" "%WORK%\pillow_heif-1.8.0\LICENSES_bundled.txt" >nul || exit /b 1
 
 rem libde265: the library only. Its sample decoder and encoder are programs Sift never runs.
 cmake -G Ninja -S "%WORK%\libde265-1.1.3" -B "%WORK%\build-libde265" ^

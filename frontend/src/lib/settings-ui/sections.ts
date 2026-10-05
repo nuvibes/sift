@@ -69,11 +69,10 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
 			{ id: 'library', label: 'Folders', icon: 'folder', admin: true },
 			/* Beside Folders because the pair is the whole of this group's own sentence: where
 			   the files are, and what is done to them on the way in. */
-			{ id: 'importing', label: 'Importing', icon: 'inbox', admin: true },
+			{ id: 'importing', label: 'Importing', icon: 'upload', admin: true },
 			/* WHEN work runs and what it has done, as four tabs: one door for "what does Sift do
 			   with my library, and when", beside the import it mostly runs. See `MOVED_TO`. */
 			{ id: 'tasks', label: 'Tasks and Activity', icon: 'calendar_clock', admin: true },
-			{ id: 'downloads', label: 'Downloads', icon: 'download', admin: true },
 			/* Sift's own noun for the thing, and the vocabulary gate insists on it:
 			   `test_one_word_per_thing.py` maps `platform` to Site and records why.
 
@@ -81,6 +80,7 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
 			   and `platforms`, the older word for a Site. An id is an address, so neither old one
 			   is a dead link. */
 			{ id: 'sites', label: 'Sites and Tunnels', icon: 'public', admin: true },
+			{ id: 'downloads', label: 'Downloads', icon: 'download', admin: true },
 			/* Compression is here: one setting behind one door and four behind another would be
 			   two doors for two questions a person asks in the same breath. Both keep a heading. */
 			{ id: 'editing', label: 'Editing', icon: 'content_cut', admin: true },
@@ -157,11 +157,9 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
 			{ id: 'performance', label: 'Performance', icon: 'readiness_score', admin: true },
 			{ id: 'maintenance', label: 'Maintenance', icon: 'mop', admin: true },
 			{ id: 'backup', label: 'Backup and restore', icon: 'settings_backup_restore', admin: true },
-			/* The version, the licence and the third-party notices at the
-			   foot, which the AGPL requires to stay reachable, and this install's device id. Not
-			   admin-only for that reason: everybody may read the terms. The install button and the
-			   device id draw for an admin only. */
-			{ id: 'updates', label: 'Updates and Info', icon: 'download' }
+			/* Everybody's: the AGPL keeps the licence and notices at its foot reachable. */
+			{ id: 'updates', label: 'Updates and Info', icon: 'download' },
+			{ id: 'documentation', label: 'Documentation', icon: 'menu_book' }
 		]
 	}
 ];

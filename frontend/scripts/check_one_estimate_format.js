@@ -35,7 +35,7 @@ if (offenders.length > 0) {
 	console.error(
 		`\n  ${offenders.length} estimate(s) worded outside lib/shell/when.ts:\n    ` +
 			offenders.join('\n    ') +
-			'\n  Instead: `sayWindow(low, high)` from $lib/shell/when. A single figure is `sayWindow(s, s)`.\n'
+			'\n  Instead: `sayWindow(low, high)` or `sayAtLeast(seconds)` from $lib/shell/when. A single figure is `sayWindow(s, s)`.\n'
 	);
 	process.exit(1);
 }

@@ -88,6 +88,19 @@ const siftLinks = {
 	}
 };
 
+// A heading link's copy press (src/components/MarkdownContent.astro) finds the links by this class.
+const anchorLinks = {
+	name: 'sift-anchor-links',
+	hooks: {
+		'astro:build:done': ({ dir }) => {
+			const page = readFileSync(new URL('library/browse/index.html', dir), 'utf-8');
+			if (!page.includes('class="sl-anchor-link"')) {
+				throw new Error('Starlight no longer draws a heading link as .sl-anchor-link');
+			}
+		}
+	}
+};
+
 const pages = (items) => items.map((slug) => ({ slug }));
 
 export default defineConfig({
@@ -98,10 +111,12 @@ export default defineConfig({
 	integrations: [
 		starlight({
 			title: 'Sift',
-			description: 'How to use Sift, the self-hosted media library and downloader.',
+			description:
+				'Sift is a feature-rich, intelligent media manager that lets you browse, download, watch, and organize your content.',
 			customCss: ['@fontsource-variable/archivo/wght.css', './src/styles/sift.css'],
 			components: {
 				Hero: './src/components/Hero.astro',
+				MarkdownContent: './src/components/MarkdownContent.astro',
 				SiteTitle: './src/components/SiteTitle.astro',
 				ThemeProvider: './src/components/ThemeProvider.astro',
 				ThemeSelect: './src/components/ThemeSelect.astro'
@@ -124,6 +139,7 @@ export default defineConfig({
 				{ label: 'For developers', items: pages(['developers', 'developers/api']) }
 			]
 		}),
-		fontLicences
+		fontLicences,
+		anchorLinks
 	]
 });

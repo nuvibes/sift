@@ -46,6 +46,7 @@ from sift.kernel.db import Connection, Database, Row
 from sift.kernel.ids import new_id
 from sift.kernel.ledger import ACTOR_USER, Actor, Object, record_event
 from sift.kernel.log import get_logger
+from sift.kernel.paging import MAX_PAGE_SIZE
 from sift.kernel.sorting import sort_key
 from sift.kernel.vocabulary import Subject
 from sift.kernel.wiring import Part
@@ -240,7 +241,7 @@ _SET_POSITION = "UPDATE collection_items SET position = ? WHERE collection_id = 
 # The sequence as it stands. NULLS LAST so a row that somehow carries no position is read as
 # sitting at the end, which is the same way the scoped read orders one.
 _ITEMS_IN_ORDER = """
-SELECT asset_id FROM collection_items
+SELECT asset_id, position FROM collection_items
  WHERE collection_id = ?
  ORDER BY position ASC NULLS LAST, asset_id ASC
 """
@@ -560,12 +561,7 @@ class CollectionService:
         return None if row is None else str(row["name"])
 
     async def members(self, collection_id: str) -> list[str]:
-        """The assets a collection holds, in its own order.
-
-        Asked by a rename, which changes indexed text on exactly these and on nothing else. A
-        rename does not move membership, so reading them after the write gives the same answer as
-        reading them before it.
-        """
+        """The assets a collection holds, in its own order: what a rename reindexes."""
         rows = await self._db.fetch_all(_ITEMS_IN_ORDER, (collection_id,))
         return [str(row["asset_id"]) for row in rows]
 
@@ -687,6 +683,35 @@ class CollectionService:
             if unknown:
                 raise UnknownItem(unknown[0])
             return await self._renumber(connection, collection_id, asset_ids)
+
+    async def move(self, viewer: Viewer, collection_id: str, asset_id: str, *, later: bool) -> int:
+        """Swap a file with the nearest file this viewer may open in the stored sequence, so one
+        nobody here can see keeps its place. The rows written: two, or none at either end."""
+        async with telling(self._db, EVERY_ADMIN, About.LIBRARY) as connection:
+            rows = await (await connection.execute(_ITEMS_IN_ORDER, (collection_id,))).fetchall()
+            sequence = [str(row["asset_id"]) for row in rows]
+            if asset_id not in sequence:
+                raise UnknownItem(asset_id)
+            at = sequence.index(asset_id)
+            ahead = sequence[at + 1 :] if later else sequence[:at][::-1]
+            neighbour = None
+            for start in range(0, len(ahead), MAX_PAGE_SIZE):
+                chunk = ahead[start : start + MAX_PAGE_SIZE]
+                shown = await self._access.standing_of(viewer, chunk)
+                opens = {one for one, shut in shown.items() if viewer.show_hidden or not shut}
+                neighbour = next((one for one in chunk if one in opens), None)
+                if neighbour is not None:
+                    break
+            if neighbour is None:
+                return 0
+            other = sequence.index(neighbour)
+            stored = [row["position"] for row in rows]
+            if None in stored or len(set(stored)) < len(stored):
+                sequence[at], sequence[other] = neighbour, asset_id
+                return await self._renumber(connection, collection_id, sequence)
+            for one, position in ((asset_id, stored[other]), (neighbour, stored[at])):
+                await connection.execute(_SET_POSITION, (position, collection_id, one))
+            return 2
 
     async def _renumber(
         self, connection: Connection, collection_id: str, first: Sequence[str]

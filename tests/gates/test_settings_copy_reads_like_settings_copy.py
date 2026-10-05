@@ -24,10 +24,14 @@ pytestmark = [pytest.mark.gate, pytest.mark.unit]
 LABEL_WORDS = 6
 
 #: Labels allowed past that, each carrying meaning a shorter one would leave to the help: the app
-#: lock's "on LAN", both halves of making people from facial fingerprints, and the step back while
-#: the device is in use.
+#: lock's "on LAN", both halves of making people from facial fingerprints, and both step backs.
 LABELS_ALLOWED_LONGER: frozenset[str] = frozenset(
-    {"vault.app_lock_enabled", "faces.people_from_files", "performance.step_back_while_used"}
+    {
+        "vault.app_lock_enabled",
+        "faces.people_from_files",
+        "performance.step_back_while_used",
+        "performance.step_back_while_busy",
+    }
 )
 
 #: The most a help string may be, in sentences and in words.

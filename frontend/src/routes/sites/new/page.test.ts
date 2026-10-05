@@ -11,5 +11,7 @@ it('names what it makes a Site', () => {
 
 it("says Site on a Site's own page where it names the thing", async () => {
 	const page = (await import('../[id]/+page.svelte?raw')).default;
-	expect(page).toContain('empty="Nothing has come from this Site yet."');
+	expect(page).toMatch(
+		/empty=\{emptyWallSays\([^)]*'Nothing has come from this Site yet\.'\s*\)\}/
+	);
 });

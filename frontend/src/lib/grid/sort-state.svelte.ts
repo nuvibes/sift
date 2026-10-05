@@ -44,6 +44,9 @@ export const SORT_OPTIONS = [
 	{ value: 'most_viewed', label: 'Most viewed' },
 	/* Also per viewer; everything never pressed sorts behind everything that was. */
 	{ value: 'o_count', label: 'Highest O count' },
+	/* This viewer's heart and stars. */
+	{ value: 'favorite', label: 'Favorites first' },
+	{ value: 'rating', label: 'Highest rated' },
 	/* When the heart was pressed: offered only by the Favorites wall (`WALL_ONLY_ORDERS`), but
 	   listed here so a remembered order or the address can be checked against it. */
 	{ value: 'favorited', label: 'Recently favorited' },
@@ -112,6 +115,10 @@ const SORT_ICONS: Record<string, IconName> = {
 	shortest: 'hourglass_arrow_down',
 	largest: 'data_usage',
 	smallest: 'data_usage',
+	largest_total: 'data_usage',
+	smallest_total: 'data_usage',
+	longest_total: 'hourglass_arrow_up',
+	shortest_total: 'hourglass_arrow_down',
 	viewed: 'history',
 	most_viewed: 'visibility',
 	o_count: 'water_drop',
@@ -136,11 +143,8 @@ export function sortIcon(value: string): IconName | undefined {
 }
 
 /*
- * The orders that apply to EVERY kind of thing in the library, not only to files.
- *
- * Everything has a name, a moment it arrived, a last edit and a size (bytes, or files held); only
- * duration cannot be asked of all. Taken out of the list above by key, so the People wall reads the
- * same strings as Browse, and every wall, client-sorted ones included, uses these four keys.
+ * The orders that apply to EVERY kind of thing in the library, taken out of the list above by key
+ * so the People wall reads the same strings as Browse.
  */
 const UNIVERSAL_KEYS = [
 	'newest',
@@ -161,7 +165,7 @@ const COUNTED_INSTEAD: Record<string, string> = {
 	smallest: 'Fewest files'
 };
 
-/** One entry for a wall that orders by a COUNT rather than by a size, from the list above. */
+/** One entry from the list above, in the words a wall of things says it in. */
 function counted(key: string): { value: string; label: string } {
 	const found = SORT_OPTIONS.find((option) => option.value === key);
 	// Fires when a key above is renamed and this is missed, rather than leaving a silent hole.
@@ -169,17 +173,24 @@ function counted(key: string): { value: string; label: string } {
 	return { value: found.value, label: COUNTED_INSTEAD[found.value] ?? found.label };
 }
 
-export const UNIVERSAL_SORTS: readonly { value: string; label: string }[] =
-	UNIVERSAL_KEYS.map(counted);
-
-/*
- * The two orders that need an opinion to have been recorded, worded once for the entity walls.
- * Not universal yet: the file grid's query has no ORDER BY arm for either.
- */
-export const ENTITY_OPINION_SORTS: readonly { value: string; label: string }[] = [
-	{ value: 'favorite', label: 'Favorites first' },
-	{ value: 'rating', label: 'Highest rated' }
+/* The orders that SUM every file under a thing; the file grid has none, its `largest` is bytes. */
+const TOTAL_SORTS: readonly { value: string; label: string }[] = [
+	{ value: 'largest_total', label: 'Largest in total' },
+	{ value: 'smallest_total', label: 'Smallest in total' },
+	{ value: 'longest_total', label: 'Longest in total' },
+	{ value: 'shortest_total', label: 'Shortest in total' }
 ];
+
+export const UNIVERSAL_SORTS: readonly { value: string; label: string }[] = [
+	...UNIVERSAL_KEYS.map(counted),
+	...TOTAL_SORTS
+];
+
+/* The heart and the stars, after the shared orders on every wall that keeps opinions. */
+export const ENTITY_OPINION_SORTS: readonly { value: string; label: string }[] = [
+	'favorite',
+	'rating'
+].map(counted);
 
 /*
  * THE ORDER BY SITE, which only the download queue offers: elsewhere the Site is a filter or the

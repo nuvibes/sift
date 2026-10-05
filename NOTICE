@@ -113,6 +113,10 @@ BUNDLED WITH THE WINDOWS DESKTOP APPLICATION
   scripts/fetch_vendor.py, which verifies the hash before unpacking and refuses to
   substitute a different build.
 
+  Every library compiled or bundled into these tools is listed, with its version, its
+  licence and where its source is published, in vendor/bin/THIRD-PARTY-NOTICES.txt,
+  which scripts/release.py writes from the manifest when it builds the installer.
+
   FFmpeg / FFprobe        vendor/bin/ffmpeg.exe, vendor/bin/ffprobe.exe, and the
                           eight libraries they share: avcodec-61.dll, avdevice-61.dll,
                           avfilter-10.dll, avformat-61.dll, avutil-59.dll,

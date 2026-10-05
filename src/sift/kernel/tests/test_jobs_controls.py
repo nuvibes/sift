@@ -19,6 +19,7 @@ from sift.kernel.jobs import (
     WorkerPool,
     Workspaces,
     folded_state,
+    recover,
     register_handler,
     sweep,
 )
@@ -1243,3 +1244,70 @@ async def test_the_last_done_run_is_found_past_a_newer_failure(job_queue: JobQue
     assert finished["tidy_up"].id == done.id
     with pytest.raises(ValueError):
         await job_queue.last_finished_runs(["tidy_up"], ended_in=(JobState.RUNNING,))
+
+
+@pytest.mark.integration
+async def test_a_boot_resumes_what_a_benchmark_paused_and_never_a_persons_pause(
+    job_queue: JobQueue,
+) -> None:
+    noop_handler("download")
+    landed, asked, persons, both, waiting = [
+        await job_queue.enqueue("download", {"n": n}) for n in range(5)
+    ]
+    for _ in (landed, asked, persons, both):
+        assert await job_queue.claim(WORKER) is not None
+    assert await job_queue.pause(landed, for_benchmark=True)
+    assert await job_queue.pause_running(landed, WORKER, "stopped")
+    assert await job_queue.pause(asked, for_benchmark=True)
+    assert await job_queue.pause(waiting, for_benchmark=True)
+    assert await job_queue.pause(persons)
+    assert await job_queue.pause(both)
+    assert not await job_queue.pause(both, for_benchmark=True)
+
+    await recover(job_queue)
+
+    states = [await job_queue.get(one) for one in (landed, asked, waiting, persons, both)]
+    assert [None if one is None else one.state for one in states] == [
+        JobState.QUEUED,
+        JobState.QUEUED,
+        JobState.QUEUED,
+        JobState.PAUSED,
+        JobState.PAUSED,
+    ]
+    assert await job_queue.resume_after_benchmark() == []
+
+
+@pytest.mark.integration
+async def test_a_handler_hears_a_benchmarks_pause_as_a_pause(job_queue: JobQueue) -> None:
+    noop_handler("download")
+    job_id = await job_queue.enqueue("download")
+    assert await job_queue.claim(WORKER) is not None
+    await job_queue.pause(job_id, for_benchmark=True)
+
+    beat = await job_queue.beat(job_id, WORKER)
+
+    assert beat is not None and beat.stop == STOP_TO_PAUSE
+
+
+@pytest.mark.integration
+async def test_a_benchmark_s_hold_pauses_what_the_claim_would_take_a_chunk_at_a_time(
+    job_queue: JobQueue,
+) -> None:
+    probe = noop_handler()
+    later = await job_queue.enqueue(probe, {"n": "later"}, run_after=2_000_000_000)
+    waiting = [await job_queue.enqueue(probe, {"n": n}) for n in range(5)]
+    assert await job_queue.held_by_exclusive() is False
+
+    async def measuring(_context: JobContext) -> None:
+        return None
+
+    register_handler("measuring", measuring, name="Measuring this device", exclusive=True)
+    await job_queue.enqueue("measuring", {})
+
+    assert await job_queue.held_by_exclusive() is True
+    assert await job_queue.due_by_type() == {"measuring": 1}, "what it holds back is not due"
+    assert await job_queue.claim(WORKER) is not None
+    assert await job_queue.pause_waiting_for_benchmark(chunk=2) == 5
+    still = await job_queue.get(later)
+    assert still is not None and still.state is JobState.QUEUED, "work due later is not held"
+    assert sorted(await job_queue.resume_after_benchmark(chunk=2)) == sorted(waiting)

@@ -49,7 +49,6 @@ function path(over: Partial<PathAnswer> = {}): PathAnswer {
 			learning('watch', [step('view_something', true), step('keep_filter', false)]),
 			learning('organize', [step('name_face', false)])
 		],
-		hints: [],
 		...over
 	} as PathAnswer;
 }

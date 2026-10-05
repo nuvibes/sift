@@ -24,10 +24,13 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from sift.kernel import wiring
 from sift.kernel.access import Viewer
 from sift.kernel.content import LibraryError, LibraryStore, resolve_directory
+from sift.kernel.db import Database
 from sift.kernel.jobs import JobQueue
+from sift.kernel.wire import Wire
 from sift.slices.auth import csrf_protect, require_admin
 from sift.slices.faces import folder_import
-from sift.slices.faces.folder_import import FACE_FOLDER_IMPORT
+from sift.slices.faces.folder_import import FACE_FOLDER_IMPORT, worded
+from sift.slices.faces.models import Finding
 from sift.slices.faces.models_http import FolderByPath, FolderImportStarted
 from sift.slices.faces.router_common import (
     _off,
@@ -37,6 +40,7 @@ from sift.slices.faces.router_common import (
 from sift.slices.faces.service import (
     FaceService,
 )
+from sift.slices.faces.store_left_out import LeftOutStore
 
 router = APIRouter(tags=["faces"])
 
@@ -270,3 +274,41 @@ async def import_reference_folder(
         raise
     log.info("faces.folder.queued", door="upload")
     return FolderImportStarted(job_id=job_id)
+
+
+class LeftOutFiles(Wire):
+    """The pictures a folder import left out for one reason."""
+
+    reason: str
+    #: The words its report counts them in ("facing away").
+    words: str
+    files: list[str]
+
+
+class FolderLeftOut(Wire):
+    """Which pictures a folder import left out, most common reason first, and the near copies it
+    kept. Each path is inside the chosen folder."""
+
+    left_out: list[LeftOutFiles]
+    near_copies: list[str]
+
+
+@router.get("/faces/references/folder/{job_id}/left-out")
+async def folder_left_out(
+    job_id: str,
+    viewer: Annotated[Viewer, Depends(require_admin)],
+    database: Annotated[Database, Depends(wiring.database)],
+) -> FolderLeftOut:
+    """The files behind each count of a folder import's report. Only the latest import has any."""
+    by_reason: dict[str, list[str]] = {}
+    for file, reason in await LeftOutStore(database).of(job_id):
+        by_reason.setdefault(reason, []).append(file)
+    near = by_reason.pop(Finding.NEAR_DUPLICATE.value, [])
+    ordered = sorted(by_reason.items(), key=lambda item: -len(item[1]))
+    return FolderLeftOut(
+        left_out=[
+            LeftOutFiles(reason=reason, words=worded(Finding(reason)), files=files)
+            for reason, files in ordered
+        ],
+        near_copies=near,
+    )

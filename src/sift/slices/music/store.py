@@ -613,9 +613,6 @@ ON CONFLICT(asset_id) DO UPDATE SET looked_up_at = excluded.looked_up_at,
   score = excluded.score
 """
 
-#: The files AcoustID answered with nothing it knew. Its own count beside the files still owed.
-_NOT_KNOWN = "SELECT COUNT(*) AS files FROM music_lookups WHERE status = 'nothing'"
-
 _LOOKUP_OF = (
     "SELECT status, lengths_sent, recording_id, title, artists, score FROM music_lookups"
     " WHERE asset_id = ?"
@@ -762,12 +759,6 @@ class NameStore:
         """
         async with telling(self._db, EVERY_ADMIN, About.JOBS) as connection:
             await connection.execute(_KEEP_LOOKUP, _lookup_row(asset_id, kept))
-
-    async def not_known(self) -> int:
-        """How many files AcoustID was asked about and did not know: asked and answered, so no
-        press asks about them again, and said apart from the files still owed a lookup."""
-        row = await self._db.fetch_one(_NOT_KNOWN)
-        return 0 if row is None else int(row["files"])
 
     @staticmethod
     async def keep_lookup_on(connection: Connection, asset_id: str, kept: LookupKept) -> None:

@@ -47,8 +47,11 @@
 		iconOf,
 		tabsFor,
 		type RelatedKind,
-		TabCounts
+		TabCounts,
+		TabWords
 	} from '$lib/entity/related.svelte';
+	import WallControls from '$lib/components/entity/WallControls.svelte';
+	import { emptyWallSays } from '$lib/components/shell/wall-words';
 	import { api } from '$lib/api/client';
 	import { recorded, reloadOnLibraryChange } from '$lib/library/changes.svelte';
 	import { EntitySubject } from '$lib/entity/subject.svelte';
@@ -77,19 +80,13 @@
 	>;
 
 	const setId = $derived(page.params.id ?? '');
-	/*
-	 * WHAT HAPPENED TO IT is a tab and not a wall, which is why it is kept out of `tabsFor`.
-	 *
-	 * Every other tab here is one question (an entity wall filtered to this page's files),
-	 * answered by one shared table that a gate holds against the server's. A history is none of
-	 * that: no wall, no count, no filter and no page. Putting it in that table to save four
-	 * lines here would give a tab with no endpoint to every page that reads the same table.
-	 */
+	/* History has no wall behind it, so it is kept out of `tabsFor`. */
 	const HISTORY = 'history';
 
 	const asked = $derived(page.url.searchParams.get('show'));
 	const showingHistory = $derived(asked === HISTORY);
 	const shown = $derived<RelatedKind>(chosenTab('photo_set', asked));
+	const fileWords = new TabWords();
 
 	/* The subject, and the three flags that go with fetching it, shared with every other entity
 	 * detail page rather than written out here. See `EntitySubject` for what it decides, which is
@@ -509,10 +506,18 @@
 						titleHidden
 						above={identity}
 						{crumbs}
-						empty="Nothing in this set yet."
+						empty={emptyWallSays('pictures', fileWords.asked, false, 'Nothing in this set yet.')}
 						pinnable
 						menuExtraGrouped
 					>
+						{#snippet tools()}
+							<WallControls
+								noun="picture"
+								plural="pictures"
+								bind:term={fileWords.term}
+								onsettled={(typed) => fileWords.write(typed)}
+							/>
+						{/snippet}
 						{#snippet menuExtra(item, grid)}
 							<!-- The two things this screen can do to a picture that the grid knows nothing about.
 						     Admin only, because both change what everybody sees: the cover is the set's face,
@@ -549,8 +554,8 @@
 						titleHidden
 						above={identity}
 						{crumbs}
-						oncount={(total) => {
-							counts.saw(tab, total);
+						oncount={(total, searched) => {
+							if (!searched) counts.saw(tab, total);
 							arrived();
 						}}
 					/>

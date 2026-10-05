@@ -115,6 +115,38 @@ def test_the_shared_reading_is_what_stepping_back_reports(monkeypatch: pytest.Mo
     assert attention.stepping_back() is False
 
 
+def test_other_programs_busy_step_back_too_and_say_so_while_input_comes_first() -> None:
+    since = _Input(ATTENTION_SECONDS + 1)
+    reader = Attention(since)
+    assert reader.workers(8, step_back=True, others_busy=True) == 2
+    assert (reader.cause, reader.share_now) == ("others", 25)
+    since.seconds = 1.0
+    assert reader.workers(8, step_back=True, others_busy=True) == 2
+    assert reader.cause == "input"
+    since.seconds = ATTENTION_SECONDS + 1
+    assert reader.workers(8, step_back=True, others_busy=False) == 8
+    assert reader.cause is None
+
+
+def test_the_full_amount_overrules_the_other_programs_cause_too() -> None:
+    reader = Attention(_Input(None))
+    reader.press(full=True)
+    assert reader.workers(8, step_back=True, others_busy=True) == 8
+    assert (reader.full_amount, reader.holding, reader.cause) == (True, False, None)
+    reader.press(full=False)
+    assert reader.workers(8, step_back=True, others_busy=True) == 2
+
+
+def test_a_benchmark_is_never_stepped_back_for_either_cause() -> None:
+    def refuses() -> float | None:
+        raise AssertionError("the input is not read while the device is being measured")
+
+    reader = Attention(refuses)
+    assert reader.workers(8, step_back=True, others_busy=True, measuring=True) == 8
+    assert _holding(reader) is False
+    assert reader.share_now == 100
+
+
 def test_the_tick_counter_is_read_across_its_wrap() -> None:
     assert elapsed_seconds(15_000, 5_000) == 10.0
     # The counter wrapped between the input and now: 3 s before the wrap, 2 s after it.

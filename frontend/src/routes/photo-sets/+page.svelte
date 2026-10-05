@@ -435,7 +435,9 @@
 			kind: 'asset',
 			targetId: set.id,
 			onassign: addDropped,
-			onlink: (url, id) => void fetchOnto(url, 'photo_set', id, set.name)
+			onlink: session.isAdmin
+				? (url, id) => void fetchOnto(url, 'photo_set', id, set.name)
+				: undefined
 		})}
 		<div
 			role="listitem"

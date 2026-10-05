@@ -77,7 +77,7 @@ def _refusals_by_folder(refused: Mapping[str, tuple[int, int]]) -> dict[str, set
 
 
 async def _record_what_was_seen(
-    context: JobContext, *, root_id: str, under: str, walk: Walk
+    context: JobContext, *, root_id: str, under: str, walk: Walk, unjudged: Iterable[str] = ()
 ) -> None:
     """Store each walked directory's timestamp against its folder row.
 
@@ -87,6 +87,8 @@ async def _record_what_was_seen(
         # The walk reports directories relative to where it started; folder rows are relative to the
         # root. `.` is the directory the walk began in, which is `under` itself.
         here = under if rel_dir == "." else (subtree_prefix(under) + rel_dir)
+        if (here + "/").startswith(tuple(unjudged)):
+            seen_at = None
         folder = (
             await context.library.root_folder(root_id)
             if here == ROOT_REL_PATH
@@ -127,7 +129,7 @@ async def _settle_folders(
             log.warning("library.folder_not_settled", root_id=root_id, folder_id=folder.id)
 
 
-async def _member_still_there(context: _Rows, location: Location) -> bool:
+async def _member_still_there(context: _Rows, location: Location, root_abs: Path) -> bool:
     """Whether a picture is still inside the archive that holds it.
 
     Two questions: the archive can be deleted, and the picture can be taken out of an archive that
@@ -140,8 +142,8 @@ async def _member_still_there(context: _Rows, location: Location) -> bool:
         try:
             with zipfile.ZipFile(archive) as opened:
                 opened.getinfo(location.member_path or "")
-        except FileNotFoundError:
-            return False
+        except FileNotFoundError as error:
+            return not is_absence(error, under=root_abs)
         except KeyError:
             # The archive opened and does not hold it: a definite no about this picture only.
             return False
@@ -185,6 +187,7 @@ async def _sweep(
     under: str,
     seen: set[str],
     only: list[str] | None = None,
+    unjudged: Iterable[str] = (),
 ) -> None:
     """Mark what the walk did not find as missing. The asset survives.
 
@@ -195,7 +198,13 @@ async def _sweep(
     overlaps it. The rows are `_missing`'s answer, which a dry run counts; this marks them."""
     gone = 0
     async for location in _missing(
-        context, root_id=root_id, root_abs=root_abs, under=under, seen=seen, only=only
+        context,
+        root_id=root_id,
+        root_abs=root_abs,
+        under=under,
+        seen=seen,
+        only=only,
+        unjudged=unjudged,
     ):
         # Counted by what the write says it did: two passes over one root may read the same rows,
         # and the count is of this pass's own marks.
@@ -215,6 +224,7 @@ async def _missing(
     seen: set[str],
     only: list[str] | None = None,
     moves: FolderMoves = NO_MOVES,
+    unjudged: Iterable[str] = (),
 ) -> AsyncIterator[Location]:
     """Every row a sweep would mark missing, a page of rows at a time. Writes nothing.
 
@@ -222,12 +232,13 @@ async def _missing(
     judged at the path the moves would give it, which is where the walk saw its file."""
     # A pass of named files concludes nothing about a row it was not handed.
     examined = None if only is None else set(only)
+    skipped = tuple(unjudged)
     # The iterator yields only rows the library believes present.
     async for location in rows.library.iter_locations_in_root(root_id, under=under):
         where = moves.of(location)
         if examined is not None and not _was_examined(where, examined):
             continue
-        if where.rel_path in seen:
+        if where.rel_path in seen or where.rel_path.startswith(skipped):
             continue
         if await _still_there(rows, where, root_abs):
             # The walk did not see it, but it is there (a folder that became unreadable mid-pass):
@@ -245,6 +256,7 @@ async def _forget_gone_refusals(
     refused: Mapping[str, tuple[int, int]],
     walked: set[str],
     only: list[str] | None,
+    unjudged: Iterable[str] = (),
 ) -> None:
     """Forget the refusal of a file that is no longer there: the sweep's twin, for the files a scan
     said no to. A refusal nothing removed would be named for a scan again by the catch-up after
@@ -252,14 +264,14 @@ async def _forget_gone_refusals(
     concludes nothing about a path it was not handed."""
     examined = None if only is None else set(only)
     scope = subtree_prefix(under)
-    # A picture removed from Sift is remembered at its path INSIDE an archive, which no walk lists
-    # and no stat finds: it is there while its archive is (`remember_removed`).
-    archives = tuple(path + "/" for path in walked if is_archive(Path(path)))
+    # A picture removed from Sift is remembered INSIDE an archive, there while its archive is
+    # (`remember_removed`); nothing under a folder that would not answer is judged.
+    kept = tuple(path + "/" for path in walked if is_archive(Path(path))) + tuple(unjudged)
     unlisted = [
         rel_path
         for rel_path in refused
         if rel_path not in walked
-        and not rel_path.startswith(archives)
+        and not rel_path.startswith(kept)
         and (rel_path in examined if examined is not None else rel_path.startswith(scope))
     ]
     if not unlisted:
@@ -306,7 +318,7 @@ async def _still_there(context: _Rows, location: Location, root_abs: Path) -> bo
     archive is asked of the archive (`_member_still_there`): `path_of` would PRODUCE a cached copy
     of the member in order to look for it."""
     if location.inside_an_archive:
-        return await _member_still_there(context, location)
+        return await _member_still_there(context, location, root_abs)
     path = await context.content.path_of(location)
 
     def look() -> bool:

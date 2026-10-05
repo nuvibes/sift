@@ -102,7 +102,8 @@
 			],
 			/* The default layout is the Layouts chooser on the wall, so it draws each shape as the
 			   wall's own chooser does, from the same glyph. */
-			pictures: { 'theater.layout': layoutPicture }
+			pictures: { 'theater.layout': layoutPicture },
+			tooltips: { 'theater.layout': (value) => layout(value).tooltip }
 		}
 	];
 

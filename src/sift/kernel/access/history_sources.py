@@ -411,12 +411,8 @@ async def naming_folders(
     person_ids: Sequence[str],
     seen: Mapping[str, frozenset[str]] | None = None,
 ) -> dict[str, Piece]:
-    """The folder each person was named from on this file, as a way there, by person id.
-
-    Named by the folder's own name, linked to its files. Only a folder the reader may see all the
-    way down is named: one inside a folder hidden from them is left out, and that line keeps its
-    words without a folder ("from a folder name"), exactly as it does for a folder since deleted.
-    """
+    """The folder each person was named from on this file, by person id: only one the reader may
+    see all the way down, a library's top included; any other line says "from a folder name"."""
     found: dict[str, Piece] = {}
     for person_id in dict.fromkeys(person_ids):
         row = await database.fetch_one(_NAMING_FOLDER, (asset_id, person_id))
@@ -425,7 +421,7 @@ async def naming_folders(
         if seen is None:
             seen = await _folders_seen(access, viewer)
         path, name = str(row["path"]), str(row["name"])
-        if path and folder_said(path, seen=seen.get(str(row["root_id"]), frozenset())) != path:
+        if folder_said(path, seen=seen.get(str(row["root_id"]), frozenset())) != path:
             continue
         found[person_id] = say.folder_named(str(row["folder_id"]), name)
     return found

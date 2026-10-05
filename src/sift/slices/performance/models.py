@@ -1,16 +1,14 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""What the self-test looks like on the wire.
-
-Declared rather than handed straight out of the dataclasses so the shape the client depends on is
-written down in one place, and so adding a field to a measurement is a deliberate act rather than
-something that leaks out of the server the moment somebody adds it.
-"""
+"""What the self-test looks like on the wire: declared, so a new field reaches the client only
+when it is added here."""
 
 from __future__ import annotations
 
 from pydantic import Field
 
 from sift.kernel.wire import Wire
+from sift.slices.performance.measure_encoder import CardCurve
+from sift.slices.performance.measure_models import ModelCurve
 
 
 class LevelView(Wire):
@@ -21,8 +19,7 @@ class LevelView(Wire):
     finished: int
     per_second: float
     responsive: bool
-    """False means the application stopped keeping up while this level ran, so it is not a level to
-    recommend however much work it finished."""
+    """False: Sift stopped keeping up at this level, so it is never recommended."""
 
 
 class StorageLevelView(Wire):
@@ -42,13 +39,12 @@ class DecodeView(Wire):
 
 
 class StorageCurveView(Wire):
-    """How one storage behaved as more files were read from it at once.
-
-    `best_at_once` is the widest level still worth having, or None where nothing was measured.
-    """
+    """One storage as more files were read at once; `best_at_once` None where nothing was."""
 
     storage: str
     label: str
+    folders: str = ""
+    """The library folders on it now; `label` is the storage's own short name."""
     remote: bool
     levels: list[StorageLevelView] = Field(default=[])
     failed: str | None = None
@@ -61,9 +57,107 @@ class MeasurementView(Wire):
     failed: str | None = None
     """Why nothing was measured, so a test that could not run does not read as a slow machine."""
     storages: list[StorageCurveView] = Field(default=[])
-    """Every network storage the library sits on, measured. Empty for a local library."""
+    """Every storage the library sits on, local disks included."""
     decode: DecodeView | None = None
     """The decoder's rates, or null where it could not be run."""
+
+
+def _megabytes(count: int | None) -> int | None:
+    return None if count is None else round(count / 1_000_000)
+
+
+class CardLevelView(Wire):
+    """Previews built on the GPU at one width, with the command previews use."""
+
+    at_once: int
+    seconds: float
+    finished: int
+    per_second: float
+    responsive: bool
+    busy: bool = False
+    card_megabytes: int | None = None
+
+
+class CardView(Wire):
+    encoder: str
+    decodes_on_card: bool
+    levels: list[CardLevelView] = Field(default=[])
+    failed: str | None = None
+    best_at_once: int | None = None
+
+
+def card_view(curve: CardCurve | None) -> CardView | None:
+    if curve is None:
+        return None
+    best = curve.best
+    return CardView(
+        encoder=curve.encoder,
+        decodes_on_card=curve.decodes_on_card,
+        failed=curve.failed,
+        best_at_once=None if best is None else best.at_once,
+        levels=[
+            CardLevelView(
+                at_once=one.at_once,
+                seconds=round(one.seconds, 2),
+                finished=one.finished,
+                per_second=round(one.throughput, 3),
+                responsive=one.responsive,
+                busy=one.busy,
+                card_megabytes=_megabytes(one.card_memory_bytes),
+            )
+            for one in curve.levels
+        ],
+    )
+
+
+class ModelLevelView(Wire):
+    at_once: int
+    files_per_second: float
+    failed: int = 0
+    busy: bool = False
+    megabytes: int | None = None
+    card_megabytes: int | None = None
+
+
+class ModelView(Wire):
+    name: str
+    device: str
+    levels: list[ModelLevelView] = Field(default=[])
+    failed: str | None = None
+    best_at_once: int | None = None
+    seconds_per_file: float | None = None
+    """One worker's seconds for one file at the chosen width: the price before any history."""
+    megabytes: int | None = None
+    card_megabytes: int | None = None
+
+
+def model_views(curves: tuple[ModelCurve, ...]) -> list[ModelView]:
+    views = []
+    for curve in curves:
+        best, each = curve.best, curve.seconds_per_file
+        views.append(
+            ModelView(
+                name=curve.name,
+                device=curve.device,
+                failed=curve.failed,
+                best_at_once=None if best is None else best.at_once,
+                seconds_per_file=None if each is None else round(each, 2),
+                megabytes=_megabytes(curve.memory_bytes),
+                card_megabytes=_megabytes(curve.card_memory_bytes),
+                levels=[
+                    ModelLevelView(
+                        at_once=one.at_once,
+                        files_per_second=round(one.files_per_second, 3),
+                        failed=one.failed,
+                        busy=one.busy,
+                        megabytes=_megabytes(one.memory_bytes),
+                        card_megabytes=_megabytes(one.card_memory_bytes),
+                    )
+                    for one in curve.levels
+                ],
+            )
+        )
+    return views
 
 
 class RecommendationView(Wire):
@@ -80,15 +174,13 @@ class RecommendationView(Wire):
 class SelfTestView(Wire):
     running: bool
     measurement: MeasurementView | None = None
+    """The result on screen: the last run that ended, never the one going."""
+    progress: MeasurementView | None = None
+    """How far the run going has measured; None while it waits for the work it paused."""
     recommendations: list[RecommendationView] = Field(default=[])
     finished: bool
     rounds: int = 0
-    """How many rounds this machine's ladder can reach, as an UPPER bound.
-
-    The screen counts the levels already measured against this to show progress. Sent from here
-    because the ladder and the rule that trims it to the machine live on this side. An upper bound,
-    shown as "up to": a run stops early when a level stops helping, but the number never moves.
-    """
+    """How many rounds this device's ladder can reach, at most: the screen's "up to"."""
     measured: bool = False
     """Whether this machine has rates on file at all, from this run or from any earlier one.
 
@@ -99,10 +191,18 @@ class SelfTestView(Wire):
     share_reads_now: int = 0
     """How many files Sift reads at once from each network share, RIGHT NOW.
 
-    The effective number, not the stored one: zero means "automatic", and the rule that resolves it
-    lives on this side (`resolve_share_reads`) so the screen cannot disagree with the reads that
-    run. Sent even when no share was measured, because the sentence it feeds is about the setting.
+    The effective number, not the stored one: zero means each share reads as measured, and the rule
+    that resolves it lives on this side (`resolve_share_reads`) so the screen cannot disagree with
+    the reads that run. Sent even when no share was measured, because the sentence it feeds is about
+    the setting.
     """
+    notes: list[str] = Field(default=[])
+    """What the last run could not measure, or paused while it measured, in sentences to show."""
+    card: CardView | None = None
+    models: list[ModelView] = Field(default=[])
+    held_while_measuring: int = 0
+    full_while_measuring: int = 0
+    """The loop's and the threads' stalls since Sift started that the benchmark caused."""
 
 
 class GpuCard(Wire):

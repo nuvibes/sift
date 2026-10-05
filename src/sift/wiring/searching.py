@@ -34,11 +34,9 @@ async def build_search(app: FastAPI, store: Storage, queue: JobQueue) -> None:
         settings=wiring.part_of_app(app, wiring.SETTINGS_HUB),
     )
     provide(app, wiring.FILTER_ENGINE, compiler)
-    provide(
-        app,
-        search.SERVICE,
-        search.SearchService(store.database, store.access, compiler, queue=queue),
-    )
+    searching = search.SearchService(store.database, store.access, compiler, queue=queue)
+    provide(app, search.SERVICE, searching)
+    provide(app, wiring.FORGET_GONE, searching)
     # Saved walls, and nothing else. Theater's cells run on the search and playback routes, so this
     # holds no resolver, no queue and no media of any kind.
     provide(app, theater.SERVICE, theater.TheaterService(store.database, compiler))

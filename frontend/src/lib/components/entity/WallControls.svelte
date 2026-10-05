@@ -22,6 +22,7 @@
 	 */
 	import { Button, NarrowBox } from '$lib/components/common';
 	import { screenBar } from '$lib/components/shell/screen-bar.svelte';
+	import { boxWords } from './wall-box';
 
 	interface Props {
 		/** The singular, for the Add: "site" gives "Add site". */
@@ -78,17 +79,45 @@
 	   address, so what is typed here never appears there. See `screenBar.claimOwnBox`. */
 	const mine = Symbol('wall-box');
 	$effect(() => screenBar.claimOwnBox(mine));
+
+	/* A box squeezed by a row of tabs shows its noun, which says more than a verb cut short. */
+	let row = $state<HTMLElement | null>(null);
+	let room = $state(0);
+	let widthOf = $state((text: string) => text.length);
+	const placeholder = $derived(boxWords(plural, room, widthOf));
+	$effect(() => {
+		const box = row?.querySelector('input');
+		if (!box || typeof ResizeObserver === 'undefined') return;
+		let pen: CanvasRenderingContext2D | null = null;
+		const measure = () => {
+			if (box.clientWidth === 0) return;
+			pen ??= document.createElement('canvas').getContext('2d');
+			if (!pen) return;
+			const style = getComputedStyle(box);
+			const font = style.font;
+			const held = pen;
+			widthOf = (text) => {
+				held.font = font;
+				return held.measureText(text).width;
+			};
+			room =
+				box.clientWidth - parseFloat(style.paddingInlineStart) - parseFloat(style.paddingInlineEnd);
+		};
+		measure();
+		const observer = new ResizeObserver(measure);
+		observer.observe(box);
+		return () => observer.disconnect();
+	});
 </script>
 
 <!-- The box on the left and the Add on the right: an action sits on the right of a row. -->
-<div class="wall-controls">
-	<!-- The page-header height, so the box and the Add beside it stand on one line. The label is the
-	     box's name for a screen reader; it says the same words the empty box shows. -->
+<div class="wall-controls" bind:this={row}>
+	<!-- The page-header height, so the box and the Add beside it stand on one line. -->
 	<NarrowBox
 		class="find"
 		size="medium"
 		label="Search {plural}"
-		placeholder="Search {plural}"
+		{placeholder}
 		bind:value={term}
 		oninput={typed}
 		{maxlength}
@@ -105,25 +134,15 @@
 		gap: var(--space-2);
 	}
 
-	/*
-	 * Only what is local to this row: how narrow the box may get. The box itself (height, padding,
-	 * edge, corner, ground, face and cross) is `NarrowBox`'s, and restating any of it here would
-	 * let the walls' boxes drift apart. `:global`, because the element is `NarrowBox`'s own and
-	 * compiled in that file's scope. The field's own natural width, floored at 20 letters. (Not
-	 * checked against a real layout: the pixel width differs by the box's own padding.)
-	 */
+	/* How narrow the box may get, and nothing else of it, which is `NarrowBox`'s. The floor is
+	   reached only on a short row, where the box gives way before a row of tabs wraps. */
 	.wall-controls :global(.find) {
 		inline-size: auto;
-		min-inline-size: 20ch;
+		min-inline-size: var(--tab-box-floor);
 	}
 
-	/*
-	 * At a phone's width the row is the header's whole second line, and the Add keeps its place on
-	 * it: the box gives way, the Add never does. With the box's 20-letter floor the two come to
-	 * more than a phone has (`Add collection` beside it would run past the edge and be cut), so
-	 * here the box takes whatever the Add leaves and may go below its floor to do it. The Add keeps
-	 * its word: a plus alone on a wall of people does not say what it adds.
-	 */
+	/* At a phone's width the row is the header's whole second line: the box takes whatever the Add
+	   leaves, and the Add keeps its word, since a plus alone does not say what it adds. */
 	@media (max-width: 767px) {
 		.wall-controls {
 			flex: 1 1 100%;

@@ -15,6 +15,7 @@ somebody a folder they were never shared.
 
 from __future__ import annotations
 
+import os
 import zipfile
 from pathlib import Path
 
@@ -294,6 +295,42 @@ async def test_a_folder_copied_rather_than_moved_is_not_the_original(
     assert made is not None
     assert made.id != original.id
     assert await library_store.folder_at(root.id, "shoot") is not None
+
+
+async def test_a_new_folder_the_walk_could_not_list_is_not_an_empty_folder_renamed(
+    context_for: Context,
+    root: Root,
+    root_path: Path,
+    settings: Settings,
+    service: LibraryService,
+    reindexer: RecordingReindexer,
+    library_store: LibraryStore,
+    access: Repository,
+    actors: Actors,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    (root_path / "pending").mkdir()
+    await _scan(context_for, root, settings, service, reindexer)
+    folder = await library_store.folder_at(root.id, "pending")
+    assert folder is not None
+    await access.grant(ObjectType.FOLDER, folder.id, actors.guest.id, Effect.SHARE)
+
+    (root_path / "pending").rmdir()
+    (root_path / "locked").mkdir()
+    real = os.scandir
+
+    def scandir(directory: Path) -> object:
+        if Path(directory).name == "locked":
+            raise PermissionError(13, "Access is denied")
+        return real(directory)
+
+    monkeypatch.setattr(os, "scandir", scandir)
+    await _scan(context_for, root, settings, service, reindexer)
+
+    locked = await library_store.folder_at(root.id, "locked")
+    assert locked is not None
+    assert locked.id != folder.id
+    assert await access.grants_on(ObjectType.FOLDER, locked.id) == []
 
 
 # --- a folder that is really gone ----------------------------------------------------------------

@@ -1,30 +1,20 @@
-/* Backup, as the settings screen asks the server about it.
- *
- * Three things a person can do here, and they are not equally reversible. Taking a backup costs
- * nothing. Changing where they go costs nothing. Restoring one replaces the library's records with
- * whatever is in the file, and there is no undoing that from this screen, so the screen asks
- * first, and this module never restores except when told to by that answer.
- *
- * Save a backup writes into the backup folder on the computer running Sift and answers where it
- * went. A copy for this device is asked for afterwards by its name (`copyOf`), straight to the
- * browser's own download, never through the shared client: that helper parses a JSON body, and a
- * backup is a database.
- */
+/* Backup, as the settings screen asks the server. A restore only ever follows the confirm; a copy
+ * goes straight to the browser's download (`copyOf`), since the shared client parses JSON. */
 
 import { API_PREFIX, ApiError, api, type ApiPath } from '$lib/api/client';
 import { UNREACHABLE } from '$lib/shell/unreachable';
 import { onRecord } from '$lib/shell/when';
-import { keptSaid } from './Backup.search';
+import { toasts } from '$lib/shell/toasts.svelte';
 import type { components } from '$lib/api/schema';
 
 /* LIVE: followed by lib/settings-ui/Backup.svelte (load and loadContents on the settings bell) */
 
 export type ScheduleView = components['schemas']['ScheduleView'];
 
-/**
- * A backup in the backup folder no rule ever deletes: one whose name carries no library's mark, or
- * one this library saved by hand (`saved`).
- */
+/** The server's word for a save running (`BACKING_UP` in sift/slices/backup/service.py). */
+export const SAVING = 'backup';
+
+/** A backup no rule deletes: its name carries no library's mark, or it was saved by hand. */
 export type UnmarkedBackup = components['schemas']['UnmarkedBackupView'];
 
 /** The list, and whether a Delete moves a file to a Recycle Bin or deletes it permanently. */
@@ -39,10 +29,7 @@ const DEFAULT_KEEP_DAYS = 7;
 
 export type RestoreResult = components['schemas']['RestoreResult'];
 
-/**
- * The backup Save a backup wrote, and where: its folder as the computer running Sift names it, and
- * its whole path there, for the Sift app on that computer to show it in its folder.
- */
+/** The backup Save a backup wrote: its folder and whole path on the computer running Sift. */
 type SavedBackup = components['schemas']['SavedBackupView'];
 
 /** The address a copy of one listed backup is handed out at. */
@@ -52,9 +39,7 @@ export const copyAddress = (name: string) =>
 export type ContentsView = components['schemas']['ContentsView'];
 export type ContentPart = components['schemas']['ContentPart'];
 
-/* The endpoints behind this screen are written for the person reading them: "That folder is not
-   one Sift can reach", "This backup was made by a newer version of Sift". Those are the whole
-   answer, so the detail is shown rather than the flat one-liner. */
+/* The server's sentences here are written for the person, so the detail is shown as it is. */
 function refusal(error: unknown): string {
 	return error instanceof ApiError ? (error.detail ?? error.message) : UNREACHABLE;
 }
@@ -74,11 +59,24 @@ export class Backup {
 	loaded = $state(false);
 	loading = $state(false);
 	busy = $state(false);
+	/** Save a backup is running: its press turns its arc while the rest of the pane waits. */
+	exporting = $state(false);
+	/** Whole-library work running anywhere, by the server's word, or null. */
+	working = $state<string | null>(null);
 	problem = $state<string | null>(null);
 	/** What just went right, so a click that produces a file somewhere else is not silent. */
 	done = $state<string | null>(null);
 	/** The backup the last press of Save a backup wrote, while the pane says where it went. */
 	saved = $state<SavedBackup | null>(null);
+
+	/** The pane opened: read it all again; the last visit's notes go unless a save runs. */
+	arrive(): void {
+		this.done = null;
+		if (!this.exporting) this.saved = null;
+		void this.load();
+		void this.loadContents();
+		void this.loadUnmarked();
+	}
 
 	async load(): Promise<void> {
 		this.loading = true;
@@ -98,17 +96,16 @@ export class Backup {
 		try {
 			this.parts = (await api.get<ContentsView>('/backup/contents')).parts;
 		} catch {
-			/* The sentence about the file's contents is a courtesy; the buttons work without it. */
+			/* A courtesy; the buttons work without it. */
 		}
 	}
 
-	/** The backups in the folder whose names carry no library's mark. Read again after a save,
-	 * which may have moved the folder. */
+	/** The backups whose names carry no library's mark; read again after a save. */
 	async loadUnmarked(): Promise<void> {
 		try {
 			this.applyUnmarked(await api.get<UnmarkedBackups>(UNMARKED));
 		} catch {
-			/* A list of files nobody's rule touches is a courtesy; the pane works without it. */
+			/* A courtesy; the pane works without it. */
 		}
 	}
 
@@ -138,22 +135,25 @@ export class Backup {
 		this.keepDays = view.keep_days ?? DEFAULT_KEEP_DAYS;
 		this.folder = view.folder;
 		this.besideSiftData = view.beside_sift_data;
+		this.working = view.working ?? null;
 	}
 
-	/** Take a backup now, into the backup folder, and keep where it went for the pane to say. */
+	/** Save a backup into the backup folder; a toast says where, since it outlives the pane. */
 	async exportNow(): Promise<void> {
 		this.busy = true;
+		this.exporting = true;
 		this.problem = null;
 		this.done = null;
 		this.saved = null;
 		try {
 			this.saved = await api.post<SavedBackup>('/backup/export');
-			/* The list of backups no rule takes holds this one now. */
+			toasts.show(`Saved a backup in ${this.saved.folder}`);
 			await this.loadUnmarked();
 		} catch (error) {
-			this.problem = refusal(error);
+			toasts.show(refusal(error), { tone: 'error' });
 		} finally {
 			this.busy = false;
+			this.exporting = false;
 		}
 	}
 
@@ -165,28 +165,42 @@ export class Backup {
 		anchor.click();
 	}
 
-	/** Save where the backups go and how many to keep. The server checks the folder before storing
-	 * anything. How often and the time of day are not sent: they are the task's own rows on Tasks,
-	 * and a body without them keeps what is stored, so this pane never puts back what it loaded. */
-	async saveSchedule(): Promise<void> {
-		this.busy = true;
-		this.problem = null;
-		this.done = null;
+	/** Change one rule and save all three, the moment it changes. */
+	saveRules(change: { keep?: number; keepDays?: number; folder?: string }): Promise<void> {
+		if (change.keep !== undefined) this.keep = change.keep;
+		if (change.keepDays !== undefined) this.keepDays = change.keepDays;
+		if (change.folder !== undefined) this.folder = change.folder;
+		return this.saveSchedule();
+	}
+
+	#saves: Promise<void> = Promise.resolve();
+	#waiting = 0;
+
+	/** Save the three rules in order, each with the values of its own moment; the server checks the
+	 * folder first. How often and the time of day are left out, so Tasks keeps them. */
+	saveSchedule(): Promise<void> {
+		const body = { keep: this.keep, keep_days: this.keepDays, folder: this.folder };
+		this.#waiting += 1;
+		this.#saves = this.#saves.then(() => this.#put(body));
+		return this.#saves;
+	}
+
+	async #put(body: { keep: number; keep_days: number; folder: string }): Promise<void> {
 		try {
-			this.apply(
-				await api.put<ScheduleView>('/backup/schedule', {
-					body: { keep: this.keep, keep_days: this.keepDays, folder: this.folder }
-				})
-			);
-			/* Only what this screen saved. The cadence is set on Tasks, where the task's When decides
-			   whether it starts on its own at all, so a sentence here that promised a daily backup
-			   could promise one the When never runs. */
-			this.done = `Saved. ${keptSaid(this.keep, this.keepDays)}`;
+			const stored = await api.put<ScheduleView>('/backup/schedule', { body });
+			// A later change is already on its way; its answer is the one to show.
+			if (this.#waiting === 1) this.apply(stored);
 			await this.loadUnmarked();
 		} catch (error) {
-			this.problem = refusal(error);
+			toasts.show(refusal(error), { tone: 'error' });
+			// Back to what is stored, so the rows show the rules that still apply.
+			try {
+				this.apply(await api.get<ScheduleView>('/backup/schedule'));
+			} catch {
+				/* The toast has said it; the rows keep the refused values until the next read. */
+			}
 		} finally {
-			this.busy = false;
+			this.#waiting -= 1;
 		}
 	}
 
@@ -210,6 +224,9 @@ export class Backup {
 		}
 	}
 }
+
+/* One per window, so a save or a restore pressed on the pane is still drawn when somebody comes back. */
+export const backup = new Backup();
 
 /* --- duplicating this library ------------------------------------------------------------ */
 

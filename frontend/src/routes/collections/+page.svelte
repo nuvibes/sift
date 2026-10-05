@@ -381,7 +381,9 @@
 			kind: 'asset',
 			targetId: collection.id,
 			onassign: addDropped,
-			onlink: (url, id) => void fetchOnto(url, 'collection', id, collection.name)
+			onlink: session.isAdmin
+				? (url, id) => void fetchOnto(url, 'collection', id, collection.name)
+				: undefined
 		})}
 		<div
 			role="listitem"

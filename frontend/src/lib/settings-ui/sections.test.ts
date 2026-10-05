@@ -3,6 +3,7 @@ import { flushSync, mount, unmount } from 'svelte';
 import { describe, expect, it } from 'vitest';
 
 import SettingsTitle from './SettingsTitle.svelte';
+import { actGlyph } from '$lib/design/button-glyphs';
 import {
 	DEFAULT_SECTION,
 	REGISTRY_HOME,
@@ -181,8 +182,8 @@ describe('the sections and their groups', () => {
 					'Folders',
 					'Importing',
 					'Tasks and Activity',
-					'Downloads',
 					'Sites and Tunnels',
+					'Downloads',
 					'Editing',
 					'Playback'
 				]
@@ -201,9 +202,31 @@ describe('the sections and their groups', () => {
 			['Recognition', ['Faces', 'Smart Search', 'Stash-boxes', 'Music', 'Watermarks']],
 			[
 				'System',
-				['General', 'Performance', 'Maintenance', 'Backup and restore', 'Updates and Info']
+				[
+					'General',
+					'Performance',
+					'Maintenance',
+					'Backup and restore',
+					'Updates and Info',
+					'Documentation'
+				]
 			]
 		]);
+	});
+
+	it('offers Documentation to everybody, under Updates and Info, as a book', () => {
+		const at = SETTINGS_SECTIONS.findIndex((one) => one.id === 'documentation');
+		expect(SETTINGS_SECTIONS[at - 1]?.id).toBe('updates');
+		expect(SETTINGS_SECTIONS[at]).toEqual({
+			id: 'documentation',
+			label: 'Documentation',
+			icon: 'menu_book'
+		});
+	});
+
+	it('gives Importing the glyph every Import press wears', () => {
+		const importing = SETTINGS_SECTIONS.find((one) => one.id === 'importing');
+		expect(importing?.icon).toBe(actGlyph('Import'));
 	});
 
 	it('draws Music for an admin and Get to know Sift for everybody', () => {

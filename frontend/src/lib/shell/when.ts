@@ -67,11 +67,8 @@ const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;
 
 /**
- * A moment, relative to now, in words. `at` and `now` are both unix SECONDS.
- *
- * `now` is a parameter so a test can name the moment it is asking about. Nothing in the app passes
- * it. A test that leans on the real clock fails at random on any machine whose clock is corrected
- * while it runs.
+ * A moment, relative to now, in words. `at` and `now` are both unix SECONDS; `now` is a parameter
+ * so a test can name its moment rather than lean on a clock that may be corrected while it runs.
  */
 export function sayWhen(at: number, now: number): string {
 	const away = at - now;
@@ -146,6 +143,17 @@ export function sayWindow(low: number | null | undefined, high: number | null | 
 		return 'a few hours';
 	}
 	return `about ${counted(count(bottom))} to ${units(count(top))}`;
+}
+
+/** The least the work takes, rounded down to its step; under five minutes it is too little to say. */
+export function sayAtLeast(seconds: number | null | undefined): string {
+	if (seconds === null || seconds === undefined || !Number.isFinite(seconds)) {
+		return NOT_ENOUGH_TO_SAY;
+	}
+	if (seconds < 5 * MINUTE) return NOT_ENOUGH_TO_SAY;
+	const band = STEPS.find((one) => seconds < one.upTo) ?? STEPS[STEPS.length - 1];
+	const n = Math.round((Math.floor(seconds / band.step) * band.step) / band.unit);
+	return n === 1 ? 'at least an hour' : `at least ${counted(n)} ${band.name}s`;
 }
 
 /**

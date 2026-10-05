@@ -54,6 +54,7 @@
 	import type { components } from '$lib/api/schema';
 	import { ACTS, keyOf } from '$lib/player/acts';
 	import { drawsHeic, drawsHeicNow } from './heic';
+	import { phoneWidth } from '$lib/components/common/phone-width.svelte';
 
 	interface Props {
 		id: string;
@@ -69,6 +70,8 @@
 		 * enough" is depends on what this is. See `restFor`.
 		 */
 		onplayedthrough?: () => void;
+		/** Whether the run brought this picture up; one opened by a press waits for Play. */
+		reachedByRun?: boolean;
 		/** Open some other file instead of this one. Absent where there is no way to open what it
 		 *  finds, and then the control that needs it is not drawn. */
 		/** Open another file, one this list may not hold; `runs` says whether it plays. */
@@ -108,6 +111,7 @@
 		onprevious,
 		onnext,
 		onplayedthrough,
+		reachedByRun = false,
 		onopen,
 		onpicturesize,
 		file = null,
@@ -117,27 +121,19 @@
 	onMount(() => void dwell.load());
 
 	/*
-	 * The run moving on from something with no end of its own.
-	 *
-	 * A timer rather than an event, because there is no event: a browser plays a GIF inside an
-	 * `<img>` and says nothing about where it is or how many times it has been round, and a
-	 * photograph has nothing to report at all. The length recorded at import is what there is.
-	 *
-	 * Cleared and set again whenever the file changes, so stepping through a run by hand does not
-	 * leave the previous picture's timer running underneath the new one.
+	 * The run moving on from a picture, by a timer: a picture has no end to report. It rests where
+	 * a clip's end would move the run on (`run.movesOnAfter`) for as long as `restFor` says, and
+	 * only once the run brought it up or Play was pressed on it.
 	 */
-	/* How long this rests before the run moves on, or null where it stays. Only while a run is
-	   actually running, and only where the answer at the end moves a run on: THE SAME RULE a clip's
-	   end follows (`run.movesOnAfter`), asked of the one answer every player holds (`dwell.mode`),
-	   which the drawer below changes. Repeat this stays here, Stop at the end stays here unless
-	   Shuffle walks the shuffled list once, and Play through rests and moves on. How long it rests,
-	   and whether a photograph rests at all, is the dwell's own (`restFor`, `Include photos on a
-	   playthrough`). */
-	const rest = $derived(
+	const restLength = $derived(
 		onplayedthrough && dwell.known && run.movesOnAfter(dwell.mode)
 			? restFor(mediaType, durationMs, { pictures: dwell.pictures })
 			: null
 	);
+	/** Play pressed on a picture waiting under Play through: its rest starts. */
+	let begun = $state(false);
+	const rest = $derived(restLength !== null && (reachedByRun || begun) ? restLength : null);
+	const waits = $derived(restLength !== null && rest === null);
 	$effect(() => {
 		void id;
 		// Held (Space, or the phone's pause): the run waits on this picture until it is let go, and
@@ -189,7 +185,7 @@
 	/* In a run, Play is a thing this picture has on one answer and not the others, so the bar keeps
 	   it, dimmed with the reason, and pressing Repeat this takes nothing off the bar. */
 	const playWhy = $derived(
-		!onplayedthrough || driven || rest !== null
+		!onplayedthrough || driven || rest !== null || waits
 			? undefined
 			: run.movesOnAfter(dwell.mode)
 				? PICTURES_LEFT_OUT
@@ -209,6 +205,7 @@
 	$effect(() => {
 		void id;
 		held = false;
+		begun = false;
 	});
 	$effect(() => {
 		const canvas = frozen;
@@ -241,6 +238,15 @@
 	function toggleHeld(): void {
 		held = !held;
 	}
+
+	/* Play on a waiting picture starts its rest; otherwise it holds and lets go. */
+	function pressPlay(): void {
+		if (waits) {
+			begun = true;
+			held = false;
+		} else toggleHeld();
+	}
+	const looksPlaying = $derived(!waits && (driven || rest !== null) && !held);
 
 	$effect(() => {
 		view.watch(driven ? frozen : img);
@@ -531,10 +537,10 @@
 		'player.playPause': ({ value }) => {
 			// A GIF pauses; a photograph resting in a run is held there. A photograph that is not
 			// in a run has nothing to pause.
-			if (!driven && rest === null) return false;
+			if (!driven && rest === null && !waits) return false;
 			// The phone sends the state it wants; a key flips it.
-			const wantsPlaying = value === null ? held : value === 1;
-			if (wantsPlaying === held) toggleHeld();
+			const wantsPlaying = value === null ? !looksPlaying : value === 1;
+			if (wantsPlaying !== looksPlaying) pressPlay();
 			return true;
 		},
 		/*
@@ -591,7 +597,7 @@
 		   list around it has no file before or after. Read afresh at every report, so a run
 		   reaching this picture offers the pause the moment it can hold. */
 		const table: Actions<PlayerAction> = { ...actions };
-		if (!driven && rest === null) delete table['player.playPause'];
+		if (!driven && rest === null && !waits) delete table['player.playPause'];
 		/* What happens at the end and the order are the run's, and the drawer offers both here, so
 		   the phone does too, through the keys' own answers above. */
 		if (onprevious)
@@ -609,7 +615,7 @@
 		return {
 			actions: table,
 			state: () => ({
-				playing: (driven || rest !== null) && !held,
+				playing: looksPlaying,
 				position: 0,
 				length: mediaType === 'gif' && durationMs ? durationMs / 1000 : null,
 				file: id,
@@ -726,22 +732,7 @@
 	{/if}
 {/if}
 
-<!--
-	The same bar a clip wears, told there is nothing to seek and nothing to hear.
-
-	One shape on every bar whatever is above it, as a theater cell draws under a photograph:
-	stepping from a clip onto a picture keeps every control where the hand left it (previous, next,
-	the drawer, the corner, the screen). The stage positions and fades `player-bar` here as for a
-	clip.
-
-	Two things are not drawn here at all, because they can never apply rather than not applying yet:
-	a photograph has no playhead or length, so there is no clock, and outside a run nothing to
-	play, so no Play button. In a run it has one: live while the picture rests, where it holds the
-	run on this picture, and dimmed with its reason on the answers it rests on, so changing the
-	answer moves nothing on the bar. The step pair stays, since stepping through the list means as
-	much on a picture as on a clip, and the sound stays dimmed, because a file with sound would
-	light it straight back up.
--->
+<!-- The bar a clip wears, every control in its place; nothing to seek or hear. -->
 
 <!-- What R and S just did, in the corner of the picture, as the Player says it for a clip. -->
 {#if !compact}
@@ -769,11 +760,11 @@
 		onseek={() => {}}
 		seekable={false}
 		sound={false}
-		playing={(driven || rest !== null) && !held}
-		playable={driven || rest !== null}
+		playing={looksPlaying}
+		playable={driven || rest !== null || waits}
 		{playWhy}
 		timed={false}
-		onplay={toggleHeld}
+		onplay={pressPlay}
 		onback={onprevious}
 		onforward={onnext}
 		backLabel={ACTS.previous}
@@ -854,9 +845,14 @@
 	</Tooltip>
 {/snippet}
 
-<!-- The end of the row: the corner, and the screen. Where a clip's bar keeps them. -->
+<!-- The end of the row where a clip's bar keeps it: the Audio player dimmed, the corner, the screen. -->
 {#snippet pictureTrailing()}
 	<Separator vertical />
+	{#if !phoneWidth.yes}
+		<Tooltip label="No sound in this">
+			<Button tone="ghost" icon="cadence" aria-label="No sound in this" disabled />
+		</Tooltip>
+	{/if}
 	<Tooltip label={ACTS.miniPlayer} shortcut={keyOf('miniPlayer', 'picture')}>
 		<Button tone="ghost" icon="picture_in_picture" aria-label={ACTS.miniPlayer} onclick={toMini} />
 	</Tooltip>

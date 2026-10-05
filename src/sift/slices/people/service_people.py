@@ -339,10 +339,18 @@ class PersonRecordMixin(PeopleBase):
 
     # --- tags on a person or a site -------------------------------------------------
 
-    async def tags_of_person(self, person_id: str) -> list[Row]:
-        """The tags on one person, by name. Rows rather than a type, because the tag's shape
-        belongs to the tags slice and importing it here would couple the two."""
-        return await self._db.fetch_all(_TAGS_OF_PERSON, (person_id,))
+    async def tags_of_person(self, person_id: str, viewer: Viewer | None = None) -> list[Row]:
+        """The tags on one person the viewer may be shown, as rows: a tag's shape is the tags
+        slice's."""
+        admin = viewer is None or viewer.is_admin
+        return await self._db.fetch_all(
+            _TAGS_OF_PERSON,
+            {
+                "subject": person_id,
+                "is_admin": int(admin),
+                "viewer": None if viewer is None else viewer.id,
+            },
+        )
 
     async def tag_person(self, person_id: str, tag_id: str, *, add: bool = True) -> None:
         if add:

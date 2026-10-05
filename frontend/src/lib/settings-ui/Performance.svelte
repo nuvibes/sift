@@ -99,12 +99,7 @@
 	let machineEl = $state<HTMLElement | null>(null);
 	let copied = $state(false);
 
-	/*
-	 * The table as words, read off the table itself.
-	 *
-	 * Built from the same fields a second time it would be free to drift: a row added above and
-	 * forgotten here, and the copy quietly stops mentioning it. What is on screen is the list.
-	 */
+	/* The table as words, read off the table itself so the copy cannot drift from it. */
 	async function copyMachine(): Promise<void> {
 		const lines = [...(machineEl?.querySelectorAll('.readings > div') ?? [])].map((row) => {
 			const name = row.querySelector('dt')?.textContent?.trim() ?? '';
@@ -201,38 +196,22 @@
 	}
 	onMount(readFirstRun);
 	whenChanged(settingChanges, () => void readFirstRun());
-	/* HOW MANY FILES SIFT READS AT ONCE FROM A SHARE, as the server resolves it.
-	 *
-	 * Never worked out here. The stored setting is 0 for "automatic" and the rule that turns that
-	 * into the real figure belongs to `kernel/lanes`, so a copy on this side would be a second
-	 * rule free to disagree with the one the reads are actually running on.
-	 */
-	const shareReads = $derived(selfTest?.share_reads_now ?? 0);
+	/* How many files Sift reads at once from a share, as the server resolves it (0 is automatic).
+	   Said only where a share was measured: a local drive is never limited by it. */
+	const shareReads = $derived(
+		selfTest?.measurement?.storages?.some((one) => one.remote) ? (selfTest.share_reads_now ?? 0) : 0
+	);
 	let testing = $state(false);
 	let testProblem = $state<string | undefined>(undefined);
 	let applying = $state(false);
 
-	/* How many rungs of the encoding ladder have finished, and whether another one can still
-	 * start.
-	 *
-	 * `levels.length + 1` (the rung now running) would count a sixth round "of up to 5": the
-	 * ladder is only the FIRST part of a run, and once the last rung has reported the server
-	 * carries on measuring the decoder and then every network share, with `running` still true.
-	 * For the rest of the run the line would count a sixth round of a ladder with five rungs in
-	 * it.
-	 *
-	 * Three things say the ladder cannot start another rung, and all three are already on the
-	 * wire: every reachable rung has run (`rounds` is the reachable count. See
-	 * `planned_levels`); the last rung reported that the app stopped keeping up, which is what
-	 * breaks the walk; or the decoder's numbers have arrived, which the server only publishes
-	 * after the ladder. No new field and no second copy of the ladder on this side.
-	 */
-	const laddered = $derived(selfTest?.measurement?.levels.length ?? 0);
+	/* The run going's rungs (`progress`, never the result), and whether another can start. */
+	const laddered = $derived(selfTest?.progress?.levels.length ?? 0);
 	const rounds = $derived(selfTest?.rounds ?? 0);
 	const climbing = $derived.by(() => {
-		const levels = selfTest?.measurement?.levels ?? [];
+		const levels = selfTest?.progress?.levels ?? [];
 		if (laddered >= rounds) return false;
-		if (selfTest?.measurement?.decode) return false;
+		if (selfTest?.progress?.decode) return false;
 		return levels.every((one) => one.responsive);
 	});
 
@@ -259,8 +238,7 @@
 		}
 	}
 
-	/* Poll until the server says it has finished. The run belongs to the server, so leaving this page
-	   and coming back picks it up again rather than losing it. */
+	/* Poll until the server says it has finished; the run is the server's, so a page left finds it. */
 	async function watch() {
 		testing = true;
 		try {
@@ -322,28 +300,15 @@
 		if (value === 'cpu') return 'CPU';
 		return null;
 	}
-	/* IS SIFT KEEPING UP: the answer, and the four instruments behind it.
-	 *
-	 * Somebody asking "is Sift slow" should not have to read four tables and two lists to find
-	 * out. One sentence answers it, computed from the same four readings, and the readings
-	 * themselves are behind Details for whoever wants the why.
-	 *
-	 * Each is read from `/health` and means exactly what the row calls it (`kernel/diagnostics`):
-	 *   - Sift itself (`loop`): how late the app's once-a-second heartbeat woke. The whole app,
-	 *     screens included, was held for that long. No "right now": a held heartbeat cannot report
-	 *     until it is free, so the reading only ever exists afterwards.
-	 *   - Video and file work (`threads`): how long a do-nothing check, handed in once a second,
-	 *     queued for a free worker thread; and how long the one in flight has queued so far.
-	 *   - Screens reading the database (`database`): the same check, queued for a free database
-	 *     connection.
-	 *   - Work waiting for Sift (`loop_queue`): how long the app took to get through the work
-	 *     already waiting for it.
-	 * "Times" is how many of those checks measured `NOTICEABLE_SECONDS` or more since Sift
-	 * started: the same quarter second at which the server writes the event to its log.
-	 *
-	 * The sentence picks, in order: anything waiting RIGHT NOW (the question is about now, so the
-	 * present outranks any past); otherwise, if nothing was ever noticeable, yes; otherwise the
-	 * reading with the longest wait since start, in the words of the thing that was slow.
+	/* IS SIFT KEEPING UP: one sentence from the four `/health` readings (`kernel/diagnostics`),
+	 * which are behind Details.
+	 *   - Sift itself (`loop`): how late the once-a-second heartbeat woke; read only afterwards.
+	 *   - Video and file work (`threads`): how long a check queued for a free worker thread.
+	 *   - Screens reading the database (`database`): the same, for a free database connection.
+	 *   - Work waiting for Sift (`loop_queue`): how long the app took to clear its waiting work.
+	 * "Times" counts checks of `NOTICEABLE_SECONDS` or more since Sift started, less the stalls the
+	 * benchmark causes on purpose. Anything waiting now is said first; else yes only where nothing
+	 * was counted, and "not always" with the longest wait since start.
 	 */
 	type Instrument = 'loop' | 'threads' | 'database' | 'queue';
 
@@ -365,7 +330,7 @@
 				kind: 'loop',
 				name: COPY.keepingUp.loop,
 				longest: health.loop.worstLagSeconds,
-				times: health.loop.heldCount,
+				times: Math.max(0, health.loop.heldCount - (selfTest?.held_while_measuring ?? 0)),
 				now: null
 			}
 		];
@@ -374,7 +339,7 @@
 				kind: 'threads',
 				name: COPY.keepingUp.threads,
 				longest: health.threads.worstWaitSeconds,
-				times: health.threads.fullCount,
+				times: Math.max(0, health.threads.fullCount - (selfTest?.full_while_measuring ?? 0)),
 				now: health.threads.waitingSeconds
 			});
 		}
@@ -411,12 +376,15 @@
 			return COPY.keepingUp.now[waitingNow.kind](readablePause(waitingNow.now));
 		}
 		const felt = readings.filter((one) => one.times > 0);
-		if (felt.length === 0) return COPY.keepingUp.yes;
+		const caused = (selfTest?.held_while_measuring ?? 0) + (selfTest?.full_while_measuring ?? 0);
+		const measuring =
+			caused > 0 ? ` ${COPY.keepingUp.measuring(COPY.keepingUp.times(caused))}` : '';
+		if (felt.length === 0) return `${COPY.keepingUp.yes}${measuring}`;
 		const worst = felt.reduce((most, one) => (one.longest > most.longest ? one : most));
-		return COPY.keepingUp.was[worst.kind](
+		return `${COPY.keepingUp.was[worst.kind](
 			COPY.keepingUp.times(worst.times),
 			readablePause(worst.longest)
-		);
+		)}${measuring}`;
 	});
 
 	/* The figures behind the fold, as text somebody pastes into a bug report. Read off the same
@@ -605,21 +573,7 @@
 			<div class="self-test">
 				<!-- The benchmark as a row: its name and what it is for on the left, the press on the
 				     right; the long account of what it measures is the row's More about this. -->
-				<!--
-					WHAT IS WAITING ON THE TEST, said on the row whose button runs it.
-
-					It runs by itself once, when the first library folder is added, and otherwise
-					only when somebody presses that. So until then every file is read the way that
-					needs no measurement (one seek per moment), and the quicker shape, one decode
-					of the whole file, is simply not chosen. Without this sentence that is
-					invisible: the sentence under a finished run explains the choice, and before the
-					first run there would be nothing at all, so the quicker read would look like
-					something Sift was already doing.
-
-					`measured` and not `finished`. Rates are stored, so a machine measured last week
-					comes back with no run in this process and its rates in hand, and this
-					sentence must not reappear for it.
-				-->
+				<!-- What waits on the benchmark; `measured`, not `finished`, as rates outlive a restart. -->
 				{#snippet unmeasured()}
 					<span data-testid="self-test-unmeasured">{COPY.measure.unmeasured}</span>
 				{/snippet}
@@ -637,36 +591,14 @@
 						busy={selfTest.running || testing}
 						disabled={applying || selfTest.running || testing}
 					>
-						{selfTest.finished ? COPY.measure.again : COPY.measure.run}
+						{selfTest.finished || selfTest.measured ? COPY.measure.again : COPY.measure.run}
 					</Button>
 				</LabelledRow>
 
 				<Problem message={testProblem} />
 
 				{#if selfTest.running || testing}
-					<!--
-						SOMETHING THAT MOVES, AND A NUMBER THAT CHANGES.
-
-						A run is two to four minutes on a slow machine, with the processor pinned. One
-						static sentence for all of it is indistinguishable from a test that started and
-						died, so people press the button again, which the server correctly ignores,
-						which looks like it is broken twice.
-
-						Two signals rather than one, because they answer different doubts. The spinner
-						says the page is alive. The rounds say the RUN is: the server publishes each
-						level as it finishes, so the count moves every twenty seconds or so and somebody
-						can see it working through the ladder.
-
-						"up to" is not hedging. A run genuinely stops early when the app stops keeping
-						up (that is the test succeeding), so a total counting down would be wrong on
-						exactly the machines it matters most on.
-
-						Only that stops the walk. A level that stops helping does NOT break it: every
-						reachable rung runs, and `best` picks the one to recommend afterwards, which is
-						the whole reason the wider rungs are measured at all. So the sentence beside it
-						says "when the app stops keeping up" and nothing about a level that stops
-						helping.
-					-->
+					<!-- The rounds move as each level is published; "up to" because a run can stop early. -->
 					<div data-testid="self-test-running">
 						<Empty scope="block" busy>{COPY.measure.busy}</Empty>
 					</div>
@@ -703,7 +635,7 @@
 									<span class="numbers">
 										<!-- The arrow character, not "-&gt;": what is on screen is typeset. -->
 										{one.current === 0 ? COPY.measure.automatic : one.current} &rarr;
-										<strong>{one.suggested}</strong>
+										<strong>{one.suggested === 0 ? COPY.measure.automatic : one.suggested}</strong>
 									</span>
 									<!-- A paragraph, so the pane's one reading measure reaches it. -->
 									<p class="reason">{one.reason}</p>
@@ -734,22 +666,24 @@
 					</p>
 				{/if}
 
+				{#each selfTest.finished ? selfTest.notes : [] as note (note)}
+					<p class="verdict" data-testid="self-test-note">{note}</p>
+				{/each}
+
 				{#if selfTest.finished && selfTest.measurement?.decode}
 					<!-- The two rates Generate and Identify read every file by. Shown so the choice made per file
 					     can be read off the numbers rather than taken on trust. -->
 					<p class="verdict" data-testid="self-test-decode">
 						{COPY.measure.decode(
 							Math.round(selfTest.measurement.decode.frames_per_second),
-							Math.round(selfTest.measurement.decode.seek_seconds * 1000)
+							Math.round(selfTest.measurement.decode.seek_seconds * 1000),
+							selfTest.measurement.storages.some((one) => one.remote)
 						)}
 					</p>
 				{/if}
 
 				{#if selfTest.finished && (selfTest.measurement?.storages?.length ?? 0) > 0}
-					<!-- What each share delivered at each width, so the number recommended above can be
-					     read off the curve it came from rather than taken on trust; and beside it the
-					     number Sift is running on, which is the fact a person on a share needs and the
-					     one the curve alone does not say. -->
+					<!-- Each storage's curve, so the number above is read off what it came from. -->
 					<div class="storages" data-testid="self-test-storages">
 						<SectionHeading level={3}>{COPY.measure.shares}</SectionHeading>
 						{#if shareReads > 0}
@@ -760,6 +694,9 @@
 						{#each selfTest.measurement?.storages ?? [] as curve (curve.storage)}
 							<div class="storage">
 								<p class="storage-name">{curve.label}</p>
+								{#if curve.folders}
+									<p class="storage-name">{COPY.measure.folders(curve.folders)}</p>
+								{/if}
 								{#if curve.failed}
 									<p class="verdict">{COPY.measure.notMeasured(curve.failed)}</p>
 								{:else}
@@ -772,12 +709,55 @@
 									</ul>
 									{#if curve.best_at_once !== null && curve.best_at_once !== undefined}
 										<p class="storage-name">
-											{COPY.measure.quickest(curve.best_at_once)}{shareReads > 0 &&
+											{COPY.measure.quickest(curve.best_at_once)}{curve.remote &&
+											shareReads > 0 &&
 											curve.best_at_once !== shareReads
 												? COPY.measure.readingAt(shareReads)
 												: ''}
 										</p>
 									{/if}
+								{/if}
+							</div>
+						{/each}
+					</div>
+				{/if}
+
+				{#if selfTest.finished && selfTest.card && !selfTest.card.failed}
+					{@const card = selfTest.card}
+					<div class="storages" data-testid="self-test-card">
+						<SectionHeading level={3}>{COPY.measure.gpu}</SectionHeading>
+						<ul class="storage-levels">
+							{#each card.levels as level (level.at_once)}
+								<li class:best={level.at_once === card.best_at_once}>
+									{COPY.measure.previews(level.at_once, level.per_second)}
+								</li>
+							{/each}
+						</ul>
+					</div>
+				{/if}
+
+				{#if selfTest.finished && selfTest.models.some((one) => !one.failed)}
+					<!-- A model not measured is said in the notes above, so only the measured are listed. -->
+					<div class="storages" data-testid="self-test-models">
+						<SectionHeading level={3}>{COPY.measure.models}</SectionHeading>
+						{#each selfTest.models.filter((one) => !one.failed) as model (model.name)}
+							<div class="storage">
+								<p class="storage-name">{COPY.measure.modelOn(model.name, model.device)}</p>
+								<ul class="storage-levels">
+									{#each model.levels as level (level.at_once)}
+										<li class:best={level.at_once === model.best_at_once}>
+											{COPY.measure.files(level.at_once, level.files_per_second)}
+										</li>
+									{/each}
+								</ul>
+								{#if model.seconds_per_file !== null && model.seconds_per_file !== undefined}
+									<p class="storage-name">
+										{COPY.measure.perFile(
+											model.seconds_per_file,
+											model.megabytes,
+											model.card_megabytes
+										)}
+									</p>
 								{/if}
 							</div>
 						{/each}

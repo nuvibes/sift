@@ -26,7 +26,7 @@ export const ACTS: ReadonlyMap<string, readonly IconName[]> = new Map<string, re
 	['Discard', ['remove']],
 	['Download', ['download']],
 	['Edit', ['edit']],
-	['Export', ['save']],
+	['Export', ['publish']],
 	['Import', ['upload']],
 	['Merge', ['merge']],
 	['Move', ['drive_file_move']],

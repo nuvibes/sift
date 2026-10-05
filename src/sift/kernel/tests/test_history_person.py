@@ -718,6 +718,36 @@ async def decide_about(
     )
 
 
+async def about_a_file_the_guest_is_shown(
+    database: Database, access: Repository, actors: Actors, asset_id: str
+) -> None:
+    """The decision names a file, and the guest is shown it."""
+    await make_file(database, asset_id)
+    await access.grant(ObjectType.ITEM, asset_id, actors.guest.id, Effect.SHARE)
+    await database.execute(
+        "INSERT INTO workbench_decision_subjects (decision_id, kind, subject_id)"
+        " VALUES (?, 'asset', ?)",
+        (DECISION, asset_id),
+    )
+
+
+async def test_a_pass_over_the_whole_library_is_an_admins_line(
+    temp_db: Database, access: Repository, actors: Actors
+) -> None:
+    """A decision naming no file counts files a guest may not see and asks things of an admin."""
+    await make_person(temp_db)
+    await decide_about(temp_db, by=None, queue="asked-only")
+
+    def decided(events: list[Event]) -> int:
+        return len([one for one in events if one.kind == "decided"])
+
+    assert decided(await history_of_person(temp_db, actors.guest, PERSON)) == 0
+    assert decided(await history_of_person(temp_db, actors.admin, PERSON)) == 1
+    await about_a_file_the_guest_is_shown(temp_db, access, actors, "01HX0000000000000000000724")
+    assert decided(await history_of_person(temp_db, actors.guest, PERSON)) == 1
+    assert decided(await history_of_person(temp_db, actors.admin, PERSON)) == 1
+
+
 async def test_a_run_that_attached_faces_to_them_is_a_line_on_their_own_thread(
     temp_db: Database, access: Repository, actors: Actors
 ) -> None:
@@ -779,6 +809,7 @@ async def test_a_guest_is_offered_no_way_to_take_it_back(
     """The workbench's undo route is admin-only, so the button would be refused on press."""
     await make_person(temp_db)
     await decide_about(temp_db, by=None)
+    await about_a_file_the_guest_is_shown(temp_db, access, actors, "01HX0000000000000000000725")
 
     decided = next(
         one
@@ -831,6 +862,7 @@ async def test_the_user_that_pressed_it_is_named_the_way_a_files_history_names_i
     withholding is the kernel's one rule about it: your own act is "you", and somebody else's is named to an admin."""
     await make_person(temp_db)
     await decide_about(temp_db, by=actors.admin.id)
+    await about_a_file_the_guest_is_shown(temp_db, access, actors, "01HX0000000000000000000726")
 
     mine = next(
         one
@@ -978,12 +1010,14 @@ async def test_a_library_s_top_folder_answered_as_them_is_said_by_its_name(
         ("01HX0000000000000000000698", PERSON, CREATED_AT),
     )
     await name_on(temp_db, "01HX0000000000000000000699", source="folder", at=NAMED_AT)
+    await access.grant(ObjectType.ITEM, "01HX0000000000000000000699", actors.guest.id, Effect.SHARE)
 
-    named = next(
-        one for one in await history_of_person(temp_db, actors.admin, PERSON) if one.kind == "named"
-    )
+    async def line(viewer: Viewer) -> str:
+        events = await history_of_person(temp_db, viewer, PERSON, access=access)
+        return next(one.what for one in events if one.kind == "named")
 
-    assert named.what == "Sift named them on 1 file from the folder Neve Alder"
+    assert await line(actors.admin) == "Sift named them on 1 file from the folder Neve Alder"
+    assert await line(actors.guest) == "Sift named them on 1 file from a folder name"
 
 
 async def test_two_folders_are_named_as_folders_because_one_link_cannot_go_to_both(

@@ -2,8 +2,8 @@
  * The Remote, the phone's screen for driving what plays at the desk.
  *
  * What would be silent if it broke: an empty list drawn as a blank page, the chooser offering a
- * screen that is not there or driving another than the one picked, a Hidden file named, a quiet screen still pressable, a transport control
- * drawn for a verb its screen never offered (which the server refuses), a drawer that rearranges
+ * screen that is not there or driving another than the one picked, a Hidden file named, a quiet screen still pressable, a transport press
+ * live for a verb its screen never offered (which the server refuses), a bar or drawer that rearranges
  * instead of dimming, a toggle sent as a flip rather than the state wanted, a choice sent as
  * anything but its place in the screen's own list, a wall's bar, cells or drawer missing, a
  * scrubber under Every cell that moves one cell, and a drawer that is not folded until opened.
@@ -30,6 +30,7 @@ for (const name of ['setPointerCapture', 'releasePointerCapture', 'hasPointerCap
 
 const Screen = (await import('./RemoteScreen.svelte')).default;
 const { COPY, LOOP_STEPS } = await import('./copy');
+const { NOTHING_AFTER, NOTHING_BEFORE } = await import('$lib/components/player/Transport.svelte');
 
 const PLAYER = [
 	'player.playPause',
@@ -249,38 +250,52 @@ describe('the Remote screen', () => {
 			expect(root.querySelector('section h2, section h3')?.textContent?.trim()).toBe('beach.mp4');
 		});
 		expect(labels(root)).toEqual([
-			COPY.previous,
 			COPY.back,
-			COPY.pause,
 			COPY.forward,
+			COPY.notHere,
+			COPY.previous,
+			COPY.pause,
 			COPY.next,
+			COPY.notHere,
 			COPY.mute,
 			COPY.fill
 		]);
+		expect(root.querySelector(`.band.grow input[aria-label="${COPY.position}"]`)).not.toBeNull();
 		expect(
 			[...root.querySelectorAll('input[type="range"]')].map((one) => one.getAttribute('aria-label'))
 		).toEqual([COPY.position, COPY.volume]);
 	});
 
-	it('draws no transport control for a verb the screen did not offer, and Full screen always dimmed', async () => {
+	it("draws every bar's five in one order, dimming with its reason what the screen did not offer", async () => {
 		const root = await open(aScreen({ supports: ['player.playPause', 'player.fill'] }));
+		const dimmed = (label: string) =>
+			[...root.querySelectorAll<HTMLButtonElement>(`button[aria-label="${label}"]`)].map(
+				(one) => one.disabled
+			);
 
-		expect(labels(root)).toEqual([COPY.pause, COPY.fill]);
-		expect(
-			root.querySelector<HTMLButtonElement>(`button[aria-label="${COPY.fill}"]`)?.disabled
-		).toBe(true);
+		expect(labels(root)).toEqual([
+			COPY.notHere,
+			NOTHING_BEFORE,
+			COPY.pause,
+			NOTHING_AFTER,
+			COPY.notHere,
+			COPY.fill
+		]);
+		expect(dimmed(COPY.notHere)).toEqual([true, true]);
+		expect(dimmed(NOTHING_BEFORE)).toEqual([true]);
+		expect(dimmed(NOTHING_AFTER)).toEqual([true]);
+		expect(dimmed(COPY.pause)).toEqual([false]);
+		expect(dimmed(COPY.fill)).toEqual([true]);
 		expect(root.querySelector('input[type="range"]')).toBeNull();
 	});
 
-	it("draws the popout drawer's nine presses in its own order, dimming what the screen cannot do", async () => {
+	it("draws the popout drawer's seven presses in its own order, dimming what the screen cannot do", async () => {
 		const root = await open(aScreen({ supports: [...PLAYER, 'player.shuffle', 'player.loop'] }));
 
 		expect(drawer(root)).toEqual([
 			[COPY.clip, false],
 			[COPY.screenshot, false],
 			[COPY.quality, false],
-			['Play through', false],
-			[COPY.shuffle, true],
 			[COPY.randomize, false],
 			[LOOP_STEPS[0], true],
 			[COPY.saveLoop, false],
@@ -314,7 +329,7 @@ describe('the Remote screen', () => {
 		]);
 	});
 
-	it("sends the drawer's presses as the desk reads them: the next repeat's place, the shuffle wanted, the loop", async () => {
+	it("sends the bar's and the drawer's presses as the desk reads them: the next repeat's place, the shuffle wanted, the loop", async () => {
 		const root = await open(
 			aScreen({
 				supports: [
@@ -335,9 +350,11 @@ describe('the Remote screen', () => {
 			})
 		);
 
-		expect(worded(root, COPY.shuffle).getAttribute('aria-pressed')).toBe('true');
-		worded(root, 'Play through').click();
-		worded(root, COPY.shuffle).click();
+		expect(
+			root.querySelector(`button[aria-label="${COPY.shuffle}"]`)?.getAttribute('aria-pressed')
+		).toBe('true');
+		press(root, 'Play through');
+		press(root, COPY.shuffle);
 		worded(root, LOOP_STEPS[2]).click();
 		worded(root, COPY.saveLoop).click();
 		worded(root, COPY.randomize).click();
@@ -457,14 +474,14 @@ describe('the Remote screen', () => {
 	});
 
 	it('folds the drawer under its name until it is opened', async () => {
-		const root = await draw([aScreen({ supports: [...PLAYER, 'player.shuffle'] })]);
+		const root = await draw([aScreen({ supports: [...PLAYER, 'player.random'] })]);
 
 		const press = fold(root);
 		expect(press?.getAttribute('aria-expanded')).toBe('false');
 		expect(drawer(root)).toEqual([]);
 		press!.click();
 		flushSync();
-		expect(drawer(root).map(([word]) => word)).toContain(COPY.shuffle);
+		expect(drawer(root).map(([word]) => word)).toContain(COPY.randomize);
 	});
 
 	it("dims a wall's scrubber under Every cell, saying why, and sends no position", async () => {
@@ -508,7 +525,7 @@ describe('the Remote screen', () => {
 		cells[4].click();
 		press(root, COPY.pause);
 		press(root, COPY.unmute);
-		worded(root, 'Play through').click();
+		press(root, 'Play through');
 		worded(root, COPY.solo).click();
 		flushSync();
 

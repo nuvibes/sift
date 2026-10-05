@@ -21,4 +21,4 @@ Nothing on this pane is a setting. It draws three paths, each with its steps:
 
 A step you've done shows the day you did it.
 
-Nothing on this pane is a stored setting: everything on it acts when you press it.
+Nothing on this pane is a stored setting.

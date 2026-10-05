@@ -1,17 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""What this machine measured, kept: the rates a Build's reader is shaped by.
-
-The self-test's full measurement is held in memory and shown on the Performance screen, and that
-is deliberate. See `selftest.SelfTest`. Two of its numbers are read by something other than a
-person: how fast this machine decodes and what a seek costs it, on the local disk and on each
-share. Those decide, per file, whether a Build seeks to the moments it wants or decodes the file
-once, and they have to outlive the process: otherwise every restart would put the next Build back
-to measuring before it could start.
-
-One row per hardware profile. A machine that has lost its graphics card or gained a processor is a
-different machine for anything that measures how fast it works, so a rate taken before the change
-must not shape reads after it. `HardwareReport.profile` is the digest that draws that line.
-"""
+"""What this machine measured, kept per hardware profile, so a changed machine finds nothing."""
 
 from __future__ import annotations
 
@@ -25,6 +13,9 @@ from sift.kernel.db import Connection, Database, register_schema_initializer
 from sift.kernel.log import get_logger
 from sift.kernel.media import ReadRates, StorageRead
 from sift.kernel.wiring import Part
+from sift.slices.performance.measure_encoder import CardCurve, CardLevel
+from sift.slices.performance.measure_models import ModelCurve, ModelLevel
+from sift.slices.performance.measure_together import Plan, Reads, Together, Window
 from sift.slices.performance.selftest import (
     Decode,
     Level,
@@ -72,18 +63,75 @@ async def initialize(connection: Connection, on_disk: int) -> None:
         await connection.execute(_CREATE_MACHINE_RATES)
 
 
-def measurement_to_json(measurement: Measurement) -> str:
-    """A finished measurement as the text kept in `machine_rates.measurement`."""
-    return json.dumps(asdict(measurement))
+def measurement_to_json(
+    measurement: Measurement,
+    *,
+    card: CardCurve | None = None,
+    models: tuple[ModelCurve, ...] = (),
+    together: Together | None = None,
+    lengths: Mapping[str, float] | None = None,
+) -> str:
+    """A finished run's curves, the combined run's included, as `machine_rates.measurement`."""
+    kept = asdict(measurement)
+    kept["card"] = None if card is None else asdict(card)
+    kept["models"] = [asdict(one) for one in models]
+    kept["together"] = None if together is None else asdict(together)
+    kept["lengths"] = dict(lengths or {})
+    return json.dumps(kept)
+
+
+def lengths_from_json(text: str) -> dict[str, float]:
+    try:
+        raw = json.loads(text).get("lengths") or {}
+        return {str(kind): float(seconds) for kind, seconds in raw.items()}
+    except (ValueError, TypeError, AttributeError):
+        return {}
+
+
+def together_from_json(text: str) -> Together | None:
+    """The combined run back again; None where none was kept or it is unreadable."""
+    try:
+        raw = json.loads(text).get("together")
+        if raw is None:
+            return None
+        windows = []
+        for one in raw["windows"]:
+            plan = one["plan"]
+            kept = Plan(
+                **{
+                    **plan,
+                    "widths": tuple((str(name), int(n)) for name, n in plan["widths"]),
+                    "reads": tuple(Reads(**each) for each in plan["reads"]),
+                }
+            )
+            windows.append(Window(**{**one, "plan": kept}))
+        return Together(windows=tuple(windows), failed=raw.get("failed"), seconds=raw["seconds"])
+    except (ValueError, KeyError, TypeError, AttributeError) as exc:
+        log.warning("performance.selftest.kept_unreadable", error=str(exc))
+        return None
+
+
+def more_from_json(text: str) -> tuple[CardCurve | None, tuple[ModelCurve, ...]]:
+    """The card's curve and the models' back again; nothing where none was kept or unreadable."""
+    try:
+        raw: dict[str, Any] = json.loads(text)
+        card = raw.get("card")
+        return (
+            None
+            if card is None
+            else CardCurve(**{**card, "levels": tuple(CardLevel(**one) for one in card["levels"])}),
+            tuple(
+                ModelCurve(**{**one, "levels": tuple(ModelLevel(**at) for at in one["levels"])})
+                for one in raw.get("models", ())
+            ),
+        )
+    except (ValueError, KeyError, TypeError) as exc:
+        log.warning("performance.selftest.kept_unreadable", error=str(exc))
+        return None, ()
 
 
 def measurement_from_json(text: str) -> Measurement | None:
-    """The measurement back again, or None for text this version cannot read.
-
-    None rather than an error: a kept reading is a convenience (the screen can always measure
-    again) and a row a later version wrote in a shape this one does not know must not take the
-    Performance screen down with it.
-    """
+    """The measurement back, or None where unreadable; a field added since takes its default."""
     try:
         raw: dict[str, Any] = json.loads(text)
         return Measurement(
@@ -97,6 +145,7 @@ def measurement_from_json(text: str) -> Measurement | None:
                     remote=bool(curve["remote"]),
                     levels=tuple(StorageLevel(**one) for one in curve.get("levels", ())),
                     failed=curve.get("failed"),
+                    unmeasured=curve.get("unmeasured"),
                 )
                 for curve in raw.get("storages", ())
             ),
@@ -134,15 +183,17 @@ class MachineRates:
     seek_seconds: float | None
     """What one moment costs when taken by seeking on the local disk, or None as above."""
     storages: Mapping[str, StorageRate] = field(default_factory=dict)
-    """Each network storage that was measured, by the key the operating system names it with."""
+    """Each storage that was measured, by the key the operating system names it with."""
     measurement: Measurement | None = None
-    """The whole reading these rates came from, for the screen's advice after a restart. None on
-    a row kept before v2, or one this version cannot read."""
+    """The whole reading, for the screen's advice after a restart; None before v2 or unreadable."""
+    card: CardCurve | None = None
+    models: tuple[ModelCurve, ...] = ()
+    together: Together | None = None
+    lengths: Mapping[str, float] = field(default_factory=dict)
 
     def for_reading(self, storage: str | None) -> ReadRates | None:
-        """The rates the way the kernel's read rule takes them, for a file on `storage`: the
-        share's key, or None for a local disk. None where the decoder was never measured: a
-        rule with no rate seeks, which needs none."""
+        """The rates for the kernel's read rule, for a file on `storage` (None for a local disk);
+        None where the decoder was never measured, as a rule with no rate seeks."""
         if self.decode_fps is None or self.seek_seconds is None:
             return None
         share = self.storages.get(storage) if storage is not None else None
@@ -156,29 +207,49 @@ class MachineRates:
             ),
         )
 
+    def reads_at_once(self) -> dict[str, int]:
+        """How many files each measured storage serves at once, for the lanes."""
+        return {key: one.at_once for key, one in self.storages.items()}
+
     @classmethod
-    def from_measurement(cls, profile: str, measurement: Measurement, *, now: int) -> MachineRates:
-        """Read the rates off a finished measurement. What could not be measured is None or
-        absent, never zero: a zero would read as a machine that decodes nothing."""
-        storages: dict[str, StorageRate] = {}
-        for curve in measurement.storages:
-            best = curve.best
-            if best is None:
-                continue
-            storages[curve.storage] = StorageRate(
-                at_once=best.at_once,
-                megabytes_per_second=best.megabytes_per_second,
-                seek_seconds=best.seconds_per_seek,
-            )
+    def from_measurement(
+        cls,
+        profile: str,
+        measurement: Measurement,
+        *,
+        now: int,
+        card: CardCurve | None = None,
+        models: tuple[ModelCurve, ...] = (),
+        together: Together | None = None,
+        lengths: Mapping[str, float] | None = None,
+    ) -> MachineRates:
+        """The rates off a finished measurement; what was not measured is None, never zero."""
         decode = measurement.decode
         return cls(
             profile=profile,
             measured_at=now,
             decode_fps=decode.frames_per_second if decode is not None else None,
             seek_seconds=decode.seek_seconds if decode is not None else None,
-            storages=storages,
+            storages=storage_rates(measurement),
             measurement=measurement,
+            card=card,
+            models=models,
+            together=together,
+            lengths=dict(lengths or {}),
         )
+
+
+def storage_rates(measurement: Measurement) -> dict[str, StorageRate]:
+    """Each storage's rate at the level the curve's rule chooses, where one was measured."""
+    return {
+        curve.storage: StorageRate(
+            at_once=best.at_once,
+            megabytes_per_second=best.megabytes_per_second,
+            seek_seconds=best.seconds_per_seek,
+        )
+        for curve in measurement.storages
+        if (best := curve.best) is not None
+    }
 
 
 class RatesStore:
@@ -186,9 +257,7 @@ class RatesStore:
 
     def __init__(self, database: Database) -> None:
         self._db = database
-        #: What each profile last answered. The runner asks per task (once per file of a
-        #: Build) and the answer moves only when `save` writes one, so it is kept here and
-        #: dropped there.
+        #: What each profile last answered: asked per file of a Build, moved only by `save`.
         self._known: dict[str, MachineRates | None] = {}
 
     async def load(self, profile: str) -> MachineRates | None:
@@ -212,15 +281,25 @@ class RatesStore:
             )
             for key, one in stored.items()
         }
+        text = None if row["measurement"] is None else str(row["measurement"])
+        measurement = None if text is None else measurement_from_json(text)
+        card, models = (None, ()) if text is None else more_from_json(text)
+        together = None if text is None else together_from_json(text)
+        lengths = {} if text is None else lengths_from_json(text)
+        if measurement is not None:
+            # Judged again by today's rule, so the lanes and the screen read one number.
+            storages.update(storage_rates(measurement))
         return MachineRates(
             profile=str(row["profile"]),
             measured_at=int(row["measured_at"]),
             decode_fps=None if row["decode_fps"] is None else float(row["decode_fps"]),
             seek_seconds=None if row["seek_seconds"] is None else float(row["seek_seconds"]),
             storages=storages,
-            measurement=None
-            if row["measurement"] is None
-            else measurement_from_json(str(row["measurement"])),
+            measurement=measurement,
+            card=card,
+            models=models,
+            together=together,
+            lengths=lengths,
         )
 
     async def save(self, rates: MachineRates) -> None:
@@ -241,7 +320,15 @@ class RatesStore:
                 rates.decode_fps,
                 rates.seek_seconds,
                 json.dumps(storages),
-                None if rates.measurement is None else measurement_to_json(rates.measurement),
+                None
+                if rates.measurement is None
+                else measurement_to_json(
+                    rates.measurement,
+                    card=rates.card,
+                    models=rates.models,
+                    together=rates.together,
+                    lengths=rates.lengths,
+                ),
             ),
         )
         self._known.pop(rates.profile, None)

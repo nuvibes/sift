@@ -252,7 +252,7 @@ export const SHORTCUTS: readonly Shortcut[] = [
 		id: 'stage.toggleBar',
 		keys: ['b', 'B'],
 		shown: 'B',
-		does: 'Send the controls away, or bring them back — while the screen is filled',
+		does: 'Send the controls away, or bring them back — on Theater, and while the screen is filled',
 		area: 'Anywhere'
 	},
 	{

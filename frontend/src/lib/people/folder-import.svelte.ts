@@ -19,6 +19,10 @@ export const READING_THE_FOLDER = 'Reading the folder\u2026';
 
 type Started = { job_id: string };
 type JobRow = components['schemas']['JobView'];
+type LeftOut = components['schemas']['FolderLeftOut'];
+
+/** One fold under the report: its count in the report's own words, and the files behind it. */
+type ReportFold = { summary: string; files: string[] };
 
 /** Import the folder at this path, on the machine Sift runs on. Answers with the task. */
 export async function importFolderByPath(path: string): Promise<string> {
@@ -67,11 +71,39 @@ export function endedWith(row: Pick<JobRow, 'state' | 'note' | 'error'> | null):
 	return row.note || 'The import has finished.';
 }
 
+/** The report's folds: each reason in the order the report counts them, then the near copies. */
+export function foldsOf(left: LeftOut): ReportFold[] {
+	const folds = left.left_out.map((one) => ({
+		summary: `${one.files.length.toLocaleString('en-US')} ${one.words}`,
+		files: one.files
+	}));
+	const near = left.near_copies.length;
+	if (near > 0) {
+		const photos = near === 1 ? '1 photo' : `${near.toLocaleString('en-US')} photos`;
+		folds.push({
+			summary: `${photos} kept though almost the same as another`,
+			files: left.near_copies
+		});
+	}
+	return folds;
+}
+
+/** Which files a finished import left out, or no folds when they cannot be read. */
+async function foldsOfJob(jobId: string): Promise<ReportFold[]> {
+	try {
+		return foldsOf(await api.get<LeftOut>(`/faces/references/folder/${jobId}/left-out`));
+	} catch {
+		return [];
+	}
+}
+
 class FolderImportWatch extends DownloadWatch {
 	/** The task last followed, kept past its end so its last row can be read. */
 	#last: string | null = null;
 	/** Whether the task that ended here finished. Null until one has ended. */
 	succeeded = $state<boolean | null>(null);
+	/** The files under each count of the report, once a task has finished here. */
+	folds = $state<ReportFold[]>([]);
 
 	constructor() {
 		super(
@@ -79,6 +111,7 @@ class FolderImportWatch extends DownloadWatch {
 			async () => {
 				const row = this.#last ? await rowOf(this.#last).catch(() => null) : null;
 				this.succeeded = row === null || (isFinished(row.state) && row.state === 'done');
+				this.folds = row?.state === 'done' ? await foldsOfJob(row.id) : [];
 				return endedWith(row);
 			},
 			"Couldn't follow the import. Open Activity to see it."
@@ -88,6 +121,7 @@ class FolderImportWatch extends DownloadWatch {
 	override follow(jobId: string, state = 'queued'): void {
 		this.#last = jobId;
 		this.succeeded = null;
+		this.folds = [];
 		super.follow(jobId, state);
 	}
 

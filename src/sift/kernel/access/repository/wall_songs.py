@@ -13,6 +13,7 @@ from sift.kernel.access.repository.walls import (
     _wall,
     _with_stored_counts,
     locked_tile,
+    shown,
 )
 from sift.kernel.sql_splice import splice
 
@@ -54,9 +55,10 @@ in_scope(grp, folder_id) AS (
 -- that have already been through every rule and closed as their own CTE, so no arrangement of ORs
 -- inside it can reach a permission rule at all.
 --
-counted(song_id, item_count, size_bytes) AS (
+counted(song_id, item_count, size_bytes, duration_ms) AS (
   SELECT sf.song_id, COUNT(*),
-         COALESCE(SUM(CASE WHEN :reveal_named = 1 OR v.concealed = 0 THEN a.size_bytes END), 0)
+         COALESCE(SUM(CASE WHEN :reveal_named = 1 OR v.concealed = 0 THEN a.size_bytes END), 0),
+         COALESCE(SUM(CASE WHEN :reveal_named = 1 OR v.concealed = 0 THEN a.duration_ms END), 0)
     FROM song_files sf
     CROSS JOIN viewer_assets v ON v.asset_id = sf.asset_id AND v.user_id = :viewer
     JOIN assets a ON a.id = sf.asset_id
@@ -83,9 +85,10 @@ counted(song_id, item_count, size_bytes) AS (
 -- share unless `:reveal`), and which carries the SIZE of those files beside it. Summed live, the
 -- size would walk every membership of every row on the wall. Read here it costs one range of the
 -- stored rows, and the number and the size come off one row, so they cannot describe different files.
-whole(song_id, item_count, size_bytes) AS (
+whole(song_id, item_count, size_bytes, duration_ms) AS (
   SELECT c.object_id, c.permitted - CASE WHEN :reveal = 1 THEN 0 ELSE c.concealed END,
-         c.permitted_bytes - CASE WHEN :reveal_named = 1 THEN 0 ELSE c.concealed_bytes END
+         c.permitted_bytes - CASE WHEN :reveal_named = 1 THEN 0 ELSE c.concealed_bytes END,
+         c.permitted_ms - CASE WHEN :reveal_named = 1 THEN 0 ELSE c.concealed_ms END
     FROM viewer_entity_counts c
    WHERE c.user_id = :viewer AND c.kind = 'song'
 )
@@ -154,9 +157,9 @@ SELECT sg.id, CASE WHEN {{LOCKED}} THEN '' ELSE sg.name END AS name,
    -- The name, where a picker or a box is narrowing the list to what somebody is typing, or the
    -- name of an artist it credits: a song is found by who sings it as well as by what it is
    -- called (the search box's dropdown reads this wall, and the Music page's box is this wall).
-   AND (:prefix = '' OR sg.name LIKE :like ESCAPE '\\'
+   AND (:prefix = '' OR ({{SHOWN}} AND (sg.name LIKE :like ESCAPE '\\'
         OR EXISTS (SELECT 1 FROM song_artists pa JOIN artists par ON par.id = pa.artist_id
-                    WHERE pa.song_id = sg.id AND par.name LIKE :like ESCAPE '\\'))
+                    WHERE pa.song_id = sg.id AND par.name LIKE :like ESCAPE '\\'))))
    AND (:reveal_named = 1 OR COALESCE(h.hidden, 0) = 0)
    AND (:list_empty = 1 OR COALESCE(n.item_count, 0) > 0)
    -- A LOCKED TILE matches no typed word: a box that finds a padlock has said the name. See
@@ -194,19 +197,30 @@ SELECT sg.id, CASE WHEN {{LOCKED}} THEN '' ELSE sg.name END AS name,
             SELECT COALESCE(ar.name_sort, ar.name) FROM song_artists sa
               JOIN artists ar ON ar.id = sa.artist_id
              WHERE sa.song_id = sg.id ORDER BY sa.position, ar.id LIMIT 1) END END ASC NULLS LAST,
-          -- The SAME expression the card prints, `:count_narrowed` and all. A wall ordered by
-          -- size that orders on the other tally puts its cards out of the order their own numbers
-          -- read in, which looks like a broken sort and is a second answer to one question.
+          -- The number and the size the card prints, so the cards read in the order asked.
           CASE :entity_sort WHEN 'largest' THEN
             COALESCE(CASE WHEN :count_narrowed = 1 THEN n.item_count ELSE w.item_count END, 0)
           END DESC,
           CASE :entity_sort WHEN 'smallest' THEN
             COALESCE(CASE WHEN :count_narrowed = 1 THEN n.item_count ELSE w.item_count END, 0)
           END ASC,
+          CASE :entity_sort WHEN 'largest_total' THEN
+            COALESCE(CASE WHEN :count_narrowed = 1 THEN n.size_bytes ELSE w.size_bytes END, 0)
+          END DESC,
+          CASE :entity_sort WHEN 'smallest_total' THEN
+            COALESCE(CASE WHEN :count_narrowed = 1 THEN n.size_bytes ELSE w.size_bytes END, 0)
+          END ASC,
+          CASE :entity_sort WHEN 'longest_total' THEN
+            NULLIF(CASE WHEN :count_narrowed = 1 THEN n.duration_ms ELSE w.duration_ms END, 0)
+          END DESC NULLS LAST,
+          CASE :entity_sort WHEN 'shortest_total' THEN
+            NULLIF(CASE WHEN :count_narrowed = 1 THEN n.duration_ms ELSE w.duration_ms END, 0)
+          END ASC NULLS LAST,
           CASE WHEN {{LOCKED}} THEN NULL ELSE COALESCE(sg.name_sort, sg.name) END ASC NULLS LAST, sg.id ASC
  LIMIT :limit OFFSET :offset
 """,
     LOCKED=locked_tile("song", "sg"),
+    SHOWN=shown("song", "sg"),
 )
 
 #: The songs wall in pieces, cut once. The facet counts read it and so does the position lookup.

@@ -58,13 +58,13 @@
 		facetsFor,
 		facetValueIcon,
 		facetValueLabel,
-		boxColour,
 		rememberFacetNames,
 		type FacetCounts,
 		type Subject
 	} from './facet-labels';
 	import { stage } from './stage.svelte';
 	import type { Pointing } from './screen-bar.svelte';
+	import { PRESENCE_COLUMNS } from './filter-bar.svelte';
 
 	interface Props {
 		/*
@@ -365,12 +365,7 @@
 	let expanded = $state<Record<string, boolean>>({});
 	let narrowing = $state<Record<string, string>>({});
 
-	/**
-	 * The values to draw for one column: what the box filters to, then the cut. The box is needed:
-	 * Tags and People run to hundreds. A banded column is put in the server's cut order
-	 * (`facet-labels`' table, gate-held), since count order scrambles a ladder; it is cut and
-	 * searched like the rest, so what folds is its tail.
-	 */
+	/** A banded column in the server's cut order (gate-held), since count order scrambles a ladder. */
 	function inBandOrder(facet: string, rows: Value[]): Value[] | null {
 		/* A column of numbers (an age, an O count) is its own ladder: ascending, by the number. */
 		if (countsUp(facet))
@@ -390,7 +385,7 @@
 	 * against the words on screen ("1 to 3 minutes") and the stored value (`60s..<3m`) alike.
 	 */
 	function narrowed(facet: string): Value[] {
-		const all = counts[facet] ?? [];
+		const all = (counts[facet] ?? []).filter((one) => !heads(facet).includes(one));
 		const needle = (narrowing[facet] ?? '').trim().toLowerCase();
 		const kept = needle
 			? all.filter(
@@ -417,7 +412,15 @@
 	 */
 	function needsABox(facet: string): boolean {
 		// A ladder too: it is cut like the rest, so it gets the same way through.
-		return (counts[facet] ?? []).length > FIRST;
+		return (counts[facet] ?? []).length - heads(facet).length > FIRST;
+	}
+
+	/** "Has" and "No" on a named-thing column: above its values, outside the cut and the box. */
+	function heads(facet: string): Value[] {
+		if (!(subject === 'asset' ? PRESENCE_COLUMNS.includes(facet) : facet === 'tags')) return [];
+		const rows = counts[facet] ?? [];
+		// Has before No, whatever their counts: the walls of things send them in count order.
+		return ['any', 'none'].flatMap((value) => rows.filter((one) => one.value === value));
 	}
 
 	/*
@@ -464,6 +467,37 @@
 		return chosen(facet).length;
 	}
 </script>
+
+<!-- One value of one column: the whole row is the press. -->
+{#snippet valueRow(facet: string, row: Value)}
+	{@const state = picked(facet, row.value)}
+	<li>
+		<!-- The whole row is the target, the box inside not separately clickable: two
+					     nested controls a pixel apart would be two answers to one click. -->
+		<Pressable
+			class="value {state}"
+			feedback="wash"
+			radius="md"
+			aria-pressed={state !== 'off'}
+			onclick={() => onpick(facet, row.value)}
+		>
+			<span class="mark">
+				<Checkbox {state} mark />
+			</span>
+			{#if facetValueIcon(facet, row.value)}
+				<!-- The author's mark, before the word, named on hover. -->
+				<Tooltip label={nameOf(facet, row)} placement="top">
+					<span class="glyph">
+						<Icon name={facetValueIcon(facet, row.value)!} size={16} />
+					</span>
+				</Tooltip>
+			{/if}
+			<span class="name">{nameOf(facet, row)}</span>
+			<!-- `count`, not `files`: on a wall of people the number is people. -->
+			<span class="files">{counted(row.count)}</span>
+		</Pressable>
+	</li>
+{/snippet}
 
 <BarPanel label="Filter by" row>
 	{#if head}
@@ -538,43 +572,10 @@
 				<div class="column-box">
 					<Scroller>
 						<ul>
-							{#each shown(facet) as row (row.value)}
-								{@const state = picked(facet, row.value)}
-								<li>
-									<!-- The whole row is the target, the box inside not separately clickable: two
-									     nested controls a pixel apart would be two answers to one click. -->
-									<Pressable
-										class="value {state}"
-										feedback="wash"
-										radius="md"
-										aria-pressed={state !== 'off'}
-										onclick={() => onpick(facet, row.value)}
-									>
-										<span class="mark">
-											<Checkbox {state} mark />
-										</span>
-										{#if facetValueIcon(facet, row.value)}
-											{@const paint = boxColour(row.value)}
-											<!-- The author's mark, before the word, named on hover. A stash-box row in that
-											     box's colour, as `EnrichmentMarks` paints it (`boxColour`; the rule in
-											     `app.css`). -->
-											<Tooltip label={nameOf(facet, row)} placement="top">
-												<span
-													class="glyph"
-													class:box-mark={paint !== undefined}
-													style:--box-colour={paint}
-												>
-													<Icon name={facetValueIcon(facet, row.value)!} size={16} />
-												</span>
-											</Tooltip>
-										{/if}
-										<span class="name">{nameOf(facet, row)}</span>
-										<!-- `count`, not `files`: on a wall of people the number is people. -->
-										<span class="files">{counted(row.count)}</span>
-									</Pressable>
-								</li>
+							{#each [...heads(facet), ...shown(facet)] as row (row.value)}
+								{@render valueRow(facet, row)}
 							{/each}
-							{#if shown(facet).length === 0}
+							{#if shown(facet).length === 0 && heads(facet).length === 0}
 								<!-- A span says how many files the screen shows; an empty value column stays and
 								     says so, so the panel never reshuffles between pages. -->
 								<li class="none">
@@ -767,14 +768,11 @@
 		pointer-events: none;
 	}
 
-	/*
-	 * The author's mark on an Enriched by or Created by row, in the accent, as on the card and the
-	 * file's row; a stash-box row is painted in its box's colour (`box-mark`) over this.
-	 */
+	/* The author's mark on an Enriched by or Created by row, in the accent, as on the card. */
 	.glyph {
 		display: inline-flex;
 		flex: none;
-		color: var(--sift-accent);
+		color: var(--sift-accent-text);
 	}
 
 	/* Takes the leftover width, so the count sits right; ellipsises rather than widen the track. */

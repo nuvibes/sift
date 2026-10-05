@@ -79,7 +79,7 @@ describe('the kinds of row on the search list', () => {
 		};
 		const filter: Row = {
 			kind: 'filter',
-			filter: { field: 'acodec', label: 'Audio codec', hint: '', example: '' }
+			filter: { field: 'acodec', label: 'Audio codec', hint: '', example: '', set_from: null }
 		};
 		expect(rowKind(person)).toEqual({ name: 'Person', icon: 'person' });
 		expect(rowKind(file).name).toBe('File');

@@ -22,7 +22,6 @@ and its bytes, which is the point of organising logically rather than by rearran
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from typing import Annotated
 
 from fastapi import (
@@ -36,7 +35,6 @@ from fastapi import (
     UploadFile,
     status,
 )
-from starlette.datastructures import MultiDict
 
 from sift.kernel import wiring
 from sift.kernel.access import (
@@ -76,7 +74,7 @@ from sift.kernel.db import Database, IntegrityError
 from sift.kernel.ledger import Actor
 from sift.kernel.paging import resume_at
 from sift.kernel.reach import BulkWriteDone, require_reachable
-from sift.kernel.seams import FilterEngine, ReindexSeam, StillSeam
+from sift.kernel.seams import FilterEngine, ForgetGoneSeam, ReindexSeam, StillSeam
 from sift.kernel.serving import face_version
 from sift.kernel.wire import (
     FacetCounts,
@@ -116,22 +114,8 @@ def _service(request: Request) -> CollectionService:
     return part_of(request, SERVICE)
 
 
-#: The filtering fields a collection's contents take: the five kinds of thing a card on its tabs can
-#: stand for. In the query language's own spelling, because they ARE its fields: `parse_modal`
-#: reads them, and a saved search, a person's Files tab and this route all mean one thing by them.
-NARROWING_FIELDS = ("people", "tags", "sites", "collections", "photo_sets", "songs")
-
-
-def narrowing_of(asked: Mapping[str, list[str] | None]) -> Mapping[str, str] | None:
-    """The filtering parameters as the engine reads them, or None when none was given.
-
-    Every value kept, a field given twice included: the parser builds one node per value and
-    demands all of them, which is what AND across picks means. A multidict rather than a plain one,
-    because a plain mapping keeps only the last value of a name written twice: the widening
-    direction, which is the one thing a filter may not do.
-    """
-    pairs = [(name, value) for name in NARROWING_FIELDS for value in asked.get(name) or []]
-    return MultiDict(pairs) if pairs else None
+#: The contents route's own parameters; any other name in its address is the query language's.
+_PAGING = frozenset({"limit", "offset"})
 
 
 def _missing() -> HTTPException:
@@ -162,7 +146,7 @@ def _view(
 
 
 def _item(
-    view: AssetView, *, revealed: bool, state: AssetUserState | None = None
+    view: AssetView, *, revealed: bool, arranges: bool, state: AssetUserState | None = None
 ) -> CollectionItem:
     """One row of a collection, from what the access layer returned.
 
@@ -175,6 +159,8 @@ def _item(
     `state` is this user's heart and stars, or None where it has never said anything about the
     file, which is nearly every file, so the absence is the ordinary case rather than a failure.
     It is handed in rather than read here, because it is read once for the whole page.
+    `arranges` is whether this viewer may rearrange: to anybody else a stored position counts the
+    files they were not shown.
     """
     if view.concealed and not revealed:
         return CollectionItem(id=view.asset.id, media_type="", concealed=True)
@@ -190,7 +176,7 @@ def _item(
         pinned=view.pinned,
         favorite=state.favorite if state else False,
         rating=state.rating if state else None,
-        position=view.arranged_at,
+        position=view.arranged_at if arranges else None,
     )
 
 
@@ -614,6 +600,7 @@ async def delete_collection(
     service: Annotated[CollectionService, Depends(_service)],
     access: Annotated[Repository, Depends(wiring.access)],
     reindexer: Annotated[ReindexSeam, Depends(wiring.reindexer)],
+    forgets: Annotated[ForgetGoneSeam, Depends(wiring.forget_gone)],
     viewer: Annotated[Viewer, Depends(require_admin)],
 ) -> Response:
     """Delete a collection, its membership rows, and every grant that named it.
@@ -622,7 +609,7 @@ async def delete_collection(
     pointing at the collection, so this removes the rows joining a collection to files and never
     the files. Deleting a shortlist is tidying up, not deleting media.
     """
-    await _require_collection(access, viewer, collection_id)
+    shelf = await _require_collection(access, viewer, collection_id)
     held = await service.delete(collection_id, actor=Actor.user(viewer.id))
     if held is None:
         raise _missing()  # pragma: no cover (resolved above, so the row is there)
@@ -632,18 +619,22 @@ async def delete_collection(
     # the last, and tidying up a few dozen EMPTY shortlists (which change no indexed text) would
     # take most of a minute. An empty list reindexes nothing and never takes the lock.
     await reindexer.touched_many(held)
+    await forgets.forget_gone("collection", collection_id, name=shelf.name, by=viewer)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/collections/{collection_id}/items")
 async def collection_items(
     collection_id: str,
+    request: Request,
     access: Annotated[Repository, Depends(wiring.access)],
     state: Annotated[UserStateStore, Depends(wiring.user_state)],
     engine: Annotated[FilterEngine, Depends(wiring.filter_engine)],
     viewer: Annotated[Viewer, Depends(current_viewer)],
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
+    # Read off the raw address by the engine; declared so the API description names them.
+    q: Annotated[str | None, Query()] = None,
     people: Annotated[list[str] | None, Query()] = None,
     tags: Annotated[list[str] | None, Query()] = None,
     sites: Annotated[list[str] | None, Query()] = None,
@@ -662,29 +653,15 @@ async def collection_items(
     The rows and the total come from one statement in the access layer, so the count is the number
     of items on the screen and never the number of rows in the table.
 
-    **Narrowed by the cards picked on the collection's tabs.** `people`, `tags`, `sites`,
-    `collections`, `photo_sets` and `songs` (the Music tab) are the query language's own fields, each a name as the language
-    writes one, given once per pick and combined with AND, read by the same engine and the same
-    parser the grid reads them with, so a pick narrows a collection's Files tab exactly as it narrows
-    a person's. The narrowing goes into the same statement as the scoping and the order, so the
-    total counts the narrowed set and the arranged order is kept within it. Declared rather than
-    read off the raw address, so a name this route does not take is visibly not taken: the rest of
-    the query language (a rating, a date) is the grid's, and this wall offers no bar to write it.
+    **Filtered by the query language, read off the raw address as `/assets` reads it**: the words
+    in `q` and the cards picked on the tabs narrow a collection's Files tab exactly as they narrow a
+    person's, inside the same statement as the scoping and the order, so the total counts the
+    narrowed set and the arranged order is kept within it.
     """
     await _require_collection(access, viewer, collection_id)
-    asked = narrowing_of(
-        {
-            "people": people,
-            "tags": tags,
-            "sites": sites,
-            "collections": collections,
-            "photo_sets": photo_sets,
-            "songs": songs,
-        }
-    )
-    # Nothing asked is the whole collection, and costs no compile: the engine is asked only when a
-    # filtering is in force, which is also what keeps the plain read exactly the read it was.
-    narrowed = NO_FILTER if asked is None else await engine.constrain(viewer, asked)
+    # Nothing asked costs no compile, which keeps the plain read exactly the read it was.
+    asked = any(name not in _PAGING for name in request.query_params)
+    narrowed = await engine.constrain(viewer, request.query_params) if asked else NO_FILTER
     page = await access.visible_assets(
         viewer,
         limit=limit,
@@ -704,7 +681,12 @@ async def collection_items(
     states = await state.states_of(named, viewer.id) if named else {}
     return CollectionContents(
         items=[
-            _item(item, revealed=viewer.show_hidden, state=states.get(item.asset.id))
+            _item(
+                item,
+                revealed=viewer.show_hidden,
+                arranges=viewer.is_admin,
+                state=states.get(item.asset.id),
+            )
             for item in page.items
         ],
         total=page.total,
@@ -722,7 +704,7 @@ async def edit_items(
     reindexer: Annotated[ReindexSeam, Depends(wiring.reindexer)],
     viewer: Annotated[Viewer, Depends(require_admin)],
 ) -> BulkWriteDone:
-    """Add to, remove from, or rearrange a collection.
+    """Add to, remove from, or rearrange a collection, or move one file a place either way.
 
     **No file is moved.** This writes rows in the join table and nothing else: every path, every
     byte and every location row is exactly as it was. That is the promise the storage model makes,
@@ -759,6 +741,11 @@ async def edit_items(
             return BulkWriteDone.after(actionable, changed)
         for asset_id in body.asset_ids:
             await require_reachable(access, viewer, asset_id, _missing)
+        if body.action == "move":
+            moved = await service.move(
+                viewer, collection_id, body.asset_ids[0], later=body.direction == "later"
+            )
+            return BulkWriteDone(changed=moved)
         return BulkWriteDone(changed=await service.reorder(collection_id, body.asset_ids))
     except UnknownItem:
         raise _missing() from None

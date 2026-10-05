@@ -1,13 +1,7 @@
 /*
- * How a menu of one thing's rows is placed: whole, wherever the window can hold it.
- *
- * `whole` takes the window's room as the menu's ceiling (the rule lives with `.ui-menu` in
- * `ContextMenu`), so the library flips or slides the menu until all of it fits and it scrolls only
- * when the window itself is shorter. The padding keeps it off the window's edge while it does.
- *
- * One answer for the right-click menu and for every door a button opens, so the two cannot come
- * to open differently. A chooser (a composed list of the library's things) keeps the shared
- * ceiling instead, because it can hold as many rows as the library has.
+ * How a menu of one thing's rows is placed: whole, wherever the window can hold it. `whole` takes
+ * the window's room as its ceiling (the rule lives with `.ui-menu` in `ContextMenu`); a chooser
+ * keeps the shared ceiling, because it can hold as many rows as the library has.
  */
 
 /** The props a menu's content takes to open whole. */
@@ -30,17 +24,8 @@ interface ChooserRoom {
 }
 
 /**
- * Which side of its press a chooser opens on, decided from the room and never from the list.
- *
- * A chooser's surface is capped at the room the library measures on the side it is placed on, and
- * the library flips only a surface that overflows. A list whose rows arrive a moment after it
- * opens is placed while it is short, so it would take the side below; its rows then grow only to
- * that side's room, never overflow, and the flip never runs: a chooser near the window's foot
- * would open with two rows and the whole screen above it free.
- *
- * So the side is chosen at the press: below when the room below holds the whole ceiling, and
- * otherwise whichever side has more room. The same press opens the same way however many rows
- * there are, and the side it takes can always hold the most rows the window allows.
+ * Which side of its press a chooser opens on, from the room and never from the list: rows that
+ * arrive late never overflow the side a short list took, so the library's flip would never run.
  */
 export function chooserSide(room: ChooserRoom): 'top' | 'bottom' {
 	const below = room.window - room.bottom;
@@ -49,8 +34,10 @@ export function chooserSide(room: ChooserRoom): 'top' | 'bottom' {
 	return above > below ? 'top' : 'bottom';
 }
 
-/** A length token read off the document root, in pixels, or `fallback` when it is not set. */
+/** A length token read off the document root, in pixels, or `fallback` when it is not in pixels. */
 export function rootLength(name: string, fallback: number): number {
-	const value = parseFloat(getComputedStyle(document.documentElement).getPropertyValue(name));
+	const said = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+	// A window-relative length is no fixed number of pixels, so it reads as the fallback.
+	const value = said.endsWith('px') ? parseFloat(said) : NaN;
 	return Number.isFinite(value) ? value : fallback;
 }

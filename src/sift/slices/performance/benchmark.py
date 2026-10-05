@@ -1,33 +1,29 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""The benchmark Sift runs by itself when the first library folder is added, and what it sets.
+"""The benchmark job: every run of the self-test, and what an automatic one sets.
 
-A device nobody has measured reads every file the guessed way: the rates that shape each read, and
-the numbers of tasks and previews at once, are the self-test's to find (`selftest`). So the first
-folder added to a library on a device with no measurement for its hardware queues the benchmark at
-once (`FirstFolder`), and the folder's first scan waits behind it in the line, so the scan reads
-under the settings the benchmark chose. A second folder, a measured device, or a library restored
-with a measurement never queues it, and only an admin can add a folder at all.
-
-When that run ends, what it recommends is saved through the settings' own door for a batch Sift
-chose (`SettingsService.apply_as_sift`): the same validation a press goes through, one receipt on
-History saying each value and what it was, and an Undo that puts the earlier values back
-(`BenchmarkReceipts`). A run somebody PRESSES on `Settings > Performance` is not this: it suggests,
-and waits for Apply.
-
-NOT A WHOLE-LIBRARY PASS. It works the processor for a few minutes and reads a small sample of
-large files on each share the library is on (`selftest.measure_storage`); it touches no file's
-record, and it starts from a person's press (adding the folder), never from a settle or at boot.
+Every run has the queue to itself and pauses the work waiting and running while it measures
+(`drain`). A press or a Build queues one that suggests; adding a folder queues one that sets, as a
+receipt on History with an Undo, and the folder's first scan waits behind it.
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
+import time
 from collections.abc import Awaitable, Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Final, Literal, NoReturn, Protocol
 
 from sift.kernel.access import Viewer
-from sift.kernel.jobs import JobContext, JobFailedPermanently, JobQueue
+from sift.kernel.jobs import (
+    MAX_PAGE_SIZE,
+    JobContext,
+    JobFailedPermanently,
+    JobQueue,
+    JobState,
+    job_name,
+)
 from sift.kernel.log import get_logger
 from sift.kernel.settings_registry import get_registered
 from sift.kernel.vocabulary import VIA_BENCHMARK
@@ -35,6 +31,7 @@ from sift.kernel.wiring import Part
 from sift.kernel.workbench import DOER, Preview, Recorded, Worded
 from sift.slices.performance import selftest
 from sift.slices.performance.runner import SelfTestRunner
+from sift.slices.performance.selftest import StorageCurve, StorageToMeasure
 
 log = get_logger(__name__)
 
@@ -47,30 +44,41 @@ BENCHMARK_NAME: Final = "Benchmarking this device"
 #: The name its receipts are taken back under (`kernel.workbench.Reverser`).
 RECEIPTS: Final = "benchmark"
 
-# --- the words ------------------------------------------------------------------------------------
-#
-# Said in three places from one author: the job's note on Activity, and the toasts every admin
-# window shows (`GET /performance/benchmark` hands the sentence over). A toast written by the
-# browser beside a note written here would be two copies of one sentence, free to drift.
+# --- the words: the job's note on Activity and every admin window's toasts read them from here ----
 
-#: While it waits and while it runs.
-RUNNING: Final = "Benchmarking this device so Sift can make the best use of it. A few minutes."
+#: What a whole run does, and what a run of the storage a new folder is on does.
+WHOLE: Final = "Benchmarking this device so Sift can make the best use of it."
+ONE_STORAGE: Final = (
+    "Measuring the storage your new folder is on to find the fastest way to read it."
+)
 
-#: While it waits or runs, what is true of the folder whose add queued it: nothing of it is read
-#: until the run has settled (the queue runs nothing beside it, `register_handler(exclusive=)`).
-#: Said by the wall that would show its files, by the toast of whoever added it, and on Activity
-#: after `RUNNING`, so the three are one sentence.
+#: Until a run of its kind here: 12 min measured for a whole run, 1 s to 28 s for one storage.
+RUNNING: Final = f"{WHOLE} It takes several minutes."
+MEASURING_STORAGE: Final = f"{ONE_STORAGE} Under a minute."
+
+#: The payload key of a run of only the storage its folder (`root_id`) is on, and its kind.
+STORAGE: Final = "storage"
+WHOLE_RUN: Final = "whole"
+
+#: The payload key of a run that suggests and sets nothing.
+PRESSED: Final = "pressed"
+
+#: How long a run waits for the work it paused to stop before it measures anyway.
+DRAIN_SECONDS: Final = 20.0
+
+#: While it waits or runs, of the folder whose add queued it: none of it is read until it settles.
 HELD: Final = "Your folder is added, and its files appear once this device has been benchmarked."
 
 #: Finished, and every value it would choose was already chosen.
 AGREED: Final = "The benchmark found your settings already suit this device."
 
-#: Finished on a device measured before it was claimed: a pressed run got there first, and its
-#: suggestions wait for Apply as a pressed run's always do.
+#: A run of one storage that measured it and had nothing to suggest, as on a local disk.
+STORAGE_KEPT: Final = "Sift measured the storage your new folder is on and kept what it found."
+
+#: Finished on a device measured before it was claimed, by a pressed run.
 ALREADY: Final = "This device was benchmarked already, so there was nothing to run."
 
-#: Why a run that ran found nothing to go on (`Measurement.best` is None): no level finished in
-#: time, which on a working encoder means the device was too busy to measure.
+#: Why a run found nothing to go on: no level finished in time.
 TOO_BUSY: Final = "this device was too busy to measure"
 
 #: Why a run that raised did not finish.
@@ -78,6 +86,26 @@ WENT_WRONG: Final = "something went wrong while it ran"
 
 #: Why a run taken off the queue before it ended did not finish.
 STOPPED: Final = "it was stopped"
+
+#: Why a run of one storage found nothing to measure.
+GONE: Final = "no library folder is on that storage any more"
+
+#: The end of a run that suggests.
+SUGGESTED: Final = "The benchmark finished. What it suggests is on Settings > Performance."
+
+
+def length_said(seconds: float) -> str:
+    if seconds < 60:
+        return "under a minute"
+    minutes = round(seconds / 60)
+    return "about a minute" if minutes == 1 else f"about {minutes} minutes"
+
+
+def running_said(*, storage: bool, last: float | None) -> str:
+    """The note while a run waits and runs, with how long the last run of its kind here took."""
+    if last is None:
+        return MEASURING_STORAGE if storage else RUNNING
+    return f"{ONE_STORAGE if storage else WHOLE} The last one here took {length_said(last)}."
 
 
 def set_sentence(count: int) -> str:
@@ -114,6 +142,16 @@ RECEIPT_DETAIL: Final = (
     "the values each setting had before, where nobody has changed it since."
 )
 
+STORAGE_RECEIPT_DETAIL: Final = (
+    "Sift measured the storage a new library folder is on by itself when the folder was added. "
+    "Undo puts back the value the setting had before, where nobody has changed it since."
+)
+
+
+def tasks_said(count: int) -> str:
+    return f"{count} {'task' if count == 1 else 'tasks'}"
+
+
 # --- what the screens read -----------------------------------------------------------------------
 
 State = Literal["waiting", "running", "set", "agreed", "already", "failed"]
@@ -147,11 +185,8 @@ class AutomaticRun:
 
 @dataclass
 class FirstBenchmark:
-    """The one automatic run there may be, for the route the toasts read.
-
-    Nothing here tells a screen: every move is told by a write beside it, the job's own row (the
-    jobs bell) and, at the end, the settings save (the settings bell).
-    """
+    """The one automatic run there may be, for the route the toasts read. The job's row and the
+    settings save tell the screens of each move."""
 
     run: AutomaticRun | None = None
 
@@ -167,13 +202,8 @@ FIRST_BENCHMARK: Part[FirstBenchmark] = Part("first_benchmark")
 
 
 class FirstFolder:
-    """The reaction to a library folder added: queue the benchmark when it is the first folder on a
-    device never measured, and take the folder's scan over so it runs after.
-
-    Every rule here is one way of NOT starting it: a folder that is not the only one, a device
-    with a measurement for its hardware (a restored library brings its own), a run already
-    waiting, nobody's press. What starts it is the one case left.
-    """
+    """A library folder added: the whole benchmark for the first folder on a device never
+    measured, or a run of the folder's storage where it has no number kept; the scan runs after."""
 
     def __init__(
         self,
@@ -182,32 +212,136 @@ class FirstFolder:
         queue: JobQueue,
         roots: Callable[[], Awaitable[int]],
         first: FirstBenchmark,
+        storage: Callable[[str], Awaitable[StorageToMeasure | None]],
     ) -> None:
         self._runner = runner
         self._queue = queue
         self._roots = roots
         self._first = first
+        self._storage = storage
 
     async def __call__(self, root_id: str, requested_by: str | None, scan: bool) -> bool:
         """Whether the benchmark was queued, and so whether the folder's scan (when one was asked
         for) is this reaction's to queue once the benchmark has settled."""
         if requested_by is None:
             return False
-        if await self._roots() != 1:
-            return False
-        if await self._runner.measured():
-            return False
         if (await self._queue.unfinished_by_type()).get(BENCHMARK, 0) > 0:
             return False
+        payload: dict[str, Any] = {"root_id": root_id, "scan": scan}
+        said = RUNNING
+        rates = await self._runner.rates()
+        if rates is None:
+            if await self._roots() != 1:
+                return False
+        else:
+            where = await self._storage(root_id)
+            if where is None or where.storage in rates.storages:
+                return False
+            payload[STORAGE] = True
+            said = running_said(storage=True, last=await self._runner.lasted(STORAGE))
         job_id = await self._queue.enqueue(
-            BENCHMARK,
-            {"root_id": root_id, "scan": scan},
-            requested_by=requested_by,
-            max_attempts=1,
+            BENCHMARK, payload, requested_by=requested_by, max_attempts=1
         )
-        self._first.now(AutomaticRun(job_id=job_id, state="waiting", said=RUNNING))
-        log.info("performance.benchmark.queued_for_first_folder", job_id=job_id, root_id=root_id)
+        self._first.now(AutomaticRun(job_id=job_id, state="waiting", said=said))
+        log.info(
+            "performance.benchmark.queued_for_folder",
+            job_id=job_id,
+            root_id=root_id,
+            storage_only=STORAGE in payload,
+        )
         return True
+
+
+async def ask_for_run(queue: JobQueue, *, requested_by: str | None) -> str | None:
+    """Queue a whole run that suggests, unless a whole run is already coming. Its id, or None."""
+    for payload in await queue.live_payloads(BENCHMARK):
+        if STORAGE not in payload:
+            return None
+    job_id = await queue.enqueue(
+        BENCHMARK, {PRESSED: True}, requested_by=requested_by, max_attempts=1
+    )
+    log.info("performance.benchmark.asked", job_id=job_id, requested_by=requested_by)
+    return job_id
+
+
+# --- the queue to itself -------------------------------------------------------------------------
+
+
+@dataclass
+class Drain:
+    """What a run paused, waiting or running, how long it waited, and what kept running."""
+
+    asked: list[str] = field(default_factory=list)
+    paused: int = 0
+    kept_running: list[str] = field(default_factory=list)
+    waited: float = 0.0
+
+    def holding(self) -> str:
+        return f"Sift paused {tasks_said(self.paused)} until it's done."
+
+    def said(self) -> list[str]:
+        """The sentences for the screen and the job's note."""
+        told: list[str] = []
+        if self.paused:
+            them = "it" if self.paused == 1 else "them"
+            waited = (
+                f", waited {round(self.waited)} s for the ones running to stop,"
+                if self.asked
+                else ""
+            )
+            told.append(
+                f"Sift paused {tasks_said(self.paused)} while it measured{waited} and started "
+                f"{them} again after."
+            )
+        if self.kept_running:
+            told.append(
+                f"{tasks_said(len(self.kept_running))} couldn't be paused and ran beside it: "
+                f"{', '.join(sorted(set(self.kept_running)))}."
+            )
+        return told
+
+
+async def drain(context: JobContext, *, wait: float = DRAIN_SECONDS) -> Drain:
+    """Pause the waiting work the queue would hand out and every running job but this one, and wait
+    up to `wait` seconds for those to stop; each is marked as the benchmark's pause."""
+    queue = context.queue
+    drained = Drain(paused=await queue.pause_waiting_for_benchmark())
+    running = await queue.list(state=JobState.RUNNING, limit=MAX_PAGE_SIZE)
+    names: dict[str, str] = {}
+    for job in running.jobs:
+        if job.id != context.job.id and await queue.pause(job.id, for_benchmark=True):
+            drained.asked.append(job.id)
+            names[job.id] = job_name(job.type)
+    started = time.monotonic()
+    left = list(drained.asked)
+    while left:
+        states = {one: await queue.get(one) for one in left}
+        left = [one for one, row in states.items() if row and row.state is JobState.RUNNING]
+        if not left or time.monotonic() - started >= wait:
+            break
+        await asyncio.sleep(0.25)
+    drained.waited = time.monotonic() - started
+    drained.kept_running = [names[one] for one in left]
+    for one in drained.asked:
+        landed = await queue.get(one)
+        if landed is not None and landed.state is JobState.PAUSED:
+            drained.paused += 1
+    log.info(
+        "performance.benchmark.drained",
+        job_id=context.job.id,
+        asked=len(drained.asked),
+        paused=drained.paused,
+        kept_running=drained.kept_running,
+        waited_seconds=round(drained.waited, 2),
+    )
+    return drained
+
+
+async def undrain(queue: JobQueue, drained: Drain) -> None:
+    """Start again what the run paused, or withdraw a pause that has not landed yet."""
+    for one in drained.asked:
+        await queue.resume(one)
+    await queue.resume_after_benchmark()
 
 
 # --- the run -------------------------------------------------------------------------------------
@@ -227,48 +361,51 @@ async def run_benchmark(
     saves: _SavesAsSift,
     current: Callable[[], Awaitable[dict[str, int]]],
     notify: Callable[[set[str]], Awaitable[None]],
+    storage_of: Callable[[str], Awaitable[StorageToMeasure | None]],
 ) -> None:
-    """Measure, then set what was found through the one door, and say so.
-
-    The run itself is the runner's, so a run pressed on the screen while this waited is the run
-    this waits for, and the screen shows this one as it goes. What it recommends is worked out
-    again against the settings as they stand at the end, the way the screen reads a finished run.
+    """Measure with the queue drained, then, for a run a folder queued, set what was found through
+    the one door and say so. A pressed run, or a Build's, only suggests.
     """
     job_id = context.job.id
-    if await runner.measured() and not runner.state.running:
+    if context.payload.get(PRESSED):
+        await _suggest_only(context, runner)
+        return
+    storage: str | None = None
+    if context.payload.get(STORAGE):
+        where = await storage_of(str(context.payload.get("root_id")))
+        if where is None:
+            _fail(first, job_id, GONE)
+        storage = where.storage
+    if storage is None and await runner.measured() and not runner.state.running:
         first.now(AutomaticRun(job_id=job_id, state="already", said=ALREADY))
         await context.set_note(ALREADY)
         return
-    first.now(AutomaticRun(job_id=job_id, state="running", said=RUNNING))
-    await context.set_note(f"{RUNNING} {HELD}")
+    said = running_said(
+        storage=storage is not None, last=await runner.lasted(STORAGE if storage else WHOLE_RUN)
+    )
+    first.now(AutomaticRun(job_id=job_id, state="running", said=said))
+    await context.set_note(f"{said} {HELD}")
     try:
-        await runner.measure()
+        drained, curve = await _measure(context, runner, storage, f"{said} {HELD}")
     except Exception:
         log.exception("performance.benchmark.raised", job_id=job_id)
         _fail(first, job_id, WENT_WRONG)
     await context.raise_if_canceled()
-    measurement = runner.state.measurement
-    if measurement is None:
-        _fail(first, job_id, WENT_WRONG)
-    if measurement.failed is not None:
-        _fail(first, job_id, measurement.failed)
-    found = selftest.recommend(measurement, current=await current())
-    if not found:
-        _fail(first, job_id, TOO_BUSY)
+    found = _found(first, job_id, runner, storage, curve, await current())
     changes = [one for one in found if one.changes_anything]
     if not changes:
-        first.now(AutomaticRun(job_id=job_id, state="agreed", said=AGREED))
-        await context.set_note(AGREED)
+        said = AGREED if storage is None else STORAGE_KEPT
+        first.now(AutomaticRun(job_id=job_id, state="agreed", said=said))
+        await context.set_note(" ".join([said, *drained.said()]))
         return
     receipt = await saves.apply_as_sift(
         {one.key: one.suggested for one in changes},
         via=VIA_BENCHMARK,
         queue=RECEIPTS,
         title=receipt_title(changes),
-        detail=RECEIPT_DETAIL,
+        detail=RECEIPT_DETAIL if storage is None else STORAGE_RECEIPT_DETAIL,
     )
-    # What has to happen the moment a preference is saved, as the settings route asks after a
-    # press: the same reactions, so a value Sift set acts as one somebody typed.
+    # The reactions a saved preference gets, so a value Sift set acts as one somebody typed.
     await notify({one.key for one in changes})
     said = set_sentence(len(changes))
     first.now(
@@ -284,8 +421,73 @@ async def run_benchmark(
         )
     )
     await context.set_progress(1.0)
-    await context.set_note(said)
+    await context.set_note(" ".join([said, *drained.said()]))
     log.info("performance.benchmark.set", job_id=job_id, keys=sorted(one.key for one in changes))
+
+
+async def _suggest_only(context: JobContext, runner: SelfTestRunner) -> None:
+    said = running_said(storage=False, last=await runner.lasted(WHOLE_RUN))
+    await context.set_note(said)
+    drained, _ = await _measure(context, runner, None, said)
+    measurement = runner.state.measurement
+    if measurement is None or measurement.failed is not None:
+        why = WENT_WRONG if measurement is None else measurement.failed
+        raise JobFailedPermanently(failed_sentence(why or WENT_WRONG))
+    await context.set_progress(1.0)
+    await context.set_note(" ".join([SUGGESTED, *drained.said()]))
+
+
+def _found(
+    first: FirstBenchmark,
+    job_id: str,
+    runner: SelfTestRunner,
+    storage: str | None,
+    curve: StorageCurve | None,
+    current: dict[str, int],
+) -> list[selftest.Recommendation]:
+    """What a finished automatic run recommends, failing the run where it found nothing."""
+    measurement = runner.state.measurement
+    if measurement is None:
+        _fail(first, job_id, WENT_WRONG)
+    if storage is None:
+        if measurement.failed is not None:
+            _fail(first, job_id, measurement.failed)
+        found = runner.recommend(measurement, current=current)
+    else:
+        if curve is None:
+            _fail(first, job_id, GONE)
+        if curve.failed is not None:
+            _fail(first, job_id, curve.failed)
+        if curve.best is None:
+            _fail(first, job_id, TOO_BUSY)
+        share = selftest.recommend_share_reads(measurement.storages, current=current)
+        return [] if share is None else [share]
+    if not found:
+        _fail(first, job_id, TOO_BUSY)
+    return found
+
+
+async def _measure(
+    context: JobContext, runner: SelfTestRunner, storage: str | None, note: str
+) -> tuple[Drain, StorageCurve | None]:
+    """The whole run, or one storage and its curve, with everything else paused for its length."""
+    began = time.monotonic()
+    drained = await drain(context)
+    if drained.paused:
+        await context.set_note(f"{note} {drained.holding()}")
+    curve = None
+    try:
+        if storage is None:
+            await runner.run()
+        else:
+            curve = await runner.measure_storage(storage)
+    finally:
+        await undrain(context.queue, drained)
+    runner.notes.extend(drained.said())
+    measured = runner.state.measurement
+    if (curve.failed is None) if curve is not None else (measured and not measured.failed):
+        await runner.keep_length(STORAGE if storage else WHOLE_RUN, time.monotonic() - began)
+    return drained, curve
 
 
 def _fail(first: FirstBenchmark, job_id: str, why: str) -> NoReturn:

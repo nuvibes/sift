@@ -106,14 +106,25 @@ async function serve(
 			body: JSON.stringify({ roots: [{ id: 'r1', name: 'Library' }] })
 		})
 	);
-	await page.route('**/api/library/folders', (route) =>
-		route.fulfill({
-			status: 200,
-			contentType: 'application/json',
-			body: JSON.stringify({
-				folders: [{ id: 'f1', root_id: 'r1', parent_id: null, name: 'Clips', rel_path: 'Clips' }]
+	await page.route(
+		(url) => url.pathname === '/api/library/folders',
+		(route) =>
+			route.fulfill({
+				status: 200,
+				contentType: 'application/json',
+				body: JSON.stringify({
+					folders: [
+						{
+							id: 'f1',
+							root_id: 'r1',
+							parent_id: null,
+							name: 'Clips',
+							rel_path: 'Clips',
+							writable: true
+						}
+					]
+				})
 			})
-		})
 	);
 
 	await page.route('**/api/compress/preflight', (route) => {

@@ -1,41 +1,8 @@
 <script lang="ts">
 	/*
-	 * BESIDE ITS ONE USER, not in `common/`, and that is the repository's own rule rather than a
-	 * demotion. Something in `common/` is a claim that more than one screen wants it, and a contract
-	 * test refuses a claim with one consumer, because that is what extracting too early looks like
-	 * from the outside, and it is a habit worth catching.
-	 *
-	 * It is written to be moved: it knows nothing about Theater, takes what it draws as snippets, and
-	 * would go back to `common/` unchanged the day a second filled screen wants one. The player's own
-	 * fullscreen is the obvious candidate and does not need it today.
-	 */
-
-	/*
-	 * THE BAR THAT COMES UP FROM THE BOTTOM WHILE A SCREEN IS FILLING THE WINDOW.
-	 *
-	 * ## What it is for
-	 *
-	 * A screen that fills the window has no room for chrome and still needs controls. The answer
-	 * everywhere else in this app is a bar that appears over the picture and fades when nobody is
-	 * doing anything, but on a screen showing SEVERAL things at once, one bar per thing is the
-	 * wrong shape: four videos on a 1400px wall leave each of them a bar too narrow for its own
-	 * controls, and four copies of the same six buttons is four times the thing to read.
-	 *
-	 * So: one bar, for whichever one is selected, and a way to change which. That is the whole idea.
-	 *
-	 * ## Where its look comes from, and why neither half is new
-	 *
-	 * The SHAPE is the selection bar's: floating over the screen rather than pushing it, centred on
-	 * the screen rather than on the window, a full-radius pill, and it RISES rather than appearing,
-	 * because it is the answer to something that just happened somewhere else and the travel is what
-	 * connects the two.
-	 *
-	 * The SURFACE is the facts panel's: a hairline edge and a blur, so it reads as a pane over the
-	 * picture rather than as a hole punched in it, and it stays legible over a bright frame where a
-	 * flat scrim does not. That was worked out for a panel that sits over video, which is exactly
-	 * what this does.
-	 *
-	 * Both are cited rather than copied so that a change to either is a change to one thing.
+	 * The one bar of a screen showing several things at once, for whichever is selected. Beside its
+	 * one user rather than in `common/`, which refuses a single consumer; it knows nothing of Theater.
+	 * The shape is the selection bar's (a floating pill that rises), the surface the facts panel's.
 	 */
 	import type { Snippet } from 'svelte';
 	import { arrive } from '$lib/shell/motion.svelte';
@@ -159,23 +126,13 @@
 		background: var(--sift-scrim);
 		backdrop-filter: blur(var(--blur-glass));
 		/*
-		 * No shadow: it is a pane over a picture, not a card lifted off a page. A shadow reads as a
-		 * grey smear under a floating row; the hairline and the blur separate it from what is
-		 * behind.
-		 *
-		 * It slides, on the same token the bar at the top of a filled screen uses: the two are one
-		 * gesture, the chrome of a filled screen arriving or leaving from its two edges, and a fade
-		 * at one end with a slide at the other would read as two things. `--dur-slow` is the
-		 * longest token the app animates chrome with, and entering a filled screen is its biggest
-		 * change of state.
-		 *
-		 * The translate is composited and the layout never moves: the bar floats over the screen,
-		 * so sliding it costs nothing and takes no space.
+		 * No shadow: the hairline and the blur separate a pane from the picture under it. It slides
+		 * on the top bar's token, one gesture from two edges, and is visible at once on the way up,
+		 * so the Tab that raises it can enter it.
 		 */
 		transition:
 			translate var(--dur-slow) var(--ease),
-			opacity var(--dur-slow) var(--ease),
-			visibility var(--dur-slow) var(--ease);
+			opacity var(--dur-slow) var(--ease);
 	}
 
 	/*
@@ -216,6 +173,12 @@
 		border-radius: 0;
 		background: none;
 		backdrop-filter: none;
+	}
+
+	/* Each group as wide as itself and one gap either side of the transport; the ends give way first. */
+	.stage-bar :global(.player-bar > .row:not(.phone)) {
+		grid-template-columns: minmax(0, max-content) auto minmax(0, max-content);
+		column-gap: var(--space-4);
 	}
 
 	.stage-bar.led {

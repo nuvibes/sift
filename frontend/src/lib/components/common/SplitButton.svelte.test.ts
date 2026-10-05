@@ -250,3 +250,10 @@ describe('it cannot grow past what it is in', () => {
 		expect(trail).not.toContain('min-inline-size: 0');
 	});
 });
+
+it('turns the main half to its arc while busy and takes no press on either half', () => {
+	draw({ busy: true, icon: 'add', ontrailing: vi.fn() });
+	expect(lead().querySelector('.spinner')).not.toBeNull();
+	expect(lead().disabled).toBe(true);
+	expect(trail().disabled).toBe(true);
+});

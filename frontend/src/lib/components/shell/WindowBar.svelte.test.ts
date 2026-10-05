@@ -13,6 +13,14 @@ import { flushSync, mount, unmount } from 'svelte';
 import WindowBar from './WindowBar.svelte';
 import source from './WindowBar.svelte?raw';
 import { rail } from './rail-state.svelte';
+import { session } from '$lib/shell/session.svelte';
+import { updates, type UpdateState } from '$lib/shell/updates.svelte';
+
+const opened = vi.hoisted(() => ({ sections: [] as string[] }));
+vi.mock('$lib/settings-ui/settings-view', () => ({
+	openSettings: (section: string, key?: string) =>
+		opened.sections.push(key ? `${section} ${key}` : section)
+}));
 
 /* The token sheet, read off the disk: a stylesheet asked for through `?raw` arrives empty here. */
 const appCss = readFileSync(resolve('src/app.css'), 'utf8');
@@ -55,6 +63,8 @@ afterEach(() => {
 	delete window.sift;
 	Reflect.deleteProperty(window, 'navigation');
 	vi.restoreAllMocks();
+	updates.state = null;
+	opened.sections = [];
 });
 
 describe('the strip itself', () => {
@@ -173,5 +183,67 @@ describe('the back and forward arrows', () => {
 		expect(arrow('Back')?.disabled).toBe(true);
 		arrow('Forward')?.click();
 		expect(forward).toHaveBeenCalledTimes(1);
+	});
+});
+
+describe('an update waiting', () => {
+	function offer(dismissed: boolean): void {
+		updates.state = {
+			current_version: '0.2.0',
+			latest_version: '0.2.1',
+			update_available: true,
+			dismissed
+		} as UpdateState;
+	}
+
+	function inTheApp(admin = true): void {
+		window.sift = { isDesktop: true, setTitleBar: async () => true };
+		vi.spyOn(session, 'isAdmin', 'get').mockReturnValue(admin);
+	}
+
+	const press = () =>
+		host.querySelector<HTMLButtonElement>(
+			'.update button[aria-label^="Open "][aria-label$=" Updates and Info: Sift 0.2.1 is available"]'
+		);
+
+	it('is a press opening Updates and Info, kept after the banner was dismissed', () => {
+		inTheApp();
+		offer(true);
+		draw(true);
+		expect(press()).not.toBeNull();
+		press()?.click();
+		expect(opened.sections).toEqual(['updates updates.version']);
+	});
+
+	it('is not drawn in a browser, outside the frame, for a guest, or with nothing newer', () => {
+		offer(false);
+		vi.spyOn(session, 'isAdmin', 'get').mockReturnValue(true);
+		draw(true);
+		expect(press(), 'a browser').toBeNull();
+		unmount(drawn!);
+
+		inTheApp();
+		draw(false);
+		expect(press(), 'the sign-in and setup screens').toBeNull();
+		unmount(drawn!);
+
+		inTheApp(false);
+		draw(true);
+		expect(press(), 'a guest').toBeNull();
+		unmount(drawn!);
+
+		inTheApp();
+		updates.state = { ...updates.state!, update_available: false };
+		draw(true);
+		expect(press(), 'nothing newer').toBeNull();
+	});
+
+	it('sits left of the system buttons, out of the drag region', () => {
+		const at = source.indexOf(":global(:root[data-window='overlaid']) .update {");
+		expect(at, 'the rule moved').toBeGreaterThan(-1);
+		const body = source.slice(at, source.indexOf('}', at));
+		expect(body).toContain('inset-inline-end: var(--captions);');
+		expect(body).toContain('app-region: no-drag;');
+		expect(source).toContain('inline-size: var(--captions);');
 	});
 });

@@ -3,13 +3,7 @@
 	   globally. A second one would answer the same drag and draw two overlays on top of each other,
 	   and there is nothing to see with no drag in progress. */
 
-	// Drop a file anywhere in the window, not onto a particular target. Hunting for a drop zone is
-	// the kind of small friction that decides whether somebody keeps using a thing, and the window is
-	// the biggest target there is.
-	//
-	// Idle, this renders nothing at all: no dashed box sitting on the page waiting. It appears while
-	// something is being dragged over the window and goes when it is not.
-	//
+	// Drop a file anywhere in the window. Idle, this renders nothing; it appears only during a drag.
 	import { capture } from '$lib/capture/capture.svelte';
 	import { draggingOut } from '$lib/capture/copy-out';
 	import DropOffer from '$lib/components/common/DropOffer.svelte';
@@ -19,6 +13,8 @@
 	import { onMount } from 'svelte';
 	import { session } from '$lib/shell/session.svelte';
 	import { toasts } from '$lib/shell/toasts.svelte';
+
+	const ADMINS_ONLY = 'Adding media is available to admins';
 
 	/*
 	 * Two facts, because they are two questions.
@@ -170,7 +166,7 @@
 		// Deciding what to render, not a permission: the server refuses a non-admin regardless. A
 		// quiet note here is kinder than a drop that appears to work and comes back refused.
 		if (!session.isAdmin) {
-			toasts.show('Adding media is available to admins');
+			toasts.show(ADMINS_ONLY);
 			return;
 		}
 		void capture.handleDrop(data);
@@ -205,5 +201,5 @@
 	});
 </script>
 
-<!-- The drawing every whole-window offer shares; this file owns only the drag. -->
-<DropOffer shown={active} words="Drop to add" />
+<!-- The drawing every whole-window offer shares; a guest is told at once that adding is not theirs. -->
+<DropOffer shown={active} words={session.isAdmin ? 'Drop to add' : ADMINS_ONLY} />

@@ -96,19 +96,13 @@
 	const held = $derived(wall.paused || cell.paused);
 
 	/*
-	 * WHAT THE VERBS ON THIS ROW LAND ON: the cell drawn here, or every cell of the wall.
-	 *
-	 * The bar always DRAWS one cell (a wall of nine has no single playhead and no single running
-	 * time) and what changes with the selection is how many cells the buttons reach. See
-	 * `Wall.addressed`, which is where that is decided once.
-	 *
-	 * The line between them is the difference between an absolute position and a relative move. The
-	 * scrubber is a position on ONE clip's timeline and stays with the cell it draws; everything that
-	 * says "again", "next", "louder", "five seconds back" is true of the whole wall at once and is
-	 * applied to all of it.
+	 * What the verbs on this row land on: the cell drawn here, or every cell of the wall
+	 * (`Wall.addressed`). The scrubber is a position on one clip and stays with the cell it draws;
+	 * a relative move ("next", "louder", "five seconds back") lands on every addressed cell.
 	 */
 	const acting = $derived(wall.addressed);
 	const actingAt = $derived(wall.addressedAt);
+	const goesBack = $derived(acting.some((one) => one.hasBack));
 
 	/*
 	 * WHAT THIS BAR IS ABOUT TO ACT ON, WASHED ON THE WALL WHILE A VERB IS POINTED AT.
@@ -328,7 +322,7 @@
 			? 'Previews come with a Center stage layout'
 			: wall.newestTakesFocus
 				? 'A preview comes up as soon as it starts something new'
-				: 'A preview comes up when you press it'
+				: 'A preview comes up when you double-click it'
 	);
 
 	function setMode(newest: boolean) {
@@ -363,7 +357,7 @@
 	{timed}
 	playing={!held}
 	onplay={togglePlay}
-	onback={() => acting.forEach((one) => void one.back())}
+	onback={goesBack ? () => acting.forEach((one) => void one.back()) : undefined}
 	onforward={() => acting.forEach((one) => void one.advance())}
 	backLabel={verb(ACTS.previous)}
 	forwardLabel={verb(ACTS.next)}

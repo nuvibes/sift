@@ -1,7 +1,4 @@
-/*
- * The leaf and the bolt: which one a read of the queue draws, in every state the server can be in,
- * and what a press sends.
- */
+/* The leaf and the bolt: what a read of the queue draws and says, and what a press sends. */
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -43,10 +40,15 @@ import {
 	fullAmountTip,
 	pressFullAmount,
 	shareWords,
-	usingShare
+	usingShare,
+	usingShareOf
 } from './full-amount';
+import { imports } from '$lib/library/imports.svelte';
+
+const held = imports as { page: unknown };
 
 afterEach(() => {
+	held.page = null;
 	sent.posts = [];
 	sent.refuse = false;
 	sent.refreshed = 0;
@@ -108,6 +110,29 @@ describe('what the tooltip says', () => {
 
 	it('says the default quarter for a server that does not name the share', () => {
 		expect(usingShare(undefined)).toBe("Using a quarter of this device while it's in use");
+	});
+
+	it('says other programs are busy when that is why it steps back', () => {
+		expect(fullAmountTip('less', 25, 'others')).toBe(
+			'Using a quarter of this device while other programs are busy. Press to use the full amount.'
+		);
+		expect(usingShareOf({ step_back_share: 50, step_back_for: 'others' })).toBe(
+			'Using half of this device while other programs are busy'
+		);
+		expect(usingShareOf({ step_back_for: 'input' })).toBe(
+			"Using a quarter of this device while it's in use"
+		);
+	});
+
+	it('reads why from the queue page the shell keeps: somebody here, or other programs', () => {
+		held.page = { counts: { running: 2 }, stepping_back: true, step_back_for: 'input' };
+		expect(fullAmountTip('less')).toBe(
+			"Using a quarter of this device while it's in use. Press to use the full amount."
+		);
+		held.page = { step_back_share: 50, step_back_for: 'others' };
+		expect(fullAmountTip('less')).toBe(
+			'Using half of this device while other programs are busy. Press to use the full amount.'
+		);
 	});
 });
 

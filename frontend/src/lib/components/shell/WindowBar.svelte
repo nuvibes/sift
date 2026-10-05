@@ -1,63 +1,36 @@
 <script lang="ts">
+	/* WHY NO HOVER: the one hover rule dresses the shared button, whose motion is its own. */
 	/*
 	 * NOT ON THE GALLERY: it is `display: none` unless the root carries `data-window="overlaid"`,
-	 * which only the packaged desktop shell ever stamps, so a gallery entry would be an empty box,
-	 * and drawing it any other way would be a second implementation of it. What it is MADE of, the
-	 * brand lockup, is on the gallery already.
+	 * which only the packaged desktop shell ever stamps, so a gallery entry would be an empty box;
+	 * what it is MADE of, the brand lockup, is on the gallery already.
 	 */
 
 	/*
-	 * The window's own title bar: Sift's, drawn by the page, on Sift's own ground.
-	 *
-	 * ## Why a strip of its own
-	 *
-	 * The window is created with the operating system's title bar HIDDEN and its minimise, maximise
-	 * and close overlaid on the page. Sitting on the application's own top bar (the row with the
-	 * search box in it), those buttons would make that bar run flush to the top and to the right of
-	 * the window for them to have the right colour behind them, and the content panel would lose
-	 * the eight-pixel inset that says "this is a panel sitting on the rail" along two of its edges.
-	 *
-	 * This strip is what the buttons sit on, so the panel underneath is inset on every edge, in both
-	 * shells, and the window has a title bar that says what application it is.
-	 *
-	 * ## It is Sift's chrome and not the operating system's
-	 *
-	 * The strip is drawn from the same tokens as everything else, so it follows the theme somebody
-	 * picked. That is the whole difference between this and the grey strip the window would have had:
-	 * a dark application under a light-grey caption bar reads as an application dropped into
-	 * somebody else's window.
-	 *
-	 * ## Why it is drawn on EVERY screen, including the ones outside the application
-	 *
-	 * Because a title bar is a fact about the window, not about what is in it. The sign-in, setup,
-	 * connect and not-answering screens have no top bar, and without a strip the window could not
-	 * be moved at all on the four screens somebody meets first. One strip, always there, is one
-	 * answer to that instead of two mechanisms that have to agree about which screens are which.
+	 * The window's own title bar, drawn by the page from Sift's tokens: the system's minimise,
+	 * maximise and close sit on it, and it is on every screen so the window can always be moved.
 	 */
 	import Logo from '$lib/components/Logo.svelte';
 	import Button from '$lib/components/common/Button.svelte';
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
 	import { bridge } from '$lib/bridge';
+	import { openSettings } from '$lib/settings-ui/settings-view';
+	import { session } from '$lib/shell/session.svelte';
+	import { updates } from '$lib/shell/updates.svelte';
 	import { rail } from './rail-state.svelte';
 
 	/*
-	 * BACK AND FORWARD, at the strip's left end, above the rail's mark: the application's own
-	 * arrows, since the window has no browser around it to carry them.
-	 *
-	 * `arrows` is the layout saying the application's frame is on screen. The sign-in, setup,
-	 * connect and not-answering screens are outside it and each has its own way back, if any.
-	 * Drawn only when this window is the desktop application (the same answer that draws this
-	 * strip at all), so a browser, on a desktop or a phone, keeps its own arrows and nothing here
-	 * listens to them or draws a second pair.
-	 *
-	 * They go where the browser's would: `history.back()` and `forward()`, which the router follows
-	 * as it follows the browser's own. Each is dimmed where there is nowhere to go, read from the
-	 * window's history (`navigation`, which Chromium, and so the application, has), and read again
-	 * every time the entry moves, whoever moved it.
+	 * BACK AND FORWARD for the desktop application, which has no browser around it to carry them;
+	 * `arrows` is the layout saying the application's frame is on screen.
 	 */
 	let { arrows = false }: { arrows?: boolean } = $props();
 
 	const inTheApp = bridge.canDressTitleBar();
+
+	/* Dismissing the banner does not hide this: it is the standing reminder. The banner loads the state. */
+	const waiting = $derived(
+		arrows && inTheApp && session.isAdmin && updates.state?.update_available === true
+	);
 
 	/** The two facts read off the window's history, and the one event that moves them. */
 	interface WindowHistory extends EventTarget {
@@ -86,14 +59,7 @@
 	});
 </script>
 
-<!--
-	The lockup is `aria-hidden`, and the arrows are the only thing here anybody operates.
-
-	Dragging a window is a pointer gesture with no keyboard equivalent to announce, and the operating
-	system's own keyboard move command is unaffected either way. The application is already named by
-	the page's title, so a second announcement of "Sift" at the top of every screen would be read out
-	before the screen itself on every navigation.
--->
+<!-- The lockup is `aria-hidden`: the page's title already names the application. -->
 <div class="window-bar">
 	{#if arrows && inTheApp}
 		<!-- A real control group: the strip is a drag region, so this corner is held out of it. -->
@@ -122,14 +88,21 @@
 	{/if}
 	<span class="lockup" aria-hidden="true"><Logo variant="lockup" height={16} /></span>
 
-	<!--
-		THE BUTTONS' OWN CORNER, HELD OUT OF THE DRAG REGION.
-
-		The difference between the window's width and `titlebar-area-width` is exactly what the
-		minimise, maximise and close take. Marking it `no-drag` keeps this strip from claiming
-		presses that belong to them. The fallback of `100vw` makes that width zero, which is right
-		for a browser, where there are no such buttons and this strip is not drawn at all.
-	-->
+	<!-- The system buttons' own corner, held out of the drag region (zero wide in a browser). -->
+	{#if waiting}
+		<span class="update">
+			<Tooltip label="Sift {updates.state?.latest_version} is available" placement="bottom">
+				<Button
+					tone="ghost"
+					shape="circle"
+					size="small"
+					icon="browser_updated"
+					aria-label="Open Updates and Info: Sift {updates.state?.latest_version} is available"
+					onclick={() => openSettings('updates', 'updates.version')}
+				/>
+			</Tooltip>
+		</span>
+	{/if}
 	<span class="controls"></span>
 </div>
 
@@ -150,6 +123,8 @@
 		   somebody wants to put it somewhere else to read what is behind it. */
 		z-index: var(--z-window-chrome);
 		block-size: var(--window-chrome);
+		/* What the system's minimise, maximise and close take at the right end. */
+		--captions: calc(100vw - env(titlebar-area-width, 100vw));
 		/* No rule along its foot. It is the same ground as the rail below it, and the caption buttons
 		   the operating system draws beside it have none, so a line here would run across the top of
 		   the rail and stop short of them. */
@@ -227,8 +202,24 @@
 		position: absolute;
 		inset-block: 0;
 		inset-inline-end: 0;
-		inline-size: calc(100vw - env(titlebar-area-width, 100vw));
+		inline-size: var(--captions);
 		-webkit-app-region: no-drag;
 		app-region: no-drag;
+	}
+
+	/* Immediately left of minimise, and out of the drag region so the press is not a move. */
+	:global(:root[data-window='overlaid']) .update {
+		position: absolute;
+		inset-block: 0;
+		inset-inline-end: var(--captions);
+		display: flex;
+		align-items: center;
+		-webkit-app-region: no-drag;
+		app-region: no-drag;
+	}
+
+	:global(:root[data-window='overlaid']) .update :global(.btn.ghost),
+	:global(:root[data-window='overlaid']) .update :global(.btn.ghost:hover:not(:disabled)) {
+		color: var(--sift-accent);
 	}
 </style>

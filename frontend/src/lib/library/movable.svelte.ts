@@ -12,9 +12,10 @@
  * sentence saying so, whatever this list happens to hold.
  */
 
-import { api } from '$lib/api/client';
+import { api, ApiError } from '$lib/api/client';
 import { libraryChanges } from '$lib/library/changes.svelte';
 import type { components } from '$lib/api/schema';
+import type { FoldersRead } from '$lib/library/destinations.svelte';
 
 type MovableFolder = Pick<components['schemas']['FolderView'], 'id' | 'name'> & { path: string };
 
@@ -28,7 +29,13 @@ type RootRow = Pick<components['schemas']['RootView'], 'id' | 'name'>;
 class Movable {
 	folders = $state<MovableFolder[]>([]);
 	loaded = $state(false);
-	#loading = false;
+	#read = $state<FoldersRead>('unread');
+	#pending: Promise<void> | null = null;
+
+	/** An empty list means no folder only once read: a failed read is not "no folder". */
+	get foldersRead(): FoldersRead {
+		return this.#read;
+	}
 
 	/** Whether there is anywhere to move a file to at all. */
 	get possible(): boolean {
@@ -36,25 +43,28 @@ class Movable {
 	}
 
 	/**
-	 * Ask once.
-	 *
-	 * Both requests are an admin's (the root list is a description of the server's disk), and so
-	 * is moving, so a guest never gets here. A refusal leaves the list empty, which reads as "no
-	 * folder can take this", which is the safe way to be wrong.
+	 * Ask once; a second ask waits for the read under way. The root list is an admin's, so a
+	 * refusal is a list read with nothing in it, and any other failure is a failed read.
 	 */
-	async ensure(): Promise<void> {
-		if (this.loaded || this.#loading) return;
-		this.#loading = true;
+	ensure(): Promise<void> {
+		if (this.loaded) return Promise.resolve();
+		this.#pending ??= this.#ask().finally(() => (this.#pending = null));
+		return this.#pending;
+	}
+
+	async #ask(): Promise<void> {
 		try {
 			const [roots, folders] = await Promise.all([
 				api.get<components['schemas']['RootsView']>('/library/roots'),
-				api.get<components['schemas']['FoldersView']>('/library/folders')
+				api.get<components['schemas']['FoldersView']>('/library/folders', {
+					query: { writable: true }
+				})
 			]);
 			const named = new Map(roots.roots.map((root) => [root.id, root.name]));
-			/* Every folder in every library. Whether the filesystem lets a file land in one is
-			   asked when the move is made, and refused in a sentence then; there is no flag to
-			   filter the list by. */
+			/* Only folders the disk lets Sift write in; the move is still refused in a sentence
+			   if that changes before it is made. */
 			this.folders = folders.folders
+				.filter((folder) => folder.writable !== false)
 				.map((folder) => ({
 					id: folder.id,
 					name: folder.name,
@@ -64,10 +74,11 @@ class Movable {
 				}))
 				.sort((one, other) => one.path.localeCompare(other.path));
 			this.loaded = true;
-		} catch {
+			this.#read = 'read';
+		} catch (error) {
 			this.folders = [];
-		} finally {
-			this.#loading = false;
+			const refused = error instanceof ApiError && (error.status === 401 || error.status === 403);
+			this.#read = refused ? 'read' : 'failed';
 		}
 	}
 
@@ -75,6 +86,7 @@ class Movable {
 	forget(): void {
 		this.loaded = false;
 		this.folders = [];
+		this.#read = 'unread';
 	}
 }
 

@@ -1,29 +1,7 @@
 /*
- * The bar across the top is the same bar on every screen.
- *
- * ## The rule
- *
- * **The bar's SHAPE does not change between screens. Only the STATE of a control does.**
- *
- * A bar built out of `{#if}` changes width screen by screen, and because its controls are laid out
- * in a flex row, the survivors slide LEFT to close the gap each time: having learned where Sort
- * is on one screen buys you nothing on the next. So every control is drawn on every screen, dimmed
- * with a reason where it has nothing to do (the tile size slider says `Nothing to resize on this
- * screen`).
- *
- * ## Why this cannot be a unit test
- *
- * Two of the three claims are about PIXELS. "The same controls" can be asked of the markup, but "in
- * the same place" cannot. The row is a flex row inside a three-column grid whose outer tracks are
- * `minmax(max-content, 1fr)`, so where a control lands is a question about the widest thing in the
- * row, which only a layout engine knows. The unit suite renders this bar happily with no stylesheet
- * at all and would agree with any arrangement whatsoever.
- *
- * ## Why every screen and not a sample
- *
- * Because the failure mode is one screen out of nine, and which one is not predictable: the bar is
- * filled by whatever the screen underneath publishes, so a screen is free to say nothing and get a
- * bar nobody looked at. A sample of three is a test that passes while the fault ships.
+ * The bar across the top is the same bar on every screen: its SHAPE never changes, only the STATE
+ * of a control. Where a control lands is a question only a layout engine answers, so this is a
+ * browser test, and every screen is visited because any one of them can publish a different bar.
  */
 import { expect, test, type Page } from '@playwright/test';
 import { SIZE_STEPS } from '../src/lib/grid/justify';
@@ -118,6 +96,9 @@ async function menus(page: Page): Promise<{ name: string; x: number; off: boolea
 async function read(page: Page): Promise<{ name: string; x: number; off: boolean }[]> {
 	const buttons = page.locator('[role="group"][aria-label="What is on screen"] button');
 	await expect(buttons.first()).toBeVisible();
+	// Measured from the bar's midpoint, which is the centre group's.
+	const bar = (await page.locator('header.topbar').boundingBox())!;
+	const middle = bar.x + bar.width / 2;
 
 	const found: { name: string; x: number; off: boolean }[] = [];
 	for (const button of await buttons.all()) {
@@ -133,7 +114,7 @@ async function read(page: Page): Promise<{ name: string; x: number; off: boolean
 			 * about: the same controls, in the same order, wherever somebody is standing.
 			 */
 			name: (await button.getAttribute('aria-label')) ?? '',
-			x: Math.round(box.x),
+			x: Math.round(box.x - middle),
 			off: await button.isDisabled()
 		});
 	}
@@ -145,7 +126,7 @@ test.beforeEach(async ({ page }) => {
 	/* Wide enough that the menus are on the top bar rather than on the row below it. Below the
 	   room they need they move down to the filter bar, which has the width to spare: one home
 	   or the other, never both, because a hidden second copy is still in the tab order. That
-	   room is read off the BAR rather than the window; see `ROOM_FOR_THE_MENUS`. */
+	   room is read off the BAR rather than the window; see `screenBar.watchRoom`. */
 	await page.setViewportSize({ width: 1440, height: 900 });
 });
 
@@ -184,19 +165,63 @@ test('the same controls, in the same order, on every screen', async ({ page }) =
  */
 const SLACK = 4;
 
+/** The centre group's midpoint less the bar's: the menus' first edge to the search box's last. */
+async function offCentre(page: Page): Promise<number> {
+	return page.evaluate(() => {
+		const bar = document.querySelector('header.topbar')!.getBoundingClientRect();
+		const group = document.querySelector('header.topbar .centre')!.getBoundingClientRect();
+		return (group.left + group.right) / 2 - (bar.left + bar.right) / 2;
+	});
+}
+
+/** Where the field's floor binds, how far the start end gives way: half of what the bar lacks. */
+async function floorShortfall(page: Page): Promise<number> {
+	return page.evaluate((floor) => {
+		const bar = document.querySelector('header.topbar') as HTMLElement;
+		const style = getComputedStyle(bar);
+		const inner =
+			bar.clientWidth - parseFloat(style.paddingInlineStart) - parseFloat(style.paddingInlineEnd);
+		const end = parseFloat(style.getPropertyValue('--bar-end'));
+		return Math.max(0, (floor + 2 * (end + parseFloat(style.columnGap)) - inner) / 2);
+	}, 227);
+}
+
+test('the centre group stands on the middle of the bar at every width, the rail open or not', async ({
+	page
+}) => {
+	await open(page, '/browse');
+	for (const collapsed of [false, true]) {
+		const toggle = page.locator(
+			`header.topbar button[aria-label="${collapsed ? 'Collapse' : 'Expand'} the sidebar"]`
+		);
+		if ((await toggle.count()) > 0) await toggle.click();
+		for (const width of [1024, 1152, 1280, 1440, 1600, 1920, 2560]) {
+			await page.setViewportSize({ width, height: 900 });
+			/* Polled: the rail's width is animated. */
+			await expect
+				.poll(async () => Math.abs(await offCentre(page)) - (await floorShortfall(page)), {
+					message: `off centre at ${width}px with the rail ${collapsed ? 'collapsed' : 'open'}`
+				})
+				.toBeLessThanOrEqual(1);
+		}
+	}
+	await page.locator('header.topbar button[aria-label="Expand the sidebar"]').click();
+});
+
 test('and in the same place, near enough to read as the same place', async ({ page }) => {
 	/*
-	 * The half that the names alone cannot catch.
-	 *
-	 * Three buttons with the same three labels can still sit at three different x positions,
-	 * because the row they are in is the first column of a grid track sized to its own content,
-	 * so anything else appearing at that end of the bar moves all of them.
+	 * The half that the names alone cannot catch: the same labels at different x positions. Read
+	 * from the bar's midpoint, and the centre group's own midpoint is held to it on every screen.
 	 */
 	let expected: number[] | null = null;
 
 	for (const screen of SCREENS) {
 		await open(page, screen);
 		const here = (await menus(page)).map((one) => one.x);
+		expect(
+			Math.abs(await offCentre(page)),
+			`the centre group is off centre on ${screen}`
+		).toBeLessThanOrEqual(1);
 		if (expected === null) expected = here;
 		else {
 			expect(here, `the bar is a different shape on ${screen}`).toHaveLength(expected.length);
@@ -255,27 +280,9 @@ test('the size slider acts on a wall of cards, not only on a wall of files', asy
 
 test('a notch grows the cards, and the wall still fills its width', async ({ page }) => {
 	/*
-	 * Two claims, and the second is why the first is not simply "the picture is N pixels tall".
-	 *
-	 * A grid track fixed to the card's width would give a notch that measures the same on every
-	 * monitor, but `auto-fill` fits a whole number of columns and the remainder then has to go
-	 * somewhere: with a fixed track it goes into a band of empty ground down the right of the
-	 * wall. Browse never does that; a justified row is scaled to span its container exactly.
-	 *
-	 * So the notch is a floor and the cards fill the row, and what is checked is what that
-	 * promises: every notch is bigger than the one below it, a card is never SMALLER than a media
-	 * tile at the same notch, and the wall reaches the same right-hand edge the header above it
-	 * does.
-	 */
-	/*
-	 * Enough of them to fill a row at the LARGEST notch on the WIDEST window, which is what the second
-	 * claim needs to mean anything.
-	 *
-	 * `auto-fill` keeps its empty columns on purpose (it is what stops one card stretching across
-	 * the whole window), so a wall holding three cards has a great deal of space to its right and
-	 * that space is correct. The hole this is about only exists once there are more cards than fit
-	 * one row, and a test seeded with one card would report the partial row as the fault and pass
-	 * happily on the arrangement that actually had it.
+	 * The notch is a floor and the cards fill the row: each notch is bigger than the last, a card
+	 * is never smaller than a media tile at the same notch, and the wall reaches the header's right
+	 * edge. Seeded with more cards than the widest row holds, or a partial row would pass.
 	 */
 	const me = await page.request.get('/api/auth/me');
 	const csrf = (await me.json()).csrf_token;
@@ -429,11 +436,40 @@ test('every wall offers the same four orders the file grid does', async ({ page 
 	 */
 	const SIZE_PAIR: Record<string, readonly string[]> = {
 		'/browse': ['Largest file', 'Smallest file'],
-		'/people': ['Most files', 'Fewest files'],
-		'/sites': ['Most files', 'Fewest files'],
-		'/tags': ['Most files', 'Fewest files'],
-		'/collections': ['Most files', 'Fewest files']
+		'/people': [
+			'Most files',
+			'Fewest files',
+			'Largest in total',
+			'Smallest in total',
+			'Longest in total',
+			'Shortest in total'
+		],
+		'/sites': [
+			'Most files',
+			'Fewest files',
+			'Largest in total',
+			'Smallest in total',
+			'Longest in total',
+			'Shortest in total'
+		],
+		'/tags': [
+			'Most files',
+			'Fewest files',
+			'Largest in total',
+			'Smallest in total',
+			'Longest in total',
+			'Shortest in total'
+		],
+		'/collections': [
+			'Most files',
+			'Fewest files',
+			'Largest in total',
+			'Smallest in total',
+			'Longest in total',
+			'Shortest in total'
+		]
 	};
+	const OPINIONS = ['Favorites first', 'Highest rated'];
 
 	const walls = ['/browse', '/people', '/sites', '/tags', '/collections'] as const;
 	for (const screen of walls) {
@@ -443,7 +479,7 @@ test('every wall offers the same four orders the file grid does', async ({ page 
 		await expect(sort).toBeEnabled();
 		await sort.click();
 
-		for (const order of [...UNIVERSAL, ...SIZE_PAIR[screen]]) {
+		for (const order of [...UNIVERSAL, ...SIZE_PAIR[screen], ...OPINIONS]) {
 			/* An OPTION: the orders are a list in the app's own chooser, so the role is the
 			   listbox's. Tolerating another role is what lets a control quietly become a third
 			   thing. */
@@ -484,6 +520,7 @@ test('the search field never hangs over the row below with nothing typed in it',
 	await page.goto('/browse');
 	const bar = page.locator('header.topbar');
 	const field = page.locator('header.topbar .search');
+	const size = page.locator('header.topbar .size');
 	await expect(field).toBeVisible();
 
 	await page.addStyleTag({
@@ -508,11 +545,11 @@ test('the search field never hangs over the row below with nothing typed in it',
 		/*
 		 * AND IT KEEPS ITS HINT, which is the half that pins the threshold.
 		 *
-		 * Without this the check above passes with `ROOM_FOR_THE_MENUS` set to anything at all: the
+		 * Without this the check above passes with the menus' threshold at anything at all: the
 		 * field's own container query would drop the hint and the box would stay one row, so the
-		 * second guard would quietly cover for the first being wrong. What `ROOM_FOR_THE_MENUS` buys
-		 * is the field never being squeezed that far in the first place (227px is one row WITH the
-		 * hint on it), and this is the only thing that says so.
+		 * second guard would quietly cover for the first being wrong. What the threshold buys is the
+		 * field never being squeezed that far in the first place (227px is one row WITH the hint on
+		 * it), and this is the only thing that says so.
 		 */
 		/* Polled, like the reading above it: the rail's width is animated, so a single measurement
 		   taken straight after a resize can be one caught mid-flight. */
@@ -521,6 +558,8 @@ test('the search field never hangs over the row below with nothing typed in it',
 				message: `the menus stayed on the bar and squeezed the field at ${width}px`
 			})
 			.toBeGreaterThanOrEqual(227);
+		if (width === 1440) await expect(size, 'no tile size with room for it').toBeVisible();
+		if (width === 1024) await expect(size, 'the tile size kept its place at 1024px').toBeHidden();
 	}
 });
 
@@ -532,7 +571,7 @@ test('a field too narrow for the keyboard hint drops the hint, not the row', asy
 	 * proves what happens if it ever does: a control added to the row, a wider rail, a longer
 	 * shortcut. The field's own container query drops the hint rather than growing a row for it.
 	 *
-	 * The middle track is set by hand, and that is the INPUT rather than the measurement: what is
+	 * The field's width is given by hand, and that is the INPUT rather than the measurement: what is
 	 * asserted is the field's height and whether the hint is drawn, neither of which is being set
 	 * here. It is the only way to ask for a field of a given width without also asking for a window
 	 * this application would not open at.
@@ -548,7 +587,7 @@ test('a field too narrow for the keyboard hint drops the hint, not the row', asy
 
 	const track = (px: number) =>
 		page.addStyleTag({
-			content: `header.topbar { grid-template-columns: minmax(max-content, 1fr) ${px}px minmax(max-content, 1fr) !important; }`
+			content: `header.topbar .centre > .wrap { inline-size: ${px}px !important; }`
 		});
 
 	/*
@@ -559,8 +598,8 @@ test('a field too narrow for the keyboard hint drops the hint, not the row', asy
 	 * Written the wrong way round the hint goes 18px early, nothing wraps, and no assertion about a
 	 * single width would ever notice.
 	 */
-	await track(280);
-	await expect(hint, 'there is room for the hint at 280px').toBeVisible();
+	await track(300);
+	await expect(hint, 'there is room for the hint at 300px').toBeVisible();
 
 	for (const width of [260, 240, 228, 220, 200, 180, 160]) {
 		await track(width);
@@ -572,4 +611,36 @@ test('a field too narrow for the keyboard hint drops the hint, not the row', asy
 
 	// And it really did go, rather than the row having had room all along.
 	await expect(hint).toBeHidden();
+});
+
+test('every row of the search list lies inside the bar, its words whole', async ({ page }) => {
+	await page.setViewportSize({ width: 1024, height: 900 });
+	await page.goto('/browse');
+	await page.getByRole('combobox', { name: 'Search' }).first().click();
+	const rows = page.locator('#search-suggestions [role=option]');
+	const network = rows.filter({ hasText: /network/i });
+	for (let presses = 0; presses < 10 && (await network.count()) === 0; presses += 1) {
+		await rows
+			.filter({ hasText: /Show \d+ more/ })
+			.last()
+			.click();
+	}
+	await expect(network.first(), 'Show more never reached the Network row').toBeVisible();
+
+	const outside = await page.evaluate(() => {
+		const bar = document.querySelector('header.topbar')!;
+		const box = bar.getBoundingClientRect();
+		const style = getComputedStyle(bar);
+		const start = box.left + parseFloat(style.paddingLeft);
+		const end = box.right - parseFloat(style.paddingRight);
+		return [...document.querySelectorAll('#search-suggestions [role=option]')].flatMap((row) => {
+			const at = row.getBoundingClientRect();
+			const cut = [...row.querySelectorAll('span')].filter(
+				(one) => one.clientWidth > 0 && one.scrollWidth > one.clientWidth
+			);
+			const out = at.left < start - 0.5 || at.right > end + 0.5;
+			return out || cut.length > 0 ? [`${row.textContent?.trim()} (${cut.length} cut)`] : [];
+		});
+	});
+	expect(outside, 'rows past the bar or with their words cut').toEqual([]);
 });

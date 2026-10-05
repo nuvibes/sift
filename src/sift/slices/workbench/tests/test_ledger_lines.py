@@ -113,6 +113,13 @@ def a_retired_setting(clean_settings_registry: None) -> Iterator[None]:
     yield
 
 
+def test_an_older_default_folder_line_is_called_by_its_row() -> None:
+    old = "The download folder for other addresses"
+    assert _setting_label("site_options.*default*.dest_folder_id", old) == "Download folder"
+    naming = "The name template for other addresses"
+    assert _setting_label("site_options.*default*.naming", naming) == naming
+
+
 @pytest.mark.usefixtures("a_retired_setting")
 def test_a_setting_retired_into_another_is_called_by_what_answers_it_now() -> None:
     """Its snapshot is the key or its last label, and neither is what a person can find today."""

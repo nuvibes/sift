@@ -46,20 +46,8 @@
 	const silent = $derived(wall.masterMuted || cell.muted);
 	const held = $derived(cell.paused || wall.paused);
 
-	/*
-	 * Save what this cell is playing.
-	 *
-	 * The browser's own menu is refused on a cell (a cell is a wall's control surface rather than a
-	 * video on a page), and Save video as would go with it; keeping something just shown is the
-	 * commonest reason anybody right-clicks a picture.
-	 *
-	 * The row is the `save` verb, not a row written here, so it reads as every other right-click in
-	 * Sift does: "Save to device", or "Copy image" where a still goes to the clipboard. The label
-	 * and the action are declared together in `grid/verbs.ts`, so they cannot part company. Taken
-	 * off the same `FileVerbs` declaration as the "Add to" group below, the cell inherits the
-	 * verb's own refusals too: no row for a sign-in that may not save, and none for a file the
-	 * vault is hiding.
-	 */
+	/* Save is the shared `save` verb, since the browser's own menu (and its Save video as) is refused
+	   on a cell; through `FileVerbs`, so the verb's refusals come with it. */
 	const playing = $derived(cell.playing);
 
 	/*
@@ -238,6 +226,7 @@
 			icon="close"
 			onselect={() => wall.dropPreview(index)}
 		/>
+		<ContextMenuItem label="Close the strip" icon="view_array" onselect={() => wall.closeStrip()} />
 	{:else}
 		<!--
 			ONE MORE CELL, which is a bigger wall until the wall is as big as it gets: the wall steps

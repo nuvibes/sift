@@ -236,20 +236,21 @@ const GROW_FROM = 0.88;
  * A player arriving and leaving: the viewer opening over the page, the corner panel appearing.
  *
  * Arriving, it grows out of the box it was handed from (`from`), or from a little smaller than
- * itself where it stands; leaving, it fades one pace quicker on the exit curve, because the
- * player it went to is arriving at the same moment and one movement is enough. Reduced motion is
- * instant both ways.
+ * itself where it stands. Leaving is one pace quicker on the exit curve: a fade, or with `leave`
+ * answering 'shrink' the arrival played backwards in place. Reduced motion is instant both ways.
  */
 export function stageTransition(
 	node: Element,
-	options: { from?: () => DOMRect | null } = {}
+	options: { from?: () => DOMRect | null; leave?: () => 'shrink' | 'fade' } = {}
 ): (how?: { direction?: 'in' | 'out' | 'both' }) => Transition {
 	return (how) => {
 		const leaving = how?.direction === 'out';
 		const { duration, curve } = stagePace(leaving);
-		if (leaving) return { duration, easing: bezier(curve), css: (t) => `opacity: ${t}` };
+		// A fade where the player it goes to is arriving at the same moment: one movement is enough.
+		if (leaving && options.leave?.() !== 'shrink')
+			return { duration, easing: bezier(curve), css: (t) => `opacity: ${t}` };
 		const box = node.getBoundingClientRect();
-		const place = options.from?.() ?? null;
+		const place = leaving ? null : (options.from?.() ?? null);
 		const usable = place !== null && place.width > 0 && box.width > 0;
 		const { dx, dy, scale } = usable ? travel(place, box) : { dx: 0, dy: 0, scale: GROW_FROM };
 		return {

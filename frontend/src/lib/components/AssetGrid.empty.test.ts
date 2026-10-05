@@ -86,5 +86,5 @@ it('Browse hands the wall "Clear the search" when its filters are what emptied i
 		/emptyAction=\{held\s*\?\s*undefined\s*:\s*unread\s*\?\s*scanNow\s*:\s*filtered\s*\?\s*clearSearch/
 	);
 	expect(page).toContain('{#snippet clearSearch()}');
-	expect(page).toContain('Clear the search');
+	expect(page).toContain('>{clearWallSays(typedWords, filters)}</Button>');
 });

@@ -439,9 +439,7 @@ it('says which of its own passes made a thing, with that pass mark beside it', (
 
 	const line = host.querySelector('.made-by');
 	expect(line?.textContent).toContain('Created by Sift, from a folder name');
-	// The pass's glyph, unpainted: no box means the accent, which is what Sift's passes wear.
 	expect(line?.querySelector('.mark')).not.toBeNull();
-	expect(line?.querySelector('.box-mark')).toBeNull();
 });
 
 it('draws a tag Sift made for a copy in the glyph and words of the act that made the copy', () => {

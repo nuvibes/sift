@@ -148,13 +148,17 @@
 			onsubmit();
 			return;
 		}
-		if (where.folders.length === 0) {
+		if (where.foldersRead === 'failed') {
+			asking = "Sift couldn't read your folders.";
+			void where.load();
+			return;
+		}
+		if (where.foldersRead === 'read' && where.folders.length === 0) {
 			// No folder to offer at all, so there is no chooser to send somebody to.
 			asking = 'Sift has no folder to save a download in yet. Add a folder to your library first.';
 			return;
 		}
-		asking =
-			'No download folder is set. Choose one for this download under Options, Download folder.';
+		asking = 'No download folder is set. Choose one under Options, Download folder.';
 		await tick();
 		onask?.();
 	}

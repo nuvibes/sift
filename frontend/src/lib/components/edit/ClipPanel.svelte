@@ -25,6 +25,7 @@
 	import type { Snippet } from 'svelte';
 	import Icon from '$lib/components/Icon.svelte';
 	import { Button } from '$lib/components/common';
+	import { SLOP } from '$lib/components/common/tile-gesture.svelte';
 	import { clock } from '$lib/edit/edit.svelte';
 
 	interface Props {
@@ -88,6 +89,10 @@
 		what: 'start' | 'end' | 'piece' | 'head';
 		rect: DOMRect;
 		from: number;
+		/* Where a press on the piece landed: a press that never slides moves the mark there. */
+		pressedAt: number;
+		pressedX: number;
+		slid: boolean;
 	} | null>(null);
 	/** The length that was asked for, when one was. Cleared the moment a mark is dragged by hand. */
 	let asked = $state<number | null>(null);
@@ -115,14 +120,7 @@
 		video.currentTime = atMs / 1000;
 	}
 
-	/**
-	 * Play the piece, and only the piece.
-	 *
-	 * The point of a preview is the thing that will be saved, so it starts at the first mark and
-	 * stops at the second rather than running on into what is being cut away. Pressed again it
-	 * stops; reaching the end stops it as well, and leaves the picture at the last frame that
-	 * survives.
-	 */
+	/** Play the piece and only the piece: a preview is of what will be saved. */
 	function playClip(): void {
 		if (!video) return;
 		if (playing) {
@@ -149,13 +147,14 @@
 		if (!track || durationMs <= 0) return;
 		event.stopPropagation();
 		const rect = track.getBoundingClientRect();
-		holding = { what, rect, from: momentAt(event, rect) };
+		const from = momentAt(event, rect);
+		holding = { what, rect, from, pressedAt: from, pressedX: event.clientX, slid: false };
 		(event.currentTarget as Element).setPointerCapture(event.pointerId);
 		if (what === 'head') {
-			show(Math.min(Math.max(startMs, holding.from), endMs));
+			show(Math.min(Math.max(startMs, from), endMs));
 			return;
 		}
-		show(what === 'end' ? endMs : startMs);
+		if (what !== 'piece') show(what === 'end' ? endMs : startMs);
 	}
 
 	function move(event: PointerEvent): void {
@@ -168,8 +167,9 @@
 			return;
 		}
 		if (holding.what === 'piece') {
+			if (!holding.slid && Math.abs(event.clientX - holding.pressedX) <= SLOP) return;
 			slide(now - holding.from);
-			holding = { ...holding, from: now };
+			holding = { ...holding, from: now, slid: true };
 			show(startMs);
 			return;
 		}
@@ -182,6 +182,9 @@
 	}
 
 	function release(): void {
+		if (holding?.what === 'piece' && !holding.slid) {
+			show(Math.min(Math.max(startMs, holding.pressedAt), endMs));
+		}
 		holding = null;
 	}
 
@@ -269,10 +272,10 @@
 		bind:this={track}
 		onpointermove={move}
 		onpointerup={release}
-		onpointercancel={release}
+		onpointercancel={() => (holding = null)}
 	>
 		<!-- The part that survives, bright, and the two that do not, dimmed with the same token the
-		     crop rectangle uses. Dragging the bright part moves the whole piece. -->
+		     crop rectangle uses. Dragging the bright part moves the whole piece; pressing it looks there. -->
 		<div class="gone" style:left="0" style:width={place(startMs)}></div>
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<div
@@ -388,10 +391,12 @@
 		touch-action: none;
 	}
 
+	/* Only a dimming: a press on the piece drawn wider than it is goes through to the piece. */
 	.gone {
 		position: absolute;
 		inset-block: 0;
 		background: var(--sift-scrim);
+		pointer-events: none;
 	}
 
 	.kept {
@@ -421,8 +426,10 @@
 		box-shadow: var(--focus-ring);
 	}
 
+	/* Above the mark, which opens on the start handle and would otherwise cover it. */
 	.handle {
 		position: absolute;
+		z-index: 1;
 		inset-block: 0;
 		inline-size: 14px;
 		translate: -50% 0;

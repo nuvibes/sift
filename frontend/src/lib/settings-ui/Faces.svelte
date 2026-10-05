@@ -1,11 +1,5 @@
 <script lang="ts">
-	/* Recognizing faces: the consent gate, what it runs on, how hard it looks, and the way out.
-	 *
-	 * The switch at the top is a consent gate: nothing loads, is fetched or is written until it is
-	 * on. Everything stays on this device; Sift ships no models, so `ready` is its own line; and
-	 * turning it off keeps what was collected, so the control that deletes it all is here, apart.
-	 * The controls are drawn from what the feature declared, never a second copy kept here.
-	 */
+	/* Recognizing faces. The switch is a consent gate: nothing loads or is written until it is on. */
 	import { onMount } from 'svelte';
 	import {
 		ChooseFile,
@@ -58,6 +52,9 @@
 		type FaceSettings
 	} from '$lib/people/faces.svelte';
 	import { exportPack, importPack, type PackImported } from '$lib/people/fingerprint-packs';
+	import type { WaitingFingerprints } from '$lib/people/fingerprint-offers';
+	import { folderImport } from '$lib/people/folder-import.svelte';
+	import { refusedMark } from '$lib/swap/refused';
 	// The download is followed OUTSIDE this component. See the module. A watcher held here dies
 	// with the pane, and the first run starts the same download from a screen that is not this one.
 	import { modelFetch } from '$lib/people/faces-runs.svelte';
@@ -83,12 +80,7 @@
 	/* Where a person has none of a count: quieter than a figure, so a zero is not read as data. */
 	const NONE = '\u2014';
 
-	/* Which settings belong on this screen, and the order they read in. Keys only: what each is
-	 * called and drawn as comes from its declaration. The page holds what a person decides (on or
-	 * off, how thorough, when it runs); the rest sits behind More settings in the order the
-	 * argument runs. How much of the device it may take is Concurrency's, on Performance. A field
-	 * with `when` is drawn only while another setting holds a particular value.
-	 */
+	/* Which settings this screen draws, by key, in order: each is worded by its declaration. */
 	interface Field {
 		key: string;
 		/** Drawn only while `key` holds `is`. */
@@ -144,19 +136,11 @@
 
 	let loadFailed = $state(false);
 	let forgetOpen = $state(false);
-	/* The sweep itself is NOT held here. See `sweep`, which outlives this screen. Held here,
-	 * the watcher would be born and die with this component while the work carried on regardless,
-	 * and the bar and the count would vanish the moment somebody clicked away. What is local is
-	 * only what is local: whether the button failed, and whether a stop is in flight.
-	 */
+	/* The sweep is followed by `sweep`, which outlives this screen; only the press's state is here. */
 	let sweepFailed = $state(false);
 	let stopping = $state(false);
 
-	/* Moving a curated set of People and their faces between installs.
-	 *
-	 * The result says what was taken in and nothing about who: a file or a folder only holds facial
-	 * fingerprints, and the pass after it decides who each one is by face, in History.
-	 */
+	/* A file taken in says what came, never who: the pass after it decides that by face. */
 	let packFile = $state<File | null>(null);
 	/* Whether the pass over facial fingerprints makes a new person of an entry whose faces match
 	   nobody's: a stored setting, drawn as the registry words it. Off, the group that looks like
@@ -202,6 +186,7 @@
 	let knownTotal = $state(0);
 	let lookingFor = $state('');
 	let knownLoaded = $state(false);
+	let knownFailed = $state(false);
 	let knownDeclined = $state<string | null>(null); // the server's sentence while it is off
 
 	async function readKnown() {
@@ -211,18 +196,14 @@
 			knownTotal = answer.total;
 			knownDeclined = answer.declined ?? null;
 			knownLoaded = true;
+			knownFailed = false;
 		} catch {
 			knownLoaded = false;
+			knownFailed = true;
 		}
 	}
 
-	/* Starter pictures from a stash-box, for the People linked to one who have no confirmed faces.
-	 *
-	 * The count is read BEFORE anything is pressed and is the press's own label: one explicit
-	 * press that shows the count first, because it reaches out to the stash-boxes for every one of
-	 * those People. Null until read (and when recognition is off, where the server refuses the
-	 * question), which draws no row at all rather than a zero that is a guess.
-	 */
+	/* Starter pictures: counted before the press, which asks a stash-box for each. */
 	let starterPeople = $state<number | null>(null);
 	/* Who they are, by name, so the count can be checked as people before the press. */
 	let starterWho = $state<{ id: string; name: string }[]>([]);
@@ -280,9 +261,31 @@
 	let chooser = $state<ReturnType<typeof ExportPeopleSheet> | null>(null);
 	/* Bumped after an import, so the list of who is waiting for a matching face is read again. */
 	let waitingRead = $state(0);
-	/* How many the file would carry. A person known by starter pictures alone is listed above but
-	   has nothing of their own to export, so the line counts what a press of Export saves. */
-	const shareable = $derived(known.filter((one) => one.id && one.faces > 0).length);
+	/* How many people waiting for a matching face the file carries as their own, the server's
+	   count; null until read, and while the list could not be read. */
+	let waitingCarried = $state<number | null>(null);
+	let waitingFailed = $state(false);
+	function waitingSaid(answer: WaitingFingerprints | null) {
+		waitingFailed = answer === null;
+		waitingCarried = answer === null ? null : (answer.exportable ?? 0);
+	}
+	/* How many the file would carry. A person known by starter pictures alone has nothing of their
+	   own to export, and one kept local or out of swaps is refused, as a swap refuses them. */
+	const shareable = $derived(
+		known.filter((one) => one.id && one.faces > 0 && !refusedMark(one)).length
+	);
+	const exportable = $derived(knownLoaded && shareable + (waitingCarried ?? 0) > 0);
+
+	/* A folder import that ends changes both lists the export row counts. */
+	let importSeen = folderImport.outcome;
+	$effect(() => {
+		const outcome = folderImport.outcome;
+		if (outcome === importSeen) return;
+		importSeen = outcome;
+		if (outcome === null) return;
+		void readKnown();
+		waitingRead += 1;
+	});
 	/* Off by default each time: the pictures are small crops of real faces, and only somebody who
 	   chose to send them should. */
 	let includePictures = $state(false);
@@ -299,14 +302,13 @@
 		}
 	}
 
-	/* No names sent is everybody, so the row's own press sends none and the sheet sends its list. */
-	async function sendOutPack(personIds: string[] = []) {
+	/* No names sent is everybody, so the row's own press sends none and the sheet sends its lists.
+	   The library's name is the file's own: the other side keys a file by it. */
+	async function sendOutPack(personIds: string[] = [], entryIds: string[] = []) {
 		packError = null;
 		try {
-			const [bytes, library] = await Promise.all([
-				exportPack('faces', { personIds, includePictures }),
-				libraryName()
-			]);
+			const library = await libraryName();
+			const bytes = await exportPack(library, { personIds, entryIds, includePictures });
 			// An anchor and an object URL: the plain way to hand a file to the browser, and one that
 			// works over plain http where the fancier APIs are simply absent.
 			const url = URL.createObjectURL(bytes);
@@ -315,18 +317,12 @@
 			link.download = COPY.pack.fileName(library, stampForAFileName(new Date()).split(' ')[0]);
 			link.click();
 			URL.revokeObjectURL(url);
-		} catch {
-			packError = COPY.pack.couldNotSave;
+		} catch (error) {
+			packError = (error instanceof ApiError && error.detail) || COPY.pack.couldNotSave;
 		}
 	}
 
-	/* Rising counter, so a read that is still in flight cannot undo a decision made while it was.
-	 * The switch is on screen before the first read lands (it has to be, or the pane would flash
-	 * empty), so somebody can press it in that window. Without this the arriving read writes the
-	 * value it fetched BEFORE the press, and the switch silently flips back: the setting really did
-	 * save, and the screen says it did not. Every write bumps the counter, and a read that finds it
-	 * has moved keeps what it fetched to itself.
-	 */
+	/* Bumped by every write, so a read still in flight cannot put back a value from before a press. */
 	let generation = 0;
 
 	onMount(() => {
@@ -365,10 +361,7 @@
 		})
 	);
 
-	/* And again when a setting moves somewhere else: this account in a browser, a second window,
-	 * or another admin changing one the installation shares. Every control on this pane writes on
-	 * the press and holds nothing unsaved, so a re-read can only put the same value back; see
-	 * `scripts/check_settings_followed.js`, which holds every pane to this. */
+	/* Read again when a setting changes elsewhere: nothing here is held unsaved. */
 	whenChanged(settingChanges, () => void load());
 	/* How many files are scanned, waiting or failed is written per file by the scans, which the
 	   queue reports: the counts on this pane follow the jobs bell while it is open, rather than
@@ -427,12 +420,7 @@
 		}
 	}
 
-	/* Start a sweep, and watch it so it can say what it did.
-	 *
-	 * A press that finishes in ten milliseconds, queues nothing and says nothing either way is
-	 * indistinguishable from a broken button. The job knows what it queued, including that it
-	 * queued nothing, so the answer comes from the job rather than from anything guessed here.
-	 */
+	/* Start a sweep and follow it, so the press says what the job queued, nothing included. */
 	async function scanEverything(everything = false) {
 		sweepFailed = false;
 		try {
@@ -675,7 +663,12 @@
 	</SettingGroup>
 
 	<!-- Held by a file or a folder and matched by no face yet. See `WaitingForAFace`. -->
-	<WaitingForAFace {enabled} read={waitingRead} onchanged={() => void readKnown()} />
+	<WaitingForAFace
+		{enabled}
+		read={waitingRead}
+		onchanged={() => void readKnown()}
+		onread={waitingSaid}
+	/>
 
 	<SettingGroup id="faces.packs" heading={COPY.lists.packs.name} help={COPY.lists.packs.help}>
 		<!-- Taking a file in, one row: choosing the file is the press. The shared picker, because the
@@ -729,14 +722,23 @@
 			help={COPY.pack.exportHelp}
 			action={COPY.pack.exportAction}
 			icon="download"
-			disabled={!knownLoaded || shareable === 0}
+			disabled={!enabled || !exportable}
 			onclick={() => void sendOutPack()}
 			trailingIcon="checklist"
 			trailingLabel={COPY.pack.choose}
 			ontrailing={() => void chooser?.choose()}
 		>
-			{#if knownLoaded && !lookingFor.trim()}
-				<p class="status">{COPY.pack.known(shareable)}</p>
+			<!-- Always one line: who the file carries, or why there is no file to save. -->
+			{#if !enabled}
+				<p class="status">
+					{COPY.pack.exportNeedsSwitch[0]}<SettingLink section="importing" setting={ENABLED_KEY}
+						>{consentEntry?.label ?? ENABLED_KEY}</SettingLink
+					>{COPY.pack.exportNeedsSwitch[1]}
+				</p>
+			{:else if knownFailed || waitingFailed}
+				<p class="status">{COPY.pack.couldNotRead}</p>
+			{:else if knownLoaded && waitingCarried !== null && !lookingFor.trim()}
+				<p class="status">{COPY.pack.known(shareable, waitingCarried)}</p>
 			{/if}
 		</ActionRow>
 		<!-- Off by default, and says what it is for: the numbers only one face model can read. Held
@@ -752,7 +754,7 @@
 
 	<ExportPeopleSheet
 		bind:this={chooser}
-		onsend={(personIds: string[]) => void sendOutPack(personIds)}
+		onsend={(personIds: string[], entryIds: string[]) => void sendOutPack(personIds, entryIds)}
 		onproblem={(message: string | null) => (packError = message)}
 	/>
 
@@ -994,16 +996,7 @@
 		color: var(--sift-ink-3);
 	}
 
-	/* The expensive pass, held back visually from the one above it. Not `danger`: nothing is
-	   destroyed, it simply costs a lot of time, and dressing "this takes hours" in the colour that
-	   elsewhere means "this deletes things" teaches the wrong thing about the colour. */
-
-	/*
-	 * The cap moves onto the box that SCROLLS, and the rule is `:global` because that box is rendered
-	 * by the shared region rather than written here. Left on the content, a `max-block-size` with no
-	 * `overflow` of its own simply CLIPS, and a scoped rule aimed at somebody else's element
-	 * matches nothing at all, silently, which is the trap this shape keeps setting.
-	 */
+	/* The cap goes on the box that scrolls, drawn by the shared region, hence `:global`. */
 	.known-box :global(.scroll-root) {
 		max-block-size: var(--settings-list-cap);
 	}

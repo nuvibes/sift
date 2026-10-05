@@ -13,9 +13,8 @@ collections were considered for the same container and deliberately left out. Do
 Two properties, and they are mechanics rather than intentions:
 
 **Importing the same pack twice writes nothing the second time.** Every reference is keyed by the
-identity of its picture, so one that is already held is skipped whatever it arrived in. Importing a
-*later edition* updates what the earlier one brought, because a pack carries a name and the name is
-what an edition replaces.
+identity of its picture. A *later edition* replaces what the earlier one brought: an edition is a
+later file from the same library (`Pack.library`), or of the same name from a file that names none.
 
 **Descriptions by default, pictures only if the maintainer opts in.** A description cannot be turned
 back into a photograph of somebody, so a pack of numbers hands on far less about real people than a
@@ -39,13 +38,15 @@ from blake3 import blake3
 from sift.slices.faces import recognize
 from sift.slices.faces.models import Vector
 
-#: The format's own version, so a pack made by a much older or newer Sift can be recognized as such
-#: rather than half-read. Version 2 gives each person how many confirmed faces they had where the
-#: file was made (`PackedPerson.confirmed`); a version 1 file is still read, without it.
-FORMAT = 2
+#: The format's own version, so a file from a much newer Sift is refused rather than half-read.
+#: Version 2 added `PackedPerson.confirmed`, version 3 `Pack.library`.
+FORMAT = 3
 
 #: Every version this Sift reads.
-READABLE = frozenset({1, 2})
+READABLE = frozenset({1, 2, 3})
+
+#: The longest library id a file is believed about; anything longer is read as no id.
+LIBRARY_ID_MAX = 64
 
 MANIFEST = "manifest.json"
 VECTORS = "vectors.bin"
@@ -94,6 +95,8 @@ class Pack:
     dimension: int
     people: tuple[PackedPerson, ...]
     digest: str
+    #: The id of the library that made the file, None from a file that never said.
+    library: str | None = None
 
     @property
     def face_count(self) -> int:
@@ -108,6 +111,7 @@ def build(
     dimension: int,
     people: list[PackedPerson],
     include_pictures: bool,
+    library: str | None = None,
 ) -> bytes:
     """Write a pack.
 
@@ -124,6 +128,8 @@ def build(
         "pictures": include_pictures,
         "people": [],
     }
+    if library:
+        manifest["library"] = library
     block = bytearray()
     for person in people:
         entry: dict[str, Any] = {
@@ -157,17 +163,10 @@ def build(
 
 
 def read(raw: bytes, *, expect_recognizer: str, other_model: bool = False) -> Pack:
-    """Read a pack, refusing one that does not belong on this machine.
+    """Read a pack, refusing one made by another model before anything is unpacked.
 
-    The model check happens before anything is unpacked and is not negotiable. Descriptions made by
-    two different models occupy different spaces: comparing one against the other does not produce a
-    worse answer, it produces a meaningless one, and it would show up as matching that had quietly
-    stopped working rather than as an error anybody could act on.
-
-    `other_model` is the one exception, and it is not a comparison: a swap with somebody on the
-    other model sends the face pictures beside their numbers, and the caller describes those
-    pictures again with this machine's model (`PacksMixin.import_pack`), throwing the numbers
-    away. A file chosen on the Faces pane never asks for it.
+    `other_model` lets a swap's pictured faces through, to be described again here
+    (`PacksMixin.import_pack`); a file chosen on the Faces pane never asks for it.
     """
     try:
         bundle = zipfile.ZipFile(BytesIO(raw))
@@ -231,6 +230,7 @@ def read(raw: bytes, *, expect_recognizer: str, other_model: bool = False) -> Pa
         dimension=dimension,
         people=tuple(people),
         digest=blake3(raw).hexdigest(),
+        library=_library(manifest),
     )
 
 
@@ -244,6 +244,15 @@ def _manifest(bundle: zipfile.ZipFile) -> dict[str, Any]:
     if int(payload.get("format") or 0) not in READABLE:
         raise PackError("This file was made by a different version of Sift and can't be read.")
     return payload
+
+
+def _library(manifest: dict[str, Any]) -> str | None:
+    """The library id a version 3 file gave, or None; an older file is keyed by its name."""
+    value = manifest.get("library")
+    if int(manifest.get("format") or 0) < 3 or not isinstance(value, str):
+        return None
+    value = value.strip()
+    return value if 0 < len(value) <= LIBRARY_ID_MAX else None
 
 
 def _count(value: object) -> int | None:

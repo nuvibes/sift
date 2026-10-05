@@ -9,7 +9,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { api } from '$lib/api/client';
-import { COLLECTION_ORDERS, Collections, type Collection } from '$lib/library/collections.svelte';
+import {
+	COLLECTION_ORDERS,
+	Collections,
+	contentsAsked,
+	contentsSource,
+	type Collection
+} from '$lib/library/collections.svelte';
 
 vi.mock('$lib/api/client', () => ({
 	api: { get: vi.fn(), post: vi.fn(), put: vi.fn(), del: vi.fn() },
@@ -195,7 +201,7 @@ describe('the heart and the stars on a shelf', () => {
 });
 
 describe('the orders this wall offers', () => {
-	it('are the seven every wall shares, then the two that need an opinion', () => {
+	it('are the eleven every wall shares, then the two that need an opinion', () => {
 		expect(COLLECTION_ORDERS.map((one) => one.value)).toEqual([
 			'newest',
 			'oldest',
@@ -204,6 +210,10 @@ describe('the orders this wall offers', () => {
 			'name_za',
 			'largest',
 			'smallest',
+			'largest_total',
+			'smallest_total',
+			'longest_total',
+			'shortest_total',
 			'favorite',
 			'rating'
 		]);
@@ -213,6 +223,27 @@ describe('the orders this wall offers', () => {
 		for (const order of COLLECTION_ORDERS) {
 			expect(Object.keys(order).sort()).toEqual(['label', 'value']);
 		}
+	});
+});
+
+describe('a collection longer than a page', () => {
+	it('is paged by the walls of files from its own route, which names no row', () => {
+		expect(contentsSource('c1')).toMatchObject({ path: '/collections/c1/items', anchored: false });
+	});
+
+	it('moves a file by one request naming it and its direction, and reads nothing', async () => {
+		mocked.post.mockResolvedValue({ changed: 2, skipped: 0, reason: null });
+		await new Collections().move('c1', 'a599', -1);
+		await new Collections().move('c1', 'a1', 1);
+
+		expect(mocked.post.mock.calls).toEqual([
+			[
+				'/collections/c1/items',
+				{ body: { asset_ids: ['a599'], action: 'move', direction: 'earlier' } }
+			],
+			['/collections/c1/items', { body: { asset_ids: ['a1'], action: 'move', direction: 'later' } }]
+		]);
+		expect(mocked.get).not.toHaveBeenCalled();
 	});
 });
 
@@ -299,6 +330,18 @@ describe('what is in one collection', () => {
 
 		expect(mocked.get).toHaveBeenCalledWith('/collections/c1/items', {
 			query: { people: ['Jane Else'], tags: ['beach', '-dusk'], limit: 200, offset: 0 }
+		});
+	});
+
+	it('asks with the words and every filter in the address, and nothing else', () => {
+		const url = new URL('http://sift/collections/c1?show=files&q=tags:beach&rating=4&q=&media=');
+		url.searchParams.append('tags', 'dusk');
+		url.searchParams.append('tags', '-rain');
+
+		expect(contentsAsked(url)).toEqual({
+			q: ['tags:beach'],
+			rating: ['4'],
+			tags: ['dusk', '-rain']
 		});
 	});
 });

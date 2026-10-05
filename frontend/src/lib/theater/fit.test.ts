@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { api } from '$lib/api/client';
 import { Cell } from './cell.svelte';
-import { ASSUMED, feedHeight, wallAspect } from './fit';
+import { ASSUMED, feedHeight, stripHeight, wallAspect } from './fit';
 import { layout, type Shape } from './layouts';
 
 /* The numbers below are the real ones: a 16:9 window, the shapes the picker offers, and the two
@@ -228,5 +228,48 @@ describe('the shape the whole wall comes out as', () => {
 			LANDSCAPE + ASSUMED,
 			6
 		);
+	});
+});
+
+describe('how tall the strip is', () => {
+	/* A filled 1920x1080 screen, the bar's band under the strip, and Center stage 1x3. */
+	const SCREEN = { width: 1920, height: 1080 };
+	const AROUND = { viewport: 1080, under: 109, gap: GAP };
+	const three = shapeOf('center_stage_three');
+	const five = (aspect: number) => new Array<number>(5).fill(aspect);
+
+	it('grows into the height the stage leaves, up to where every preview fits across', () => {
+		const tall = stripHeight(three, SCREEN, five(LANDSCAPE).slice(0, 3), five(LANDSCAPE), AROUND);
+		expect(tall).toBe(Math.floor((1920 - 4 * GAP) / (5 * LANDSCAPE)));
+		expect(tall).toBeGreaterThan(148);
+	});
+
+	it('is never taller than a feed in focus', () => {
+		const tall = stripHeight(three, SCREEN, five(LANDSCAPE).slice(0, 3), five(PORTRAIT), AROUND);
+		expect(tall).toBe(Math.floor((1920 - 2 * GAP) / (3 * LANDSCAPE)));
+	});
+
+	it('keeps its least height when the stage uses the whole height', () => {
+		const one = shapeOf('center_stage');
+		expect(stripHeight(one, SCREEN, [PORTRAIT], five(PORTRAIT), AROUND)).toBe(148);
+	});
+
+	it('keeps its least height when the previews cannot all fit across anyway', () => {
+		const narrow = { width: 600, height: 1080 };
+		expect(stripHeight(three, narrow, five(LANDSCAPE), five(LANDSCAPE), AROUND)).toBe(148);
+	});
+
+	it('takes its least height from the window, between 72 and 148', () => {
+		const one = shapeOf('center_stage');
+		const at = (viewport: number) =>
+			stripHeight(one, SCREEN, [PORTRAIT], five(PORTRAIT), { ...AROUND, viewport });
+		expect(at(600)).toBe(96);
+		expect(at(300)).toBe(72);
+		expect(at(2000)).toBe(148);
+	});
+
+	it('stands at its least height until the wall is measured', () => {
+		const none = { width: 0, height: 0 };
+		expect(stripHeight(three, none, [], five(LANDSCAPE), AROUND)).toBe(148);
 	});
 });

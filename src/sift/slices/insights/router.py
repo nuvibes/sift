@@ -686,7 +686,7 @@ async def _by_kind_block(
 
 
 async def _theater_block(access: Repository, database: Database, page: Page) -> InsightsBlock:
-    """Time in Theater and the presets it was spent on."""
+    """Time in Theater and the Saved Layouts it was spent on."""
     viewer, book = page.viewer, page.book
     # Theater.
     walls = book.keyed("theater_ms:wall")
@@ -709,7 +709,7 @@ async def _theater_block(access: Repository, database: Database, page: Page) -> 
             book.figure("In Theater", "viewed_ms:kind", "ms", st.THEATER),
             book.figure("Sessions", "sittings:kind", "count", st.THEATER),
         ],
-        lists=[named_list("Presets", named_walls, "ms")],
+        lists=[named_list("Saved Layouts", named_walls, "ms")],
     )
     return theater
 

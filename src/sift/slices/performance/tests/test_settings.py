@@ -209,12 +209,10 @@ def test_the_share_reads_setting_defaults_to_automatic_and_is_bounded_by_the_lan
     assert declared.maximum == MAX_READS_AT_ONCE
 
 
-def test_automatic_share_reads_is_the_measured_two() -> None:
-    from sift.kernel.lanes import NETWORK_READS_AT_ONCE
-
-    assert performance.resolve_share_reads(0) == NETWORK_READS_AT_ONCE
-    assert performance.resolve_share_reads(None) == NETWORK_READS_AT_ONCE
-    assert performance.resolve_share_reads(True) == NETWORK_READS_AT_ONCE
+def test_automatic_share_reads_leaves_each_share_at_its_measured_number() -> None:
+    assert performance.resolve_share_reads(0) == 0
+    assert performance.resolve_share_reads(None) == 0
+    assert performance.resolve_share_reads(True) == 0
 
 
 def test_a_set_share_reads_is_used_and_capped() -> None:

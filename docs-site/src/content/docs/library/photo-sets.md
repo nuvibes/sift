@@ -25,7 +25,7 @@ The line **Created by** on a Photo Set's page says which way it was made, such a
 
 Each card shows the Photo Set's cover, how many pictures it holds and how much room they take. The marks under it count the people, Sites and tags in it. **Search Photo Sets** finds one by its name.
 
-**Sort by** offers **Newest first**, **Oldest first**, **Recently edited**, **Name A-Z**, **Name Z-A**, **Most files**, **Fewest files**, **Favorites first** and **Highest rated**.
+**Sort by** offers **Newest first**, **Oldest first**, **Recently edited**, **Name A-Z**, **Name Z-A**, **Most files**, **Fewest files**, **Favorites first** and **Highest rated**. Four more orders add up every file under each one. **Largest in total** and **Smallest in total** go by size, and **Longest in total** and **Shortest in total** by length.
 
 **Filter** opens these columns:
 
