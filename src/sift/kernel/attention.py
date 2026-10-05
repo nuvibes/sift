@@ -37,11 +37,7 @@ _TICK_WRAP = 1 << 32
 
 
 def elapsed_seconds(now_ticks: int, last_input_ticks: int) -> float:
-    """Seconds between two readings of the millisecond tick counter, across its wrap.
-
-    Both readings are the low 32 bits of the same counter, so the difference taken modulo its
-    range is the true one for any gap shorter than the wrap itself.
-    """
+    """Seconds between two readings of the millisecond tick counter, across its wrap."""
     return ((now_ticks - last_input_ticks) % _TICK_WRAP) / 1000.0
 
 
@@ -144,6 +140,7 @@ class Attention:
     def __init__(self, since_input: Callable[[], float | None] = seconds_since_input) -> None:
         self._since_input = since_input
         self._cause: Cause | None = None
+        self._event = "attention.full_count"
         self._full_by_hand = False
         self._share = STEP_BACK_SHARE
 
@@ -154,8 +151,8 @@ class Attention:
 
     @property
     def cause(self) -> Cause | None:
-        """Why the work is stepped back while it is: somebody's `input`, or `others` busy."""
-        return self._cause if self.holding else None
+        """What put Sift in eco mode, or would but for the press: `input`, or `others` busy."""
+        return self._cause
 
     @property
     def share(self) -> int:
@@ -213,15 +210,16 @@ class Attention:
             elif others_busy:
                 cause = "others"
         effective = stepped if cause is not None and not self._full_by_hand else full
-        if cause != self._cause:
-            if cause is None:
-                event = "attention.full_count"
-            elif effective < full:
-                event = "attention.stepping_back"
-            else:
-                event = "attention.full_amount"
+        if cause is None:
+            event = "attention.full_count"
+        elif effective < full:
+            event = "attention.stepping_back"
+        else:
+            event = "attention.full_amount"
+        # A press is logged here too, on the tick it takes effect, not only a cause's change.
+        if cause != self._cause or event != self._event:
             log.info(event, workers=effective, full=full, share=self._share, cause=cause)
-            self._cause = cause
+            self._cause, self._event = cause, event
             # The leaf on the sidebar comes and goes with this, and nothing in the queue moves.
             announce_now(EVERY_ADMIN, About.JOBS)
         return effective

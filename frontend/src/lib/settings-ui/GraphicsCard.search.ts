@@ -24,19 +24,8 @@ export const COPY = {
 	downloadingNow: 'Downloading',
 	leave:
 		'You can leave this screen; the download continues. Follow or cancel it in Activity. A canceled download keeps what arrived, so starting again downloads only the rest.',
-	restart: {
-		label: 'Restart needed',
-		help: 'The GPU runtime was installed after Sift had already loaded the CPU version, and only one can be in use at a time. This restarts Sift on the device that runs your library, wherever you are reading this. Nothing is lost: unfinished tasks continue, and you are asked for your password again if you had unlocked anything.',
-		restarting: 'Restarting',
-		action: 'Restart Sift',
-		failed: "Sift didn't restart",
-		cannot: "Couldn't restart Sift.",
-		slow: "Sift hasn't finished restarting. It may still be starting; this screen updates the next time you open it."
-	},
 	test: {
 		label: 'Test the GPU',
-		notYet:
-			'Not yet: Sift is still running the CPU version, so the test would fail whatever the GPU can do. Restart first, then test.',
 		help: "Loads a real model onto the GPU and runs it in a separate process. A GPU that's present doesn't always work; this checks.",
 		testing: 'Testing',
 		action: 'Run the test',

@@ -20,10 +20,12 @@ from sift.slices.performance.benchmark import (
     BENCHMARK,
     BENCHMARK_NAME,
     FIRST_BENCHMARK,
+    WHEN_QUIET,
     BenchmarkReceipts,
     FirstBenchmark,
     FirstFolder,
     ThenScan,
+    WhenQuiet,
     run_benchmark,
 )
 from sift.slices.performance.jobs import ACCEL_INSTALL, register_handlers
@@ -93,6 +95,7 @@ __all__ = [
     "SHARE_READS_KEY",
     "STEP_BACK_KEY",
     "STEP_BACK_SHARE_KEY",
+    "WHEN_QUIET",
     "WORKER_COUNT_KEY",
     "BenchmarkReceipts",
     "FirstBenchmark",
@@ -102,6 +105,7 @@ __all__ = [
     "SelfTestRunner",
     "StorageRate",
     "ThenScan",
+    "WhenQuiet",
     "current_settings",
     "register_handlers",
     "resolve_compress_share",

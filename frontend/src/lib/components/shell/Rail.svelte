@@ -27,6 +27,7 @@
 		currentFullAmount,
 		FULL_AMOUNT_COPY,
 		fullAmountTip,
+		leafDimmed,
 		pressFullAmount
 	} from './full-amount';
 
@@ -58,10 +59,10 @@
 
 	/* The leaf or the bolt above the rule, or neither. See `full-amount.ts`. */
 	const fullAmount = $derived(currentFullAmount(session.isAdmin));
-	/* One press at a time, so a second cannot repeat or undo the first in flight. */
-	let pressing = $state(false);
+	let pressing = false; // One press at a time; not `disabled`, which dims it like other programs' leaf.
 
 	async function press(): Promise<void> {
+		if (pressing) return;
 		pressing = true;
 		try {
 			await pressFullAmount(fullAmount !== 'full');
@@ -607,24 +608,19 @@
 			<!-- The bottom of the rail, and the rule above it: a position in the arrangement, not a wall. -->
 			<!-- svelte-ignore a11y_no_static_element_interactions -->
 			<div class="group footer" class:zoned={rail.editing} class:over={overZone === 'below'}>
-				<!--
-					The leaf, or the bolt: background work stepping back while this device is in use, and
-					the press that overrules it, in the glyphs' column above the rule. Drawn only while it
-					is in play (`full-amount.ts`), and not while arranging.
-				-->
+				<!-- The leaf in eco mode, the bolt for the full amount (`full-amount.ts`); not while arranging. -->
 				{#if fullAmount !== null && !rail.editing}
 					<div class="full-amount">
 						<Tooltip label={fullAmountTip(fullAmount)} placement="right">
 							<Button
 								tone="ghost"
 								shape="circle"
-								class="rail-full-amount"
+								class={leafDimmed(fullAmount) ? 'rail-full-amount dimmed' : 'rail-full-amount'}
 								icon={fullAmount === 'full' ? 'bolt_boost' : 'energy_savings_leaf'}
 								iconSize={20}
 								iconFilled
 								aria-label={FULL_AMOUNT_COPY.name}
 								pressed={fullAmount === 'full'}
-								disabled={pressing}
 								onclick={() => void press()}
 							/>
 						</Tooltip>
@@ -698,6 +694,10 @@
 	.full-amount :global(.btn.ghost.rail-full-amount),
 	.full-amount :global(.btn.ghost.rail-full-amount:hover:not(:disabled)) {
 		color: var(--sift-ok);
+	}
+
+	.full-amount :global(.btn.ghost.rail-full-amount.dimmed .icon) {
+		opacity: var(--disabled-opacity);
 	}
 
 	/* Pressed keeps the ghost's bare ground, so the circle shows only under the pointer. */

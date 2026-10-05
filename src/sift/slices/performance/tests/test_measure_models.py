@@ -150,8 +150,8 @@ async def test_a_width_whose_files_fail_is_not_counted_and_said(tmp_path: Path) 
     ]
 
 
-async def test_a_busy_width_is_taken_again_and_marked_when_still_busy(tmp_path: Path) -> None:
-    answers = iter([True, True, True, False, False, False])
+async def test_a_busy_width_is_taken_once_and_marked(tmp_path: Path) -> None:
+    answers = iter([True, False, False])
     curve = await _measure(tmp_path, a_pass(), busy=lambda: next(answers))
     assert [level.busy for level in curve.levels] == [True, False, False]
     assert curve.said() == [
@@ -159,7 +159,7 @@ async def test_a_busy_width_is_taken_again_and_marked_when_still_busy(tmp_path: 
     ]
 
 
-async def test_steady_takes_a_busy_level_once_more_only() -> None:
+async def test_steady_takes_a_level_once_and_marks_it_busy() -> None:
     taken: list[int] = []
 
     async def take() -> int:
@@ -167,9 +167,7 @@ async def test_steady_takes_a_busy_level_once_more_only() -> None:
         return len(taken)
 
     assert await selftest.steady(take, lambda n: -n, lambda: False) == 1
-    quiet_after = iter([True, False])
-    assert await selftest.steady(take, lambda n: -n, lambda: next(quiet_after)) == 3
-    assert await selftest.steady(take, lambda n: -n, lambda: True) == -5
+    assert await selftest.steady(take, lambda n: -n, lambda: True) == -2
 
 
 def test_the_device_load_reader_says_whether_others_are_busy(

@@ -1,6 +1,7 @@
 import { goto } from '$app/navigation';
 import { api } from '$lib/api/client';
 import type { components } from '$lib/api/schema';
+import { mini } from '$lib/player/mini.svelte';
 import { session } from '$lib/shell/session.svelte';
 import { vault } from '$lib/shell/vault.svelte';
 
@@ -29,6 +30,8 @@ export async function lockSift(): Promise<void> {
 		}
 		outcome = 'signed_out';
 	}
+	// The corner panel's file would be drawn again at the next sign-in in this window.
+	mini.close();
 	/* Straight to the door, re-reading the session, so screen and server agree from the first frame. */
 	if (outcome === 'locked') {
 		vault.sessionLocked();

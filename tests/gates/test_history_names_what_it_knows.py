@@ -308,8 +308,7 @@ async def _seed(database: Database, admin: Viewer) -> Library:
         await database.execute(statement, (lib.file, row))
     for statement, shelf in (
         (
-            "INSERT INTO collection_items (collection_id, asset_id, position, added_at)"
-            " VALUES (?, ?, 0, ?)",
+            "INSERT INTO collection_items (collection_id, asset_id, added_at) VALUES (?, ?, ?)",
             lib.collection,
         ),
         (

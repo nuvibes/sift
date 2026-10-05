@@ -36,6 +36,7 @@ from __future__ import annotations
 import asyncio
 import shutil
 import zipfile
+import zlib
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -200,16 +201,18 @@ class WeightStore:
         *,
         session_factory: SessionFactory | None = None,
         progress: Progress | None = None,
+        fresh: bool = False,
     ) -> None:
-        """Download a model, resuming a previous attempt if there is one.
+        """Download a model, resuming a previous attempt unless `fresh` says start again.
 
         The partial file is kept beside the destination and asked for by byte range on a second
-        attempt, so a dropped connection costs the remainder rather than the whole thing. Nothing
-        is put in place until the digest matches.
+        attempt. Nothing is put in place until the digest matches; a partial that fails it goes.
         """
         destination = self.path_of(weight)
         await asyncio.to_thread(destination.parent.mkdir, parents=True, exist_ok=True)
         partial = destination.with_suffix(".part")
+        if fresh:
+            await asyncio.to_thread(partial.unlink, True)
 
         try:
             finished = await fetch_resumable(
@@ -220,13 +223,21 @@ class WeightStore:
                 session_factory=session_factory,
             )
         except FetchFailed as exc:
-            raise WeightError(f"{exc} Or install the file by hand.") from exc
+            raise WeightError(f"{exc} Or copy the file to this device yourself.") from exc
         if not finished:
             # Stopped on purpose. What has arrived stays where it is, and the next attempt asks for
             # the remainder rather than starting again.
             return
 
-        await asyncio.to_thread(self._install_local, weight, partial)
+        try:
+            await asyncio.to_thread(self._install_local, weight, partial)
+        except WeightError as exc:
+            # Resuming a wrong partial asks for nothing more and fails the same check for ever.
+            await asyncio.to_thread(partial.unlink, True)
+            raise WeightError(
+                f"The {weight.role} model didn't arrive intact, so it was removed. Starting again "
+                "downloads it afresh."
+            ) from exc
         await asyncio.to_thread(partial.unlink, True)
         log.info(
             "ml.weight.installed", namespace=self._namespace, weight=weight.id, source="download"
@@ -237,7 +248,13 @@ class WeightStore:
         destination.parent.mkdir(parents=True, exist_ok=True)
         staged = destination.with_suffix(".staged")
         if weight.archive_member and zipfile.is_zipfile(source):
-            _extract(source, weight, staged)
+            try:
+                _extract(source, weight, staged)
+            except (zipfile.BadZipFile, zlib.error):
+                staged.unlink(missing_ok=True)
+                raise WeightError(
+                    f"that archive is damaged, so it isn't the {weight.role} model Sift expects."
+                ) from None
         else:
             shutil.copyfile(source, staged)
 

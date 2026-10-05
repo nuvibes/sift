@@ -36,6 +36,8 @@ from sift.kernel.content.library import LibraryStore, Root
 from sift.kernel.db import Database
 from sift.kernel.hardware import HardwareReport
 from sift.kernel.ingress import Origin, verify_ingress
+from sift.kernel.ml import child as ml_child
+from sift.kernel.ml import runtime, session
 from sift.slices.faces import runner as faces_runner
 from sift.slices.faces import service_weights, weights
 from sift.slices.faces import settings as face_settings
@@ -408,6 +410,8 @@ def models_in_this_process(monkeypatch: pytest.MonkeyPatch) -> None:
     a real model, once.
     """
     monkeypatch.setattr(service_weights, "ChildRunner", faces_runner.Runner)
+    monkeypatch.setattr(runtime, "loader", session)
+    monkeypatch.setattr(ml_child, "DEVICES", ml_child.DeviceQuestion(session.providers))
 
 
 #: The ingress corpus the kernel's tests keep: real small files a scan would accept.

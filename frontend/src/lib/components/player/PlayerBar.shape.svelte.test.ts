@@ -78,3 +78,55 @@ it("holds a clock's height on the scrub line with no clock, except on a compact 
 	draw({ timed: false, compact: true });
 	expect(host.querySelector('.scrub-line')?.classList.contains('steady')).toBe(false);
 });
+
+/* Beside the clocks the row stands under the timeline, its outer buttons flush with its ends. */
+it('stands the row under the timeline wherever the scrub line keeps its clocks', () => {
+	const under = () => host.querySelector('.player-bar')?.classList.contains('under-line');
+	const again = (props: Record<string, unknown>) => {
+		if (mounted) unmount(mounted);
+		host.remove();
+		draw(props);
+		return under();
+	};
+	draw();
+	expect(under()).toBe(true);
+	expect(again({ variant: 'theater', timed: false })).toBe(true);
+	expect(again({ timed: false })).toBe(false);
+	expect(again({ compact: true })).toBe(false);
+	phoneWidth.yes = true;
+	expect(again({})).toBe(false);
+});
+
+/* A row that wants more than the whole bar keeps the bar's own edges and gives way inside them. */
+it('leaves the timeline for a row wider than the whole bar, and comes back when it fits', () => {
+	const real = globalThis.ResizeObserver;
+	const read: Array<() => void> = [];
+	globalThis.ResizeObserver = class {
+		constructor(heard: ResizeObserverCallback) {
+			read.push(() => heard([], this as unknown as ResizeObserver));
+		}
+		observe() {}
+		unobserve() {}
+		disconnect() {}
+	} as unknown as typeof ResizeObserver;
+	try {
+		draw();
+		const bar = host.querySelector('.player-bar') as HTMLElement;
+		const parts = [...bar.querySelector('.row')!.children] as HTMLElement[];
+		const each = (px: number) => {
+			for (const part of parts)
+				Object.defineProperty(part, 'scrollWidth', { value: px, configurable: true });
+			for (const again of read) again();
+			flushSync();
+			return bar.classList.contains('under-line');
+		};
+		Object.defineProperty(bar, 'clientWidth', { value: 24 + 300 * parts.length });
+		bar.style.paddingLeft = '12px';
+		bar.style.paddingRight = '12px';
+		expect(each(300)).toBe(true);
+		expect(each(301)).toBe(false);
+		expect(each(300)).toBe(true);
+	} finally {
+		globalThis.ResizeObserver = real;
+	}
+});

@@ -142,8 +142,6 @@ NOT_AN_ACT: dict[str, str] = {
     # Caches, derived rows and positions.
     "kernel.cache_stamp.bump_cache_stamp": "a cache stamp, which is what makes a picture stale",
     "kernel.cache_stamp.bump_every_cache_stamp": "a cache stamp, which is what makes a picture stale",
-    "slices.collections.service._renumber": "closes the gaps a removal left; the removal is the act",
-    "slices.collections.service.move": "two files' places swapped, the order `reorder` writes; a position, not an act",
     "slices.people.merge._filled": "a read: it works out which blanks a merge WOULD fill, to say so on the sheet; the merge is the act",
     "slices.people.site_merge._links_go_after": "one step of a Site merge: it re-mints the going site's link ids so they land after the survivor's; the merge records the fold in the same transaction",
     "slices.faces.store_removals._bring_into_line": "derived from the face tables; a redraw, not a decision",

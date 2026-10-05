@@ -103,44 +103,17 @@
 			help={COPY.leave}
 		/>
 	{:else if accel.installed}
-		{#if accel.restart_needed}
-			<!-- Real, correct, and cannot take effect until Sift is opened again: two builds of
-			     one library cannot both be loaded, and the processor build is already in this
-			     process. Saying so is the point: the alternative is a screen claiming the
-			     card is in use while every job goes to the processor.
-
-			     AND IT OFFERS TO DO IT. A screen that says "close Sift and open it again" and
-			     then leaves somebody to find the taskbar is asking them to do the machine's
-			     job. In a browser there is no such button, because the application to restart
-			     is on another computer. -->
-			<ActionRow
-				label={COPY.restart.label}
-				help={COPY.restart.help}
-				action={card.restarting ? COPY.restart.restarting : COPY.restart.action}
-				icon="sync"
-				busy={card.restarting}
-				onclick={() => void card.restart()}
-			/>
-			{#if card.restartProblem}
-				<FactRow label={COPY.restart.failed} fact={card.restartProblem} />
-			{/if}
-		{/if}
-		<!-- NOT PRESSABLE UNTIL THE RESTART HAS HAPPENED, and that is not caution. The test is
-		     honest about a session that has already loaded the processor version: it refuses,
-		     correctly, and says the card was refused. Read before the restart, that sentence is
-		     indistinguishable from a card that does not work, so the answer it gives is worse
-		     than no answer. -->
 		<ActionRow
 			label={COPY.test.label}
-			help={accel.restart_needed ? COPY.test.notYet : COPY.test.help}
+			help={COPY.test.help}
 			action={card.testing ? COPY.test.testing : COPY.test.action}
 			icon="readiness_score"
-			disabled={card.testing || accel.restart_needed}
+			disabled={card.testing}
 			note={card.tested ? (card.tested.works ? COPY.test.passed : COPY.test.refused) : undefined}
 			onclick={() => void card.test()}
 		/>
 		{#if card.tested && !card.tested.works}
-			<FactRow label={COPY.test.said} fact={card.tested.problem ?? COPY.test.noModel} />
+			<FactRow label={COPY.test.said} fact={card.tested.problem ?? COPY.test.noModel} stacked />
 		{/if}
 	{:else if accel.supported && !accel.already_capable}
 		<ActionRow
@@ -154,6 +127,6 @@
 	{/if}
 
 	{#if accelWatch.outcome && !accelWatch.running}
-		<FactRow label={COPY.lastDownload} fact={accelWatch.outcome} />
+		<FactRow label={COPY.lastDownload} fact={accelWatch.outcome} stacked />
 	{/if}
 {/if}

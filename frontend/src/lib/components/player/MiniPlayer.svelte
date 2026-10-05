@@ -9,7 +9,7 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
-	import { Button, Empty, KeyEcho } from '$lib/components/common';
+	import { Button, Empty, KeyEcho, Withheld } from '$lib/components/common';
 	import { muteEcho, type Echo } from '$lib/theater/echoes';
 	import Player from './Player.svelte';
 	import MiniBar from './MiniBar.svelte';
@@ -18,9 +18,8 @@
 	import { inTheCorner, newSitting } from '$lib/player/sitting.svelte';
 	import type { PlaybackPlan } from '$lib/player/playback';
 	import StillView from './StillView.svelte';
-	import { thumbUrl } from '$lib/entity/art';
 	import { toasts } from '$lib/shell/toasts.svelte';
-	import { handover, mini, resized, shapedTo, type Grip } from '$lib/player/mini.svelte';
+	import { handover, heldOf, mini, resized, shapedTo, type Grip } from '$lib/player/mini.svelte';
 	import {
 		canStepBack,
 		canStepForward,
@@ -280,17 +279,7 @@
 		try {
 			const file =
 				takeRecord(id) ?? (await api.get<components['schemas']['AssetDetail']>(`/assets/${id}`));
-			mini.open(
-				{
-					id: file.id,
-					mediaType: file.media_type,
-					art: file.art,
-					sprite: file.sprite,
-					poster: thumbUrl(file),
-					concealed: file.concealed
-				},
-				{ width: window.innerWidth, height: window.innerHeight }
-			);
+			mini.open(heldOf(file), { width: window.innerWidth, height: window.innerHeight });
 		} catch {
 			toasts.show("Sift couldn't open that. The file isn't where it was.", { tone: 'error' });
 		}
@@ -379,6 +368,15 @@
 	/** How the player is playing this file, handed up so the corner can say why. */
 	let plan = $state<PlaybackPlan | null>(null);
 	let picture = $state<ReturnType<typeof StillView> | null>(null);
+
+	/* A file gone hidden takes its clock and its play state with it: its player says nothing as it goes. */
+	$effect(() => {
+		if (!concealed) return;
+		playing = false;
+		playedTo = 0;
+		length = 0;
+		plan = null;
+	});
 
 	/*
 	 * The panel offers itself to the phone while it holds a file: a clip through its player, a
@@ -549,12 +547,17 @@
 				{#if theater.wall}
 					<TheaterWall wall={theater.wall} />
 				{/if}
+			{:else if asset && concealed && (mini.bar || docked)}
+				<!-- The strip's picture is too small for the sentence; its controls say why. -->
+				<Withheld label="Hidden" />
 			{:else if asset && concealed}
 				<!-- Hidden, said in the picture's own area: the frame, the strip and both arrows stay, so
 				     the way on through the list does too. `Empty`'s one-line form fits the smallest
 				     panel. -->
 				<div class="veiled">
-					<Empty scope="block">This one is hidden. Enter your PIN to view it.</Empty>
+					<Empty scope="block" icon="visibility_off"
+						>This one is hidden. It takes the PIN to see.</Empty
+					>
 				</div>
 			{:else if asset && showsPicture}
 				<!-- A photograph or a GIF, drawn by the one component that draws them everywhere else.
@@ -883,8 +886,8 @@
 		inset-inline-end: 0;
 	}
 
-	/* The Audio player, in Theater's bar's shell: the scrub line on top, then the transport, the
-	   picture on the centre line (the outer columns are equal), the ends. Tall by its content.
+	/* The Audio player, in Theater's bar's shell: the scrub line on top; under the timeline, the
+	   picture from its start, the transport, and the ends flush with its end. Tall by its content.
 	   Centred in the PAGE (`inThePage`) less a drawer beside it, so it never runs under the rail. */
 	.mini.bar {
 		--frame-corner: var(--radius-xl);
@@ -900,11 +903,11 @@
 		/* The frame under the pointer stands above the bar, which has nothing else to clip. */
 		overflow: visible;
 		display: grid;
-		grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+		grid-template-columns: auto auto auto minmax(0, 1fr) auto;
 		grid-template-rows: auto auto;
 		grid-template-areas:
-			'line line line'
-			'transport start ends';
+			'line line line line line'
+			'. start transport ends .';
 		align-items: center;
 		column-gap: var(--space-3);
 		row-gap: var(--space-1);

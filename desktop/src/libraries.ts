@@ -69,6 +69,10 @@ export function librariesFolderOf(dataDir: string): string {
 	return path.join(path.dirname(dataDir), LIBRARIES_FOLDER);
 }
 
+export function holdsLibrary(dataDir: string): boolean {
+	return fs.existsSync(path.join(dataDir, DATABASE_FILENAME));
+}
+
 /**
  * The library chosen on the page to open when Sift starts, or null for "whichever opened last".
  *
@@ -91,7 +95,7 @@ export function openingAtStart(dataDir: string): DataLocations | null {
 	const { data_dir: target, cache_dir: cache } = chosen as Record<string, unknown>;
 	if (typeof target !== 'string' || typeof cache !== 'string') return null;
 	if (!path.isAbsolute(target) || !path.isAbsolute(cache)) return null;
-	if (!fs.existsSync(path.join(target, DATABASE_FILENAME))) return null;
+	if (!holdsLibrary(target)) return null;
 	return { dataDir: target, cacheDir: cache };
 }
 
@@ -334,7 +338,10 @@ export function sameFolder(a: string, b: string): boolean {
 }
 
 function normalise(folder: string): string {
-	return path.normalize(folder).replace(/[\\/]+$/, '').toLowerCase();
+	return path
+		.normalize(folder)
+		.replace(/[\\/]+$/, '')
+		.toLowerCase();
 }
 
 /**

@@ -366,8 +366,24 @@ async def test_a_server_that_refuses_is_reported_in_words_somebody_can_act_on(
     weight = make_weight(tmp_path, b"payload")
     session = FakeSession(FakeResponse(404, b""))
 
-    with pytest.raises(WeightError, match="could not be downloaded"):
+    with pytest.raises(WeightError, match="couldn't be downloaded"):
         await weights.fetch(settings, weight, session_factory=lambda: session)
+
+
+async def test_downloading_again_starts_afresh_rather_than_from_what_arrived_before(
+    tmp_path: Path, settings: Settings
+) -> None:
+    payload = b"downloaded model" * 200
+    weight = make_weight(tmp_path, payload)
+    partial = weights.path_of(settings, weight).with_suffix(".part")
+    partial.parent.mkdir(parents=True, exist_ok=True)
+    partial.write_bytes(b"left from before")
+    session = FakeSession(FakeResponse(200, payload))
+
+    await weights.fetch(settings, weight, session_factory=lambda: session, fresh=True)
+
+    assert "Range" not in session.headers
+    assert weights.path_of(settings, weight).read_bytes() == payload
 
 
 async def test_a_server_saying_there_is_nothing_more_completes_what_was_already_there(

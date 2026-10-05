@@ -18,7 +18,7 @@ from sift.kernel.jobs import (
     SystemCapabilities,
 )
 from sift.kernel.jobs.workspaces import Workspaces
-from sift.slices.download import jobs
+from sift.slices.download import attempt
 from sift.slices.download.service import DownloadService, DownloadView
 from sift.slices.download.site_options import SiteOptions
 from sift.slices.download.sources import progress, url_hash
@@ -61,7 +61,7 @@ def _no_real_guard(monkeypatch: pytest.MonkeyPatch) -> None:
     async def allow(_url: str, **_kwargs: object) -> None:
         return None
 
-    monkeypatch.setattr(jobs, "guard_url", allow)
+    monkeypatch.setattr(attempt, "guard_url", allow)
 
 
 def _caps(

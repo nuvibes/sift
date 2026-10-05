@@ -175,8 +175,8 @@ async def fetch_models(
     and it is a deliberate act by an admin rather than something that happens on enabling, because
     what it downloads is published by somebody else on their own terms.
 
-    Queued rather than done here: it is several hundred megabytes, and a request held open for
-    that long is a request that times out somewhere between the browser and here.
+    Queued, as several hundred megabytes outlast a request; a second press joins the download
+    already waiting or under way.
 
     Answers 409 with the feature off. Downloading models for a feature nobody switched on is
     exactly the network call the switch exists to prevent.
@@ -189,7 +189,13 @@ async def fetch_models(
     """
     if not await service.enabled():
         raise _off()
-    job_id = await queue.enqueue(SEMANTIC_FETCH_MODELS, {"again": again})
+    newest = [job.id for job in await queue.newest_of(SEMANTIC_FETCH_MODELS, limit=1)]
+    live = await queue.unfinished_among(newest)
+    job_id = (
+        live.pop()
+        if live
+        else await queue.enqueue(SEMANTIC_FETCH_MODELS, {"again": again}, dedupe=True)
+    )
     log.info("semantic.models.requested", job_id=job_id)
     return ModelsFetchStarted(job_id=job_id)
 

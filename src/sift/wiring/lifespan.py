@@ -68,6 +68,7 @@ from sift.slices import (
     insights,
     loops,
     organize,
+    performance,
     photo_sets,
     player,
     semantic,
@@ -413,6 +414,12 @@ async def _after_the_workers(
     # Before the workers stop, so a shutdown never leaves the power request standing. Not
     # cancelled: told to stop, the loop withdraws the request on its way out.
     teardown.push_async_callback(_end_loop, staying_awake, staying_awake_task, cancel=False)
+    quiet_stop = asyncio.Event()
+    quiet_task = asyncio.create_task(
+        wiring.part_of_app(app, performance.WHEN_QUIET).keep_looking(quiet_stop),
+        name="performance.when_quiet",
+    )
+    teardown.push_async_callback(_end_loop, quiet_stop, quiet_task)
     watches = start_diagnostics(app, store.database)
     teardown.push_async_callback(_stop_the_watches, watches)
 

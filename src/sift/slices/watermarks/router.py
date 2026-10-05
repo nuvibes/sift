@@ -90,14 +90,18 @@ async def fetch_models(
     Answers 409 with the feature off. Downloading models for a feature nobody switched on is
     exactly the network call the switch exists to prevent.
 
-    `again=true` fetches files that are already on disk. A model is called installed if it EXISTS;
-    whether it is the RIGHT file is a separate, expensive question, and a damaged one refuses to
-    load with "delete it and fetch it again", which nobody running a container should have to do
-    at a shell.
+    `again=true` fetches files that are already on disk, for a damaged model. A second press joins
+    the download already waiting or under way.
     """
     if not await service.enabled():
         raise _off()
-    job_id = await queue.enqueue(WATERMARK_FETCH_MODELS, {"again": again})
+    newest = [job.id for job in await queue.newest_of(WATERMARK_FETCH_MODELS, limit=1)]
+    live = await queue.unfinished_among(newest)
+    job_id = (
+        live.pop()
+        if live
+        else await queue.enqueue(WATERMARK_FETCH_MODELS, {"again": again}, dedupe=True)
+    )
     log.info("watermarks.models.requested", job_id=job_id)
     return ModelsFetching(job_id=job_id)
 

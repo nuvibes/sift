@@ -37,7 +37,6 @@ vi.mock('$lib/api/client', async (importOriginal) => {
 					pinned: false,
 					favorite: false,
 					rating: null,
-					position: null,
 					concealed: false
 				})),
 				total: 2,

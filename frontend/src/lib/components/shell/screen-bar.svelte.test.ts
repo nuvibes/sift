@@ -368,9 +368,8 @@ describe('a draft keeps the panel its box', () => {
  * Whether the named menus fit, which is a question about the bar and not the window.
  *
  * The window's width is not what the bar's three columns share: the rail takes 208px of it when
- * open, and in the desktop window the caption buttons take about 138 more. At half-screen on a
- * large monitor the search field would be left too narrow and its keyboard hint would wrap, so the
- * bar measures itself.
+ * open, and in the desktop window the caption buttons take about 138 more, so the bar measures
+ * itself.
  *
  * These drive a `ResizeObserver` by hand. The one in `test-setup` reports nothing, deliberately, so
  * a test that needs a size supplies it, and the size supplied is the only thing asserted on.
@@ -407,6 +406,7 @@ describe('the room on the top bar', () => {
 		screenBar.roomOnTopBar = true;
 		screenBar.barEnd = 0;
 		screenBar.sizeOnBar = true;
+		screenBar.pasteOnBar = true;
 		Reflect.deleteProperty(page, 'route');
 	});
 
@@ -576,6 +576,43 @@ describe('the room on the top bar', () => {
 		expect(screenBar.roomOnTopBar, 'the menus came up beside a narrower end').toBe(false);
 		barIs(923);
 		expect(screenBar.roomOnTopBar).toBe(true);
+	});
+
+	/* Without the tile size the end is 166, Add's 36 px paste half in it: 2 * 166 + 227 = 559. */
+	it('folds the paste half into Add after the tile size, and back at the same width', () => {
+		const { bar, size } = barWithSize();
+		const trailing = bar.querySelectorAll<HTMLElement>('.actions > *')[1];
+		const paste = { standing: true };
+		const add = document.createElement('div');
+		add.className = 'add';
+		const half = document.createElement('span');
+		half.className = 'half trail';
+		half.getBoundingClientRect = () => ({ width: paste.standing ? 36 : 0 }) as DOMRect;
+		add.append(half);
+		trailing.append(add);
+		trailing.getBoundingClientRect = () =>
+			({ width: (paste.standing ? 66 : 30) + (size.standing ? 138 : 0) }) as DOMRect;
+		screenBar.watchRoom(bar);
+
+		barIs(834);
+		expect(screenBar.sizeOnBar).toBe(false);
+		expect(screenBar.pasteOnBar, 'the paste half folded before the tile size left').toBe(true);
+		size.standing = false;
+		barIs(559);
+		expect(screenBar.pasteOnBar).toBe(true);
+		barIs(558);
+		expect(screenBar.pasteOnBar, 'the group slid with the paste half still up').toBe(false);
+
+		paste.standing = false;
+		barIs(558);
+		expect(screenBar.barEnd, 'the centre is capped by what is drawn').toBe(130);
+		expect(screenBar.pasteOnBar).toBe(false);
+		barIs(559);
+		expect(screenBar.pasteOnBar, 'the paste half came back late').toBe(true);
+		barIs(834);
+		expect(screenBar.sizeOnBar, "the paste half's leaving moved the tile size's threshold").toBe(
+			false
+		);
 	});
 
 	it('counts the gap with it only where something stands beside it', () => {

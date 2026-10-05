@@ -305,7 +305,7 @@ This reference lists every route Sift answers, grouped by what it's about. The f
 ## Logs
 
 - `GET /api/logs`: Recent
-- `POST /api/logs/redacted`: Redacted
+- `GET /api/logs/archive`: Archive
 
 ## Loops
 

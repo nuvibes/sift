@@ -395,8 +395,13 @@ class JobsPage(Wire):
     )
     step_back_for: Literal["input", "others"] | None = Field(
         default=None,
-        description="Why the work steps back while `stepping_back` is true: somebody at this "
-        "device (input) or other programs busy (others).",
+        description="Why Sift is in eco mode while `stepping_back` or `full_amount` is true: "
+        "somebody at this device (input) or other programs busy (others).",
+    )
+    step_back_over: list[Literal["processor", "graphics", "memory"]] = Field(
+        default_factory=list,
+        description="What other programs keep busy while `step_back_for` is others: the CPU "
+        "(processor), the GPU (graphics) or memory. What the leaf and the Activity line name.",
     )
     password_wanted: int = Field(
         default=0,

@@ -178,7 +178,7 @@
 	/* Each group as wide as itself and one gap either side of the transport; the ends give way first. */
 	.stage-bar :global(.player-bar > .row:not(.phone)) {
 		grid-template-columns: minmax(0, max-content) auto minmax(0, max-content);
-		column-gap: var(--space-4);
+		column-gap: var(--space-8);
 	}
 
 	.stage-bar.led {

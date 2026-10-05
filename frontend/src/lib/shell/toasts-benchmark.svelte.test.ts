@@ -17,10 +17,13 @@ import { jobChanges } from '$lib/library/changes.svelte';
 import { toasts } from '$lib/shell/toasts.svelte';
 
 const RUNNING =
-	'Benchmarking this device so Sift can make the best use of it. It takes several minutes.';
+	'Benchmarking this device so Sift can make the best use of it. It takes up to 5 minutes.';
 const SET = 'Sift set 2 settings from the benchmark.';
 const FAILED =
 	"Sift couldn't benchmark this device because the video encoder couldn't be run. You can run it from Settings > Performance.";
+
+const GAVE_WAY =
+	"Sift stopped the full benchmark because this device is in use. It runs again by itself once Sift has nothing else to do and nobody's using this device.";
 
 const HELD = 'Your folder is added, and its files appear once this device has been benchmarked.';
 
@@ -46,6 +49,12 @@ describe('the rule', () => {
 		]);
 		expect(benchmarkToasts(run('failed', FAILED), new Set())).toEqual([
 			{ key: 'job-1:end', message: FAILED, tone: 'error', press: 'open', going: false }
+		]);
+	});
+
+	it('says a run Sift stopped for other work as a notice, with nothing to review', () => {
+		expect(benchmarkToasts(run('gave_way', GAVE_WAY), new Set(['job-1:start']))).toEqual([
+			{ key: 'job-1:end', message: GAVE_WAY, tone: 'info', press: null, going: false }
 		]);
 	});
 
@@ -127,6 +136,17 @@ describe('the listener', () => {
 		expect(shown?.action?.label).toBe('Open');
 		shown?.action?.run();
 		expect(opened.calls).toEqual([['performance', 'performance.benchmark']]);
+	});
+
+	it('shows a run Sift stopped for other work without a press', async () => {
+		const reads = [run('running', RUNNING), run('gave_way', GAVE_WAY)];
+		let at = 0;
+		const listener = new BenchmarkToasts(async () => reads[Math.min(at++, reads.length - 1)]);
+		await listener.look();
+		await listener.look();
+		const shown = toasts.items.find((one) => one.message === GAVE_WAY);
+		expect(shown?.tone).toBe('info');
+		expect(shown?.action).toBeUndefined();
 	});
 
 	it('holds the folder sentence while the run goes, the first read included, and drops it after', async () => {

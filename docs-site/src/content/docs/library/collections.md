@@ -1,9 +1,9 @@
 ---
 title: Collections
-description: The groups of files you put together yourself, in the order you arrange them.
+description: The groups of files you put together yourself.
 ---
 
-Collections holds the groups of files you put together yourself, each in the order you arrange it. To open it, click [Collections](/collections) in the sidebar.
+Collections holds the groups of files you put together yourself. To open it, click [Collections](/collections) in the sidebar.
 
 ![Collections, with one collection from the demo library](../../../assets/screens/library-collections.jpg)
 
@@ -44,17 +44,13 @@ Only an admin sees Add to's Tag, Rename, Share, Visibility and Delete. No stash-
 
 ## A collection's page
 
-The page shows the files in the order you arranged them. Its tabs each show one side of the collection: **Files**, **Loops**, **People**, **Tags**, **Sites**, **Music** and **History**.
+Its tabs each show one side of the collection: **Files**, **Loops**, **People**, **Tags**, **Sites**, **Music** and **History**.
 
-**Search files** searches the whole collection, and takes everything the search box on Browse takes; the files keep the order you arranged. Under the files, the page controls move through a long collection a page at a time, as on Browse.
+On **Files**, **Sort by** offers the same orders as on Browse (see [Sort the wall](/library/browse/#sort-the-wall)). A file you pinned stays before the rest in every order. **Search files** searches the whole collection, and takes everything the search box on Browse takes. Under the files, the page controls move through a long collection a page at a time, as on Browse.
 
-A file's menu on this page has four more rows. Only an admin sees Move earlier and Move later:
+A file's menu on this page has two more rows, which only an admin sees:
 
-- **Move earlier**: moves the file one place toward the start. It's unavailable on the first file.
-- **Move later**: moves the file one place toward the end. It's unavailable on the last file.
 - **Use as the cover**: makes the file the collection's cover.
 - **Remove from this collection**: takes the file out of this collection, and out of nothing else.
-
-Move earlier and Move later are unavailable while only part of the collection is showing. Clear the search, the filters or the picks to rearrange it.
 
 **Options** at the top of the page holds **Hide it**, which moves the collection into Hidden, or **Stop hiding it**, which brings it back.

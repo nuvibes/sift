@@ -12,12 +12,12 @@ import pytest
 from fastapi.testclient import TestClient
 
 from sift.kernel.access import AssetFilter, Concealment, Role, Viewer
+from sift.kernel.access.repository.asset_orders import ordering_for
 from sift.kernel.access.repository.assets import DEFAULT_SORT, RELEVANCE, SIMILARITY
 from sift.kernel.content import DerivativeKind
 from sift.kernel.jobs.failure_words import VERDICT_WORDS
 from sift.kernel.mp4 import NEEDS_REPAIR_BYTES
 from sift.slices.auth import current_viewer
-from sift.slices.browse.router import ordering_for
 from sift.slices.browse.tests.conftest import (
     Library,
     db_path,

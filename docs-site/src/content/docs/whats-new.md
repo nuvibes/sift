@@ -10,6 +10,26 @@ What's new lists what each release of Sift changes for you, newest first. To see
 
 ### What changed for you
 
+**Crashes and logs**
+
+- **Sift no longer stops when a model library can't load.** On some computers, turning on face
+  recognition or Smart Search ended Sift at every start. The models now load only in a process of
+  their own, so a failure there leaves Sift running and the screen says why.
+- **The installer carries Microsoft's C++ runtime,** so Sift no longer depends on the copy a
+  computer happens to have.
+- **If Sift keeps stopping, the dialog says what's wrong and what to do.** It shows the exit code,
+  what that code usually means and the last start's lines. It offers Start without them, which
+  holds face recognition, Smart Search and watermark reading off for that start, and Download log.
+- **Setup is offered only when your library's folder can't be found,** such as a drive that isn't
+  plugged in. The dialog names the folder, and no choice there moves or replaces a library.
+- **Download log saves every log whole** as one zip, whatever the screen is filtered to, with
+  personal details removed. It saved at most 500 lines. It works even when Sift can't start, and
+  more is removed: a name with spaces in a path, a whole cookie header, a tunnel's own address and
+  the address of any device that opened Sift.
+- **The app's own log stays small:** one file per start, 8 MB at most in all. It had no limit.
+- **A model download that fails says why** and what to check. It uses the proxy set in Windows,
+  removes a damaged partial download, and two presses make one download.
+
 **Players**
 
 - **Every player bar keeps all its controls.** The repeat control, Previous, Play, Next and Shuffle
@@ -18,8 +38,6 @@ What's new lists what each release of Sift changes for you, newest first. To see
   before. Like the popout, they now get the next file ready while one plays.
 - **A picture you open stays put** under Play through until you press Play, Next or Previous. It
   moved on after 2 seconds.
-- **The Audio player wears Theater's bar,** with its picture centered and no file name. The popout
-  shrinks back as it leaves, and in Trim the start can be grabbed across 8 px at 0:00, not 2 px.
 - **The Remote has the same five controls,** with Back 5 seconds and Forward 5 seconds above them.
 
 **Theater**
@@ -52,8 +70,9 @@ What's new lists what each release of Sift changes for you, newest first. To see
   Tags and the other walls, and their pages' tabs, add Largest, Smallest, Longest and Shortest in
   total. On 101,619 files, Highest O count's first page went from 0.75 s to 0.13 s (83% less).
 - **A search box on every tab** of a person's, Site's, tag's, collection's, Photo Set's or song's
-  page. A collection now pages past its first 200 files, and Move earlier and Move later work
-  anywhere in it.
+  page. A collection now pages past its first 200 files.
+- **A collection's Files tab has Sort by,** with pinned files first, like every wall. Move earlier
+  and Move later are gone, and an order arranged by hand in 0.2.0 isn't kept.
 - **The pager keeps your place** when files arrive, and Previous page returns to the page you left.
   The last page is never one lone row.
 - **Saved filters go with what they name.** Deleting the last thing a saved filter names deletes the
@@ -67,8 +86,7 @@ What's new lists what each release of Sift changes for you, newest first. To see
   library the file went from 150 people to 657. Anyone marked Kept local or Don't swap stays out.
 - **Two libraries' files no longer replace each other,** because each carries its own library's ID.
   Sift 0.2.0 can't read a file exported by this version.
-- **A folder import's report lists the files** behind each reason. Each stash-box mark wears its own
-  glyph, all in one accent tone.
+- **A folder import's report lists the files** behind each reason.
 
 **Importing, Activity and the benchmark**
 
@@ -85,36 +103,50 @@ What's new lists what each release of Sift changes for you, newest first. To see
   read had 91 refused one by one; now 1 is, and nothing in it is marked missing. The Scan row says
   the scan failed and why.
 - **The benchmark measures what Sift uses:** previews on your GPU, each installed model, and every
-  drive and share. It runs its picks together for a minute, and can give each share a number
+  drive and share. It runs its picks together for half a minute, and can give each share a number
   measured for it.
-- **The benchmark pauses your waiting tasks and says so.** A whole run now takes ten to twenty
-  minutes on a busy computer, where it took one to three. Cancel stops it at once and keeps your
-  last result.
+- **A new library's files start arriving after about a minute.** The first folder waits only for a
+  short first measure. The full benchmark runs later by itself, once Sift has nothing to do and
+  nobody has used the device for 10 minutes, and it gives way when you press something.
+- **The full benchmark ends within 5 minutes,** on a busy computer too. Each step has its share of
+  the time and stops early rather than run over, and a setting from a step cut short is only
+  suggested. It pauses your waiting tasks and says so, and Cancel keeps your last result.
+- **A big first import is searchable sooner.** While a folder is still being read, reading its
+  files comes first. On a 1,220-file folder on a network share every file was read 269 seconds
+  after the count, where it took 1,068 (75% sooner).
 - **A tool that can't start says why.** Its task fails with "A tool Sift runs couldn't start,
   because a file it needs was in use or missing." where it said "no detail".
-- **A new setting, Use less system resources while other programs are busy,** is off until you turn
-  it on, and works on Windows only.
+- **Eco mode has a name.** While you're working, Sift is in eco mode and the leaf says so. A new
+  setting, Use less system resources while other programs are busy, adds that reason too: it's off
+  until you turn it on and works on Windows only. The leaf is then dimmed and says what is busy.
+- **A press for the full amount shows at once.** During a big import the leaf went gray and could
+  take seconds to change.
 - **Activity's totals leave out files whose folder you removed.** On 101,619 files, that makes the
   library's count take 9.3 ms where it took 1.8 ms.
 
 **Settings and docs**
 
 - **Documentation in Settings** holds every page of the docs with its pictures, offline and for the
-  version you run. It makes Sift about 4.6 MB bigger. Each heading has a Copy link press, and on the
-  docs site a heading's link now copies itself.
+  version you run. It makes Sift about 4.6 MB bigger. A screen reader can step through its
+  headings, each has a Copy link press, and on the docs site a heading's link now copies itself.
 - **Backup and restore saves as you go.** Save a backup spins from the moment you press it, where
   nothing showed for about 38 seconds. A second window shows a save that is going.
 - **Picking a Download folder anywhere saves it** as the default, and the choosers list only folders
   Sift can write to.
-- **Test the GPU says Passed,** where it said Working, which read as still running.
-- **Icons and order.** Importing wears Upload, Export wears Publish, and Sites and Tunnels sits
-  above Downloads. In the desktop app, an admin sees an update waiting as a button in the title bar.
+- **In the desktop app, an admin sees an update waiting** as a button in the title bar.
 - **History names a tunnel,** never its ID. Renaming a song no longer marks its files as edited: all
   50 files of a song were marked.
 - **The first-visit hints are gone.**
+- **Other minor UI improvements.**
 
-**Guests and privacy**
+**Privacy and guests**
 
+- **Locking Hidden stops a Hidden clip everywhere at once.** The Audio player and the Mini player
+  went on showing and playing one after Hide hidden items, and so did a Theater wall in the corner.
+  Each now lets go at once, in every tab, and comes back when you unlock.
+- **A Site set to go through a tunnel now gets everything for a download through that tunnel.** The
+  link's first check went out from your own connection, once per download, and so did the lookup
+  of the Site's name. The reads for the creator, the picture and the music now keep the same route.
 - **A guest's search no longer hints at files they can't see.** A word matching such files made the
   search slower. Words, names, and filters on people, tags and other things are now matched only
   against what the guest may see.
@@ -141,6 +173,14 @@ What's new lists what each release of Sift changes for you, newest first. To see
 - **Building the HEIF wheel yourself.** Anywhere but the computer that builds Sift's releases, add
   `--wheel-by-contents` to `scripts/fetch_vendor.py`. A seeded wheel is used only when it matches
   the pinned digest.
+- **The server never imports the model runtime or the tokenizer.** Both load only in the model
+  process, and a gate walks every import from the server's entry point to hold that.
+- **A release carries the newest C++ runtime the build machine has.** It refuses one older than
+  the toolset any bundled library was linked with, and names the library.
+- **`python -I -m sift.logbundle` makes the redacted log archive** with the standard library alone.
+  `GET /api/logs/archive` replaces `POST /api/logs/redacted`.
+- **A collection's items take `add` and `remove` only,** and their GET takes `sort`. The catalog is
+  at version 91: the stored position is dropped.
 - **The client build reads the docs.** `npm run build`, `dev` and `prepare` turn the docs site's
   pages into the client's Documentation. A page the reader doesn't understand stops the build. It
   needs Node 22.18 or later.

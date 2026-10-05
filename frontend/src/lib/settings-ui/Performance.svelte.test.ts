@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushSync, mount } from 'svelte';
 import type { SettingSection } from '$lib/settings-ui/settings';
 import type { ServerHealth } from '$lib/shell/health';
-import type { SelfTest } from '$lib/shell/selftest';
+import type { Recommendation, SelfTest } from '$lib/shell/selftest';
 import Performance from './Performance.svelte';
 import DrilldownPage from './DrilldownPage.svelte';
 import { COPY } from './Performance.search';
@@ -36,10 +36,10 @@ vi.mock('$lib/shell/health', () => ({
 
 /* The machine probe, which is its own admin-only route rather than part of the settings. Only
    `get` is replaced: everything else in the client, `ApiError` included, stays real. */
-const machine = vi.fn<() => Promise<unknown>>();
+const machine = vi.fn<(url?: string) => Promise<unknown>>();
 vi.mock('$lib/api/client', async (importOriginal) => {
 	const actual = await importOriginal<typeof import('$lib/api/client')>();
-	return { ...actual, api: { ...actual.api, get: () => machine() } };
+	return { ...actual, api: { ...actual.api, get: (url: string) => machine(url) } };
 });
 
 /* The shell, which is the only thing that can say what computer this window is on. Answers null by
@@ -266,7 +266,7 @@ describe('the performance screen', () => {
 				{
 					key: 'performance.step_back_share',
 					value: 25,
-					label: "System resource usage while you're working",
+					label: 'System resource usage in eco mode',
 					help: 'How much of this device background tasks use.',
 					minimum: 10,
 					maximum: 100,
@@ -277,7 +277,7 @@ describe('the performance screen', () => {
 		};
 		await render([stepBack]);
 
-		expect(host.textContent).toContain("System resource usage while you're working");
+		expect(host.textContent).toContain('System resource usage in eco mode');
 		expect(host.querySelector('[id="performance.step_back_share"]')).not.toBeNull();
 	});
 
@@ -538,6 +538,8 @@ const MEASURED: SelfTest = {
 	measured: true,
 	progress: null,
 	share_reads_now: 0,
+	whole_to_come: false,
+	whole_due: false,
 	held_while_measuring: 0,
 	full_while_measuring: 0,
 	notes: [],
@@ -585,7 +587,7 @@ describe('testing this machine', () => {
 	 */
 	function applyButton(): HTMLButtonElement | null {
 		const buttons = [...(panel()?.querySelectorAll('button') ?? [])] as HTMLButtonElement[];
-		return buttons.find((one) => /Apply these|Applying/.test(one.textContent ?? '')) ?? null;
+		return buttons.find((one) => /Apply th|Applying/.test(one.textContent ?? '')) ?? null;
 	}
 
 	function panel(): HTMLElement | null {
@@ -605,6 +607,8 @@ describe('testing this machine', () => {
 			finished: false,
 			measured: false,
 			share_reads_now: 0,
+			whole_to_come: false,
+			whole_due: false,
 			held_while_measuring: 0,
 			full_while_measuring: 0,
 			notes: [],
@@ -634,6 +638,8 @@ describe('testing this machine', () => {
 			finished: false,
 			measured: false,
 			share_reads_now: 0,
+			whole_to_come: false,
+			whole_due: false,
 			held_while_measuring: 0,
 			full_while_measuring: 0,
 			notes: [],
@@ -655,6 +661,8 @@ describe('testing this machine', () => {
 			finished: false,
 			measured: true,
 			share_reads_now: 0,
+			whole_to_come: false,
+			whole_due: false,
 			held_while_measuring: 0,
 			full_while_measuring: 0,
 			notes: [],
@@ -676,6 +684,8 @@ describe('testing this machine', () => {
 			finished: false,
 			measured: false,
 			share_reads_now: 0,
+			whole_to_come: false,
+			whole_due: false,
 			held_while_measuring: 0,
 			full_while_measuring: 0,
 			notes: [],
@@ -703,6 +713,8 @@ describe('testing this machine', () => {
 			finished: false,
 			measured: false,
 			share_reads_now: 0,
+			whole_to_come: false,
+			whole_due: false,
 			held_while_measuring: 0,
 			full_while_measuring: 0,
 			notes: [],
@@ -741,6 +753,8 @@ describe('testing this machine', () => {
 			finished: false,
 			measured: false,
 			share_reads_now: 0,
+			whole_to_come: false,
+			whole_due: false,
 			held_while_measuring: 0,
 			full_while_measuring: 0,
 			notes: [],
@@ -777,6 +791,8 @@ describe('testing this machine', () => {
 			finished: false,
 			measured: false,
 			share_reads_now: 0,
+			whole_to_come: false,
+			whole_due: false,
 			held_while_measuring: 0,
 			full_while_measuring: 0,
 			notes: [],
@@ -811,6 +827,8 @@ describe('testing this machine', () => {
 			finished: false,
 			measured: false,
 			share_reads_now: 0,
+			whole_to_come: false,
+			whole_due: false,
 			held_while_measuring: 0,
 			full_while_measuring: 0,
 			notes: [],
@@ -943,6 +961,82 @@ describe('testing this machine', () => {
 		expect(panel()?.querySelector('[data-testid="self-test-agrees"]')).not.toBeNull();
 	});
 
+	/* Sift's own run: only what it set stands under the sentence that says it set it. */
+	describe('after a run Sift started by itself', () => {
+		const TASKS: Recommendation = {
+			key: 'performance.worker_count',
+			label: 'How many tasks run at the same time',
+			current: 7,
+			suggested: 7,
+			reason: 'Measured directly.',
+			changes_anything: false
+		};
+		const PREVIEWS: Recommendation = { ...MEASURED.recommendations[0], current: 8, suggested: 6 };
+		const TASKS_SET = [{ key: TASKS.key, after: 7 }];
+
+		async function after(
+			state: string,
+			changes: { key: string; after: number }[],
+			recommendations: Recommendation[]
+		) {
+			machine.mockImplementation(async (url) => {
+				if (url !== '/performance/benchmark') throw new Error('nothing is answering');
+				const set = changes.map((one) => ({ ...one, label: one.key, before: 1 }));
+				return { state, job_id: 'run-1', said: 'Done.', changes: set, measured: true };
+			});
+			await withTest({ ...MEASURED, recommendations });
+			await vi.waitFor(() => expect(machine).toHaveBeenCalledWith('/performance/benchmark'));
+			await new Promise((settled) => setTimeout(settled, 0));
+			flushSync();
+		}
+		const said = () => panel()?.querySelector('[data-testid="self-test-set-by-sift"]');
+		const labels = (testid: string) =>
+			[...(panel()?.querySelectorAll(`[data-testid="${testid}"] dt`) ?? [])].map(
+				(one) => one.textContent
+			);
+
+		it('claims the row it set, and offers the one it only suggested with Apply', async () => {
+			await after('set', TASKS_SET, [TASKS, PREVIEWS]);
+
+			expect(said()?.textContent).toContain('set this number from it');
+			expect(labels('self-test-set')).toEqual([TASKS.label]);
+			expect(labels('self-test-suggested')).toEqual([PREVIEWS.label]);
+			expect(applyButton()?.textContent).toContain('Apply this number');
+		});
+
+		it('claims every row when it set them all', async () => {
+			const both = { ...PREVIEWS, current: 6, changes_anything: false };
+			await after('set', [...TASKS_SET, { key: PREVIEWS.key, after: 6 }], [TASKS, both]);
+
+			expect(said()?.textContent).toContain('set these numbers from it');
+			expect(labels('self-test-set')).toEqual([TASKS.label, PREVIEWS.label]);
+			expect(applyButton()).toBeNull();
+		});
+
+		it('claims nothing when every row is a suggestion', async () => {
+			await after('set', TASKS_SET, [PREVIEWS]);
+
+			expect(said()).toBeNull();
+			expect(applyButton()?.textContent).toContain('Apply this number');
+		});
+
+		it('claims nothing somebody has moved since', async () => {
+			const moved = { ...TASKS, current: 9, changes_anything: true };
+			await after('set', TASKS_SET, [moved, PREVIEWS]);
+
+			expect(said()).toBeNull();
+			expect(labels('self-test-suggested')).toEqual([TASKS.label, PREVIEWS.label]);
+			expect(applyButton()?.textContent).toContain('Apply these 2 numbers');
+		});
+
+		it('claims nothing when there was nothing to change', async () => {
+			await after('agreed', [], [TASKS]);
+
+			expect(said()).toBeNull();
+			expect(panel()?.querySelector('[data-testid="self-test-agrees"]')).not.toBeNull();
+		});
+	});
+
 	it('says a test that could not run is not a slow machine', async () => {
 		// The two call for opposite things, and a result of zero would be read as the second.
 		await withTest({
@@ -951,6 +1045,8 @@ describe('testing this machine', () => {
 			finished: true,
 			measured: true,
 			share_reads_now: 0,
+			whole_to_come: false,
+			whole_due: false,
 			held_while_measuring: 0,
 			full_while_measuring: 0,
 			notes: [],
@@ -980,6 +1076,8 @@ describe('testing this machine', () => {
 	const ON_A_SHARE = {
 		...MEASURED,
 		share_reads_now: 2,
+		whole_to_come: false,
+		whole_due: false,
 		measurement: {
 			...MEASURED.measurement,
 			cores: 8,
@@ -1063,6 +1161,22 @@ describe('testing this machine', () => {
 		);
 		expect(said).toEqual(notes);
 	});
+
+	it.each([
+		[true, "runs by itself once Sift has nothing else to do and nobody's using this device"],
+		[false, "The full benchmark hasn't run yet."]
+	])(
+		'says a first measure is all there is until the full run (by itself: %s)',
+		async (due, said) => {
+			const whole = () => panel()?.querySelector('[data-testid="self-test-whole"]')?.textContent;
+			await withTest({ ...MEASURED, whole_to_come: true, whole_due: due });
+			expect(whole()).toContain('This is a first measure');
+			expect(whole()).toContain(said);
+
+			await withTest({ ...MEASURED, running: true, whole_to_come: true });
+			expect(whole()).toBeUndefined();
+		}
+	);
 
 	it('lists the previews built on the GPU and each measured model, not the ones it did not', async () => {
 		await withTest({

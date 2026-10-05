@@ -91,10 +91,9 @@ async def guarded_get(
     is refused rather than chased. A caller whose input needs canonicalising (Reddit's apex/old host)
     does it before the request, so the address that is vetted is the one that is fetched.
 
-    Raises `UrlRejected` (from `check_url`) before any request if the address is not one the server may
-    be pointed at. The response body is read before the session closes.
+    Raises `UrlRejected` before any request for an address the server may not be pointed at. The response body is read before the session closes.
     """
-    check_url(url)
+    check_url(url, here=proxy is None)
     request_headers = ({"User-Agent": user_agent} if user_agent else {}) | (headers or {})
 
     async def once() -> Fetched:
@@ -131,10 +130,9 @@ async def guarded_post(
     before the request and redirects are never followed: a service API answers directly. `Origin`
     and `Referer` some of these APIs check are supplied by the caller through `headers`.
 
-    Raises `UrlRejected` (from `check_url`) before any request if the address is not one the server may
-    be pointed at. The response body is read before the session closes.
+    Raises `UrlRejected` before any request for an address the server may not be pointed at. The response body is read before the session closes.
     """
-    check_url(url)
+    check_url(url, here=proxy is None)
     request_headers = ({"User-Agent": user_agent} if user_agent else {}) | (headers or {})
 
     async def once() -> Fetched:

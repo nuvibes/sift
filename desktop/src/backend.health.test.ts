@@ -1,14 +1,6 @@
-/* Waiting for the backend to be ready, which is the half of starting that the window waits on.
- *
- * Polling `/health` rather than sleeping for a guessed interval is the decision this holds: a first
- * start creates the database and asks SQLite what it can do, which takes as long as it takes, while
- * a warm start is ready almost at once. Both have to end the moment it is actually true, and a
- * start that will never come good has to end with a sentence saying why: the end of the backend's
- * own log, which is the only thing on the machine that knows.
- *
- * In its own file because it stands in for `fetch` and for reading the log, and the port check
- * beside it must keep using real sockets and the real file system.
- */
+/* Waiting for the backend to be ready by polling `/health`, and a start that never comes good
+ * ending with why: the exit code and the end of its own log. `fetch` and the log read are stood in
+ * for here, so the port check beside it keeps real sockets. */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -150,7 +142,21 @@ describe('the end of the backend own log', () => {
 
 		expect(failure.detail).toContain('line 199');
 		expect(failure.detail).not.toContain('line 174');
-		expect(failure.detail.split('\n')).toHaveLength(25);
+		expect(failure.detail.split('\n\n')[1]?.split('\n')).toHaveLength(25);
+	});
+
+	it('opens with the exit code of the start that died', async () => {
+		logText.value = 'the last line\n';
+		const { backend, wait } = waiting();
+		(backend as unknown as { child: unknown }).child = null;
+		(backend as unknown as { lastExit: number }).lastExit = 1;
+
+		const failure = await failed(wait());
+
+		expect(failure.crashed).toBe(true);
+		expect(failure.code).toBe(1);
+		expect(failure.detail.split('\n')[0]).toBe('It stopped with exit code 1.');
+		expect(failure.detail).toContain('the last line');
 	});
 
 	/* A start that failed before the backend wrote anything at all. Naming the file is the whole of

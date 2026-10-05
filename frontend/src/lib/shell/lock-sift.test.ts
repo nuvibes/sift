@@ -12,7 +12,8 @@ const mocks = vi.hoisted(() => ({
 	get: vi.fn(),
 	goto: vi.fn(async () => undefined),
 	load: vi.fn(async () => undefined),
-	forget: vi.fn()
+	forget: vi.fn(),
+	closePanel: vi.fn()
 }));
 
 vi.mock('$app/navigation', () => ({ goto: mocks.goto }));
@@ -23,6 +24,7 @@ vi.mock('$lib/api/client', () => ({
 vi.mock('$lib/shell/session.svelte', () => ({
 	session: { load: mocks.load, forget: mocks.forget }
 }));
+vi.mock('$lib/player/mini.svelte', () => ({ mini: { close: mocks.closePanel } }));
 
 import { lockSift } from './lock-sift';
 import { Vault, vault } from './vault.svelte';
@@ -41,6 +43,7 @@ describe('Ctrl+L', () => {
 
 		expect(mocks.post.mock.calls.map(([path]) => path)).toEqual(['/auth/lock']);
 		expect(reached).toBe(true);
+		expect(mocks.closePanel).toHaveBeenCalled();
 		expect(mocks.goto).toHaveBeenCalledWith('/locked', { replaceState: true });
 	});
 
@@ -50,6 +53,7 @@ describe('Ctrl+L', () => {
 		await lockSift();
 
 		expect(mocks.forget).toHaveBeenCalled();
+		expect(mocks.closePanel).toHaveBeenCalled();
 		expect(mocks.goto).toHaveBeenCalledWith('/login', { replaceState: true });
 	});
 

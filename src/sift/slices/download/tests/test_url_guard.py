@@ -3,17 +3,19 @@
 
 from __future__ import annotations
 
+import asyncio
 import ipaddress
 import socket
-import urllib.error
-import urllib.request
+from collections.abc import AsyncIterator
 from pathlib import Path
-from typing import Literal
 
+import aiohttp
 import pytest
 
 from sift.slices.download import url_guard
-from sift.slices.download.url_guard import UrlRejected, confine_to, guard_url
+from sift.slices.download.url_guard import UrlRejected, check_url, confine_to, guard_url, next_hop
+
+_REAL_GETADDRINFO = socket.getaddrinfo
 
 # What each named host resolves to, so a test never depends on real DNS. A literal IP resolves to
 # itself; a name resolves to whatever this map says.
@@ -153,61 +155,106 @@ def test_confine_refuses_a_file_that_escapes_the_folder(tmp_path: Path) -> None:
         confine_to(tmp_path / "sub", escaping)
 
 
-# --- the default redirect follower (the real one, exercised without a network) ----------------
+# --- through a tunnel: nothing is resolved on this machine ---------------------------------------
 
 
-class _FakeOpener:
-    def __init__(self, behaviour: object) -> None:
-        self._behaviour = behaviour
-
-    def open(self, _request: object, timeout: float | None = None) -> object:
-        return self._behaviour()  # type: ignore[operator]
-
-
-class _NullContext:
-    def __enter__(self) -> object:
-        return object()
-
-    def __exit__(self, *_args: object) -> Literal[False]:
-        return False
-
-
-async def test_default_follower_returns_none_when_a_url_does_not_redirect(
+def test_through_a_tunnel_a_name_is_never_asked_of_this_machine(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(urllib.request, "build_opener", lambda *_a: _FakeOpener(_NullContext))
-    assert await url_guard._http_follow("http://public.example/") is None
+    asked: list[str] = []
+    monkeypatch.setattr(socket, "getaddrinfo", lambda host, *_a, **_k: asked.append(host))
+    check_url("https://private.example/x", here=False)
+    check_url("https://93.184.216.34/x", here=False)
+    assert asked == []
 
 
-async def test_default_follower_hands_back_a_redirect_target(
-    monkeypatch: pytest.MonkeyPatch,
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://10.0.0.42/",
+        "http://2130706433/",  # the loopback address spelled as one number
+        "http://localhost/",
+        "http://admin.localhost./",
+        "ftp://public.example/x",
+        "http:///just/a/path",
+    ],
+)
+def test_through_a_tunnel_a_literal_or_local_address_is_still_refused(url: str) -> None:
+    with pytest.raises(UrlRejected):
+        check_url(url, here=False)
+
+
+async def test_a_walk_through_a_tunnel_judges_each_hop_without_resolving_it() -> None:
+    async def follow(url: str) -> str | None:
+        return "http://10.0.0.9/" if url == "http://private.example/" else None
+
+    with pytest.raises(UrlRejected, match="private or local"):
+        await guard_url("http://private.example/", follow=follow, here=False)
+
+
+# --- asking where a link goes ------------------------------------------------------------------
+
+
+@pytest.fixture
+async def answering() -> AsyncIterator[tuple[str, dict[str, bytes]]]:
+    """A server on loopback answering each path with the head scripted for it."""
+    heads: dict[str, bytes] = {}
+
+    async def serve(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        first = (await reader.readuntil(b"\r\n\r\n")).split(b" ", 2)[1].decode()
+        writer.write(heads[first] + b"Content-Length: 0\r\nConnection: close\r\n\r\n")
+        await writer.drain()
+        writer.close()
+
+    server = await asyncio.start_server(serve, "127.0.0.1", 0)
+    port = server.sockets[0].getsockname()[1]
+    try:
+        yield f"http://127.0.0.1:{port}", heads
+    finally:
+        server.close()
+
+
+@pytest.fixture
+def real_dns(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Loopback only: these tests reach a server on this machine by its literal address."""
+    monkeypatch.setattr(socket, "getaddrinfo", _REAL_GETADDRINFO)
+
+
+@pytest.mark.usefixtures("real_dns")
+async def test_next_hop_reads_a_redirect_and_stops_at_an_answer(
+    answering: tuple[str, dict[str, bytes]],
 ) -> None:
-    def redirect() -> object:
-        raise url_guard._Redirected("http://next.example/")
-
-    monkeypatch.setattr(urllib.request, "build_opener", lambda *_a: _FakeOpener(redirect))
-    assert await url_guard._http_follow("http://public.example/") == "http://next.example/"
-
-
-async def test_default_follower_swallows_an_unreachable_host(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    def unreachable() -> object:
-        raise urllib.error.URLError("boom")
-
-    monkeypatch.setattr(urllib.request, "build_opener", lambda *_a: _FakeOpener(unreachable))
-    assert await url_guard._http_follow("http://public.example/") is None
+    base, heads = answering
+    heads["/a"] = b"HTTP/1.1 302 Found\r\nLocation: /b\r\n"
+    heads["/u"] = b"HTTP/1.1 301 Moved\r\nURI: http://next.example/\r\n"
+    heads["/bare"] = b"HTTP/1.1 302 Found\r\n"
+    heads["/b"] = b"HTTP/1.1 200 OK\r\n"
+    async with aiohttp.ClientSession() as session:
+        assert await next_hop(session, f"{base}/a") == f"{base}/b"
+        assert await next_hop(session, f"{base}/u") == "http://next.example/"
+        assert await next_hop(session, f"{base}/bare") is None
+        assert await next_hop(session, f"{base}/b") is None
 
 
-def test_the_no_follow_handler_surfaces_the_target_and_tolerates_a_missing_one() -> None:
-    handler = url_guard._StopRedirects()
-    with pytest.raises(url_guard._Redirected) as redirect:
-        handler.redirect_request(None, None, 302, "moved", {}, "http://next/")
-    assert redirect.value.location == "http://next/"
+@pytest.mark.usefixtures("real_dns")
+async def test_next_hop_lets_an_unreachable_address_through_to_the_tool() -> None:
+    probe = socket.socket()
+    probe.bind(("127.0.0.1", 0))
+    closed = probe.getsockname()[1]
+    probe.close()
+    async with aiohttp.ClientSession() as session:
+        assert await next_hop(session, f"http://127.0.0.1:{closed}/") is None
 
-    with pytest.raises(url_guard._Redirected) as no_target:
-        handler.redirect_request(None, None, 302, "moved", {})
-    assert no_target.value.location is None
+
+async def test_next_hop_never_swallows_a_refusal() -> None:
+    """A refusal raised by the guarded session's own check reaches the walk, not a None."""
+
+    class _Refusing:
+        def head(self, *_args: object, **_kwargs: object) -> object:
+            raise UrlRejected("refused", reason="private_address")
+
+    with pytest.raises(UrlRejected):
+        await next_hop(_Refusing(), "http://public.example/")  # type: ignore[arg-type]
 
 
 def test_address_is_public_is_the_one_policy_the_pin_and_the_prewalk_share() -> None:

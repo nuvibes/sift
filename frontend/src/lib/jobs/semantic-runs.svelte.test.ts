@@ -172,6 +172,25 @@ describe('reading a run while it goes', () => {
 		expect(describing.outcome).toMatch(/nothing described so far has been lost/i);
 	});
 
+	it('says nothing stopped on opening a pane whose models are missing', async () => {
+		semanticStatus.mockResolvedValue(status({ ready: false, waiting_files: 40 }));
+
+		await attach();
+
+		expect(describing.outcome).toBeNull();
+	});
+
+	it('says it stopped when a run it joined goes off underneath it', async () => {
+		semanticStatus
+			.mockResolvedValueOnce(status({ waiting_files: 5, running_jobs: 2 }))
+			.mockResolvedValue(status({ ready: false, waiting_files: 5 }));
+
+		await attach();
+		await vi.advanceTimersByTimeAsync(2100);
+
+		expect(describing.outcome).toMatch(/nothing described so far has been lost/i);
+	});
+
 	it('says how many were left when a run stops with work outstanding', async () => {
 		semanticStatus.mockResolvedValue(status({ described_files: 3, waiting_files: 17 }));
 
@@ -263,7 +282,12 @@ describe('roughly how long is left', () => {
 /* The progress of a download is read off the jobs list, which is one `api.get`. The watcher is
    shared with the graphics-card download and lives in `$lib/jobs/watch-download`, so these drive
    the request itself. */
-function theJobSays(row: { state: string; progress?: number; note?: string | null }): void {
+function theJobSays(row: {
+	state: string;
+	progress?: number;
+	note?: string | null;
+	error?: string | null;
+}): void {
 	apiGet.mockResolvedValue({ jobs: [{ id: 'job-1', progress: 0, note: null, ...row }] });
 }
 
@@ -295,14 +319,14 @@ describe('following a model download', () => {
 		expect(availability.available).toBe(true);
 	});
 
-	it('says what arrived is kept when a download stops before it finishes', async () => {
-		theJobSays({ state: 'failed', progress: 0.3 });
+	it("says a failed download's own reason, not that anything arrived", async () => {
+		theJobSays({ state: 'failed', progress: 0, error: 'WeightError: The reader model failed.' });
 		semanticStatus.mockResolvedValue(status({ ready: false }));
 		semanticAvailable.mockResolvedValue({ available: false });
 		modelFetch.follow('job-1');
 		await vi.advanceTimersByTimeAsync(2100);
 
-		expect(modelFetch.outcome).toMatch(/starting again costs only the rest/i);
+		expect(modelFetch.outcome).toBe('The reader model failed.');
 	});
 
 	it('says so when the run can no longer be followed at all', async () => {

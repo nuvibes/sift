@@ -14,7 +14,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from sift.kernel.access import DEFAULT_SORT, RELEVANCE, SIMILARITY, AssetFilter
-from sift.slices.browse.router import ordering_for
+from sift.kernel.access.repository.asset_orders import ordering_for
 from sift.slices.browse.tests.conftest import Library, sign_in
 from sift.slices.search.filters import FilterCompiler
 

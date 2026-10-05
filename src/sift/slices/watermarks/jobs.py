@@ -116,4 +116,5 @@ def register_handlers(*, service: WatermarkService) -> None:
         WATERMARK_FETCH_MODELS,
         lambda context: fetch_models(context, service=service),
         name="Downloading the watermark models",
+        alone=True,
     )

@@ -38,10 +38,9 @@
 	 *
 	 * ## The copy that leaves the machine
 	 *
-	 * The log is written whole unless somebody asked otherwise, so `Download log` writes a copy with
-	 * personal detail and secrets taken out on the way (`/logs/redacted`, the server's scrubber, for
-	 * the lines of both logs), with the narrowing on screen applied and each line marked. A file
-	 * downloaded in the desktop app lands in its `Save files to` folder, and the toast names it.
+	 * `Download log` shares every log whole and redacted, whatever the screen is narrowed to: the
+	 * desktop app makes one archive of its own and its library's (`sift.logbundle`), a browser gets
+	 * the library's from the server (`/logs/archive`), and the toast says where it went.
 	 */
 	import { onMount } from 'svelte';
 	import {
@@ -75,14 +74,11 @@
 
 	type LogPage = components['schemas']['LogPage'];
 	type LogRecord = components['schemas']['LogLine'];
-	type RedactedLines = components['schemas']['RedactedLines'];
 
 	/** A screenful and some scrollback, matching the route's own default. */
 	const LINES = 200;
 	/** What the app's own log is narrowed FROM, since the bridge cannot narrow. The route's ceiling. */
 	const APP_LINES = 500;
-	/** What a download reads of the library's log: the route's ceiling. */
-	const DOWNLOAD_LINES = 500;
 
 	/* Every level, loudest first and named by the level, each keeping itself and everything worse.
 	   Debug is the quietest, which is also where a line nobody can rate is kept. */
@@ -266,20 +262,20 @@
 		return from === 'library' ? COPY.library : appName;
 	}
 
-	/* Both logs as far as the routes reach, narrowed as the screen is, redacted by the server and
-	   saved as one file, each line led by its log's mark. */
+	/* The app's archive where this shell makes one, else the library's from the server. */
 	async function download() {
 		downloading = true;
+		const name = COPY.fileName(stampForAFileName(new Date()));
 		try {
-			const both = await readBoth(DOWNLOAD_LINES);
-			const clean = await api.post<RedactedLines>('/logs/redacted', {
-				body: { lines: both.lines.map(({ line }) => line.raw) }
-			});
-			const text = both.lines
-				.map(({ from }, index) => `[${markOf(from)}] ${clean.lines?.[index] ?? ''}`)
-				.join('\n');
-			const url = URL.createObjectURL(new Blob([`${text}\n`], { type: 'text/plain' }));
-			triggerDownload(url, COPY.fileName(stampForAFileName(new Date())));
+			if (bridge.canSaveLogArchive()) {
+				const saved = await bridge.saveLogArchive(name);
+				if (saved === null) throw new Error('not made');
+				toasts.show(COPY.savedTo(saved), { tone: 'success' });
+				return;
+			}
+			const archive = await api.get<Blob>('/logs/archive', { asBlob: true });
+			const url = URL.createObjectURL(archive);
+			triggerDownload(url, name);
 			setTimeout(() => URL.revokeObjectURL(url), 0);
 			const folder = await bridge.downloadFolder();
 			toasts.show(folder ? COPY.savedTo(folder.path) : COPY.savedInBrowser, { tone: 'success' });
@@ -368,7 +364,6 @@
 				icon="download"
 				onclick={() => void download()}
 				busy={downloading}
-				disabled={lines.length === 0}
 			>
 				{COPY.download}
 			</Button>

@@ -28,7 +28,7 @@ from sift.kernel.jobs import (
     JobPaused,
 )
 from sift.kernel.jobs.workspaces import Workspaces
-from sift.slices.download import attempt, jobs
+from sift.slices.download import attempt
 from sift.slices.download.jobs import download
 from sift.slices.download.service import DownloadService
 from sift.slices.download.site_options import SiteOptions
@@ -694,7 +694,7 @@ async def test_passing_the_ledger_does_not_pass_the_address_check(
     async def refuse(_url: str, **_kwargs: object) -> None:
         raise UrlRejected("That link points to a private address.", reason="private_address")
 
-    monkeypatch.setattr(jobs, "guard_url", refuse)
+    monkeypatch.setattr(attempt, "guard_url", refuse)
     await _seed_download(temp_db, "d1")
     fetcher = FakeFetcher(png_bytes())
     context = await make_context(
@@ -789,7 +789,7 @@ async def test_a_refused_address_fails_without_spawning_a_tool(
     async def refuse(_url: str, **_kwargs: object) -> None:
         raise UrlRejected("That link points to a private address.", reason="private_address")
 
-    monkeypatch.setattr(jobs, "guard_url", refuse)
+    monkeypatch.setattr(attempt, "guard_url", refuse)
     await _seed_download(temp_db, "d1")
     fetcher = FakeFetcher(png_bytes())
     context = await make_context(

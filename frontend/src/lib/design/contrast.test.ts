@@ -378,13 +378,18 @@ const PAIRS: Pair[] = [
 		floor: ELEMENT,
 		why: 'an enrichment mark on a card, warm end'
 	},
-	/* The marks wear the accent's text tone, not the wave, on the chip surface: the highest ground
-	   they are drawn on. The fill is under 3:1 there. The two pairs above stay for the search spark. */
+	/* A mark takes its tone from its ground: the fill on the page, the text tone on a raised one. */
 	{
 		front: '--sift-accent-text',
-		back: '--sift-surface-4',
+		back: '--sift-surface-2',
 		floor: ELEMENT,
-		why: 'an enrichment mark on a chip'
+		why: 'an enrichment mark on a raised ground'
+	},
+	{
+		front: '--sift-accent',
+		back: '--sift-bg',
+		floor: ELEMENT,
+		why: "an enrichment mark on an entity's page"
 	},
 
 	// The scrims, over the worst picture there is. A control over media has no idea what is behind

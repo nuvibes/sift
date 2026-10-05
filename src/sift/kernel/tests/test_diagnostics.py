@@ -1081,3 +1081,59 @@ def test_what_start_up_built_is_set_aside_and_given_back() -> None:
         assert not any(one is built for one in gc.get_objects())
     assert gc.get_freeze_count() == 0
     assert any(one is built for one in gc.get_objects())
+
+
+# --- the crash recorder -----------------------------------------------------------------------
+
+
+def test_a_process_that_dies_in_native_code_leaves_every_threads_stack() -> None:
+    """Killed the way an access violation kills it: no handler of its own runs. Started the way
+    the desktop app starts the backend, so no variable of the environment switches it on."""
+    import subprocess
+    import sys
+
+    crash = (
+        "import ctypes, faulthandler, sys, threading, time\n"
+        "import sift.kernel.crash_record\n"
+        "if sys.platform == 'win32':\n"
+        "    ctypes.windll.kernel32.SetErrorMode(0x0002)\n"
+        "threading.Thread(target=time.sleep, args=(30,), name='beside', daemon=True).start()\n"
+        "def loading_a_native_library():\n"
+        "    faulthandler._read_null()\n"
+        "loading_a_native_library()\n"
+    )
+    died = subprocess.run(
+        [sys.executable, "-I", "-c", crash],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+
+    assert died.returncode != 0
+    assert "in loading_a_native_library" in died.stderr
+    # Every thread's, not only the one that died.
+    assert died.stderr.count("most recent call first") >= 2
+
+
+@pytest.mark.parametrize("module", ["main.py", "kernel/ml/worker.py"])
+def test_the_recorder_is_switched_on_before_anything_else_is_imported(module: str) -> None:
+    import ast
+    from pathlib import Path
+
+    import sift
+
+    source = (Path(sift.__file__).parent / module).read_text(encoding="utf-8")
+    imports = [
+        node
+        for node in ast.parse(source).body
+        if isinstance(node, ast.Import)
+        or (isinstance(node, ast.ImportFrom) and node.module != "__future__")
+    ]
+
+    first = imports[0]
+    assert isinstance(first, ast.ImportFrom) and first.module == "sift.kernel"
+    assert [alias.name for alias in first.names] == ["crash_record"]
+    from sift.kernel import crash_record  # noqa: F401
+
+    assert faulthandler.is_enabled()

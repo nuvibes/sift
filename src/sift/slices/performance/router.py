@@ -103,6 +103,7 @@ def _view(
     caused: tuple[int, int] = (0, 0),
     progress: selftest.Measurement | None = None,
     folders: dict[str, str] | None = None,
+    whole: tuple[bool, bool] = (False, False),
 ) -> SelfTestView:
     """The run, built field by field so a field reaches the wire only when added here. `current`
     is read now, so an applied recommendation stops being offered; `waiting` is a queued run."""
@@ -112,6 +113,8 @@ def _view(
         progress=None if progress is None else _measurement_view(progress, folders or {}),
         held_while_measuring=caused[0],
         full_while_measuring=caused[1],
+        whole_to_come=whole[0],
+        whole_due=whole[1],
         notes=[*(notes or ()), *(measurement.not_measured() if measurement is not None else ())],
         finished=state.finished_at is not None,
         measured=measured,
@@ -188,6 +191,7 @@ async def _read(request: Request) -> SelfTestView:
         caused=runner.caused,
         progress=runner.progress,
         folders=await runner.folders(),
+        whole=(await runner.whole_to_come(), await runner.whole_due()),
     )
 
 
@@ -229,7 +233,9 @@ async def first_benchmark(
     in-memory read and the one point read `measured` costs, so following the bell is cheap.
     """
     run = part_of(request, FIRST_BENCHMARK).run
-    measured = await part_of(request, SELF_TEST_RUNNER).measured()
+    runner = part_of(request, SELF_TEST_RUNNER)
+    # Not measured while the full run is still to come, so a window keeps asking for it.
+    measured = await runner.measured() and not await runner.whole_to_come()
     if run is None:
         return FirstBenchmarkView(state="none", measured=measured)
     return FirstBenchmarkView(
@@ -241,7 +247,7 @@ async def first_benchmark(
             for one in run.changes
         ],
         measured=measured,
-        held=HELD if run.going else None,
+        held=HELD if run.going and run.holds else None,
     )
 
 
@@ -251,11 +257,8 @@ async def run_report(
     run_id: str,
     viewer: Annotated[Viewer, Depends(require_admin)],
 ) -> RunReportView:
-    """One run as the block of plain text a person copies and passes on.
-
-    Made on the server rather than assembled by the screen, so a pasted report is the same words
-    whichever screen it was copied from, and so the words can be tested once.
-    """
+    """One run as the plain text a person copies and passes on, made here so every screen's copy
+    says the same words."""
     _ = viewer
     run = await part_of(request, LEDGER).get(run_id)
     if run is None:
@@ -311,7 +314,6 @@ def _accelerator(request: Request, job_id: str | None = None) -> AcceleratorView
         peak_bytes=accel.PEAK_BYTES,
         version=accel.PIN,
         job_id=job_id,
-        restart_needed=accel.installed(settings) and accel.restart_needed(settings),
     )
 
 
@@ -414,12 +416,8 @@ async def restart_server(
 ) -> RestartView:
     """Stop this backend cleanly so that whatever started it starts it again.
 
-    IT RESTARTS THE COMPUTER RUNNING THE LIBRARY, whichever one the person asking is sitting at.
-    That is the point of it being here rather than in the desktop shell: the process that has to
-    start again is the one the graphics-card runtime is loaded into, and somebody looking at those
-    settings may be in a browser on another machine or in a second copy of Sift in client mode. A
-    button that restarted the application in front of them would restart the wrong computer, say it
-    had worked, and leave the card exactly as it was.
+    IT RESTARTS THE COMPUTER RUNNING THE LIBRARY, whichever one the person asking is sitting at:
+    they may be in a browser on another machine, or in a second copy of Sift in client mode.
 
     ADMIN-ONLY, and it takes nothing but the name of the window's own computer (`device`), for the
     line History keeps of it (`machine_acts.record_act`). There is no argument to get wrong: it is

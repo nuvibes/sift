@@ -601,13 +601,6 @@ class AssetView:
     #: one source and the order from another is two answers to one question, and the day they
     #: disagree the pin appears on a row that is not first.
     pinned: bool = False
-    #: Where this file sits in the sequence it was listed as part of, or None when it was not
-    #: listed as part of one. Only a collection sets it today.
-    #:
-    #: It exists for the WRITE, not the read. The screen that rearranges a collection sends a whole
-    #: order back, so it has to know the stored one: given only what is drawn it would send the
-    #: order it was drawn in, pinned first, and save that as the collection's own.
-    arranged_at: int | None = None
 
     #: The token that goes on the end of every picture address for this asset, or None when there
     #: is nothing to say about them yet. It names both what the pictures are and how many times what
@@ -1117,31 +1110,12 @@ def _like_anywhere(term: str) -> str:
 
 
 def _optional_text(row: Row, name: str) -> str | None:
-    """One nullable string off a row that may not carry the column at all. See `_optional_int`."""
+    """One nullable string off a row that may not carry the column at all."""
     try:
         value = row[name]
     except (IndexError, KeyError):
         return None
     return None if value is None else str(value)
-
-
-def _optional_int(row: Row, name: str) -> int | None:
-    """One nullable number off a row that may not carry the column at all.
-
-    Both the set form and the point form select the arranged position today: the point form is the
-    SET form cut at seams (same `_COLUMNS`, same joins), so this fallback is unexercised by
-    anything the application does.
-
-    It is kept because the point form is the hottest read in the application (every thumbnail, hover
-    clip, scrub strip and vault write), and a column it has no use for is the obvious thing to cut
-    from it for cost. A plain subscript would turn that cut into an error on opening a single file,
-    which is a failure a long way from the edit that caused it. Two lines to make the cut safe.
-    """
-    try:
-        value = row[name]
-    except (IndexError, KeyError):
-        return None
-    return None if value is None else int(value)
 
 
 def _asset_view(row: Row, viewer: Viewer) -> AssetView:
@@ -1164,7 +1138,6 @@ def _asset_view(row: Row, viewer: Viewer) -> AssetView:
         art_version=art_version(row["art_marks"], viewer.cache_stamp),
         concealed_here=bool(row["concealed_here"]),
         pinned=bool(row["pinned"]),
-        arranged_at=_optional_int(row, "arranged_at"),
     )
 
 

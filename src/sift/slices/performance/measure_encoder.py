@@ -1,12 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""The graphics card's previews, measured with the command previews really run.
-
-Previews encode on the card and decode on it where there is one (`media.choose_encoder`,
-`media.decode_flags`), so the processor ladder cannot say how many the card builds at once. This
-runs the preview's own command on a 1080p clip, one at a time and then more, and judges the curve
-by the benchmark's one rule. A width whose encodes fail is not counted: a card's limit on encoder
-sessions shows up exactly so.
-"""
+"""The GPU's previews, timed with the preview's own command on a 1080p clip, one at a time and then
+more. A width whose encodes fail isn't counted: that's how a card's limit on sessions shows."""
 
 from __future__ import annotations
 
@@ -24,6 +18,7 @@ from sift.kernel.hardware import HardwareReport
 from sift.kernel.log import get_logger
 from sift.kernel.media import Encoder
 from sift.kernel.subprocess import Priority
+from sift.slices.performance.budget import PREVIEWS, Deadline
 from sift.slices.performance.measure_models import NO_SOURCE, MemoryWatch, Watch
 from sift.slices.performance.selftest import (
     BUSY,
@@ -232,6 +227,7 @@ async def measure_card(
     encode: Callable[..., Awaitable[bool]] | None = None,
     clock: Callable[[], float] = time.monotonic,
     fell_behind: Callable[[], int] = lambda: 0,
+    deadline: Deadline | None = None,
 ) -> CardCurve:
     """The card's previews at each width, with `encoder` or what previews use. Never raises."""
     chosen = encoder or media.choose_encoder(hardware)
@@ -275,14 +271,19 @@ async def measure_card(
     async def take(at_once: int) -> CardLevel:
         return _kept([await run(at_once) for _ in range(repeats)], chosen)
 
+    deadline = deadline or Deadline(PREVIEWS)
     done: list[CardLevel] = []
     for at_once in levels:
-        done.append(await steady(partial(take, at_once), _marked, busy))
+        level = await deadline.within(steady(partial(take, at_once), _marked, busy))
+        if level is None:
+            break
+        done.append(level)
         if _stops(done):
             break
     between = midpoint([level for level in done if level.counted], key=_per_second)
     if between is not None:
-        done.append(await steady(partial(take, between), _marked, busy))
+        level = await deadline.within(steady(partial(take, between), _marked, busy))
+        done.extend([level] if level is not None else [])
         done.sort(key=lambda level: level.at_once)
     return replace(curve, levels=tuple(done))
 

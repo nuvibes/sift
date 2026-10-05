@@ -2386,13 +2386,9 @@ export interface paths {
         };
         /**
          * Collection Items
-         * @description A collection's contents, in the arranged order, scoped to this viewer.
-         *
-         *     The order is the collection's own, not the grid's: a collection is a sequence somebody put
-         *     together, and showing it newest-first is showing something else. What this user has PINNED
-         *     comes above that sequence, which is the same thing the pin does on every other wall that offers
-         *     it; each item carries its stored position so that rearranging still works off the sequence
-         *     rather than off what happens to be drawn.
+         * @description A collection's contents, scoped to this viewer, in the order `sort`, `seed` and `meaning`
+         *     ask for as `/assets` takes them: a collection has no order of its own. What this user has
+         *     PINNED comes first under every order, as on every wall that offers the pin.
          *
          *     The rows and the total come from one statement in the access layer, so the count is the number
          *     of items on the screen and never the number of rows in the table.
@@ -2400,23 +2396,19 @@ export interface paths {
          *     **Filtered by the query language, read off the raw address as `/assets` reads it**: the words
          *     in `q` and the cards picked on the tabs narrow a collection's Files tab exactly as they narrow a
          *     person's, inside the same statement as the scoping and the order, so the total counts the
-         *     narrowed set and the arranged order is kept within it.
+         *     narrowed set.
          */
         get: operations["collection_items_api_collections__collection_id__items_get"];
         put?: never;
         /**
          * Edit Items
-         * @description Add to, remove from, or rearrange a collection, or move one file a place either way.
+         * @description Add to or remove from a collection.
          *
          *     **No file is moved.** This writes rows in the join table and nothing else: every path, every
          *     byte and every location row is exactly as it was. That is the promise the storage model makes,
          *     and the test asserting it is the one worth keeping.
          *
-         *     Adding and removing SKIP an asset that cannot be resolved, and the reply says how many were
-         *     left out and why. Rearranging does not, and the difference is not an oversight: an order is a
-         *     whole list, and applying a partial one silently rewrites the positions of files nobody moved.
-         *     A locked vault cannot produce that call anyway, because a client that cannot see a file does
-         *     not send its id in the order.
+         *     Both SKIP an asset that cannot be resolved, and the reply says how many were left out and why.
          *
          *     An asset can still go between being resolved and being written: two requests, one adding a file
          *     and one deleting it. The membership row's foreign key catches that and the answer is the same
@@ -4559,8 +4551,9 @@ export interface paths {
          * @description Fetch the models this install is set to use. Hands back the job doing it.
          *
          *     **Sift ships no models**: what this downloads is licensed by others, so an admin asks for it.
-         *     Queued (minutes long); the job id lets a screen follow and cancel it. Answers 409 with the
-         *     feature off. `again=true` fetches files already here too, for a damaged model.
+         *     Queued (minutes long), and a second press joins the one waiting or under way; the job id lets
+         *     a screen follow and cancel it. Answers 409 with the feature off. `again=true` fetches files
+         *     already here too, for a damaged model.
          */
         post: operations["fetch_weights_api_faces_weights_fetch_post"];
         delete?: never;
@@ -6091,24 +6084,21 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/logs/redacted": {
+    "/api/logs/archive": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        get?: never;
-        put?: never;
         /**
-         * Redacted
-         * @description The lines handed in, with personal detail and secrets taken out: `Download log`.
-         *
-         *     A downloaded log is what gets attached to a public issue, so it is redacted whatever the setting
-         *     says. Lines rather than a read of the file, because the copy also holds the app's own log from
-         *     the screen's device, and both go through the one scrubber this side writes with.
+         * Archive
+         * @description `Download log`: the library's log whole and unfiltered, redacted whatever the setting says,
+         *     as the zip the desktop app makes of both its places (`sift.logbundle`).
          */
-        post: operations["redacted_api_logs_redacted_post"];
+        get: operations["archive_api_logs_archive_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -7024,12 +7014,8 @@ export interface paths {
          * Restart Server
          * @description Stop this backend cleanly so that whatever started it starts it again.
          *
-         *     IT RESTARTS THE COMPUTER RUNNING THE LIBRARY, whichever one the person asking is sitting at.
-         *     That is the point of it being here rather than in the desktop shell: the process that has to
-         *     start again is the one the graphics-card runtime is loaded into, and somebody looking at those
-         *     settings may be in a browser on another machine or in a second copy of Sift in client mode. A
-         *     button that restarted the application in front of them would restart the wrong computer, say it
-         *     had worked, and leave the card exactly as it was.
+         *     IT RESTARTS THE COMPUTER RUNNING THE LIBRARY, whichever one the person asking is sitting at:
+         *     they may be in a browser on another machine, or in a second copy of Sift in client mode.
          *
          *     ADMIN-ONLY, and it takes nothing but the name of the window's own computer (`device`), for the
          *     line History keeps of it (`machine_acts.record_act`). There is no argument to get wrong: it is
@@ -7056,10 +7042,8 @@ export interface paths {
         };
         /**
          * Run Report
-         * @description One run as the block of plain text a person copies and passes on.
-         *
-         *     Made on the server rather than assembled by the screen, so a pasted report is the same words
-         *     whichever screen it was copied from, and so the words can be tested once.
+         * @description One run as the plain text a person copies and passes on, made here so every screen's copy
+         *     says the same words.
          */
         get: operations["run_report_api_performance_runs__run_id__report_get"];
         put?: never;
@@ -8130,8 +8114,8 @@ export interface paths {
          *     and it is a deliberate act by an admin rather than something that happens on enabling, because
          *     what it downloads is published by somebody else on their own terms.
          *
-         *     Queued rather than done here: it is several hundred megabytes, and a request held open for
-         *     that long is a request that times out somewhere between the browser and here.
+         *     Queued, as several hundred megabytes outlast a request; a second press joins the download
+         *     already waiting or under way.
          *
          *     Answers 409 with the feature off. Downloading models for a feature nobody switched on is
          *     exactly the network call the switch exists to prevent.
@@ -11874,10 +11858,8 @@ export interface paths {
          *     Answers 409 with the feature off. Downloading models for a feature nobody switched on is
          *     exactly the network call the switch exists to prevent.
          *
-         *     `again=true` fetches files that are already on disk. A model is called installed if it EXISTS;
-         *     whether it is the RIGHT file is a separate, expensive question, and a damaged one refuses to
-         *     load with "delete it and fetch it again", which nobody running a container should have to do
-         *     at a shell.
+         *     `again=true` fetches files that are already on disk, for a damaged model. A second press joins
+         *     the download already waiting or under way.
          */
         post: operations["fetch_models_api_watermarks_models_fetch_post"];
         delete?: never;
@@ -12061,8 +12043,6 @@ export interface components {
              * @default 0
              */
             peak_bytes: number;
-            /** Restart Needed */
-            restart_needed: boolean;
             /** Supported */
             supported: boolean;
             /** Version */
@@ -13487,7 +13467,7 @@ export interface components {
         };
         /**
          * CollectionItem
-         * @description One item inside a collection, in the arranged order.
+         * @description One item inside a collection.
          *
          *     A concealed item is described by its concealment and nothing else, as a concealed grid tile
          *     is. Whether it appears at all is the viewer's placeholder choice; either way the count agrees
@@ -13521,8 +13501,6 @@ export interface components {
              * @default false
              */
             pinned: boolean;
-            /** Position */
-            position: number | null;
             /** Rating */
             rating: number | null;
             /**
@@ -15486,12 +15464,11 @@ export interface components {
         };
         /**
          * FirstBenchmarkView
-         * @description The benchmark Sift runs by itself on the first library folder, as the toasts read it.
+         * @description The benchmark Sift runs by itself, as the toasts read it.
          *
          *     `state` is `none` until one was queued in this process; `job_id` is what a window compares, so
-         *     one run is said once; `said` is the sentence Activity's note carries for the same moment, so
-         *     the toast and the note are one author's. `measured` lets a window on a measured device stop
-         *     asking: a measured device never queues one.
+         *     one run is said once; `said` is Activity's note for the same moment. `measured` lets a window
+         *     stop asking: it's true once nothing more is run by itself.
          */
         FirstBenchmarkView: {
             /**
@@ -16755,9 +16732,14 @@ export interface components {
             password_wanted: number;
             /**
              * Step Back For
-             * @description Why the work steps back while `stepping_back` is true: somebody at this device (input) or other programs busy (others).
+             * @description Why Sift is in eco mode while `stepping_back` or `full_amount` is true: somebody at this device (input) or other programs busy (others).
              */
             step_back_for: ("input" | "others") | null;
+            /**
+             * Step Back Over
+             * @description What other programs keep busy while `step_back_for` is others: the CPU (processor), the GPU (graphics) or memory. What the leaf and the Activity line name.
+             */
+            step_back_over: ("processor" | "graphics" | "memory")[];
             /**
              * Step Back Share
              * @description The share of this device, in percent, background work keeps to while it steps back (Settings > Performance). What the leaf and the Activity line say.
@@ -17297,17 +17279,6 @@ export interface components {
             opens_at_start: boolean;
             /** Verdict */
             verdict: string;
-        };
-        /**
-         * LinesToRedact
-         * @description Lines of either log, as the screen holds them, to be written out for somebody else.
-         */
-        LinesToRedact: {
-            /**
-             * Lines
-             * @default []
-             */
-            lines: string[];
         };
         /**
          * LinkList
@@ -20326,17 +20297,6 @@ export interface components {
             title?: string | null;
         };
         /**
-         * RedactedLines
-         * @description The same lines in the same order, with personal detail and secrets taken out.
-         */
-        RedactedLines: {
-            /**
-             * Lines
-             * @default []
-             */
-            lines: string[];
-        };
-        /**
          * RedundancyView
          * @description An asset with more than one copy on disk, and what dropping the extras would free.
          */
@@ -21639,6 +21599,16 @@ export interface components {
              * @default 0
              */
             share_reads_now: number;
+            /**
+             * Whole Due
+             * @default false
+             */
+            whole_due: boolean;
+            /**
+             * Whole To Come
+             * @default false
+             */
+            whole_to_come: boolean;
         };
         /**
          * SemanticAvailable
@@ -24614,10 +24584,8 @@ export interface components {
         };
         /**
          * ItemsWrite
-         * @description Adding to, removing from, or rearranging a collection.
-         *
-         *     One body with a named action, so add, remove and reorder cannot drift in what they accept. For
-         *     `reorder`, `asset_ids` is the new order; `move` names one file and its `direction`.
+         * @description Adding to or removing from a collection: one body with a named action, so the two cannot
+         *     drift in what they accept.
          */
         sift__slices__collections__models__ItemsWrite: {
             /**
@@ -24625,11 +24593,9 @@ export interface components {
              * @default add
              * @enum {string}
              */
-            action: "add" | "remove" | "reorder" | "move";
+            action: "add" | "remove";
             /** Asset Ids */
             asset_ids: string[];
-            /** Direction */
-            direction?: ("earlier" | "later") | null;
         };
         /**
          * RatingWrite
@@ -27912,6 +27878,9 @@ export interface operations {
             query?: {
                 limit?: number;
                 offset?: number;
+                sort?: string | null;
+                seed?: number | null;
+                meaning?: boolean | null;
                 q?: string | null;
                 people?: string[] | null;
                 tags?: string[] | null;
@@ -32550,18 +32519,14 @@ export interface operations {
             };
         };
     };
-    redacted_api_logs_redacted_post: {
+    archive_api_logs_archive_get: {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["LinesToRedact"];
-            };
-        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
@@ -32569,16 +32534,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["RedactedLines"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/zip": unknown;
                 };
             };
         };

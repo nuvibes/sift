@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""The shelf of collections: its order, its pages, and whose heart is on it. The items inside a
-collection keep their hand arrangement; only the shelf is ordered."""
+"""The shelf of collections: its order, its pages, and whose heart is on it."""
 
 from __future__ import annotations
 

@@ -14,7 +14,9 @@ it looks like. The scheme must be http or https. The host is resolved, and every
 to must be a public one: not loopback, not a private range, not link-local, not the metadata
 address. And because a public URL is free to redirect to a private one, the redirects are walked
 here, before the tool runs, and every hop is held to the same rule. A chain that starts public and
-ends private is refused, not followed.
+ends private is refused, not followed. The walk is asked by the route the download holds, so a Site
+set to a tunnel is sent nothing from this machine's own address; through a tunnel a name is not
+resolved here at all (only a literal address is judged), as the tool proxy does it.
 
 A tool follows redirects and fetches segments on its own once it has the URL, so this pre-walk is
 the early answer rather than the only one: it refuses a private link before a tool is spawned, with
@@ -24,18 +26,17 @@ tool proxy (`kernel.public_net.ToolProxy`), which holds every connection to the 
 
 from __future__ import annotations
 
-import asyncio
 import socket
-import urllib.error
-import urllib.request
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import NoReturn
-from urllib.parse import urlsplit
+from urllib.parse import urljoin, urlsplit
+
+import aiohttp
 
 from sift.kernel.log import get_logger, hashed, security_event
 from sift.kernel.paths import PathEscape, confine
-from sift.kernel.public_net import address_is_public
+from sift.kernel.public_net import address_is_public, literal_address
 
 log = get_logger(__name__)
 
@@ -48,7 +49,10 @@ SAFE_SCHEMES = frozenset({"http", "https"})
 MAX_REDIRECT_HOPS = 10
 
 #: How long a single pre-walk request may take.
-_REDIRECT_TIMEOUT_SECONDS = 10.0
+_REDIRECT_TIMEOUT = aiohttp.ClientTimeout(total=10.0)
+
+#: The answers that send a request somewhere else.
+_REDIRECT_STATUSES = frozenset({301, 302, 303, 307, 308})
 
 #: Follows one redirect: given a URL, returns where it points next, or None if it does not redirect.
 Follower = Callable[[str], Awaitable[str | None]]
@@ -76,11 +80,12 @@ def _resolve(host: str) -> list[str]:
     return [str(info[4][0]) for info in infos]
 
 
-def _check_address(url: str) -> None:
+def _check_address(url: str, *, here: bool = True) -> None:
     """Check one URL's scheme and where its host resolves. Raises `UrlRejected` on any problem.
 
     Resolve-then-check, and check every address the host offers: a host that resolves to one public
-    and one private address is refused, because the tool is free to connect to either.
+    and one private address is refused, because the tool is free to connect to either. Not `here`
+    (through a tunnel), only a literal address or a name for this machine is judged.
     """
     parts = urlsplit(url)
     scheme = parts.scheme.lower()
@@ -91,7 +96,7 @@ def _check_address(url: str) -> None:
     if not host:
         _refuse(url, "no_host", "That does not look like a web address.")
 
-    for address in _resolve(host):
+    for address in _resolve(host) if here else _named_here(host):
         if not address_is_public(address):
             _refuse(
                 url,
@@ -100,88 +105,68 @@ def _check_address(url: str) -> None:
             )
 
 
+def _named_here(host: str) -> list[str]:
+    """The address a host names without asking a resolver, the way the tool proxy reads it."""
+    literal = literal_address(host)
+    if literal is not None:
+        return [str(literal)]
+    name = host.rstrip(".").lower()
+    return ["127.0.0.1"] if name == "localhost" or name.endswith(".localhost") else []
+
+
 def _refuse(url: str, reason: str, message: str) -> NoReturn:
     """Log the refusal as a redacted security event and raise. The URL never enters the log."""
     security_event("ssrf_blocked", reason=reason, host=hashed(url))
     raise UrlRejected(message, reason=reason)
 
 
-async def _http_follow(url: str) -> str | None:
-    """Ask a URL where it redirects to, without following it. None if it is a final destination.
+async def next_hop(session: aiohttp.ClientSession, url: str) -> str | None:
+    """Where a URL redirects to, asked with a HEAD on `session` and never followed; None if not.
 
-    Runs a real request in a thread, because the check has to see what the server actually answers.
-    A redirect is captured and stopped at rather than chased, so the caller re-validates the target
-    before anyone goes there.
+    The session is the download's own, so the ask leaves by the download's route. An address that
+    cannot be reached is None as well: the tool then fails on it with a real reason.
     """
-    return await asyncio.to_thread(_http_follow_sync, url)
-
-
-class _Redirected(Exception):
-    """Raised internally to hand a redirect's target back out of urllib without following it."""
-
-    def __init__(self, location: str | None) -> None:
-        super().__init__(location or "")
-        self.location = location
-
-
-class _StopRedirects(urllib.request.HTTPRedirectHandler):
-    """A urllib handler that refuses to follow a redirect, surfacing its target instead."""
-
-    def redirect_request(self, *args: object, **kwargs: object) -> None:
-        # The new URL is the sixth positional argument in urllib's contract. Reaching it this way
-        # keeps the signature tolerant of the handler being called either way.
-        newurl = args[5] if len(args) > 5 else None
-        raise _Redirected(newurl if isinstance(newurl, str) else None)
-
-
-def _http_follow_sync(url: str) -> str | None:
-    opener = urllib.request.build_opener(_StopRedirects)
-    request = urllib.request.Request(url, method="HEAD")  # noqa: S310 (scheme already allowlisted)
     try:
-        with opener.open(request, timeout=_REDIRECT_TIMEOUT_SECONDS):
-            return None
-    except _Redirected as redirect:
-        return redirect.location
-    except (urllib.error.URLError, OSError, ValueError):
-        # The pre-walk could not reach the URL. That is not proof it is safe, but it is also not a
-        # redirect to somewhere private: the address itself was already checked. Let the tool try
-        # and fail with a real download error rather than turning an unreachable host into an SSRF
-        # rejection.
+        async with session.head(url, allow_redirects=False, timeout=_REDIRECT_TIMEOUT) as answer:
+            if answer.status not in _REDIRECT_STATUSES:
+                return None
+            # aiohttp's own precedence when it follows a redirect.
+            location = answer.headers.get("Location") or answer.headers.get("URI")
+    except (aiohttp.ClientError, OSError):
         return None
+    return urljoin(url, location) if location else None
 
 
 async def guard_url(
-    url: str, *, follow: Follower | None = None, max_hops: int = MAX_REDIRECT_HOPS
+    url: str, *, follow: Follower, here: bool = True, max_hops: int = MAX_REDIRECT_HOPS
 ) -> None:
     """Refuse a URL the server must not fetch. Returns on success, raises `UrlRejected` otherwise.
 
-    Checks the address, then walks its redirects and checks each hop the same way. A chain that
-    lands on a private address at any point is refused. `follow` is the redirect resolver, injected
-    so a test can script a chain without a network.
+    Checks the address, then walks its redirects with `follow` and checks each hop the same way.
+    `here` is False when the walk goes through a tunnel (see `_check_address`).
     """
-    follower = follow if follow is not None else _http_follow
-
-    _check_address(url)
+    _check_address(url, here=here)
 
     current = url
     for _ in range(max_hops):
-        nxt = await follower(current)
+        nxt = await follow(current)
         if nxt is None:
             return
-        _check_address(nxt)
+        _check_address(nxt, here=here)
         current = nxt
 
     _refuse(url, "too_many_redirects", "That link redirects too many times to be downloaded.")
 
 
-def check_url(url: str) -> None:
+def check_url(url: str, *, here: bool = True) -> None:
     """Refuse a URL by scheme and resolved address, without walking its redirects.
 
     For a caller that fetches the URL with redirects disabled: the curl_cffi resolvers, which cannot
     pin a connection and so refuse rather than chase a redirect to a fresh, unvetted address.
-    `guard_url` adds the redirect pre-walk for a caller whose fetch will follow them.
+    `guard_url` adds the redirect pre-walk for a caller whose fetch will follow them. Not `here`,
+    nothing is resolved: the check a link gets before its route is known.
     """
-    _check_address(url)
+    _check_address(url, here=here)
 
 
 def confine_to(root: Path, candidate: Path) -> Path:
@@ -212,4 +197,5 @@ __all__ = [
     "check_url",
     "confine_to",
     "guard_url",
+    "next_hop",
 ]

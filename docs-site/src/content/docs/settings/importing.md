@@ -24,26 +24,6 @@ Each stage's row says when it runs and whether anything is waiting for it.
 
 ## Every setting
 
-<a id="photo_sets.from_folders"></a>
-
-### Create Photo Sets from folders
-
-A folder with 10 or more photos and no videos becomes a Photo Set named after the folder.
-
-- **Path**: [Settings > Importing > Create Photo Sets from folders](/settings/importing#photo_sets.from_folders)
-- **Default**: On
-- **Who sets it**: an admin, for everyone on this Sift
-
-<a id="photo_sets.from_archives"></a>
-
-### Create Photo Sets from ZIP files
-
-A ZIP file with 10 or more photos inside becomes a Photo Set named after the file.
-
-- **Path**: [Settings > Importing > Create Photo Sets from ZIP files](/settings/importing#photo_sets.from_archives)
-- **Default**: On
-- **Who sets it**: an admin, for everyone on this Sift
-
 <a id="performance.generate_fingerprints"></a>
 
 ### Generate fingerprints
@@ -102,6 +82,26 @@ Some files store their sound far from their picture, which makes skipping around
 Sift keeps a corrected copy and plays that instead. Your own file is never changed. Each copy is a whole second file, so turning this off stops new ones and keeps the ones already made. To free that space, delete them in [Settings > Maintenance](/settings/maintenance).
 
 - **Path**: [Settings > Importing > Repair videos that stutter when skipping](/settings/importing#performance.repair_playback)
+- **Default**: On
+- **Who sets it**: an admin, for everyone on this Sift
+
+<a id="photo_sets.from_folders"></a>
+
+### Create Photo Sets from folders
+
+A folder with 10 or more photos and no videos becomes a Photo Set named after the folder.
+
+- **Path**: [Settings > Importing > Create Photo Sets from folders](/settings/importing#photo_sets.from_folders)
+- **Default**: On
+- **Who sets it**: an admin, for everyone on this Sift
+
+<a id="photo_sets.from_archives"></a>
+
+### Create Photo Sets from ZIP files
+
+A ZIP file with 10 or more photos inside becomes a Photo Set named after the file.
+
+- **Path**: [Settings > Importing > Create Photo Sets from ZIP files](/settings/importing#photo_sets.from_archives)
 - **Default**: On
 - **Who sets it**: an admin, for everyone on this Sift
 

@@ -18,12 +18,14 @@ from typing import Any
 
 import pytest
 from pydantic import ValidationError
+from structlog.testing import capture_logs
 
 from sift.kernel import attention
 from sift.kernel.attention import ATTENTION_SECONDS, Attention, elapsed_seconds
 from sift.kernel.changes import About
 from sift.kernel.config import Settings
 from sift.kernel.jobs import JobContext, JobQueue, JobState, WorkerPool, register_handler
+from sift.testing.logs import uncached_log
 
 
 def _holding(reader: Attention) -> bool:
@@ -132,7 +134,8 @@ def test_the_full_amount_overrules_the_other_programs_cause_too() -> None:
     reader = Attention(_Input(None))
     reader.press(full=True)
     assert reader.workers(8, step_back=True, others_busy=True) == 8
-    assert (reader.full_amount, reader.holding, reader.cause) == (True, False, None)
+    # Still said, so the bolt can say what it overrules.
+    assert (reader.full_amount, reader.holding, reader.cause) == (True, False, "others")
     reader.press(full=False)
     assert reader.workers(8, step_back=True, others_busy=True) == 2
 
@@ -291,6 +294,26 @@ def test_a_press_runs_the_full_count_while_somebody_is_here_and_a_second_press_s
     reader.press(full=False)
     assert (_holding(reader), _full_amount(reader)) == (True, False)
     assert reader.workers(8, step_back=True) == 2
+
+
+def test_the_log_says_when_a_press_takes_effect_not_only_when_the_cause_changes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    uncached_log(monkeypatch, attention)
+    reader = Attention(_Input(2.0))
+    reader.workers(8, step_back=True)
+    with capture_logs() as logs:
+        reader.press(full=True)
+        reader.workers(8, step_back=True)
+        reader.workers(8, step_back=True)
+        reader.press(full=False)
+        reader.workers(8, step_back=True)
+    assert [(one["event"], one.get("workers")) for one in logs] == [
+        ("attention.full_amount_pressed", None),
+        ("attention.full_amount", 8),
+        ("attention.step_back_pressed", None),
+        ("attention.stepping_back", 2),
+    ]
 
 
 def test_nobody_here_is_the_full_count_by_itself_with_nothing_to_press() -> None:

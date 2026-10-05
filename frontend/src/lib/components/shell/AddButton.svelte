@@ -10,7 +10,8 @@
 		Field,
 		Popover,
 		Select,
-		TextInput
+		TextInput,
+		Tooltip
 	} from '$lib/components/common';
 	import SplitButton from '$lib/components/common/SplitButton.svelte';
 	import { canReadClipboard } from '$lib/shell/clipboard';
@@ -19,6 +20,7 @@
 	import { carriesALink } from '$lib/components/common/drag-assign.svelte';
 	import { session } from '$lib/shell/session.svelte';
 	import SwapModeButton from '$lib/swap/SwapModeButton.svelte';
+	import { screenBar } from './screen-bar.svelte';
 
 	/*
 	 * Opens on hover rather than on click, and the opening is the library's.
@@ -120,6 +122,9 @@
 	 * does not. Read once at setup: whether this shell can do it does not change while it is open. */
 	const canPaste = canReadClipboard();
 
+	/* Short of room, the paste half folds into Add and its press moves into the panel. */
+	const pasteHere = $derived(canPaste && session.isAdmin && screenBar.pasteOnBar);
+
 	async function pasteIn() {
 		await capture.pasteFromClipboard(null);
 		open = false;
@@ -209,7 +214,7 @@
 		fromTheBar
 	>
 		{#snippet trigger({ props })}
-			{#if canPaste && session.isAdmin}
+			{#if pasteHere}
 				<SplitButton
 					{...props}
 					tone="primary"
@@ -236,6 +241,17 @@
 								onpaste={pasted}
 								bind:value={url}
 							/>
+							{#if canPaste && !pasteHere}
+								<Tooltip label="Paste from clipboard">
+									<Button
+										tone="secondary"
+										size="small"
+										icon="assignment_add"
+										aria-label="Paste from clipboard"
+										onclick={pasteIn}
+									/>
+								</Tooltip>
+							{/if}
 							<Button type="submit" tone="primary" size="small" icon="add">Add</Button>
 						</div>
 					{/snippet}
@@ -271,13 +287,9 @@
 			</div>
 
 			<!--
-								There is no "Paste from clipboard" row here, and no note explaining its absence.
-
-								The Add button has a half of its own that does it: a row in this panel doing exactly
-								what the button above it does would be a second door to one act, and this panel is
-								the list of things that button cannot do. A note would be worse: a paragraph about
-								why something is missing, shown on the devices where nothing is missing, which reads
-								as the application apologising for the browser's rules.
+								No "Paste from clipboard" here while Add's own half does it: one act, one door. Where
+								the clipboard can't be read there's no note either; it would only apologise for the
+								browser's rules.
 
 								Ctrl-V still works everywhere, including where the button is absent, because a paste
 								EVENT carries its own data and needs no permission at all. See `pasted`.

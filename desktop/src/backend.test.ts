@@ -16,6 +16,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
 	assertPortIsFree,
 	BackendStartError,
+	exitCodeWords,
 	HOST,
 	INTERPRETER_ARGS,
 	ORIGIN,
@@ -140,5 +141,19 @@ describe('the flags the backend is started with', () => {
 	it('asks for unbuffered output on the command line, because isolation ignores the variable', () => {
 		if (!INTERPRETER_ARGS.includes('-I')) return;
 		expect(INTERPRETER_ARGS).toContain('-u');
+	});
+});
+
+describe('the exit code, in words', () => {
+	it("reads Windows' own codes in hex, and says when there was none", () => {
+		expect(exitCodeWords(3221225477)).toBe('It stopped with exit code 3221225477 (0xC0000005).');
+		expect(exitCodeWords(-1073741819)).toContain('(0xC0000005)');
+		expect(exitCodeWords(1)).toBe('It stopped with exit code 1.');
+		expect(exitCodeWords(null)).toBe('It ended without an exit code.');
+	});
+
+	it('marks a start error as a crash only when it is told', () => {
+		expect(new BackendStartError('m', 'd').crashed).toBe(false);
+		expect(new BackendStartError('m', 'd', true).crashed).toBe(true);
 	});
 });

@@ -36,7 +36,8 @@ from sift.kernel.content import ContentStore, Lack, VerdictProduct
 from sift.kernel.hardware import HardwareReport
 from sift.kernel.ledger import Actor
 from sift.kernel.log import get_logger
-from sift.kernel.ml.runtime import DeviceUnavailable, providers_now, resolve_provider
+from sift.kernel.ml.child import devices_here
+from sift.kernel.ml.runtime import DeviceUnavailable, resolve_provider
 from sift.kernel.ml.weights import Progress, WeightError
 from sift.kernel.wiring import Part
 from sift.slices.semantic import settings as semantic_settings
@@ -234,6 +235,8 @@ class SemanticService:
                 # The card died underneath a running session. The runtime would happily open it
                 # again; the runner knows better, and says what to do.
                 problem = embedder.broken
+            elif embedder.words_refused is not None:
+                problem = embedder.words_refused
             else:
                 try:
                     await self._check_device(configured.device)
@@ -259,10 +262,7 @@ class SemanticService:
         every scan fail into the job log while the settings screen said everything was fine, which
         is a fault nobody can see from the screen that caused it.
         """
-        # Through `providers_now` rather than a bare import: that import has to be the one that
-        # puts the graphics-card build in front of the processor one, and whichever build is loaded
-        # first is the one this process has for good.
-        available = await asyncio.to_thread(providers_now)
+        available = await asyncio.to_thread(devices_here, self._settings, FEATURE)
         resolve_provider(device, self._hardware, available, feature=FEATURE)
 
     # --- turning things into numbers -----------------------------------------------------------
@@ -279,7 +279,13 @@ class SemanticService:
         if not readiness.ready:
             return None
         embedder = await self.embedder()
-        return await embedder.describe_words(text)
+        try:
+            return await embedder.describe_words(text)
+        except DeviceUnavailable:
+            # A vocabulary that can't load is said by `readiness`; the search takes the ordinary order.
+            if embedder.words_refused is None:
+                raise
+            return None
 
     async def _reading(self) -> str | None:
         """The revision a read of the index answers by, or None while the switch is off.
@@ -460,7 +466,7 @@ class SemanticService:
             # to say why reads as a download that keeps failing and starting over.
             if on_file is not None:
                 on_file(index, len(wanted), weight.role)
-            await store.fetch(weight, progress=progress)
+            await store.fetch(weight, progress=progress, fresh=force)
             installed.append(weight.id)
         return installed
 

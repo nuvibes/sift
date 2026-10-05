@@ -225,6 +225,12 @@ BUNDLED WITH THE WINDOWS DESKTOP APPLICATION
                           affected by, whatever Python is installed on the machine.
                           PSF License Agreement.
 
+  Visual C++ runtime      Microsoft's Visual C++ redistributable for x64 (msvcp140,
+                          concrt140, vcruntime140 and their companions), unmodified,
+                          bundled beside the interpreter so its native libraries never
+                          load an older copy from Windows. Redistributed under
+                          Microsoft's terms for the Visual C++ redistributable.
+
 PYTHON LIBRARIES THAT CARRY NATIVE LIBRARIES OF THEIR OWN
 =========================================================
 

@@ -115,20 +115,8 @@
 		return `${Math.round(bytes / 1024 / 1024 / 1024)} GB`;
 	}
 
-	/* WHAT THE MACHINE HAS, not what the operating system can address.
-	 *
-	 * They are different numbers: what the operating system reports as physical memory is the
-	 * installed total less whatever the firmware and the hardware reserve, a few gigabytes. Shown
-	 * here, the addressable figure would stand beside a Windows dialog naming the installed one,
-	 * and read as Sift being unable to count.
-	 *
-	 * Only the installed figure is SHOWN. The addressable one is still what every sizing decision
-	 * is made against (it is the memory that actually exists to be spent), but a description of
-	 * somebody's computer should say what is in it and stop there. Two numbers in one row would
-	 * invite the question rather than answer it.
-	 *
-	 * Falls back where nothing will say: Linux has no equivalent that is not a guess.
-	 */
+	/* The installed memory, as a Windows dialog names it, not the smaller addressable figure every
+	   sizing uses. Linux reports only the second. */
 	const memory = $derived(
 		readableMemory(hardware?.installed_ram_bytes ?? hardware?.total_ram_bytes ?? null)
 	);
@@ -151,15 +139,13 @@
 		}
 	});
 
-	/* A duration a person can read. Tenths are the smallest unit worth showing: this is here to
-	   answer "did Sift stop", and no one cares whether it was 4 or 7 milliseconds. */
+	/* Tenths at most: this answers "did Sift stop", not by how many milliseconds. */
 	function readablePause(seconds: number): string {
 		if (seconds < 0.1) return COPY.pause.tiny;
 		return COPY.pause.seconds(seconds.toFixed(1));
 	}
 
-	/* The start-up reading, without the decimals nobody reads. Whole numbers here because the
-	   figure only has to be recognisable as far too large, and 401 says that as well as 400.5. */
+	/* Whole numbers: the figure only has to read as far too large. */
 	function roundedMicroseconds(measured: number): string {
 		return Math.round(measured).toLocaleString();
 	}
@@ -167,11 +153,7 @@
 	async function load() {
 		try {
 			const sections = await fetchSettings();
-			/* EVERY section, keyed. The readout below says what each expensive feature is running
-			 * on, and the two settings that decide that belong to Smart Search and to face
-			 * recognition. Looked up in one section only, both would miss, both would fall to the
-			 * "not nvidia" side of the test, and the table would report the processor on a machine
-			 * set to use the card. */
+			/* Every section: the device settings the readout reads belong to Smart Search and Faces. */
 			elsewhere = new Map(
 				sections.flatMap((one) => one.settings).map((entry) => [entry.key, entry.value])
 			);
@@ -181,18 +163,20 @@
 	}
 
 	let selfTest = $state<SelfTest | null>(null);
-	/* WHETHER SIFT SET THESE ITSELF: the run it starts on the first library folder saves what it
-	   found (`performance/benchmark.py`), so the numbers under it are already in force and the pane
-	   says who set them. Read again on the settings bell, which that save rings. */
+	/* What Sift's own run set, each key with the value it left; read again on the settings bell. */
 	type FirstBenchmark = components['schemas']['FirstBenchmarkView'];
-	let setBySift = $state(false);
+	let setBySift = $state(new Map<string, number>());
 	async function readFirstRun(): Promise<void> {
 		try {
 			const run = await api.get<FirstBenchmark>('/performance/benchmark');
-			setBySift = run.state === 'set';
+			setBySift = new Map(run.changes.map((one) => [one.key, one.after]));
 		} catch {
-			setBySift = false;
+			setBySift = new Map();
 		}
+	}
+	/* Only a row Sift set and nobody has moved since stands under the sentence that says so. */
+	function wasSet(one: Recommendation): boolean {
+		return !one.changes_anything && setBySift.get(one.key) === one.current;
 	}
 	onMount(readFirstRun);
 	whenChanged(settingChanges, () => void readFirstRun());
@@ -263,9 +247,7 @@
 		try {
 			await saveSettings(Object.fromEntries(changes.map((one) => [one.key, one.suggested])));
 			await load();
-			/* Read back rather than assumed. The server compares each suggestion against the CURRENT
-			   setting, so what comes back has already stopped calling these changes, which is what
-			   takes the apply button away instead of leaving it offering to do it again. */
+			/* Read back: the server compares against the CURRENT setting, so the apply button goes. */
 			selfTest = await fetchSelfTest();
 		} catch (error) {
 			testProblem = error instanceof Error ? error.message : COPY.measure.cannotSave;
@@ -288,13 +270,7 @@
 		).filter((one): one is { what: string; where: string } => one.where !== null)
 	);
 
-	/* The device as a word, or NOTHING when there is no value to read.
-	 *
-	 * The `null` is the point. Answering "CPU" for anything that is not the string `nvidia` would
-	 * turn a key that is missing (a section this account may not see, a request that failed, a
-	 * feature renamed) into a confident, wrong reading of the machine. A row that is not drawn
-	 * is honest; a row that says the wrong thing is not.
-	 */
+	/* The device as a word, or null where nothing says: a missing key is never read as the CPU. */
 	function deviceWord(value: unknown): string | null {
 		if (value === 'nvidia') return 'GPU';
 		if (value === 'cpu') return 'CPU';
@@ -565,17 +541,35 @@
 	<!-- "How long jobs take" is a record of what each pass cost, not a live reading, so it is
 	     in Activity > History with every other record. -->
 
-	<!-- The benchmark, under the description of the device it measures. What it suggests is
-	     applied to the numbers behind Concurrency, through the ordinary settings save. -->
+	<!-- The benchmark, under the device it measures; its advice goes through the settings save. -->
 	{#if selfTest}
 		<div class="block" data-testid="self-test">
 			<SectionHeading id={MEASURE_ANCHOR}>{COPY.measure.name}</SectionHeading>
 			<div class="self-test">
-				<!-- The benchmark as a row: its name and what it is for on the left, the press on the
-				     right; the long account of what it measures is the row's More about this. -->
+				<!-- The benchmark as a row; what it measures is the row's More about this. -->
 				<!-- What waits on the benchmark; `measured`, not `finished`, as rates outlive a restart. -->
 				{#snippet unmeasured()}
 					<span data-testid="self-test-unmeasured">{COPY.measure.unmeasured}</span>
+				{/snippet}
+				{#snippet suggestions(rows: Recommendation[], testid: string)}
+					{#if rows.length > 0}
+						<dl class="suggestions" data-testid={testid}>
+							{#each rows as one (one.key)}
+								<div class="suggestion" class:unchanged={!one.changes_anything}>
+									<dt>{one.label}</dt>
+									<dd>
+										<!-- The arrow character, not "-&gt;": what is on screen is typeset. -->
+										<span class="numbers">
+											{one.current === 0 ? COPY.measure.automatic : one.current} &rarr;
+											<strong>{one.suggested === 0 ? COPY.measure.automatic : one.suggested}</strong
+											>
+										</span>
+										<p class="reason">{one.reason}</p>
+									</dd>
+								</div>
+							{/each}
+						</dl>
+					{/if}
 				{/snippet}
 				<LabelledRow
 					id="performance.benchmark"
@@ -624,25 +618,17 @@
 					</p>
 				{:else if selfTest.finished && selfTest.recommendations.length > 0}
 					{@const changes = selfTest.recommendations.filter((one) => one.changes_anything)}
-					{#if setBySift}
-						<p class="verdict" data-testid="self-test-set-by-sift">{COPY.measure.setBySift}</p>
+					{@const set = selfTest.recommendations.filter(wasSet)}
+					{#if set.length > 0}
+						<p class="verdict" data-testid="self-test-set-by-sift">
+							{COPY.measure.setBySift(set.length)}
+						</p>
+						{@render suggestions(set, 'self-test-set')}
 					{/if}
-					<dl class="suggestions">
-						{#each selfTest.recommendations as one (one.key)}
-							<div class="suggestion" class:unchanged={!one.changes_anything}>
-								<dt>{one.label}</dt>
-								<dd>
-									<span class="numbers">
-										<!-- The arrow character, not "-&gt;": what is on screen is typeset. -->
-										{one.current === 0 ? COPY.measure.automatic : one.current} &rarr;
-										<strong>{one.suggested === 0 ? COPY.measure.automatic : one.suggested}</strong>
-									</span>
-									<!-- A paragraph, so the pane's one reading measure reaches it. -->
-									<p class="reason">{one.reason}</p>
-								</dd>
-							</div>
-						{/each}
-					</dl>
+					{@render suggestions(
+						selfTest.recommendations.filter((one) => !wasSet(one)),
+						'self-test-suggested'
+					)}
 					<!-- Not on a pane held read only: applying is a change to how hard the computer works. -->
 					{#if changes.length > 0 && !held()}
 						<Button
@@ -669,6 +655,11 @@
 				{#each selfTest.finished ? selfTest.notes : [] as note (note)}
 					<p class="verdict" data-testid="self-test-note">{note}</p>
 				{/each}
+				{#if selfTest.whole_to_come && !selfTest.running}
+					<p class="verdict" data-testid="self-test-whole">
+						{COPY.measure.wholeToCome(selfTest.whole_due)}
+					</p>
+				{/if}
 
 				{#if selfTest.finished && selfTest.measurement?.decode}
 					<!-- The two rates Generate and Identify read every file by. Shown so the choice made per file
@@ -960,8 +951,6 @@
 		gap: var(--space-3);
 	}
 
-	/* The spinner sits ON the sentence's line rather than above it: one thing that is working, not
-	   a mark and then a caption. */
 	/* The bar and the count under it, as one block held off the sentence above. */
 	.rounds {
 		display: flex;

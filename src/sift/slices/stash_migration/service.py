@@ -28,7 +28,7 @@ linked where a stash-box here has the same address; its scene markers as Loops o
 videos (a marker with no end becomes a twenty-second Loop tagged as a Stash marker, since a moment
 is not a stretch); its saved filters over scenes and images, as saved searches where every part
 of one can be said in Sift's words (`saved_filters`); its groups, as Collections of the scenes that
-are here, in the group's order; and, where the person asked for them, the pictures it kept on
+are here; and, where the person asked for them, the pictures it kept on
 performers, studios and tags, as their covers where they have none, through the cover door that
 re-encodes every outside picture. What could not come across is in the report.
 
@@ -1067,13 +1067,11 @@ class StashMigration:
         user_id: str | None,
         tally: Tally,
     ) -> None:
-        """Scenes of one group that are here, into the Collection it became, at its end.
+        """Scenes of one group that are here, into the Collection it became.
 
         Made once, by the Collections feature's own writer, owned by whoever pressed Run (a
         Collection is somebody's); added to from then on, so a second run or a scene arriving
-        later never makes a second one. A Collection somebody deleted is not made again. A scene
-        that arrives late goes at the end, since the group's order is Stash's and the Collection
-        may have been rearranged here since."""
+        later never makes a second one. A Collection somebody deleted is not made again."""
         if self.doors is None:
             return
         kept = await self._waiting.group(source, group_id) or KeptGroup(name, None)

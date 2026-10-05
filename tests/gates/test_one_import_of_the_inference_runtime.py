@@ -16,7 +16,7 @@ import pytest
 pytestmark = pytest.mark.unit
 
 #: The one module allowed to import it.
-THE_ONE_PLACE = Path("src/sift/kernel/ml/runtime.py")
+THE_ONE_PLACE = Path("src/sift/kernel/ml/session.py")
 
 #: The library itself.
 RUNTIME_NAMES = ("onnxruntime",)
@@ -60,8 +60,8 @@ def test_only_one_module_imports_the_inference_runtime() -> None:
     ]
 
     assert guilty == [], (
-        "These import the inference runtime directly. Call `providers_now()` or go through "
-        f"`sift.kernel.ml.runtime` instead, so the graphics-card build is in front of it: {guilty}"
+        "These import the inference runtime directly. Ask `sift.kernel.ml.child.devices_here` "
+        f"or a `ChildRunner` instead, so it loads in the model process: {guilty}"
     )
 
 

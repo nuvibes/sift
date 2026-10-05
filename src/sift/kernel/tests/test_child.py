@@ -9,8 +9,11 @@ dies is replaced on the next ask, and letting go of the models ends the process.
 
 from __future__ import annotations
 
+import os
 import subprocess
+import sys
 import time
+import weakref
 from pathlib import Path
 from typing import Any
 
@@ -19,12 +22,22 @@ import pytest
 
 from sift.kernel.config import Settings
 from sift.kernel.hardware import HardwareReport
-from sift.kernel.ml import worker
-from sift.kernel.ml.child import ChildRunner, receive, send
+from sift.kernel.ml import child as ml_child
+from sift.kernel.ml import runtime, session, worker
+from sift.kernel.ml.child import DEVICES_FLAG, ChildRunner, DeviceQuestion, receive, send
 from sift.kernel.ml.runtime import DeviceUnavailable, Runner
 from sift.kernel.ml.weights import Weight, WeightError, WeightStore, digest_of
 
 pytestmark = pytest.mark.integration
+
+CPU = "CPUExecutionProvider"
+
+
+@pytest.fixture(autouse=True)
+def runtime_in_this_process(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Models load here too, as they do in the model process; no other test's child is asked."""
+    monkeypatch.setattr(runtime, "loader", session)
+    monkeypatch.setattr(ml_child, "_RUNNING", weakref.WeakSet())
 
 
 def machine() -> HardwareReport:
@@ -327,6 +340,7 @@ def test_a_child_that_cannot_start_or_answer_says_so(
 
     class StandIn:
         pid = 1
+        returncode = 1
 
         def __init__(self, *frames: dict[str, Any], breaks: bool = False) -> None:
             self.stdin = io.BytesIO()
@@ -367,7 +381,10 @@ def test_a_child_that_cannot_start_or_answer_says_so(
     with pytest.raises(DeviceUnavailable, match=r"stopped while Probe was using it \(gone\)"):
         runner.load(weight)
     starts({"ok": True})  # the pipe ends where the answer should be
-    with pytest.raises(DeviceUnavailable, match=r"stopped while Probe was using it\. It is"):
+    with pytest.raises(
+        DeviceUnavailable,
+        match=r"stopped while Probe was using it \(it stopped with code 1\)\. It is",
+    ):
         runner.load(weight)
     starts({"ok": True}, {"error": "ValueError: bad shape", "kind": "other"})
     with pytest.raises(RuntimeError, match="bad shape"):
@@ -461,8 +478,250 @@ def test_the_worker_keeps_its_pipe_for_frames(monkeypatch: pytest.MonkeyPatch) -
     frames = io.BytesIO()
     monkeypatch.setattr(sys, "stdin", SimpleNamespace(buffer=io.BytesIO()))
     monkeypatch.setattr(sys, "stdout", SimpleNamespace(buffer=frames))
+    monkeypatch.setattr(sys, "argv", ["worker"])
+    monkeypatch.setattr(runtime, "loader", None)
     assert worker.main() == 2
     assert sys.stdout is sys.stderr
+    assert runtime.loader is session
+
+
+def test_the_worker_answers_the_device_question_alone_and_exits(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import io
+    import sys
+    from types import SimpleNamespace
+
+    frames = io.BytesIO()
+    monkeypatch.setattr(sys, "stdout", SimpleNamespace(buffer=frames))
+    args = [DEVICES_FLAG, str(settings.data_dir), str(settings.cache_dir)]
+
+    assert worker.main(args) == 0
+    frames.seek(0)
+    answer = receive(frames)
+    assert answer is not None and CPU in answer["devices"]
+
+    def broken(_settings: Settings) -> tuple[str, ...]:
+        raise ImportError("DLL load failed while importing onnxruntime_pybind11_state")
+
+    monkeypatch.setattr(session, "providers", broken)
+    out = io.BytesIO()
+    assert worker.answer_devices(out, settings) == 1
+    out.seek(0)
+    assert receive(out) == {
+        "error": "ImportError: DLL load failed while importing onnxruntime_pybind11_state"
+    }
+
+
+def test_a_running_worker_answers_the_device_question(settings: Settings) -> None:
+    import io
+
+    stdin = io.BytesIO()
+    send(
+        stdin,
+        {
+            "op": "hello",
+            "data_dir": str(settings.data_dir),
+            "cache_dir": str(settings.cache_dir),
+            "namespace": "probe",
+            "hardware": machine(),
+            "device": "cpu",
+            "feature": "Probe",
+        },
+    )
+    send(stdin, {"op": "devices"})
+    stdin.seek(0)
+    stdout = io.BytesIO()
+
+    assert worker.serve(stdin, stdout, configure=lambda _hello: None) == 0
+    stdout.seek(0)
+    assert receive(stdout) == {"ok": True}
+    answer = receive(stdout)
+    assert answer is not None and CPU in answer["devices"]
+
+
+# --- the device question, asked of real children ----------------------------------------------
+
+
+async def test_a_running_child_answers_the_device_question_and_a_busy_one_is_passed_over(
+    store: WeightStore, settings: Settings
+) -> None:
+    weight = await _example_model(store)
+    child = ChildRunner(store, machine(), device="cpu", feature="Probe")
+    assert child.devices() is None, "no child to ask"
+    try:
+        child.load(weight)
+        assert child in ml_child._RUNNING
+
+        def never(_settings: Settings) -> tuple[str, ...]:
+            raise AssertionError("a new child was started beside a running one")
+
+        assert CPU in DeviceQuestion(never).ask(settings, "Probe")
+        with child._lock:
+            assert child.devices() is None
+    finally:
+        child.unload()
+
+
+def a_runtime(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, body: str) -> None:
+    """An `onnxruntime` that does `body` as it loads, found first by every child started now."""
+    a_library(tmp_path, monkeypatch, "onnxruntime", body)
+
+
+def a_library(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, name: str, body: str) -> None:
+    """A library `name` that does `body` as it loads, found first by every child started now."""
+    package = tmp_path / "standin" / name
+    package.mkdir(parents=True)
+    (package / "__init__.py").write_text(body, encoding="utf-8")
+    already = os.environ.get("PYTHONPATH")
+    found = str(package.parent) + (os.pathsep + already if already else "")
+    monkeypatch.setenv("PYTHONPATH", found)
+
+
+#: What a runtime does when it dies in native code, without the Windows crash dialog.
+CRASH = """
+import ctypes, faulthandler, sys
+if sys.platform == "win32":
+    ctypes.windll.kernel32.SetErrorMode(0x0002)
+faulthandler._read_null()
+"""
+
+
+async def test_a_child_reads_text_with_a_real_vocabulary(
+    store: WeightStore, tmp_path: Path
+) -> None:
+    """Typed words are read in the model process: the server never loads the vocabulary."""
+    import sentencepiece
+
+    corpus = tmp_path / "corpus.txt"
+    corpus.write_text("a red car on a road\na woman at the beach\n" * 20, encoding="utf-8")
+    sentencepiece.SentencePieceTrainer.train(
+        input=str(corpus),
+        model_prefix=str(tmp_path / "words"),
+        vocab_size=24,
+        model_type="char",
+        minloglevel=2,
+    )
+    path = tmp_path / "words.model"
+    weight = Weight(
+        id="probe.vocabulary",
+        role="vocabulary",
+        family="probe",
+        revision="1",
+        url="",
+        digest=digest_of(path),
+        size_bytes=path.stat().st_size,
+        archive_member=None,
+        licence="MIT",
+    )
+    await store.install_from_file(weight, path)
+    runner = Runner(store, machine())
+    here = runner.encode(weight, "a red car")
+    assert runner.encode(weight, "a red car") == here, "the vocabulary is loaded once and kept"
+    child = ChildRunner(store, machine(), feature="Probe")
+    try:
+        assert child.encode(weight, "a red car") == here
+        assert here[0] and isinstance(here[1], int)
+    finally:
+        child.unload()
+
+
+def test_a_new_child_answers_which_devices_the_runtime_offers(settings: Settings) -> None:
+    assert CPU in ml_child._one_shot(settings)
+
+
+def test_a_runtime_that_raises_as_it_loads_costs_one_child_and_says_why(
+    settings: Settings, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    a_runtime(tmp_path, monkeypatch, 'raise ImportError("DLL load failed: the specified module")')
+
+    with pytest.raises(DeviceUnavailable) as refused:
+        DeviceQuestion().ask(settings, "Recognition")
+
+    assert str(refused.value) == (
+        "Recognition can't run on this device: the model runtime couldn't start "
+        "(ImportError: DLL load failed: the specified module). Restart Sift to try again."
+    )
+
+
+def test_a_runtime_that_kills_its_process_costs_one_child_and_leaves_a_record(
+    settings: Settings,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    """The way an access violation ends a process: no handler runs, and only the crash recorder
+    says where it was."""
+    a_runtime(tmp_path, monkeypatch, CRASH)
+
+    with pytest.raises(DeviceUnavailable) as refused:
+        DeviceQuestion().ask(settings, "Search by meaning")
+
+    said = str(refused.value)
+    assert said.startswith("Search by meaning can't run on this device: ")
+    if sys.platform == "win32":
+        assert "(it stopped with code 0xC0000005)" in said
+    else:
+        assert "(it was ended by signal 11)" in said
+    record = capfd.readouterr().err
+    assert "most recent call first" in record
+    assert str(Path("onnxruntime") / "__init__.py") in record
+
+
+def test_a_child_that_never_answers_is_ended(
+    settings: Settings, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pid_file = tmp_path / "pid"
+    a_runtime(
+        tmp_path,
+        monkeypatch,
+        f"import os, time\nopen({str(pid_file)!r}, 'w').write(str(os.getpid()))\ntime.sleep(60)\n",
+    )
+    monkeypatch.setattr(ml_child, "DEVICES_TIMEOUT_SECONDS", 15.0)
+
+    with pytest.raises(DeviceUnavailable, match="didn't answer within 15 seconds"):
+        ml_child._one_shot(settings)
+
+    assert not _alive(int(pid_file.read_text(encoding="utf-8")))
+
+
+def _alive(pid: int) -> bool:
+    """Whether this test's own child is still running five seconds on: ending takes a moment."""
+    if os.name == "nt":
+        import ctypes
+
+        kernel32 = getattr(ctypes, "windll").kernel32  # noqa: B009 (Windows only)
+        handle = kernel32.OpenProcess(0x00100000, False, pid)  # SYNCHRONIZE
+        if not handle:
+            return False
+        try:
+            return bool(kernel32.WaitForSingleObject(handle, 5000) != 0)
+        finally:
+            kernel32.CloseHandle(handle)
+    for _ in range(50):
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return False
+        time.sleep(0.1)
+    return True
+
+
+def test_a_child_that_cannot_be_started_or_answers_nonsense_is_said(
+    settings: Settings, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    a_runtime(
+        tmp_path,
+        monkeypatch,
+        "import os\nos.write(1, bytes([0, 0, 0, 2]) + b'{]')\nraise SystemExit(4)\n",
+    )
+    with pytest.raises(DeviceUnavailable, match=r"^it stopped with code 4$"):
+        ml_child._one_shot(settings)
+
+    monkeypatch.setattr(ml_child, "launch_prefix", lambda _priority: [])
+    monkeypatch.setattr(sys, "executable", str(tmp_path / "no-such-python"))
+    with pytest.raises(DeviceUnavailable):
+        ml_child._one_shot(settings)
 
 
 def test_the_worker_is_configured_the_way_the_parent_is(monkeypatch: pytest.MonkeyPatch) -> None:

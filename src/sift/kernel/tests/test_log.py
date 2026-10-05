@@ -15,10 +15,10 @@ from pathlib import Path
 import pytest
 
 from sift.kernel import log as log_module
+from sift.kernel import redaction as redaction_module
 from sift.kernel.log import (
     REDACTED,
     WIDE_READ_ROWS,
-    _own_username,
     configure_logging,
     get_logger,
     hashed,
@@ -196,13 +196,15 @@ def test_a_generic_account_name_is_not_substituted(monkeypatch: pytest.MonkeyPat
     for generic in ("media", "data", "root", "abc", "app"):
         # The home folder itself is patched: Windows reads USERPROFILE, never $HOME.
         monkeypatch.setattr(Path, "home", staticmethod(lambda name=generic: Path("/") / name))
-        assert _own_username() is None, f"{generic!r} should not be treated as identifying"
+        assert redaction_module._own_username() is None, (
+            f"{generic!r} should not be treated as identifying"
+        )
 
 
 def test_a_distinctive_account_name_is_substituted(monkeypatch: pytest.MonkeyPatch) -> None:
     """A distinctive account name is substituted."""
     monkeypatch.setattr(Path, "home", staticmethod(lambda: Path("/") / "harbourlight"))
-    assert _own_username() == "harbourlight"
+    assert redaction_module._own_username() == "harbourlight"
 
 
 @pytest.mark.parametrize("key", ["filename", "file_name", "basename"])
@@ -799,7 +801,7 @@ def test_a_machine_that_will_not_say_who_it_is_is_not_an_error(
         raise RuntimeError("no home directory")
 
     monkeypatch.setattr(Path, "home", staticmethod(refuses))
-    assert _own_username() is None
+    assert redaction_module._own_username() is None
 
 
 def test_a_machine_that_will_not_say_its_name_is_not_an_error(
@@ -809,7 +811,7 @@ def test_a_machine_that_will_not_say_its_name_is_not_an_error(
         raise OSError("no name")
 
     monkeypatch.setattr(socket, "gethostname", refuses)
-    assert log_module._own_hostname() is None
+    assert redaction_module._own_hostname() is None
 
 
 @pytest.mark.parametrize(
@@ -830,13 +832,13 @@ def test_a_hostname_is_only_worth_hiding_when_it_names_somebody(
     name: str, expected: str | None, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(socket, "gethostname", lambda: name)
-    assert log_module._own_hostname() == expected
+    assert redaction_module._own_hostname() == expected
 
 
 def test_this_machines_name_is_taken_out_of_prose(monkeypatch: pytest.MonkeyPatch) -> None:
     """A hostname is taken out of prose: mount points, URLs and errors carry it with no key."""
-    monkeypatch.setattr(log_module, "_HOSTNAME", "workshop")
-    monkeypatch.setattr(log_module, "_OS_USERNAME", None)
+    monkeypatch.setattr(redaction_module, "_HOSTNAME", "workshop")
+    monkeypatch.setattr(redaction_module, "_OS_USERNAME", None)
 
     assert log_module.hide_identity("cannot reach WORKSHOP:5171") == f"cannot reach {REDACTED}:5171"
 
@@ -845,14 +847,14 @@ def test_a_path_ending_in_this_machines_user_loses_the_name(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A home directory last in a path, with no separator after it."""
-    monkeypatch.setattr(log_module, "_OS_USERNAME", "wren")
-    monkeypatch.setattr(log_module, "_HOSTNAME", None)
+    monkeypatch.setattr(redaction_module, "_OS_USERNAME", "wren")
+    monkeypatch.setattr(redaction_module, "_HOSTNAME", None)
 
     # A mount that is not a home directory: the name in an ffmpeg error or a library root.
-    assert log_module._hide_own_names("could not open /srv/wren") == (
+    assert redaction_module._hide_own_names("could not open /srv/wren") == (
         f"could not open /srv/{REDACTED}"
     )
-    assert log_module._hide_own_names("/srv/wren/one.mp4") == f"/srv/{REDACTED}/one.mp4"
+    assert redaction_module._hide_own_names("/srv/wren/one.mp4") == f"/srv/{REDACTED}/one.mp4"
     assert log_module.hide_identity("/home/wren") == f"/home/{REDACTED}"
 
 
@@ -1194,7 +1196,7 @@ def test_a_distinctive_account_name_is_the_one_that_gets_hidden(
     """
     monkeypatch.setattr(Path, "home", classmethod(lambda _cls: tmp_path / "genevieve"))
 
-    assert log_module._own_username() == "genevieve"
+    assert redaction_module._own_username() == "genevieve"
 
 
 @pytest.mark.parametrize("generic", ["root", "app", "abc", "media", "container"])
@@ -1205,7 +1207,7 @@ def test_a_name_every_installation_shares_is_left_alone(
     nobody. That is a live bug in at least one tool in this space."""
     monkeypatch.setattr(Path, "home", classmethod(lambda _cls: tmp_path / generic))
 
-    assert log_module._own_username() is None
+    assert redaction_module._own_username() is None
 
 
 class TestMovingTheRunningLoggerOntoTheStoredPreferences:

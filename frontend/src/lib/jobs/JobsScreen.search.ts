@@ -6,7 +6,7 @@
  * ONE COPY MODULE PER PANE. `JobsScreen.svelte` draws the words it adds from `COPY`. What a person
  * can type to find each tab is declared by the module of what the tab draws, so no entry is here. */
 
-import { usingShareOf } from '$lib/components/shell/full-amount';
+import { currentShare, fullAmountSays } from '$lib/components/shell/full-amount';
 
 export const COPY = {
 	tabs: { tasks: 'Tasks', now: 'Activity', history: 'App History', log: 'Logs' },
@@ -33,9 +33,8 @@ export const COPY = {
 		noneOfType: 'No tasks of this type.',
 		noneOfTypeInState: 'No tasks of this type in this state.'
 	},
-	/* Beside the running count while background work uses a share of this device because somebody
-	   is using it (Settings > Performance): the sidebar leaf's words. */
-	steppingBack: usingShareOf,
+	/* Beside the running count in eco mode, or out of it by a press: the sidebar leaf's words. */
+	steppingBack: (state: 'less' | 'full') => `${fullAmountSays(state, currentShare())}.`,
 	/* More of a family's steps than the first page held. */
 	moreSteps: 'Show more steps',
 	/* A task that failed: why, on the hover of what says so, which opens the failed ones in the

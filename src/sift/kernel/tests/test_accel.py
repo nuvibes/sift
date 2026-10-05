@@ -21,7 +21,10 @@ import pytest
 from sift.kernel.config import Settings
 from sift.kernel.fetch import FetchFailed
 from sift.kernel.ml import accel
+from sift.kernel.ml import child as ml_child
 from sift.kernel.ml.accel import AccelError, Wheel
+from sift.kernel.ml.child import DeviceQuestion
+from sift.kernel.ml.runtime import DeviceUnavailable
 from sift.kernel.subprocess import SubprocessError
 
 
@@ -154,7 +157,7 @@ async def test_a_package_that_did_not_arrive_intact_installs_nothing(
     monkeypatch.setattr(accel, "TOTAL_BYTES", good.size_bytes + damaged.size_bytes)
     index = FakeIndex({good.url: good_body, damaged.url: bad_body})
 
-    with pytest.raises(AccelError, match="did not arrive intact"):
+    with pytest.raises(AccelError, match="didn't arrive intact"):
         await accel.install(settings, session_factory=lambda: index)
 
     assert not accel.installed(settings)
@@ -354,9 +357,7 @@ def test_a_machine_whose_runtime_already_drives_a_card_is_offered_nothing(
 ) -> None:
     """A runtime somebody installed themselves is asked about before anything is downloaded over
     it."""
-    from sift.kernel.ml import runtime
-
-    monkeypatch.setattr(runtime, "installed_providers", lambda: ("CUDAExecutionProvider",))
+    monkeypatch.setattr(ml_child, "DEVICES", DeviceQuestion(lambda _: ("CUDAExecutionProvider",)))
 
     assert accel.already_capable() is True
 
@@ -365,9 +366,16 @@ def test_a_machine_whose_runtime_drives_nothing_is_offered_the_download(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The other side of it, and the one every shipped installation is on."""
-    from sift.kernel.ml import runtime
+    monkeypatch.setattr(ml_child, "DEVICES", DeviceQuestion(lambda _: ("CPUExecutionProvider",)))
 
-    monkeypatch.setattr(runtime, "installed_providers", lambda: ("CPUExecutionProvider",))
+    assert accel.already_capable() is False
+
+
+def test_a_runtime_that_cannot_start_drives_no_card(monkeypatch: pytest.MonkeyPatch) -> None:
+    def crashed(_settings: Settings) -> tuple[str, ...]:
+        raise DeviceUnavailable("it stopped with code 0xC0000005")
+
+    monkeypatch.setattr(ml_child, "DEVICES", DeviceQuestion(crashed))
 
     assert accel.already_capable() is False
 
@@ -450,57 +458,14 @@ async def test_saying_stop_between_packages_installs_nothing(
     assert not accel.installed(settings)
 
 
-class _Loaded:
-    """A module object, as `sys.modules` holds one, loaded from a given file."""
-
-    def __init__(self, file: str | None) -> None:
-        if file is not None:
-            self.__file__ = file
-
-
-def test_a_process_that_has_already_loaded_the_processor_build_needs_restarting(
-    monkeypatch: pytest.MonkeyPatch, settings: Settings
+def test_removing_it_takes_the_whole_folder(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Two builds of one library cannot both be loaded, and the first one in wins for the life of
-    the process. An installation done after that point is real and cannot take effect yet, and
-    saying so is the whole reason this exists."""
-    monkeypatch.setitem(sys.modules, "onnxruntime", _Loaded(r"C:\App\onnxruntime\__init__.py"))
-
-    assert accel.restart_needed(settings) is True
-
-
-def test_nothing_loaded_yet_needs_no_restart(
-    monkeypatch: pytest.MonkeyPatch, settings: Settings
-) -> None:
-    """The next import is the first one, and it gets the card build."""
-    monkeypatch.delitem(sys.modules, "onnxruntime", raising=False)
-
-    assert accel.restart_needed(settings) is False
-
-
-def test_the_card_build_already_loaded_needs_no_restart(
-    monkeypatch: pytest.MonkeyPatch, settings: Settings
-) -> None:
-    """Whether the card build is loaded is asked of the loaded module, not of "is onnxruntime
-    imported": opening the settings screen imports it, so a working server would be told to
-    restart."""
-    where = accel.directory(settings) / "onnxruntime" / "__init__.py"
-    monkeypatch.setitem(sys.modules, "onnxruntime", _Loaded(str(where)))
-
-    assert accel.restart_needed(settings) is False
-
-
-def test_a_runtime_that_will_not_say_where_it_came_from_is_not_vouched_for(
-    monkeypatch: pytest.MonkeyPatch, settings: Settings
-) -> None:
-    """A restart costs seconds; claiming a card is in use when it is not costs a lot more."""
-    monkeypatch.setitem(sys.modules, "onnxruntime", _Loaded(None))
-
-    assert accel.restart_needed(settings) is True
-
-
-def test_removing_it_takes_the_whole_folder(settings: Settings) -> None:
-    """A gigabyte somebody may want back is a gigabyte they can see and remove."""
+    """A gigabyte somebody may want back is a gigabyte they can see and remove, and the card is no
+    longer offered."""
+    offered = iter([("CUDAExecutionProvider",), ("CPUExecutionProvider",)])
+    monkeypatch.setattr(ml_child, "DEVICES", DeviceQuestion(lambda _: next(offered)))
+    assert accel.already_capable() is True
     root = accel.directory(settings)
     (root / "nvidia" / "cublas" / "bin").mkdir(parents=True)
     (root / accel._MARKER).write_text("{}", encoding="utf-8")
@@ -510,6 +475,7 @@ def test_removing_it_takes_the_whole_folder(settings: Settings) -> None:
 
     assert not root.exists()
     assert not accel.installed(settings)
+    assert accel.already_capable() is False
     # And asking twice is not an error: the button is there whether or not anything is installed.
     accel.remove(settings)
 

@@ -29,7 +29,8 @@ const makeScene = () => ({
     locations: DataLocations;
     sharing: boolean;
     feed: string | null;
-    gaveUp: (reason: string) => void;
+    held: boolean;
+    gaveUp: (reason: string, crashed?: boolean, code?: number | null) => void;
     takeOver: () => boolean;
     stopped: number;
     listened: boolean[];
@@ -69,6 +70,11 @@ const makeScene = () => ({
     beforeLaunch?: (version: string) => Promise<void>;
   }) => Promise<import("../src/update").UpdateOutcome>,
   firewall: [] as unknown[][],
+  bundled: [] as unknown[],
+  libraryHere: true,
+  logArchive: null as unknown as (name: string) => Promise<string | null>,
+  bundleAnswer: { ok: true, file: "C:\\Downloads\\Sift log.zip" } as
+    { ok: true; file: string } | { ok: false; reason: string },
 });
 
 type Scene = ReturnType<typeof makeScene>;
@@ -97,15 +103,22 @@ export const doubles = {
       private readonly record;
       constructor(
         locations: DataLocations,
-        gaveUp: (reason: string) => void,
+        gaveUp: (
+          reason: string,
+          crashed?: boolean,
+          code?: number | null,
+        ) => void,
         sharing: boolean,
         takeOver: () => boolean = () => false,
         feed: string | null = null,
+        _link: unknown = null,
+        held = false,
       ) {
         this.record = {
           locations,
           sharing,
           feed,
+          held,
           gaveUp,
           takeOver,
           stopped: 0,
@@ -161,6 +174,7 @@ export const doubles = {
         detail: scene.fileDetail,
       }),
       backUpLibrary: async () => scene.backup,
+      holdsLibrary: () => scene.libraryHere,
       openingAtStart: () => scene.opening,
       takeSwitchNote: (dataDir: string) => {
         scene.notesTaken.push(dataDir);
@@ -289,6 +303,18 @@ export const doubles = {
       return scene.smoke;
     },
   }),
+  logbundle: () => ({
+    bundleLogs: async (ask: unknown) => {
+      scene.bundled.push(ask);
+      return scene.bundleAnswer;
+    },
+    registerLogArchive: (
+      _trust: unknown,
+      archive: (name: string) => Promise<string | null>,
+    ) => {
+      scene.logArchive = archive;
+    },
+  }),
   uninstall: () => ({
     recordForUninstaller: (where: DataLocations | null) => {
       scene.uninstaller.push(where);
@@ -414,4 +440,7 @@ export function resetScene(): void {
   scene.storageRefusal = null;
   scene.update = async () => ({ ok: false, reason: "none" });
   scene.firewall = [];
+  scene.bundled = [];
+  scene.libraryHere = true;
+  scene.bundleAnswer = { ok: true, file: "C:\\Downloads\\Sift log.zip" };
 }

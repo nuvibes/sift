@@ -14,18 +14,15 @@ and a thumbnail already do. And when its device dies underneath it, the child ex
 started again: one process is restarted rather than the application, and the models are loaded
 again on the next ask.
 
-The protocol is the smallest thing that carries a numpy array: a length-prefixed JSON frame on
-the child's own pipes, with each array's bytes following it. JSON rather than pickle, though the
-only writer is this module and the only reader is the worker it started: a reader that can be
-made to run code by what it reads is not something to have in the tree at all, and the two
-kinds of record the frames carry (a weight, the hardware report) are plain enough to spell out.
-Nothing here listens on a port and nothing crosses a machine boundary.
+The protocol is a length-prefixed JSON frame on the child's own pipes, each array's bytes after
+it: JSON rather than pickle, so nothing read can run code. Nothing here listens on a port.
 """
 
 from __future__ import annotations
 
 import contextlib
 import dataclasses
+import io
 import json
 import os
 import struct
@@ -33,23 +30,32 @@ import subprocess
 import sys
 import threading
 import time
-from collections.abc import Sequence
+import weakref
+from collections.abc import Callable, Sequence
 from typing import IO, Any
 
 import numpy as np
 
 from sift.kernel import device_load
+from sift.kernel.config import Settings
 from sift.kernel.hardware import HardwareReport
 from sift.kernel.log import get_logger, level_name, redacts_personal
 from sift.kernel.ml.runtime import _ANONYMOUS, _DEVICES, DeviceLost, DeviceUnavailable, Loaded
 from sift.kernel.ml.weights import Weight, WeightError, WeightStore
 from sift.kernel.subprocess import Priority, creation_flags, launch_prefix, step_aside
+from sift.kernel.threads import waits_on_storage
 
 log = get_logger(__name__)
 
 #: The module the child runs. Named here and nowhere else, so the parent and the worker cannot
 #: come to disagree about which program is on the other end of the pipe.
 WORKER_MODULE = "sift.kernel.ml.worker"
+
+#: The worker's argument for a child that answers the device question and exits.
+DEVICES_FLAG = "--devices"
+
+#: How long that child has to answer. Loading the runtime takes seconds on a slow disk.
+DEVICES_TIMEOUT_SECONDS = 60.0
 
 #: How long a lost device is held against, before the next ask starts a child again. A card that
 #: is genuinely dead would otherwise be asked again by every job, each paying a process start to
@@ -158,6 +164,17 @@ def receive(pipe: IO[bytes]) -> dict[str, Any] | None:
     return frame if isinstance(frame, dict) else None
 
 
+class ChildStopped(DeviceUnavailable):
+    """The model process ended while it was asked something; `how` says how it ended."""
+
+    def __init__(self, feature: str, how: str) -> None:
+        super().__init__(
+            f"The model process stopped while {feature} was using it ({how}). "
+            "It is started again on the next ask."
+        )
+        self.how = how
+
+
 class ChildRunner:
     """The runtime, driven in a child process. The same surface `Runner` has, so a feature can
     hold either without knowing which."""
@@ -188,11 +205,8 @@ class ChildRunner:
 
     @property
     def broken(self) -> str | None:
-        """Why the device cannot be used just now, or None. What a screen says.
-
-        Unlike the in-process runtime's, this clears itself: the child that lost the device is
-        gone, and the next ask after the hold starts a fresh one on a fresh context.
-        """
+        """Why the device cannot be used just now, or None. Clears itself once the hold passes:
+        the next ask starts a fresh child on a fresh context."""
         if self._lost_at is None:
             return None
         if time.monotonic() - self._lost_at >= LOST_DEVICE_HOLD_SECONDS:
@@ -228,23 +242,8 @@ class ChildRunner:
         self, loaded: Loaded, blob: np.ndarray, *, outputs: Sequence[str] | None = None
     ) -> list[np.ndarray]:
         """Run one input through a loaded model and hand back its outputs, in declared order or
-        in the order asked for.
-
-        **One input per ask.** A face pass reads thirty frames of a file and the detector's batch
-        dimension is fixed at one, but the pipe costs the PIXELS and almost nothing else: thirty
-        asks carrying thirty detector frames cost about five percent more than one ask carrying
-        all thirty, because both move exactly the same bytes. The per-ask cost beyond the bytes is
-        what a protocol change could remove, and it is not worth a second shape on this seam.
-
-        Where the cost IS: a frame crosses as float32 pixels, four times the bytes it began life
-        as, because the conversion is made on this side. Moving the
-        conversion into the child would cut the pipe by four, and it would put a model family's
-        own arrangement in the kernel, which this module deliberately knows nothing about. Left
-        for whoever has a reason to open that seam.
-
-        The batching that does pay needs nothing here: several inputs stacked into ONE array are
-        one ordinary ask, and the face recognizer sends thirty-two crops that way (about half the
-        time of thirty-two asks).
+        in the order asked for. One input per ask: the pipe's cost is the bytes, so inputs worth
+        batching are stacked into one array by the caller.
         """
         with self._lock:
             if loaded.weight.id not in self._loaded:
@@ -261,6 +260,12 @@ class ChildRunner:
                 }
             )
             return [np.asarray(one) for one in answer["outputs"]]
+
+    def encode(self, weight: Weight, text: str) -> tuple[list[int], int]:
+        """Text as the symbols of a vocabulary file, read in the child, and its end symbol."""
+        with self._lock:
+            answer = self._ask({"op": "encode", "weight": weight, "text": text})
+        return [int(one) for one in answer["ids"]], int(answer["eos"])
 
     def unload(self) -> None:
         """Drop every session and end the child, so the memory goes back to the machine."""
@@ -292,10 +297,7 @@ class ChildRunner:
             ) from error
         if answer is None:
             self._end()
-            raise DeviceUnavailable(
-                f"The model process stopped while {self._feature} was using it. "
-                "It is started again on the next ask."
-            )
+            raise ChildStopped(self._feature, _how_it_ended(child.returncode))
         if "error" not in answer:
             return answer
         why = str(answer["error"])
@@ -331,6 +333,7 @@ class ChildRunner:
             )
         except OSError as error:
             raise DeviceUnavailable(f"The model process could not be started ({error}).") from error
+        _RUNNING.add(self)
         # Behind everything else on the disk and in memory too, like any tool's reads.
         step_aside(child)
         device_load.own_child(child)
@@ -363,6 +366,17 @@ class ChildRunner:
             raise DeviceUnavailable(f"The model process could not start ({why}).")
         log.info("ml.child.started", pid=child.pid, device=self._device, feature=self._feature)
         return child
+
+    def devices(self) -> tuple[str, ...] | None:
+        """What the runtime in this runner's child offers, or None with no idle child to ask."""
+        if not self._lock.acquire(blocking=False):
+            return None
+        try:
+            if self._child is None:
+                return None
+            return tuple(self._ask({"op": "devices"})["devices"])
+        finally:
+            self._lock.release()
 
     @staticmethod
     def _answer(pipe: IO[bytes]) -> dict[str, Any] | None:
@@ -418,3 +432,117 @@ def _pipes(child: subprocess.Popen[bytes]) -> tuple[IO[bytes], IO[bytes]]:
     """The child's two pipes, which `_start` asked for; typed as optional by the library."""
     assert child.stdin is not None and child.stdout is not None  # noqa: S101 (pipes were asked for)
     return child.stdin, child.stdout
+
+
+# --- which devices the runtime can drive ------------------------------------------------------
+
+#: Every runner with a child started, so the device question can go to a runtime already loaded.
+_RUNNING: weakref.WeakSet[ChildRunner] = weakref.WeakSet()
+
+
+def runtime_wont_start(feature: str, why: str) -> str:
+    """What a screen says when the runtime can't load on this device."""
+    return (
+        f"{feature} can't run on this device: the model runtime couldn't start ({why}). "
+        "Restart Sift to try again."
+    )
+
+
+def _how_it_ended(code: int) -> str:
+    if code < 0:
+        return f"it was ended by signal {-code}"
+    # A Windows crash code reads as the hex its documentation uses.
+    return f"it stopped with code 0x{code:08X}" if code > 0xFFFF else f"it stopped with code {code}"
+
+
+def _one_shot(settings: Settings) -> tuple[str, ...]:
+    """Ask a new child, which exits once it has answered. Raises `DeviceUnavailable` saying why."""
+    argv = [
+        *launch_prefix(Priority.BACKGROUND),
+        sys.executable,
+        "-m",
+        WORKER_MODULE,
+        DEVICES_FLAG,
+        str(settings.data_dir),
+        str(settings.cache_dir),
+    ]
+    try:
+        done = subprocess.run(  # noqa: S603 (a list, never a shell; our own interpreter)
+            argv,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=None,
+            timeout=DEVICES_TIMEOUT_SECONDS,
+            check=False,
+            creationflags=creation_flags(Priority.BACKGROUND),
+        )
+    except subprocess.TimeoutExpired:
+        raise DeviceUnavailable(
+            f"it didn't answer within {DEVICES_TIMEOUT_SECONDS:.0f} seconds"
+        ) from None
+    except OSError as error:
+        raise DeviceUnavailable(str(error)) from error
+    try:
+        answer = receive(io.BytesIO(done.stdout)) or {}
+    except ValueError:
+        answer = {}
+    if done.returncode == 0 and "devices" in answer:
+        return tuple(answer["devices"])
+    raise DeviceUnavailable(str(answer.get("error") or _how_it_ended(done.returncode)))
+
+
+class DeviceQuestion:
+    """Which backends the runtime offers, asked of a child and kept until `forget`.
+
+    A failure is kept too: a runtime that crashed as it loaded crashes the same way again.
+    """
+
+    def __init__(self, one_shot: Callable[[Settings], tuple[str, ...]] = _one_shot) -> None:
+        self._one_shot = one_shot
+        self._lock = threading.Lock()
+        self._answer: tuple[str, ...] | None = None
+        self._failed: str | None = None
+
+    def ask(self, settings: Settings, feature: str) -> tuple[str, ...]:
+        with self._lock:
+            if self._answer is None and self._failed is None:
+                try:
+                    self._answer = _from_a_running_child() or self._one_shot(settings)
+                except (DeviceUnavailable, RuntimeError) as error:
+                    self._failed = str(error)
+                    log.error("ml.runtime.wont_start", detail=self._failed)
+            if self._answer is None:
+                raise DeviceUnavailable(runtime_wont_start(feature, str(self._failed)))
+            return self._answer
+
+    def forget(self) -> None:
+        """Ask again next time, of a fresh child: a runtime was installed or removed."""
+        with self._lock:
+            self._answer = None
+            self._failed = None
+            _RUNNING.clear()
+
+
+def _from_a_running_child() -> tuple[str, ...] | None:
+    for runner in list(_RUNNING):
+        # A child that stopped for its own reasons says nothing about the runtime: a new one does.
+        with contextlib.suppress(DeviceUnavailable, RuntimeError):
+            answer = runner.devices()
+            if answer is not None:
+                return answer
+    return None
+
+
+#: The one door to the device question, for every feature.
+DEVICES = DeviceQuestion()
+
+
+@waits_on_storage
+def devices_here(settings: Settings, feature: str = _ANONYMOUS) -> tuple[str, ...]:
+    """Which backends the runtime offers on this device, or `DeviceUnavailable` saying it can't
+    start here, in the feature's words."""
+    return DEVICES.ask(settings, feature)
+
+
+def forget_devices() -> None:
+    DEVICES.forget()

@@ -90,6 +90,7 @@ describe('the preload', () => {
 			'shellVersion',
 			'shellLog',
 			'shellLogDetail',
+			'saveLogArchive',
 			'firewall',
 			'openFirewall',
 			'listBrowsers',
@@ -128,9 +129,7 @@ describe('the preload', () => {
 			'forgetLibrary',
 			'setTitleBar'
 		]);
-		/* And each one is a verb, not a name left over from a rename. `offered` is built from the
-		   channel list, so an entry of `api` renamed by mistake leaves its key here with nothing
-		   behind it, and a page calling it would throw where the key promised a function. */
+		/* And each is a function, not a key left behind by a rename that a page would call and throw. */
 		for (const [name, verb] of Object.entries(exposed.sift as object)) {
 			if (name !== 'isDesktop') expect(typeof verb, name).toBe('function');
 		}
@@ -153,6 +152,7 @@ describe('the preload', () => {
 			'localHardware',
 			'machineName',
 			'shellVersion',
+			'saveLogArchive',
 			'listBrowsers',
 			'setBrowser',
 			'downloadFolder',
@@ -251,6 +251,7 @@ describe('what each verb sends across', () => {
 		['shellVersion', channels.SHELL_VERSION, []],
 		['shellLog', channels.SHELL_LOG, [200]],
 		['shellLogDetail', channels.SHELL_LOG_DETAIL, [true, false]],
+		['saveLogArchive', channels.SAVE_LOG_ARCHIVE, ['Sift log.zip']],
 		['firewall', channels.GET_FIREWALL, []],
 		['openFirewall', channels.OPEN_FIREWALL, ['private']],
 		['listBrowsers', channels.LIST_BROWSERS, []],

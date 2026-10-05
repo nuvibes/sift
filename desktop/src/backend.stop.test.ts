@@ -1,17 +1,12 @@
-/* Stopping the backend, which is the half of the shutdown this side owns.
- *
- * `child.kill()` is not a polite request on Windows. Node turns every signal name into
- * TerminateProcess, which stops the process where it stands, so the database is never closed and
- * the write-ahead log is left unfolded. Closing the backend's stdin is the request instead.
- *
- * In its own file because it mocks `node:child_process`, and the port check beside it must keep
- * using real sockets.
- */
+/* Stopping and restarting the backend, with `node:child_process` mocked: `child.kill()` on Windows
+ * is TerminateProcess, so closing stdin is how a stop is asked for. */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const spawned = {
 	stdin: { end: vi.fn() },
+	stdout: { on: vi.fn() },
+	stderr: { on: vi.fn() },
 	kill: vi.fn(),
 	once: vi.fn(),
 	on: vi.fn(),
@@ -49,7 +44,21 @@ vi.mock('./log', () => ({
 	)
 }));
 
-const { ASKED_TO_RESTART, Backend } = await import('./backend');
+const starts = vi.hoisted(() => ({ written: [] as string[], closed: 0, facts: [] as unknown[][] }));
+vi.mock('./backendlog', () => ({
+	openStart: () => ({
+		start: 7,
+		write: (chunk: Buffer) => starts.written.push(chunk.toString()),
+		close: () => {
+			starts.closed += 1;
+		}
+	})
+}));
+vi.mock('./facts', () => ({
+	writeFacts: (...args: unknown[]) => starts.facts.push(args)
+}));
+
+const { ASKED_TO_RESTART, Backend, DRAIN_MS } = await import('./backend');
 const { spawn } = await import('node:child_process');
 
 function started(): InstanceType<typeof Backend> {
@@ -233,14 +242,23 @@ describe('an exit the backend asked for', () => {
 
 	/* And the budget still applies to everything else, or a backend failing at startup would be
 	   restarted for ever. */
-	it('leaves a crash counted as a crash', () => {
+	it('leaves a crash counted as a crash', async () => {
+		vi.useFakeTimers();
 		const gaveUp = vi.fn();
 		spawnedOnce(gaveUp);
 
-		for (let each = 0; each < 4; each += 1) spawned.exited?.(1);
+		for (let each = 0; each < 4; each += 1) spawned.exited?.(3221225477);
+		/* The give-up waits for the dead backend's last output first. */
+		await vi.advanceTimersByTimeAsync(DRAIN_MS - 1);
+		expect(gaveUp).not.toHaveBeenCalled();
+		await vi.advanceTimersByTimeAsync(1);
 
 		expect(gaveUp).toHaveBeenCalledOnce();
-		expect(gaveUp.mock.calls[0][0]).toContain('stopped');
+		expect(gaveUp.mock.calls[0]?.[0]).toContain('stopped 4 times');
+		expect(gaveUp.mock.calls[0]?.[0]).toContain('exit code 3221225477 (0xC0000005)');
+		expect(gaveUp.mock.calls[0]?.[0]).toContain('The end of start 7:');
+		expect(gaveUp.mock.calls[0]?.[1]).toBe(true);
+		expect(gaveUp.mock.calls[0]?.[2]).toBe(3221225477);
 	});
 
 	/* The shell's own log says the backend went away and came back, and why, or a bug report
@@ -386,5 +404,62 @@ describe('the shell link', () => {
 		const variables = variablesWith(null);
 		expect('SIFT_SHELL_URL' in variables).toBe(false);
 		expect('SIFT_SHELL_TOKEN' in variables).toBe(false);
+	});
+});
+
+/* Held only for a launch the crash dialog asked for. */
+describe('the optional features held off', () => {
+	function variablesOf(held?: boolean): Record<string, string | undefined> {
+		vi.mocked(spawn).mockClear();
+		starts.facts.length = 0;
+		const backend = new Backend(
+			{ dataDir: 'D:\\data', cacheDir: 'D:\\cache' },
+			() => {},
+			false,
+			() => false,
+			null,
+			null,
+			...(held === undefined ? [] : [held])
+		);
+		(backend as unknown as { spawnChild(): void }).spawnChild();
+		const { env: variables } = vi.mocked(spawn).mock.calls[0]?.[2] as {
+			env: Record<string, string | undefined>;
+		};
+		return variables;
+	}
+
+	it('are asked for by a variable only when held', () => {
+		expect(variablesOf(true)['SIFT_HOLD_OPTIONAL_FEATURES']).toBe('true');
+		expect(starts.facts[0]?.[1]).toBe(true);
+		expect('SIFT_HOLD_OPTIONAL_FEATURES' in variablesOf(false)).toBe(false);
+		expect('SIFT_HOLD_OPTIONAL_FEATURES' in variablesOf()).toBe(false);
+		expect(starts.facts[0]?.[1]).toBe(false);
+	});
+});
+
+/* The backend's output goes through this side into the start's own file, both streams. */
+describe('the output of a start', () => {
+	it('is written to its start log, which is closed when the streams are', async () => {
+		starts.written.length = 0;
+		starts.closed = 0;
+		let closeIt: () => void = () => {};
+		spawned.once.mockImplementation((event: string, run: (code?: number) => void) => {
+			if (event === 'close') closeIt = run as () => void;
+		});
+		const backend = new Backend({ dataDir: 'D:\\data', cacheDir: 'D:\\cache' }, () => {});
+		(backend as unknown as { spawnChild(): void }).spawnChild();
+		const options = vi.mocked(spawn).mock.calls.at(-1)?.[2] as { stdio: unknown[] };
+
+		for (const stream of [spawned.stdout, spawned.stderr]) {
+			const [event, take] = stream.on.mock.calls.at(-1) as [string, (chunk: Buffer) => void];
+			expect(event).toBe('data');
+			take(Buffer.from('a line\n'));
+		}
+		closeIt();
+		await Promise.resolve();
+
+		expect(options.stdio).toEqual(['pipe', 'pipe', 'pipe']);
+		expect(starts.written).toEqual(['a line\n', 'a line\n']);
+		expect(starts.closed).toBe(1);
 	});
 });

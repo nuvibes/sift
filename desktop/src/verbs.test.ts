@@ -171,8 +171,7 @@ import {
 
 const TRUSTED = 'http://127.0.0.1:5171';
 
-/* The two kinds of trusted page. `localAt` is this machine's own Sift and may use every verb;
-   `remoteAt` is a saved server on another computer and gets only `REMOTE_VERBS`. */
+/* This machine's own Sift gets every verb; a saved server elsewhere only `REMOTE_VERBS`. */
 const localAt =
 	(origin: string) =>
 	(url: string): Reach | null =>
@@ -663,7 +662,8 @@ describe('a page served by another computer', () => {
 				channels.SET_KEEP_RUNNING,
 				channels.GET_START_WITH_WINDOWS,
 				channels.SET_START_WITH_WINDOWS,
-				channels.FORGET_MODE
+				channels.FORGET_MODE,
+				channels.SAVE_LOG_ARCHIVE
 			].sort()
 		);
 		const every = Object.values(channels).filter((one) => one !== BRIDGE_VERBS);

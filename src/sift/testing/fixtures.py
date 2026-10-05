@@ -591,9 +591,8 @@ async def build_world(database: Database, world: World) -> None:
         (world.collection, "collection", sort_key("collection"), world.solo, _EPOCH),
     )
     await database.execute(
-        "INSERT INTO collection_items (collection_id, asset_id, position, added_at)"
-        " VALUES (?, ?, ?, ?)",
-        (world.collection, world.solo, 0, _EPOCH),
+        "INSERT INTO collection_items (collection_id, asset_id, added_at) VALUES (?, ?, ?)",
+        (world.collection, world.solo, _EPOCH),
     )
     # The photo set holds `solo` and wears it as its cover, exactly as the collection above
     # does and for the same reason: the truth table can then put every way of concealing that one

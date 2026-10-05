@@ -16,8 +16,10 @@ from fastapi.testclient import TestClient
 
 from sift.kernel.config import get_settings
 from sift.kernel.http import CSRF_HEADER_NAME, SESSION_COOKIE_NAME
+from sift.kernel.jobs.worker_pool import registered_alone
 from sift.main import create_app
 from sift.slices.semantic import settings as semantic_settings
+from sift.slices.semantic.jobs import SEMANTIC_FETCH_MODELS
 from sift.slices.semantic.service import Readiness, SemanticService
 from sift.testing.auth import establish_session
 from sift.testing.settings import set_app_setting
@@ -134,6 +136,10 @@ def test_fetching_the_models_queues_a_job_once_it_is_on(client: TestClient) -> N
 
     assert answer.status_code == 200
     assert answer.json()["job_id"]
+    # A second press joins it: two downloads would append to one partial file.
+    again = client.post("/api/semantic/models/fetch", params={"again": "true"})
+    assert again.json()["job_id"] == answer.json()["job_id"]
+    assert SEMANTIC_FETCH_MODELS in registered_alone()
 
 
 # --- removing the index --------------------------------------------------------------------------

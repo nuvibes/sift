@@ -44,7 +44,7 @@ export const COPY = {
 	},
 	again: {
 		label: 'Run setup again',
-		help: 'The next time you open Sift, it asks how to set up, as it did the first time.',
+		help: "The next time you open Sift, it asks whether this device keeps the library or connects to another. It doesn't ask where your library is, and nothing is moved or deleted.",
 		action: 'Run setup',
 		done: 'Sift will ask how to set up the next time it opens'
 	},

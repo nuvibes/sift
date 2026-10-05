@@ -513,6 +513,7 @@ class Downloader:
                 session,
                 one,
                 into,
+                here=proxy is None,
                 report=report,
                 already_done=already_done,
                 files_done=files_done,
@@ -568,6 +569,7 @@ class Downloader:
         files_done: int = 0,
         files_total: int | None = None,
         policy: RunPolicy = POLICY,
+        here: bool = True,
     ) -> tuple[Path, int]:
         """Stream one direct media address to a file named for what it is. The extension the
         resolver knew is used; an extensionless address gets one from the response content type.
@@ -578,8 +580,7 @@ class Downloader:
         A file of this name already in the directory is what a PAUSED run left behind, and it is
         asked to be continued rather than fetched again. The staging name is what makes that safe:
         it is derived from the address, so the same item resumed is the same file and a different
-        item is a different one. On any other run the directory is empty and the size is zero,
-        which is the ordinary fetch with nothing added to it.
+        item is a different one. On any other run the directory is empty and the size is zero.
         """
         dest = into / stage_name(item)
         return await fetcher.fetch_to_file(
@@ -595,6 +596,7 @@ class Downloader:
             files_total=files_total,
             resume_from=await asyncio.to_thread(_bytes_already_here, dest),
             policy=policy,
+            here=here,
         )
 
     async def _fetch_subprocess(

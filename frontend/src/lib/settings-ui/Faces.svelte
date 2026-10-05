@@ -373,16 +373,10 @@
 		);
 	});
 
-	/* What the download did, said out loud, once, rather than leaving the bar at whatever it
-	   last read. `settled` is the server's answer afterwards, so the tone follows what is
-	   actually true rather than what the job's last state suggested. */
-	let announced: string | null = null;
+	/* The server's answer once a download has ended, drawn without asking again. The watcher
+	   announces the ending itself. */
 	$effect(() => {
-		const outcome = modelFetch.outcome;
-		if (outcome === null || outcome === announced) return;
-		announced = outcome;
-		feature = modelFetch.settled ?? feature;
-		toasts.show(outcome, { tone: modelFetch.settled?.ready ? 'success' : 'error' });
+		if (modelFetch.outcome !== null) feature = modelFetch.settled ?? feature;
 	});
 
 	async function load() {

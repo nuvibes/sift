@@ -4,10 +4,8 @@ import { setHidden } from '$lib/library/hiding';
 
 /* Putting things in the vault, from wherever the menu is.
  *
- * Four kinds of thing do this through four different endpoints, and everything around the write is
- * the same every time. It lives in one place so that a wall which grows a Hide item gets the whole
- * of it (the refusal that tells somebody to set a PIN, and the one press back) rather than the
- * part of it a copy would remember.
+ * Each kind has its own endpoint and everything around the write is the same, so it lives in one
+ * place: a wall that grows a Hide item gets the refusal and the one press back whole.
  */
 
 const shown = vi.hoisted(() => vi.fn());
@@ -92,6 +90,16 @@ describe('when it is refused', () => {
 		expect(moved).toEqual([]);
 		expect(lastToast().message).toContain('PIN');
 		expect(lastToast().tone).toBe('error');
+	});
+
+	it('sends the refused straight to the PIN form', async () => {
+		const set = vi.fn().mockRejectedValue(new ApiError(409, 'nope'));
+
+		await setHidden(['a1'], true, { noun: 'file', set });
+
+		expect(shown.mock.calls.at(-1)?.[0]).toContainEqual(
+			expect.objectContaining({ text: 'Profile', href: '/settings/profile#profile.pin' })
+		);
 	});
 
 	it('stops at the first failure instead of saying so six times', async () => {

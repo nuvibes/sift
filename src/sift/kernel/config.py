@@ -270,6 +270,9 @@ class Settings(BaseSettings):
     """Where the release check reads from. The desktop app sets it when it starts the backend;
     unset, the check makes no request."""
 
+    hold_optional_features: bool = False
+    """Face recognition, Smart Search and watermark reading read as off for this start only."""
+
     @classmethod
     def settings_customise_sources(
         cls,
@@ -628,12 +631,7 @@ def _explain(error: ValidationError) -> str:
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
-    """The settings, loaded once.
-
-    Cached because the environment does not change while the process runs, and because a
-    second parse could silently disagree with the first. Tests that need different values
-    construct `Settings(...)` directly rather than mutating this.
-    """
+    """The settings, loaded once: a second parse could disagree with the first."""
     try:
         return Settings()
     except ValidationError as exc:

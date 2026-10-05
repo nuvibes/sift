@@ -190,6 +190,20 @@ def test_the_page_says_why_the_work_steps_back(
     assert client.get("/api/jobs").json()["step_back_for"] == "input"
 
 
+def test_the_page_says_what_other_programs_keep_busy(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from sift.kernel import attention, device_load
+
+    sign_in(client, "admin")
+    reader = attention.Attention(lambda: None)
+    monkeypatch.setattr(attention, "ATTENTION", reader)
+    monkeypatch.setattr(device_load.READER, "over", ["graphics"])
+    assert client.get("/api/jobs").json()["step_back_over"] == []
+    reader.workers(8, step_back=True, others_busy=True)
+    assert client.get("/api/jobs").json()["step_back_over"] == ["graphics"]
+
+
 def test_the_press_for_the_full_amount_is_answered_and_every_page_follows_it(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -3,7 +3,6 @@ import { flushSync, mount } from 'svelte';
 import GraphicsCard from './GraphicsCard.svelte';
 import GraphicsCardRemove from './GraphicsCardRemove.svelte';
 import { GraphicsCardState } from './graphics-card-state.svelte';
-import { ApiError } from '$lib/api/client';
 
 /* The panel has five states and the whole point of it is that they read differently.
  *
@@ -37,13 +36,6 @@ const watch = vi.hoisted(() => ({
 }));
 const { resume, follow, couldNotStart } = watch;
 
-/* Which RUN of the server is answering. The panel waits for a DIFFERENT one before it believes a
-   restart happened: the server answers the ask before it goes, so waiting for a reply would decide
-   it had come back before it had left. */
-const bootId = vi.hoisted(() => vi.fn(async () => 'before' as string | null));
-
-vi.mock('$lib/shell/health', () => ({ serverBootId: bootId }));
-
 vi.mock('$lib/jobs/accelerator.svelte', () => ({
 	ACCEL_INSTALL: 'accel_install',
 	accelWatch: watch
@@ -58,7 +50,6 @@ function machine(overrides: Record<string, unknown> = {}) {
 		download_bytes: 1_335_666_167,
 		version: '1.28.0-cp313-cu13',
 		job_id: null,
-		restart_needed: false,
 		...overrides
 	};
 }
@@ -75,8 +66,6 @@ beforeEach(() => {
 	watch.fraction = 0;
 	watch.note = null;
 	watch.outcome = null;
-	bootId.mockReset();
-	bootId.mockResolvedValue('before');
 	host = document.createElement('div');
 	document.body.append(host);
 });
@@ -95,6 +84,23 @@ async function draw(card = new GraphicsCardState()) {
 }
 
 describe('the graphics card panel', () => {
+	it('puts a sentence of a fact under its label, so the label keeps its line', async () => {
+		get.mockResolvedValue(machine({ installed: true }));
+		const card = new GraphicsCardState();
+		card.tested = { works: false, problem: 'The runtime could not load a library it needs.' };
+		watch.outcome =
+			"The onnxruntime package couldn't be downloaded: files.example.test was refused.";
+
+		await draw(card);
+
+		const rows = [...host.querySelectorAll('.row')];
+		for (const name of ['Last download', 'What the GPU reported']) {
+			const row = rows.find((one) => one.querySelector('.name')?.textContent?.trim() === name);
+			expect(row?.classList.contains('stacked')).toBe(true);
+			expect(row?.classList.contains('loose')).toBe(false);
+		}
+	});
+
 	it('offers nothing, and says why, on a machine with no card', async () => {
 		get.mockResolvedValue(machine({ supported: false, card: null }));
 
@@ -183,14 +189,23 @@ describe('the graphics card panel', () => {
 		expect(press()?.disabled).toBe(false);
 	});
 
-	it('says a restart is needed when it was installed too late in this session', async () => {
-		/* The install is real and cannot take effect until Sift is opened again. Saying nothing
-		   would leave a screen claiming the card is in use while the work goes to the processor.
-		   How it is SAID depends on the shell (an offer to do it here, a sentence in a browser),
-		   and both are covered at the foot of this file. */
-		get.mockResolvedValue(machine({ installed: true, restart_needed: true }));
+	it('lets installed support be tested, with no restart before it, and says Passed', async () => {
+		/* The models run in a child process started fresh, so a download takes effect at once. */
+		get.mockResolvedValue(machine({ installed: true }));
+		post.mockResolvedValue({ works: true, problem: null });
 
-		expect(await draw()).toMatch(/Restart needed/i);
+		await draw();
+
+		const test = [...host.querySelectorAll('button')].find((one) =>
+			/run the test/i.test(one.textContent ?? '')
+		);
+		expect(test?.disabled).toBe(false);
+		expect(host.textContent).not.toMatch(/restart/i);
+		test?.click();
+		await vi.waitFor(() => {
+			flushSync();
+			expect(host.textContent).toContain('Passed');
+		});
 	});
 
 	it('follows the job it just started, so the bar appears without a reload', async () => {
@@ -224,134 +239,6 @@ describe('the graphics card panel', () => {
 
 		// Nothing at all rather than a confident wrong answer about somebody's machine.
 		expect(await draw()).toBe('');
-	});
-});
-
-/* The restart, which the panel cannot do without.
- *
- * Turning the card on installs a second build of a library that is already loaded, and two builds
- * of one library cannot both be in a process. So the panel has to offer to start it again, and
- * the test beside it has to be refused until that has happened, because a test run in this session
- * answers "the card was refused" whatever the card can actually do. Read before the restart, that
- * sentence is indistinguishable from a card that does not work.
- */
-describe('when a restart is needed', () => {
-	function pressableNamed(text: string): HTMLButtonElement | undefined {
-		return [...host.querySelectorAll('button')].find((one) =>
-			(one.textContent ?? '').includes(text)
-		);
-	}
-
-	/* THE ONE THAT DECIDES WHICH COMPUTER RESTARTS. The process that has to start again is the one
-	   the runtime is loaded into, which is the SERVER, and this panel is read from browsers and
-	   from client-mode copies on other machines. Restarting the application in front of the reader
-	   would restart the wrong computer, say it worked, and leave the card as it was. */
-	it('asks the server to restart, not whatever is being read', async () => {
-		get.mockResolvedValue(machine({ installed: true, restart_needed: true }));
-		post.mockResolvedValue({ restarting: true });
-
-		await draw();
-		pressableNamed('Restart Sift')?.click();
-		flushSync();
-
-		/* Waited for rather than counted in ticks: the press first asks which computer this window
-		   is on, for the line History keeps of the restart. */
-		await vi.waitFor(() => expect(post).toHaveBeenCalledWith('/performance/restart'));
-	});
-
-	/* THE HALF A RESTART NEEDS, or one that worked looks like one that did nothing: stopping at
-	   the yes would leave the button saying "Restarting" for ever and the panel showing the
-	   state of the process it had just stopped. */
-	it('waits for a different run of the server, then reads the panel again', async () => {
-		get.mockResolvedValue(machine({ installed: true, restart_needed: true }));
-		post.mockResolvedValue({ restarting: true });
-		await draw();
-		get.mockClear();
-		get.mockResolvedValue(machine({ installed: true, restart_needed: false }));
-		// Still the old process for one look, then the new one.
-		bootId.mockResolvedValueOnce('before');
-		bootId.mockResolvedValueOnce('before');
-		bootId.mockResolvedValue('after');
-
-		pressableNamed('Restart Sift')?.click();
-		await vi.waitFor(() => expect(get).toHaveBeenCalledWith('/performance/accelerator'), {
-			timeout: 5000
-		});
-		flushSync();
-
-		// And the panel is about the new process: the restart row is gone with it.
-		expect(pressableNamed('Restart Sift')).toBeUndefined();
-	});
-
-	/* Pressing Download and pressing Restart is the whole of what anybody should have to do. The
-	   test is the only thing between a restart and knowing whether it worked, it takes seconds, and
-	   it is the question every person has at exactly this moment. */
-	it('tests the card itself once the server is back', async () => {
-		get.mockResolvedValue(machine({ installed: true, restart_needed: true }));
-		post.mockResolvedValue({ restarting: true });
-		await draw();
-		get.mockResolvedValue(machine({ installed: true, restart_needed: false }));
-		post.mockClear();
-		post.mockResolvedValue({ works: true, problem: null });
-		// The run it was BEFORE, then the run it is after. Set to the same value both times, the
-		// panel correctly refuses to call it a restart, which is the guard working.
-		bootId.mockResolvedValueOnce('before');
-		bootId.mockResolvedValue('after');
-
-		pressableNamed('Restart Sift')?.click();
-		/* Waiting on the SCREEN rather than on the call: the call is made a tick before the answer
-		   reaches the panel, so asserting on it and then reading the page catches the page half a
-		   step behind and fails on a feature that works. */
-		await vi.waitFor(
-			() => {
-				flushSync();
-				expect(host.textContent).toContain('Passed');
-			},
-			{ timeout: 5000 }
-		);
-
-		expect(post).toHaveBeenCalledWith('/performance/accelerator/test', {
-			signal: expect.any(AbortSignal)
-		});
-	});
-
-	/* A backend nothing is supervising would stop and stay stopped, and the server refuses rather
-	   than taking the library off the air to find out. The refusal has to reach the screen. */
-	it('says why when the server will not restart itself', async () => {
-		get.mockResolvedValue(machine({ installed: true, restart_needed: true }));
-		post.mockRejectedValue(
-			new ApiError(409, 'That did not work.', 'Nothing is watching this copy of Sift.')
-		);
-
-		await draw();
-		pressableNamed('Restart Sift')?.click();
-		flushSync();
-
-		await vi.waitFor(() => {
-			flushSync();
-			expect(host.textContent).toContain('Nothing is watching this copy of Sift');
-		});
-		// And it is pressable again, rather than stuck saying "Restarting" for ever.
-		expect(pressableNamed('Restart Sift')).toBeDefined();
-	});
-
-	/* THE OTHER ONE THAT MATTERS. A test pressed before the restart gives a wrong answer
-	   confidently. */
-	it('will not let the card be tested until it has happened', async () => {
-		get.mockResolvedValue(machine({ installed: true, restart_needed: true }));
-
-		await draw();
-
-		expect(pressableNamed('Run the test')?.disabled).toBe(true);
-		expect(host.textContent).toContain('Restart first');
-	});
-
-	it('lets the card be tested once it is not needed', async () => {
-		get.mockResolvedValue(machine({ installed: true, restart_needed: false }));
-
-		await draw();
-
-		expect(pressableNamed('Run the test')?.disabled).toBe(false);
 	});
 });
 

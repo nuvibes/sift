@@ -10,10 +10,7 @@ export const BRIDGE_VERBS = 'sift:bridgeVerbs';
 /** Ask the operating system for a folder. The whole of the decision's grant mechanism. */
 export const CHOOSE_FOLDER = 'sift:chooseFolder';
 
-/**
- * Ask the operating system for one database file (Migrate from Stash). The page learns only the
- * path somebody pointed at, which the server confines to the folders Sift has been given.
- */
+/** One database file somebody pointed at (Migrate from Stash), confined by the server. */
 export const CHOOSE_FILE = 'sift:chooseFile';
 
 /** Drag one asset's file out of the window into another application. */
@@ -53,6 +50,9 @@ export const SET_SHARING = 'sift:setSharing';
 export const SHELL_VERSION = 'sift:shellVersion';
 /* The end of the SHELL's own log: in client mode the server is another computer with its own. */
 export const SHELL_LOG = 'sift:shellLog';
+
+/* Every log of this device, redacted, in one archive in the save folder. A file name in. */
+export const SAVE_LOG_ARCHIVE = 'sift:saveLogArchive';
 
 /* Whether the shell's log writes detail too (`Settings > Activity > Log`). A true or false in. */
 export const SHELL_LOG_DETAIL = 'sift:shellLogDetail';

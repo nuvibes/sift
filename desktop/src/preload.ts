@@ -53,6 +53,7 @@ const SET_SHARING = 'sift:setSharing';
 const SHELL_VERSION = 'sift:shellVersion';
 const SHELL_LOG = 'sift:shellLog';
 const SHELL_LOG_DETAIL = 'sift:shellLogDetail';
+const SAVE_LOG_ARCHIVE = 'sift:saveLogArchive';
 const GET_FIREWALL = 'sift:getFirewall';
 const OPEN_FIREWALL = 'sift:openFirewall';
 const LIST_BROWSERS = 'sift:listBrowsers';
@@ -287,16 +288,17 @@ const api = {
 	getSharing: (): Promise<Sharing | null> => ipcRenderer.invoke(GET_SHARING),
 	setSharing: (on: boolean): Promise<Sharing | null> => ipcRenderer.invoke(SET_SHARING, on),
 
-	/* What version THIS copy of Sift is. Null from a checkout, where there is no answer.
-	 *
-	 * The page cannot work it out for itself: everything it can see comes from the server, which in
-	 * client mode is another computer entirely. */
+	/* What version THIS copy of Sift is, which in client mode the server cannot say; null from a
+	 * checkout. */
 	shellVersion: (): Promise<string | null> => ipcRenderer.invoke(SHELL_VERSION),
 	shellLog: (lines: number): Promise<ShellLog | null> => ipcRenderer.invoke(SHELL_LOG, lines),
 	/* The library's Detail and Hide personal details settings, handed to the shell's own log so it
 	 * writes what the library's log writes. The answer is what the log now does. */
 	shellLogDetail: (detailed: boolean, hidePersonal?: boolean): Promise<boolean | null> =>
 		ipcRenderer.invoke(SHELL_LOG_DETAIL, detailed, hidePersonal),
+	/* Download log: the path of the archive made, or null. Only the name crosses. */
+	saveLogArchive: (name: string): Promise<string | null> =>
+		ipcRenderer.invoke(SAVE_LOG_ARCHIVE, name),
 
 	/* Whether Windows is letting anything through to that port, and asking it to. BOTH TAKE
 	 * NOTHING: the port is the shell's own and the rule is written in the shell, so the most this
@@ -434,6 +436,7 @@ const CHANNEL_OF: Record<Exclude<keyof typeof api, 'isDesktop'>, string> = {
 	shellVersion: SHELL_VERSION,
 	shellLog: SHELL_LOG,
 	shellLogDetail: SHELL_LOG_DETAIL,
+	saveLogArchive: SAVE_LOG_ARCHIVE,
 	firewall: GET_FIREWALL,
 	openFirewall: OPEN_FIREWALL,
 	listBrowsers: LIST_BROWSERS,

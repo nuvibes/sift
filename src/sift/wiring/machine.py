@@ -17,6 +17,7 @@ from sift.kernel.db import check_sqlite_capabilities
 from sift.kernel.hardware import HardwareReport, probe
 from sift.kernel.jobs import JobContext, JobQueue, JobSwitchedOff, register_handler
 from sift.kernel.jobs.families import Family
+from sift.kernel.jobs.worker_pool import registered_handlers
 from sift.kernel.log import get_logger
 from sift.kernel.ml import accel
 from sift.kernel.ml.child import ChildRunner
@@ -168,13 +169,9 @@ def build_benchmark(
     hub: settings_hub.SettingsService,
     workbench: Workbench,
 ) -> None:
-    """The benchmark job, and what Sift runs by itself when a library folder is added.
-
-    The reaction to a folder added (`wiring.ON_FOLDER_ADDED`), the job that measures and sets,
-    the folder's scan queued once that job has settled, and the Undo that History offers for what it
-    set. Built after the self-test's runner, which it drives, and before the workers start, which
-    claim it. See `performance.benchmark`.
-    """
+    """The benchmark job, what Sift runs by itself when a library folder is added
+    (`wiring.ON_FOLDER_ADDED`) and once nothing waits, the folder's scan after it, and its Undo.
+    Built after the self-test's runner and before the workers start. See `performance.benchmark`."""
     runner = wiring.part_of_app(app, performance.SELF_TEST_RUNNER)
     first = performance.FirstBenchmark()
     provide(app, performance.FIRST_BENCHMARK, first)
@@ -224,11 +221,22 @@ def build_benchmark(
     queue.listen_for_settled(
         performance.BENCHMARK, performance.ThenScan(queue=queue, first=first, scan=scan)
     )
+    quiet = performance.WhenQuiet(
+        runner=runner, queue=queue, first=first, kinds=registered_handlers
+    )
+    quiet.listen()
+    queue.listen_for_settled(performance.BENCHMARK, quiet.ended)
+    provide(app, performance.WHEN_QUIET, quiet)
     workbench.register_reverser(performance.BenchmarkReceipts(hub, notify))
     provide(
         app,
         wiring.ON_FOLDER_ADDED,
         performance.FirstFolder(
-            runner=runner, queue=queue, roots=roots, first=first, storage=storage
+            runner=runner,
+            queue=queue,
+            roots=roots,
+            first=first,
+            storage=storage,
+            give_way=quiet.give_way_to_folder,
         ),
     )

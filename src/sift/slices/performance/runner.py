@@ -1,10 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""The one self-test run there may be at a time, and the things that ask for it.
-
-A press and a Build on a device never measured both ask for the benchmark job, which calls `run` or
-`measure_storage` here. What a run reads is handed in as callables by the composition root, since
-the watches are built later in the boot and only read while a run is going.
-"""
+"""The one self-test run there may be at a time, which the benchmark job calls. What a run reads is
+handed in as callables, since the watches are built later in the boot."""
 
 from __future__ import annotations
 
@@ -14,6 +10,7 @@ import tempfile
 import time
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field, replace
+from functools import partial
 from pathlib import Path
 from typing import Protocol
 
@@ -24,11 +21,27 @@ from sift.kernel.log import get_logger
 from sift.kernel.media import FFmpegError, ReadRates
 from sift.kernel.wiring import Part
 from sift.slices.performance import measure_encoder, measure_models, measure_together, selftest
+from sift.slices.performance.budget import (
+    DECODER,
+    ENCODING,
+    FIRST_PART_SECONDS,
+    FIRST_PART_SHARES,
+    GRACE_SECONDS,
+    MODELS,
+    PREVIEWS,
+    STORAGE,
+    TOGETHER,
+    WHOLE_SECONDS,
+    WHOLE_SHARES,
+    Budget,
+    Deadline,
+)
 from sift.slices.performance.measure_encoder import CardCurve, PreviewCommand
 from sift.slices.performance.measure_models import ModelCurve, ModelPass
 from sift.slices.performance.measure_together import Machine, Readings, Together
 from sift.slices.performance.rates import MachineRates, RatesStore, StorageRate, now
 from sift.slices.performance.selftest import (
+    OUT_OF_TIME,
     Measurement,
     Recommendation,
     SelfTest,
@@ -40,6 +53,55 @@ log = get_logger(__name__)
 
 #: Said under a run that found no library folder to read.
 NO_FOLDER = "No library folder yet, so no network share was measured."
+
+
+#: Left by a first part to the full run, which measures previews the way they're built.
+FULL_RUN_ONLY = frozenset({selftest.GENERATION_LIMIT_KEY})
+
+
+def _never() -> bool:
+    return False
+
+
+def _ladders(first_part: bool) -> Callable[..., Awaitable[Measurement]]:
+    """Each level once, to keep within the run's time; a first part also skips the midpoint."""
+    if not first_part:
+        return partial(selftest.measure, repeats=1)
+    return partial(
+        selftest.measure,
+        repeats=1,
+        busy=_never,
+        with_midpoint=False,
+        measure_one_storage=partial(selftest.measure_storage, busy=_never),
+    )
+
+
+#: The settings a stage's figures move: where it was cut short, they're only suggested.
+MOVES: dict[str, frozenset[str]] = {
+    ENCODING: frozenset({selftest.WORKER_COUNT_KEY, selftest.GENERATION_LIMIT_KEY}),
+    STORAGE: frozenset({selftest.SHARE_READS_KEY}),
+    PREVIEWS: frozenset({selftest.GENERATION_LIMIT_KEY}),
+    MODELS: frozenset({measure_models.RECOGNITION_SHARE_KEY}),
+    TOGETHER: frozenset({selftest.WORKER_COUNT_KEY, selftest.GENERATION_LIMIT_KEY}),
+}
+
+STAGES_SAID = {
+    ENCODING: "the encoding rounds",
+    DECODER: "the decoder",
+    STORAGE: "reading your drives and shares",
+    PREVIEWS: "previews on the GPU",
+    MODELS: "the installed models",
+    TOGETHER: "everything run together",
+}
+
+
+def cut_said(stages: Sequence[str]) -> str:
+    said = [STAGES_SAID[one] for one in stages]
+    listed = said[0] if len(said) == 1 else f"{', '.join(said[:-1])} and {said[-1]}"
+    return (
+        f"To finish in time, the benchmark stopped {listed} early. What it measured there comes "
+        f"from fewer rounds, so Sift only suggests what it found."
+    )
 
 
 class _HasRoots(Protocol):
@@ -73,11 +135,8 @@ async def current_settings(hub: _ReadsSettings) -> dict[str, int]:
 
 
 async def storages_to_measure(library: _HasRoots) -> list[StorageToMeasure]:
-    """Every storage the library sits on, with the folders on it, for the storage half of the test.
-
-    Grouped by the storage the operating system names rather than by folder: nine folders on one
-    share are one share, and it is the share that has a number of readers it can serve.
-    """
+    """Every storage the library sits on, with its folders: nine folders on one share are one
+    share, and it's the share that serves a number of readers."""
     return await asyncio.to_thread(_grouped, await library.roots())
 
 
@@ -162,17 +221,18 @@ class SelfTestRunner:
         """How far the run going has measured; None while it waits or when none is going."""
         self.notes: list[str] = []
         """What the last run could not measure or had to pause, in sentences for the screen."""
+        self.unsure: frozenset[str] = frozenset()
+        """The settings the last run measured only in part, which Sift never sets by itself."""
         self._task: asyncio.Task[None] | None = None
         self._recalled = False
 
-    def start(self) -> bool:
-        """Begin a run, unless one is going. Whether this call began it. The task is held here, as
-        one nobody references may be collected mid-run."""
+    def start(self, *, first_part: bool = False, since: float | None = None) -> bool:
+        """Begin a run unless one is going; `since` starts its clock, the drain included."""
         if self.state.running:
             return False
         self.state.running = True
         self.progress = None
-        self._task = asyncio.create_task(self._run())
+        self._task = asyncio.create_task(self._run(first_part=first_part, since=since))
         return True
 
     async def ask(self, requested_by: str | None) -> str | None:
@@ -232,6 +292,28 @@ class SelfTestRunner:
         """Whether this hardware has rates on file from an earlier run."""
         return await self._rates.load(self._hardware.profile) is not None
 
+    async def whole_to_come(self) -> bool:
+        kept = await self._rates.load(self._hardware.profile)
+        return kept is not None and kept.first_part
+
+    async def whole_due(self) -> bool:
+        kept = await self._rates.load(self._hardware.profile)
+        return kept is not None and kept.first_part and not kept.whole_stopped
+
+    async def hold_whole(self) -> None:
+        kept = await self._rates.load(self._hardware.profile)
+        if kept is not None:
+            await self._rates.save(replace(kept, whole_stopped=True))
+
+    async def first_values(self) -> dict[str, int]:
+        """What the kept quick part set each setting to; a setting since moved is a person's."""
+        kept = await self._rates.load(self._hardware.profile)
+        measurement = kept.measurement if kept is not None else None
+        if measurement is None:
+            return {}
+        advice = self.recommend(measurement, current={}, run=Found())
+        return {one.key: one.suggested for one in advice if one.key not in FULL_RUN_ONLY}
+
     async def rates(self) -> MachineRates | None:
         """This hardware's rates, or None where it has never been measured."""
         return await self._rates.load(self._hardware.profile)
@@ -252,15 +334,20 @@ class SelfTestRunner:
         """Ask for a run, as a Build on a machine never measured does: queued, not awaited."""
         await self._ask(None)
 
-    async def run(self) -> None:
+    async def run(self, *, first_part: bool = False, since: float | None = None) -> None:
         """Run the test and wait for it: the one in flight if there is one, a new one if not."""
-        self.start()
+        self.start(first_part=first_part, since=since)
         # Not shielded: a caller canceled cancels the run, and waits here while its tools end.
         if self._task is not None:  # pragma: no branch (the task is always held by here)
             await self._task
 
-    async def _run(self) -> None:
+    async def _run(self, *, first_part: bool = False, since: float | None = None) -> None:
         """The test, on its own task; shown and kept only once it ends, so a cancel keeps the last."""
+        budget = Budget(
+            FIRST_PART_SECONDS if first_part else WHOLE_SECONDS,
+            FIRST_PART_SHARES if first_part else WHOLE_SHARES,
+            started=since,
+        )
         await self.recall()
         state = self.state
         current = await self._current()
@@ -273,7 +360,7 @@ class SelfTestRunner:
             def reached(partial: Measurement) -> None:
                 self.progress = partial
 
-            measurement = await selftest.measure(
+            measurement = await _ladders(first_part)(
                 workspace=workspace,
                 settings=self._settings,
                 cores=self._hardware.cpu_count,
@@ -282,13 +369,19 @@ class SelfTestRunner:
                 report=reached,
                 storages=storages,
                 fell_behind=self._fell_behind,
+                budget=budget,
             )
-            source = None if measurement.failed else await self._measure_more(workspace, found)
+            if first_part or measurement.failed:
+                source = None
+            else:
+                source = await self._measure_more(workspace, found, budget)
             advice = self.recommend(measurement, current=current, run=found)
-            if measurement.failed is None:
+            if first_part and measurement.failed is None:
+                await self._keep(measurement, found, first_part=True)
+            elif measurement.failed is None:
                 try:
                     if await self._measure_together(
-                        measurement, advice, workspace, source, storages, current, found
+                        measurement, advice, workspace, source, storages, current, found, budget
                     ):
                         advice = self.recommend(measurement, current=current, run=found)
                 except Exception:
@@ -297,6 +390,8 @@ class SelfTestRunner:
                     self._show(measurement, advice, found)
                     raise
                 await self._keep(measurement, found)
+            self.unsure = frozenset(key for one in budget.cut() for key in MOVES.get(one, ()))
+            found.notes.extend([cut_said(budget.cut())] if budget.cut() else [])
             self._show(measurement, advice, found)
         finally:
             state.running = False
@@ -317,7 +412,9 @@ class SelfTestRunner:
         if kept is not None:
             await self._rates.save(replace(kept, lengths={**kept.lengths, kind: round(seconds, 1)}))
 
-    async def _keep(self, measurement: Measurement, found: Found) -> None:
+    async def _keep(
+        self, measurement: Measurement, found: Found, *, first_part: bool = False
+    ) -> None:
         kept = await self._rates.load(self._hardware.profile)
         rates = MachineRates.from_measurement(
             self._hardware.profile,
@@ -327,7 +424,10 @@ class SelfTestRunner:
             models=found.models,
             together=found.together,
             lengths=kept.lengths if kept is not None else None,
+            first_part=first_part,
         )
+        if kept is not None:
+            rates = replace(rates, storages={**kept.storages, **rates.storages})
         await self._rates.save(rates)
         log.info(
             "performance.selftest.rates_kept",
@@ -347,6 +447,7 @@ class SelfTestRunner:
         storages: Sequence[StorageToMeasure],
         current: dict[str, int],
         found: Found,
+        budget: Budget | None = None,
     ) -> bool:
         """The last step, the recommended numbers all running at the same time; whether it ran."""
         plan = measure_together.plan_for(
@@ -367,27 +468,38 @@ class SelfTestRunner:
             preview_command=self._preview,
             card=found.card,
         )
-        found.together = await self._together(
-            plan,
-            machine,
-            passes=await self._passes() if self._passes is not None else (),
-            to_read=storages,
-            readings=Readings(self._worst_lag, self._worst_wait, self._fell_behind),
+        passes = await self._passes() if self._passes is not None else ()
+        found.together = (
+            await (budget or Budget())
+            .stage(TOGETHER)
+            .within(
+                self._together(
+                    plan,
+                    machine,
+                    passes=passes,
+                    to_read=storages,
+                    readings=Readings(self._worst_lag, self._worst_wait, self._fell_behind),
+                ),
+                grace=GRACE_SECONDS,
+            )
         )
+        if found.together is None:
+            return False
         found.notes.extend(found.together.said())
         return True
 
-    async def _measure_more(self, workspace: Path, found: Found) -> Path | None:
+    async def _measure_more(self, workspace: Path, found: Found, budget: Budget) -> Path | None:
         """The card's previews and each installed model, on one 1080p clip, which is handed back."""
         if self._preview is None and self._passes is None:
             return None
+        previews = budget.stage(PREVIEWS)
         source: Path | None = None
         try:
-            source = await measure_encoder.build_source(workspace, self._settings)
+            source = await previews.within(measure_encoder.build_source(workspace, self._settings))
         except (FFmpegError, OSError) as error:
             log.warning("performance.selftest.no_source", error=str(error))
         if self._preview is not None:
-            found.card = await measure_encoder.measure_card(
+            card = measure_encoder.measure_card(
                 source=source,
                 workspace=workspace,
                 settings=self._settings,
@@ -396,21 +508,38 @@ class SelfTestRunner:
                 worst_lag=self._worst_lag,
                 worst_wait=self._worst_wait,
                 fell_behind=self._fell_behind,
+                repeats=1,
+                deadline=previews,
+            )
+            found.card = await previews.within(card, grace=GRACE_SECONDS) or CardCurve(
+                encoder="", decodes_on_card=False, failed=OUT_OF_TIME
             )
         if self._passes is not None:
-            found.models = tuple(
-                [
-                    await measure_models.measure_pass(
-                        one,
-                        source=source,
-                        seconds=measure_encoder.SOURCE_SECONDS,
-                        settings=self._settings,
-                    )
-                    for one in await self._passes()
-                ]
+            found.models = await self._measure_models(
+                source, budget.stage(MODELS), await self._passes()
             )
         found.notes.extend(found.said())
         return source
+
+    async def _measure_models(
+        self, source: Path | None, models: Deadline, passes: Sequence[ModelPass]
+    ) -> tuple[ModelCurve, ...]:
+        curves: list[ModelCurve] = []
+        for index, one in enumerate(passes):
+            part = models.part(len(passes) - index)
+            measuring = measure_models.measure_pass(
+                one,
+                source=source,
+                seconds=measure_encoder.SOURCE_SECONDS,
+                settings=self._settings,
+                repeats=1,
+                deadline=part,
+            )
+            curve = await part.within(measuring, grace=GRACE_SECONDS)
+            models.cut = models.cut or part.cut
+            gone = ModelCurve(one.name, one.family, one.device, failed=OUT_OF_TIME)
+            curves.append(curve or replace(gone, share_key=one.share_key))
+        return tuple(curves)
 
     async def measure_storage(self, storage: str) -> StorageCurve | None:
         """Measure one storage and keep its number beside this hardware's rates, the rest kept.

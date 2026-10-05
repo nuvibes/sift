@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import json
 import sqlite3  # nosemgrep: sift-no-database-driver-outside-kernel
 import threading
@@ -21,12 +22,15 @@ from sift.kernel.config import get_settings
 from sift.kernel.db import Database
 from sift.kernel.http import CSRF_HEADER_NAME, SESSION_COOKIE_NAME
 from sift.kernel.jobs import (
+    WAITED_ON_PRIORITY,
     JobContext,
     JobFailedPermanently,
     JobQueue,
     JobState,
     register_handler,
 )
+from sift.kernel.jobs.quiet_hours import AT_QUIET
+from sift.kernel.jobs.recovery import recover
 from sift.kernel.jobs.worker_pool import WorkerPool
 from sift.kernel.vocabulary import VIA_BENCHMARK
 from sift.kernel.workbench import DOER, Recorded
@@ -41,12 +45,14 @@ from sift.slices.performance.benchmark import (
     FirstBenchmark,
     FirstFolder,
     ThenScan,
+    WhenQuiet,
     ask_for_run,
     drain,
     run_benchmark,
     undrain,
 )
 from sift.slices.performance.rates import MachineRates
+from sift.slices.performance.runner import SelfTestRunner
 from sift.slices.performance.selftest import (
     Measurement,
     StorageCurve,
@@ -111,10 +117,20 @@ async def a_trigger(
             return None
         return StorageToMeasure(storage=on, label="Clips", remote=remote, roots=(tmp_path,))
 
+    quiet = WhenQuiet(runner=runner, queue=queue, first=first, kinds=list, since_input=_nobody)
     trigger = FirstFolder(
-        runner=runner, queue=queue, roots=Folders(folders), first=first, storage=storage
+        runner=runner,
+        queue=queue,
+        roots=Folders(folders),
+        first=first,
+        storage=storage,
+        give_way=quiet.give_way_to_folder,
     )
     return trigger, first
+
+
+def _nobody() -> float | None:
+    return None
 
 
 async def _waiting(queue: JobQueue, job_type: str) -> int:
@@ -131,7 +147,8 @@ async def test_the_first_folder_on_a_device_never_measured_queues_the_benchmark(
     assert await _waiting(job_queue, BENCHMARK) == 1
     assert first.run is not None and first.run.state == "waiting"
     job = await job_queue.get(first.run.job_id)
-    assert job is not None and job.payload == {"root_id": "root-1", "scan": True}
+    assert job is not None
+    assert job.payload == {"root_id": "root-1", "scan": True, benchmark.FIRST_PART: True}
     assert job.requested_by == "admin-1", "the run is the press of whoever added the folder"
 
 
@@ -261,9 +278,7 @@ def _queued(client: TestClient) -> list[tuple[str, str]]:
 def test_the_first_folder_s_scan_waits_behind_the_benchmark_and_a_second_s_does_not(
     idle_app: TestClient, tmp_path: Path
 ) -> None:
-    """Today a folder's scan is queued as it is added. The first folder on a device never measured
-    queues the benchmark instead, and its scan is queued once the benchmark has settled, so the
-    scan reads under the settings the benchmark chose. A second folder scans at once."""
+    """The first folder's scan waits for the benchmark to settle; a second folder's doesn't."""
     _sign_in(idle_app, "admin")
     (tmp_path / "one").mkdir()
     (tmp_path / "two").mkdir()
@@ -277,7 +292,7 @@ def test_the_first_folder_s_scan_waits_behind_the_benchmark_and_a_second_s_does_
     assert _queued(idle_app) == [(BENCHMARK, "queued"), ("scan", "queued")]
 
     run = idle_app.get("/api/performance/benchmark").json()
-    assert run["state"] == "waiting" and run["said"] == benchmark.RUNNING
+    assert run["state"] == "waiting" and run["said"] == benchmark.MEASURING_FIRST
 
     # Settled (here, stopped from Activity): the first folder's own scan is queued after it.
     cancelled = idle_app.post(f"/api/jobs/{run['job_id']}/cancel")
@@ -328,9 +343,19 @@ class Measures:
         self.is_measured = False
         self.notes: list[str] = []
         self.lengths: dict[str, float] = {}
+        self.unsure: frozenset[str] = frozenset()
+        self.to_come = False
+        self.left: dict[str, int] = {}
+        self.parts: list[bool] = []
 
     async def measured(self) -> bool:
         return self.is_measured
+
+    async def whole_to_come(self) -> bool:
+        return self.to_come
+
+    async def first_values(self) -> dict[str, int]:
+        return self.left
 
     async def lasted(self, kind: str) -> float | None:
         return self.lengths.get(kind)
@@ -343,7 +368,8 @@ class Measures:
     ) -> list[selftest.Recommendation]:
         return selftest.recommend(measurement, current=current)
 
-    async def run(self) -> None:
+    async def run(self, *, first_part: bool = False, since: float | None = None) -> None:
+        self.parts.append(first_part)
         self.state.measurement = self.measurement
         self.is_measured = self.measurement is not None and self.measurement.failed is None
 
@@ -435,9 +461,7 @@ async def test_the_automatic_run_sets_what_it_found_as_one_receipt_sift_took(
 async def test_the_receipt_is_worded_from_what_it_recorded(
     temp_db: Database, job_queue: JobQueue
 ) -> None:
-    """History draws the line from the changes the receipt recorded, each setting by the name it
-    has now, rather than from the title stored on the day. A row holding no change this build can
-    read keeps its stored title (None)."""
+    """From the changes recorded, by each setting's name now; a row with none keeps its title."""
     _first, hub, _told, go = await a_run(temp_db, job_queue, a_measurement())
     await go()
     (line,) = await _receipts(temp_db)
@@ -656,7 +680,7 @@ async def test_a_device_measured_while_the_run_waited_is_not_measured_again(
 class Raises(Measures):
     """A runner whose measuring breaks part way, as an encoder that crashes would."""
 
-    async def run(self) -> None:
+    async def run(self, *, first_part: bool = False, since: float | None = None) -> None:
         raise RuntimeError("the encoder went away")
 
 
@@ -1036,3 +1060,402 @@ async def test_a_run_with_nothing_running_waits_for_nothing(job_queue: JobQueue)
     drained = await drain(JobContext(job=bench, worker_id="worker-c", queue=job_queue))
 
     assert drained.asked == [] and drained.said() == [] and drained.waited < 1
+
+
+# --- a first folder's first part, and the full run once nothing waits ----------------------------
+
+WORK = "stand_in_task"
+
+
+class Watches(Measures):
+    def __init__(self, measurement: Measurement | None, queue: JobQueue) -> None:
+        super().__init__(measurement)
+        self.queue = queue
+        self.seen: list[str | None] = []
+
+    async def run(self, *, first_part: bool = False, since: float | None = None) -> None:
+        self.seen += [job.note for job in await self.queue.newest_of(BENCHMARK, limit=1)]
+        await super().run(first_part=first_part)
+
+
+async def test_a_press_while_a_first_part_waits_queues_the_whole_run(job_queue: JobQueue) -> None:
+    register_handler(BENCHMARK, _nothing, name="Benchmarking this device")
+    await job_queue.enqueue(BENCHMARK, {"root_id": "r", "scan": True, benchmark.FIRST_PART: True})
+
+    assert await ask_for_run(job_queue, requested_by="admin-1") is not None
+    assert await _waiting(job_queue, BENCHMARK) == 2
+
+
+@pytest.mark.parametrize("suited", [False, True], ids=["set", "already suited"])
+async def test_a_first_part_measures_quickly_and_says_the_full_run_comes_later(
+    temp_db: Database, job_queue: JobQueue, suited: bool
+) -> None:
+    runner = Watches(a_measurement(), job_queue)
+    payload = {"root_id": "root-1", "scan": True, benchmark.FIRST_PART: True}
+    first, hub, _told, go = await a_run(temp_db, job_queue, None, runner=runner, payload=payload)
+    advice = selftest.recommend(a_measurement(), current={})
+    if suited:
+        admin = await create_user(temp_db, Role.ADMIN)
+        await hub.apply(admin, {one.key: one.suggested for one in advice})
+
+    await go()
+
+    assert runner.parts == [True] and "first_part" in runner.lengths
+    assert runner.seen == [f"{benchmark.MEASURING_FIRST} {benchmark.HELD}"]
+    previews = selftest.GENERATION_LIMIT_KEY
+    changed = sum(one.changes_anything and one.key != previews for one in advice)
+    if not suited:
+        assert await hub.get_app(previews) == 0, "previews wait for the full run's GPU"
+    ended = benchmark.AGREED if suited else benchmark.set_sentence(changed)
+    assert first.run is not None and first.run.said == f"{ended} {benchmark.WHOLE_LATER}"
+    job = await job_queue.get(first.run.job_id)
+    assert job is not None and job.note == first.run.said
+
+
+async def test_the_full_run_moves_only_what_the_first_part_left_and_holds_no_folder(
+    temp_db: Database, job_queue: JobQueue
+) -> None:
+    runner = Watches(a_measurement(), job_queue)
+    runner.is_measured = runner.to_come = True
+    runner.left = {selftest.WORKER_COUNT_KEY: 0, selftest.GENERATION_LIMIT_KEY: 0}
+    payload = {benchmark.QUIET: True}
+    first, hub, _told, go = await a_run(temp_db, job_queue, None, runner=runner, payload=payload)
+    admin = await create_user(temp_db, Role.ADMIN)
+    await hub.apply(admin, {selftest.WORKER_COUNT_KEY: 5})
+
+    await go()
+
+    assert runner.parts == [False]
+    assert runner.seen == [benchmark.RUNNING], "no folder waits for it"
+    assert await hub.get_app(selftest.WORKER_COUNT_KEY) == 5, "a person's value is theirs"
+    previews = next(
+        one
+        for one in selftest.recommend(a_measurement(), current={})
+        if one.key == selftest.GENERATION_LIMIT_KEY
+    )
+    assert await hub.get_app(selftest.GENERATION_LIMIT_KEY) == previews.suggested
+    assert first.run is not None and first.run.state == "set" and not first.run.holds
+    assert [one.key for one in first.run.changes] == [selftest.GENERATION_LIMIT_KEY]
+
+
+async def test_a_full_run_after_a_press_measured_it_runs_nothing(
+    temp_db: Database, job_queue: JobQueue
+) -> None:
+    runner = Measures(a_measurement())
+    runner.is_measured = True
+    first, _hub, _told, go = await a_run(
+        temp_db, job_queue, None, runner=runner, payload={benchmark.QUIET: True}
+    )
+
+    await go()
+
+    assert runner.parts == []
+    assert first.run is not None and first.run.state == "already" and not first.run.holds
+
+
+async def test_a_folder_added_while_the_full_run_waits_stops_it_and_asks_again_later(
+    tmp_path: Path, job_queue: JobQueue
+) -> None:
+    trigger, first = await a_trigger(
+        tmp_path, job_queue, folders=2, measured=True, on=KNOWN_SHARE, remote=True
+    )
+    runner = trigger._runner
+    stopped = await job_queue.enqueue(BENCHMARK, {benchmark.QUIET: True})
+    await job_queue.cancel(stopped)
+    pressed = await job_queue.enqueue(BENCHMARK, {PRESSED: True})
+    waiting = await job_queue.enqueue(BENCHMARK, {benchmark.QUIET: True})
+
+    await trigger("root-2", "admin-1", True)
+
+    states = {}
+    for one in (stopped, pressed, waiting):
+        job = await job_queue.get(one)
+        assert job is not None
+        states[one] = job.state
+    assert states == {
+        stopped: JobState.CANCELED,
+        pressed: JobState.QUEUED,
+        waiting: JobState.CANCELED,
+    }
+    said = f"{benchmark.FOLDER_ADDED} {benchmark.AGAIN}"
+    assert first.run is not None
+    assert (first.run.state, first.run.said, first.run.holds) == ("gave_way", said, False)
+    kept = await runner.rates()
+    assert kept is not None and not kept.whole_stopped, "asked again the next time nothing waits"
+
+
+async def _finish(queue: JobQueue, worker: str) -> None:
+    claimed = await queue.claim(worker)
+    assert claimed is not None
+    await queue.complete(claimed.id, worker)
+
+
+async def test_the_full_run_is_asked_for_once_the_first_time_nothing_waits(
+    tmp_path: Path, job_queue: JobQueue, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    register_handler(BENCHMARK, _nothing, name="Benchmarking this device")
+    register_handler(WORK, _nothing, name="A stand-in task")
+    store = await a_store(tmp_path)
+    runner = a_runner(tmp_path, store)
+    first = FirstBenchmark()
+    quiet = WhenQuiet(
+        runner=runner,
+        queue=job_queue,
+        first=first,
+        kinds=lambda: [WORK, BENCHMARK],
+        since_input=_nobody,
+    )
+    quiet.listen()
+    job_queue.listen_for_settled(BENCHMARK, quiet.ended)
+
+    await job_queue.enqueue(WORK)
+    await _finish(job_queue, "w1")
+    assert await _waiting(job_queue, BENCHMARK) == 0, "a device never measured has no rest to run"
+
+    quick = MachineRates.from_measurement(a_machine().profile, a_measurement(), now=0)
+    await store.save(dataclasses.replace(quick, first_part=True))
+    await job_queue.enqueue(WORK)
+    await job_queue.enqueue(WORK)
+    one = await job_queue.claim("w1")
+    two = await job_queue.claim("w2")
+    assert one is not None and two is not None
+    due = job_queue.due_by_type
+    counted: list[bool] = []
+
+    async def counting() -> dict[str, int]:
+        counted.append(True)
+        return await due()
+
+    monkeypatch.setattr(job_queue, "due_by_type", counting)
+    await job_queue.complete(one.id, "w1")
+    assert counted == [], "while a task runs, the queue's tally is never read"
+    monkeypatch.setattr(job_queue, "due_by_type", due)
+    assert await _waiting(job_queue, BENCHMARK) == 0, "a task still running"
+    await job_queue.enqueue(WORK)
+    await job_queue.complete(two.id, "w2")
+    assert await _waiting(job_queue, BENCHMARK) == 0, "a task still waiting"
+    await _finish(job_queue, "w3")
+
+    assert await _waiting(job_queue, BENCHMARK) == 1
+    assert first.run is not None
+    assert (first.run.state, first.run.said, first.run.holds) == (
+        "waiting",
+        benchmark.RUNNING,
+        False,
+    )
+    job = await job_queue.get(first.run.job_id)
+    assert job is not None and job.payload == {benchmark.QUIET: True} and job.requested_by is None
+    await job_queue.cancel(first.run.job_id)
+    kept = await runner.rates()
+    assert kept is not None and kept.whole_stopped, "a person's Cancel"
+    await job_queue.enqueue(WORK)
+    await _finish(job_queue, "w5")
+    assert await _waiting(job_queue, BENCHMARK) == 0, "never again by itself"
+
+
+async def test_two_tasks_ending_together_ask_for_one_full_run(
+    tmp_path: Path, job_queue: JobQueue
+) -> None:
+    register_handler(BENCHMARK, _nothing, name="Benchmarking this device")
+    store = await a_store(tmp_path)
+    quick = MachineRates.from_measurement(a_machine().profile, a_measurement(), now=0)
+    await store.save(dataclasses.replace(quick, first_part=True))
+    quiet = WhenQuiet(
+        runner=a_runner(tmp_path, store),
+        queue=job_queue,
+        first=FirstBenchmark(),
+        kinds=list,
+        since_input=_nobody,
+    )
+
+    await asyncio.gather(quiet("a"), quiet("b"))
+
+    assert await _waiting(job_queue, BENCHMARK) == 1
+
+
+async def _quick(tmp_path: Path) -> SelfTestRunner:
+    store = await a_store(tmp_path)
+    quick = MachineRates.from_measurement(a_machine().profile, a_measurement(), now=0)
+    await store.save(dataclasses.replace(quick, first_part=True))
+    return a_runner(tmp_path, store)
+
+
+class Input:
+    def __init__(self, seconds: float) -> None:
+        self.seconds = seconds
+
+    def __call__(self) -> float:
+        return self.seconds
+
+
+async def _state(queue: JobQueue, job_id: str) -> JobState:
+    job = await queue.get(job_id)
+    assert job is not None
+    return job.state
+
+
+async def test_the_full_run_waits_for_nobody_at_the_device_and_stops_when_somebody_comes_back(
+    tmp_path: Path, job_queue: JobQueue
+) -> None:
+    register_handler(BENCHMARK, _nothing, name="Benchmarking this device")
+    runner = await _quick(tmp_path)
+    first = FirstBenchmark()
+    here = Input(30.0)
+    quiet = WhenQuiet(runner=runner, queue=job_queue, first=first, kinds=list, since_input=here)
+    job_queue.listen_for_settled(BENCHMARK, quiet.ended)
+
+    await quiet.look()
+    assert await _waiting(job_queue, BENCHMARK) == 0, "used half a minute ago"
+    here.seconds = benchmark.AWAY_SECONDS
+    await quiet.look()
+    assert first.run is not None
+    asked = first.run.job_id
+    await quiet.look()
+    assert await _state(job_queue, asked) is JobState.QUEUED, "left alone while nobody's there"
+
+    here.seconds = 5.0
+    await quiet.look()
+    assert await _state(job_queue, asked) is JobState.CANCELED
+    assert (first.run.state, first.run.said) == (
+        "gave_way",
+        f"{benchmark.IN_USE} {benchmark.AGAIN}",
+    )
+    stopped = await job_queue.get(asked)
+    assert stopped is not None and stopped.error == first.run.said, "Activity's row says why"
+    here.seconds = benchmark.AWAY_SECONDS
+    await quiet.look()
+    assert await _waiting(job_queue, BENCHMARK) == 1, "asked again at the next quiet moment"
+
+
+@pytest.mark.parametrize(
+    ("asked", "stops"),
+    [
+        ({"requested_by": "admin-1"}, True),
+        ({"priority": WAITED_ON_PRIORITY}, True),
+        ({"requested_by": "admin-1", "at": AT_QUIET}, False),
+        ({"requested_by": "admin-1", "run_after": 4_000_000_000}, False),
+        ({}, False),
+    ],
+    ids=["a press", "waited on", "for quiet hours", "for later", "Sift's own"],
+)
+async def test_work_a_person_asks_for_stops_the_full_run_and_sifts_own_does_not(
+    tmp_path: Path, job_queue: JobQueue, asked: dict[str, Any], stops: bool
+) -> None:
+    register_handler(BENCHMARK, _nothing, name="Benchmarking this device")
+    register_handler(WORK, _nothing, name="A stand-in task")
+    first = FirstBenchmark()
+    quiet = WhenQuiet(
+        runner=await _quick(tmp_path),
+        queue=job_queue,
+        first=first,
+        kinds=list,
+        since_input=_nobody,
+    )
+    await quiet.look()
+    assert first.run is not None
+    run = first.run.job_id
+
+    await job_queue.enqueue(WORK, **asked)
+    await quiet.look()
+
+    assert (await _state(job_queue, run) is JobState.CANCELED) is stops
+    if stops:
+        assert first.run.said == f"{benchmark.ASKED_FOR} {benchmark.AGAIN}"
+
+
+async def test_a_full_run_cut_off_by_a_restart_or_a_shutdown_is_asked_for_again(
+    tmp_path: Path, temp_db: Database, job_queue: JobQueue
+) -> None:
+    register_handler(BENCHMARK, _nothing, name="Benchmarking this device")
+    runner = await _quick(tmp_path)
+
+    def booted() -> tuple[JobQueue, WhenQuiet]:
+        queue = JobQueue(temp_db)
+        quiet = WhenQuiet(
+            runner=runner, queue=queue, first=FirstBenchmark(), kinds=list, since_input=_nobody
+        )
+        queue.listen_for_settled(BENCHMARK, quiet.ended)
+        return queue, quiet
+
+    queue, quiet = booted()
+    await quiet.look()
+    assert await queue.claim("before-the-crash") is not None
+    queue, quiet = booted()
+    await recover(queue)
+    await quiet.look()
+    assert await _waiting(queue, BENCHMARK) == 1, "asked again after the crash"
+
+    assert await queue.claim("before-the-shutdown") is not None
+    await queue.release_running()
+    queue, quiet = booted()
+    await quiet.look()
+    assert await _waiting(queue, BENCHMARK) == 1 and await runner.whole_due()
+
+
+@pytest.mark.parametrize("here", [True, False], ids=["failed here", "failed by a restart"])
+async def test_a_full_run_that_failed_by_itself_is_not_started_again(
+    tmp_path: Path, job_queue: JobQueue, here: bool
+) -> None:
+    register_handler(BENCHMARK, _nothing, name="Benchmarking this device")
+    register_handler(WORK, _nothing, name="A stand-in task")
+    runner = await _quick(tmp_path)
+    first = FirstBenchmark()
+    quiet = WhenQuiet(runner=runner, queue=job_queue, first=first, kinds=list, since_input=_nobody)
+    await quiet.look()
+    claimed = await job_queue.claim("worker-one")
+    assert claimed is not None
+    said = benchmark.failed_sentence(benchmark.TOO_BUSY)
+    if here:
+        first.now(benchmark.AutomaticRun(job_id=claimed.id, state="failed", said=said))
+    else:
+        first.run = None
+    await job_queue.fail(claimed.id, "worker-one", said, permanent=True)
+    await quiet.ended("not-a-job")
+    await quiet.ended(await job_queue.enqueue(WORK))
+
+    await quiet.ended(claimed.id)
+
+    assert await runner.whole_due() is not here
+
+
+async def test_the_quiet_moment_is_looked_for_on_a_clock_and_a_failed_look_is_not_the_end(
+    tmp_path: Path, job_queue: JobQueue, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    register_handler(BENCHMARK, _nothing, name="Benchmarking this device")
+    quiet = WhenQuiet(
+        runner=await _quick(tmp_path),
+        queue=job_queue,
+        first=FirstBenchmark(),
+        kinds=list,
+        since_input=_nobody,
+    )
+    stop = asyncio.Event()
+    looks: list[int] = []
+    look = quiet.look
+
+    async def looking() -> None:
+        looks.append(1)
+        if len(looks) == 1:
+            raise sqlite3.OperationalError("the database isn't open")
+        await look()
+        stop.set()
+
+    monkeypatch.setattr(quiet, "look", looking)
+    await asyncio.wait_for(quiet.keep_looking(stop, every=0.01), 5)
+
+    assert len(looks) == 2 and await _waiting(job_queue, BENCHMARK) == 1
+
+
+async def test_a_setting_from_a_stage_cut_short_is_only_suggested(
+    temp_db: Database, job_queue: JobQueue
+) -> None:
+    runner = Measures(a_measurement())
+    runner.unsure = frozenset({selftest.WORKER_COUNT_KEY})
+    first, hub, _told, go = await a_run(temp_db, job_queue, None, runner=runner)
+
+    await go()
+
+    assert await hub.get_app(selftest.WORKER_COUNT_KEY) == 0
+    assert first.run is not None
+    assert selftest.WORKER_COUNT_KEY not in {one.key for one in first.run.changes}
+    assert first.run.changes, "the rest is set"

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 from sift.kernel.log import get_logger
+from sift.slices.download.attempt import Reach, on_route
 from sift.slices.download.endings import _give_up, _transient_message
 from sift.slices.download.job_seams import Seams
 from sift.slices.download.landing import Landed, Who
@@ -23,7 +24,7 @@ async def settle(
     who: Who,
     landed: Landed,
     fetched: Fetched,
-    proxy: str | None,
+    reach: Reach,
     mutable: bool,
     seams: Seams,
 ) -> None:
@@ -40,12 +41,15 @@ async def settle(
         await _attribute(service, job, attribution, who, arrived, seams, site=site)
     await _file(service, download_id, job, arrived, seams)
     # The pictures the Site and the creator are shown with, once ever; never worth failing for.
-    if seams.keep_art is not None and site is not None:
-        await seams.keep_art(job.url, proxy, who.username)
-    # The track it is set to, only where the Site says it records one; seeded, never set, so a
-    # value somebody typed is never argued with.
+    keep_art = seams.keep_art
+    if keep_art is not None and site is not None:
+        await on_route(reach, lambda proxy: keep_art(job.url, proxy, who.username), what="art")
+    # The track it is set to, where the Site records one; seeded, so a typed value is never argued
+    # with.
     if attribution.names_music and arrived:
-        track = await seams.read_music(job.url, proxy=proxy)
+        track = await on_route(
+            reach, lambda proxy: seams.read_music(job.url, proxy=proxy), what="music"
+        )
         if track:
             for one in arrived:
                 await service.seed_music(one, track, url=job.url)

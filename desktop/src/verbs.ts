@@ -76,6 +76,7 @@ import {
 	SET_TITLE_BAR,
 	SHOW_IN_FOLDER,
 	SET_SHARING,
+	SAVE_LOG_ARCHIVE,
 	SHELL_LOG,
 	SHELL_LOG_DETAIL,
 	SHELL_VERSION,
@@ -123,6 +124,7 @@ export {
 	SET_SHARING,
 	SET_START_WITH_WINDOWS,
 	SET_TITLE_BAR,
+	SAVE_LOG_ARCHIVE,
 	SHELL_LOG,
 	SHELL_LOG_DETAIL,
 	SHELL_VERSION,
@@ -228,7 +230,8 @@ export const REMOTE_VERBS: ReadonlySet<string> = new Set([
 	SET_KEEP_RUNNING,
 	GET_START_WITH_WINDOWS,
 	SET_START_WITH_WINDOWS,
-	FORGET_MODE
+	FORGET_MODE,
+	SAVE_LOG_ARCHIVE
 ]);
 
 /** Every channel the page can be offered, read off `channels.ts` so a new one cannot be missed. */
@@ -383,7 +386,7 @@ function dragArriving(at: Arriving, name: string, total: number | null): void {
  * of the call. Is the page Sift at all, and may a page of its reach use this channel? The preload
  * leaving a method off is a convenience; this is the check.
  */
-function askingFrame(event: IpcMainInvokeEvent, reachOf: ReachCheck, channel: string) {
+export function askingFrame(event: IpcMainInvokeEvent, reachOf: ReachCheck, channel: string) {
 	const frame = event.senderFrame;
 	if (frame === null || frame.parent !== null) return null;
 	const reach = reachOf(frame.url);
@@ -772,12 +775,8 @@ export function registerVerbs(reachOf: ReachCheck, hooks: ShellHooks = {}): void
 		return sharing.read();
 	});
 
-	/*
-	 * The end of the shell's own log, for the Application log screen. NOT ADMIN-ONLY: the file is on
-	 * the person's own machine, reachable only from origins they saved; the redaction happens where
-	 * records are written (`log.ts`, after `kernel/log.py`). A count in, nothing else; the file is
-	 * `paths.ts`'s.
-	 */
+	/* The end of the shell's own log: not admin-only, as the file is on the person's own machine and
+	 * redacted where it is written. A count in, nothing else. */
 	ipcMain.handle(SHELL_LOG, async (event, lines: unknown): Promise<ShellLog | null> => {
 		if (askingFrame(event, reachOf, SHELL_LOG) === null) return null;
 		/* A number from the page, and nothing else: the backend's link reads its count from a query. */

@@ -889,12 +889,14 @@ def test_resume_groups_pictures_and_the_from_stash_line_come_across_once(
         "SELECT t.name FROM person_tags pt JOIN tags t ON t.id = pt.tag_id"
         " JOIN people p ON p.id = pt.person_id WHERE p.name = 'Jane Doe'",
     ) == [(WORN_TAG,)]
-    # One Collection, owned by whoever pressed Run, with the group's scenes in the group's order.
-    assert _read(
-        database,
-        "SELECT c.name, c.owner_id, i.asset_id FROM collections c"
-        " JOIN collection_items i ON i.collection_id = c.id ORDER BY i.position",
-    ) == [(GROUP, user_id, second), (GROUP, user_id, first)]
+    # One Collection, owned by whoever pressed Run, holding the group's scenes.
+    assert sorted(
+        _read(
+            database,
+            "SELECT c.name, c.owner_id, i.asset_id FROM collections c"
+            " JOIN collection_items i ON i.collection_id = c.id",
+        )
+    ) == sorted([(GROUP, user_id, second), (GROUP, user_id, first)])
     assert report["collections"] == 1
     # Her picture from the database and the Site's from the blobs folder, each re-encoded.
     covered = _read(

@@ -168,7 +168,7 @@ class WatermarkService:
         for weight in weights.working_set():
             if store.installed(weight) and not force:
                 continue
-            await store.fetch(weight, progress=progress)
+            await store.fetch(weight, progress=progress, fresh=force)
             installed.append(weight.id)
         return installed
 

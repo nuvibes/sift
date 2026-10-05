@@ -370,6 +370,33 @@
 		return () => window.removeEventListener('keydown', shutOnEscape);
 	});
 
+	/* A row wider than the whole bar cannot stand under the timeline: it keeps the bar's own edges
+	   and gives way inside them. Read from the parts' own widths, which the squeeze does not move. */
+	let tooWide = $state(false);
+
+	function fitsTheBar(bar: HTMLElement): boolean {
+		const row = bar.querySelector(':scope > .row') as HTMLElement;
+		const parts = [...row.children] as HTMLElement[];
+		const gaps = (parseFloat(getComputedStyle(row).columnGap) || 0) * Math.max(0, parts.length - 1);
+		const wanted = parts.reduce((sum, part) => sum + part.scrollWidth, gaps);
+		const style = getComputedStyle(bar);
+		const room =
+			bar.clientWidth -
+			(parseFloat(style.paddingLeft) || 0) -
+			(parseFloat(style.paddingRight) || 0);
+		return wanted <= room + 0.5;
+	}
+
+	$effect(() => {
+		const bar = root;
+		if (bar === null) return;
+		const watch = new ResizeObserver(() => (tooWide = !fitsTheBar(bar)));
+		watch.observe(bar);
+		for (const part of bar.querySelectorAll(':scope > .row, :scope > .row > *'))
+			watch.observe(part);
+		return () => watch.disconnect();
+	});
+
 	onDestroy(() => {
 		if (trayTimer) clearTimeout(trayTimer);
 	});
@@ -381,6 +408,7 @@
 <div
 	bind:this={root}
 	class="bar player-bar"
+	class:under-line={!compact && !phoneWidth.yes && !tooWide && (timed || variant === 'theater')}
 	role="group"
 	aria-label="Playback controls"
 	onpointerenter={(event) => onhold?.(event)}
@@ -573,6 +601,29 @@
 			var(--sift-scrim) 80%,
 			var(--sift-scrim-none)
 		);
+	}
+
+	/* Beside the clocks the row stands under the timeline, its outer buttons flush with the scrub
+	   bar's ends: one grid, the scrub line sharing its columns. */
+	.bar.under-line {
+		grid-template-columns: auto minmax(0, 1fr) auto;
+		column-gap: var(--space-3);
+	}
+
+	.bar.under-line > :global(*) {
+		grid-column: 1 / -1;
+	}
+
+	.bar.under-line > :global(.scrub-line) {
+		grid-template-columns: subgrid;
+	}
+
+	/* Never narrower than its controls: short of room it spills evenly back under the clocks. */
+	.bar.under-line > .row {
+		grid-column: 2;
+		justify-self: center;
+		inline-size: 100%;
+		min-inline-size: max-content;
 	}
 
 	/* The transport at the start, after any lead; the end takes the rest. `minmax(0, 1fr)` lets the

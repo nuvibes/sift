@@ -272,8 +272,7 @@ test('and the actions that were on it really do open on the right button', async
 						duration_ms: 5000,
 						favorite: false,
 						rating: null,
-						concealed: false,
-						position: 0
+						concealed: false
 					}
 				],
 				total: 1,
@@ -295,8 +294,8 @@ test('and the actions that were on it really do open on the right button', async
 	   shared file verbs, and it is declared once as "Remove from this collection". */
 	await expect(page.getByRole('menuitem', { name: 'Remove from this collection' })).toBeVisible();
 	await expect(page.getByRole('menuitem', { name: 'Use as the cover' })).toBeVisible();
-	await expect(page.getByRole('menuitem', { name: 'Move earlier' })).toBeVisible();
-	await expect(page.getByRole('menuitem', { name: 'Move later' })).toBeVisible();
+	await expect(page.getByRole('menuitem', { name: 'Move earlier' })).toHaveCount(0);
+	await expect(page.getByRole('menuitem', { name: 'Move later' })).toHaveCount(0);
 
 	// The failure is a thrown error rather than a missing element, so it is worth naming.
 	expect(broke, 'the menu threw while rendering').toEqual([]);

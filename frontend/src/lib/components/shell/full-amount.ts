@@ -1,13 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 /*
- * THE LEAF AND THE BOLT: background work stepping back to a share of this device, said where
- * somebody can see it, and a press that overrules it until Sift stops or the next press.
- *
- * The work steps back while somebody is at the keyboard or mouse, or while other programs keep the
- * device busy (Settings > Performance). The leaf is drawn while it holds, the bolt while the full
- * amount was pressed for; nothing while no task runs, while neither cause holds, or for a guest.
- *
- * What is read is the queue's first page, which the shell already keeps current for the rail.
+ * THE LEAF AND THE BOLT: eco mode, where background work keeps to a share of this device while
+ * somebody is working or other programs are busy, and a press for the full amount until Sift stops
+ * or the next press. Nothing is drawn while no task runs, outside eco mode, or for a guest. Read
+ * from the queue's first page, which the shell already keeps current.
  */
 
 import { api, ApiError } from '$lib/api/client';
@@ -19,12 +15,20 @@ import { UNREACHABLE } from '$lib/shell/unreachable';
 /** Why the work steps back: somebody at this device, or other programs keeping it busy. */
 type StepBackCause = NonNullable<components['schemas']['JobsPage']['step_back_for']>;
 
-/* All this reads of the queue page, so a test hands in only those. A server that does not say the
-   share reads as the default quarter, and one that does not say why reads as somebody here. */
+/** What other programs keep busy: the CPU, the GPU, memory. */
+type BusyWith = 'processor' | 'graphics' | 'memory';
+
+/* All this reads of the queue page. A server that does not say the share reads as a quarter, and
+   one that does not say why reads as somebody here. */
 type StepBackFacts = Partial<
 	Pick<
 		components['schemas']['JobsPage'],
-		'stepping_back' | 'full_amount' | 'counts' | 'step_back_share' | 'step_back_for'
+		| 'stepping_back'
+		| 'full_amount'
+		| 'counts'
+		| 'step_back_share'
+		| 'step_back_for'
+		| 'step_back_over'
 	>
 >;
 
@@ -46,13 +50,31 @@ export function shareWords(percent: number): string {
 	return SHARE_WORDS[percent] ?? `${percent}%`;
 }
 
-/** What the leaf's tooltip, a phone's row and the Activity line say while the step back holds. */
+const BUSY_WORDS: Record<BusyWith, string> = {
+	processor: 'the CPU',
+	graphics: 'the GPU',
+	memory: 'most of the memory'
+};
+
+/** Why Sift is in eco mode: "you're working", "other programs are using the CPU and the GPU". */
+export function ecoWhy(
+	cause: StepBackCause | null | undefined,
+	over: readonly BusyWith[] | null | undefined = []
+): string {
+	if (cause !== 'others') return "you're working";
+	const named = (over ?? []).map((one) => BUSY_WORDS[one]).filter(Boolean);
+	if (named.length === 0) return 'other programs are busy';
+	const last = named.pop();
+	return `other programs are using ${named.length > 0 ? `${named.join(', ')} and ` : ''}${last}`;
+}
+
+/** What the leaf's tooltip, a phone's row and the Activity line say in eco mode. */
 export function usingShare(
 	percent: number | null | undefined,
-	cause: StepBackCause | null | undefined = 'input'
+	cause: StepBackCause | null | undefined = 'input',
+	over: readonly BusyWith[] | null | undefined = []
 ): string {
-	const why = cause === 'others' ? 'other programs are busy' : "it's in use";
-	return `Using ${shareWords(percent ?? DEFAULT_SHARE)} of this device while ${why}`;
+	return `In eco mode while ${ecoWhy(cause, over)}: using ${shareWords(percent ?? DEFAULT_SHARE)} of this device`;
 }
 
 /** Which of the two is drawn, or neither. */
@@ -63,11 +85,11 @@ export const FULL_AMOUNT_COPY = {
 	/* The control's name, the same in both states; pressed or not is said by `aria-pressed`. */
 	name: 'Use the full amount of this device',
 	lessPress: 'Press to use the full amount.',
-	full: "Using the full amount of this device although it's in use",
-	fullPress: 'Press to use less system resources again.',
+	full: (why: string) => `Out of eco mode: using the full amount of this device although ${why}`,
+	fullPress: 'Press to go back to eco mode.',
 	/* The press on a phone's row, where there is room for a verb. */
 	useFull: 'Use the full amount',
-	stepBack: 'Use less system resources',
+	stepBack: 'Use eco mode',
 	failed: "Sift couldn't change how much of this device it uses"
 } as const;
 
@@ -85,56 +107,75 @@ export function currentFullAmount(isAdmin: boolean): FullAmountState {
 	return fullAmountState(imports.page, isAdmin);
 }
 
-/** `usingShare` for a queue page: the share it names, or the default where it names none. */
-export function usingShareOf(page: StepBackFacts | null | undefined): string {
-	return usingShare(page?.step_back_share, page?.step_back_for);
-}
-
 /** The share the step back keeps to, as the queue page the shell keeps says it. */
 export function currentShare(): number {
 	return imports.page?.step_back_share ?? DEFAULT_SHARE;
 }
 
-/** Why the work steps back now, as the queue page the shell keeps says it. */
+/** Why Sift is in eco mode now, as the queue page the shell keeps says it. */
 function currentCause(): StepBackCause | null {
 	return imports.page?.step_back_for ?? null;
+}
+
+function currentOver(): BusyWith[] {
+	return imports.page?.step_back_over ?? [];
+}
+
+/** Whether the leaf is dimmed: eco mode for other programs, not for somebody working. */
+export function leafDimmed(
+	state: FullAmountState,
+	cause: StepBackCause | null = currentCause()
+): boolean {
+	return state === 'less' && cause === 'others';
 }
 
 /** The state's first sentence: what is happening. */
 export function fullAmountSays(
 	state: Exclude<FullAmountState, null>,
 	share: number,
-	cause: StepBackCause | null = currentCause()
+	cause: StepBackCause | null = currentCause(),
+	over: readonly BusyWith[] = currentOver()
 ): string {
-	return state === 'less' ? usingShare(share, cause) : FULL_AMOUNT_COPY.full;
+	return state === 'less'
+		? usingShare(share, cause, over)
+		: FULL_AMOUNT_COPY.full(ecoWhy(cause, over));
 }
 
 /** The tooltip's two sentences for a state: what is happening, then what a press does. */
 export function fullAmountTip(
 	state: Exclude<FullAmountState, null>,
 	share: number = currentShare(),
-	cause: StepBackCause | null = currentCause()
+	cause: StepBackCause | null = currentCause(),
+	over: readonly BusyWith[] = currentOver()
 ): string {
 	const press = state === 'less' ? FULL_AMOUNT_COPY.lessPress : FULL_AMOUNT_COPY.fullPress;
-	return `${fullAmountSays(state, share, cause)}. ${press}`;
+	return `${fullAmountSays(state, share, cause, over)}. ${press}`;
 }
 
 const PRESS = '/jobs/full-amount';
 
 /**
- * Press for the full amount (`on`), or step back again.
+ * Press for the full amount (`on`), or go back to eco mode.
  *
- * The queue page is read again at once, so this window answers without waiting for the live
- * connection; the others are told by the server and read it themselves.
+ * The press's own answer is drawn at once: a queue read can take seconds on a busy device, and
+ * one asked while the queue keeps moving is joined to every read after it.
  */
 export async function pressFullAmount(on: boolean): Promise<void> {
+	let answer: components['schemas']['StepBack'];
 	try {
-		await api.post(PRESS, { body: { on } });
+		answer = await api.post<components['schemas']['StepBack']>(PRESS, { body: { on } });
 	} catch (error) {
 		toasts.show(error instanceof ApiError ? FULL_AMOUNT_COPY.failed : UNREACHABLE, {
 			tone: 'error'
 		});
 		return;
 	}
-	await imports.refresh();
+	if (imports.page !== null) {
+		imports.page = {
+			...imports.page,
+			stepping_back: answer.stepping_back,
+			full_amount: answer.full_amount
+		};
+	}
+	void imports.refresh();
 }

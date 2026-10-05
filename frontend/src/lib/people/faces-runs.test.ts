@@ -40,20 +40,20 @@ describe("recognition's model download, once it ends", () => {
 		expect(modelFetch.settled).toEqual({ ready: true });
 	});
 
-	it('says it stopped short when the models are still not all there', async () => {
+	it('says it ended without them when the models are still not all there', async () => {
 		asked.settings.mockResolvedValue({ ready: false });
 
 		await ended();
 
-		expect(modelFetch.outcome).toContain('The download stopped before it finished');
+		expect(modelFetch.outcome).toContain('The download ended without the models');
 	});
 
-	it('says it stopped short when the server could not be asked, rather than claiming success', async () => {
+	it('never claims success when the server could not be asked', async () => {
 		asked.settings.mockRejectedValue(new Error('offline'));
 
 		await ended();
 
-		expect(modelFetch.outcome).toContain('The download stopped before it finished');
+		expect(modelFetch.outcome).toContain('The download ended without the models');
 		expect(modelFetch.settled).toBeNull();
 	});
 });

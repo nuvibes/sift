@@ -15,12 +15,14 @@ from sift.kernel.db import Database
 from sift.kernel.hardware import HardwareReport
 from sift.kernel.media import FFmpegError
 from sift.slices.performance import measure_encoder, measure_models, measure_together, selftest
+from sift.slices.performance import runner as running
 from sift.slices.performance.measure_encoder import CardCurve, CardLevel
 from sift.slices.performance.measure_models import ModelCurve, ModelLevel, ModelPass
 from sift.slices.performance.rates import (
     MachineRates,
     RatesStore,
     StorageRate,
+    flag_from_json,
     lengths_from_json,
     measurement_to_json,
     more_from_json,
@@ -330,8 +332,7 @@ async def test_the_stalls_a_run_causes_are_counted_apart_from_the_rest(
 async def test_a_run_that_could_not_measure_files_nothing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A machine whose encoder could not run is not a measured machine: the next Build asks again
-    rather than reading a row that says nothing."""
+    """A machine whose encoder couldn't run isn't measured: the next Build asks again."""
 
     async def refused(**_kwargs: object) -> Measurement:
         return Measurement(cores=8, failed="the video encoder could not be run")
@@ -817,3 +818,79 @@ def test_the_combined_run_round_trips_and_an_unreadable_one_is_none() -> None:
     assert together_from_json(kept) == a_together(behind=True)
     assert together_from_json(measurement_to_json(a_measurement())) is None
     assert together_from_json('{"together": {"windows": [{}]}}') is None
+
+
+async def test_a_first_part_takes_each_level_once_and_keeps_that_the_rest_is_to_come(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    asked: list[dict[str, Any]] = []
+    more: list[bool] = []
+
+    async def instant(**kwargs: Any) -> Measurement:
+        asked.append(kwargs)
+        return a_measurement()
+
+    async def measure_more(*_args: object) -> None:
+        more.append(True)
+
+    monkeypatch.setattr(selftest, "measure", instant)
+    monkeypatch.setattr(SelfTestRunner, "_measure_more", measure_more)
+    store = await a_store(tmp_path)
+    runner = a_runner(tmp_path, store)
+
+    await runner.run(first_part=True)
+
+    quick = asked[0]
+    assert (quick["repeats"], quick["with_midpoint"], quick["busy"]()) == (1, False, False)
+    assert quick["measure_one_storage"].keywords == {"busy": running._never}
+    assert more == [], "no GPU, no models and nothing run together"
+    kept = await runner.rates()
+    assert kept is not None and kept.first_part and not kept.whole_stopped
+    assert await runner.whole_to_come() and await runner.whole_due()
+    advice = selftest.recommend(a_measurement(), current={})
+    assert await runner.first_values() == {
+        one.key: one.suggested for one in advice if one.key != selftest.GENERATION_LIMIT_KEY
+    }
+
+    await runner.hold_whole()
+    assert await runner.whole_to_come() and not await runner.whole_due()
+    reread = await RatesStore(store._db).load(a_machine().profile)
+    assert reread is not None and reread.first_part and reread.whole_stopped, (
+        "it outlives a restart"
+    )
+
+    await runner.run()
+    assert asked[1]["repeats"] == 1 and "with_midpoint" not in asked[1] and more == [True]
+    assert not await runner.whole_to_come() and not await runner.whole_due()
+
+
+async def test_a_first_part_that_could_not_measure_keeps_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def refused(**_kwargs: object) -> Measurement:
+        return Measurement(cores=8, failed="the video encoder couldn't be run")
+
+    monkeypatch.setattr(selftest, "measure", refused)
+    store = await a_store(tmp_path)
+    runner = a_runner(tmp_path, store)
+
+    await runner.run(first_part=True)
+
+    assert await runner.rates() is None
+    assert not await runner.whole_to_come() and not await runner.whole_due()
+    await runner.hold_whole()
+    assert await runner.rates() is None, "nothing to mark before anything is kept"
+    assert await runner.first_values() == {}
+
+
+async def test_rates_kept_without_a_measurement_give_no_first_values(tmp_path: Path) -> None:
+    store = await a_store(tmp_path)
+    await store.save(
+        MachineRates(profile=a_machine().profile, measured_at=1, decode_fps=None, seek_seconds=None)
+    )
+    assert await a_runner(tmp_path, store).first_values() == {}
+
+
+@pytest.mark.parametrize("text", ["not json", "[]", "{}"])
+def test_an_unreadable_or_missing_flag_reads_as_not_set(text: str) -> None:
+    assert flag_from_json(text, "first_part") is False

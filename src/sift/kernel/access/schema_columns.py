@@ -1,9 +1,10 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Catalog steps that add marks and columns to tables made before them, one call each from
+"""Catalog steps that change the columns of tables made before them, one call each from
 `schema.initialize_catalog`, so that function stays the list of steps in their order."""
 
 from __future__ import annotations
 
+from sift.kernel.access import default_covers
 from sift.kernel.db import Connection
 from sift.kernel.migrations import column_exists
 
@@ -76,3 +77,17 @@ async def mark_folders(connection: Connection) -> None:
         await connection.execute(_ADD_FOLDERS_KEPT_FROM_SWAPS)
     await connection.execute(_INDEX_FOLDERS_KEPT_LOCAL)
     await connection.execute(_INDEX_FOLDERS_KEPT_FROM_SWAPS)
+
+
+_DROP_COLLECTION_POSITION = "ALTER TABLE collection_items DROP COLUMN position"
+
+
+async def forget_the_arrangements(connection: Connection) -> None:
+    """Step 91: a collection's files have no stored order. The cover triggers read the column,
+    so they are written again around the drop."""
+    if not await column_exists(connection, "collection_items", "position"):
+        return
+    for statement in default_covers.drop_triggers():
+        await connection.execute(statement)
+    await connection.execute(_DROP_COLLECTION_POSITION)
+    await default_covers.start(connection)

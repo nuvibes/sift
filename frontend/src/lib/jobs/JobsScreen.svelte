@@ -46,6 +46,7 @@
 	import { canCancel, canRetry, offeredWhileViewing, startsIn } from './labels';
 	import { OWNED, addressOf, landingFor, type ActivityTab } from './tabs';
 	import { COPY } from './JobsScreen.search';
+	import { currentFullAmount } from '$lib/components/shell/full-amount';
 	import Ledger from '$lib/settings-ui/Ledger.svelte';
 	import UnlockField from '$lib/settings-ui/UnlockField.svelte';
 	import { session } from '$lib/shell/session.svelte';
@@ -183,11 +184,11 @@
 		};
 	});
 
-	/* The rows of the queue as the server sent them: families, newest first, under every kind (a
-	   state's tab lists the families whose row shows it); a kind's tasks, flat, while one is
-	   chosen. */
+	/* Families, newest first, under every kind; a kind's tasks, flat, while one is chosen. */
 	const jobs = $derived(queue.listed?.jobs ?? []);
 	const counts = $derived(queue.page?.counts ?? {});
+	/* From the rail's own read, so a press there answers here at once too. Activity is an admin's. */
+	const eco = $derived(currentFullAmount(true));
 
 	// Only the states that exist right now, so the row of tallies is not mostly zeroes. Ordered by the
 	// list rather than by the object's keys: what comes back from the server is a tally, and the order
@@ -364,11 +365,8 @@
 	}
 
 	/**
-	 * The second line: what is being done, and on a folded row what is under it:
-	 * "Downloading, 8 steps: 7 done, 1 running" (a middle dot between). The doing is dropped when it is already the first
-	 * line (whole-library work names no file, so it leads with what it is).
-	 *
-	 * A running or done job's own note goes beside it: what it is doing, or what it ended with.
+	 * The second line: what is being done, a running or done job's note, and on a folded row what
+	 * is under it, a middle dot between. The doing is dropped when it is already the first line.
 	 */
 	function doingOf(job: Job, steps: string | null): string | null {
 		const doing = job.subject || job.steps?.subject ? job.name : null;
@@ -686,7 +684,9 @@
 			{#if job.error}
 				<!-- Already redacted on the way into the queue. This is the screen a screenshot in a
 				     bug report is most likely to be of, and a raw path would ride out on it. -->
-				<span class="why" class:asks={job.waits_for_password}>{job.error}</span>
+				<span class="why" class:whole={job.waits_for_password || job.state === 'canceled'}
+					>{job.error}</span
+				>
 			{/if}
 			{#if job.waits_for_password && session.secretsLocked}
 				{#if unlocking === job.id}
@@ -1045,10 +1045,9 @@
 				{/if}
 			</MenuButton>
 		</div>
-		<!-- Under the strip that carries the running count, while work uses a share of this device
-		     because somebody is using it: why that count is lower, in the sidebar leaf's words. -->
-		{#if queue.page?.stepping_back && (counts.running ?? 0) > 0}
-			<div class="stepping-back"><Note>{COPY.steppingBack(queue.page)}</Note></div>
+		<!-- Under the running count, in eco mode or out of it by a press: the sidebar leaf's words. -->
+		{#if eco !== null}
+			<div class="stepping-back"><Note>{COPY.steppingBack(eco)}</Note></div>
 		{/if}
 
 		<!-- The one list the strip filters, whichever state it is in. On the same columns as the list
@@ -1317,7 +1316,7 @@
 
 	/* A wait for the password is read whole: cut to "Waiting for your password to unl..." it no
 	   longer says which key. Every other reason keeps its one line. */
-	.subject .why.asks {
+	.subject .why.whole {
 		white-space: normal;
 	}
 

@@ -173,12 +173,16 @@ class WeightFiles:
     def __init__(self, present: set[str]) -> None:
         self.present = present
         self.fetched: list[tuple[str, Any]] = []
+        self.afresh: list[bool] = []
 
     def installed(self, weight: weights.Weight) -> bool:
         return weight.id in self.present
 
-    async def fetch(self, weight: weights.Weight, *, progress: Any = None) -> None:
+    async def fetch(
+        self, weight: weights.Weight, *, progress: Any = None, fresh: bool = False
+    ) -> None:
         self.fetched.append((weight.id, progress))
+        self.afresh.append(fresh)
         self.present.add(weight.id)
 
 
@@ -196,6 +200,7 @@ async def test_only_the_missing_model_is_fetched_unless_asked_again(
     assert await service.install_models(progress=note) == ["reader"]
     assert files.fetched == [("reader", note)]
     assert await service.install_models(force=True) == ["finder", "reader"]
+    assert files.afresh == [False, True, True], "asked again, nothing left from before is resumed"
 
 
 # --- what a user may be shown -------------------------------------------------------------

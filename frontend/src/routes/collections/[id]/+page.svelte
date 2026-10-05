@@ -1,17 +1,8 @@
 <script lang="ts">
 	import { counted, filesSaid, sizeOf, withSize } from '$lib/entity/entity-counts';
 	/*
-	 * One collection, in the order it was arranged.
-	 *
-	 * The order is the point: a collection is a sequence somebody put together, so the items are
-	 * drawn in the order the server sends and never re-sorted here. Rearranging sends the ids it
-	 * can see in their new order and the server writes the positions; anything concealed is absent
-	 * from this screen and keeps its place behind what was arranged.
-	 *
-	 * The wall is DRAWN pinned first and paged like every wall of files, so Move earlier and Move
-	 * later act on the stored `position`, never on what is drawn (see `collections.move`).
-	 *
-	 * Dropping a clip here adds it, as on the list screen, and no file moves.
+	 * One collection: its files in the Sort by order every wall of files has, pinned first, paged
+	 * like every wall. Dropping a clip here adds it, as on the list screen, and no file moves.
 	 */
 	import type { Crumb } from '$lib/components/common';
 	import type { Frame } from '$lib/entity/cover-frame';
@@ -68,6 +59,7 @@
 	import { Grid, type PageStart } from '$lib/grid/grid.svelte';
 	import { WalkBack } from '$lib/grid/walk-back';
 	import { screenBar } from '$lib/components/shell/screen-bar.svelte';
+	import { WallOrder } from '$lib/components/wall-order.svelte';
 	// The hover clip, shared with the search wall. See the module for why this is not the library
 	// grid's whole slot-pool machine.
 	import { HoverPreviews, canPreview } from '$lib/grid/hover-preview.svelte';
@@ -126,7 +118,7 @@
 	   grid. */
 	const previews = new HoverPreviews();
 	onDestroy(() => previews.dispose());
-	/* The arrangement a page at a time, as every wall of files pages; its rows are the route's own. */
+	/* A page at a time, as every wall of files pages; its rows are the route's own. */
 	const grid = $derived(new Grid(contentsSource(id)));
 	const items = $derived(grid.items as unknown as CollectionItem[]);
 	/* The picks' own total while words or a bar filter narrow them further. */
@@ -139,8 +131,15 @@
 	const narrowed = $derived(Object.keys(narrowing).length > 0);
 	const searched = $derived(Object.keys(filters).some((name) => !(name in narrowing)));
 	const filtered = $derived(Object.keys(filters).some((one) => one !== 'q' && !(one in narrowing)));
-	/* The route pins first; saying so keeps the grid from continuing after a row it cannot find. */
-	const query = $derived({ ...filters, pinned_first: '1' });
+	/* The order as every wall of files asks it, pinned first, which also keeps the grid from
+	   continuing after a row the route cannot find. */
+	const wallOrder = new WallOrder({
+		query: () => ({}),
+		source: () => contentsSource(id),
+		fixedSort: () => undefined,
+		pinnable: () => true
+	});
+	const query = $derived({ ...wallOrder.fullQuery, ...filters });
 	/* The tab's number: the whole, or what the picks left, never what the words found. */
 	const wholeFiles = $derived(
 		searched
@@ -220,8 +219,7 @@
 	let scroller = $state<HTMLElement | null>(null);
 	let contentBox = $state<HTMLElement | null>(null);
 
-	/* The bar while Files shows (`RelatedWall` publishes for the rest): no orders, since the
-	   arrangement made by hand is the point of the screen. */
+	/* The bar while Files shows (`RelatedWall` publishes for the rest). */
 	const mine = Symbol('collection-files');
 
 	$effect(() => {
@@ -232,7 +230,9 @@
 			filterable: true,
 			resizable: true,
 			playable: true,
-			sorts: []
+			sorts: wallOrder.sortOptions,
+			sort: wallOrder.sort,
+			onSort: (next) => wallOrder.choose(next)
 		});
 	});
 
@@ -272,7 +272,7 @@
 
 	/* Where the page begins, for the question it was turned on; a new question starts at the top.
 	   Previous returns to the page Next left, as on every wall of files. */
-	const question = $derived(`${id}\n${filtersKey}`);
+	const question = $derived(`${id}\n${JSON.stringify(query)}`);
 	let start = $state<{ for: string; at: PageStart }>({ for: '', at: { at: 0 } });
 	const from = $derived<PageStart>(start.for === question ? start.at : { at: 0 });
 	const walk = new WalkBack();
@@ -297,7 +297,7 @@
 		});
 	});
 
-	/* Next and Previous walk the collection in ITS order, past the page through the same question. */
+	/* Next and Previous walk the wall's order, past the page through the same question. */
 	function asNeighbour(item: { id: string; media_type: string }) {
 		return { id: item.id, runs: item.media_type === 'video' || item.media_type === 'gif' };
 	}
@@ -312,17 +312,13 @@
 		openAsset(opened, items.map(asNeighbour), undefined, undefined, more);
 	}
 
-	/* Reordering is `nudge`, from the tile's own menu: a tile's drag means "take this file
-	   out" on every screen in Sift, including this one, and the menu is the way to do it without
-	   a mouse. */
-
 	$effect(() => {
 		// Read here so the picks' total follows the filters as well as the collection.
 		void filtersKey;
 		void refresh(id);
 	});
 
-	/* Its own loader rather than `EntitySubject`: the row and the arrangement are two reads, and a
+	/* Its own loader rather than `EntitySubject`: the row and the files are two reads, and a
 	   re-read never blanks the header. It follows what this account may see. */
 	reloadOnLibraryChange(() => void reread());
 
@@ -354,23 +350,6 @@
 	async function reread() {
 		await Promise.all([refresh(id), grid.loadAt(query, { at: grid.offset }, { quiet: true })]);
 	}
-
-	/*
-	 * Move one file one place in the ARRANGEMENT, never in the drawn order: the pin is one account's
-	 * opinion and the arrangement is everybody's. Never over a filtered wall either, where the files
-	 * left out would be moved behind the ones kept; the verbs are dimmed for the same reason.
-	 */
-	async function nudge(assetId: string, by: -1 | 1) {
-		if (partWhy !== null) return;
-		try {
-			await collections.move(id, assetId, by);
-		} catch {
-			toasts.show("That couldn't be rearranged", { tone: 'error' });
-		}
-		await reread();
-	}
-
-	/* The pin is the shared verb's (`setFilesPinned`): it moves the tile, never the arrangement. */
 
 	/** Whether the picture chooser is open. Opened by the pencil on the cover. */
 	let pickingPicture = $state(false);
@@ -405,40 +384,13 @@
 	}
 
 	/*
-	 * The verbs only a collection has (a place in the arrangement, the cover, membership), appended
-	 * to `FileVerbs`' list so the menu and the bar render one declaration. The three that move or
-	 * choose are `singleOnly`, so the bar keeps only Remove. The moves are offered where the server
-	 * sent a position, which is only to whoever may rearrange.
+	 * The verbs only a collection has (the cover, membership), appended to `FileVerbs`' list so the
+	 * menu and the bar render one declaration. The cover is `singleOnly`, so the bar keeps Remove.
+	 * Both are an admin's, as the routes behind them are.
 	 */
 	function ownVerbs(item: CollectionItem): Verb[] {
-		const at = item.position;
-		const moves: Verb[] =
-			at === null
-				? []
-				: [
-						{
-							id: 'move-earlier',
-							label: 'Move earlier',
-							icon: 'arrow_upward',
-							singleOnly: true,
-							disabled: partWhy !== null || at <= 0,
-							why: partWhy ?? "It's already first",
-							run: () => void nudge(item.id, -1)
-						},
-						{
-							id: 'move-later',
-							label: 'Move later',
-							icon: 'arrow_downward',
-							singleOnly: true,
-							disabled: partWhy !== null || at >= grid.total - 1,
-							why: partWhy ?? "It's already last",
-							run: () => void nudge(item.id, 1)
-						}
-					];
-		/* The cover and membership are an admin's, as the routes behind them are. */
-		if (!session.isAdmin) return moves;
+		if (!session.isAdmin) return [];
 		return [
-			...moves,
 			{
 				id: 'cover',
 				label: collection?.cover_asset_id === item.id ? 'This is the cover' : 'Use as the cover',
@@ -451,14 +403,6 @@
 			removeVerb
 		];
 	}
-
-	/** Why the arrangement cannot be changed while picks filter the wall. See `nudge`. */
-	const NARROWED_WHY = 'Only part of the collection is showing. Clear the picks to rearrange it';
-	const SEARCHED_WHY = 'Only part of the collection is showing. Clear the search to rearrange it';
-	const FILTERED_WHY = 'Only part of the collection is showing. Clear the filters to rearrange it';
-	const partWhy = $derived(
-		fileWords.asked ? SEARCHED_WHY : narrowed ? NARROWED_WHY : searched ? FILTERED_WHY : null
-	);
 
 	/** Out of this collection, and out of nothing else. Offered on both surfaces, worded once. */
 	const removeVerb: Verb = {
@@ -697,9 +641,7 @@
 <!--
 	The Files tab, which is this screen's own wall, and every other tab, which is the shared one.
 
-	Only Files carries the drop target and the drag-to-rearrange grid: dropping a clip on a wall of
-	PEOPLE would have no meaning, and the order that makes this screen worth having is an order over
-	files. The identity band and the tab strip are rendered by both, from the same two snippets, so
+	Only Files carries the drop target: dropping a clip on a wall of PEOPLE would have no meaning. The identity band and the tab strip are rendered by both, from the same two snippets, so
 	the page does not change shape when somebody moves between tabs.
 -->
 {#if missing}
@@ -709,8 +651,8 @@
 {:else if showingHistory}
 	<!--
 		The thread, in the frame every other screen uses. Not a wall: nothing to select, nothing to
-		page and nothing to count, so this screen's own drop target and its drag-to-rearrange grid
-		would be furniture with no work behind it.
+		page and nothing to count, so this screen's own drop target and grid would be furniture with
+		no work behind it.
 
 		WITHOUT `measure`: that bounds the line AND centres it, and the thread belongs at the page's
 		own left edge where the tabs and the title are.
@@ -751,8 +693,8 @@
 					have the whole opinion they read.
 
 					What this screen hands over is what only this screen knows: how to look a row up, how to
-					drop one, and how to re-read the arrangement. `pinnable`, because a collection is a wall
-					somebody curates and is drawn pinned-first (see the note on the pin above).
+					drop one, and how to re-read the wall. `pinnable`, because a collection is a wall somebody
+					curates and is drawn pinned first.
 				-->
 					<FileVerbs
 						{items}
@@ -857,7 +799,7 @@
 										>Drag files from the library onto this page to add them.</Empty
 									>
 								{:else}
-									<!-- Browse's paging, rows and tile, drawn here because the moves and the drop are this
+									<!-- Browse's paging, rows and tile, drawn here because the drop and the verbs are this
 									     screen's own; the order is the server's and never re-sorted. -->
 									<div class="wall">
 										{#each grid.rows as row, rowIndex (rowIndex)}
@@ -865,8 +807,7 @@
 												{#each row.tiles as placed (placed.id)}
 													{@const item = byId.get(placed.id)}
 													{#if item}
-														<!-- Draggable out of Sift as everywhere; reordering is Move earlier and Move later
-														     in the menu, which the keyboard reaches too. No buttons on a tile as narrow as 110. -->
+														<!-- Draggable out of Sift as everywhere. No buttons on a tile as narrow as 110. -->
 														<div
 															{...{ [TILE_ID]: item.id }}
 															class="slot"

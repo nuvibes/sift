@@ -203,6 +203,9 @@ class SelfTestView(Wire):
     held_while_measuring: int = 0
     full_while_measuring: int = 0
     """The loop's and the threads' stalls since Sift started that the benchmark caused."""
+    whole_to_come: bool = False
+    whole_due: bool = False
+    """Only the first part was measured, and whether Sift still runs the rest by itself."""
 
 
 class GpuCard(Wire):
@@ -277,9 +280,6 @@ class AcceleratorView(Wire):
     """Which set is pinned, so a screen can say what it would install."""
     job_id: str | None
     """The download in flight, when there is one, so the screen can follow it."""
-    restart_needed: bool
-    """Installed after the processor build had already been loaded in this process. The install is
-    real and cannot take effect until Sift is opened again. See `ml.accel.restart_needed`."""
 
 
 class AcceleratorTestView(Wire):
@@ -312,13 +312,11 @@ class BenchmarkChangeView(Wire):
 
 
 class FirstBenchmarkView(Wire):
-    """The benchmark Sift runs by itself on the first library folder, as the toasts read it.
+    """The benchmark Sift runs by itself, as the toasts read it.
 
     `state` is `none` until one was queued in this process; `job_id` is what a window compares, so
-    one run is said once; `said` is the sentence Activity's note carries for the same moment, so
-    the toast and the note are one author's. `measured` lets a window on a measured device stop
-    asking: a measured device never queues one.
-    """
+    one run is said once; `said` is Activity's note for the same moment. `measured` lets a window
+    stop asking: it's true once nothing more is run by itself."""
 
     state: str
     job_id: str | None = None

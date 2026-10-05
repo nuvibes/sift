@@ -40,13 +40,13 @@ describe("the watermark models' download, once it ends", () => {
 		);
 	});
 
-	it('says it stopped short when they are not, or when the server could not be asked', async () => {
+	it('says it ended without them when they are not, or when the server could not be asked', async () => {
 		asked.status.mockResolvedValue({ ready: false });
 		await ended();
-		expect(modelFetch.outcome).toContain('The download stopped before it finished');
+		expect(modelFetch.outcome).toContain('The download ended without the models');
 
 		asked.status.mockRejectedValue(new Error('offline'));
 		await ended();
-		expect(modelFetch.outcome).toContain('The download stopped before it finished');
+		expect(modelFetch.outcome).toContain('The download ended without the models');
 	});
 });

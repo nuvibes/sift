@@ -79,6 +79,9 @@ vi.mock("./shellpage", async (original) =>
 vi.mock("./smoke", async () =>
   (await import("../test/main-scene")).doubles.smoke(),
 );
+vi.mock("./logbundle", async () =>
+  (await import("../test/main-scene")).doubles.logbundle(),
+);
 vi.mock("./uninstall", async () =>
   (await import("../test/main-scene")).doubles.uninstall(),
 );
@@ -371,29 +374,170 @@ describe("a copy set up for its own library", () => {
     expect(electron.appCalls.quit).toBe(1);
   });
 
-  it("goes back to the first question when the way back is taken, leaving the library folder", async () => {
-    scene.startFailures.push(new Error("boom"));
-    const electron = await boot({ mode: "standalone", ...LIBRARY }, (stub) => {
-      stub.dialogAnswers.push(0);
+  it("asks where the library is only when it isn't where this copy was told", async () => {
+    scene.libraryHere = false;
+    const { BackendStartError } = await import("./backend");
+    scene.startFailures.push(new BackendStartError("Sift stopped while it was starting up.", "", true, 1));
+    const opened = [{ ...LIBRARY, name: "Library", lastOpened: 1 }];
+    const electron = await boot({ mode: "standalone", ...LIBRARY, libraries: opened }, (stub) => {
+      stub.dialogAnswers.push(1);
     });
     await settle();
 
-    expect(electron.dialogCalls[0]?.message).toBe("Sift could not start");
+    expect(electron.dialogCalls[0]?.message).toBe(
+      `Sift can't open your library at ${LIBRARY.dataDir}`,
+    );
+    expect(electron.dialogCalls[0]?.buttons).toEqual([
+      "Start again",
+      "Choose again",
+      "Download log",
+      "Quit",
+    ]);
+    expect(electron.dialogCalls[0]?.detail).toContain(
+      "starts a new, empty library there, and your library stays where it is",
+    );
     expect(electron.appCalls.quit).toBe(0);
-    expect(lastSaved().mode).toBeNull();
-    expect(lastSaved().dataDir).toBe(LIBRARY.dataDir);
-    expect(windowOf(electron).loaded.at(-1)).toBe(`${SHELL}/start`);
+    expect(lastSaved()).toMatchObject({ mode: "standalone", dataDir: null, cacheDir: null });
+    expect(windowOf(electron).loaded.at(-1)).toBe(`${SHELL}/library-location`);
   });
 
-  it("offers the same way back when a running backend gives up", async () => {
+  it("starts again on the place it was told, once the folder answers", async () => {
+    scene.refusal = "That folder is on a network drive.";
+    const electron = await boot({ mode: "standalone", ...LIBRARY }, (stub) => {
+      stub.dialogAnswers.push(0, 1);
+    });
+
+    scene.backends[0]?.gaveUp("it stopped four times", true, 1);
+    await settle();
+
+    expect(electron.dialogCalls[0]?.detail).toContain("That folder is on a network drive.");
+    expect(scene.backends).toHaveLength(2);
+    expect(lastSaved().dataDir).toBe(LIBRARY.dataDir);
+  });
+
+  it("says what to do, and never offers setup, when a running backend gives up", async () => {
     const electron = await boot({ mode: "standalone", ...LIBRARY }, (stub) => {
       stub.dialogAnswers.push(1);
     });
 
-    scene.backends[0]?.gaveUp("it stopped three times");
+    scene.backends[0]?.gaveUp("it stopped three times", false, 3221225477);
+    await settle();
+
+    expect(electron.dialogCalls[0]?.detail).toContain(
+      "It stopped inside one of the libraries it runs on.",
+    );
+    expect(electron.dialogCalls[0]?.detail).toContain("github.com/nuvibes/sift/issues");
+    expect(electron.dialogCalls[0]?.buttons).toEqual(["Download log", "Quit"]);
 
     expect(electron.dialogCalls[0]?.title).toBe("Sift has stopped");
     expect(electron.dialogCalls[0]?.detail).toContain("it stopped three times");
+    expect(electron.appCalls.quit).toBe(1);
+  });
+
+  it("offers a start without the optional features when the backend kept dying, and says it did", async () => {
+    const electron = await boot({ mode: "standalone", ...LIBRARY }, (stub) => {
+      stub.dialogAnswers.push(0);
+    });
+
+    scene.backends[0]?.gaveUp("it stopped four times", true);
+    await settle();
+
+    expect(electron.dialogCalls[0]?.buttons).toEqual([
+      "Start without them",
+      "Download log",
+      "Quit",
+    ]);
+    expect(electron.dialogCalls[0]?.detail).toContain(
+      "Your settings don't change.",
+    );
+    expect(scene.backends.map((one) => one.held)).toEqual([false, true]);
+    expect(electron.dialogCalls[1]?.message).toBe(
+      "Sift started without face recognition, Smart Search and watermark reading",
+    );
+    expect(scene.logged).toContain("backend.optional_held");
+    expect(lastSaved().mode).toBe("standalone");
+  });
+
+  it("does not offer the held start again once it is the one that stopped", async () => {
+    const electron = await boot({ mode: "standalone", ...LIBRARY }, (stub) => {
+      stub.dialogAnswers.push(0, 0, 1);
+    });
+    scene.backends[0]?.gaveUp("it stopped four times", true);
+    await settle();
+
+    scene.backends[1]?.gaveUp("and again", true);
+    await settle();
+
+    expect(electron.dialogCalls[2]?.buttons).toEqual(["Download log", "Quit"]);
+    expect(electron.appCalls.quit).toBe(1);
+  });
+
+  it("offers the held start when the backend died while it was starting", async () => {
+    const { BackendStartError } = await import("./backend");
+    scene.startFailures.push(
+      new BackendStartError("Sift stopped while it was starting up.", "", true, 0xc0000135),
+    );
+    const electron = await boot({ mode: "standalone", ...LIBRARY }, (stub) => {
+      stub.dialogAnswers.push(2);
+    });
+
+    expect(electron.dialogCalls[0]?.detail).toContain("It couldn't start: a file it needs");
+
+    expect(electron.dialogCalls[0]?.buttons?.[0]).toBe("Start without them");
+    expect(electron.appCalls.quit).toBe(1);
+  });
+
+  it("downloads the log with no backend, shows the file, and asks again", async () => {
+    const electron = await boot({ mode: "standalone", ...LIBRARY }, (stub) => {
+      stub.dialogAnswers.push(0, 1);
+    });
+
+    scene.backends[0]?.gaveUp("it stopped three times");
+    await settle();
+
+    const asked = scene.bundled[0] as {
+      appLogs: string;
+      libraryLogs: string;
+      into: string;
+      facts: { sift: string };
+    };
+    expect(asked.appLogs).toBe(electron.app.getPath("userData"));
+    expect(asked.libraryLogs).toBe(LIBRARY.dataDir);
+    expect(asked.into).toBe(electron.app.getPath("downloads"));
+    expect(asked.facts.sift).toBe(electron.app.getVersion());
+    expect(electron.revealed).toEqual(["C:\\Downloads\\Sift log.zip"]);
+    expect(electron.dialogCalls[1]?.title).toBe("Sift has stopped");
+    expect(electron.appCalls.quit).toBe(1);
+  });
+
+  it("makes the page's log archive the same way, into the save folder", async () => {
+    await boot({ mode: "standalone", ...LIBRARY, downloadDir: "E:\\Saved" });
+
+    expect(await scene.logArchive("Sift log.zip")).toBe("C:\\Downloads\\Sift log.zip");
+    scene.bundleAnswer = { ok: false, reason: "no room" };
+    expect(await scene.logArchive("Sift log.zip")).toBeNull();
+
+    const asked = scene.bundled[0] as { name: string; into: string; libraryLogs: string };
+    expect(asked).toMatchObject({ name: "Sift log.zip", into: "E:\\Saved", libraryLogs: LIBRARY.dataDir });
+    expect(scene.logged).toContain("shell.log_download_failed");
+  });
+
+  it("says why the log could not be made, and asks again", async () => {
+    scene.bundleAnswer = { ok: false, reason: "The folder is read-only." };
+    const electron = await boot({ mode: "standalone", ...LIBRARY }, (stub) => {
+      stub.dialogAnswers.push(0, 0, 1);
+    });
+
+    scene.backends[0]?.gaveUp("it stopped three times");
+    await settle();
+
+    expect(electron.dialogCalls[1]?.message).toBe(
+      "Sift couldn't make the log file",
+    );
+    expect(electron.dialogCalls[1]?.detail).toBe("The folder is read-only.");
+    expect(electron.dialogCalls[2]?.title).toBe("Sift has stopped");
+    expect(electron.revealed).toEqual([]);
+    expect(scene.logged).toContain("shell.log_download_failed");
     expect(electron.appCalls.quit).toBe(1);
   });
 
@@ -436,22 +580,24 @@ describe("a copy set up for its own library", () => {
     electron.dialogAnswers.push(1);
 
     expect((await scene.hooks.libraries.open(OTHER.dataDir)).ok).toBe(false);
+    await settle();
 
     expect(electron.dialogCalls[0]?.detail).toContain("database is locked");
     expect(electron.appCalls.quit).toBe(1);
   });
 
   it("draws nothing when the way back is taken after the window has gone", async () => {
+    scene.libraryHere = false;
     const electron = await boot({ mode: "standalone", ...LIBRARY }, (stub) => {
-      stub.dialogAnswers.push(0);
+      stub.dialogAnswers.push(1);
     });
     const window = windowOf(electron);
     (window.listeners.get("closed") as unknown as () => void)();
 
-    scene.backends[0]?.gaveUp("it stopped three times");
+    scene.backends[0]?.gaveUp("it stopped three times", true, 1);
     await settle();
 
-    expect(lastSaved().mode).toBeNull();
+    expect(lastSaved().dataDir).toBeNull();
     expect(window.loaded).toEqual([LOCAL]);
   });
 

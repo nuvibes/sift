@@ -16,6 +16,7 @@ a preference) and the log is the thing people paste into a bug report.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 from collections.abc import Awaitable, Callable
@@ -470,10 +471,13 @@ class SettingsService:
             if viewer is not None and setting.scope is Scope.APP and not viewer.is_admin:
                 raise ScopeForbidden(f"{key!r} is a global setting; only an admin may change it")
             normalized = setting.validate(value)
-            # And only here. A refusal is about the machine, not about the value, so it belongs on
-            # the way IN and nowhere else: `_decode` runs the validator on every read, and a
-            # machine check there would quietly rewrite a stored choice somebody made deliberately.
-            refused = setting.refuse(normalized) if setting.refuse is not None else None
+            # Only on the way in, and on a thread: a refusal asks the machine, which can wait, and
+            # in `_decode` (every read) it would rewrite a stored choice somebody made.
+            refused = (
+                await asyncio.to_thread(setting.refuse, normalized)
+                if setting.refuse is not None
+                else None
+            )
             if refused is None and (check := self._checks.get(key)) is not None:
                 refused = await check(normalized)
             if refused is not None:

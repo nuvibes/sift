@@ -1,4 +1,4 @@
-/* Settings > Documentation, drawn from the pages the build wrote: the menu, a page, and its links. */
+/* Settings > Documentation, drawn from the pages the build wrote. */
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { flushSync, mount, unmount } from 'svelte';
 import { replaceState } from '$app/navigation';
@@ -178,6 +178,20 @@ describe('a page', () => {
 		expect(copySectionLink).toHaveBeenCalledWith(
 			`${location.origin}/settings/documentation?show=${encodeURIComponent(slug)}#${last.id}`
 		);
+	});
+
+	it("draws the headings as elements, a level under the pane's title", async () => {
+		const tags = (pane: Element, selector: string) =>
+			[...pane.querySelectorAll(selector)].map((one) => one.tagName);
+		const contents = await open();
+		expect(new Set(tags(contents, '.doc-menu .doc-heading'))).toEqual(new Set(['H2', 'H3']));
+		const slug = withBlock((block) => block.kind === 'heading' && block.level === 3);
+		const page = await open(slug);
+		expect(page.querySelector('.doc-title')?.tagName).toBe('H2');
+		const levels = BOOK.pages[slug]?.blocks.flatMap((one) =>
+			one.kind === 'heading' ? [`H${one.level + 1}`] : []
+		);
+		expect(tags(page, '.docs > .doc-heading')).toEqual(levels);
 	});
 
 	it('draws a table, a note and an anchor as the page writes them', async () => {

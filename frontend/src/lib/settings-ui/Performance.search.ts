@@ -56,7 +56,7 @@ export const COPY = {
 		name: 'Benchmarking this device',
 		row: 'Benchmark this device',
 		help: 'Find out what this device can do, and get suggested numbers for how many things Sift does at the same time.',
-		lede: 'Sift estimates how much to do at the same time from your CPU. The benchmark measures it instead. It encodes the same short clip one at a time, then several at the same time. It times how fast this device decodes video and seeks into a file. It builds previews on your GPU the way Sift does, and times each installed model. Then it reads a few large files from each drive and network share your library is on. Each step runs three times and keeps the middle result. It takes a few minutes and keeps this device busy while it runs.',
+		lede: 'Sift estimates how much to do at the same time from your CPU. The benchmark measures it instead. It encodes the same short clip one at a time, then several at the same time. It times how fast this device decodes video and seeks into a file. It builds previews on your GPU the way Sift does, and times each installed model. Then it reads a few large files from each drive and network share your library is on. Each step is timed once, and a step stops early rather than run past its share of the time. It takes up to 5 minutes and keeps this device busy while it runs.',
 		busy: 'Benchmarking\u2026 this device is busy until it finishes.',
 		round: (at: number, of: number) =>
 			`Round ${at} of up to ${of}. Each one encodes more clips at the same time than the last, and it stops early if this device stops keeping up.`,
@@ -66,9 +66,11 @@ export const COPY = {
 		again: 'Run it again',
 		unmeasured:
 			'Adding your first folder benchmarks this device. Until it has been benchmarked, Generate and Identify read a file on a network share by seeking into it. The quicker way there, one decode of the whole file, needs the benchmark first.',
-		/* The run Sift started by itself on the first folder, said over the results it set. */
-		setBySift:
-			'Sift ran this benchmark when your first folder was added, and set these numbers from it. History has the line, with Undo.',
+		/* Over the rows Sift's own run set; what it only suggested stands apart, with Apply. */
+		setBySift: (n: number) =>
+			`Sift ran this benchmark by itself and set ${n === 1 ? 'this number' : 'these numbers'} from it. History has the line, with Undo.`,
+		wholeToCome: (byItself: boolean) =>
+			`This is a first measure, taken so your first folder's files could start arriving. ${byItself ? "The full benchmark runs by itself once Sift has nothing else to do and nobody's using this device. Press Run it again to run it now." : "The full benchmark hasn't run yet. Press Run it again to run it."}`,
 		/* The two presses on the toasts about that run: the row while it runs or after a failure,
 		   the row and its results once it set something. */
 		open: 'Open',
@@ -77,7 +79,7 @@ export const COPY = {
 			`The benchmark didn't finish \u2014 ${why}. Your settings are unchanged.`,
 		automatic: 'automatic',
 		applying: 'Applying\u2026',
-		apply: (n: number) => `Apply these ${n} numbers`,
+		apply: (n: number) => (n === 1 ? 'Apply this number' : `Apply these ${n} numbers`),
 		nothingYet:
 			'Nothing is changed until you press that. You can change any of them later under Importing.',
 		agrees: 'Your settings already match what this device can do. Nothing to change.',

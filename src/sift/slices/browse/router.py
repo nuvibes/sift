@@ -21,10 +21,8 @@ from starlette.background import BackgroundTask
 from sift.kernel import heif, places, wiring
 from sift.kernel.access import (
     ADMIN_FACETS,
-    DEFAULT_SORT,
     FACETS,
     FACETS_RENAMED,
-    RELEVANCE,
     SEEKABLE_SORTS,
     SHUFFLE_MODULUS,
     SIMILARITY,
@@ -46,6 +44,7 @@ from sift.kernel.access.history import (
     history_of_asset,
 )
 from sift.kernel.access.history_boxes import unshown_said
+from sift.kernel.access.repository.asset_orders import ordering_for
 from sift.kernel.access.search_index import INDEXED_RECORD_FIELDS
 from sift.kernel.content import (
     Asset,
@@ -138,26 +137,6 @@ def _refuse_cross_site(request: Request) -> None:
     """Refuse a request another site sent the browser here to make."""
     if request.headers.get("sec-fetch-site") == "cross-site":
         raise HTTPException(status.HTTP_403_FORBIDDEN, "that request did not come from Sift")
-
-
-def ordering_for(sort: str | None, asset_filter: AssetFilter, *, by_meaning: bool = False) -> str:
-    """Which order a page comes back in, given what was asked for and what was searched for.
-
-    **Named wins, always.**
-
-    **A Smart Search with nothing named is ordered by Similarity**
-    """
-    if sort is not None:
-        # Closest match on a wall with no words and a `like:` ranking is closeness to that file:
-        # there is nothing for a text score to rank, so it would read newest first.
-        if sort == RELEVANCE and not asset_filter.text and asset_filter.neighbours:
-            return SIMILARITY
-        return sort
-    if asset_filter.text:
-        return SIMILARITY if by_meaning else RELEVANCE
-    # With no words, a ranking the filter carries is a `like:`: a wall of files similar to one
-    # file, which reads closest first.
-    return SIMILARITY if asset_filter.neighbours else DEFAULT_SORT
 
 
 async def _narrowed(

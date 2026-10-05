@@ -52,8 +52,6 @@ const NOT_A_PANE = /\.test\.svelte$|Probe/;
 const EXCUSED = {
 	'ApplicationLog.svelte': { Show: "the log view's level filter, not a setting" },
 	'GraphicsCard.svelte': {
-		'Restart needed': 'a state the pane reports, not something to set',
-		"Sift didn't restart": 'a state the pane reports, not something to set',
 		'What the GPU reported': 'the answer to Test the GPU, found by that row',
 		'Last download': 'the answer to Download the GPU runtime, found by that row'
 	},

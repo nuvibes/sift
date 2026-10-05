@@ -15,13 +15,15 @@ import weakref
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from functools import cache
-from typing import Any
+from typing import Any, Literal
 
 from sift.kernel import subprocess as tools
 from sift.kernel.attention import ATTENTION_SECONDS
 from sift.kernel.log import get_logger
 
 log = get_logger(__name__)
+
+Busy = Literal["processor", "graphics", "memory"]
 
 #: Other programs' share of the whole processor that counts as busy. A placeholder until measured.
 BUSY_PROCESSOR = 25.0
@@ -35,6 +37,8 @@ BUSY_READINGS = 2
 QUIET_FRACTION = 0.5
 #: How long quiet must hold before the work comes back: the same patience as for input.
 QUIET_SECONDS = ATTENTION_SECONDS
+#: While other programs are busy, one log line this often, so a long spell leaves a record to judge.
+SHADOW_EVERY = 60.0
 #: A graphics read slower than this is taken only every `ENGINE_EVERY` readings.
 SLOW_ENGINE_MS = 20.0
 ENGINE_EVERY = 3
@@ -56,9 +60,8 @@ class Load:
     def engine(self) -> float:
         return max(self.engines.values(), default=0.0)
 
-    def busy(self) -> list[str]:
-        """Which lines this reading is over."""
-        over = []
+    def busy(self) -> list[Busy]:
+        over: list[Busy] = []
         if self.processor >= BUSY_PROCESSOR:
             over.append("processor")
         if self.engine >= BUSY_ENGINE:
@@ -75,7 +78,6 @@ class Load:
         )
 
     def said(self) -> dict[str, object]:
-        """The figures a log line carries."""
         return {
             "processor_others": round(self.processor, 1),
             "processor_sift": round(self.own, 1),
@@ -85,6 +87,21 @@ class Load:
             "memory_free": round(self.memory_free, 1),
             "cost_ms": round(self.cost_ms, 2),
         }
+
+
+def summed(loads: list[Load]) -> Load:
+    """Several readings as one: the processor's mean, each engine's peak, the least memory free."""
+    engines: dict[str, float] = {}
+    for one in loads:
+        for name, value in one.engines.items():
+            engines[name] = max(engines.get(name, 0.0), value)
+    return Load(
+        processor=sum(one.processor for one in loads) / len(loads),
+        own=sum(one.own for one in loads) / len(loads),
+        engines=engines,
+        memory_free=min(one.memory_free for one in loads),
+        cost_ms=max(one.cost_ms for one in loads),
+    )
 
 
 def others_engines(
@@ -184,7 +201,6 @@ class _Windows:
         return self.process_time(self._k.GetCurrentProcess())
 
     def memory_free(self) -> float:
-        """Available physical memory, in percent of the whole."""
         import ctypes
 
         status = _structures()[0]()
@@ -256,7 +272,6 @@ def _structures() -> tuple[Any, Any]:
 
 @cache
 def _windows() -> _Windows | None:
-    """The calls, typed, or None off Windows."""
     if sys.platform != "win32":
         return None  # pragma: no cover (the other operating system's branch)
     import ctypes
@@ -316,7 +331,7 @@ def _typed_pdh() -> Any:
 class DeviceLoad:
     """Reads the device each tick and says whether other programs are busy.
 
-    Logs each moment it would step back and come back, whether or not the setting lets it act.
+    Logs, acting or not, when it would step back, each busy minute, and when it would come back.
     """
 
     def __init__(
@@ -331,7 +346,11 @@ class DeviceLoad:
         self._engine_wait = 0
         self._over = 0
         self._quiet_since: float | None = None
+        self._since = 0.0
+        self._next_line = 0.0
+        self._minute: list[Load] = []
         self.busy = False
+        self.over: list[Busy] = []
         self.latest: Load | None = None
 
     def read(self) -> Load | None:
@@ -395,9 +414,26 @@ class DeviceLoad:
         if not self.busy:
             if self._over >= BUSY_READINGS:
                 self.busy = True
+                self.over = over
                 self._quiet_since = None
+                self._since = now
+                self._next_line = now + SHADOW_EVERY
+                self._minute = []
                 log.info("device_load.others_busy", over=over, acting=acting, **load.said())
             return
+        self.over = over or self.over
+        self._minute.append(load)
+        if now >= self._next_line:
+            self._next_line = now + SHADOW_EVERY
+            log.info(
+                "device_load.others_still_busy",
+                over=over,
+                acting=acting,
+                busy_seconds=round(now - self._since),
+                readings=len(self._minute),
+                **summed(self._minute).said(),
+            )
+            self._minute = []
         if not load.quiet():
             self._quiet_since = None
             return
@@ -406,10 +442,15 @@ class DeviceLoad:
         if now - self._quiet_since >= QUIET_SECONDS:
             self.busy = False
             self._over = 0
-            log.info("device_load.others_quiet", acting=acting, **load.said())
+            self.over = []
+            log.info(
+                "device_load.others_quiet",
+                acting=acting,
+                busy_seconds=round(now - self._since),
+                **load.said(),
+            )
 
 
-#: The one reader the worker pool ticks.
 READER = DeviceLoad()
 
 
@@ -420,9 +461,11 @@ __all__ = [
     "LOW_MEMORY",
     "QUIET_SECONDS",
     "READER",
+    "SHADOW_EVERY",
     "DeviceLoad",
     "Load",
     "child_ended",
     "others_engines",
     "own_child",
+    "summed",
 ]

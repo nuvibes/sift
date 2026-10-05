@@ -1,9 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Each installed model, timed the way its pass runs it: through the feature's own model process,
-on the device the feature is set to, one file at a time and then several.
-
-A file is its pass's frames, decoded from the benchmark's clip, and its model runs on them. Nothing
-is downloaded: a model that isn't installed isn't measured."""
+"""Each installed model, timed through the feature's own model process on its set device, one file
+of decoded frames at a time and then several. Nothing is downloaded."""
 
 from __future__ import annotations
 
@@ -28,6 +25,7 @@ from sift.kernel.config import Settings
 from sift.kernel.log import get_logger
 from sift.kernel.ml.runtime import DeviceUnavailable, Loaded
 from sift.kernel.ml.weights import Weight, WeightError
+from sift.slices.performance.budget import MODELS, Deadline
 from sift.slices.performance.selftest import (
     BUSY,
     NEAR_BEST,
@@ -371,6 +369,20 @@ async def one_file(
 # --- the ladder -----------------------------------------------------------------------------------
 
 
+def _level(
+    at_once: int, took: float, done: Sequence[bool], held: int | None, card: int | None
+) -> ModelLevel:
+    finished = sum(1 for ok in done if ok)
+    return ModelLevel(
+        at_once=at_once,
+        seconds=took,
+        finished=finished,
+        failed=at_once - finished,
+        memory_bytes=held,
+        card_memory_bytes=card,
+    )
+
+
 async def measure_pass(
     one: ModelPass,
     *,
@@ -383,6 +395,7 @@ async def measure_pass(
     watch: Callable[[], Watch] = MemoryWatch,
     load: Callable[[ModelPass], _Ready] = _load,
     file: Callable[..., Awaitable[bool]] = one_file,
+    deadline: Deadline | None = None,
 ) -> ModelCurve:
     """Time one pass at each width. Never raises: what could not be measured is the answer."""
     curve = ModelCurve(name=one.name, family=one.family, device=one.device, share_key=one.share_key)
@@ -419,16 +432,7 @@ async def measure_pass(
                 )
             finally:
                 held, card = memory.stop()
-            took = time.monotonic() - started
-            finished = sum(1 for ok in done if ok)
-            return ModelLevel(
-                at_once=at_once,
-                seconds=took,
-                finished=finished,
-                failed=at_once - finished,
-                memory_bytes=held,
-                card_memory_bytes=card,
-            )
+            return _level(at_once, time.monotonic() - started, done, held, card)
 
         async def take(at_once: int) -> ModelLevel:
             runs = [await run(at_once) for _ in range(repeats)]
@@ -442,7 +446,14 @@ async def measure_pass(
             )
             return kept
 
-        done = [await steady(partial(take, at_once), _marked, busy) for at_once in levels]
+        done: list[ModelLevel] = []
+        for at_once in levels:
+            level = await (deadline or Deadline(MODELS)).within(
+                steady(partial(take, at_once), _marked, busy)
+            )
+            if level is None:
+                break
+            done.append(level)
         return replace(curve, levels=tuple(done))
     finally:
         await asyncio.to_thread(ready.runner.unload)

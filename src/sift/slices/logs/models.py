@@ -44,19 +44,3 @@ class LogPage(Wire):
     #: asked for can say "that is all of them" or "the older part was not searched", which are
     #: different answers. See `tail.SEARCH_BUDGET`.
     whole: bool = True
-
-
-#: The most lines one copy for a bug report carries: both logs' reads at their ceiling.
-MOST_REDACTED_LINES = 1000
-
-
-class LinesToRedact(Wire):
-    """Lines of either log, as the screen holds them, to be written out for somebody else."""
-
-    lines: list[str] = Field(default=[], max_length=MOST_REDACTED_LINES)
-
-
-class RedactedLines(Wire):
-    """The same lines in the same order, with personal detail and secrets taken out."""
-
-    lines: list[str] = Field(default=[])

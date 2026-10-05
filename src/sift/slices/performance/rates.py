@@ -70,6 +70,8 @@ def measurement_to_json(
     models: tuple[ModelCurve, ...] = (),
     together: Together | None = None,
     lengths: Mapping[str, float] | None = None,
+    first_part: bool = False,
+    whole_stopped: bool = False,
 ) -> str:
     """A finished run's curves, the combined run's included, as `machine_rates.measurement`."""
     kept = asdict(measurement)
@@ -77,7 +79,16 @@ def measurement_to_json(
     kept["models"] = [asdict(one) for one in models]
     kept["together"] = None if together is None else asdict(together)
     kept["lengths"] = dict(lengths or {})
+    kept["first_part"] = first_part
+    kept["whole_stopped"] = whole_stopped
     return json.dumps(kept)
+
+
+def flag_from_json(text: str, key: str) -> bool:
+    try:
+        return bool(json.loads(text).get(key))
+    except (ValueError, AttributeError):
+        return False
 
 
 def lengths_from_json(text: str) -> dict[str, float]:
@@ -190,10 +201,12 @@ class MachineRates:
     models: tuple[ModelCurve, ...] = ()
     together: Together | None = None
     lengths: Mapping[str, float] = field(default_factory=dict)
+    #: Only a first folder's quick part is measured, and whether Sift no longer runs the rest itself.
+    first_part: bool = False
+    whole_stopped: bool = False
 
     def for_reading(self, storage: str | None) -> ReadRates | None:
-        """The rates for the kernel's read rule, for a file on `storage` (None for a local disk);
-        None where the decoder was never measured, as a rule with no rate seeks."""
+        """The kernel's read rule's rates for `storage` (None: a local disk); None if never decoded."""
         if self.decode_fps is None or self.seek_seconds is None:
             return None
         share = self.storages.get(storage) if storage is not None else None
@@ -222,6 +235,7 @@ class MachineRates:
         models: tuple[ModelCurve, ...] = (),
         together: Together | None = None,
         lengths: Mapping[str, float] | None = None,
+        first_part: bool = False,
     ) -> MachineRates:
         """The rates off a finished measurement; what was not measured is None, never zero."""
         decode = measurement.decode
@@ -236,6 +250,7 @@ class MachineRates:
             models=models,
             together=together,
             lengths=dict(lengths or {}),
+            first_part=first_part,
         )
 
 
@@ -286,6 +301,8 @@ class RatesStore:
         card, models = (None, ()) if text is None else more_from_json(text)
         together = None if text is None else together_from_json(text)
         lengths = {} if text is None else lengths_from_json(text)
+        first_part = text is not None and flag_from_json(text, "first_part")
+        whole_stopped = text is not None and flag_from_json(text, "whole_stopped")
         if measurement is not None:
             # Judged again by today's rule, so the lanes and the screen read one number.
             storages.update(storage_rates(measurement))
@@ -300,6 +317,8 @@ class RatesStore:
             models=models,
             together=together,
             lengths=lengths,
+            first_part=first_part,
+            whole_stopped=whole_stopped,
         )
 
     async def save(self, rates: MachineRates) -> None:
@@ -328,6 +347,8 @@ class RatesStore:
                     models=rates.models,
                     together=rates.together,
                     lengths=rates.lengths,
+                    first_part=rates.first_part,
+                    whole_stopped=rates.whole_stopped,
                 ),
             ),
         )
@@ -338,5 +359,4 @@ def now() -> int:
     return int(time.time())
 
 
-#: The rates store, on the application.
 MACHINE_RATES: Part[RatesStore] = Part("machine_rates")

@@ -9,6 +9,7 @@ from typing import Any, cast
 
 import pytest
 
+from sift.kernel import fetch
 from sift.kernel.ingress import Reason
 from sift.kernel.jobs.failure_words import (
     KINDS,
@@ -21,6 +22,7 @@ from sift.kernel.jobs.failure_words import (
 from sift.kernel.jobs.recovery import _INTERRUPTED
 from sift.kernel.jobs.worker_pool import _NO_HANDLER
 from sift.kernel.subprocess import NEVER_STARTED
+from sift.kernel.tests.test_fetch import FAILURES, FakeResponse, FakeSession, Unreached
 from sift.slices.library_roots import jobs
 from sift.slices.library_roots.walking import RootUnreachable
 
@@ -58,6 +60,51 @@ def test_each_stored_error_is_said_by_its_kind(error: str, kind: str) -> None:
     assert found is not None
     assert found.name == kind
     assert in_plain_words(error) == found.words
+
+
+#: Each way a download fails, by the kind its words are.
+_DOWNLOADS = {
+    fetch.REFUSED: "connection-refused",
+    fetch.UNREACHED: "unreached",
+    fetch.NOT_FOUND: "name-not-found",
+    fetch.NO_ANSWER: "no-answer",
+    fetch.UNTRUSTED: "untrusted",
+    fetch.PROXY: "proxy",
+    fetch.DROPPED: "dropped",
+}
+
+
+@pytest.mark.parametrize(("error", "why"), FAILURES)
+async def test_a_download_that_failed_is_said_by_its_kind(
+    error: BaseException, why: str, tmp_path: Path
+) -> None:
+    with pytest.raises(fetch.FetchFailed) as failed:
+        await fetch.fetch_resumable(
+            "https://models.example.test/m",
+            tmp_path / "m.part",
+            what="detector model",
+            session_factory=lambda: Unreached(error),
+        )
+    found = kind_of(f"WeightError: {failed.value} Or copy the file to this device yourself.")
+    assert found is not None
+    assert found.name == _DOWNLOADS[why]
+
+
+async def test_a_refused_download_and_one_that_arrived_damaged_are_said_by_their_kinds(
+    tmp_path: Path,
+) -> None:
+    with pytest.raises(fetch.FetchFailed) as failed:
+        await fetch.fetch_resumable(
+            "https://models.example.test/m",
+            tmp_path / "m.part",
+            session_factory=lambda: FakeSession(FakeResponse(503, b"")),
+        )
+    assert (kind_of(f"AccelError: {failed.value}") or KINDS[0]).name == "server-refused"
+    for stored in (
+        "WeightError: The reader model didn't arrive intact, so it was removed.",
+        "AccelError: The onnxruntime package didn't arrive intact. Nothing was installed.",
+    ):
+        assert (kind_of(stored) or KINDS[0]).name == "arrived-damaged"
 
 
 @pytest.mark.parametrize(

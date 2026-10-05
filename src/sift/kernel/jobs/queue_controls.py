@@ -7,7 +7,7 @@ from collections.abc import Callable
 
 from sift.kernel.db import in_clause
 from sift.kernel.jobs.queue_handoffs import HandOffs
-from sift.kernel.jobs.queue_rows import _fetch
+from sift.kernel.jobs.queue_rows import _fetch, _for_the_record
 from sift.kernel.jobs.tuning import (
     CLEAR_BATCH,
     PARKED_RETENTION_SECONDS,
@@ -33,6 +33,7 @@ UPDATE jobs
        claimed_by = NULL,
        heartbeat_at = NULL,
        stop_wanted = NULL,
+       error = CASE WHEN id = ? AND ? IS NOT NULL THEN ? ELSE error END,
        updated_at = ?
  WHERE id IN (SELECT id FROM tree)
    AND state IN ('queued', 'running', 'blocked', 'paused')
@@ -183,16 +184,22 @@ class Controls(HandOffs):
     """What a person does to the queue as a whole, and the housekeeping that forgets old rows."""
 
     async def cancel(
-        self, job_id: str, *, on_canceled: Callable[[set[str]], None] | None = None
+        self,
+        job_id: str,
+        *,
+        on_canceled: Callable[[set[str]], None] | None = None,
+        why: str | None = None,
     ) -> list[str]:
         """Cancel a job and everything it spawned. Returns the ids actually cancelled.
 
         A running job's worker is told at once (`listen_for_stops`), beats, finds the claim gone and
         drops it; nothing it writes meanwhile can land. `on_canceled` is told which kinds of job
-        this stopped BEFORE the commit, so the work ledger cannot see a family drain untold.
+        this stopped BEFORE the commit, so the work ledger cannot see a family drain untold. `why`
+        is Sift's own reason, kept on the named row; a person's cancel gives none.
         """
+        said = None if why is None else _for_the_record(why)
         async with self._writing() as connection:
-            rows = await _fetch(connection, _CANCEL_TREE, (job_id, self._now()))
+            rows = await _fetch(connection, _CANCEL_TREE, (job_id, job_id, said, said, self._now()))
             if not rows:
                 return []
             if all(str(row["id"]) != job_id for row in rows):

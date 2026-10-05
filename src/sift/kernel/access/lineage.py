@@ -90,7 +90,7 @@ ON CONFLICT(asset_id, person_id) DO NOTHING
 _PEOPLE_OF = "SELECT person_id FROM asset_people WHERE asset_id = ?"
 
 # A collection is a claim about the content (these pictures belong together), and a copy of a
-# picture is the same picture. It joins each collection the source is in, at the end, as its
+# picture is the same picture. It joins each collection the source is in, as its
 # tags, People, rating and hidden come across, or the copy would sit outside every collection
 # while looking like it belonged. A photo set
 # is deliberately NOT carried: a set is a folder's own pictures in the folder's order, and a copy
@@ -101,12 +101,8 @@ _PEOPLE_OF = "SELECT person_id FROM asset_people WHERE asset_id = ?"
 # being copied is the one somebody made about the source, and re-dating it to the moment of the copy
 # would say that this membership was decided today. A copy carries the record it inherits.
 _COPY_COLLECTIONS = """
-INSERT INTO collection_items (collection_id, asset_id, position, added_at)
-SELECT held.collection_id, ?,
-       (SELECT COALESCE(MAX(after.position) + 1, 0)
-          FROM collection_items after
-         WHERE after.collection_id = held.collection_id),
-       held.added_at
+INSERT INTO collection_items (collection_id, asset_id, added_at)
+SELECT held.collection_id, ?, held.added_at
   FROM collection_items held
  WHERE held.asset_id = ?
 ON CONFLICT(collection_id, asset_id) DO NOTHING

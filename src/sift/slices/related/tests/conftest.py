@@ -182,7 +182,7 @@ def world(client: TestClient, tmp_path: Path) -> World:
             (collection, "best of", _EPOCH),
         ),
         (
-            "INSERT INTO collection_items (collection_id, asset_id, position) VALUES (?, ?, 0)",
+            "INSERT INTO collection_items (collection_id, asset_id) VALUES (?, ?)",
             (collection, video),
         ),
         (

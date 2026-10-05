@@ -113,13 +113,22 @@ async def fetch_weights(
     """Fetch the models this install is set to use. Hands back the job doing it.
 
     **Sift ships no models**: what this downloads is licensed by others, so an admin asks for it.
-    Queued (minutes long); the job id lets a screen follow and cancel it. Answers 409 with the
-    feature off. `again=true` fetches files already here too, for a damaged model.
+    Queued (minutes long), and a second press joins the one waiting or under way; the job id lets
+    a screen follow and cancel it. Answers 409 with the feature off. `again=true` fetches files
+    already here too, for a damaged model.
     """
     if not await service.enabled():
         raise _off()
+    newest = [job.id for job in await queue.newest_of(FACE_FETCH_WEIGHTS, limit=1)]
+    live = await queue.unfinished_among(newest)
     # Ahead of the library-wide work: somebody is watching the bar (`WAITED_ON_PRIORITY`).
-    job_id = await queue.enqueue(FACE_FETCH_WEIGHTS, {"again": again}, priority=WAITED_ON_PRIORITY)
+    job_id = (
+        live.pop()
+        if live
+        else await queue.enqueue(
+            FACE_FETCH_WEIGHTS, {"again": again}, priority=WAITED_ON_PRIORITY, dedupe=True
+        )
+    )
     log.info("faces.weights.requested", job_id=job_id, again=again)
     return FetchStarted(job_id=job_id)
 

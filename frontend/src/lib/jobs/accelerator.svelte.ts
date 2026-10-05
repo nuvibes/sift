@@ -7,18 +7,15 @@
  * find out whether it had finished would be to reload the page.
  */
 
-import { DownloadWatch } from '$lib/jobs/watch-download.svelte';
+import { ModelFetchWatch } from '$lib/jobs/model-fetch';
 
 /** The job kind, as the queue knows it. Must match `ACCEL_INSTALL` in the performance slice. */
 export const ACCEL_INSTALL = 'accel_install';
 
-export const accelWatch = new DownloadWatch(ACCEL_INSTALL, async () =>
-	/* Deliberately not "it worked". Whether it worked is a separate question with a separate answer
-	   (the card has to actually run a model), and the panel asks it with its own button. What is
-	   known here is only that the download stopped, which is why the sentence covers both ways it
-	   can stop and neither claims success. */
-	Promise.resolve(
-		'The download has stopped. If it finished, the card can be tested below; if it did not, ' +
-			'what arrived is kept, so starting again costs only the rest.'
-	)
+/* Finished is not "it works": the panel's own test answers that. */
+export const accelWatch = new ModelFetchWatch(
+	ACCEL_INSTALL,
+	async (row) =>
+		row?.state === 'done' ? 'The download finished. Test the GPU to see that it works.' : null,
+	'GPU support'
 );

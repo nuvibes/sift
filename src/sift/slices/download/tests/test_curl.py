@@ -69,7 +69,7 @@ async def test_it_vets_then_requests_as_an_impersonated_browser_without_redirect
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        curl, "check_url", lambda _url: None
+        curl, "check_url", lambda _url, **_k: None
     )  # the guard is tested on its own below
     calls: list[dict[str, Any]] = []
     session_kwargs: list[dict[str, Any]] = []
@@ -98,7 +98,7 @@ async def test_it_vets_then_requests_as_an_impersonated_browser_without_redirect
 async def test_it_can_omit_the_user_agent_for_apis_that_reject_one(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(curl, "check_url", lambda _url: None)
+    monkeypatch.setattr(curl, "check_url", lambda _url, **_k: None)
     calls: list[dict[str, Any]] = []
     monkeypatch.setattr(
         curl, "AsyncSession", _fake_session_factory(_FakeResponse(200, {}, "{}"), calls, [])
@@ -112,7 +112,7 @@ async def test_it_can_omit_the_user_agent_for_apis_that_reject_one(
 async def test_it_can_carry_a_saved_login_and_never_follows_a_redirect(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(curl, "check_url", lambda _url: None)
+    monkeypatch.setattr(curl, "check_url", lambda _url, **_k: None)
     calls: list[dict[str, Any]] = []
     session_kwargs: list[dict[str, Any]] = []
     monkeypatch.setattr(
@@ -129,7 +129,7 @@ async def test_it_can_carry_a_saved_login_and_never_follows_a_redirect(
 
 
 async def test_it_posts_a_form_body_after_vetting(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(curl, "check_url", lambda _url: None)
+    monkeypatch.setattr(curl, "check_url", lambda _url, **_k: None)
     calls: list[dict[str, Any]] = []
     monkeypatch.setattr(
         curl, "AsyncSession", _fake_session_factory(_FakeResponse(200, {}, "ok"), calls, [])
@@ -177,7 +177,7 @@ async def test_post_refuses_a_private_address_before_building_a_session(
 async def test_an_oversized_response_body_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
     """A misbehaving or hostile service that answers with a huge body cannot exhaust memory: the read
     is streamed and aborted once it passes the ceiling, rather than buffered whole."""
-    monkeypatch.setattr(curl, "check_url", lambda _url: None)
+    monkeypatch.setattr(curl, "check_url", lambda _url, **_k: None)
     monkeypatch.setattr(curl, "_MAX_BODY_BYTES", 4)  # a tiny ceiling for the test
     monkeypatch.setattr(
         curl,
@@ -237,7 +237,7 @@ async def test_a_downloads_lookup_is_asked_again_when_nothing_answered(
 ) -> None:
     """Given the download's settings, a lookup that got no answer is asked again up to the retries,
     and a longer connection timeout raises the service's own ceiling (a shorter one does not)."""
-    monkeypatch.setattr(curl, "check_url", lambda _url: None)
+    monkeypatch.setattr(curl, "check_url", lambda _url, **_k: None)
     sessions = _NoAnswerThenOk(failures=2)
     monkeypatch.setattr(curl, "AsyncSession", sessions)
 
@@ -254,7 +254,7 @@ async def test_a_lookup_with_no_retries_left_or_no_policy_is_asked_once(
 ) -> None:
     from curl_cffi.requests.exceptions import ConnectionError as NoConnection
 
-    monkeypatch.setattr(curl, "check_url", lambda _url: None)
+    monkeypatch.setattr(curl, "check_url", lambda _url, **_k: None)
     for policy in (None, _policy(retries=1, timeout=30)):
         sessions = _NoAnswerThenOk(failures=5)
         monkeypatch.setattr(curl, "AsyncSession", sessions)

@@ -5,7 +5,7 @@ Four rules run through all of it.
 
 **A collection is shared, so editing one is admin-only.** There is one `collections` table for the
 whole install and a collection carries access grants: a share on a collection reaches every item
-in it. Making, renaming, filling, rearranging and deleting one all change what other users see.
+in it. Making, renaming, filling and deleting one all change what other users see.
 Reading is open to any signed-in user, scoped to what they may see.
 
 **Every read is scoped, including the numbers.** The list, a single collection and a collection's
@@ -43,6 +43,9 @@ from sift.kernel.access import (
     ENTITY_SORT_KEYS,
     ENTITY_SORT_SEEN,
     NO_FILTER,
+    SHUFFLE_MODULUS,
+    SIMILARITY,
+    SORT_KEYS,
     AssetView,
     CollectionView,
     EntityNarrowing,
@@ -55,6 +58,7 @@ from sift.kernel.access import (
 from sift.kernel.access.catalog import made_by
 from sift.kernel.access.history import DEFAULT_LIMIT, MAX_LIMIT
 from sift.kernel.access.history_entity import history_of_collection
+from sift.kernel.access.repository.asset_orders import ordering_for
 from sift.kernel.content import (
     AssetUserState,
     EntityStateStore,
@@ -103,7 +107,7 @@ from sift.slices.collections.models import (
     TagOnCollection,
     VaultWrite,
 )
-from sift.slices.collections.service import SERVICE, CollectionService, UnknownItem
+from sift.slices.collections.service import SERVICE, CollectionService
 
 router = APIRouter(tags=["collections"])
 
@@ -115,7 +119,7 @@ def _service(request: Request) -> CollectionService:
 
 
 #: The contents route's own parameters; any other name in its address is the query language's.
-_PAGING = frozenset({"limit", "offset"})
+_OWN = frozenset({"limit", "offset", "sort", "seed", "meaning", "pinned_first"})
 
 
 def _missing() -> HTTPException:
@@ -146,7 +150,7 @@ def _view(
 
 
 def _item(
-    view: AssetView, *, revealed: bool, arranges: bool, state: AssetUserState | None = None
+    view: AssetView, *, revealed: bool, state: AssetUserState | None = None
 ) -> CollectionItem:
     """One row of a collection, from what the access layer returned.
 
@@ -159,8 +163,6 @@ def _item(
     `state` is this user's heart and stars, or None where it has never said anything about the
     file, which is nearly every file, so the absence is the ordinary case rather than a failure.
     It is handed in rather than read here, because it is read once for the whole page.
-    `arranges` is whether this viewer may rearrange: to anybody else a stored position counts the
-    files they were not shown.
     """
     if view.concealed and not revealed:
         return CollectionItem(id=view.asset.id, media_type="", concealed=True)
@@ -176,7 +178,6 @@ def _item(
         pinned=view.pinned,
         favorite=state.favorite if state else False,
         rating=state.rating if state else None,
-        position=view.arranged_at if arranges else None,
     )
 
 
@@ -633,6 +634,9 @@ async def collection_items(
     viewer: Annotated[Viewer, Depends(current_viewer)],
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
+    sort: Annotated[str | None, Query()] = None,
+    seed: Annotated[int | None, Query(ge=0, le=SHUFFLE_MODULUS - 1)] = None,
+    meaning: Annotated[bool | None, Query()] = None,
     # Read off the raw address by the engine; declared so the API description names them.
     q: Annotated[str | None, Query()] = None,
     people: Annotated[list[str] | None, Query()] = None,
@@ -642,13 +646,9 @@ async def collection_items(
     photo_sets: Annotated[list[str] | None, Query()] = None,
     songs: Annotated[list[str] | None, Query()] = None,
 ) -> CollectionContents:
-    """A collection's contents, in the arranged order, scoped to this viewer.
-
-    The order is the collection's own, not the grid's: a collection is a sequence somebody put
-    together, and showing it newest-first is showing something else. What this user has PINNED
-    comes above that sequence, which is the same thing the pin does on every other wall that offers
-    it; each item carries its stored position so that rearranging still works off the sequence
-    rather than off what happens to be drawn.
+    """A collection's contents, scoped to this viewer, in the order `sort`, `seed` and `meaning`
+    ask for as `/assets` takes them: a collection has no order of its own. What this user has
+    PINNED comes first under every order, as on every wall that offers the pin.
 
     The rows and the total come from one statement in the access layer, so the count is the number
     of items on the screen and never the number of rows in the table.
@@ -656,22 +656,33 @@ async def collection_items(
     **Filtered by the query language, read off the raw address as `/assets` reads it**: the words
     in `q` and the cards picked on the tabs narrow a collection's Files tab exactly as they narrow a
     person's, inside the same statement as the scoping and the order, so the total counts the
-    narrowed set and the arranged order is kept within it.
+    narrowed set.
     """
+    if sort is not None and sort not in SORT_KEYS:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, f"unknown sort {sort!r}")
     await _require_collection(access, viewer, collection_id)
+    by_meaning = meaning if meaning is not None else sort == SIMILARITY
     # Nothing asked costs no compile, which keeps the plain read exactly the read it was.
-    asked = any(name not in _PAGING for name in request.query_params)
-    narrowed = await engine.constrain(viewer, request.query_params) if asked else NO_FILTER
+    asked = any(name not in _OWN for name in request.query_params)
+    narrowed = (
+        (
+            await engine.narrow(
+                viewer, request.query_params, by_meaning=by_meaning, need=offset + limit
+            )
+        ).asset_filter
+        if asked
+        else NO_FILTER
+    )
     page = await access.visible_assets(
         viewer,
         limit=limit,
         offset=offset,
         collection_id=collection_id,
         asset_filter=narrowed,
-        # This wall honours the pin, and it offers the verb: the two are one fact. What somebody has
-        # kept comes to the top of the sequence, and the sequence itself is unharmed: each item
-        # carries its stored position, and that is what a rearrange is computed from.
+        # This wall honours the pin, and it offers the verb: the two are one fact.
         pinned_first=True,
+        sort=ordering_for(sort, narrowed, by_meaning=by_meaning),
+        seed=seed,
     )
     # ONE statement for the page's hearts and stars, beside the items rather than per row: the
     # same read and the same reason the grid gives for it. Asked only for what is actually
@@ -681,12 +692,7 @@ async def collection_items(
     states = await state.states_of(named, viewer.id) if named else {}
     return CollectionContents(
         items=[
-            _item(
-                item,
-                revealed=viewer.show_hidden,
-                arranges=viewer.is_admin,
-                state=states.get(item.asset.id),
-            )
+            _item(item, revealed=viewer.show_hidden, state=states.get(item.asset.id))
             for item in page.items
         ],
         total=page.total,
@@ -704,17 +710,13 @@ async def edit_items(
     reindexer: Annotated[ReindexSeam, Depends(wiring.reindexer)],
     viewer: Annotated[Viewer, Depends(require_admin)],
 ) -> BulkWriteDone:
-    """Add to, remove from, or rearrange a collection, or move one file a place either way.
+    """Add to or remove from a collection.
 
     **No file is moved.** This writes rows in the join table and nothing else: every path, every
     byte and every location row is exactly as it was. That is the promise the storage model makes,
     and the test asserting it is the one worth keeping.
 
-    Adding and removing SKIP an asset that cannot be resolved, and the reply says how many were
-    left out and why. Rearranging does not, and the difference is not an oversight: an order is a
-    whole list, and applying a partial one silently rewrites the positions of files nobody moved.
-    A locked vault cannot produce that call anyway, because a client that cannot see a file does
-    not send its id in the order.
+    Both SKIP an asset that cannot be resolved, and the reply says how many were left out and why.
 
     An asset can still go between being resolved and being written: two requests, one adding a file
     and one deleting it. The membership row's foreign key catches that and the answer is the same
@@ -724,31 +726,19 @@ async def edit_items(
     await _require_collection(access, viewer, collection_id)
 
     try:
-        if body.action in {"add", "remove"}:
-            actionable = await access.actionable_of(viewer, body.asset_ids)
-            wanted = list(actionable.allowed)
-            changed = 0
-            if wanted:
-                changed = (
-                    await service.add(collection_id, wanted, actor=Actor.user(viewer.id))
-                    if body.action == "add"
-                    else await service.remove(collection_id, wanted, actor=Actor.user(viewer.id))
-                )
-                # Known by id, so these are rewritten now rather than queued, and as one call:
-                # this list runs to five hundred. Reordering is left out on purpose: it moves rows
-                # within a collection an asset is already in, so no asset gains or loses the name.
-                await reindexer.touched_many(wanted)
-            return BulkWriteDone.after(actionable, changed)
-        for asset_id in body.asset_ids:
-            await require_reachable(access, viewer, asset_id, _missing)
-        if body.action == "move":
-            moved = await service.move(
-                viewer, collection_id, body.asset_ids[0], later=body.direction == "later"
+        actionable = await access.actionable_of(viewer, body.asset_ids)
+        wanted = list(actionable.allowed)
+        changed = 0
+        if wanted:
+            changed = (
+                await service.add(collection_id, wanted, actor=Actor.user(viewer.id))
+                if body.action == "add"
+                else await service.remove(collection_id, wanted, actor=Actor.user(viewer.id))
             )
-            return BulkWriteDone(changed=moved)
-        return BulkWriteDone(changed=await service.reorder(collection_id, body.asset_ids))
-    except UnknownItem:
-        raise _missing() from None
+            # Known by id, so these are rewritten now rather than queued, and as one call: this
+            # list runs to five hundred.
+            await reindexer.touched_many(wanted)
+        return BulkWriteDone.after(actionable, changed)
     except IntegrityError:
         raise _missing() from None
 

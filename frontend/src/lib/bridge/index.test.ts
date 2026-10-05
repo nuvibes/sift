@@ -319,3 +319,22 @@ describe("the shell log's detail", () => {
 		expect(shellLogDetail).toHaveBeenCalledWith(false, true);
 	});
 });
+
+/* Every log of this app and its library, made into one archive by the shell. */
+describe('the log archive', () => {
+	it('is nothing in a browser and from a shell that cannot make one', async () => {
+		expect(bridge.canSaveLogArchive()).toBe(false);
+		await expect(bridge.saveLogArchive('logs.zip')).resolves.toBeNull();
+		window.sift = { isDesktop: true };
+		await expect(bridge.saveLogArchive('logs.zip')).resolves.toBeNull();
+	});
+
+	it('hands the shell the name and hands back where it went', async () => {
+		const saveLogArchive = vi.fn().mockResolvedValue('C:\\Saved\\logs.zip');
+		window.sift = { saveLogArchive };
+
+		expect(bridge.canSaveLogArchive()).toBe(true);
+		await expect(bridge.saveLogArchive('logs.zip')).resolves.toBe('C:\\Saved\\logs.zip');
+		expect(saveLogArchive).toHaveBeenCalledWith('logs.zip');
+	});
+});

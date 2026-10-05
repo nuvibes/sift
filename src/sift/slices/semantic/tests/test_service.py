@@ -81,6 +81,7 @@ class StubEmbedder:
         self.revision = REVISION
         self.unloaded = False
         self.broken: str | None = None
+        self.words_refused: str | None = None
         self.described: list[int] = []
 
     def installed(self) -> bool:
@@ -1102,12 +1103,14 @@ async def test_asking_again_fetches_files_that_are_already_here(
     reporting success."""
     service, _preferences, _embedder, _reader = wired
     asked: list[str] = []
+    afresh: list[bool] = []
 
     def already_here(self: Any, weight: Any) -> bool:
         return True
 
-    async def record(self: Any, weight: Any, **_: Any) -> None:
+    async def record(self: Any, weight: Any, **kwargs: Any) -> None:
         asked.append(weight.id)
+        afresh.append(kwargs["fresh"])
 
     from sift.kernel.ml.weights import WeightStore
 
@@ -1120,6 +1123,7 @@ async def test_asking_again_fetches_files_that_are_already_here(
     installed = await service.install_models(force=True)
 
     assert asked == installed != []
+    assert set(afresh) == {True}, "a partial left from before is not resumed"
 
 
 async def test_each_transfer_says_which_of_the_set_it_is_before_it_starts(
@@ -1153,3 +1157,64 @@ async def test_each_transfer_says_which_of_the_set_it_is_before_it_starts(
     assert [index for index, _of, _role in announced] == list(range(len(installed)))
     assert {of for _index, of, _role in announced} == {len(installed)}
     assert all(role for _index, _of, role in announced)
+
+
+async def test_a_runtime_that_cannot_start_is_said_in_words_rather_than_raised(
+    wired: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from sift.kernel.ml import child as ml_child
+    from sift.kernel.ml.runtime import DeviceUnavailable
+
+    def crashed(_settings: Settings) -> tuple[str, ...]:
+        raise DeviceUnavailable("it stopped with code 0xC0000005")
+
+    monkeypatch.setattr(ml_child, "DEVICES", ml_child.DeviceQuestion(crashed))
+    service, preferences, _embedder, _reader = wired
+    preferences.values[semantic_settings.ENABLED_KEY] = True
+
+    readiness = await service.readiness()
+
+    assert readiness.ready is False
+    assert readiness.problem == (
+        "Search by meaning can't run on this device: the model runtime couldn't start "
+        "(it stopped with code 0xC0000005). Restart Sift to try again."
+    )
+
+
+async def test_a_vocabulary_that_cannot_load_is_said_and_the_search_takes_the_ordinary_order(
+    wired: Any,
+) -> None:
+    from sift.kernel.ml.runtime import DeviceUnavailable
+
+    service, preferences, embedder, _reader = wired
+    preferences.values[semantic_settings.ENABLED_KEY] = True
+    refused = (
+        "Search by meaning can't run on this device: the model runtime couldn't start "
+        "(it stopped with code 0xC0000005). Restart Sift to try again."
+    )
+
+    async def describe_words(text: str) -> list[float]:
+        embedder.words_refused = refused
+        raise DeviceUnavailable(refused)
+
+    embedder.describe_words = describe_words
+
+    assert await service.describe_query("a red car") is None
+    readiness = await service.readiness()
+    assert readiness.ready is False
+    assert readiness.problem == refused
+
+
+async def test_a_lost_card_while_reading_words_is_raised_as_before(wired: Any) -> None:
+    from sift.kernel.ml.runtime import DeviceLost
+
+    service, preferences, embedder, _reader = wired
+    preferences.values[semantic_settings.ENABLED_KEY] = True
+
+    async def describe_words(text: str) -> list[float]:
+        raise DeviceLost("an NVIDIA graphics card stopped answering")
+
+    embedder.describe_words = describe_words
+
+    with pytest.raises(DeviceLost):
+        await service.describe_query("a red car")

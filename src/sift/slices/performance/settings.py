@@ -259,8 +259,8 @@ def _register_step_back() -> None:
             "minute, it goes back to its usual number of tasks. This works only on Windows."
         ),
         help=(
-            "While you're typing or moving the mouse, Sift uses only a share of this device for "
-            "background tasks, so the computer stays quick."
+            "While you're typing or moving the mouse, Sift is in eco mode. Background tasks then use "
+            "only a share of this device, so the computer stays quick."
         ),
     )
     register_setting(
@@ -275,8 +275,8 @@ def _register_step_back() -> None:
             "to its usual number of tasks. This works only on Windows."
         ),
         help=(
-            "While other programs keep this device busy, Sift uses only a share of it for "
-            "background tasks."
+            "While other programs keep this device busy, Sift is in eco mode. Background tasks then "
+            "use only a share of this device."
         ),
     )
     register_setting(
@@ -287,12 +287,15 @@ def _register_step_back() -> None:
         minimum=MIN_STEP_BACK_SHARE,
         maximum=100,
         unit="%",
-        label="System resource usage while you're working",
+        label="System resource usage in eco mode",
         disclosure=(
             "Every kind of task shares this amount. A task's own share, such as the one for "
             "recognizing faces, is a share of it."
         ),
-        help="How much of this device background tasks use while you're using it.",
+        help=(
+            "How much of this device background tasks use in eco mode. Sift is in eco mode while "
+            "you're working or other programs are busy, as the two settings above choose."
+        ),
     )
 
 

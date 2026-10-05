@@ -42,7 +42,7 @@ IDENTITY_COMPONENT = "identity"
 IDENTITY_VERSION = 4
 
 CATALOG_COMPONENT = "catalog"
-CATALOG_VERSION = 90
+CATALOG_VERSION = 91
 
 ACCESS_COMPONENT = "access"
 ACCESS_VERSION = 5
@@ -345,7 +345,6 @@ _CREATE_COLLECTION_ITEMS = """
 CREATE TABLE IF NOT EXISTS collection_items (
   collection_id TEXT NOT NULL REFERENCES collections(id) ON DELETE CASCADE,
   asset_id      TEXT NOT NULL REFERENCES assets(id)      ON DELETE CASCADE,
-  position      INTEGER,
   added_at      INTEGER,
   PRIMARY KEY(collection_id, asset_id)
 )
@@ -699,8 +698,7 @@ CREATE TABLE IF NOT EXISTS person_user_state (
 """
 
 
-# `position` for the reason a collection has one: a shoot is a sequence, and showing it shuffled is
-# showing something else. Filled from the filename order when a set is derived, rearrangeable after.
+# `position`: a shoot is a sequence, filled in filename order when derived and rearrangeable after.
 _CREATE_PHOTO_SET_ITEMS = """
 CREATE TABLE IF NOT EXISTS photo_set_items (
   photo_set_id TEXT NOT NULL REFERENCES photo_sets(id) ON DELETE CASCADE,
@@ -1693,6 +1691,8 @@ async def initialize_catalog(connection: Connection, on_disk: int) -> None:
         await default_covers.out_of_hidden(connection)
     if 0 < on_disk < 90:
         await let_go_of_broken_references(connection)
+    if 0 < on_disk < 91:
+        await schema_columns.forget_the_arrangements(connection)
 
 
 register_schema_initializer(IDENTITY_COMPONENT, IDENTITY_VERSION, initialize_identity, baseline=4)

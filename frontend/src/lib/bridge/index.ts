@@ -190,6 +190,13 @@ interface NativeBridge {
 	 * answers truthfully without having this channel.
 	 */
 	canReadShellLog(): boolean;
+	/**
+	 * Save every log of this app and of the library it runs, redacted, as one archive named `name`
+	 * in its `Save files to` folder. The answer is where it went; null where it couldn't be made.
+	 */
+	saveLogArchive(name: string): Promise<string | null>;
+	/** Whether this shell can make that archive at all. */
+	canSaveLogArchive(): boolean;
 	/** Whether Windows is letting other computers through to Sift, and on which networks. Unknown
 	 *  outside the app. */
 	firewall(): Promise<FirewallReport>;
@@ -398,6 +405,7 @@ interface InjectedBridge {
 	shellVersion?: () => Promise<string | null>;
 	shellLog?: (lines: number) => Promise<ShellLog | null>;
 	shellLogDetail?: (detailed: boolean, hidePersonal?: boolean) => Promise<boolean | null>;
+	saveLogArchive?: (name: string) => Promise<string | null>;
 	firewall?: () => Promise<FirewallReport | FirewallState>;
 	openFirewall?: (scope?: FirewallScope) => Promise<FirewallReport | FirewallState>;
 	listBrowsers?: () => Promise<BrowserChoice>;
@@ -679,6 +687,12 @@ export const bridge: NativeBridge = {
 	},
 
 	canReadShellLog: () => typeof injected()?.shellLog === 'function',
+
+	async saveLogArchive(name: string) {
+		return (await injected()?.saveLogArchive?.(name)) ?? null;
+	},
+
+	canSaveLogArchive: () => typeof injected()?.saveLogArchive === 'function',
 
 	async firewall() {
 		/* A shell from before the networks were read answers the word alone; it is read as an

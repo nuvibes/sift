@@ -50,7 +50,7 @@ RUNS: Mapping[Family, tuple[str, str]] = {
 #: What the run says while the self-test goes, on the Activity screen.
 MEASURING_FIRST = (
     "Benchmarking this device first to find the fastest way to process each file. It takes "
-    "several minutes and runs once."
+    "up to 5 minutes and runs once."
 )
 
 #: The payload key of a first page queued again behind the benchmark it asked for.

@@ -3,12 +3,8 @@
 
 Two things about this module are deliberate and neither is obvious from the code.
 
-**The runtime is imported inside the function that needs it, not at the top of the file.** The
-inference runtime costs a couple of hundred milliseconds and a hundred megabytes of memory to
-import, and the overwhelming majority of installs will never turn any of this on. An import at
-module scope would charge every one of them for a capability they are not using, at boot, before
-anything is served. This is the one place in Sift where a late import is the correct shape rather
-than a smell, so it is written down here rather than argued about in review.
+**The runtime and the vocabulary are loaded only in the model process** (`sift.kernel.ml.session`,
+through `loader`). A native library that crashes as it loads then costs a child, never the server.
 
 **A device that was asked for and is not there is a failure, not a fallback.** Falling back to the
 processor when a graphics card was requested turns "why is this taking nine hours" into a question
@@ -27,9 +23,9 @@ from __future__ import annotations
 import threading
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from functools import lru_cache
 from pathlib import Path
-from typing import Any
+from types import ModuleType
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
@@ -37,7 +33,9 @@ from sift.kernel.budget import STEP_BACK_SHARE, WHOLE_DEVICE
 from sift.kernel.hardware import HardwareReport
 from sift.kernel.log import get_logger
 from sift.kernel.ml.weights import Weight, WeightStore
-from sift.kernel.threads import waits_on_storage
+
+if TYPE_CHECKING:
+    from sift.kernel.config import Settings
 
 log = get_logger(__name__)
 
@@ -231,64 +229,19 @@ def session_threads(device: str, cpu_count: int) -> int:
     return max(1, min(MOST_DEVICE_THREADS, cpu_count // 2, stepped))
 
 
-def _runtime() -> Any:
-    """Import the inference runtime, with the graphics-card build in front of it where there is one.
-
-    ONE PLACE for both callers, because a second runtime can be installed beside the first, and
-    putting the installed one at the front of the path has to happen BEFORE the first import and
-    cannot be undone after. Two import sites means one of them is the first one, and which of the
-    two it is depends on what somebody happened to click.
-    """
-    from sift.kernel.config import get_settings
-    from sift.kernel.ml import accel
-
-    accel.enable(get_settings())
-    import onnxruntime
-
-    return onnxruntime
+#: What loads the native libraries in this process (`sift.kernel.ml.session`): set by the model
+#: process alone, so `Runner` refuses here.
+loader: ModuleType | None = None
 
 
-@waits_on_storage
-def providers_now() -> tuple[str, ...]:
-    """What the runtime offers, asked fresh and always through the one import site.
-
-    NOT CACHED, unlike `installed_providers`. This is what a screen asks the moment somebody
-    changes a device, and the answer changes when a runtime is installed beside it.
-
-    Through `_runtime`, never a module's own `import onnxruntime`: a second import site would be
-    a way for the PROCESSOR build to be the first one loaded, and the first one in wins for the
-    life of the process, so a face job running before anybody opened the settings screen would
-    decide that the card could not be used, for good, on a machine where it works perfectly.
-    """
-    return tuple(_runtime().get_available_providers())
+def _native() -> ModuleType:
+    if loader is None:
+        raise DeviceUnavailable("The model runtime is loaded only in the model process.")
+    return loader
 
 
-@lru_cache(maxsize=1)
-def installed_providers() -> tuple[str, ...]:
-    """Which runtime backends this installation actually has.
-
-    THE IMPORT IS THE POINT, and it is why this is cached rather than read.
-
-    The note at the top of this module says the inference runtime is never imported at boot, and
-    that still holds: nothing calls this while Sift is starting. It is called when an admin picks a
-    device on the settings screen, which is a deliberate and rare action, and it costs one import
-    (a fraction of a second), once for the life of the process. An installation
-    that never touches the choice never pays it.
-
-    Cached, and the cache is CLEARED by an install rather than waiting for a restart (see
-    `sift.kernel.ml.accel`). It has to be one or the other: an answer of "no card" that outlives the
-    thing that made it true is a person watching a download finish and then being told the download
-    did not happen.
-
-    Every failure is the same answer: no providers, which reads as "no device but the processor".
-    A settings screen must not fall over because an optional dependency will not import.
-    """
-    try:
-        onnxruntime = _runtime()
-    except Exception:  # pragma: no cover - an unimportable runtime is not reproducible in tests
-        log.info("ml.runtime_absent")
-        return ()
-    return tuple(onnxruntime.get_available_providers())
+def _runtime(settings: Settings) -> Any:
+    return _native().load_runtime(settings)
 
 
 def device_refusal(feature: str) -> Callable[[Any], str | None]:
@@ -321,7 +274,14 @@ def device_refusal(feature: str) -> Callable[[Any], str | None]:
         # which is the one thing the note at the top of this module exists to prevent.
         if value == "cpu":
             return None
-        return why_unusable(value, installed_providers(), feature=feature)
+        from sift.kernel.config import get_settings
+        from sift.kernel.ml.child import devices_here
+
+        try:
+            available = devices_here(get_settings(), feature)
+        except DeviceUnavailable as refused:
+            return str(refused)
+        return why_unusable(value, available, feature=feature)
 
     return check
 
@@ -362,6 +322,7 @@ class Runner:
         self._device = device
         self._feature = feature
         self._loaded: dict[str, Loaded] = {}
+        self._vocabularies: dict[str, Any] = {}
         self._lock = threading.Lock()
         #: Why the device cannot be used any more, once it has failed underneath a session. Set
         #: for the life of the process: a lost context does not come back, and a session opened
@@ -405,7 +366,7 @@ class Runner:
             return loaded
 
     def _open(self, weight: Weight, path: Path) -> Loaded:
-        onnxruntime = _runtime()
+        onnxruntime = _runtime(self._store.settings)
 
         providers = resolve_provider(
             self._device,
@@ -471,7 +432,7 @@ class Runner:
         try:
             names = list(loaded.outputs) if outputs is None else list(outputs)
             return list(loaded.session.run(names, {loaded.inputs[0]: blob}))
-        except _device_errors(_runtime()) as error:
+        except _device_errors(_runtime(self._store.settings)) as error:
             if self._device == "cpu":
                 raise
             self._broken = (
@@ -484,7 +445,19 @@ class Runner:
             self.unload()
             raise DeviceLost(self._broken) from error
 
+    def encode(self, weight: Weight, text: str) -> tuple[list[int], int]:
+        """Text as the symbols of a vocabulary file, and that vocabulary's end symbol."""
+        with self._lock:
+            vocabulary = self._vocabularies.get(weight.id)
+            if vocabulary is None:
+                self._store.verify(weight)
+                vocabulary = _native().load_vocabulary(self._store.path_of(weight))
+                self._vocabularies[weight.id] = vocabulary
+                log.info("ml.vocabulary.loaded", weight=weight.id, revision=weight.revision)
+        return [int(one) for one in vocabulary.encode(text)], int(vocabulary.eos_id())
+
     def unload(self) -> None:
         """Drop every session. Called when a feature is switched off, so the memory goes back."""
         with self._lock:
             self._loaded.clear()
+            self._vocabularies.clear()

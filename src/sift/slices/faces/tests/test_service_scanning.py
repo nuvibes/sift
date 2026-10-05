@@ -285,6 +285,26 @@ async def test_a_forced_fetch_gets_both_again_even_when_they_are_here(
     assert await service.ready() is True
 
 
+async def test_a_forced_fetch_starts_each_file_afresh(
+    service: FaceService, listed: dict[str, bytes], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A partial left from before is thrown away, so a wrong one cannot be resumed."""
+    from sift.slices.faces import weights
+
+    real = weights.fetch
+    fresh: list[bool] = []
+
+    async def fetch(*args: Any, **kwargs: Any) -> None:
+        fresh.append(kwargs["fresh"])
+        await real(*args, **kwargs)
+
+    monkeypatch.setattr(weights, "fetch", fetch)
+    await service.install_models(session_factory=lambda: OneShotSession(listed))
+    await service.install_models(session_factory=lambda: OneShotSession(listed), force=True)
+
+    assert fresh == [False, False, True, True]
+
+
 async def test_progress_is_reported_across_the_whole_set_not_per_file(
     service: FaceService, listed: dict[str, bytes]
 ) -> None:

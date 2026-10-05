@@ -17,6 +17,5 @@ The pane draws these groups, in this order:
 ## Rows the pane draws by hand
 
 - **Concurrency**: **Edit** opens how many tasks, previews and folder scans run at the same time, and how much of your computer face recognition may use.
-- **Restart Sift**: shown after GPU support is downloaded, because Sift loads the GPU runtime only when it starts.
 
 The rows below under **Every setting** are on the pane itself and on the Concurrency page behind **Edit**.

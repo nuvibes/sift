@@ -4,14 +4,27 @@
 from __future__ import annotations
 
 from functools import partial
+from typing import Any
 
 from fastapi import FastAPI
 
 from sift.kernel import wiring
+from sift.kernel.config import get_settings
+from sift.kernel.log import get_logger
 from sift.kernel.wiring import provide
-from sift.slices import settings_hub, update_notify
+from sift.slices import faces, semantic, settings_hub, update_notify, watermarks
 from sift.slices.download.sources.net import guarded_session
 from sift.wiring.built import Storage
+
+#: What the desktop app holds off for one start after Sift kept stopping; nothing stored changes.
+HELD_OFF = frozenset({faces.ENABLED_KEY, semantic.ENABLED_KEY, watermarks.ENABLED_KEY})
+
+
+class HoldingOff(settings_hub.SettingsService):
+    """The settings, with the optional features read as off."""
+
+    async def get_app(self, key: str) -> Any:
+        return False if key in HELD_OFF else await super().get_app(key)
 
 
 def build_preferences(
@@ -29,7 +42,10 @@ def build_preferences(
     slice does not import a slice, and the address rule that refuses a private one lives in a single
     place. This is where the two meet.
     """
-    hub = settings_hub.SettingsService(store.database)
+    holding = get_settings().hold_optional_features
+    hub = (HoldingOff if holding else settings_hub.SettingsService)(store.database)
+    if holding:
+        get_logger(__name__).warning("boot.optional_features_held", keys=list(HELD_OFF))
     provide(app, settings_hub.SERVICE, hub)
     provide(app, wiring.SETTINGS_HUB, hub)
     provide(

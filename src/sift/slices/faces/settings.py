@@ -288,8 +288,8 @@ def _register_device_use() -> None:
         unit="%",
         label="Share of this device to use",
         disclosure=(
-            "While you're working, this is a share of the amount Sift uses then. That amount is set "
-            "in Settings > Performance > System resource usage while you're working."
+            "In eco mode, this is a share of the amount Sift uses then. That amount is set in "
+            "Settings > Performance > System resource usage in eco mode."
         ),
         help="Using all of it slows other apps.",
     )

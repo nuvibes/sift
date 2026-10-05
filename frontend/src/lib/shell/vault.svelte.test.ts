@@ -305,3 +305,35 @@ describe('the PIN is six digits', () => {
 		expect(await vault.setPin('2468', 'the password')).toBe('not-a-pin');
 	});
 });
+
+describe('another tab of this browser', () => {
+	/* A channel of the test's own: the store's never hears what it says itself. */
+	const heard = (channel: BroadcastChannel) =>
+		new Promise<unknown>((done) =>
+			channel.addEventListener('message', (e) => done(e.data), { once: true })
+		);
+
+	it('is told when Hidden shuts here', async () => {
+		const other = new BroadcastChannel('sift.vault');
+		mocked.post.mockResolvedValue(undefined);
+		const told = heard(other);
+
+		await new Vault().lock();
+
+		expect(await told).toBe('shut');
+		other.close();
+	});
+
+	it('shuts it here when it shuts there, since the session is the same', async () => {
+		mocked.get.mockResolvedValue({ unlocked: true, pin_set: true });
+		await shellVault.load();
+		const before = shellVault.generation;
+		const other = new BroadcastChannel('sift.vault');
+
+		other.postMessage('shut');
+		await vi.waitFor(() => expect(shellVault.unlocked).toBe(false));
+
+		expect(shellVault.generation).toBe(before + 1);
+		other.close();
+	});
+});

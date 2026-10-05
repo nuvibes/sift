@@ -53,6 +53,7 @@ import mmap
 import os
 import re
 import shutil
+import struct
 import subprocess
 import sys
 import tempfile
@@ -242,27 +243,10 @@ _EXPORT_THE_LOCK = ("export", "--frozen", "--no-emit-project", "--format", "requ
 
 
 def build_runtime() -> None:
-    """A self-contained interpreter with the backend installed into it, NON-EDITABLE.
+    """A real interpreter copied whole with the backend installed into it, non-editable.
 
-    THE INTERPRETER TRAVELS WITH THE APPLICATION. A VIRTUAL ENVIRONMENT is not an interpreter: it
-    is a folder of packages plus a `pyvenv.cfg` naming an interpreter somewhere else, typically
-    `%APPDATA%\\uv\\python\\cpython-3.13-...` in the BUILD MACHINE'S OWN PROFILE. Shipped, every
-    installed copy would read the whole standard library from a folder that exists on exactly one
-    computer, so the backend could not start anywhere else, and nothing would say so on the
-    machine that built it, where the folder is right there, or on a machine running in CLIENT mode,
-    where the backend is never started at all.
-
-    So the interpreter is copied whole and the packages are put inside it, and `prove_runtime_is_
-    self_contained` below runs it and asks it where its own standard library came from. A check that
-    reads the FILES cannot answer that question: only running the thing can.
-
-    Fresh, and not a copy of the development environment: that one carries pytest, ruff, mypy,
-    semgrep and playwright, which is over a hundred megabytes of things a person running Sift has no
-    use for and which widen what is shipped for no reason.
-
-    NON-EDITABLE is the other part that is easy to get wrong. An editable install writes a path
-    pointing at this checkout, so the packaged application would look for its own client, its own
-    migrations and its own everything in a folder that does not exist on the user's machine.
+    A virtual environment names an interpreter in the build machine's profile, and an editable
+    install names this checkout: neither exists on anybody else's computer.
     """
     uv = tool("uv")
     staging = ROOT / "build" / "runtime-staging"
@@ -315,6 +299,7 @@ def build_runtime() -> None:
     # can import them. They are the only things dropped: 4 MB is not worth a class of fault where
     # some import fails on somebody's machine and works on every one of ours.
     shutil.copytree(base, RUNTIME, ignore=shutil.ignore_patterns("include", "libs", "BUILD"))
+    carry_the_cpp_runtime(RUNTIME)
     packages = RUNTIME / "Lib" / "site-packages"
     packages.mkdir(parents=True, exist_ok=True)
     for entry in (staging / "Lib" / "site-packages").iterdir():
@@ -355,6 +340,7 @@ def build_runtime() -> None:
     prove_the_runtime_ships_no_tests()
     prove_the_runtime_ships_the_site_icons()
     prove_the_runtime_carries_the_pinned_wheels(packages)
+    prove_the_runtime_carries_the_cpp_runtime()
 
 
 def _interpreter_behind(environment: Path) -> Path:
@@ -371,14 +357,7 @@ def _interpreter_behind(environment: Path) -> Path:
 
 
 def prove_runtime_is_self_contained() -> None:
-    """Run the bundled interpreter and make it say where its own standard library came from.
-
-    THE ONLY CHECK THAT CAN CATCH THIS, and the reason is that the failure is not visible in the
-    files. A virtual environment whose interpreter lives elsewhere looks complete: python.exe is
-    there, the DLL beside it, site-packages full of the right things. What is missing is `Lib`, and
-    the machine that built it has one, at the path written inside `pyvenv.cfg`. Only asking the
-    interpreter, out loud, distinguishes the two.
-    """
+    """Run the bundled interpreter and make it say where its own standard library came from."""
     python = RUNTIME / "python.exe"
     if not python.is_file():
         raise ReleaseFailed(f"the runtime has no interpreter at {python}.")
@@ -406,12 +385,7 @@ def prove_runtime_is_self_contained() -> None:
 
 
 def shell_interpreter_args() -> list[str]:
-    """The flags the desktop shell starts the backend with, READ FROM THE SHELL ITSELF.
-
-    Copied into this file they would be a second list, and the two would disagree the first time one
-    of them was edited, which is the whole class of fault the check below exists to catch. So the
-    one declaration is `INTERPRETER_ARGS` in desktop/src/backend.ts and this reads it.
-    """
+    """The flags the desktop shell starts the backend with, read from desktop/src/backend.ts."""
     source = DESKTOP / "src" / "backend.ts"
     text = source.read_text(encoding="utf-8")
     found = re.search(r"export const INTERPRETER_ARGS = \[([^\]]*)\]", text)
@@ -428,29 +402,11 @@ def shell_interpreter_args() -> list[str]:
 
 
 def prove_the_runtime_ignores_other_pythons() -> None:
-    """Start the interpreter the way the SHELL does, on a machine pretending to have its own Python.
+    """Start the interpreter with the shell's flags beside a staged per-user package folder and
+    PYTHONPATH, and require the import to come out of the runtime anyway.
 
-    WHAT THIS CATCHES, AND WHY THE CHECK ABOVE DOES NOT.
-
-    `prove_runtime_is_self_contained` asks the interpreter where its own files come from, in a clean
-    environment, so it cannot see this. A normal interpreter reads
-    the per-user package folder (`%APPDATA%\\Python\\Python3xx\\site-packages`) and `PYTHONPATH`
-    BEFORE its own site-packages, so on a computer where anyone has ever installed a package for
-    their own account, those packages win over the ones Sift shipped.
-
-    An older `typing_extensions` in that folder, for one, is imported in preference to Sift's, and
-    the backend dies on `ImportError: cannot import name 'sentinel' from 'typing_extensions'` before
-    it opens a socket. A build machine seldom has such a folder, so only this check would see it.
-
-    So this stages one (a package folder holding a deliberately empty module that every real
-    version of it would satisfy), points the interpreter at it BOTH ways it can be pointed, and
-    requires the import to succeed anyway and to have come out of the runtime.
-
-    The flags come from the shell, not from here. A check that isolated the interpreter its own way
-    would prove something true of nothing that ships.
-
-    The environment handed over is written out in full rather than inherited, so what this measures
-    is the same on any machine that builds Sift.
+    A normal interpreter reads both before its own packages, so a stray package on somebody's
+    machine would win over the one Sift ships.
     """
     python = RUNTIME / "python.exe"
     staged = ROOT / "build" / "foreign-python"
@@ -505,17 +461,7 @@ def prove_the_runtime_ignores_other_pythons() -> None:
 
 
 def prove_the_runtime_ships_no_tests() -> None:
-    """The suite is not part of the product, and this is what says so about the packed copy.
-
-    Every slice keeps its tests beside the code they cover. That is right for reading it and wrong
-    for shipping it: without the exclusion the wheel carries hundreds of test files into the
-    installed application, a third of the Python payload, code that can never run there, and the route by which a fixture written from
-    somebody's real library would reach every machine Sift is installed on.
-
-    The exclusion is declared in pyproject.toml. This is the check, because a packaging rule is
-    exactly the kind of thing a later edit widens, narrows or drops with nothing to say it happened:
-    the wheel still builds, the application still starts, and the only tell is a folder nobody opens.
-    """
+    """Refuse a packed runtime carrying the tests kept beside the code (the wheel's `exclude`)."""
     packages = RUNTIME / "Lib" / "site-packages" / "sift"
     shipped = [
         one.relative_to(packages).as_posix()
@@ -532,18 +478,7 @@ def prove_the_runtime_ships_no_tests() -> None:
 
 
 def prove_the_runtime_ships_the_site_icons() -> None:
-    """The site logos are part of the product, and this is what says so about the packed copy.
-
-    They are the second thing in the wheel that is not Python (the client is the first, and a
-    release without it installs, starts and serves a blank page). These fail more quietly: a build
-    that dropped them installs, starts, and draws a wall of coloured letters, which a self-hoster
-    with a new library would take for how Sift always looks.
-
-    They need no `artifacts` line of their own (they are committed rather than generated, so
-    hatchling packs them with the rest of the package), and that is precisely why this check is
-    worth having: nothing in the packaging configuration names them, so nothing in it would have to
-    change for them to stop shipping.
-    """
+    """Refuse a packed runtime without the site logos: nothing in the packaging names them."""
     pack = RUNTIME / "Lib" / "site-packages" / "sift" / "kernel" / "site_icons"
     icons = sorted(pack.glob("icons/*.png"))
     if not (pack / "manifest.json").is_file() or not icons:
@@ -646,6 +581,141 @@ def prove_the_runtime_carries_the_pinned_wheels(
             )
 
 
+#: The Visual C++ runtime carried beside the interpreter, where Windows looks before System32.
+CPP_RUNTIME = (
+    "concrt140.dll",
+    "msvcp140.dll",
+    "msvcp140_1.dll",
+    "msvcp140_2.dll",
+    "vcruntime140.dll",
+    "vcruntime140_1.dll",
+)
+#: Carried too where the source has them, at its version: a library may import any of them.
+CPP_COMPANIONS = (
+    "msvcp140_atomic_wait.dll",
+    "msvcp140_codecvt_ids.dll",
+    "vcruntime140_threads.dll",
+    "vccorlib140.dll",
+)
+
+
+def file_version(path: Path) -> str | None:
+    """A Windows file's version from its fixed version block, or None where it has none."""
+    data = path.read_bytes()
+    at = data.find(b"\xbd\x04\xef\xfe")
+    if at < 0 or len(data) < at + 16:
+        return None
+    high, low = struct.unpack_from("<II", data, at + 8)
+    return f"{high >> 16}.{high & 0xFFFF}.{low >> 16}.{low & 0xFFFF}"
+
+
+def _visual_studio_redist() -> Path:
+    """The newest installed C++ toolchain's redistributable folder, as its own tools name it."""
+    named = os.getenv("VCTOOLSREDISTDIR")
+    if named:
+        return Path(named)
+    installer = Path(os.getenv("PROGRAMFILES(X86)", "C:\\Program Files (x86)"))
+    vswhere = installer / "Microsoft Visual Studio" / "Installer" / "vswhere.exe"
+    if not vswhere.is_file():
+        raise ReleaseFailed(f"there is no {vswhere}, so no C++ runtime to carry.")
+    asked = [str(vswhere), "-latest", "-products", "*", "-property", "installationPath"]
+    home = Path(subprocess.run(asked, capture_output=True, text=True, check=True).stdout.strip())
+    default = home / "VC" / "Auxiliary" / "Build" / "Microsoft.VCRedistVersion.default.txt"
+    if not default.is_file():
+        raise ReleaseFailed(f"{home} has no C++ build tools, so no C++ runtime to carry.")
+    return home / "VC" / "Redist" / "MSVC" / default.read_text(encoding="utf-8").strip()
+
+
+def _parts(version: str) -> tuple[int, ...]:
+    return tuple(int(part) for part in version.split("."))
+
+
+def whole_cpp_runtime(folder: Path) -> str | None:
+    """The one version all of CPP_RUNTIME, and every companion present, carries in `folder`."""
+    versions = {
+        file_version(folder / name) if (folder / name).is_file() else None for name in CPP_RUNTIME
+    }
+    present = {file_version(folder / name) for name in CPP_COMPANIONS if (folder / name).is_file()}
+    whole = len(versions) == 1 and None not in versions and present <= versions
+    return versions.pop() if whole else None
+
+
+def cpp_runtime_source(redist: Path | None = None) -> tuple[Path, str]:
+    """The newer whole x64 C++ runtime of the toolchain's redistributable and Windows' installed one."""
+    candidates = [Path(os.getenv("SYSTEMROOT", "C:\\Windows")) / "System32"]
+    try:
+        folder = _visual_studio_redist() if redist is None else redist
+        candidates += sorted(folder.glob("x64/Microsoft.VC*.CRT"))[-1:]
+    except (ReleaseFailed, OSError, subprocess.CalledProcessError):
+        pass
+    whole = [(whole_cpp_runtime(one), at, one) for at, one in enumerate(candidates)]
+    found = [(_parts(version), at, one, version) for version, at, one in whole if version]
+    if not found:
+        raise ReleaseFailed(
+            "no whole x64 C++ runtime is on this machine. Install the C++ build tools."
+        )
+    _, _, folder, version = max(found)
+    print(f"  C++ runtime from {folder}  {version}")
+    return folder, version
+
+
+def carry_the_cpp_runtime(into: Path) -> None:
+    """The newest C++ runtime this machine has, beside the interpreter, over what it came with."""
+    source, _ = cpp_runtime_source()
+    names = [name for name in CPP_RUNTIME + CPP_COMPANIONS if (source / name).is_file()]
+    for name in names:
+        shutil.copyfile(source / name, into / name)
+    print(f"  C++ runtime  {len(names)} files carried")
+
+
+def linker_version(path: Path) -> tuple[int, int] | None:
+    """The toolset a Windows binary was linked with, from its PE optional header; None if not one."""
+    with path.open("rb") as handle:
+        head = handle.read(0x40)
+        if len(head) < 0x40 or head[:2] != b"MZ":
+            return None
+        handle.seek(struct.unpack_from("<I", head, 0x3C)[0])
+        pe = handle.read(28)
+    return (pe[26], pe[27]) if len(pe) == 28 and pe[:4] == b"PE\0\0" else None
+
+
+def newest_linked(folder: Path) -> tuple[tuple[int, int], Path] | None:
+    """The newest toolset any bundled binary was linked with; an older linker cannot raise it."""
+    linked = [
+        (linker_version(one), one)
+        for one in folder.rglob("*")
+        if one.suffix.lower() in (".pyd", ".dll")
+    ]
+    found = [(version, one) for version, one in linked if version is not None]
+    return max(found) if found else None
+
+
+def prove_the_runtime_carries_the_cpp_runtime(folder: Path | None = None) -> str:
+    """Refuse a C++ runtime that is missing, mixed, or older than a bundled binary's linker.
+
+    New code on an older C++ runtime can die as it loads, so it must be at least the newest toolset.
+    """
+    where = RUNTIME if folder is None else folder
+    missing = [name for name in CPP_RUNTIME if not (where / name).is_file()]
+    if missing:
+        raise ReleaseFailed(f"the runtime has no {', '.join(missing)} beside its interpreter.")
+    carried_names = CPP_RUNTIME + tuple(one for one in CPP_COMPANIONS if (where / one).is_file())
+    versions = {name: file_version(where / name) for name in carried_names}
+    if None in versions.values() or len(set(versions.values())) != 1:
+        found = ", ".join(f"{name} {version}" for name, version in versions.items())
+        raise ReleaseFailed(f"the runtime's C++ runtime is not one release: {found}.")
+    carried = str(versions["msvcp140.dll"])
+    newest = newest_linked(where)
+    if newest is not None and _parts(carried)[:2] < newest[0]:
+        (major, minor), library = newest
+        raise ReleaseFailed(
+            f"the runtime carries C++ runtime {carried}, older than {library.relative_to(where)} "
+            f"was linked with ({major}.{minor}). It must be at least as new as every component."
+        )
+    print(f"  C++ runtime  {carried}")
+    return carried
+
+
 def rebuild_addon() -> None:
     """The drag addon, against the Electron version this release ships.
 
@@ -717,16 +787,8 @@ def write_manifest(installer: Path, sums: Path) -> Path:
 
 
 def sign(sums: Path, manifest: Path) -> list[Path]:
-    """Minisign over the HASH FILE and the MANIFEST, in one call, never over the installer.
-
-    Verifying then needs small downloads rather than the whole installer: the manifest says which
-    release this is and what its bytes hash to, and the signature says who wrote it. The hash file
-    is signed too, for anyone checking a download by hand and for copies from before the manifest.
-
-    `-l`, the LEGACY form, which signs the bytes themselves. Without it minisign signs a BLAKE2b
-    digest of them ("prehashed"), and the desktop application accepts only the legacy form, so an
-    unmarked signature would be refused by every installed copy.
-    """
+    """Minisign over the hash file and the manifest, never over the installer. `-l`, the legacy
+    form, because the desktop application refuses a prehashed signature."""
     minisign = tool("minisign")
     if not MINISIGN_KEY.is_file():
         raise ReleaseFailed(
@@ -804,27 +866,9 @@ def prune_old_releases(
 ) -> int:
     """Keep the newest few releases in the artefacts folder, delete the rest. Returns bytes freed.
 
-    Without this the folder keeps every installer ever built, about 204 MB each, growing by one on
-    every release and read by nothing. `put_on_the_desktop` replaces the copy it handed over last
-    time; this is the same rule, one directory over.
-
-    Whole RELEASES go, never loose files. An installer without the hash beside it, or a hash without
-    the signature over it, is worse than neither: the two together are what somebody checks before
-    running 200 MB of executable, and half a set invites checking the half that is there.
-
-    Nothing else in the folder is touched. `win-unpacked` is the packer's working tree and is rebuilt
-    on the next run; anything that does not match `ARTEFACT` was put there by a person.
-
-    The version this run built is never pruned, whatever its number. Building an older release
-    deliberately (a rebuild of a tag to compare bytes) would otherwise delete the thing that was
-    just made, at the one moment the folder is guaranteed not to be looked at again.
-
-    THE PACKER'S INTERMEDIATE GOES BY A DIFFERENT RULE, and not by the keep window: see
-    `INTERMEDIATE`. It is a working file rather than something anybody rolls back to, so keeping
-    three of them would be 600 MB held for nothing, and one left behind by a pack that did not
-    finish tidying up is not a release at all: it has no installer, no hash and no signature to
-    go with it. Every one but this run's own goes, whatever its version. This run's is spared for
-    the same reason the release it belongs to is.
+    Whole releases go (installer, hash and signatures together), nothing a person put there, and
+    never the version this run built. Every packer intermediate but this run's goes, whatever its
+    version: it is a working file, not something anybody rolls back to.
     """
     if not folder.is_dir():
         return 0
@@ -990,15 +1034,8 @@ def write_upgrade_fixture(
 
 
 def _desktop() -> Path | None:
-    """Where this account's desktop actually is, read from Windows rather than guessed.
-
-    NOT `~/Desktop`. A desktop can be redirected (OneDrive does it by default on a new install),
-    and the guess then writes a 200 MB file into a folder nobody ever opens, silently. The registry
-    value is what Explorer itself reads, so it follows the redirection.
-
-    None when there is no desktop to write to, which is an ordinary state on a build machine rather
-    than a failure: the release is already built and finished by the time this runs.
-    """
+    """Where this account's desktop is, read from the registry as Explorer reads it (it may be
+    redirected); None where there is none, an ordinary state on a build machine."""
     import winreg
 
     shell_folders = r"Software\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders"
@@ -1012,15 +1049,8 @@ def _desktop() -> Path | None:
 
 
 def put_on_the_desktop(artefacts: list[Path]) -> None:
-    """Copy the finished release to the desktop of the account that built it, replacing the last.
-
-    An installer fetched out of a build directory is fetched once and then remembered wrongly. One
-    copy in a known place, replaced by every release, cannot be an old build that looks current.
-
-    The previous copies go, and only ones this script could have written: the name has to be an
-    installer, a hash file, a manifest or a signature, with a version in it. A folder full of somebody's own
-    files is the last place to run a loose pattern.
-    """
+    """Copy the finished release to this account's desktop, replacing the copies this script wrote
+    before: one copy in a known place cannot be an old build that looks current."""
     where = _desktop()
     if where is None:
         print("\n  No desktop to copy to; the artefacts are in the release folder only.")
@@ -1511,17 +1541,9 @@ def _git(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
 
 
 def check_the_tree(*, signed: bool, repo: Path = ROOT) -> None:
-    """Refuse a release built from anything but a commit the project holds on `origin/main`.
+    """Refuse a signed or published release built from anything but a clean commit on `origin/main`.
 
-    Two questions, both read-only: whether the working tree has a change or a new file in it
-    (`git status --porcelain`, which leaves ignored files out), and whether HEAD is on
-    `origin/main` as this clone last heard of it. Nothing is fetched: a release step that wrote
-    refs would be a second thing the script does to the repository, and a clone that has not
-    heard of a push refuses, which is the safe side to be wrong on.
-
-    Refused only for a build that can reach anybody else, one signed or published. `signed=False`
-    is a build for this device, and a warning is printed instead: its installer is for the person
-    running it, and trying a change before it is committed is what it is for.
+    Read-only: nothing is fetched. An unsigned build for this device only prints a warning.
     """
     problems: list[str] = []
     status = _git(repo, "status", "--porcelain")
@@ -1807,16 +1829,8 @@ SMOKE_TIMEOUT_S = 120.0
 
 
 def read_fuse_wire(binary: Path) -> dict[int, int]:
-    """The fuse states baked into an Electron binary, read from the binary itself.
-
-    The wire is found by its sentinel, exactly as @electron/fuses finds it: the byte after the
-    sentinel is the wire version, the byte after that is how many fuses this Electron has, and the
-    rest are one byte per fuse.
-
-    READ RATHER THAN SHELLED OUT TO. `npx @electron/fuses read` answers the same question and needs
-    a package resolved from the network at the last step of a release, prints for a person rather
-    than for a program, and would have to be parsed. This is the same twenty lines the package runs.
-    """
+    """The fuse states baked into an Electron binary, found by their sentinel as @electron/fuses
+    finds them: wire version, fuse count, then one byte per fuse."""
     with binary.open("rb") as handle:
         size = binary.stat().st_size
         if size == 0:
@@ -1842,16 +1856,10 @@ def read_fuse_wire(binary: Path) -> dict[int, int]:
 
 
 def _check_the_fuses_are_flipped() -> None:
-    """Refuse a build whose shipped executable does not carry the states it was configured with.
+    """Refuse a build whose packed executable does not carry the fuse states it was configured with.
 
-    **THE FAULT THIS CATCHES IS SILENT IN BOTH DIRECTIONS.** A fuse that failed to flip leaves an
-    application that works perfectly and has a door open in it: `ELECTRON_RUN_AS_NODE=1 Sift.exe`
-    running any script with Sift's identity, or an `app` folder dropped beside the archive replacing
-    the application. Nothing about the build says so; the only tell is a byte in a 235 MB file.
-
-    Read from the PACKED executable rather than from the configuration, which is the whole point:
-    electron-builder flips these after the bundle is assembled and immediately before signing, and
-    a step that quietly did not happen is exactly what a configuration file cannot tell you about.
+    Read from the packed file, since electron-builder flips them after the bundle is assembled and a
+    fuse left unflipped leaves an application that works with a door open in it.
     """
     shell = ARTIFACTS / "win-unpacked" / "Sift.exe"
     if not shell.is_file():
@@ -1943,26 +1951,11 @@ def run_the_shell(command: list[str], timeout_s: float) -> ShellRun:
 
 
 def _check_the_shell_boots(launch: Launcher = run_the_shell) -> None:
-    """Start the application that was just packed and make it say it started.
+    """Start the packed application with `--smoke` and require its marker.
 
-    WHAT NOTHING ELSE IN THIS SCRIPT PROVES. The runtime is started twice above and asked where its
-    own code comes from, the bundle is measured, the vendored tools are counted, and all of that
-    is about the files beside Electron. Whether ELECTRON itself will run Sift's own code is a
-    separate question, and two of the fuses decide it: with `OnlyLoadAppFromAsar` the archive is the
-    only place an entry point may come from, and with `EnableEmbeddedAsarIntegrityValidation` that
-    archive is compared against a hash compiled into the executable. A bundle packed without its
-    integrity resource produces an installer that installs and an application that never opens.
-
-    IT STOPS SHORT OF THE BACKEND ON PURPOSE, and this is the judgement in it. Waiting for `/health`
-    would be the better proof and cannot be made safely from a build: the port is fixed at 5171 and
-    the data folder belongs to whoever's machine this is, so a boot check that started the backend
-    would either refuse to run whenever Sift is open (failing a release for a reason that has
-    nothing to do with the build) or open the real library in a second process and run its
-    migrations. `--smoke` takes no lock, opens no window, starts nothing and reads nothing.
-
-    The MARKER rather than the exit code, because 0 is also what this shell exits with when another
-    copy holds the single-instance lock. A check that passes on any machine with Sift open is not a
-    check, and that is why the flag is answered before the lock is taken.
+    The fuses decide whether Electron runs Sift's code at all. It stops short of the backend: the
+    port and the data folder are whoever's machine this is. The marker, not the exit code, because
+    0 is also what a second copy exits with.
     """
     shell = ARTIFACTS / "win-unpacked" / "Sift.exe"
     if not shell.is_file():

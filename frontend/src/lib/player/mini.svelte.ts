@@ -19,6 +19,8 @@
 import type { SpriteSheet } from '$lib/player/trickplay';
 import type { SittingBaton, SittingPlace } from '$lib/player/sitting.svelte';
 import { readStored, writeStored } from '$lib/shell/remembered.svelte';
+import { thumbUrl } from '$lib/entity/art';
+import type { components } from '$lib/api/schema';
 
 const PLACE_KEY = 'sift.mini.place';
 
@@ -415,6 +417,18 @@ export function restingPlace(within: { width: number; height: number }, shape?: 
 	);
 }
 
+/** What the panel holds of a file's record. */
+export function heldOf(file: components['schemas']['AssetDetail']): MiniAsset {
+	return {
+		id: file.id,
+		mediaType: file.media_type,
+		art: file.art,
+		sprite: file.sprite,
+		poster: thumbUrl(file),
+		concealed: file.concealed
+	};
+}
+
 /* A clip, as the panel reads a record: an absent type means one. See `MiniAsset.mediaType`. */
 function isClip(asset: MiniAsset): boolean {
 	return !asset.concealed && (asset.mediaType === undefined || asset.mediaType === 'video');
@@ -548,6 +562,18 @@ class MiniPlayer {
 	/** Back up from the bar to the panel. */
 	toPanel(): void {
 		this.bar = false;
+	}
+
+	/** Hidden shut on this file: its id is all that stays, at the size and in the bar it was in. */
+	veil(id: string): void {
+		if (this.asset?.id !== id || this.asset.concealed) return;
+		this.asset = { id, concealed: true, from: this.asset.from };
+	}
+
+	/** Hidden opened on the file the panel was holding as hidden. */
+	unveil(asset: MiniAsset): void {
+		if (this.asset?.id !== asset.id || !this.asset.concealed) return;
+		this.asset = { ...asset, from: this.asset.from };
 	}
 
 	/** The full-size view has been left. */

@@ -61,7 +61,7 @@ export const COPY = {
 	copied: 'Copied',
 	download: 'Download log',
 	downloadTrailer: 'Download redacted log',
-	fileName: (stamp: string) => `sift-log ${stamp}.txt`,
+	fileName: (stamp: string) => `sift-log ${stamp}.zip`,
 	savedTo: (folder: string) => `Saved to ${folder}`,
 	savedInBrowser: "Saved to your browser's downloads.",
 	cannotDownload: "Couldn't download the log. Try again.",

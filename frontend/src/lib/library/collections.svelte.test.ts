@@ -2,8 +2,7 @@
  *
  * The same shape as the tag store and for the same reasons. See its file for the argument about
  * why a wall that pages cannot also order itself in the browser. What is different here is the
- * default order, which is by name, and the fact that what is inside a collection is arranged by hand
- * and never touched by any of this. This orders the shelf, never the books.
+ * default order, which is by name.
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -231,19 +230,8 @@ describe('a collection longer than a page', () => {
 		expect(contentsSource('c1')).toMatchObject({ path: '/collections/c1/items', anchored: false });
 	});
 
-	it('moves a file by one request naming it and its direction, and reads nothing', async () => {
-		mocked.post.mockResolvedValue({ changed: 2, skipped: 0, reason: null });
-		await new Collections().move('c1', 'a599', -1);
-		await new Collections().move('c1', 'a1', 1);
-
-		expect(mocked.post.mock.calls).toEqual([
-			[
-				'/collections/c1/items',
-				{ body: { asset_ids: ['a599'], action: 'move', direction: 'earlier' } }
-			],
-			['/collections/c1/items', { body: { asset_ids: ['a1'], action: 'move', direction: 'later' } }]
-		]);
-		expect(mocked.get).not.toHaveBeenCalled();
+	it('offers every order Browse offers, since a collection has none of its own', () => {
+		expect(contentsSource('c1').sorts).toBeNull();
 	});
 });
 

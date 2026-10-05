@@ -12,16 +12,14 @@
  * also what makes it resume for free.
  */
 
-import { DownloadWatch } from '$lib/jobs/watch-download.svelte';
+import { ModelFetchWatch } from '$lib/jobs/model-fetch';
 import { FETCHING_MODELS, watermarkStatus } from '$lib/library/watermarks.svelte';
 
-class ModelFetch extends DownloadWatch {
+class ModelFetch extends ModelFetchWatch {
 	constructor() {
 		super(FETCHING_MODELS, async () => {
 			const state = await watermarkStatus().catch(() => null);
-			return state?.ready
-				? 'The models are on this machine. Sift can read watermarks now.'
-				: 'The download stopped before it finished. What arrived is kept, so starting again costs only the rest.';
+			return state?.ready ? 'The models are on this machine. Sift can read watermarks now.' : null;
 		});
 	}
 }

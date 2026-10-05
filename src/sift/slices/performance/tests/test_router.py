@@ -5,14 +5,16 @@ recommendations compared with settings as they are now, and the scratch director
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import functools
 import threading
 import time
 from collections.abc import Iterator
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from sift.kernel.config import get_settings
@@ -21,6 +23,7 @@ from sift.kernel.wiring import part_of_app
 from sift.main import create_app
 from sift.slices.auth.crypto import derive_csrf_token
 from sift.slices.performance import measure_encoder, measure_together, selftest
+from sift.slices.performance.rates import MachineRates
 from sift.slices.performance.runner import SELF_TEST_RUNNER
 from sift.slices.performance.selftest import Level, Measurement, Recommendation, SelfTest
 from sift.testing.auth import establish_session
@@ -116,8 +119,7 @@ def a_finished_run() -> SelfTest:
 
 
 def test_a_guest_may_not_read_the_measurement(client: TestClient) -> None:
-    """It hands back instance-wide settings and it works the machine hard for a minute. Refused at
-    the route rather than hidden in the client, which is a courtesy and not a control."""
+    """Refused at the route, not only hidden in the client: it hands back instance-wide settings."""
     _sign_in(client, "guest")
 
     assert client.get("/api/performance/self-test").status_code == 403
@@ -164,8 +166,7 @@ def test_a_process_that_queued_no_benchmark_of_its_own_says_none(client: TestCli
 def test_starting_answers_at_once_and_leaves_the_work_running(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The request returns while the test is still going. It takes about a minute; a request that
-    waited for it would be indistinguishable from a hung server."""
+    """The request returns while the test is still going, or it would read as a hung server."""
     started = asyncio.Event()
     release = asyncio.Event()
 
@@ -190,8 +191,7 @@ def test_starting_answers_at_once_and_leaves_the_work_running(
 def test_a_second_request_joins_the_run_rather_than_starting_another(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Two of these at once would measure each other. The second request is not an error: it is
-    somebody pressing the button twice, so it answers with the run already in flight."""
+    """A second press is not an error: it answers with the run already in flight."""
     runs = 0
     release = asyncio.Event()
     # Set from the application's own loop and read from this thread, so it has to be a threading
@@ -599,3 +599,46 @@ def test_the_folders_on_each_storage_are_read_from_the_library_never_kept_with_t
     body = _as_admin(client).get("/api/performance/self-test").json()
 
     assert [one["folders"] for one in body["measurement"]["storages"]] == ["Added since", ""]
+
+
+def test_a_first_part_is_said_until_the_full_run_and_toasts_keep_asking_for_it(
+    client: TestClient,
+) -> None:
+    from sift.kernel.wiring import HARDWARE
+    from sift.slices.performance.benchmark import FIRST_BENCHMARK, AutomaticRun
+
+    app = cast(FastAPI, client.app)
+    runner = part_of_app(app, SELF_TEST_RUNNER)
+    profile = part_of_app(app, HARDWARE).profile
+    quick = MachineRates.from_measurement(
+        profile, Measurement(cores=8, levels=(a_level(1),)), now=1, first_part=True
+    )
+    asyncio.run(_kept_beside_the_app(client, quick))
+    runner._rates._known.clear()
+    admin = _as_admin(client)
+
+    body = admin.get("/api/performance/self-test").json()
+    assert (body["whole_to_come"], body["whole_due"]) == (True, True)
+    part_of_app(app, FIRST_BENCHMARK).now(
+        AutomaticRun(job_id="j", state="running", said="s", holds=False)
+    )
+    run = admin.get("/api/performance/benchmark").json()
+    assert run["measured"] is False, "a window keeps asking until the full run"
+    assert run["held"] is None, "no folder waits for the full run"
+
+    asyncio.run(_kept_beside_the_app(client, dataclasses.replace(quick, whole_stopped=True)))
+    runner._rates._known.clear()
+    body = admin.get("/api/performance/self-test").json()
+    assert (body["whole_to_come"], body["whole_due"]) == (True, False)
+
+
+async def _kept_beside_the_app(client: TestClient, rates: MachineRates) -> None:
+    from sift.kernel.db import Database
+    from sift.slices.performance.rates import RatesStore
+
+    database = Database(client.app.state.database.path, readers=1)  # type: ignore[attr-defined]
+    await database.connect()
+    try:
+        await RatesStore(database).save(rates)
+    finally:
+        await database.close()

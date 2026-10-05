@@ -87,6 +87,7 @@ async def _measure(tmp_path: Path, *, cap: int = 4, **given: Any) -> me.CardCurv
         encode=encode,
         clock=lambda: clock[0],
         fell_behind=given.get("fell_behind", lambda: 0),
+        deadline=given.get("deadline"),
     )
 
 
@@ -146,8 +147,8 @@ async def test_a_width_whose_encodes_fail_is_not_counted_and_nothing_wider_is_tr
     assert "wider failed, or Sift stopped keeping up" in found.reason
 
 
-async def test_a_busy_width_is_taken_again_and_marked(tmp_path: Path) -> None:
-    answers = iter([True, True] + [False] * 20)
+async def test_a_busy_width_is_taken_once_and_marked(tmp_path: Path) -> None:
+    answers = iter([True] + [False] * 20)
     curve = await _measure(tmp_path, cap=1, busy=lambda: next(answers))
     assert [level.busy for level in curve.levels] == [True, False]
     assert curve.said() == [

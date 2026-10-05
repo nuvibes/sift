@@ -56,13 +56,12 @@ interface HideOptions {
 /**
  * A PIN has to exist before anything can go in, and this is what a refusal looks like.
  *
- * The vault is opened by the PIN and by nothing else, so concealing something without one is not
- * hiding it. It is losing it. The server refuses, and it is the one failure here worth its own
- * sentence: every other one is "that did not work", and this one is "here is what to do".
+ * Concealing something with no PIN would lose it, so the server refuses, and this one failure says
+ * what to do: the link opens the PIN form.
  */
 const NO_PIN = [
 	'Set a PIN in ',
-	place('Privacy and Security', '/settings/privacy'),
+	place('Profile', '/settings/profile#profile.pin'),
 	" first. It's what unhides these again."
 ];
 

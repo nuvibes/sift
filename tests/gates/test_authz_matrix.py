@@ -406,7 +406,7 @@ MATRIX: dict[tuple[str, str], Case] = {
     ("GET", "/api/performance/benchmark"): Case(Policy.ADMIN),
     # A log line names files, users and paths, and what OTHER people did.
     ("GET", "/api/logs"): Case(Policy.ADMIN),
-    ("POST", "/api/logs/redacted"): Case(Policy.ADMIN),
+    ("GET", "/api/logs/archive"): Case(Policy.ADMIN),
     ("GET", "/api/performance/hardware"): Case(Policy.ADMIN),
     # A run says how big the library is and names the machine.
     ("GET", "/api/performance/runs/{run_id}/report"): Case(

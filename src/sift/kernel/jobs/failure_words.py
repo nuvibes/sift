@@ -83,6 +83,55 @@ KINDS: tuple[FailureKind, ...] = (
         "A tool Sift runs couldn't start, because a file it needs was in use or missing. Run it "
         "again; if it keeps happening, another program may be holding Sift's files.",
     ),
+    # A download's failures, in the words `kernel.fetch` and the model store write.
+    _kind(
+        "server-refused",
+        r"couldn't be downloaded: \S+ answered \d+",
+        "The download was refused at its source. Try again later.",
+    ),
+    _kind(
+        "connection-refused",
+        r"the connection to \S+ was refused",
+        "The connection was refused. A firewall, a proxy or the network may be blocking it.",
+    ),
+    _kind(
+        "name-not-found",
+        r"couldn't be downloaded: \S+ couldn't be found",
+        "The download's address couldn't be found. Check the internet connection, and whether the "
+        "network blocks it.",
+    ),
+    _kind(
+        "no-answer",
+        r"couldn't be downloaded: \S+ didn't answer in time",
+        "The download didn't answer in time. Check the internet connection, then run it again.",
+    ),
+    _kind(
+        "untrusted",
+        r"a secure connection to \S+ couldn't be made",
+        "A secure connection couldn't be made. Check the computer's date and time, and whether "
+        "security software inspects secure connections.",
+    ),
+    _kind(
+        "proxy",
+        r"the proxy didn't let the connection through",
+        "The proxy didn't let the connection through. Check the system's proxy settings.",
+    ),
+    _kind(
+        "unreached",
+        r"sift couldn't connect to",
+        "Sift couldn't connect for the download. Check the internet connection, and whether a "
+        "firewall blocks it.",
+    ),
+    _kind(
+        "dropped",
+        r"the connection to \S+ dropped",
+        "The connection dropped partway. Check the internet connection, then run it again.",
+    ),
+    _kind(
+        "arrived-damaged",
+        r"didn't arrive intact",
+        "The download didn't arrive intact, so it was removed. Run it again to download it afresh.",
+    ),
     _kind(
         "unreadable",
         r"could not be decoded|image data not found|invalid data found when processing input"

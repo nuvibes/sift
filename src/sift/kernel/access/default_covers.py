@@ -160,13 +160,13 @@ _KINDS: tuple[_Kind, ...] = (
         entity_of_new="NEW.person_id",
         entities_of_file="SELECT f.person_id FROM asset_people f WHERE f.asset_id = {{FILE}}",
     ),
-    # A collection and a Photo Set are arranged, so where several files went in at one moment the
-    # first is the one the page draws first.
+    # Where several files went in at one moment, a collection takes the oldest file and a Photo
+    # Set the first of its own order.
     _Kind(
         covered=_COLLECTION,
         membership="collection_items m",
         belongs="m.collection_id = {{ENTITY}}",
-        order="m.added_at, m.position",
+        order="m.added_at, m.asset_id",
         filed_on="collection_items",
         entity_of_new="NEW.collection_id",
         entities_of_file=(

@@ -3,7 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
 	inFlight: 0,
 	post: vi.fn(),
-	goto: vi.fn()
+	goto: vi.fn(),
+	closePanel: vi.fn()
 }));
 
 vi.mock('$app/navigation', () => ({ goto: mocks.goto }));
@@ -16,6 +17,7 @@ vi.mock('$lib/api/client', () => ({
 vi.mock('$lib/shell/account-scoped', () => ({ stopAccountScopedReaders: vi.fn() }));
 vi.mock('$lib/theme/theme.svelte', () => ({ theme: { forget: vi.fn() } }));
 vi.mock('$lib/shell/toasts.svelte', () => ({ toasts: { show: vi.fn() } }));
+vi.mock('$lib/player/mini.svelte', () => ({ mini: { close: mocks.closePanel } }));
 
 import { LANDING_WAIT_MS, signOut } from './sign-out';
 
@@ -51,5 +53,6 @@ describe('signing out', () => {
 	it('signs out at once when nothing is on its way', async () => {
 		await signOut();
 		expect(mocks.post).toHaveBeenCalledWith('/auth/logout');
+		expect(mocks.closePanel).toHaveBeenCalled();
 	});
 });

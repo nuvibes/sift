@@ -203,6 +203,9 @@ async def fetch(
     *,
     session_factory: SessionFactory | None = None,
     progress: Progress | None = None,
+    fresh: bool = False,
 ) -> None:
-    """Download a face model, resuming a previous attempt if there is one."""
-    await store(settings).fetch(weight, session_factory=session_factory, progress=progress)
+    """Download a face model, resuming a previous attempt unless `fresh` says start again."""
+    await store(settings).fetch(
+        weight, session_factory=session_factory, progress=progress, fresh=fresh
+    )

@@ -1,5 +1,5 @@
-/* The Logs tab in the desktop app: both logs as one list, and Download log, which writes both
- * through the server's scrubber into one file, each line marked, and says where it went. */
+/* The Logs tab in the desktop app: both logs as one list, and Download log, which shares every log
+ * whole as one redacted archive and says where it went. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushSync, mount, tick, unmount } from 'svelte';
 
@@ -11,15 +11,22 @@ const library = (event: string, at: string) => ({
 });
 
 const get = vi.hoisted(() => vi.fn());
-const post = vi.hoisted(() => vi.fn());
 const shellLog = vi.hoisted(() => vi.fn());
 const downloadFolder = vi.hoisted(() => vi.fn());
+const saveLogArchive = vi.hoisted(() => vi.fn());
+const shellArchives = vi.hoisted(() => ({ on: false }));
 const show = vi.hoisted(() => vi.fn());
 const triggerDownload = vi.hoisted(() => vi.fn());
 
-vi.mock('$lib/api/client', () => ({ ApiError: class extends Error {}, api: { get, post } }));
+vi.mock('$lib/api/client', () => ({ ApiError: class extends Error {}, api: { get } }));
 vi.mock('$lib/bridge', () => ({
-	bridge: { canReadShellLog: () => true, shellLog, downloadFolder }
+	bridge: {
+		canReadShellLog: () => true,
+		shellLog,
+		downloadFolder,
+		canSaveLogArchive: () => shellArchives.on,
+		saveLogArchive
+	}
 }));
 vi.mock('$lib/desktop/server-shell', () => ({
 	offersServer: () => false,
@@ -35,19 +42,11 @@ import { COPY } from './Logs.search';
 let host: HTMLElement;
 let shown: ReturnType<typeof mount> | null = null;
 let saved: Blob | null = null;
+const zip = new Blob(['PK'], { type: 'application/zip' });
 
 beforeEach(async () => {
-	get.mockResolvedValue({
-		lines: [
-			library('scan.started', '2026-10-03T06:00:00Z'),
-			library('scan.done', '2026-10-03T06:00:05Z')
-		],
-		path: 'C:\\Sift\\sift.log',
-		size_bytes: 2048,
-		present: true,
-		searched_bytes: 0,
-		whole: true
-	});
+	shellArchives.on = false;
+	get.mockImplementation(async (path: string) => (path === '/logs/archive' ? zip : page()));
 	shellLog.mockResolvedValue({
 		lines: [
 			JSON.stringify({ event: 'drag.started', level: 'info', timestamp: '2026-10-03T06:00:02Z' })
@@ -56,9 +55,6 @@ beforeEach(async () => {
 		size: 100,
 		present: true
 	});
-	post.mockImplementation(async (_path: string, options: { body: { lines: string[] } }) => ({
-		lines: options.body.lines.map((one) => one.replace('scan', 'SCRUBBED'))
-	}));
 	vi.spyOn(URL, 'createObjectURL').mockImplementation((blob) => {
 		saved = blob as Blob;
 		return 'blob:log';
@@ -71,6 +67,20 @@ beforeEach(async () => {
 	await vi.waitFor(() => expect(host.querySelectorAll('.line')).toHaveLength(3));
 	await tick();
 });
+
+function page() {
+	return {
+		lines: [
+			library('scan.started', '2026-10-03T06:00:00Z'),
+			library('scan.done', '2026-10-03T06:00:05Z')
+		],
+		path: 'C:\\Sift\\sift.log',
+		size_bytes: 2048,
+		present: true,
+		searched_bytes: 0,
+		whole: true
+	};
+}
 
 afterEach(() => {
 	if (shown) unmount(shown);
@@ -109,27 +119,18 @@ describe('the one list', () => {
 });
 
 describe('Download log', () => {
-	it('has every line scrubbed by the server and saves them as one file, each marked', async () => {
-		downloadFolder.mockResolvedValue({ path: 'C:\\Users\\someone\\Downloads', chosen: false });
+	it("saves the server's archive of the library's log, asked for whole", async () => {
+		downloadFolder.mockResolvedValue(null);
 		pressDownload();
 		await vi.waitFor(() => expect(show).toHaveBeenCalled());
 
-		expect(post).toHaveBeenCalledWith('/logs/redacted', {
-			body: { lines: expect.arrayContaining([expect.stringContaining('drag.started')]) }
-		});
+		expect(get).toHaveBeenCalledWith('/logs/archive', { asBlob: true });
+		expect(saved).toBe(zip);
 		expect(triggerDownload).toHaveBeenCalledWith(
 			'blob:log',
-			expect.stringMatching(/^sift-log \d{4}-\d\d-\d\d \d\d-\d\d-\d\d\.txt$/)
+			expect.stringMatching(/^sift-log \d{4}-\d\d-\d\d \d\d-\d\d-\d\d\.zip$/)
 		);
-		const text = await saved!.text();
-		expect(
-			text
-				.split('\n')
-				.filter(Boolean)
-				.map((one) => one.slice(0, one.indexOf(']') + 1))
-		).toEqual([`[${COPY.library}]`, `[${COPY.app}]`, `[${COPY.library}]`]);
-		expect(text).toContain('SCRUBBED.started');
-		expect(text).not.toContain('"scan.started"');
+		expect(show).toHaveBeenCalledWith(COPY.savedInBrowser, { tone: 'success' });
 	});
 
 	it('names the Save files to folder in the desktop app', async () => {
@@ -141,15 +142,30 @@ describe('Download log', () => {
 		});
 	});
 
-	it("says the browser's downloads where there is no folder of the app's", async () => {
-		downloadFolder.mockResolvedValue(null);
+	it('has the shell make the archive of both places where it can, and names the file', async () => {
+		shellArchives.on = true;
+		saveLogArchive.mockResolvedValue('C:\\Saved\\sift-log.zip');
 		pressDownload();
 		await vi.waitFor(() => expect(show).toHaveBeenCalled());
-		expect(show).toHaveBeenCalledWith(COPY.savedInBrowser, { tone: 'success' });
+
+		expect(saveLogArchive).toHaveBeenCalledWith(expect.stringMatching(/^sift-log .*\.zip$/));
+		expect(get).not.toHaveBeenCalledWith('/logs/archive', expect.anything());
+		expect(show).toHaveBeenCalledWith('Saved to C:\\Saved\\sift-log.zip', { tone: 'success' });
 	});
 
-	it('saves nothing unscrubbed when the server cannot scrub it', async () => {
-		post.mockRejectedValue(new Error('refused'));
+	it("says so when the shell couldn't make it", async () => {
+		shellArchives.on = true;
+		saveLogArchive.mockResolvedValue(null);
+		pressDownload();
+		await vi.waitFor(() => expect(show).toHaveBeenCalled());
+		expect(show).toHaveBeenCalledWith(COPY.cannotDownload, { tone: 'error' });
+	});
+
+	it('saves nothing when the server refuses the archive', async () => {
+		get.mockImplementation(async (path: string) => {
+			if (path === '/logs/archive') throw new Error('refused');
+			return page();
+		});
 		pressDownload();
 		await vi.waitFor(() => expect(show).toHaveBeenCalled());
 		expect(triggerDownload).not.toHaveBeenCalled();

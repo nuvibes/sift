@@ -147,7 +147,7 @@ it('gives the transport the same gap on both sides', () => {
 	expect(getComputedStyle(wide).gridTemplateColumns).toBe(
 		'minmax(0, max-content) auto minmax(0, max-content)'
 	);
-	expect(getComputedStyle(wide).columnGap).toBe('var(--space-4)');
+	expect(getComputedStyle(wide).columnGap).toBe('var(--space-8)');
 	expect(getComputedStyle(phone).gridTemplateColumns).not.toContain('max-content');
 	removeStyles();
 });

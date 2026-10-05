@@ -206,6 +206,7 @@ def register_handlers(
         SEMANTIC_FETCH_MODELS,
         lambda context: fetch_models(context, service=service),
         name="Downloading Smart Search model",
+        alone=True,
     )
     register_handler(
         SEMANTIC_FORGET,

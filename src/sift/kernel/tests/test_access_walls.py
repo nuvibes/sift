@@ -599,9 +599,8 @@ async def test_every_entity_sums_this_users_o_tally_over_its_own_files(
         "INSERT INTO asset_people (asset_id, person_id) VALUES (?, ?)", (world.twin, world.person)
     )
     await temp_db.execute(
-        "INSERT INTO collection_items (collection_id, asset_id, position, added_at)"
-        " VALUES (?, ?, ?, ?)",
-        (world.collection, world.twin, 1, _EPOCH),
+        "INSERT INTO collection_items (collection_id, asset_id, added_at) VALUES (?, ?, ?)",
+        (world.collection, world.twin, _EPOCH),
     )
     await temp_db.execute(
         "INSERT INTO photo_set_items (photo_set_id, asset_id, position, added_at)"
@@ -985,9 +984,8 @@ async def _a_second_of_each(temp_db: Database, world: World) -> dict[str, tuple[
             ("INSERT INTO asset_tags (asset_id, tag_id) VALUES (?, ?)", (second["tag"],)),
             ("INSERT INTO asset_people (asset_id, person_id) VALUES (?, ?)", (second["person"],)),
             (
-                "INSERT INTO collection_items (asset_id, collection_id, position, added_at)"
-                " VALUES (?, ?, ?, 0)",
-                (second["collection"], position),
+                "INSERT INTO collection_items (asset_id, collection_id, added_at) VALUES (?, ?, 0)",
+                (second["collection"],),
             ),
             (
                 "INSERT INTO photo_set_items (asset_id, photo_set_id, position, added_at)"

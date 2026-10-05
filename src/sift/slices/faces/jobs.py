@@ -584,10 +584,7 @@ def _placed(*, made: int, claimed: int, asked: int) -> str:
 async def fetch_weights(context: JobContext, *, service: FaceService) -> None:
     """Download the models this install is set to use.
 
-    A job rather than something the route does, for three reasons that are all the same reason.
-    It takes minutes over a domestic connection, so a request holding it open would time out; the
-    dashboard already draws a bar for every job, which is where progress belongs; and cancelling is already a thing you can do to a job, so nothing new has to be
-    invented to stop a download somebody started by accident.
+    A job, because it takes minutes, the dashboard draws its bar, and a job can be cancelled.
 
     The awkward part is the seam between the two halves and it is worth naming. Reporting progress
     is asynchronous (it writes to the queue), and the callback the transfer offers is an
@@ -937,11 +934,6 @@ def register_handlers(
         family=Family.IDENTIFY,
     )
     register_handler(
-        FACE_FETCH_WEIGHTS,
-        lambda context: fetch_weights(context, service=service),
-        name="Downloading facial recognition model",
-    )
-    register_handler(
         FACE_PEOPLE_FROM_FILES,
         lambda context: people_from_files(context, service=service),
         name="Recognizing People from facial fingerprints",
@@ -968,6 +960,13 @@ async def _fingerprints_now(queue: JobQueue) -> None:
 
 
 def _register_one_at_a_time(service: FaceService, left_out: LeftOutStore | None) -> None:
+    register_handler(
+        FACE_FETCH_WEIGHTS,
+        lambda context: fetch_weights(context, service=service),
+        name="Downloading facial recognition model",
+        # One at a time: two would append to the same partial file.
+        alone=True,
+    )
     register_handler(
         FACE_FORGET,
         lambda context: forget(context, service=service),

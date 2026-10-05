@@ -1,11 +1,9 @@
 /*
  * The heart, the stars and the stash-box marks on an entity's page stand at one even spacing.
  *
- * The heart and the stars are controls, each a glyph in a box with a step of room either side; the
- * marks are not controls, and with no box of their own the row would space them unevenly against
- * the heart and the star. In a row of controls a mark takes a
- * control's box (`padded`), and the row's gap is the marks' own, so every glyph is the same distance
- * from the next. Read off the stylesheets, because jsdom lays nothing out.
+ * The heart and the stars are controls, each a glyph in a box; in their row a mark takes a
+ * control's box (`padded`), so every glyph is the same distance from the next. Read off the
+ * stylesheets, because jsdom lays nothing out.
  */
 import { afterEach, beforeEach, expect, it } from 'vitest';
 import { flushSync, mount, unmount } from 'svelte';
@@ -110,4 +108,15 @@ it("draws each stash-box's own glyph, all in the one paint the marks share", () 
 	);
 	for (const one of marks) expect(one.getAttribute('style')).toBeNull();
 	expect(declared(marksSource, '.mark', 'color')).toBe('var(--sift-accent-text)');
+});
+
+it("paints the marks on an entity's page in the accent's fill, as every icon on that ground", () => {
+	drawn = mount(EnrichmentMarks, {
+		target: host,
+		props: { sources: [{ via: 'stash', name: 'Example box', box: null }], onPage: true }
+	}) as Record<string, unknown>;
+	flushSync();
+	expect(host.querySelector('.marks')?.classList.contains('page')).toBe(true);
+	expect(declared(marksSource, '.page .mark', 'color')).toBe('var(--sift-accent)');
+	expect(headerSource.match(/<EnrichmentMarks\s[^>]*?\bonPage\s/g)).toHaveLength(3);
 });

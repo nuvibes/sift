@@ -25,7 +25,7 @@ The pane draws one group in a browser, and more in the Sift app:
 
 ## Rows the pane draws by hand
 
-- <a id="general.run_setup"></a>**Run setup again**: the next time you open Sift, it asks how to set up, as it did the first time.
+- <a id="general.run_setup"></a>**Run setup again**: the next time you open Sift, it asks whether your computer keeps the library or connects to another computer. It doesn't ask where your library is, and nothing is moved or deleted.
 - <a id="general.restart"></a>**Restart Sift**: Sift closes and opens again.
 
 Nothing on this pane is a stored setting.

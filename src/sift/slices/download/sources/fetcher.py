@@ -227,6 +227,7 @@ async def fetch_to_file(
     policy: RunPolicy = POLICY,
     sleep: Sleep = asyncio.sleep,
     limiter: HostRateLimiter | None = None,
+    here: bool = True,
 ) -> tuple[Path, int]:
     """Stream `url` to `dest`, returning `(final_path, bytes_on_disk)`.
 
@@ -261,6 +262,7 @@ async def fetch_to_file(
                     resume_from=on_disk,
                     policy=policy,
                     sleep=sleep,
+                    here=here,
                 )
                 return dest, on_disk
             except _Interrupted as interrupted:
@@ -380,6 +382,7 @@ async def _one_attempt(
     resume_from: int,
     policy: RunPolicy,
     sleep: Sleep,
+    here: bool = True,
 ) -> tuple[Path, int]:
     """One request for the file (and the redirects it is sent through), streamed to `dest`.
 
@@ -392,7 +395,7 @@ async def _one_attempt(
         for _hop in range(MAX_REDIRECT_HOPS + 1):
             # Per hop: a redirect can send the ask to another host, which has answered nothing yet.
             answered = False
-            check_url(current)  # raises UrlRejected on a private/literal-IP/non-http target
+            check_url(current, here=here)
             async with session.get(
                 current, headers=headers, timeout=_make_timeout(policy), allow_redirects=False
             ) as resp:

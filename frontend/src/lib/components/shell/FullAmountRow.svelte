@@ -1,14 +1,11 @@
 <script lang="ts">
-	/* NOT ON THE GALLERY: it draws the live queue's state and nothing at all while there is none to
-	   draw, and the one place it lives is the top of More, which the layout already renders.
+	/* NOT ON THE GALLERY: it draws only the live queue's state, at the top of More.
 
 	 * The rail's leaf and bolt on a phone, which has no rail: a row at the top of More, the phone's
 	 * list of everything the rail does not put on a tab.
 	 *
-	 * A row rather than the bare glyph, because a phone has no pointer to hover with: the rail says
-	 * its sentence in a tooltip, and a tooltip is a thing a finger never sees. Here the sentence is
-	 * the row's words and the press is a verb at its end. Drawn in exactly the states the rail draws
-	 * the glyph in (`full-amount.ts`), and nothing otherwise.
+	 * A row rather than the bare glyph, because a finger never sees a tooltip. Drawn in exactly the
+	 * states the rail draws the glyph in (`full-amount.ts`), dimmed as the rail dims it.
 	 */
 	import ActionRow from '$lib/settings-ui/ActionRow.svelte';
 	import { session } from '$lib/shell/session.svelte';
@@ -17,6 +14,7 @@
 		currentShare,
 		FULL_AMOUNT_COPY,
 		fullAmountSays,
+		leafDimmed,
 		pressFullAmount
 	} from './full-amount';
 
@@ -35,7 +33,7 @@
 </script>
 
 {#if shown !== null}
-	<div class="full-amount-row" class:full={shown === 'full'}>
+	<div class="full-amount-row" class:full={shown === 'full'} class:dimmed={leafDimmed(shown)}>
 		<ActionRow
 			icon={shown === 'full' ? 'bolt_boost' : 'energy_savings_leaf'}
 			label={fullAmountSays(shown, share)}
@@ -54,5 +52,9 @@
 
 	.full-amount-row.full > :global(.row > .control > .press > .btn > .icon) {
 		color: var(--sift-warn);
+	}
+
+	.full-amount-row.dimmed > :global(.row > .control > .press > .btn > .icon) {
+		opacity: var(--disabled-opacity);
 	}
 </style>

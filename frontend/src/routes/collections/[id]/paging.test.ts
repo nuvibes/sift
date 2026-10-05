@@ -2,11 +2,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushSync, mount, unmount } from 'svelte';
 import { session, type Viewer } from '$lib/shell/session.svelte';
+import { screenBar } from '$lib/components/shell/screen-bar.svelte';
+import { gridSort } from '$lib/grid/sort-state.svelte';
 
 const LENGTH = 250;
 const asked = vi.hoisted(() => ({
 	reads: [] as Record<string, unknown>[],
-	arranges: true,
 	mixed: false
 }));
 
@@ -32,7 +33,6 @@ vi.mock('$lib/api/client', async (importOriginal) => {
 					pinned: false,
 					favorite: false,
 					rating: null,
-					position: asked.arranges ? offset + each : null,
 					concealed: false
 				})),
 				total: LENGTH,
@@ -82,8 +82,8 @@ function sized(width: number, height: number): () => void {
 
 beforeEach(() => {
 	asked.reads = [];
-	asked.arranges = true;
 	asked.mixed = false;
+	gridSort.set('newest');
 	session.viewer = { role: 'admin' } as Viewer;
 	unsize = sized(1200, 900);
 });
@@ -166,14 +166,23 @@ describe('a collection of 250 files', () => {
 		expect([await turn('Previous page'), await turn('Previous page')]).toEqual([second, first]);
 	});
 
-	it('offers the moves to a viewer the server sent a position', async () => {
+	it('offers no move: a collection has no order of its own', async () => {
 		await open();
-		expect(await menuWords()).toContain('Move earlier');
+		expect(await menuWords()).not.toContain('Move earlier');
+		expect(await menuWords()).not.toContain('Move later');
 	});
 
-	it('offers no move to a viewer the server sent no position', async () => {
-		asked.arranges = false;
+	it('is asked in the Sort by order, pinned first, and a new order starts at the top', async () => {
 		await open();
-		expect(await menuWords()).not.toContain('Move');
+		const offered = screenBar.tools.sorts;
+		expect(Array.isArray(offered) && offered.map((one) => one.value)).toContain('name_az');
+		expect(screenBar.tools.sort).toBe('newest');
+		expect(asked.reads[0]).toMatchObject({ sort: 'newest', pinned_first: '1' });
+
+		host!.querySelector<HTMLButtonElement>('button[aria-label="Next page"]')!.click();
+		await settle();
+		screenBar.tools.onSort!('name_az');
+		await settle();
+		expect(asked.reads.at(-1)).toMatchObject({ sort: 'name_az', offset: 0 });
 	});
 });

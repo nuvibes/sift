@@ -19,7 +19,10 @@ import { capture } from '$lib/capture/capture.svelte';
 import { api } from '$lib/api/client';
 import { swapMode } from '$lib/swap/mode.svelte';
 import topBarSource from './TopBar.svelte?raw';
+import { screenBar } from './screen-bar.svelte';
 
+const clipboard = vi.hoisted(() => ({ readable: false }));
+vi.mock('$lib/shell/clipboard', () => ({ canReadClipboard: () => clipboard.readable }));
 vi.mock('$lib/shell/session.svelte', () => ({ session: { isAdmin: true } }));
 vi.mock('$lib/api/client', () => ({
 	api: {
@@ -46,8 +49,7 @@ beforeEach(() => {
 
 afterEach(() => {
 	host?.remove();
-	// The panel is portalled to the end of the document, so removing the host does not take it with
-	// it, and a panel left standing is found by the next test in this file.
+	// The panel is portalled, so removing the host leaves it for the next test.
 	for (const stale of document.querySelectorAll('.popover-panel')) stale.remove();
 });
 
@@ -356,6 +358,31 @@ describe("the panel's words and its last row", () => {
 
 	it('is no longer on the top bar', () => {
 		expect(topBarSource).not.toContain('SwapModeButton');
+	});
+});
+
+describe('the paste half, short of room', () => {
+	afterEach(() => {
+		clipboard.readable = false;
+		screenBar.pasteOnBar = true;
+	});
+
+	it('folds into Add, and its press waits in the panel', () => {
+		clipboard.readable = true;
+		const pasted = vi.spyOn(capture, 'pasteFromClipboard').mockResolvedValue(undefined);
+		render();
+		expect(host.querySelector('.half.trail'), 'no paste half with room for it').not.toBeNull();
+		expect(panel()?.querySelector('[aria-label="Paste from clipboard"]')).toBeNull();
+
+		host.remove();
+		for (const stale of document.querySelectorAll('.popover-panel')) stale.remove();
+		screenBar.pasteOnBar = false;
+		render();
+		expect(host.querySelector('.half.trail'), 'the paste half stayed on the bar').toBeNull();
+		const press = panel()?.querySelector<HTMLButtonElement>('[aria-label="Paste from clipboard"]');
+		expect(press, 'the folded paste is out of reach').not.toBeNull();
+		press?.click();
+		expect(pasted).toHaveBeenCalledWith(null);
 	});
 });
 

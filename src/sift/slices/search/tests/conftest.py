@@ -299,8 +299,8 @@ def world(client: TestClient, tmp_path: Path) -> World:
                 (beach, username),
             ),
             (
-                "INSERT INTO collection_items (collection_id, asset_id, position) VALUES (?, ?, ?)",
-                (collection, beach, 0),
+                "INSERT INTO collection_items (collection_id, asset_id) VALUES (?, ?)",
+                (collection, beach),
             ),
             (
                 "INSERT INTO photo_set_items (photo_set_id, asset_id, position) VALUES (?, ?, ?)",

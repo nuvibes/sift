@@ -17,18 +17,20 @@ whose ceiling is a gigabyte.
 from __future__ import annotations
 
 import asyncio
+import io
 import json
 from collections.abc import Callable
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, Query, Request, Response
 
 from sift.kernel.access import Viewer
-from sift.kernel.log import LOG_FILENAME, redact
+from sift.kernel.log import LOG_FILENAME
 from sift.kernel.wiring import SETTINGS, part_of
+from sift.logbundle import write_archive
 from sift.slices.auth import require_admin
-from sift.slices.logs.models import LinesToRedact, LogLine, LogPage, RedactedLines
+from sift.slices.logs.models import LogLine, LogPage
 from sift.slices.logs.tail import MOST_LINES, SEARCH_BUDGET, newest_matching
 
 router = APIRouter(tags=["logs"])
@@ -194,24 +196,18 @@ def _searched_text(record: dict[str, Any]) -> str:
     return "  ".join([event if isinstance(event, str) else "", *fields])
 
 
-@router.post("/logs/redacted", response_model=RedactedLines)
-async def redacted(
-    body: LinesToRedact,
+@router.get(
+    "/logs/archive",
+    response_class=Response,
+    responses={200: {"content": {"application/zip": {}}}},
+)
+async def archive(
+    request: Request,
     _admin: Annotated[Viewer, Depends(require_admin)],
-) -> RedactedLines:
-    """The lines handed in, with personal detail and secrets taken out: `Download log`.
-
-    A downloaded log is what gets attached to a public issue, so it is redacted whatever the setting
-    says. Lines rather than a read of the file, because the copy also holds the app's own log from
-    the screen's device, and both go through the one scrubber this side writes with.
-    """
-    return RedactedLines(lines=[_redacted_line(one) for one in body.lines])
-
-
-def _redacted_line(raw: str) -> str:
-    """One line, redacted field by field where it is a record (a key naming a secret hides its
-    value) and as text where it is not."""
-    record = _record(raw)
-    if record is None:
-        return str(redact(raw, always_personal=True))
-    return json.dumps(redact(record, always_personal=True), ensure_ascii=False)
+) -> Response:
+    """`Download log`: the library's log whole and unfiltered, redacted whatever the setting says,
+    as the zip the desktop app makes of both its places (`sift.logbundle`)."""
+    folder = Path(part_of(request, SETTINGS).data_dir)
+    made = io.BytesIO()
+    await asyncio.to_thread(write_archive, made, [("library", folder)])
+    return Response(made.getvalue(), media_type="application/zip")

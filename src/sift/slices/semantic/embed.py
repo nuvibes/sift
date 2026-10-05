@@ -24,12 +24,8 @@ So the preparation here is not incidental detail, it is the property:
   the model was trained still returns numbers and still ranks them confidently. See `canonical`,
   which carries what a capital letter does to a query.
 
-**Nothing here touches the event loop.** Running a model is a single call into compiled code that
-holds the interpreter for its whole duration (about a tenth of a second per frame) and during it
-nothing else in the process runs at all: not a request, not the job feed, not a video somebody is
-watching. The symptom is the screen freezing, not an error. Every call into a model here is made
-from a worker thread, and the seam that does it is `describe_*`, which is async for that reason and
-no other.
+**Nothing here touches the event loop.** A model call holds the interpreter for its whole duration,
+so every one is made from a worker thread, through the async `describe_*`.
 """
 
 from __future__ import annotations
@@ -37,19 +33,14 @@ from __future__ import annotations
 import asyncio
 import string
 from collections.abc import Sequence
-from pathlib import Path
-from typing import Any
 
 import numpy as np
 
 from sift.kernel.config import Settings
 from sift.kernel.hardware import HardwareReport
-from sift.kernel.log import get_logger
-from sift.kernel.ml.child import ChildRunner
-from sift.kernel.ml.runtime import Loaded, Runner
+from sift.kernel.ml.child import ChildRunner, ChildStopped, runtime_wont_start
+from sift.kernel.ml.runtime import DeviceUnavailable, Loaded, Runner
 from sift.slices.semantic import weights
-
-log = get_logger(__name__)
 
 #: How this feature names itself when a device it was set to use is not there.
 FEATURE = "Search by meaning"
@@ -157,7 +148,9 @@ class Embedder:
         self._runner: Runner | ChildRunner = ChildRunner(
             weights.store(settings), hardware, device=device, feature=FEATURE
         )
-        self._vocabulary: Any | None = None
+        #: Why typed words can't be read here, once the vocabulary failed to load: kept, because a
+        #: vocabulary that crashed its process crashes the next one the same way.
+        self._words_refused: str | None = None
 
     @property
     def family(self) -> str:
@@ -175,6 +168,11 @@ class Embedder:
         return self._runner.broken
 
     @property
+    def words_refused(self) -> str | None:
+        """Why a typed query can't be read on this device, or None while it can."""
+        return self._words_refused
+
+    @property
     def revision(self) -> str:
         """What described a file, recorded against it. Numbers from two different revisions are not
         comparable, and nothing about them says so."""
@@ -189,7 +187,6 @@ class Embedder:
     def unload(self) -> None:
         """Give the memory back. What switching the feature off does."""
         self._runner.unload()
-        self._vocabulary = None
 
     # --- pictures ---------------------------------------------------------------------------
 
@@ -253,9 +250,9 @@ class Embedder:
         return await asyncio.to_thread(self._describe_words, text)
 
     def _describe_words(self, text: str) -> list[float]:
+        symbols = np.array([self._symbols(text)], dtype=np.int64)
         _, words, _ = weights.working_set(self._family)
         loaded = self._runner.load(words)
-        symbols = np.array([self._symbols(text)], dtype=np.int64)
         output = self._runner.run(loaded, symbols, outputs=[_POOLED])
         return to_unit_length(np.asarray(output[0]).reshape(-1))
 
@@ -277,22 +274,18 @@ class Embedder:
         words), throw away the very symbol the paragraph above says closes the text, so the one
         input that most needs the marker would be the one that lost it.
         """
-        vocabulary = self._load_vocabulary()
-        symbols = [*vocabulary.encode(canonical(text))[: MAX_SYMBOLS - 1], vocabulary.eos_id()]
-        return symbols + [_PADDING] * (MAX_SYMBOLS - len(symbols))
-
-    def _load_vocabulary(self) -> Any:
-        if self._vocabulary is not None:
-            return self._vocabulary
-        import sentencepiece
-
-        store = weights.store(self._settings)
+        if self._words_refused is not None:
+            raise DeviceUnavailable(self._words_refused)
         _, _, vocabulary = weights.working_set(self._family)
-        store.verify(vocabulary)
-        path: Path = store.path_of(vocabulary)
-        self._vocabulary = sentencepiece.SentencePieceProcessor(model_file=str(path))
-        log.info("semantic.vocabulary.loaded", revision=vocabulary.revision)
-        return self._vocabulary
+        try:
+            # Read in the model process: the vocabulary is native code, like the runtime.
+            encoded, end = self._runner.encode(vocabulary, canonical(text))
+        except (DeviceUnavailable, RuntimeError) as failure:
+            why = failure.how if isinstance(failure, ChildStopped) else str(failure)
+            self._words_refused = runtime_wont_start(FEATURE, why)
+            raise DeviceUnavailable(self._words_refused) from failure
+        symbols = [*encoded[: MAX_SYMBOLS - 1], end]
+        return symbols + [_PADDING] * (MAX_SYMBOLS - len(symbols))
 
     # --- for tests and for the settings screen ------------------------------------------------
 

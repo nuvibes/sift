@@ -364,8 +364,7 @@ _INSERT_COLLECTION = (
 )
 
 _LINK_ASSET_COLLECTION = (
-    "INSERT OR IGNORE INTO collection_items (collection_id, asset_id, position, added_at)"
-    " VALUES (?, ?, 0, 0)"
+    "INSERT OR IGNORE INTO collection_items (collection_id, asset_id, added_at) VALUES (?, ?, 0)"
 )
 
 

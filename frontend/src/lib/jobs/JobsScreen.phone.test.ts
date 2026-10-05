@@ -52,6 +52,7 @@ const PAGE: JobsPage = {
 	stepping_back: false,
 	step_back_share: 25,
 	step_back_for: null,
+	step_back_over: [],
 	full_amount: false,
 	password_wanted: 0
 };

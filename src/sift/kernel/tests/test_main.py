@@ -676,3 +676,25 @@ def test_a_refusal_written_for_a_person_is_said_under_its_field_and_nothing_type
     assert answer.json() == {"detail": "A name needs a letter in it."}
     assert answer.headers["Sift-Field"] == "name"
     assert "s3cret-typed" not in answer.text
+
+
+def test_the_look_for_a_quiet_moment_runs_with_the_server_and_is_told_to_stop(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from sift.slices import performance
+
+    stops: list[asyncio.Event] = []
+
+    async def looking(_self: object, stop: asyncio.Event, *, every: float = 0.0) -> None:
+        stops.append(stop)
+        await stop.wait()
+
+    monkeypatch.setattr(performance.WhenQuiet, "keep_looking", looking)
+    monkeypatch.setenv("SIFT_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("SIFT_CACHE_DIR", str(tmp_path / "cache"))
+    get_settings.cache_clear()
+    with TestClient(create_app()) as booted:
+        assert booted.get("/health").status_code == 200
+        assert [stop.is_set() for stop in stops] == [False]
+    get_settings.cache_clear()
+    assert stops[0].is_set()

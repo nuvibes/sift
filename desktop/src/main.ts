@@ -44,6 +44,7 @@ import {
 } from './libraries';
 import { firewallState, openFirewall } from './firewall';
 import { log, tail as tailShellLog } from './log';
+import { registerLogArchive } from './logbundle';
 import { machineName } from './machine';
 import { watchGestures } from './gesture';
 import {
@@ -74,8 +75,10 @@ import {
 	networkAddress,
 	registerVerbs,
 	type LibraryList,
+	type ReachCheck,
 	type Sharing
 } from './verbs';
+import { wayBack } from './wayback';
 
 /* The Vite dev server, which forwards /api and /health to the backend, so the page sees one origin;
  * behind a flag, so a shipped app is never pointed at it. */
@@ -108,6 +111,16 @@ let signInStart = startedAtSignIn(process.argv);
 /* Whether the running backend is listening to the network, as against what the setting says: the
  * two part while a restart runs and stay parted if it failed, when only this is honest. */
 let liveSharing = false;
+
+/* The dialog after Sift has stopped, and the start with the optional features held off. */
+const crashDialog = wayBack({
+	settings: () => settings,
+	save: (next) => {
+		settings = next;
+		save(settings);
+	},
+	startAgain: () => void advanceFirstRun()
+});
 
 /* When this copy started, and whether its window has been shown, for the first-show time in the log. */
 const startedAt = Date.now();
@@ -151,145 +164,144 @@ async function main(): Promise<void> {
 
 	/* Before any window exists, so no page is ever shown unwired verbs. Read through functions,
 	 * since `settings` changes during first run. */
-	registerVerbs(
-		/* The shell's own connect screen is this machine's too (static files from the bundle); the
-		 * dev server stands in for the local backend. */
-		(url) => {
-			if (url.startsWith(SHELL_ORIGIN)) return 'local';
-			if (isDevShell) return url.startsWith(DEV_ORIGIN) ? 'local' : null;
-			return reachOf(settings, url);
+	/* The shell's own connect screen is this machine's too (static files from the bundle); the dev
+	 * server stands in for the local backend. */
+	const trust: ReachCheck = (url) => {
+		if (url.startsWith(SHELL_ORIGIN)) return 'local';
+		if (isDevShell) return url.startsWith(DEV_ORIGIN) ? 'local' : null;
+		return reachOf(settings, url);
+	};
+	registerLogArchive(trust, crashDialog.archive);
+	registerVerbs(trust, {
+		/* Read through a function, as the trust check is. */
+		feedUrl: () => settings.feedUrl,
+		servers: {
+			remember: rememberServer,
+			last: () => settings.lastServer,
+			problem: () => connectProblem,
+			saved: () => settings.servers,
+			forget: forgetServer
 		},
-		{
-			/* Read through a function, as the trust check is. */
-			feedUrl: () => settings.feedUrl,
-			servers: {
-				remember: rememberServer,
-				last: () => settings.lastServer,
-				problem: () => connectProblem,
-				saved: () => settings.servers,
-				forget: forgetServer
+		sharing: {
+			read: (): Sharing => ({
+				enabled: settings.shareOnNetwork,
+				/* What is TRUE RIGHT NOW, which differs from `enabled` only after a failed restart. */
+				live: liveSharing,
+				mode: settings.mode,
+				address: shareAddress(networkAddress(), PORT),
+				/* One declaration, in the file that opens the socket and makes the firewall rule. */
+				port: PORT
+			}),
+			write: writeSharing
+		},
+		links: {
+			chosen: () => settings.browser,
+			/* Written straight through: nothing to restart, nothing that can fail. */
+			choose: (id: string | null) => {
+				settings = { ...settings, browser: id };
+				save(settings);
+			}
+		},
+		downloads: {
+			/* Always a real path; the machine's own Downloads is resolved here, so it can move. */
+			folder: () => settings.downloadDir ?? app.getPath('downloads'),
+			chosen: () => settings.downloadDir,
+			choose: (dir: string | null) => {
+				settings = { ...settings, downloadDir: dir };
+				save(settings);
+			}
+		},
+		storage: {
+			read: () => describeStorage(locations(settings)),
+			/*
+			 * THE ORDER IS THE WHOLE OF THE SAFETY, and only the backend's supervisor can keep it:
+			 * stop, move, write, start. The database's files are held open until the backend is
+			 * down, and the settings change only after the bytes arrive, so no crash leaves them
+			 * pointing at an empty folder. A failed move restarts on the intact old folder.
+			 */
+			move: moveFolders,
+			forget: forgetMode
+		},
+		port: PORT,
+		titleBarHeight: TITLE_BAR_HEIGHT,
+		setup: {
+			/* What each first-run ANSWER does lives here: only the supervising process can write
+			 * the setting, decide what is next, start the backend and load the library. */
+			mode: async (chosen) => {
+				settings = { ...settings, mode: chosen };
+				save(settings);
+				await advanceFirstRun();
+				return { ok: true, refusal: null };
 			},
-			sharing: {
-				read: (): Sharing => ({
-					enabled: settings.shareOnNetwork,
-					/* What is TRUE RIGHT NOW, which differs from `enabled` only after a failed restart. */
-					live: liveSharing,
-					mode: settings.mode,
-					address: shareAddress(networkAddress(), PORT),
-					/* One declaration, in the file that opens the socket and makes the firewall rule. */
-					port: PORT
-				}),
-				write: writeSharing
+			suggested: async () => {
+				const offered = await offeredDataLocation();
+				return {
+					path: offered.locations.dataDir,
+					existing: offered.existing
+				};
 			},
-			links: {
-				chosen: () => settings.browser,
-				/* Written straight through: nothing to restart, nothing that can fail. */
-				choose: (id: string | null) => {
-					settings = { ...settings, browser: id };
-					save(settings);
-				}
+			library: async (pick, told) => {
+				/* Without picking: the folder the screen showed (an earlier library, or the default). */
+				const chosen = pick ? await pickDataLocation() : (await offeredDataLocation()).locations;
+				/* Closing the picker is neither failure nor answer: the screen stays as it was. */
+				if (chosen === null) return { ok: false, refusal: null };
+				told('checking');
+				const problem = await refuseLocation(chosen);
+				if (problem !== null) return { ok: false, refusal: problem };
+				settings = {
+					...settings,
+					dataDir: chosen.dataDir,
+					cacheDir: chosen.cacheDir
+				};
+				save(settings);
+				told('starting');
+				await advanceFirstRun();
+				return { ok: true, refusal: null };
 			},
-			downloads: {
-				/* Always a real path; the machine's own Downloads is resolved here, so it can move. */
-				folder: () => settings.downloadDir ?? app.getPath('downloads'),
-				chosen: () => settings.downloadDir,
-				choose: (dir: string | null) => {
-					settings = { ...settings, downloadDir: dir };
-					save(settings);
-				}
-			},
-			storage: {
-				read: () => describeStorage(locations(settings)),
-				/*
-				 * THE ORDER IS THE WHOLE OF THE SAFETY, and only the backend's supervisor can keep it:
-				 * stop, move, write, start. The database's files are held open until the backend is
-				 * down, and the settings change only after the bytes arrive, so no crash leaves them
-				 * pointing at an empty folder. A failed move restarts on the intact old folder.
-				 */
-				move: moveFolders,
-				forget: forgetMode
-			},
-			port: PORT,
-			titleBarHeight: TITLE_BAR_HEIGHT,
-			setup: {
-				/* What each first-run ANSWER does lives here: only the supervising process can write
-				 * the setting, decide what is next, start the backend and load the library. */
-				mode: async (chosen) => {
-					settings = { ...settings, mode: chosen };
-					save(settings);
-					await advanceFirstRun();
-					return { ok: true, refusal: null };
-				},
-				suggested: async () => {
-					const offered = await offeredDataLocation();
-					return {
-						path: offered.locations.dataDir,
-						existing: offered.existing
-					};
-				},
-				library: async (pick, told) => {
-					/* Without picking: the folder the screen showed (an earlier library, or the default). */
-					const chosen = pick ? await pickDataLocation() : (await offeredDataLocation()).locations;
-					/* Closing the picker is neither failure nor answer: the screen stays as it was. */
-					if (chosen === null) return { ok: false, refusal: null };
-					told('checking');
-					const problem = await refuseLocation(chosen);
-					if (problem !== null) return { ok: false, refusal: problem };
-					settings = {
-						...settings,
-						dataDir: chosen.dataDir,
-						cacheDir: chosen.cacheDir
-					};
-					save(settings);
-					told('starting');
-					await advanceFirstRun();
-					return { ok: true, refusal: null };
-				},
-				back: async () => {
-					/* The backend is stopped first, cleanly: Back is reachable from the sign-in screen,
-					 * and a backend left holding 5171 would refuse the next start. */
-					await backend?.stop();
-					backend = null;
-					/* The settings screen's own "set this up again" write, which leaves the library
-					 * folder, so going back and forward loses nothing. */
-					forgetMode();
-					await advanceFirstRun();
-					return { ok: true, refusal: null };
-				}
-			},
-			/* The installer runs only once the backend has been ASKED to stop and has gone, as a quit
-			 * does, so no job is cut off. Null in client mode. */
-			stopForUpdate: async () => {
+			back: async () => {
+				/* The backend is stopped first, cleanly: Back is reachable from the sign-in screen,
+				 * and a backend left holding 5171 would refuse the next start. */
 				await backend?.stop();
-			},
-			/* "Restart Sift": only the backend's owner can stop it cleanly and relaunch. */
-			restart: restartApp,
-			closing: {
-				keepRunning: () => settings.keepRunningWhenClosed,
-				keep: (on: boolean) => {
-					settings = { ...settings, keepRunningWhenClosed: on };
-					save(settings);
-					/* Applied NOW: it decides what the next press of close means. */
-					dressTheTray();
-				}
-			},
-			/* The executable is this process's own, and nothing a page sends can change it. */
-			startup: startWithWindows(app, process.execPath),
-			libraries: {
-				list: libraryList,
-				open: openLibrary,
-				add: addLibrary,
-				forget: (dataDir: string) => {
-					settings = {
-						...settings,
-						libraries: forgotten(settings.libraries, dataDir)
-					};
-					save(settings);
-					return libraryList();
-				}
+				backend = null;
+				/* The settings screen's own "set this up again" write, which leaves the library
+				 * folder, so going back and forward loses nothing. */
+				forgetMode();
+				await advanceFirstRun();
+				return { ok: true, refusal: null };
+			}
+		},
+		/* The installer runs only once the backend has been ASKED to stop and has gone, as a quit
+		 * does, so no job is cut off. Null in client mode. */
+		stopForUpdate: async () => {
+			await backend?.stop();
+		},
+		/* "Restart Sift": only the backend's owner can stop it cleanly and relaunch. */
+		restart: restartApp,
+		closing: {
+			keepRunning: () => settings.keepRunningWhenClosed,
+			keep: (on: boolean) => {
+				settings = { ...settings, keepRunningWhenClosed: on };
+				save(settings);
+				/* Applied NOW: it decides what the next press of close means. */
+				dressTheTray();
+			}
+		},
+		/* The executable is this process's own, and nothing a page sends can change it. */
+		startup: startWithWindows(app, process.execPath),
+		libraries: {
+			list: libraryList,
+			open: openLibrary,
+			add: addLibrary,
+			forget: (dataDir: string) => {
+				settings = {
+					...settings,
+					libraries: forgotten(settings.libraries, dataDir)
+				};
+				save(settings);
+				return libraryList();
 			}
 		}
-	);
+	});
 
 	/* After the verbs and before the window, so the icon is there for the whole run. */
 	dressTheTray();
@@ -1030,14 +1042,15 @@ async function startBackend(): Promise<void> {
 	});
 	backend = new Backend(
 		locations(settings),
-		(reason) => {
-			offerAWayBack('Sift has stopped', reason);
+		(reason, crashed, code) => {
+			crashDialog.offer('Sift has stopped', reason, crashed, code);
 		},
 		liveSharing,
 		takeOverRestart,
 		/* The one release feed, so the backend's update check reads this shell's own address. */
 		feedAddress(settings.feedUrl),
-		shellLink
+		shellLink,
+		crashDialog.holding()
 	);
 	const began = Date.now();
 	try {
@@ -1056,6 +1069,7 @@ async function startBackend(): Promise<void> {
 		network: liveSharing,
 		took_ms: Date.now() - began
 	});
+	crashDialog.started();
 	/* RECORDED HERE, where a library is OPENED, never where one is chosen: a refused folder must not
 	 * become an entry. */
 	settings = {
@@ -1189,40 +1203,13 @@ function createWindow(): BrowserWindow {
 function showStartFailure(err: unknown): void {
 	log.error('shell.start_failed', { error: err instanceof Error ? err.message : String(err) });
 	if (err instanceof BackendStartError) {
-		offerAWayBack(err.message, err.detail);
+		crashDialog.offer(err.message, err.detail, err.crashed, err.code);
 		return;
 	}
-	offerAWayBack(
+	crashDialog.offer(
 		'Sift could not start',
 		err instanceof Error ? `${err.message}\n\n${err.stack ?? ''}` : String(err)
 	);
-}
-
-/**
- * Say what went wrong, and offer a way out of it rather than only quitting: the next launch would
- * hit the same error, so the way out is back to the setup questions. An operating-system dialog,
- * since the window may have nothing loaded and a dialog cannot fail to appear.
- */
-function offerAWayBack(message: string, detail: string): void {
-	log.error('shell.stopped', { message });
-	const CHANGE = 0;
-	const chosen = dialog.showMessageBoxSync({
-		type: 'error',
-		title: 'Sift has stopped',
-		message,
-		detail: `${detail}\n\nYou can run setup again. It asks where your library is and does not delete anything.`,
-		buttons: ['Run setup again', 'Quit'],
-		defaultId: CHANGE,
-		cancelId: 1,
-		noLink: true
-	});
-	if (chosen !== CHANGE) {
-		app.quit();
-		return;
-	}
-	/* Back to the first question; the library folder stays (`forgetMode`). */
-	forgetMode();
-	void advanceFirstRun();
 }
 
 /* Windows quits when the last window closes. Stopping the backend first keeps the database's

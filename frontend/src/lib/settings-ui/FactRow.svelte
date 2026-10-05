@@ -29,18 +29,25 @@
 		fact?: string;
 		/** The fact, as markup. Ignored when absent. */
 		children?: Snippet;
+		/** The fact under its label, the row's whole width: for a sentence rather than a value. */
+		stacked?: boolean;
 	}
 
-	let { label, help, fact, children }: Props = $props();
+	let { label, help, fact, children, stacked = false }: Props = $props();
 </script>
 
-<LabelledRow {label} {help} looseColumn>
-	{#if children}{@render children()}{:else}<span class="fact">{fact}</span>{/if}
+<LabelledRow {label} {help} looseColumn={!stacked} {stacked}>
+	{#if children}{@render children()}{:else}<span class="fact" class:sentence={stacked}>{fact}</span
+		>{/if}
 </LabelledRow>
 
 <style>
 	.fact {
 		color: var(--sift-ink-2);
 		font: var(--text-body);
+	}
+
+	.fact.sentence {
+		flex: 1 1 auto;
 	}
 </style>

@@ -74,8 +74,8 @@
 </div>
 
 <style>
-	/* Inset so each time stands over the ink of the row's first and last controls, whose 18px glyphs
-	   sit 9px into their 36px buttons. */
+	/* Inset to the ink of a 36px button's 18px glyph. The player bar stands its row under the
+	   timeline instead (`PlayerBar`). */
 	.scrub-line {
 		display: grid;
 		grid-template-columns: minmax(0, 1fr);

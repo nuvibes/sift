@@ -26,7 +26,7 @@ import { join } from 'node:path';
 type MessageBoxResult = Awaited<ReturnType<Dialog['showMessageBox']>>;
 type OpenDialogResult = Awaited<ReturnType<Dialog['showOpenDialog']>>;
 
-type PathName = 'appData' | 'userData' | 'home' | 'temp';
+type PathName = 'appData' | 'userData' | 'home' | 'temp' | 'downloads';
 
 interface AppStub {
 	isPackaged: boolean;

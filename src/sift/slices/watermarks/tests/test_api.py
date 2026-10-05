@@ -20,6 +20,7 @@ from fastapi.testclient import TestClient
 from sift.kernel.config import get_settings
 from sift.kernel.db import Database
 from sift.kernel.http import CSRF_HEADER_NAME, SESSION_COOKIE_NAME
+from sift.kernel.jobs.worker_pool import registered_alone
 from sift.main import create_app
 from sift.slices.watermarks import settings as watermark_settings
 from sift.slices.watermarks.jobs import WATERMARK_FETCH_MODELS
@@ -115,3 +116,8 @@ def test_an_admin_is_answered_by_every_endpoint_in_the_order_a_fresh_install_mee
     fetches = [payload for kind, payload in _queued(client) if kind == WATERMARK_FETCH_MODELS]
     assert [json.loads(payload) for payload in fetches] == [{"again": True}]
     assert fetching.json()["job_id"]
+    # A second press joins it: two downloads would append to one partial file.
+    joined = client.post("/api/watermarks/models/fetch")
+    assert joined.json()["job_id"] == fetching.json()["job_id"]
+    assert sum(kind == WATERMARK_FETCH_MODELS for kind, _ in _queued(client)) == 1
+    assert WATERMARK_FETCH_MODELS in registered_alone()

@@ -5,19 +5,20 @@ Started as `python -m sift.kernel.ml.worker` by `ChildRunner` and by nothing els
 frame saying what it is for, then answers loads and runs until its input ends, which is what
 happens the moment the parent lets go of it, so a worker never outlives the backend.
 
-Its standard output is the pipe, and nothing but frames may go down it: a print or a log line
-there is read by the parent as the length of a frame that never comes, and both ends wait for
-ever. So the very first thing `main` does is take the pipe for itself and point everything else
-at standard error, which is the backend's own: the shell keeps both streams of the backend in
-one log, so the child's lines land beside the parent's. The logging pipeline is then configured
-the way the backend's is, level and redaction included, so a line from here is scrubbed like any
-other.
+Its standard output is the pipe and carries frames alone (a stray print would be read as a
+frame's length), so `main` sends everything else to standard error, which the backend's log
+keeps, and logging is configured as the backend's is.
 
 A device that dies underneath a session ends this process, deliberately: the parent is what
 restarts it, and a fresh process is the only thing that gets a fresh context.
 """
 
 from __future__ import annotations
+
+# First: a crash as the runtime loads then leaves every thread's stack in the backend's log.
+from sift.kernel import crash_record  # noqa: F401
+
+# isort: split
 
 import sys
 from collections.abc import Callable
@@ -26,7 +27,8 @@ from typing import Any
 
 from sift.kernel.config import Settings
 from sift.kernel.log import configure_logging
-from sift.kernel.ml.child import receive, send
+from sift.kernel.ml import runtime, session
+from sift.kernel.ml.child import DEVICES_FLAG, receive, send
 from sift.kernel.ml.runtime import DeviceUnavailable, Loaded, Runner
 from sift.kernel.ml.weights import WeightError, WeightStore
 
@@ -41,6 +43,29 @@ def configure_from(hello: dict[str, Any]) -> None:
         str(hello.get("log_level", "INFO")),
         redact_personal=bool(hello.get("redact_personal", True)),
     )
+
+
+def _answer(
+    frame: dict[str, Any], runner: Runner, loaded: dict[str, Loaded], settings: Settings
+) -> dict[str, Any]:
+    op = frame.get("op")
+    if op == "load":
+        one = runner.load(frame["weight"])
+        loaded[one.weight.id] = one
+        return {"inputs": list(one.inputs), "outputs": list(one.outputs), "device": one.device}
+    if op == "run":
+        handle = loaded[str(frame["weight_id"])]
+        return {"outputs": runner.run(handle, frame["blob"], outputs=frame.get("outputs"))}
+    if op == "encode":
+        ids, end = runner.encode(frame["weight"], str(frame["text"]))
+        return {"ids": ids, "eos": end}
+    if op == "devices":
+        return {"devices": list(session.providers(settings))}
+    if op == "unload":
+        runner.unload()
+        loaded.clear()
+        return {"ok": True}
+    return {"error": f"unknown request {op!r}", "kind": "other"}
 
 
 def serve(
@@ -64,29 +89,8 @@ def serve(
         frame = receive(stdin)
         if frame is None:
             return 0
-        op = frame.get("op")
         try:
-            if op == "load":
-                one = runner.load(frame["weight"])
-                loaded[one.weight.id] = one
-                send(
-                    stdout,
-                    {
-                        "inputs": list(one.inputs),
-                        "outputs": list(one.outputs),
-                        "device": one.device,
-                    },
-                )
-            elif op == "run":
-                handle = loaded[str(frame["weight_id"])]
-                answer = runner.run(handle, frame["blob"], outputs=frame.get("outputs"))
-                send(stdout, {"outputs": answer})
-            elif op == "unload":
-                runner.unload()
-                loaded.clear()
-                send(stdout, {"ok": True})
-            else:
-                send(stdout, {"error": f"unknown request {op!r}", "kind": "other"})
+            send(stdout, _answer(frame, runner, loaded, settings))
         except WeightError as error:
             send(stdout, {"error": str(error), "kind": "weight"})
         except DeviceUnavailable as error:
@@ -96,10 +100,25 @@ def serve(
             send(stdout, {"error": f"{type(error).__name__}: {error}", "kind": "other"})
 
 
-def main() -> int:
+def answer_devices(stdout: Any, settings: Settings) -> int:
+    """The device question alone, for a child started to answer it and exit."""
+    try:
+        found = session.providers(settings)
+    except Exception as error:
+        send(stdout, {"error": f"{type(error).__name__}: {error}"})
+        return 1
+    send(stdout, {"devices": list(found)})
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int:
     frames = sys.stdout.buffer
     # From here on, whatever anything prints goes to standard error. See the module head.
     sys.stdout = sys.stderr
+    runtime.loader = session
+    args = sys.argv[1:] if argv is None else argv
+    if args[:1] == [DEVICES_FLAG]:
+        return answer_devices(frames, Settings(data_dir=Path(args[1]), cache_dir=Path(args[2])))
     return serve(sys.stdin.buffer, frames)
 
 

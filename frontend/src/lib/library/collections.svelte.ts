@@ -43,9 +43,10 @@ export function contentsAsked(url: URL): Record<string, string[]> {
 
 export type CollectionContents = components['schemas']['CollectionContents'];
 
-/** A collection's arrangement as a wall of files pages it; the route takes no `from` or `after`. */
+/** A collection's files as a wall of files pages them, in every order Browse offers; the route
+ *  takes no `from` or `after`. */
 export function contentsSource(id: string): RowSource {
-	return { path: `/collections/${id}/items`, anchored: false, sorts: [], filterable: true };
+	return { path: `/collections/${id}/items`, anchored: false, sorts: null, filterable: true };
 }
 
 /* How many Collections one page of the wall holds. See the People wall for the reasoning; this is
@@ -273,13 +274,6 @@ export class Collections {
 		return await overChunks(assetIds, (chunk) => this.#edit(id, chunk, 'remove'));
 	}
 
-	/** One file a place in the stored arrangement; nothing else changes, so nothing is reloaded. */
-	async move(id: string, assetId: string, by: -1 | 1): Promise<void> {
-		await api.post<BulkWriteDone>(`/collections/${id}/items`, {
-			body: { asset_ids: [assetId], action: 'move', direction: by < 0 ? 'earlier' : 'later' }
-		});
-	}
-
 	async #edit(id: string, assetIds: string[], action: string): Promise<BulkWriteDone> {
 		/* The WHOLE answer, not `changed` off the front of it: the server says how many it
 		   skipped and why (a file left behind by a locked vault), and a store that reads one
@@ -331,7 +325,7 @@ export class Collections {
 		return updated;
 	}
 
-	/** What is in one collection, in its arranged order, filtered by the query language (`contentsAsked`). */
+	/** What is in one collection, filtered by the query language (`contentsAsked`). */
 	async contents(
 		id: string,
 		limit = 200,
@@ -367,10 +361,6 @@ function byName(a: Collection, b: Collection): number {
  * one answer, and a paged shelf never has the whole list: it asks the server for its order; see
  * the tag wall's note for why the two cannot coexist. These values ARE the server's keys, and it
  * refuses one it does not know rather than quietly ordering some other way.
- *
- * Note what is NOT ordered here: the items INSIDE a collection. Those are arranged by hand, that
- * arrangement is the whole point of a collection, and nothing on this screen touches it. This
- * orders the shelf, never the books.
  */
 export const COLLECTION_ORDERS: readonly { value: string; label: string }[] = [
 	...UNIVERSAL_SORTS,

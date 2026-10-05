@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """A real application, a real database, and three files with real bytes on disk.
 
-These run over HTTP rather than against the service object. A collection is a permission surface,
-a promise about the filesystem and an ordering all at once, and those live in the router, the
+These run over HTTP rather than against the service object. A collection is a permission surface
+and a promise about the filesystem at once, and those live in the router, the
 dependencies and the access layer together: a test of the service alone would exercise the half
 that was never in question.
 
@@ -10,8 +10,7 @@ The bytes on disk are not decoration. The load-bearing claim in this slice is th
 to a collection moves nothing, and the only way to assert that is to have something real to compare
 before and after.
 
-Three assets rather than two, because an order needs at least three to be an order: with two, a
-sequence and its reverse are the only arrangements and a rearrange that only ever swaps would pass.
+Three assets rather than two, because with two an order and its reverse are the only orders.
 
 Everything is seeded through a connection of its own rather than the running app's handle. The test
 client drives the application on its own event loop, and a write issued from the test's loop meets
@@ -183,9 +182,7 @@ def library(client: TestClient, tmp_path: Path) -> Library:
         ids.append(asset_id)
         payload = f"bytes of {name}".encode()
         (media / f"{name}.mp4").write_bytes(payload)
-        # Staggered `added_at`, so the grid's own newest-first order is a different order from the
-        # one a collection arranges. A test that rearranged into date order would otherwise pass
-        # without the arranged order being read at all.
+        # Staggered `added_at`, so newest first and oldest first are two different orders.
         statements.append(
             (
                 _INSERT_ASSET,
@@ -268,18 +265,3 @@ def item_ids(client: TestClient, collection_id: str) -> list[str]:
     response = client.get(f"/api/collections/{collection_id}/items")
     assert response.status_code == 200, response.text
     return [str(item["id"]) for item in response.json()["items"]]
-
-
-def positions(client: TestClient, collection_id: str) -> dict[str, int]:
-    """The stored positions, read straight from the table.
-
-    Read behind the API on purpose: the order coming back correctly is one claim, and the sequence
-    actually being written down is another. A view that sorted in Python would satisfy the first
-    and fail this.
-    """
-    rows = read(
-        db_path(client),
-        "SELECT asset_id, position FROM collection_items WHERE collection_id = ?",
-        (collection_id,),
-    )
-    return {str(row["asset_id"]): int(str(row["position"])) for row in rows}

@@ -121,7 +121,8 @@
 		{:else}
 			<p class="explain">
 				This folder holds Sift's database, its settings, and the files Sift generates, such as
-				thumbnails.
+				thumbnails. If your library is somewhere else, choose that folder. A folder with no library
+				in it starts a new, empty library, and your library stays where it is.
 			</p>
 		{/if}
 

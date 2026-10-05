@@ -24,50 +24,10 @@ The pane draws these groups, in this order:
 ## Rows the pane draws by hand
 
 - **Concurrency**: **Edit** opens how many tasks, previews and folder scans run at the same time, and how much of your computer face recognition may use.
-- **Restart Sift**: shown after GPU support is downloaded, because Sift loads the GPU runtime only when it starts.
 
 The rows below under **Every setting** are on the pane itself and on the Concurrency page behind **Edit**.
 
 ## Every setting
-
-<a id="faces.machine_budget"></a>
-
-### How much recognition uses
-
-How much of this device face recognition uses.
-
-Share uses the share below. Fixed number checks as many files at the same time as you choose. When recognition runs is set under Tasks.
-
-- **Path**: [Settings > Performance > How much recognition uses](/settings/performance#faces.machine_budget)
-- **Default**: Share
-- **Choices**: Share, Fixed number
-- **Who sets it**: an admin, for everyone on this Sift
-
-<a id="faces.core_share"></a>
-
-### Share of this device to use
-
-Using all of it slows other apps.
-
-While you're working, this is a share of the amount Sift uses then. That amount is set in [Settings > Performance > System resource usage while you're working](/settings/performance#performance.step_back_share).
-
-- **Path**: [Settings > Performance > Share of this device to use](/settings/performance#faces.core_share)
-- **Default**: 50 %
-- **Range**: 10 to 100 %
-- **Who sets it**: an admin, for everyone on this Sift
-
-<a id="faces.thread_count"></a>
-
-### Files searched at the same time
-
-Used with Fixed number, whatever else this device is doing.
-
-Choose a number only if you have measured this device and want a different one from Sift's.
-
-- **Path**: [Settings > Performance > Files searched at the same time](/settings/performance#faces.thread_count)
-- **Default**: Automatic
-- **Range**: Automatic to 64
-- **Who sets it**: an admin, for everyone on this Sift
 
 <a id="performance.worker_count"></a>
 
@@ -125,7 +85,7 @@ Automatic reads each share at the number the benchmark measured for it, and two 
 
 ### Use less system resources while you're working
 
-While you're typing or moving the mouse, Sift uses only a share of this device for background tasks, so the computer stays quick.
+While you're typing or moving the mouse, Sift is in eco mode. Background tasks then use only a share of this device, so the computer stays quick.
 
 Sift checks every few seconds. Once nobody has touched the keyboard or mouse for a minute, it goes back to its usual number of tasks. This works only on Windows.
 
@@ -137,7 +97,7 @@ Sift checks every few seconds. Once nobody has touched the keyboard or mouse for
 
 ### Use less system resources while other programs are busy
 
-While other programs keep this device busy, Sift uses only a share of it for background tasks.
+While other programs keep this device busy, Sift is in eco mode. Background tasks then use only a share of this device.
 
 Sift checks every few seconds how busy the CPU and GPU are with other programs, not counting its own work. Once they have been quiet for a minute, it goes back to its usual number of tasks. This works only on Windows.
 
@@ -147,13 +107,52 @@ Sift checks every few seconds how busy the CPU and GPU are with other programs, 
 
 <a id="performance.step_back_share"></a>
 
-### System resource usage while you're working
+### System resource usage in eco mode
 
-How much of this device background tasks use while you're using it.
+How much of this device background tasks use in eco mode. Sift is in eco mode while you're working or other programs are busy, as the two settings above choose.
 
 Every kind of task shares this amount. A task's own share, such as the one for recognizing faces, is a share of it.
 
-- **Path**: [Settings > Performance > System resource usage while you're working](/settings/performance#performance.step_back_share)
+- **Path**: [Settings > Performance > System resource usage in eco mode](/settings/performance#performance.step_back_share)
 - **Default**: 25 %
 - **Range**: 10 to 100 %
+- **Who sets it**: an admin, for everyone on this Sift
+
+<a id="faces.machine_budget"></a>
+
+### How much recognition uses
+
+How much of this device face recognition uses.
+
+Share uses the share below. Fixed number checks as many files at the same time as you choose. When recognition runs is set under Tasks.
+
+- **Path**: [Settings > Performance > How much recognition uses](/settings/performance#faces.machine_budget)
+- **Default**: Share
+- **Choices**: Share, Fixed number
+- **Who sets it**: an admin, for everyone on this Sift
+
+<a id="faces.core_share"></a>
+
+### Share of this device to use
+
+Using all of it slows other apps.
+
+In eco mode, this is a share of the amount Sift uses then. That amount is set in [Settings > Performance > System resource usage in eco mode](/settings/performance#performance.step_back_share).
+
+- **Path**: [Settings > Performance > Share of this device to use](/settings/performance#faces.core_share)
+- **Default**: 50 %
+- **Range**: 10 to 100 %
+- **Who sets it**: an admin, for everyone on this Sift
+
+<a id="faces.thread_count"></a>
+
+### Files searched at the same time
+
+Used with Fixed number, whatever else this device is doing.
+
+Choose a number only if you have measured this device and want a different one from Sift's.
+
+- **Path**: [Settings > Performance > Files searched at the same time](/settings/performance#faces.thread_count)
+- **Default**: Automatic
+- **Range**: Automatic to 64
 - **Who sets it**: an admin, for everyone on this Sift

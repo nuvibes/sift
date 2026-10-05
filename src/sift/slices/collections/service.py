@@ -1,23 +1,9 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """The writes behind a manual collection.
 
-A collection is a curated sequence: a set somebody put together by hand, in an order they chose.
-That is what separates it from a tag, which describes, and from a folder, which is where the file
-physically is. Nothing here derives membership from a query: every row in `collection_items` is
-there because a person put it there.
-
-Two things this module is careful about.
-
-**Order is data.** `position` is not a display hint. It is the sequence, it is written on every
-add and rewritten on every rearrange. Every edit made here leaves it dense (the rows carry
-0..n-1 with no gaps), so there is never a question of what comes between two items.
-
-One thing outside this module can still open a gap: deleting an asset from the library cascades
-its membership row away, and nothing here runs when it does. The order stays correct, because
-order is what the numbers are read for, and the next edit closes the gap. So the numbers are
-ascending and unique, always; contiguous, until an asset is deleted and until the next edit.
-Anything that comes to depend on contiguity ("insert at position four") has to close the gaps
-first rather than assume them closed.
+A collection is a set somebody put together by hand. That is what separates it from a tag, which
+describes, and from a folder, which is where the file physically is. Nothing here derives
+membership from a query: every row in `collection_items` is there because a person put it there.
 
 **Nothing on disk moves.** Adding an item writes one row in a join table. The file keeps its path
 and its bytes, exactly as attaching a tag does, and the same test asserts it.
@@ -42,11 +28,10 @@ from sift.kernel.content.entity_state import opinion_before
 from sift.kernel.content.user_state import OpinionKind, record_opinion
 from sift.kernel.cover_frame import CoverFrame
 from sift.kernel.covers import ChosenCover, chosen_from_row, cover_change
-from sift.kernel.db import Connection, Database, Row
+from sift.kernel.db import Database, Row
 from sift.kernel.ids import new_id
 from sift.kernel.ledger import ACTOR_USER, Actor, Object, record_event
 from sift.kernel.log import get_logger
-from sift.kernel.paging import MAX_PAGE_SIZE
 from sift.kernel.sorting import sort_key
 from sift.kernel.vocabulary import Subject
 from sift.kernel.wiring import Part
@@ -82,15 +67,6 @@ SELECT t.* FROM tags t
  WHERE ct.collection_id = ?
  ORDER BY COALESCE(t.name_sort, t.name) ASC, t.id ASC
 """
-
-
-class UnknownItem(Exception):
-    """A rearrange naming something the collection does not hold.
-
-    Refused rather than ignored. A rearrange is a statement about the whole sequence, and one that
-    quietly dropped an id nobody recognized would answer "done" to a request that was not carried
-    out.
-    """
 
 
 @dataclass(frozen=True, slots=True)
@@ -208,17 +184,10 @@ def _opinion_of(row: Row) -> tuple[bool, int | None]:
     return bool(row["favorite"]), (None if row["rating"] is None else int(row["rating"]))
 
 
-# The next free slot, so an added item lands at the end of the sequence rather than at the front
-# of it. NULL from an empty collection, which COALESCE turns into the first position.
-_NEXT_POSITION = (
-    "SELECT COALESCE(MAX(position) + 1, 0) AS next FROM collection_items WHERE collection_id = ?"
-)
-
 # `DO NOTHING` rather than a lookup first: the insert is the check. Dropping the same clip onto the
-# same collection twice is a no-op, which is what somebody doing it means by it, and crucially it
-# does NOT move the item, so a re-drop cannot silently rearrange a sequence somebody arranged.
+# same collection twice is a no-op, which is what somebody doing it means by it.
 _ADD_ITEM = """
-INSERT INTO collection_items (collection_id, asset_id, position, added_at) VALUES (?, ?, ?, ?)
+INSERT INTO collection_items (collection_id, asset_id, added_at) VALUES (?, ?, ?)
 ON CONFLICT DO NOTHING
 """
 
@@ -236,15 +205,7 @@ UPDATE collections SET cover_asset_id = NULL
    AND cover_asset_id NOT IN (SELECT asset_id FROM collection_items WHERE collection_id = ?)
 """
 
-_SET_POSITION = "UPDATE collection_items SET position = ? WHERE collection_id = ? AND asset_id = ?"
-
-# The sequence as it stands. NULLS LAST so a row that somehow carries no position is read as
-# sitting at the end, which is the same way the scoped read orders one.
-_ITEMS_IN_ORDER = """
-SELECT asset_id, position FROM collection_items
- WHERE collection_id = ?
- ORDER BY position ASC NULLS LAST, asset_id ASC
-"""
+_ITEMS = "SELECT asset_id FROM collection_items WHERE collection_id = ? ORDER BY asset_id"
 
 _HOLDS_ITEM = "SELECT 1 FROM collection_items WHERE collection_id = ? AND asset_id = ?"
 
@@ -535,7 +496,7 @@ class CollectionService:
         async with self._db.write() as connection:
             held = [
                 str(row["asset_id"])
-                for row in await connection.execute_fetchall(_ITEMS_IN_ORDER, (collection_id,))
+                for row in await connection.execute_fetchall(_ITEMS, (collection_id,))
             ]
             rows = list(await connection.execute_fetchall(_DELETE_COLLECTION, (collection_id,)))
             if rows:
@@ -561,19 +522,16 @@ class CollectionService:
         return None if row is None else str(row["name"])
 
     async def members(self, collection_id: str) -> list[str]:
-        """The assets a collection holds, in its own order: what a rename reindexes."""
-        rows = await self._db.fetch_all(_ITEMS_IN_ORDER, (collection_id,))
+        """The assets a collection holds: what a rename reindexes."""
+        rows = await self._db.fetch_all(_ITEMS, (collection_id,))
         return [str(row["asset_id"]) for row in rows]
 
     async def add(self, collection_id: str, asset_ids: Sequence[str], *, actor: Actor) -> int:
-        """Append items to the end of the sequence, and touch no file on disk.
+        """Put items in, and touch no file on disk.
 
         This is the whole promise of organising logically: a clip dragged onto a collection moves
         nothing, is copied nowhere, and its path is the same afterwards. The only table written is
         the join.
-
-        Appended rather than inserted anywhere in particular, because a drop is "put this in here",
-        not "put this in here at position four". Rearranging is a separate, deliberate act.
 
         The caller resolves every asset through the access layer first. Nothing here can tell a
         visible asset from a hidden one, which is why it does not try to.
@@ -582,21 +540,14 @@ class CollectionService:
         landed: list[str] = []
         named = await self._name_of(collection_id)
         async with self._db.write() as connection:
-            row = await (await connection.execute(_NEXT_POSITION, (collection_id,))).fetchone()
-            position = int(row["next"]) if row else 0
             # One moment for the whole drop. Reading the clock per item would date a drag of two
             # hundred files across a second or more, which says they were put here separately.
             now = int(time.time())
             for asset_id in asset_ids:
-                cursor = await connection.execute(
-                    _ADD_ITEM, (collection_id, asset_id, position, now)
-                )
+                cursor = await connection.execute(_ADD_ITEM, (collection_id, asset_id, now))
                 if cursor.rowcount > 0:
                     written += cursor.rowcount
-                    # Only a row that actually landed consumes a slot. A duplicate drop leaves the
-                    # sequence dense rather than opening a hole in it.
-                    position += 1
-                    # And only a row that landed is an act. Membership carries no timestamp at all:
+                    # Only a row that landed is an act. Membership carries no timestamp at all:
                     # the table has no column for one, and the history reader says so in its own
                     # comment, so this event is the whole of what says when a file was put here.
                     landed.append(asset_id)
@@ -619,11 +570,7 @@ class CollectionService:
         return written
 
     async def remove(self, collection_id: str, asset_ids: Sequence[str], *, actor: Actor) -> int:
-        """Take items out, close the gap they leave, and drop the cover if it went with them.
-
-        Removing renumbers what is left. Left alone, positions would drift into 0, 3, 7, still a
-        correct order, but every later rearrange has to reason about holes, and a dense sequence is
-        the one thing that makes "what is third" answerable without reading the whole list.
+        """Take items out, and drop the cover if it went with them.
 
         The cover is cleared in the same transaction when the item it named has gone. A cover is
         one of the items, and that is enforced when one is set, so leaving a stale one behind
@@ -648,7 +595,6 @@ class CollectionService:
                     object=Object(kind="collection", id=collection_id, name=named),
                 )
             if removed:
-                await self._renumber(connection, collection_id, [])
                 await connection.execute(_DROP_STALE_COVER, (collection_id, collection_id))
                 # The direction that matters most: a file taken out of a shared collection ends a
                 # user's access to it as surely as taking the share away does.
@@ -657,89 +603,6 @@ class CollectionService:
                 )
                 announce(_and_the_actor(moved, actor), About.LIBRARY)
         return removed
-
-    async def reorder(self, collection_id: str, asset_ids: Sequence[str]) -> int:
-        """Rearrange the sequence. Raises `UnknownItem` for an id the collection does not hold.
-
-        `asset_ids` is the new order. It does not have to name every item, and that is not a
-        convenience: it is what makes rearranging possible at all when something in the
-        collection is concealed. A vaulted item is absent from what the person rearranging can
-        see, so it cannot be in the list they send back, and refusing the whole edit for that
-        reason would make a collection holding one vaulted item permanently unarrangeable.
-
-        What is named takes the front of the sequence in the order given. What is not named keeps
-        its own relative order and follows. So an item nobody could see keeps its place relative to
-        the other items nobody could see, and lands after the ones that were arranged.
-
-        The membership check reads inside the write lock, with the write it is checking. Read
-        outside it, an item removed between the check and the renumber would still be believed to
-        be there: it would take a slot in the sequence, an UPDATE naming it would touch no row,
-        and the collection would be left with a hole at the position it was given.
-        """
-        async with telling(self._db, EVERY_ADMIN, About.LIBRARY) as connection:
-            rows = await (await connection.execute(_ITEMS_IN_ORDER, (collection_id,))).fetchall()
-            holding = {str(row["asset_id"]) for row in rows}
-            unknown = [asset_id for asset_id in asset_ids if asset_id not in holding]
-            if unknown:
-                raise UnknownItem(unknown[0])
-            return await self._renumber(connection, collection_id, asset_ids)
-
-    async def move(self, viewer: Viewer, collection_id: str, asset_id: str, *, later: bool) -> int:
-        """Swap a file with the nearest file this viewer may open in the stored sequence, so one
-        nobody here can see keeps its place. The rows written: two, or none at either end."""
-        async with telling(self._db, EVERY_ADMIN, About.LIBRARY) as connection:
-            rows = await (await connection.execute(_ITEMS_IN_ORDER, (collection_id,))).fetchall()
-            sequence = [str(row["asset_id"]) for row in rows]
-            if asset_id not in sequence:
-                raise UnknownItem(asset_id)
-            at = sequence.index(asset_id)
-            ahead = sequence[at + 1 :] if later else sequence[:at][::-1]
-            neighbour = None
-            for start in range(0, len(ahead), MAX_PAGE_SIZE):
-                chunk = ahead[start : start + MAX_PAGE_SIZE]
-                shown = await self._access.standing_of(viewer, chunk)
-                opens = {one for one, shut in shown.items() if viewer.show_hidden or not shut}
-                neighbour = next((one for one in chunk if one in opens), None)
-                if neighbour is not None:
-                    break
-            if neighbour is None:
-                return 0
-            other = sequence.index(neighbour)
-            stored = [row["position"] for row in rows]
-            if None in stored or len(set(stored)) < len(stored):
-                sequence[at], sequence[other] = neighbour, asset_id
-                return await self._renumber(connection, collection_id, sequence)
-            for one, position in ((asset_id, stored[other]), (neighbour, stored[at])):
-                await connection.execute(_SET_POSITION, (position, collection_id, one))
-            return 2
-
-    async def _renumber(
-        self, connection: Connection, collection_id: str, first: Sequence[str]
-    ) -> int:
-        """Write 0..n-1 over the collection, `first` in front and the rest behind it.
-
-        The one place a position is ever written outside an add, so the numbering has a single
-        author. Called with an empty `first` it simply closes the gaps in the order that is already
-        there.
-
-        `first` is intersected with what the collection actually holds rather than trusted. Every
-        caller checks membership before getting here, but the check and this are two reads, and an
-        id that survived the first and not the second would otherwise consume a position that then
-        gets written to no row: a hole, produced by the one function whose job is to have none.
-        Filtering here means the sequence is built from rows that exist, whatever the caller
-        believed.
-        """
-        rows = await (await connection.execute(_ITEMS_IN_ORDER, (collection_id,))).fetchall()
-        current = [str(row["asset_id"]) for row in rows]
-        held = set(current)
-        named = [asset_id for asset_id in dict.fromkeys(first) if asset_id in held]
-        sequence = named + [asset_id for asset_id in current if asset_id not in set(named)]
-
-        written = 0
-        for position, asset_id in enumerate(sequence):
-            cursor = await connection.execute(_SET_POSITION, (position, collection_id, asset_id))
-            written += cursor.rowcount if cursor.rowcount > 0 else 0
-        return written
 
 
 #: Collections.

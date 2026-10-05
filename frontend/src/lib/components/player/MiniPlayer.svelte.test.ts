@@ -649,6 +649,67 @@ describe('stepping onto a file that is hidden', () => {
 	});
 });
 
+describe('Hidden shut on the file in the Audio player', () => {
+	const position = () =>
+		host.querySelector('.bar-timeline input[type="range"]') as HTMLInputElement | null;
+
+	/* Played to eight seconds, then veiled: nothing of the clip may stay, its clock included. */
+	async function veiledMidway(): Promise<void> {
+		await show({ id: 'asset-1', mediaType: 'video' });
+		mini.toBar();
+		flushSync();
+		const video = host.querySelector('video')!;
+		Object.defineProperty(video, 'duration', { configurable: true, value: 10 });
+		video.dispatchEvent(new Event('loadedmetadata'));
+		video.currentTime = 8;
+		video.dispatchEvent(new Event('play'));
+		video.dispatchEvent(new Event('timeupdate'));
+		flushSync();
+		expect(position()?.value).toBe('8');
+		mini.veil('asset-1');
+		flushSync();
+	}
+
+	it('stops the clip and takes its picture, its poster and its clock away at once', async () => {
+		await veiledMidway();
+
+		expect(host.querySelector('video')).toBeNull();
+		expect(host.querySelector('img')).toBeNull();
+		expect(host.querySelector('.screen .withheld [aria-label="Hidden"]')).not.toBeNull();
+		expect(position()?.value).toBe('0');
+		expect(host.querySelector('.bar-timeline .time')).toBeNull();
+		expect(host.querySelector('[aria-label="Pause"]')).toBeNull();
+	});
+
+	it('goes back to full size from the start, not from where the hidden clip had got to', async () => {
+		await veiledMidway();
+
+		button('Back to full size')?.click();
+
+		expect(reopenAsset).toHaveBeenCalledWith('asset-1', undefined);
+	});
+
+	it('stays the Audio player, named Hidden, every control dimmed for the reason', async () => {
+		await veiledMidway();
+
+		expect(host.querySelector('.mini')?.getAttribute('aria-label')).toBe('Audio player');
+		expect(host.querySelector('.what')?.textContent).toBe('Hidden');
+		expect(button('This one is hidden')?.hasAttribute('disabled')).toBe(true);
+	});
+
+	it('brings the clip back when Hidden is opened again', async () => {
+		await veiledMidway();
+
+		mini.unveil({ id: 'asset-1', mediaType: 'video' });
+		await Promise.resolve();
+		await Promise.resolve();
+		flushSync();
+
+		expect(host.querySelector('video')).not.toBeNull();
+		expect(host.querySelector('.withheld')).toBeNull();
+	});
+});
+
 /*
  * The repair mark does not sit on the close button.
  *
@@ -982,7 +1043,11 @@ describe("the Audio player's timeline", () => {
 		expect(floating).toContain('block-size: auto;');
 		expect(floating).toContain('padding: var(--space-2) var(--space-3);');
 		expect(floating).toContain('grid-template-rows: auto auto;');
-		expect(floating).toContain("grid-template-areas: 'line line line' 'transport start ends';");
+		/* Under the timeline: the picture from its start, the transport, the ends to its end. */
+		expect(floating).toContain('grid-template-columns: auto auto auto minmax(0, 1fr) auto;');
+		expect(floating).toContain(
+			"grid-template-areas: 'line line line line line' '. start transport ends .';"
+		);
 		expect(floating).toContain('border: 1px solid var(--sift-line);');
 		expect(floating).toContain('background: var(--sift-scrim);');
 		expect(floating).toContain('box-shadow: none;');

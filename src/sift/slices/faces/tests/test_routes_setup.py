@@ -16,7 +16,7 @@ from sift.kernel.db import Database
 from sift.kernel.ids import new_id
 from sift.kernel.jobs import JobQueue
 from sift.kernel.jobs.tuning import DEFAULT_PRIORITY, WAITED_ON_PRIORITY
-from sift.kernel.jobs.worker_pool import WorkerPool
+from sift.kernel.jobs.worker_pool import WorkerPool, registered_alone
 from sift.slices.faces import folder_import
 from sift.slices.faces import jobs as faces_jobs
 from sift.slices.faces.folder_import import FACE_FOLDER_IMPORT
@@ -91,6 +91,29 @@ def test_a_fetch_somebody_pressed_goes_in_front_of_the_library_wide_work(
     assert WAITED_ON_PRIORITY < DEFAULT_PRIORITY, "a press would run LAST"
 
 
+def _fetches(client: TestClient, *, end: str | None = None) -> dict[str, dict[str, object]]:
+    """Every model download in the queue by id, its payload read; `end` first ends them all."""
+
+    async def read() -> dict[str, dict[str, object]]:
+        database = Database(db_path(client), readers=1)
+        await database.connect()
+        try:
+            if end is not None:
+                async with database.write() as connection:
+                    await connection.execute(
+                        "UPDATE jobs SET state = ? WHERE type = ?",
+                        (end, faces_jobs.FACE_FETCH_WEIGHTS),
+                    )
+            rows = await database.fetch_all(
+                "SELECT id, payload FROM jobs WHERE type = ?", (faces_jobs.FACE_FETCH_WEIGHTS,)
+            )
+        finally:
+            await database.close()
+        return {str(row["id"]): json.loads(str(row["payload"])) for row in rows}
+
+    return asyncio.run(read())
+
+
 def test_asking_for_the_models_again_says_so_in_the_job(client: TestClient) -> None:
     """Download the models again carries `again` to the job, which fetches the files already here
     too; the ordinary press carries it as false, so only what is missing is fetched."""
@@ -98,22 +121,29 @@ def test_asking_for_the_models_again_says_so_in_the_job(client: TestClient) -> N
     sign_in(client, "admin")
 
     again = client.post("/api/faces/weights/fetch", params={"again": "true"}).json()["job_id"]
+    _fetches(client, end="failed")
     plain = client.post("/api/faces/weights/fetch").json()["job_id"]
 
-    async def payloads() -> dict[str, dict[str, object]]:
-        database = Database(db_path(client), readers=1)
-        await database.connect()
-        try:
-            rows = await database.fetch_all(
-                "SELECT id, payload FROM jobs WHERE id IN (?, ?)", (again, plain)
-            )
-        finally:
-            await database.close()
-        return {str(row["id"]): json.loads(str(row["payload"])) for row in rows}
-
-    read = asyncio.run(payloads())
+    read = _fetches(client)
     assert read[again].get("again") is True
     assert read[plain].get("again") is False
+
+
+@pytest.mark.parametrize("state", ["queued", "running"])
+def test_a_second_press_joins_the_download_already_waiting_or_under_way(
+    client: TestClient, state: str
+) -> None:
+    """Two downloads would append to one partial file, so a second press hands back the first."""
+    turn_on(client)
+    sign_in(client, "admin")
+
+    first = client.post("/api/faces/weights/fetch").json()["job_id"]
+    _fetches(client, end=state)
+    second = client.post("/api/faces/weights/fetch", params={"again": "true"}).json()["job_id"]
+
+    assert second == first
+    assert list(_fetches(client)) == [first]
+    assert faces_jobs.FACE_FETCH_WEIGHTS in registered_alone(), "and two never run at once"
 
 
 #: Every job type this slice can put in the queue.

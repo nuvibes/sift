@@ -184,6 +184,48 @@ def test_two_busy_readings_step_back_and_a_quiet_minute_comes_back(
     assert [(one["event"], one["acting"]) for one in logs] == [("device_load.others_quiet", True)]
 
 
+def test_a_busy_hour_writes_a_line_a_minute_and_quiet_says_how_long_it_lasted(
+    no_tools: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    uncached_log(monkeypatch, device_load)
+    api = _Api()
+    clock = _Clock()
+    reader = DeviceLoad(lambda: api, clock)
+    reader.tick(acting=False)
+    for _ in range(2):
+        api.advance(busy=500, own=100)
+        reader.tick(acting=False)
+    assert reader.over == ["processor"]
+    with capture_logs() as logs:
+        for step in range(1200):
+            clock.now += 3
+            # Over the line, then under it but not quiet: the spell holds and keeps what it was over.
+            api.advance(busy=500 if step % 2 else 300, own=100)
+            reader.tick(acting=False)
+    assert reader.over == ["processor"]
+    lines = [one for one in logs if one["event"] == "device_load.others_still_busy"]
+    assert len(lines) == 3600 / device_load.SHADOW_EVERY
+    first = lines[0]
+    assert (first["busy_seconds"], first["readings"], first["acting"]) == (60, 20, False)
+    assert first["processor_others"] == 30.0
+    assert lines[-1]["busy_seconds"] == 3600
+    with capture_logs() as logs:
+        for _ in range(21):
+            clock.now += 3
+            api.advance(busy=50, own=0)
+            reader.tick(acting=False)
+    assert [one["busy_seconds"] for one in logs if one["event"].endswith("quiet")] == [3663]
+    assert reader.over == []
+
+
+def test_several_readings_sum_to_the_mean_the_peaks_and_the_least_memory() -> None:
+    one = Load(processor=10, own=2, engines={"3D": 50.0}, memory_free=40, cost_ms=1)
+    two = Load(processor=30, own=4, engines={"3D": 20.0, "VideoEncode": 70.0}, memory_free=30)
+    both = device_load.summed([one, two])
+    assert (both.processor, both.own, both.memory_free, both.cost_ms) == (20.0, 3.0, 30, 1)
+    assert both.engines == {"3D": 50.0, "VideoEncode": 70.0}
+
+
 def test_low_memory_is_busy_whoever_holds_it(no_tools: None) -> None:
     api = _Api()
     api.memory = LOW_MEMORY - 1

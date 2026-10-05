@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Building, arranging and deleting a collection.
+"""Building, filling and deleting a collection.
 
-The claims worth breaking the build over are here rather than spread out: that a sequence is
-really a sequence, that arranging one moves nothing on disk, that deleting one takes its rows and
-never its files, and that a collection cannot be used to count what somebody was not shown.
+The claims worth breaking the build over are here rather than spread out: that filling one moves
+nothing on disk, that deleting one takes its rows and never its files, and that a collection cannot
+be used to count what somebody was not shown.
 """
 
 from __future__ import annotations
@@ -26,7 +26,6 @@ from sift.slices.collections.tests.conftest import (
     grants_naming,
     item_ids,
     make_collection,
-    positions,
     read,
     set_vault,
     share,
@@ -53,83 +52,55 @@ def test_a_collection_is_made_empty_and_shows_up_in_the_list(client: TestClient)
     assert listed[0]["cover_asset_id"] is None
 
 
-def test_a_pin_floats_an_item_without_moving_it_in_the_arrangement(
-    client: TestClient, library: Library
-) -> None:
-    """A pin floats an item to the top of this wall and leaves the SEQUENCE where it was.
-
-    Two different orders, and the whole point is that they are different. What is DRAWN puts what
-    this user has pinned first, which is what the pin does on every wall that offers it. What is
-    STORED is the sequence somebody arranged, and each item carries its own position so the screen
-    can rearrange from that rather than from what it can see.
-
-    Why it matters more here than anywhere: Move earlier and Move later send a whole order back. A
-    screen working from the drawn order would send the pinned-first one and have it saved as the
-    collection's own, so one user's private opinion would permanently overwrite a sequence
-    that is everybody's. The positions are what make that impossible.
-    """
+def test_a_pinned_file_comes_first_under_every_order(client: TestClient, library: Library) -> None:
+    """A collection is sorted like every wall of files, and what this user pinned stands before
+    everything else under each order; among themselves the pinned files keep the order chosen."""
     sign_in(client)
-    collection_id = make_collection(client, "A sequence")
-    # Arranged AGAINST the sort on purpose. The three are created oldest-first, so a newest-first
-    # wall lists them third, second, first, and the collection is arranged the other way round.
-    # With the sequence and the sort agreeing, the file pinned would already be first in both and
-    # every assertion below would hold against a pin that did nothing whatsoever.
-    edit_items(client, collection_id, [library.third, library.second, library.first])
+    collection_id = make_collection(client, "Mixtape")
+    edit_items(client, collection_id, library.all_ids)
 
-    def contents() -> list[dict[str, Any]]:
-        items: list[dict[str, Any]] = client.get(f"/api/collections/{collection_id}/items").json()[
-            "items"
-        ]
-        return items
+    def drawn(sort: str | None = None) -> list[str]:
+        params = {} if sort is None else {"sort": sort}
+        response = client.get(f"/api/collections/{collection_id}/items", params=params)
+        assert response.status_code == 200, response.text
+        return [str(one["id"]) for one in response.json()["items"]]
 
-    def drawn() -> list[str]:
-        return [one["id"] for one in contents()]
+    newest = [library.third, library.second, library.first]
+    assert drawn() == newest == drawn("newest")
+    assert drawn("oldest") == newest[::-1]
 
-    def arranged() -> list[str]:
-        return [one["id"] for one in sorted(contents(), key=lambda one: one["position"])]
-
-    def sorted_wall() -> list[str]:
-        return [
-            one["id"]
-            for one in client.get("/api/assets", params={"limit": 10, "pinned_first": True}).json()[
-                "items"
-            ]
-        ]
-
-    sequence = [library.third, library.second, library.first]
-    assert drawn() == sequence
-    assert arranged() == sequence
-    # LAST on the sorted wall as well, so floating it is unmissable in both directions.
-    assert sorted_wall()[-1] == library.first
+    assert client.put(f"/api/assets/{library.second}/pin", json={"pinned": True}).status_code == 200
+    assert drawn() == [library.second, library.third, library.first]
+    assert drawn("oldest") == [library.second, library.first, library.third]
 
     assert client.put(f"/api/assets/{library.first}/pin", json={"pinned": True}).status_code == 200
+    assert drawn() == [library.second, library.first, library.third]
+    assert drawn("oldest") == [library.first, library.second, library.third]
 
-    # Drawn first now ...
-    assert drawn() == [library.first, library.third, library.second]
-    # ... and still last in the sequence, where somebody put it.
-    assert arranged() == sequence
-    assert [one["pinned"] for one in contents()] == [True, False, False]
-    # ... and floated on a wall that is sorted rather than arranged.
-    assert sorted_wall()[0] == library.first
 
-    # THE GUARD: rearranging while something is pinned must not save the drawn order. This is what
-    # the screen sends: the arrangement with one item moved, never the list as drawn.
-    moved = [library.second, library.third, library.first]
-    assert (
-        client.post(
-            f"/api/collections/{collection_id}/items",
-            json={"asset_ids": moved, "action": "reorder"},
-        ).status_code
-        == 200
-    )
-    assert arranged() == moved
-    # The pinned one is still drawn first, and it is still last in the sequence it was moved within.
-    assert drawn() == [library.first, library.second, library.third]
+def test_a_collection_takes_every_order_a_wall_of_files_takes(
+    client: TestClient, library: Library
+) -> None:
+    """Browse's default, its orders and its shuffle, and an order it does not know is refused."""
+    sign_in(client)
+    collection_id = make_collection(client, "Mixtape")
+    edit_items(client, collection_id, [library.first, library.third, library.second])
 
-    # Taking the pin off leaves the arrangement exactly as the rearrange left it.
-    assert client.put(f"/api/assets/{library.first}/pin", json={"pinned": False}).status_code == 200
-    assert drawn() == moved
-    assert arranged() == moved
+    def drawn(**params: object) -> list[str]:
+        response = client.get(f"/api/collections/{collection_id}/items", params=params)
+        assert response.status_code == 200, response.text
+        return [str(one["id"]) for one in response.json()["items"]]
+
+    browse = [one["id"] for one in client.get("/api/assets").json()["items"]]
+    assert drawn() == browse == [library.third, library.second, library.first]
+    assert drawn(sort="name_az") == [library.first, library.second, library.third]
+    assert drawn(sort="name_za") == [library.third, library.second, library.first]
+    shuffled = drawn(sort="random", seed=7)
+    assert shuffled == drawn(sort="random", seed=7)
+    assert sorted(shuffled) == sorted(library.all_ids)
+
+    refused = client.get(f"/api/collections/{collection_id}/items", params={"sort": "arranged"})
+    assert refused.status_code == 422
 
 
 def test_a_collection_tile_says_whether_its_thumbnail_has_been_built(
@@ -174,7 +145,7 @@ def test_two_collections_may_share_a_name(client: TestClient) -> None:
     assert len(client.get("/api/collections").json()["items"]) == 2
 
 
-def test_create_add_reorder_and_cover(client: TestClient, library: Library) -> None:
+def test_create_add_and_cover(client: TestClient, library: Library) -> None:
     """The whole loop, in the order somebody would actually do it."""
     sign_in(client)
     collection_id = make_collection(client, "Mixtape")
@@ -186,11 +157,7 @@ def test_create_add_reorder_and_cover(client: TestClient, library: Library) -> N
         "reason_many": None,
         "vault_locked": False,
     }
-    assert item_ids(client, collection_id) == library.all_ids
-
-    rearranged = [library.third, library.first, library.second]
-    assert edit_items(client, collection_id, rearranged, "reorder").status_code == 200
-    assert item_ids(client, collection_id) == rearranged
+    assert sorted(item_ids(client, collection_id)) == sorted(library.all_ids)
 
     response = client.put(
         f"/api/collections/{collection_id}/cover", json={"asset_id": library.third}
@@ -200,65 +167,8 @@ def test_create_add_reorder_and_cover(client: TestClient, library: Library) -> N
     assert response.json()["item_count"] == 3
 
 
-def test_the_arranged_order_is_written_down_and_not_sorted_on_the_way_out(
-    client: TestClient, library: Library
-) -> None:
-    """`position` is the data, not a display hint.
-
-    Read from the table rather than from the response, because a view that sorted in Python would
-    answer the API test correctly and leave the sequence unrecorded, and the next reader or the
-    next screen would get a different order from the same collection.
-    """
-    sign_in(client)
-    collection_id = make_collection(client, "Mixtape")
-    edit_items(client, collection_id, library.all_ids)
-
-    edit_items(client, collection_id, [library.third, library.first, library.second], "reorder")
-
-    assert positions(client, collection_id) == {
-        library.third: 0,
-        library.first: 1,
-        library.second: 2,
-    }
-
-
-def test_the_arranged_order_survives_a_restart(client: TestClient, library: Library) -> None:
-    """The order is in the database, so a second request gets the same answer as the first."""
-    sign_in(client)
-    collection_id = make_collection(client, "Mixtape")
-    edit_items(client, collection_id, library.all_ids)
-    edit_items(client, collection_id, [library.second, library.third, library.first], "reorder")
-
-    assert item_ids(client, collection_id) == item_ids(client, collection_id)
-    assert item_ids(client, collection_id) == [library.second, library.third, library.first]
-
-
-def test_the_arranged_order_is_not_the_order_the_grid_would_use(
-    client: TestClient, library: Library
-) -> None:
-    """A collection is a sequence somebody chose, so it does not fall back to newest-first.
-
-    The fixture staggers `added_at`, so the grid's order is `third, second, first`. A collection
-    arranged the other way has to come back the other way, or the arrangement was never read.
-    """
-    sign_in(client)
-    collection_id = make_collection(client, "Mixtape")
-    edit_items(client, collection_id, library.all_ids)
-
-    assert item_ids(client, collection_id) == [library.first, library.second, library.third]
-
-    grid = client.get("/api/assets").json()
-    assert [item["id"] for item in grid["items"]] == [
-        library.third,
-        library.second,
-        library.first,
-    ]
-
-
-def test_adding_the_same_item_twice_changes_nothing_and_does_not_move_it(
-    client: TestClient, library: Library
-) -> None:
-    """A second drop of the same clip is a no-op, not a quiet rearrange."""
+def test_adding_the_same_item_twice_changes_nothing(client: TestClient, library: Library) -> None:
+    """A second drop of the same clip is a no-op."""
     sign_in(client)
     collection_id = make_collection(client, "Mixtape")
     edit_items(client, collection_id, library.all_ids)
@@ -270,11 +180,15 @@ def test_adding_the_same_item_twice_changes_nothing_and_does_not_move_it(
         "reason_many": None,
         "vault_locked": False,
     }
-    assert item_ids(client, collection_id) == library.all_ids
+    assert sorted(item_ids(client, collection_id)) == sorted(library.all_ids)
+    assert read(
+        db_path(client),
+        "SELECT COUNT(*) AS held FROM collection_items WHERE collection_id = ?",
+        (collection_id,),
+    )[0]["held"] == len(library.all_ids)
 
 
-def test_removing_an_item_closes_the_gap(client: TestClient, library: Library) -> None:
-    """Positions stay dense, so there is never a question of what sits between two items."""
+def test_removing_an_item_leaves_the_rest(client: TestClient, library: Library) -> None:
     sign_in(client)
     collection_id = make_collection(client, "Mixtape")
     edit_items(client, collection_id, library.all_ids)
@@ -286,7 +200,7 @@ def test_removing_an_item_closes_the_gap(client: TestClient, library: Library) -
         "reason_many": None,
         "vault_locked": False,
     }
-    assert positions(client, collection_id) == {library.first: 0, library.third: 1}
+    assert item_ids(client, collection_id) == [library.third, library.first]
 
 
 def test_removing_something_the_collection_never_held_changes_nothing(
@@ -306,35 +220,19 @@ def test_removing_something_the_collection_never_held_changes_nothing(
     assert item_ids(client, collection_id) == [library.first]
 
 
-def test_rearranging_by_an_id_the_collection_does_not_hold_is_refused(
-    client: TestClient, library: Library
-) -> None:
-    """Refused rather than ignored: a rearrange is a statement about the whole sequence."""
-    sign_in(client)
-    collection_id = make_collection(client, "Mixtape")
-    edit_items(client, collection_id, [library.first, library.second])
-
-    response = edit_items(client, collection_id, [library.third, library.first], "reorder")
-    assert response.status_code == 404
-    assert item_ids(client, collection_id) == [library.first, library.second]
-
-
-def test_a_partial_rearrange_puts_what_was_named_in_front(
-    client: TestClient, library: Library
-) -> None:
-    """Naming some of the items arranges those and leaves the rest behind them, in their own order.
-
-    This is what makes a collection holding something concealed still arrangeable: the item nobody
-    can see cannot be in the list they send back, and refusing the edit for that reason would lock
-    the collection forever.
-    """
+def test_a_collection_is_never_moved_or_rearranged(client: TestClient, library: Library) -> None:
+    """A collection has no order of its own to write: a move and a rearrange are not actions."""
     sign_in(client)
     collection_id = make_collection(client, "Mixtape")
     edit_items(client, collection_id, library.all_ids)
 
-    edit_items(client, collection_id, [library.third], "reorder")
-
-    assert item_ids(client, collection_id) == [library.third, library.first, library.second]
+    for body in (
+        {"asset_ids": [library.first], "action": "move", "direction": "later"},
+        {"asset_ids": [library.third, library.first, library.second], "action": "reorder"},
+    ):
+        response = client.post(f"/api/collections/{collection_id}/items", json=body)
+        assert response.status_code == 422, response.text
+    assert item_ids(client, collection_id) == [library.third, library.second, library.first]
 
 
 # --- the cover -----------------------------------------------------------------------------
@@ -616,7 +514,6 @@ def test_adding_to_a_collection_moves_no_file(client: TestClient, library: Libra
     )
 
     edit_items(client, collection_id, library.all_ids)
-    edit_items(client, collection_id, [library.third, library.first, library.second], "reorder")
     client.put(f"/api/collections/{collection_id}/cover", json={"asset_id": library.first})
     edit_items(client, collection_id, [library.second], "remove")
 
@@ -700,7 +597,6 @@ def test_a_guest_may_not_edit_a_collection(client: TestClient, library: Library)
     assert client.post("/api/collections", json={"name": "Mine"}).status_code == 403
     assert edit_items(client, collection_id, [library.first]).status_code == 403
     assert edit_items(client, collection_id, [library.first], "remove").status_code == 403
-    assert edit_items(client, collection_id, [library.first], "reorder").status_code == 403
     assert client.delete(f"/api/collections/{collection_id}").status_code == 403
     assert (
         client.put(
@@ -884,7 +780,7 @@ def test_a_vaulted_item_inside_a_normal_collection_is_absent_and_the_count_adjus
     vault_asset(client, library.second)
 
     contents = client.get(f"/api/collections/{collection_id}/items").json()
-    assert [item["id"] for item in contents["items"]] == [library.first, library.third]
+    assert [item["id"] for item in contents["items"]] == [library.third, library.first]
     assert contents["total"] == 2, "the count still described the concealed item"
     assert client.get("/api/collections").json()["items"][0]["item_count"] == 2
 
@@ -898,27 +794,6 @@ def test_a_vaulted_item_is_dropped_as_a_cover_too(client: TestClient, library: L
     vault_asset(client, library.second)
 
     assert client.get(f"/api/collections/{collection_id}").json()["cover_asset_id"] is None
-
-
-def test_a_vaulted_item_can_still_be_arranged_around(client: TestClient, library: Library) -> None:
-    """A collection holding something concealed is not frozen.
-
-    The item nobody can see cannot be named in the new order, so it keeps its place behind what
-    was named rather than blocking the edit.
-    """
-    sign_in(client)
-    collection_id = make_collection(client, "Mixtape")
-    edit_items(client, collection_id, library.all_ids)
-    vault_asset(client, library.second)
-
-    assert (
-        edit_items(client, collection_id, [library.third, library.first], "reorder").status_code
-        == 200
-    )
-    assert item_ids(client, collection_id) == [library.third, library.first]
-    assert positions(client, collection_id)[library.second] == 2, (
-        "the concealed item lost its place in the sequence"
-    )
 
 
 def test_a_placeholder_in_a_collection_says_no_more_than_a_placeholder_on_the_grid(
@@ -951,8 +826,8 @@ def test_a_placeholder_in_a_collection_says_no_more_than_a_placeholder_on_the_gr
     try:
         contents = client.get(f"/api/collections/{collection_id}/items").json()
 
-        # The gap is kept, so the sequence still has three places in it and the count agrees.
-        assert [item["id"] for item in contents["items"]] == library.all_ids
+        # The gap is kept, so the wall still has three places in it and the count agrees.
+        assert [item["id"] for item in contents["items"]] == library.all_ids[::-1]
         assert contents["total"] == 3
 
         hidden = contents["items"][1]
@@ -1065,7 +940,7 @@ def test_sharing_a_collection_reveals_its_items(client: TestClient, library: Lib
 
     sign_in(client, "guest")
     contents = client.get(f"/api/collections/{collection_id}/items").json()
-    assert [item["id"] for item in contents["items"]] == library.all_ids
+    assert [item["id"] for item in contents["items"]] == library.all_ids[::-1]
     assert contents["total"] == 3
 
 
@@ -1371,21 +1246,18 @@ def _tag(client: TestClient, name: str, *asset_ids: str) -> None:
     write(db_path(client), statements)
 
 
-def test_a_pick_narrows_the_contents_in_the_arranged_order_and_the_count_with_them(
+def test_a_pick_narrows_the_contents_and_the_count_with_them(
     client: TestClient, library: Library
 ) -> None:
     """The Files tab of a collection reads the picks the way a person's Files tab does.
 
-    Arranged third-first so the filtered rows can only come back in this order by reading the
-    arrangement: the files' own order is first, second, third. Two tags given twice is AND, the
-    meaning a repeated field has everywhere in the query language, and a name nobody holds
-    filters to nothing rather than being ignored.
+    Two tags given twice is AND, the meaning a repeated field has everywhere in the query language,
+    and a name nobody holds filters to nothing rather than being ignored.
     """
     sign_in(client)
     collection_id = make_collection(client, "Best of")
-    arranged = [library.third, library.second, library.first]
-    assert edit_items(client, collection_id, arranged).status_code == 200
-    assert edit_items(client, collection_id, arranged, action="reorder").status_code == 200
+    newest = [library.third, library.second, library.first]
+    assert edit_items(client, collection_id, library.all_ids).status_code == 200
     _tag(client, "beach", library.first, library.third)
     _tag(client, "dusk", library.third)
     address = f"/api/collections/{collection_id}/items"
@@ -1404,7 +1276,7 @@ def test_a_pick_narrows_the_contents_in_the_arranged_order_and_the_count_with_th
     assert nobody.json()["total"] == 0
 
     whole = client.get(address)
-    assert [item["id"] for item in whole.json()["items"]] == arranged
+    assert [item["id"] for item in whole.json()["items"]] == newest
     assert whole.json()["total"] == 3
 
 

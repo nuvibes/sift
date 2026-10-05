@@ -1,6 +1,6 @@
 /* Measuring what this machine can actually do, and reading back what it found.
  *
- * The test works the machine hard for several minutes, so starting it and reading the result
+ * The test works the machine hard for up to 5 minutes, so starting it and reading the result
  * are two requests: the start queues the run and answers straight away, and the result is polled.
  * A second start while one is coming queues nothing, because two runs would measure each other.
  *

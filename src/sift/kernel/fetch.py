@@ -1,21 +1,15 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """Getting a large file over HTTP: resumably, reportably, and stoppably.
 
-Extracted from the model store, which had the only copy, when a second thing needed to download
-hundreds of megabytes onto somebody's machine. The two callers want the same four properties and
-nothing about them is specific to a model:
-
-- **It resumes.** These are hundreds of megabytes; a connection dropping at 90 % must not mean
-  starting again. What has arrived is kept beside the destination and asked for by byte range next
+- **It resumes.** What has arrived is kept beside the destination and asked for by byte range next
   time.
-- **It reports.** A transfer nobody can see the progress of is one people assume has hung.
-- **It can be stopped**, and stopping leaves the partial file for a later attempt to continue from.
-  There is nothing to interrupt: the reader simply stops asking.
-- **It never puts anything in place.** This writes a `.part` file and says whether it finished. What
-  the bytes are, and whether they are the right ones, is the CALLER'S question, and it stays the
-  caller's, because the two callers answer it differently: a model file is verified whole by one
-  digest after being taken out of its archive, and a set of packages is verified one by one before
-  any of them is unpacked. A shared "and then check the digest" would have to know both.
+- **It reports**, and **it can be stopped**: the reader simply stops asking, and the partial file
+  stays for a later attempt.
+- **It never puts anything in place.** It writes a `.part` file and says whether it finished;
+  whether the bytes are right is the caller's question, because its two callers check differently.
+- **It goes the way the system says**: the environment's and the system's proxy settings apply.
+- **A failure is a sentence**: a bad answer, a refused or dropped connection, a name that does not
+  resolve, a timeout and a certificate refused each say what to check.
 """
 
 from __future__ import annotations
@@ -24,6 +18,7 @@ import asyncio
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 from sift.kernel.log import get_logger
 
@@ -51,6 +46,30 @@ class FetchFailed(Exception):
     """A file could not be downloaded. The message is for a person to read."""
 
 
+#: Why a transfer failed, after "The <what> couldn't be downloaded: ". The job's plain words
+#: (`kernel.jobs.failure_words`) recognise each of these.
+ANSWERED = "{host} answered {status}. Try again later."
+REFUSED = (
+    "the connection to {host} was refused. A firewall, a proxy or the network may be blocking it."
+)
+NOT_FOUND = (
+    "{host} couldn't be found. Check the internet connection, and whether the network blocks"
+    " {host}."
+)
+NO_ANSWER = "{host} didn't answer in time. Check the internet connection, then try again."
+UNTRUSTED = (
+    "a secure connection to {host} couldn't be made. Check the computer's date and time, and"
+    " whether security software inspects secure connections."
+)
+PROXY = "the proxy didn't let the connection through. Check the system's proxy settings."
+UNREACHED = (
+    "Sift couldn't connect to {host}. Check the internet connection, and whether a firewall blocks"
+    " {host}."
+)
+DROPPED = "the connection to {host} dropped. Check the internet connection, then try again."
+KEPT = " What arrived is kept, so starting again costs only the rest."
+
+
 async def fetch_resumable(
     url: str,
     partial: Path,
@@ -70,26 +89,51 @@ async def fetch_resumable(
     have = await asyncio.to_thread(size_of, partial)
     headers = {"Range": f"bytes={have}-"} if have else {}
     timeout = aiohttp.ClientTimeout(connect=CONNECT_TIMEOUT, sock_read=READ_TIMEOUT)
+    host = urlsplit(url).hostname or url
 
-    make_session = session_factory or (lambda: aiohttp.ClientSession(timeout=timeout))
-    session = make_session()
-    async with session as client, client.get(url, headers=headers) as response:
-        if response.status == 416:
-            # The server says there is nothing past where we stopped, which means the partial file
-            # is already the whole thing, or is longer than the real file, in which case the
-            # caller's own check will refuse it.
-            return True
-        if response.status not in (200, 206):
-            raise FetchFailed(
-                f"the {what} could not be downloaded (the server answered {response.status}). "
-                "Check the machine's internet connection."
-            )
-        if response.status == 200:
-            # The server ignored the range and is sending the whole file, so what was already
-            # downloaded is not a prefix of what is arriving.
-            have = 0
-        total = have + int(response.headers.get("Content-Length") or 0)
-        return await _stream(response, partial, have=have, total=total, progress=progress)
+    make_session = session_factory or (
+        lambda: aiohttp.ClientSession(timeout=timeout, trust_env=True)
+    )
+    try:
+        async with make_session() as client, client.get(url, headers=headers) as response:
+            if response.status == 416:
+                # Nothing past where we stopped: the partial is the whole file, or too long, which
+                # the caller's own check refuses.
+                return True
+            if response.status not in (200, 206):
+                why = ANSWERED.format(host=host, status=response.status)
+                raise FetchFailed(await _failed(what, why, partial))
+            if response.status == 200:
+                # The range was ignored, so what is already here is not a prefix of what arrives.
+                have = 0
+            total = have + int(response.headers.get("Content-Length") or 0)
+            return await _stream(response, partial, have=have, total=total, progress=progress)
+    except (aiohttp.ClientError, TimeoutError) as exc:
+        raise FetchFailed(await _failed(what, _why(exc, host), partial)) from exc
+
+
+def _why(exc: BaseException, host: str) -> str:
+    """What went wrong with the connection, and what to check. Most specific first."""
+    import aiohttp
+
+    if isinstance(exc, aiohttp.ClientSSLError | aiohttp.ServerFingerprintMismatch):
+        return UNTRUSTED.format(host=host)
+    if isinstance(exc, aiohttp.ClientProxyConnectionError | aiohttp.ClientHttpProxyError):
+        return PROXY
+    if isinstance(exc, aiohttp.ClientConnectorDNSError):
+        return NOT_FOUND.format(host=host)
+    if isinstance(exc, TimeoutError):
+        return NO_ANSWER.format(host=host)
+    if isinstance(exc, aiohttp.ClientConnectorError):
+        refused = isinstance(exc.os_error, ConnectionRefusedError)
+        return (REFUSED if refused else UNREACHED).format(host=host)
+    return DROPPED.format(host=host)
+
+
+async def _failed(what: str, why: str, partial: Path) -> str:
+    """The whole sentence, saying what arrived is kept only when something did."""
+    kept = KEPT if await asyncio.to_thread(size_of, partial) else ""
+    return f"The {what} couldn't be downloaded: {why}{kept}"
 
 
 async def _stream(

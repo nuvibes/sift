@@ -90,7 +90,7 @@ from sift.slices.download.sources.hosts import source_host
 from sift.slices.download.sources.music import music_of
 from sift.slices.download.sources.registry import Attribution
 from sift.slices.download.sources.resolve import is_mutable
-from sift.slices.download.url_guard import UrlRejected, guard_url
+from sift.slices.download.url_guard import UrlRejected, check_url
 
 log = get_logger(__name__)
 
@@ -239,9 +239,9 @@ async def download(
 
     await service.mark_running(download_id)
 
-    # 0. The address, before anything else. A private or malformed target is a permanent refusal.
+    # 0. The address, before anything else; its name and redirects wait for the route.
     try:
-        await guard_url(job.url)
+        check_url(job.url, here=False)
     except UrlRejected as exc:
         await _give_up(service, download_id, str(exc))
 
@@ -381,10 +381,10 @@ async def _run(
     options: SiteOptions = _NOTHING_SPECIAL,
     seams: Seams,
 ) -> None:
-    """The attempt, the landing and the record. Split out so the workspace wraps exactly this."""
+    """The attempt, the landing and the record, on the one route the attempt holds."""
     # Where a drop said to put it wins; a per-site default is what applies when nobody chose.
     dest_folder_id = job.dest_folder_id or options.dest_folder_id
-    fetched, proxy = await attempt(
+    async with attempt(
         context,
         service,
         downloader,
@@ -397,44 +397,44 @@ async def _run(
         mutable=mutable,
         report=report,
         seams=seams,
-    )
-    if not fetched.files and mutable:
-        # A link whose contents change, with nothing new behind it: done, never a duplicate, since
-        # the username behind it may post again. Only the address has named anybody by now.
-        await service.mark_done(
-            download_id,
-            asset_id=None,
+    ) as (fetched, reach):
+        if not fetched.files and mutable:
+            # A link whose contents change, with nothing new behind it: done, never a duplicate, since
+            # the username behind it may post again. Only the address has named anybody by now.
+            await service.mark_done(
+                download_id,
+                asset_id=None,
+                site=attribution.site,
+                username=attribution.username,
+                username_from="address",
+            )
+            log.info("download.nothing_new", download_id=download_id)
+            return
+        who = await who_posted(attribution, fetched, job.url, reach, seams.read_creator)
+        landed = await land(
+            context,
+            service,
+            import_file,
+            fetched,
+            download_id=download_id,
+            staging=staging,
+            options=options,
             site=attribution.site,
-            username=attribution.username,
-            username_from="address",
+            username=who.username,
+            dest_folder_id=dest_folder_id,
+            hash_value=hash_value,
         )
-        log.info("download.nothing_new", download_id=download_id)
-        return
-    who = await who_posted(attribution, fetched, job.url, proxy, seams.read_creator)
-    landed = await land(
-        context,
-        service,
-        import_file,
-        fetched,
-        download_id=download_id,
-        staging=staging,
-        options=options,
-        site=attribution.site,
-        username=who.username,
-        dest_folder_id=dest_folder_id,
-        hash_value=hash_value,
-    )
-    if landed is None:
-        return
-    await settle(
-        service,
-        download_id=download_id,
-        job=job,
-        attribution=attribution,
-        who=who,
-        landed=landed,
-        fetched=fetched,
-        proxy=proxy,
-        mutable=mutable,
-        seams=seams,
-    )
+        if landed is None:
+            return
+        await settle(
+            service,
+            download_id=download_id,
+            job=job,
+            attribution=attribution,
+            who=who,
+            landed=landed,
+            fetched=fetched,
+            reach=reach,
+            mutable=mutable,
+            seams=seams,
+        )

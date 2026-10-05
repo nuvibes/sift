@@ -86,10 +86,6 @@
             "title": "Peak Bytes",
             "type": "integer"
           },
-          "restart_needed": {
-            "title": "Restart Needed",
-            "type": "boolean"
-          },
           "supported": {
             "title": "Supported",
             "type": "boolean"
@@ -107,8 +103,7 @@
           "download_bytes",
           "peak_bytes",
           "version",
-          "job_id",
-          "restart_needed"
+          "job_id"
         ],
         "title": "AcceleratorView",
         "type": "object"
@@ -3193,7 +3188,7 @@
         "type": "object"
       },
       "CollectionItem": {
-        "description": "One item inside a collection, in the arranged order.\n\nA concealed item is described by its concealment and nothing else, as a concealed grid tile\nis. Whether it appears at all is the viewer's placeholder choice; either way the count agrees\nwith the list, because both come from one read.",
+        "description": "One item inside a collection.\n\nA concealed item is described by its concealment and nothing else, as a concealed grid tile\nis. Whether it appears at all is the viewer's placeholder choice; either way the count agrees\nwith the list, because both come from one read.",
         "properties": {
           "art": {
             "anyOf": [
@@ -3262,17 +3257,6 @@
             "title": "Pinned",
             "type": "boolean"
           },
-          "position": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Position"
-          },
           "rating": {
             "anyOf": [
               {
@@ -3313,8 +3297,7 @@
           "original_filename",
           "pinned",
           "favorite",
-          "rating",
-          "position"
+          "rating"
         ],
         "title": "CollectionItem",
         "type": "object"
@@ -7730,7 +7713,7 @@
         "type": "object"
       },
       "FirstBenchmarkView": {
-        "description": "The benchmark Sift runs by itself on the first library folder, as the toasts read it.\n\n`state` is `none` until one was queued in this process; `job_id` is what a window compares, so\none run is said once; `said` is the sentence Activity's note carries for the same moment, so\nthe toast and the note are one author's. `measured` lets a window on a measured device stop\nasking: a measured device never queues one.",
+        "description": "The benchmark Sift runs by itself, as the toasts read it.\n\n`state` is `none` until one was queued in this process; `job_id` is what a window compares, so\none run is said once; `said` is Activity's note for the same moment. `measured` lets a window\nstop asking: it's true once nothing more is run by itself.",
         "properties": {
           "changes": {
             "default": [],
@@ -10208,8 +10191,21 @@
                 "type": "null"
               }
             ],
-            "description": "Why the work steps back while `stepping_back` is true: somebody at this device (input) or other programs busy (others).",
+            "description": "Why Sift is in eco mode while `stepping_back` or `full_amount` is true: somebody at this device (input) or other programs busy (others).",
             "title": "Step Back For"
+          },
+          "step_back_over": {
+            "description": "What other programs keep busy while `step_back_for` is others: the CPU (processor), the GPU (graphics) or memory. What the leaf and the Activity line name.",
+            "items": {
+              "enum": [
+                "processor",
+                "graphics",
+                "memory"
+              ],
+              "type": "string"
+            },
+            "title": "Step Back Over",
+            "type": "array"
           },
           "step_back_share": {
             "default": 25,
@@ -10259,6 +10255,7 @@
           "full_amount",
           "step_back_share",
           "step_back_for",
+          "step_back_over",
           "password_wanted"
         ],
         "title": "JobsPage",
@@ -11295,22 +11292,6 @@
           "opens_at_start"
         ],
         "title": "LibraryEntry",
-        "type": "object"
-      },
-      "LinesToRedact": {
-        "description": "Lines of either log, as the screen holds them, to be written out for somebody else.",
-        "properties": {
-          "lines": {
-            "default": [],
-            "items": {
-              "type": "string"
-            },
-            "maxItems": 1000,
-            "title": "Lines",
-            "type": "array"
-          }
-        },
-        "title": "LinesToRedact",
         "type": "object"
       },
       "LinkList": {
@@ -17372,24 +17353,6 @@
         "title": "RecordWrite",
         "type": "object"
       },
-      "RedactedLines": {
-        "description": "The same lines in the same order, with personal detail and secrets taken out.",
-        "properties": {
-          "lines": {
-            "default": [],
-            "items": {
-              "type": "string"
-            },
-            "title": "Lines",
-            "type": "array"
-          }
-        },
-        "required": [
-          "lines"
-        ],
-        "title": "RedactedLines",
-        "type": "object"
-      },
       "RedundancyView": {
         "description": "An asset with more than one copy on disk, and what dropping the extras would free.",
         "properties": {
@@ -20300,6 +20263,16 @@
             "default": 0,
             "title": "Share Reads Now",
             "type": "integer"
+          },
+          "whole_due": {
+            "default": false,
+            "title": "Whole Due",
+            "type": "boolean"
+          },
+          "whole_to_come": {
+            "default": false,
+            "title": "Whole To Come",
+            "type": "boolean"
           }
         },
         "required": [
@@ -20315,7 +20288,9 @@
           "card",
           "models",
           "held_while_measuring",
-          "full_while_measuring"
+          "full_while_measuring",
+          "whole_to_come",
+          "whole_due"
         ],
         "title": "SelfTestView",
         "type": "object"
@@ -26571,15 +26546,13 @@
         "type": "object"
       },
       "sift__slices__collections__models__ItemsWrite": {
-        "description": "Adding to, removing from, or rearranging a collection.\n\nOne body with a named action, so add, remove and reorder cannot drift in what they accept. For\n`reorder`, `asset_ids` is the new order; `move` names one file and its `direction`.",
+        "description": "Adding to or removing from a collection: one body with a named action, so the two cannot\ndrift in what they accept.",
         "properties": {
           "action": {
             "default": "add",
             "enum": [
               "add",
-              "remove",
-              "reorder",
-              "move"
+              "remove"
             ],
             "title": "Action",
             "type": "string"
@@ -26592,21 +26565,6 @@
             "minItems": 1,
             "title": "Asset Ids",
             "type": "array"
-          },
-          "direction": {
-            "anyOf": [
-              {
-                "enum": [
-                  "earlier",
-                  "later"
-                ],
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Direction"
           }
         },
         "required": [
@@ -32096,7 +32054,7 @@
     },
     "/api/collections/{collection_id}/items": {
       "get": {
-        "description": "A collection's contents, in the arranged order, scoped to this viewer.\n\nThe order is the collection's own, not the grid's: a collection is a sequence somebody put\ntogether, and showing it newest-first is showing something else. What this user has PINNED\ncomes above that sequence, which is the same thing the pin does on every other wall that offers\nit; each item carries its stored position so that rearranging still works off the sequence\nrather than off what happens to be drawn.\n\nThe rows and the total come from one statement in the access layer, so the count is the number\nof items on the screen and never the number of rows in the table.\n\n**Filtered by the query language, read off the raw address as `/assets` reads it**: the words\nin `q` and the cards picked on the tabs narrow a collection's Files tab exactly as they narrow a\nperson's, inside the same statement as the scoping and the order, so the total counts the\nnarrowed set and the arranged order is kept within it.",
+        "description": "A collection's contents, scoped to this viewer, in the order `sort`, `seed` and `meaning`\nask for as `/assets` takes them: a collection has no order of its own. What this user has\nPINNED comes first under every order, as on every wall that offers the pin.\n\nThe rows and the total come from one statement in the access layer, so the count is the number\nof items on the screen and never the number of rows in the table.\n\n**Filtered by the query language, read off the raw address as `/assets` reads it**: the words\nin `q` and the cards picked on the tabs narrow a collection's Files tab exactly as they narrow a\nperson's, inside the same statement as the scoping and the order, so the total counts the\nnarrowed set.",
         "operationId": "collection_items_api_collections__collection_id__items_get",
         "parameters": [
           {
@@ -32129,6 +32087,56 @@
               "minimum": 0,
               "title": "Offset",
               "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Sort"
+            }
+          },
+          {
+            "in": "query",
+            "name": "seed",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 2147483646,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Seed"
+            }
+          },
+          {
+            "in": "query",
+            "name": "meaning",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Meaning"
             }
           },
           {
@@ -32290,7 +32298,7 @@
         ]
       },
       "post": {
-        "description": "Add to, remove from, or rearrange a collection, or move one file a place either way.\n\n**No file is moved.** This writes rows in the join table and nothing else: every path, every\nbyte and every location row is exactly as it was. That is the promise the storage model makes,\nand the test asserting it is the one worth keeping.\n\nAdding and removing SKIP an asset that cannot be resolved, and the reply says how many were\nleft out and why. Rearranging does not, and the difference is not an oversight: an order is a\nwhole list, and applying a partial one silently rewrites the positions of files nobody moved.\nA locked vault cannot produce that call anyway, because a client that cannot see a file does\nnot send its id in the order.\n\nAn asset can still go between being resolved and being written: two requests, one adding a file\nand one deleting it. The membership row's foreign key catches that and the answer is the same\n404 the resolve would have given a moment later, rather than the 500 an uncaught constraint\nwould surface. It is the same answer for the same reason: the asset is not there.",
+        "description": "Add to or remove from a collection.\n\n**No file is moved.** This writes rows in the join table and nothing else: every path, every\nbyte and every location row is exactly as it was. That is the promise the storage model makes,\nand the test asserting it is the one worth keeping.\n\nBoth SKIP an asset that cannot be resolved, and the reply says how many were left out and why.\n\nAn asset can still go between being resolved and being written: two requests, one adding a file\nand one deleting it. The membership row's foreign key catches that and the answer is the same\n404 the resolve would have given a moment later, rather than the 500 an uncaught constraint\nwould surface. It is the same answer for the same reason: the asset is not there.",
         "operationId": "edit_items_api_collections__collection_id__items_post",
         "parameters": [
           {
@@ -36490,7 +36498,7 @@
     },
     "/api/faces/weights/fetch": {
       "post": {
-        "description": "Fetch the models this install is set to use. Hands back the job doing it.\n\n**Sift ships no models**: what this downloads is licensed by others, so an admin asks for it.\nQueued (minutes long); the job id lets a screen follow and cancel it. Answers 409 with the\nfeature off. `again=true` fetches files already here too, for a damaged model.",
+        "description": "Fetch the models this install is set to use. Hands back the job doing it.\n\n**Sift ships no models**: what this downloads is licensed by others, so an admin asks for it.\nQueued (minutes long), and a second press joins the one waiting or under way; the job id lets\na screen follow and cancel it. Answers 409 with the feature off. `again=true` fetches files\nalready here too, for a damaged model.",
         "operationId": "fetch_weights_api_faces_weights_fetch_post",
         "parameters": [
           {
@@ -39274,43 +39282,19 @@
         ]
       }
     },
-    "/api/logs/redacted": {
-      "post": {
-        "description": "The lines handed in, with personal detail and secrets taken out: `Download log`.\n\nA downloaded log is what gets attached to a public issue, so it is redacted whatever the setting\nsays. Lines rather than a read of the file, because the copy also holds the app's own log from\nthe screen's device, and both go through the one scrubber this side writes with.",
-        "operationId": "redacted_api_logs_redacted_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/LinesToRedact"
-              }
-            }
-          },
-          "required": true
-        },
+    "/api/logs/archive": {
+      "get": {
+        "description": "`Download log`: the library's log whole and unfiltered, redacted whatever the setting says,\nas the zip the desktop app makes of both its places (`sift.logbundle`).",
+        "operationId": "archive_api_logs_archive_get",
         "responses": {
           "200": {
             "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RedactedLines"
-                }
-              }
+              "application/zip": {}
             },
             "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
           }
         },
-        "summary": "Redacted",
+        "summary": "Archive",
         "tags": [
           "logs"
         ]
@@ -42481,7 +42465,7 @@
     },
     "/api/performance/restart": {
       "post": {
-        "description": "Stop this backend cleanly so that whatever started it starts it again.\n\nIT RESTARTS THE COMPUTER RUNNING THE LIBRARY, whichever one the person asking is sitting at.\nThat is the point of it being here rather than in the desktop shell: the process that has to\nstart again is the one the graphics-card runtime is loaded into, and somebody looking at those\nsettings may be in a browser on another machine or in a second copy of Sift in client mode. A\nbutton that restarted the application in front of them would restart the wrong computer, say it\nhad worked, and leave the card exactly as it was.\n\nADMIN-ONLY, and it takes nothing but the name of the window's own computer (`device`), for the\nline History keeps of it (`machine_acts.record_act`). There is no argument to get wrong: it is\nthe switch a person standing at the machine could throw by closing the window, offered to the\nperson who is allowed to administer the library and to nobody else.\n\nAnswered 202 rather than 200 and rather than nothing at all. The work has been ARRANGED, not\ndone: the server finishes what it is serving first, and this very response is part of that.\nA screen that got a 200 would be entitled to think the restart had already happened.",
+        "description": "Stop this backend cleanly so that whatever started it starts it again.\n\nIT RESTARTS THE COMPUTER RUNNING THE LIBRARY, whichever one the person asking is sitting at:\nthey may be in a browser on another machine, or in a second copy of Sift in client mode.\n\nADMIN-ONLY, and it takes nothing but the name of the window's own computer (`device`), for the\nline History keeps of it (`machine_acts.record_act`). There is no argument to get wrong: it is\nthe switch a person standing at the machine could throw by closing the window, offered to the\nperson who is allowed to administer the library and to nobody else.\n\nAnswered 202 rather than 200 and rather than nothing at all. The work has been ARRANGED, not\ndone: the server finishes what it is serving first, and this very response is part of that.\nA screen that got a 200 would be entitled to think the restart had already happened.",
         "operationId": "restart_server_api_performance_restart_post",
         "parameters": [
           {
@@ -42532,7 +42516,7 @@
     },
     "/api/performance/runs/{run_id}/report": {
       "get": {
-        "description": "One run as the block of plain text a person copies and passes on.\n\nMade on the server rather than assembled by the screen, so a pasted report is the same words\nwhichever screen it was copied from, and so the words can be tested once.",
+        "description": "One run as the plain text a person copies and passes on, made here so every screen's copy\nsays the same words.",
         "operationId": "run_report_api_performance_runs__run_id__report_get",
         "parameters": [
           {
@@ -45152,7 +45136,7 @@
     },
     "/api/semantic/models/fetch": {
       "post": {
-        "description": "Fetch the models this install is set to use. Hands back the job doing it.\n\n**Sift ships no models**, so this is how a fresh install becomes able to describe anything,\nand it is a deliberate act by an admin rather than something that happens on enabling, because\nwhat it downloads is published by somebody else on their own terms.\n\nQueued rather than done here: it is several hundred megabytes, and a request held open for\nthat long is a request that times out somewhere between the browser and here.\n\nAnswers 409 with the feature off. Downloading models for a feature nobody switched on is\nexactly the network call the switch exists to prevent.\n\n`again=true` fetches files that are already on disk. A model is called installed if it EXISTS;\nwhether it is the RIGHT file is a separate, expensive question, and a damaged one refuses to\nload with \"delete it and fetch it again\", which nobody running a container should have to do\nat a shell. Without this the button that offers exactly that would download nothing and\nreport success, which is the worst of the three possible behaviours.",
+        "description": "Fetch the models this install is set to use. Hands back the job doing it.\n\n**Sift ships no models**, so this is how a fresh install becomes able to describe anything,\nand it is a deliberate act by an admin rather than something that happens on enabling, because\nwhat it downloads is published by somebody else on their own terms.\n\nQueued, as several hundred megabytes outlast a request; a second press joins the download\nalready waiting or under way.\n\nAnswers 409 with the feature off. Downloading models for a feature nobody switched on is\nexactly the network call the switch exists to prevent.\n\n`again=true` fetches files that are already on disk. A model is called installed if it EXISTS;\nwhether it is the RIGHT file is a separate, expensive question, and a damaged one refuses to\nload with \"delete it and fetch it again\", which nobody running a container should have to do\nat a shell. Without this the button that offers exactly that would download nothing and\nreport success, which is the worst of the three possible behaviours.",
         "operationId": "fetch_models_api_semantic_models_fetch_post",
         "parameters": [
           {
@@ -54865,7 +54849,7 @@
     },
     "/api/watermarks/models/fetch": {
       "post": {
-        "description": "Fetch the models. Hands back the job doing it.\n\n**Sift ships no models**, so this is how a fresh install becomes able to read anything, and it\nis a deliberate act by an admin rather than something that happens on enabling, because what it\ndownloads is published by somebody else on their own terms.\n\nAnswers 409 with the feature off. Downloading models for a feature nobody switched on is\nexactly the network call the switch exists to prevent.\n\n`again=true` fetches files that are already on disk. A model is called installed if it EXISTS;\nwhether it is the RIGHT file is a separate, expensive question, and a damaged one refuses to\nload with \"delete it and fetch it again\", which nobody running a container should have to do\nat a shell.",
+        "description": "Fetch the models. Hands back the job doing it.\n\n**Sift ships no models**, so this is how a fresh install becomes able to read anything, and it\nis a deliberate act by an admin rather than something that happens on enabling, because what it\ndownloads is published by somebody else on their own terms.\n\nAnswers 409 with the feature off. Downloading models for a feature nobody switched on is\nexactly the network call the switch exists to prevent.\n\n`again=true` fetches files that are already on disk, for a damaged model. A second press joins\nthe download already waiting or under way.",
         "operationId": "fetch_models_api_watermarks_models_fetch_post",
         "parameters": [
           {

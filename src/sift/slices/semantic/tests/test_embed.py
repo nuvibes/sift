@@ -317,22 +317,87 @@ def test_the_vocabulary_is_handed_the_canonical_text_and_not_what_was_typed(
 
 def test_the_vocabulary_is_read_once_and_kept(settings: Settings, installed: None) -> None:
     embedder = Embedder(settings, machine())
+    runner: Any = embedder._runner
 
-    first = embedder._load_vocabulary()
-    again = embedder._load_vocabulary()
+    embedder._symbols("a red car")
+    first = runner._vocabularies["vocabulary"]
+    embedder._symbols("a blue car")
 
-    assert first is again
+    assert runner._vocabularies == {"vocabulary": first}
 
 
 def test_switching_off_drops_the_models_and_the_vocabulary(
     settings: Settings, installed: None
 ) -> None:
     embedder = Embedder(settings, machine())
-    embedder._load_vocabulary()
+    embedder._symbols("a red car")
 
     embedder.unload()
 
-    assert embedder._vocabulary is None
+    runner: Any = embedder._runner
+    assert runner._vocabularies == {}
+
+
+REFUSED = "Search by meaning can't run on this device: the model runtime couldn't start ({})."
+
+
+def test_a_vocabulary_that_cannot_load_is_refused_in_words_and_never_asked_again(
+    settings: Settings, installed: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from sift.kernel.ml.runtime import DeviceUnavailable
+
+    embedder = Embedder(settings, machine())
+    asked: list[str] = []
+
+    def broken(weight: Any, text: str) -> tuple[list[int], int]:
+        asked.append(text)
+        raise RuntimeError("ImportError: DLL load failed")
+
+    monkeypatch.setattr(embedder._runner, "encode", broken)
+
+    for _ in range(2):
+        with pytest.raises(DeviceUnavailable) as refused:
+            embedder._symbols("a red car")
+        assert str(refused.value).startswith(REFUSED.format("ImportError: DLL load failed"))
+    assert asked == ["a red car"]
+    assert embedder.words_refused == str(refused.value)
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    ("body", "why"),
+    [
+        ('raise ImportError("DLL load failed: the specified module")', "ImportError: DLL load"),
+        ("CRASH", "it "),
+    ],
+)
+def test_a_vocabulary_that_raises_or_kills_its_process_leaves_the_server_answering(
+    settings: Settings,
+    installed: None,
+    tmp_path: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    body: str,
+    why: str,
+) -> None:
+    """Read in a real model process, with a vocabulary library that fails as it loads."""
+    from sift.kernel.ml import child as ml_child
+    from sift.kernel.ml.runtime import DeviceUnavailable
+    from sift.kernel.tests.test_child import CRASH, a_library
+    from sift.slices.semantic import embed
+
+    a_library(tmp_path, monkeypatch, "sentencepiece", CRASH if body == "CRASH" else body)
+    monkeypatch.setattr(embed, "ChildRunner", ml_child.ChildRunner)
+    embedder = Embedder(settings, machine())
+    try:
+        with pytest.raises(DeviceUnavailable) as refused:
+            embedder._symbols("a red car")
+    finally:
+        embedder.unload()
+
+    assert str(refused.value).startswith(REFUSED.format(why)[: -len(").")])
+    assert str(refused.value).endswith("Restart Sift to try again.")
+    if body == "CRASH":
+        assert "(it stopped with code" in str(refused.value) or "signal" in str(refused.value)
 
 
 def test_the_device_and_the_set_are_readable_so_a_change_can_be_noticed(

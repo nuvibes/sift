@@ -11,6 +11,7 @@ from sift.kernel.jobs import (
     JobContext,
 )
 from sift.slices.download import naming
+from sift.slices.download.attempt import Reach, on_route
 from sift.slices.download.endings import (
     _animated_webp_message,
     _give_up,
@@ -39,14 +40,13 @@ async def who_posted(
     attribution: Attribution,
     fetched: Fetched,
     url: str,
-    proxy: str | None,
+    reach: Reach,
     read_creator: CreatorReader,
 ) -> Who:
     """Who posted it, settled after the fetch and before the first file is named.
 
-    Every fact a name template can use has to be in hand when the name is decided, and the same
-    answer files the file and fills the row. The address wins where it names somebody; else what
-    resolving it learned; else the page is asked, once, only for a download that has no name.
+    The same answer names the file, files it and fills the row. The address wins where it names
+    somebody; else what resolving it learned; else the page is asked, once, on the held route.
     """
     site = attribution.site
     username = attribution.username
@@ -57,7 +57,9 @@ async def who_posted(
 
     from_page = False
     if site is not None and username is None and attribution.names_creators:
-        username = await read_creator(url, proxy=proxy)
+        username = await on_route(
+            reach, lambda proxy: read_creator(url, proxy=proxy), what="creator"
+        )
         from_page = username is not None
     return Who(username, named_by_resolver=named_by_resolver, from_page=from_page)
 

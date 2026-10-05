@@ -20,7 +20,7 @@ export const COPY = {
 	   sentence. The breadcrumb is built from the Performance
 	   pane's own words, so a renamed row renames the link. */
 	notMeasured: {
-		said: "This device hasn't been benchmarked yet. Adding your first folder benchmarks it, and so does the first run if it still hasn't been. It takes a few minutes, so Sift can make the best use of this device. You can run it from",
+		said: "This device hasn't been benchmarked yet. Adding your first folder benchmarks it, and so does the first run if it still hasn't been. It takes up to 5 minutes, so Sift can make the best use of this device. You can run it from",
 		link: `Settings > Performance > ${PERFORMANCE.measure.row}`,
 		section: 'performance',
 		setting: MEASURE_ANCHOR

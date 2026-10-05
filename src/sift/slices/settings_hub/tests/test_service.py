@@ -356,6 +356,45 @@ async def test_a_choice_this_machine_cannot_make_is_refused_with_the_reason(
     assert await service.get_app("library.a_device_this_machine_lacks") == "cpu"
 
 
+async def test_a_refusal_that_waits_on_the_machine_leaves_the_server_answering(
+    service: SettingsService, users: Users, registered: None
+) -> None:
+    """Asking which devices this machine can drive starts a process; the loop answers meanwhile."""
+    import asyncio
+    import time
+
+    def slow(value: object) -> str | None:
+        time.sleep(0.5)
+        return None
+
+    register_setting(
+        key="library.a_device_asked_slowly",
+        scope="app",
+        default="cpu",
+        choices=("cpu", "nvidia"),
+        choice_labels=("Processor", "Graphics card"),
+        section="Library",
+        label="Device",
+        help="Which device to use.",
+        refuse=slow,
+    )
+    ticks = 0
+
+    async def tick() -> None:
+        nonlocal ticks
+        while True:
+            await asyncio.sleep(0.01)
+            ticks += 1
+
+    ticking = asyncio.create_task(tick())
+    try:
+        await service.apply(users.admin, {"library.a_device_asked_slowly": "nvidia"})
+    finally:
+        ticking.cancel()
+
+    assert ticks >= 20, f"the loop answered {ticks} times in half a second"
+
+
 # --- a setting that changes what the user may SEE ---------------------------------------------
 
 

@@ -15,8 +15,7 @@
  * row, so each ring of the jobs bell (the run is a job) and the library bell (a folder was added)
  * reads `GET /performance/benchmark` and compares the run's id and state with what this tab has
  * said. The first read only remembers: opening Sift is not the moment to be told about a run that
- * ended before. A device already measured never queues one, so a tab that reads one with nothing
- * going stops asking for good.
+ * ended before. A tab stops asking once the server says nothing more runs by itself (`measured`).
  *
  * ## Whose words
  *
@@ -44,13 +43,15 @@ export interface BenchmarkToast {
 	key: string;
 	message: string;
 	tone: 'info' | 'success' | 'error';
-	/** Open while it runs and on a failure (the row, to run it by hand); Review once it set things. */
-	press: 'open' | 'review';
+	/** Open while it runs and on a failure; Review once it ended; none once it made way. */
+	press: 'open' | 'review' | null;
 	/** Still running: the toast stays until the run ends rather than leaving on a timer. */
 	going: boolean;
 }
 
 const GOING = new Set(['waiting', 'running']);
+/* Sift stopped its own full run for other work: nothing went wrong and nothing was set. */
+const GAVE_WAY = 'gave_way';
 
 /**
  * THE RULE: what one read of the run says, given what has been said already.
@@ -74,6 +75,7 @@ export function benchmarkToasts(
 	const key = `${id}:end`;
 	if (said.has(key)) return [];
 	const failed = read.state === 'failed';
+	if (read.state === GAVE_WAY) return [{ key, message, tone: 'info', press: null, going: false }];
 	return [
 		{
 			key,
@@ -189,10 +191,12 @@ function showToast(toast: BenchmarkToast): number {
 	return toasts.show(toast.message, {
 		tone: toast.tone,
 		progress: toast.going ? { value: null, max: 1 } : undefined,
-		action: {
-			label: toast.press === 'review' ? COPY.measure.review : COPY.measure.open,
-			run: () => openSettings('performance', MEASURE_ROW)
-		}
+		action: toast.press
+			? {
+					label: toast.press === 'review' ? COPY.measure.review : COPY.measure.open,
+					run: () => openSettings('performance', MEASURE_ROW)
+				}
+			: undefined
 	});
 }
 

@@ -20,16 +20,45 @@ from sift.kernel.log import get_logger
 from sift.kernel.subprocess import Priority
 from sift.kernel.wiring import Part
 from sift.slices.performance import uncached
+from sift.slices.performance.budget import (
+    DECODER,
+    ENCODING,
+    GRACE_SECONDS,
+    STORAGE,
+    Budget,
+    Deadline,
+)
+
+# Re-exported: the ladders below and their callers read these here.
+from sift.slices.performance.clip import (
+    CLIP_HEIGHT as CLIP_HEIGHT,
+)
+from sift.slices.performance.clip import (
+    CLIP_RATE as CLIP_RATE,
+)
+from sift.slices.performance.clip import (
+    CLIP_SECONDS as CLIP_SECONDS,
+)
+from sift.slices.performance.clip import (
+    CLIP_WIDTH as CLIP_WIDTH,
+)
+from sift.slices.performance.clip import (
+    REPEATS as REPEATS,
+)
+from sift.slices.performance.clip import (
+    SEEK_MOMENTS as SEEK_MOMENTS,
+)
+from sift.slices.performance.clip import (
+    Decode as Decode,
+)
+from sift.slices.performance.clip import (
+    measure_decode as measure_decode,
+)
+from sift.slices.performance.clip import (
+    middle as middle,
+)
 
 log = get_logger(__name__)
-
-#: How long each clip is, in seconds: long enough that a level is work rather than start-up.
-CLIP_SECONDS = 20
-
-#: 720p, the commonest size in a library, and quick enough to build on a slow machine.
-CLIP_WIDTH = 1280
-CLIP_HEIGHT = 720
-CLIP_RATE = 30
 
 #: The encodes-at-once levels, in order. A small machine stops before the wide ones.
 LEVELS = (1, 2, 4, 8, 16)
@@ -40,10 +69,11 @@ NEAR_BEST = 0.95
 #: Above this the application was not keeping up: the quarter second the server warns at.
 TOO_BUSY_SECONDS = 0.25
 
-#: Runs of each level: the middle one is kept, and the lowest and highest say how sure it is.
-REPEATS = 3
-
 BUSY = "measured while other programs were busy"
+
+#: Why a stage measured less than it would have: its part of the run's time was used.
+OUT_OF_TIME = "its time ran out"
+OUT_OF_TIME_UNTRIED = f"nothing wider was tried: {OUT_OF_TIME}."
 
 
 def others_busy() -> bool:
@@ -55,22 +85,13 @@ def others_busy() -> bool:
 async def steady[T](
     take: Callable[[], Awaitable[T]], mark: Callable[[T], T], busy: Callable[[], bool]
 ) -> T:
-    """A level, taken again where other programs were busy, and marked if they still were."""
-    level = await take()
-    if not busy():
-        return level
+    """A level, marked where other programs were busy: once, as the run's time is kept to."""
     level = await take()
     return mark(level) if busy() else level
 
 
 def _marked[T: (Level, StorageLevel)](level: T) -> T:
     return replace(level, busy=True)
-
-
-def middle(values: Sequence[float]) -> float:
-    """The median of a few readings: sorted, the one in the middle, the lower of two when even."""
-    ordered = sorted(values)
-    return ordered[(len(ordered) - 1) // 2]
 
 
 def middle_by[T](runs: Sequence[T], *, key: Callable[[T], float]) -> T:
@@ -105,8 +126,8 @@ def midpoint[T: _Rung](levels: Sequence[T], *, key: Callable[[T], float]) -> int
 
 
 def sureness(low: float | None, high: float | None, figure: float, unit: str) -> str:
-    """How far apart a level's runs were, as how sure its number is; empty where not kept."""
-    if low is None or high is None or figure <= 0:
+    """How far apart a level's runs were, as how sure its number is; empty for one take."""
+    if low is None or high is None or figure <= 0 or low == high:
         return ""
     apart = round((high - low) / figure * 100)
     margin = round((1 - NEAR_BEST) * 100)
@@ -272,22 +293,6 @@ class StorageCurve:
             return False
         after = [one for one in self.levels if one.at_once > best.at_once]
         return bool(after) and after[0].megabytes_per_second < best.megabytes_per_second
-
-
-@dataclass(frozen=True)
-class Decode:
-    """How fast this machine decodes and seeks the clip at 720p, which a Build reads by."""
-
-    frames_per_second: float
-    """Frames of 720p decoded per second by one task with a background job's thread share."""
-    seek_seconds: float
-    """What one more moment costs when taken by seeking on the local disk; a share adds its own."""
-
-    def as_dict(self) -> dict[str, object]:
-        return {
-            "frames_per_second": round(self.frames_per_second, 1),
-            "seek_seconds": round(self.seek_seconds, 4),
-        }
 
 
 @dataclass(frozen=True)
@@ -612,70 +617,6 @@ async def _encode_once(
     return True
 
 
-# --- measuring the decoder ------------------------------------------------------------------------
-
-#: Where the seek half takes its moments, as fractions of the clip: spread, as a strip's are.
-SEEK_MOMENTS = tuple((index + 0.5) / 10 for index in range(10))
-
-
-async def _decode_once(source: Path, settings: Settings) -> float:
-    """Decode the whole clip with one background task's thread share. Seconds it took."""
-    started = time.monotonic()
-    await media.run(
-        [
-            settings.ffmpeg_path,
-            *media.background_flags(settings),
-            "-i",
-            str(source),
-            "-f",
-            "null",
-            "-",
-        ],
-        time_limit=300.0,
-        priority=Priority.NORMAL,
-    )
-    return time.monotonic() - started
-
-
-async def _seek_run(source: Path, ats: Sequence[float], settings: Settings) -> float:
-    """Seconds to take a frame at each of `ats` by seeking, as `media.moments_to_files` does."""
-    argv = [settings.ffmpeg_path, *media.background_flags(settings)]
-    for at in ats:
-        argv += ["-ss", f"{at:.3f}", "-i", str(source)]
-    for index in range(len(ats)):
-        argv += ["-map", f"{index}:v", "-frames:v", "1", "-f", "null", "-"]
-    started = time.monotonic()
-    await media.run(argv, time_limit=120.0, priority=Priority.NORMAL)
-    return time.monotonic() - started
-
-
-async def measure_decode(
-    source: Path,
-    settings: Settings,
-    *,
-    repeats: int = REPEATS,
-    decode: Callable[[Path, Settings], Awaitable[float]] | None = None,
-    seek: Callable[[Path, Sequence[float], Settings], Awaitable[float]] | None = None,
-) -> Decode | None:
-    """The Build's two rates, each the middle of `repeats` runs; None if the decoder can't run."""
-    run_decode = decode or _decode_once
-    run_seek = seek or _seek_run
-    ats = [CLIP_SECONDS * at for at in SEEK_MOMENTS]
-    try:
-        decodes = [await run_decode(source, settings) for _ in range(repeats)]
-        seeks = [await run_seek(source, ats, settings) / len(ats) for _ in range(repeats)]
-    except (media.FFmpegError, OSError) as error:
-        log.warning("performance.selftest.no_decoder", error=str(error))
-        return None
-    seconds = middle(decodes)
-    found = Decode(
-        frames_per_second=CLIP_SECONDS * CLIP_RATE / seconds if seconds > 0 else 0.0,
-        seek_seconds=middle(seeks),
-    )
-    log.info("performance.selftest.decode", **found.as_dict())
-    return found
-
-
 # --- measuring the storage: read as a probe reads, the readers it serves read off the curve ------
 
 #: How many places in a file one reader seeks to, and how much it reads at each: about what a
@@ -835,10 +776,11 @@ async def measure_storage(
     files: Sequence[Path] | None = None,
     repeats: int = REPEATS,
     busy: Callable[[], bool] = others_busy,
+    deadline: Deadline | None = None,
 ) -> StorageCurve:
-    """How many files this storage serves at once, a local disk read past the cache; never raises.
-    The ladder doubles until a level gains nothing, a seek passes `SEEK_BOUND_SECONDS` or the sample
-    runs out, then tries the midpoint."""
+    """How many files this storage serves at once, never raising: doubling until a level gains
+    nothing, a seek passes `SEEK_BOUND_SECONDS`, the sample or `deadline` runs out, then the midpoint."""
+    deadline = deadline or Deadline(STORAGE)
     curve = StorageCurve(storage=one.storage, label=one.label, remote=one.remote)
     if not one.remote and not uncached.AVAILABLE:
         return replace(curve, failed=NO_UNCACHED)
@@ -865,13 +807,18 @@ async def measure_storage(
     untried: str | None = None
     stop = False
     while not stop:
-        done.append(await steady(partial(take, levels[len(done)]), _marked, busy))
+        level = await deadline.within(steady(partial(take, levels[len(done)]), _marked, busy))
+        if level is None:
+            untried = OUT_OF_TIME_UNTRIED
+            break
+        done.append(level)
         wider = levels[len(done)] if len(done) < len(levels) else None
         stop, untried = _stops(done, len(sample), wider)
     curve = replace(curve, levels=tuple(done), unmeasured=untried)
     between = midpoint(curve.eligible, key=_mbps)
     if between is not None and between * 2 <= len(sample):
-        done.append(await steady(partial(take, between), _marked, busy))
+        level = await deadline.within(steady(partial(take, between), _marked, busy))
+        done.extend([level] if level is not None else [])
         curve = replace(curve, levels=tuple(sorted(done, key=lambda level: level.at_once)))
     return curve
 
@@ -914,6 +861,31 @@ async def _encode_level(
     return level
 
 
+def _unheard(_measurement: Measurement) -> None:
+    return None
+
+
+async def _read_storages(
+    storages: Sequence[StorageToMeasure],
+    measure_one: Callable[..., Awaitable[StorageCurve]],
+    repeats: int,
+    budget: Budget,
+    say: Callable[[tuple[StorageCurve, ...]], None],
+) -> tuple[StorageCurve, ...]:
+    """Each storage in an equal part of the stage's time left; one it had no time for says so."""
+    curves: list[StorageCurve] = []
+    reading = budget.stage(STORAGE)
+    for index, one in enumerate(storages):
+        part = reading.part(len(storages) - index)
+        curve = await part.within(
+            measure_one(one, repeats=repeats, deadline=part), grace=GRACE_SECONDS
+        )
+        reading.cut = reading.cut or part.cut
+        curves.append(curve or StorageCurve(one.storage, one.label, one.remote, failed=OUT_OF_TIME))
+        say(tuple(curves))
+    return tuple(curves)
+
+
 async def measure(
     *,
     workspace: Path,
@@ -930,15 +902,22 @@ async def measure(
     measure_decoder: Callable[..., Awaitable[Decode | None]] | None = None,
     busy: Callable[[], bool] = others_busy,
     fell_behind: Callable[[], int] = lambda: 0,
+    with_midpoint: bool = True,
+    budget: Budget | None = None,
 ) -> Measurement:
     """Run the test and hand back what happened; never raises. `report` is handed each level as it
-    lands. After the doublings the midpoint is tried, then the decoder, then each storage."""
+    lands. The doublings, the midpoint, the decoder, each storage: each stage within `budget`."""
+    budget = budget or Budget()
+    say = report or _unheard
+    encoding = budget.stage(ENCODING)
     try:
-        source = await build_clip(workspace, settings)
+        source = await encoding.within(build_clip(workspace, settings))
     except (media.FFmpegError, OSError) as error:
         # No working encoder is not a slow machine: the difference between leaving and lowering.
         log.warning("performance.selftest.no_encoder", error=str(error))
         return Measurement(cores=cores, failed="the video encoder couldn't be run")
+    if source is None:
+        return Measurement(cores=cores, failed=OUT_OF_TIME)
 
     take = partial(
         _encode_level,
@@ -953,28 +932,31 @@ async def measure(
     for at_once in levels:
         if cores_in_use(at_once) > cores * 2 and done:
             break
-        done.append(await steady(partial(take, at_once), _marked, busy))
-        if report is not None:
-            report(Measurement(cores=cores, levels=tuple(done)))
+        level = await encoding.within(steady(partial(take, at_once), _marked, busy))
+        if level is None:
+            break
+        done.append(level)
+        say(Measurement(cores=cores, levels=tuple(done)))
         if not done[-1].responsive:
             break
     between = midpoint([one for one in done if one.responsive and one.finished], key=_per_second)
-    if between is not None and cores_in_use(between) <= cores * 2:
-        done = sorted(
-            [*done, await steady(partial(take, between), _marked, busy)],
-            key=lambda level: level.at_once,
-        )
-    decode = await (measure_decoder or measure_decode)(source, settings, repeats=repeats)
-    if report is not None:
-        report(Measurement(cores=cores, levels=tuple(done), decode=decode))
-    curves: list[StorageCurve] = []
-    for one in storages:
-        curves.append(await (measure_one_storage or measure_storage)(one, repeats=repeats))
-        if report is not None:
-            report(
-                Measurement(cores=cores, levels=tuple(done), storages=tuple(curves), decode=decode)
-            )
-    return Measurement(cores=cores, levels=tuple(done), storages=tuple(curves), decode=decode)
+    if with_midpoint and between is not None and cores_in_use(between) <= cores * 2:
+        level = await encoding.within(steady(partial(take, between), _marked, busy))
+        done = sorted([*done, *([level] if level else [])], key=lambda one: one.at_once)
+    decode = await budget.stage(DECODER).within(
+        (measure_decoder or measure_decode)(source, settings, repeats=repeats)
+    )
+    say(Measurement(cores=cores, levels=tuple(done), decode=decode))
+    curves = await _read_storages(
+        storages,
+        measure_one_storage or measure_storage,
+        repeats,
+        budget,
+        lambda read: say(
+            Measurement(cores=cores, levels=tuple(done), storages=read, decode=decode)
+        ),
+    )
+    return Measurement(cores=cores, levels=tuple(done), storages=curves, decode=decode)
 
 
 def _per_second(level: Level) -> float:

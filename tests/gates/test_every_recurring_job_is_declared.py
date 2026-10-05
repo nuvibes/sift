@@ -166,6 +166,7 @@ PROCESS_LOOPS: dict[str, str] = {
     "db.statistics_keeper": "the statistics refresh",
     "insights.rollup": "slices/insights/rollup.py",
     "tasks.keep_awake": "the keep-awake request",
+    "performance.when_quiet": "the look for a quiet moment",
     "settings.applier": "the settings pushed onto the running process",
 }
 

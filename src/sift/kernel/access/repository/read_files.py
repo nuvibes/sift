@@ -333,7 +333,7 @@ class FileReads(RepositoryCore):
         reveal = self._reveal_existence(viewer)
         where, outer, bound = _narrowed(viewer, asset_filter, words)
         # A sequence or a pin in front of the sort costs the whole set: no index answers it.
-        sequence = collection_id is not None or photo_set_id is not None
+        sequence = photo_set_id is not None
         arranged = pinned_first or sequence
         if after is not None:
             if arranged or sort not in SEEKABLE_SORTS:

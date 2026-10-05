@@ -35,4 +35,4 @@ Come here to run a task now, change when it runs, or find out what happened to a
 - **Filter the log**: shows only the lines holding the words you type.
 - **Refresh**: reads the newest lines.
 - **Copy for a bug report**: copies the lines on screen as they are, without redaction. Read the lines before you paste anywhere public.
-- **Download log**: saves the log as a file, filtered as the screen is, without your personal details and secrets. The line under it, **Download redacted log**, says so. Attach this file to a bug report.
+- **Download log**: saves every log whole as one zip file, whatever the screen is filtered to, without your personal details and secrets. In the Sift app the file holds the library's log and the app's own. In a browser it holds the library's. The line under it, **Download redacted log**, says so. Attach this file to a bug report.

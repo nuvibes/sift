@@ -54,6 +54,7 @@ function page(jobs: Job[], total = 9): JobsPage {
 		stepping_back: false,
 		step_back_share: 25,
 		step_back_for: null,
+		step_back_over: [],
 		full_amount: false,
 		password_wanted: 0
 	};
@@ -273,21 +274,25 @@ describe("a running or done row's note", () => {
 	});
 });
 
-describe('stepping back while the computer is in use', () => {
-	const WORDS = "Using a quarter of this device while it's in use";
+describe('eco mode, under the strip', () => {
+	const WORDS = "In eco mode while you're working: using a quarter of this device.";
 
-	it('is said under the strip while the pool is holding and something is running', async () => {
-		EVERYTHING.stepping_back = true;
-		try {
-			await open();
-			expect(host.textContent).toContain(WORDS);
-		} finally {
-			EVERYTHING.stepping_back = false;
-		}
+	it("is said from the rail's read while something is running, and so is a press out of it", async () => {
+		await open();
+		imports.page = { ...EVERYTHING, stepping_back: true, step_back_for: 'input' };
+		flushSync();
+		expect(host.textContent).toContain(WORDS);
+		imports.page = { ...EVERYTHING, full_amount: true, step_back_for: 'input' };
+		flushSync();
+		expect(host.textContent).toContain(
+			"Out of eco mode: using the full amount of this device although you're working."
+		);
 	});
 
-	it('is not said while the pool runs its full count', async () => {
+	it('is not said outside eco mode', async () => {
 		await open();
-		expect(host.textContent).not.toContain(WORDS);
+		imports.page = EVERYTHING;
+		flushSync();
+		expect(host.querySelector('.stepping-back')).toBeNull();
 	});
 });

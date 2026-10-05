@@ -173,7 +173,7 @@ async def test_a_window_that_falls_behind_steps_the_plan_down_and_says_so() -> N
     assert [one.plan.tasks for one in together.windows] == [8, 6, 5]
     assert together.settled is not None and together.settled.tasks == 4
     assert together.said()[1:] == [
-        "At 8 tasks the server was held 0.40 s.",
+        "At 8 tasks, Sift stopped responding for 0.40 s.",
         "So tasks were stepped down to 4 and previews to 1, which wasn't run again.",
     ]
     moved = {one.key: one for one in together.applied(advice(8, 4))}
@@ -200,7 +200,7 @@ async def test_a_failed_task_is_falling_behind_and_its_slot_waits_for_the_next_w
     work = Counted(failing=True)
     together = await _measure(mt.Plan(tasks=1, previews=1, on_card=True), work, [0.0])
     assert together.windows[0].failed == 1 and work.calls == ["preview 0"]
-    assert together.said()[1] == "Sift fell behind even at 1 task: 1 of its tasks failed."
+    assert together.said()[1] == "Even at 1 task, 1 of the tasks failed."
     again = await _measure(
         mt.Plan(tasks=2, previews=1, on_card=True), Counted(failing=True), [0.0, 0.0]
     )
@@ -224,8 +224,8 @@ async def test_a_storage_that_stops_answering_ends_only_its_reader() -> None:
 def test_the_other_reasons_for_falling_behind_are_said() -> None:
     plan = mt.Plan(tasks=1, previews=1, on_card=True)
     assert mt.Window(plan, 1.0, worst_wait_seconds=0.3).why() == "work waited 0.30 s for a thread"
-    assert mt.Window(plan, 1.0, fell_behind=2).why() == "the server fell behind 2 times"
-    assert mt.Window(plan, 1.0, fell_behind=1).why() == "the server fell behind once"
+    assert mt.Window(plan, 1.0, fell_behind=2).why() == "Sift fell behind 2 times"
+    assert mt.Window(plan, 1.0, fell_behind=1).why() == "Sift fell behind once"
     assert not mt.Window(plan, 1.0, fell_behind=2).kept_up, "under the worst since the start"
     assert mt.Together().said() == [] and mt.Together().settled is None
     assert mt.Together().applied(advice()) == advice()

@@ -52,6 +52,8 @@ from pathlib import Path
 from sift.kernel.config import Settings
 from sift.kernel.fetch import CHUNK, FetchFailed, Progress, SessionFactory, fetch_resumable
 from sift.kernel.log import get_logger
+from sift.kernel.ml.child import devices_here, forget_devices
+from sift.kernel.ml.runtime import DeviceUnavailable, why_unusable
 from sift.kernel.paths import PathEscape, confine
 from sift.kernel.subprocess import SubprocessError
 from sift.kernel.subprocess import run as run_once
@@ -202,14 +204,15 @@ def already_capable() -> bool:
     would silently take the version decision away from them.
 
     So it is asked BEFORE anything is offered: where this is true, there is nothing to install and
-    the screen says so instead of offering a download.
-
-    Nothing is imported that would not have been imported anyway: this is the same cached question
-    the settings screen already asks to decide whether a card may be chosen.
+    the screen says so instead of offering a download. A runtime that can't start can't drive one.
     """
-    from sift.kernel.ml.runtime import installed_providers, why_unusable
+    from sift.kernel.config import get_settings
 
-    return why_unusable("nvidia", installed_providers()) is None
+    try:
+        available = devices_here(get_settings())
+    except DeviceUnavailable:
+        return False
+    return why_unusable("nvidia", available) is None
 
 
 # The directories Windows has been told it may load libraries from. Held at module scope because
@@ -353,7 +356,7 @@ async def install(
             if not await asyncio.to_thread(_matches, target, wheel.digest):
                 await asyncio.to_thread(target.unlink, True)
                 raise AccelError(
-                    f"the {wheel.name} package did not arrive intact. Nothing was installed. "
+                    f"The {wheel.name} package didn't arrive intact. Nothing was installed. "
                     "Starting again downloads it afresh."
                 )
         done += wheel.size_bytes
@@ -368,46 +371,10 @@ async def install(
         json.dumps({"pin": PIN, "packages": {w.name: w.version for w in WHEELS}}, indent=2),
         "utf-8",
     )
-    # The answer to "which devices can this installation drive" was cached the first time somebody
-    # opened the settings screen, and it has just stopped being true. Imported here rather than at
-    # the top because the runtime imports THIS module (lazily, in the one function that does the
-    # importing), and a module-scope import in the other direction closes the circle.
-    from sift.kernel.ml.runtime import installed_providers
-
-    installed_providers.cache_clear()
+    # The kept answer to "which devices can the runtime drive" has just stopped being true.
+    forget_devices()
     log.info("ml.accel.installed", pin=PIN, bytes=TOTAL_BYTES)
     return True
-
-
-def restart_needed(settings: Settings) -> bool:
-    """Whether this process has to be restarted before the card can be used.
-
-    Two builds of one library cannot both be loaded and the first one in wins for the life of the
-    process, so an installation done after something has already run a model is real, correct, and
-    cannot take effect until Sift is started again. Saying so is the whole reason this exists: the
-    alternative is a screen that says it is using the card while the work goes to the processor,
-    which is the exact silence the rest of this module is built to avoid.
-
-    WHICH BUILD IS LOADED IS THE QUESTION, not whether one is. "Is onnxruntime imported at all"
-    turns into a permanent lie the moment it is true: opening the settings screen imports the
-    runtime to ask which devices it has (correctly, WITH the graphics-card build in front of it),
-    and from then on a server already driving the card would tell everybody to restart it,
-    "Restart needed" beside a test that says "Working".
-
-    Asked of the loaded module's own FILE rather than of its provider list. A runtime lists every
-    provider it was compiled with whether or not the hardware behind it can be reached; where the
-    file sits cannot be that kind of wrong.
-    """
-    loaded = sys.modules.get("onnxruntime")
-    if loaded is None:
-        return False
-    where = getattr(loaded, "__file__", None)
-    if where is None:
-        # A runtime with no file to point at is one this cannot vouch for. A restart is the safe
-        # answer: it costs seconds and the alternative is claiming a card is in use when it is not.
-        return True
-    root = directory(settings).resolve()
-    return root not in Path(where).resolve().parents
 
 
 def remove(settings: Settings) -> None:
@@ -419,6 +386,7 @@ def remove(settings: Settings) -> None:
     """
     root = directory(settings)
     shutil.rmtree(root, ignore_errors=True)  # nosemgrep: sift-no-file-removal-outside-delete-trash
+    forget_devices()
     log.info("ml.accel.removed", pin=PIN)
 
 

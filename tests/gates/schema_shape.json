@@ -521,8 +521,7 @@
    "columns": {
     "added_at": "integer",
     "asset_id": "text not null references assets ( id ) on delete cascade",
-    "collection_id": "text not null references collections ( id ) on delete cascade",
-    "position": "integer"
+    "collection_id": "text not null references collections ( id ) on delete cascade"
    },
    "constraints": [
     "primary key ( collection_id , asset_id )"
@@ -2895,7 +2894,7 @@
  "versions": {
   "access": 5,
   "benchmarks": 3,
-  "catalog": 90,
+  "catalog": 91,
   "content": 29,
   "dedup": 4,
   "download": 37,

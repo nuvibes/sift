@@ -24,16 +24,14 @@
 // A pane that needs a heading passes its words to the component; it never writes the element, and
 // it never writes the look.
 //
-// ## Why a ratchet that stands at zero rather than a ban
-//
-// A ratchet at zero refuses the first hand-written heading exactly as a ban would, and it keeps the
-// one shape every other count in `gate-baselines.json` has.
+// A ratchet at zero refuses the first hand-written heading as a ban would, in the shape of every
+// other count in `gate-baselines.json`.
 //
 // ## What is not counted
 //
-// `SettingsTitle.svelte`, which IS the title mechanism: its `<h1>` is the one every section gets.
-// It is named below with that reason, and the check that every named file still exists and still
-// holds a heading keeps the exemption from outliving what it excuses.
+// `SettingsTitle.svelte`, which IS the title mechanism, and the Documentation pane, whose pages bring
+// their own headings. Each is named below with its reason, and the check that every named file still
+// holds a heading keeps an exemption from outliving what it excuses.
 //
 // What this does NOT see: a heading drawn by a component that lives OUTSIDE these two folders and
 // is rendered into a settings pane (the Folders and Activity screens are two). Their headings are
@@ -53,10 +51,12 @@ const SCOPES = [
 	join(SOURCE, 'lib', 'jobs')
 ];
 
-/** The mechanisms themselves. A file here is where the one heading is drawn, and why. */
+/** The files that draw headings themselves, and why. */
 const THE_MECHANISM = {
 	'lib/settings-ui/SettingsTitle.svelte':
-		"the section's title: the one h1 every section and sub-page gets, with its icon"
+		"the section's title: the one h1 every section and sub-page gets, with its icon",
+	'lib/settings-ui/Documentation.svelte':
+		"the docs site's pages: their own headings, a level under the title, for a screen reader to step through"
 };
 
 /** A heading element in the markup. The tag, or the role that makes anything one. */

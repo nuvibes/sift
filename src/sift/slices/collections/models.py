@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import Field, field_validator
 
 from sift.kernel.cover_frame import CoverFrame
 from sift.kernel.text import clean_name
@@ -86,7 +86,7 @@ class CollectionList(Wire):
 
 
 class CollectionItem(Wire):
-    """One item inside a collection, in the arranged order.
+    """One item inside a collection.
 
     A concealed item is described by its concealment and nothing else, as a concealed grid tile
     is. Whether it appears at all is the viewer's placeholder choice; either way the count agrees
@@ -107,18 +107,14 @@ class CollectionItem(Wire):
     #: The name the file was imported under, so a drag from a remote library can say what it is
     #: fetching. Never on a placeholder.
     original_filename: str | None = None
-    #: Pinned by this user: this wall is read `pinned_first`, deliberately above the arranged order
-    #: (a pin under it would stop working when the order changed). A move is computed from stored
-    #: positions, never the drawn order, so the arrangement survives. Never on a placeholder.
+    #: Pinned by this user: this wall is read `pinned_first`, so a pinned file comes before the rest
+    #: under every order. Never on a placeholder.
     pinned: bool = False
     #: This user's heart and stars, so this wall hands its selection to the shared file verbs like
     #: every wall. Read for the page in one statement, never per row. Never on a placeholder.
     favorite: bool = False
     #: Out of five, or absent where this user has not said. Same read as `favorite`.
     rating: int | None = None
-    #: Where this item sits in the arranged sequence, from zero, sent only to an admin, so Move
-    #: earlier and Move later rearrange the real sequence rather than the pinned-first order drawn.
-    position: int | None = None
 
 
 class CollectionContents(Wire):
@@ -205,23 +201,11 @@ class CoverWrite(Wire):
 
 
 class ItemsWrite(Wire):
-    """Adding to, removing from, or rearranging a collection.
-
-    One body with a named action, so add, remove and reorder cannot drift in what they accept. For
-    `reorder`, `asset_ids` is the new order; `move` names one file and its `direction`.
-    """
+    """Adding to or removing from a collection: one body with a named action, so the two cannot
+    drift in what they accept."""
 
     asset_ids: list[str] = Field(min_length=1, max_length=MAX_BULK_ITEMS)
-    action: Literal["add", "remove", "reorder", "move"] = "add"
-    direction: Literal["earlier", "later"] | None = None
-
-    @model_validator(mode="after")
-    def _one_move(self) -> ItemsWrite:
-        if (self.action == "move") != (self.direction is not None):
-            raise ValueError("a direction goes with a move, and only with a move")
-        if self.action == "move" and len(self.asset_ids) != 1:
-            raise ValueError("a move names one file")
-        return self
+    action: Literal["add", "remove"] = "add"
 
 
 class TagOnCollection(Wire):

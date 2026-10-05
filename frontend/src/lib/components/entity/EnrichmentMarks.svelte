@@ -18,9 +18,9 @@
 	 * face", "Sift: from a folder name"), and a stash-box known only from a row carrying `source =
 	 * 'stash_box'` says "a stash-box".
 	 *
-	 * Every mark wears the accent's text tone. Each stash-box Sift knows wears its own glyph
-	 * (`boxIcon`), so a row of marks tells the services apart without hovering each. The glyphs are
-	 * not the enrichment verbs': a state wearing a verb's glyph reads as an offer to run it.
+	 * Each stash-box Sift knows wears its own glyph (`boxIcon`), so a row of marks tells the
+	 * services apart without hovering each. The glyphs are not the enrichment verbs': a state
+	 * wearing a verb's glyph reads as an offer to run it.
 	 *
 	 * One component for the hover card, the entity's own header and the file's action row, which
 	 * draw the same marks about the same question. It lives beside the header rather than in
@@ -64,8 +64,7 @@
 		 * order the subject's own record panel lists them in, so the marks and the panel read the
 		 * same way down.
 		 *
-		 * ONE PER BOX, so a file two boxes both recognised carries two `stash` entries. That is why
-		 * the list is keyed on its position as well as its contents below, and never on `via` alone.
+		 * ONE PER BOX, so the list is keyed on its position as well as its contents, never on `via`.
 		 */
 		sources: readonly Source[];
 		/**
@@ -82,9 +81,11 @@
 		 * filename.
 		 */
 		padded?: boolean;
+		/** On the page's own ground, where the accent's fill clears 3:1 in every theme. */
+		onPage?: boolean;
 	}
 
-	let { sources, said = 'enriched', padded = false }: Props = $props();
+	let { sources, said = 'enriched', padded = false, onPage = false }: Props = $props();
 
 	/*
 	 * THE Enriched by COLUMN'S OWN ROW for this author, word for word.
@@ -130,7 +131,7 @@
 <!-- A group rather than a list: a screen reader announcing "list, 2 items" before two marks
      that each already say what they are is ceremony around nothing. -->
 {#if sources.length > 0}
-	<span class="marks" class:padded role="group" aria-label={SAID[said]}>
+	<span class="marks" class:padded class:page={onPage} role="group" aria-label={SAID[said]}>
 		{#each sources as one, at (`${at}:${one.via}:${one.name ?? ''}`)}
 			{@const glyph = boxIcon(one.box) ?? madeIcon(one.via, one.act)}
 			{#if glyph}
@@ -151,12 +152,16 @@
 		gap: var(--space-1);
 	}
 
-	/* No ground and no hover: these are read-only marks, and looking pressable when not is worse.
-	   The accent's text tone, since the fill is under 3:1 on a chip. */
+	/* No ground and no hover: read-only marks. The text tone on a raised ground, where the fill
+	   misses 3:1. */
 	.mark {
 		display: inline-flex;
 		align-items: center;
 		color: var(--sift-accent-text);
+	}
+
+	.page .mark {
+		color: var(--sift-accent);
 	}
 
 	/* A control's box, to the token: `Heart`'s and `RatingChip`'s padding. See `padded`. */

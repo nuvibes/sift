@@ -11,6 +11,11 @@ asks before anything is started.
 
 from __future__ import annotations
 
+# First, before any native library loads: a crash in one then leaves every thread's stack.
+from sift.kernel import crash_record  # noqa: F401
+
+# isort: split
+
 import json
 import os
 
@@ -54,10 +59,7 @@ from sift.kernel.jobs import JobSwitchedOff
 from sift.kernel.log import LOG_FILENAME, configure_logging, get_logger
 from sift.kernel.wire import Refused
 
-# Imported for its side effect and nothing else: it declares the three look-and-feel preferences
-# and has no router, no schema and no service. Everything a theme does happens in the stylesheet.
-# Drop the import and the settings silently stop existing: the browser's save is refused as an
-# unknown key, and the appearance pane looks broken.
+# Imported for its side effect: it declares the look-and-feel preferences, gone without it.
 from sift.slices import theming  # noqa: F401
 from sift.slices.backup import COPIED_NOTE, leave_origin_note, make_its_own_library
 from sift.wiring.lifespan import lifespan

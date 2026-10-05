@@ -219,7 +219,7 @@ _cov_benchmarks() { _cov src/sift/kernel/tests/test_benchmarks.py --cov=sift.ker
 # Reading the tail of the application log. Small, and the seeking read under it is the whole of it:
 # the ceiling is a gigabyte, so a version that read the file to find its end would be correct on
 # every test fixture and unusable on a real log.
-_cov_logs() { _cov src/sift/slices/logs/tests --cov=sift.slices.logs; }
+_cov_logs() { _cov src/sift/slices/logs/tests --cov=sift.slices.logs --cov=sift.logbundle; }
 # The typed lookup every route reads the application through, and the sealing helpers under it.
 # Both are on the path of ordinary requests, which is exactly why they are pinned: their lines are
 # executed by any test that calls any route, so their coverage reads as high whether or not one
@@ -625,7 +625,7 @@ _cov_db() {
 # it is wrong: the redaction, where a missed branch puts somebody's filesystem into a file that gets
 # pasted into a bug report, and the timing records, where a wait counted as work names the wrong
 # component, and every diagnosis follows the wrong name.
-_cov_log() { _cov src/sift/kernel/tests/test_log.py --cov=sift.kernel.log; }
+_cov_log() { _cov src/sift/kernel/tests/test_log.py src/sift/kernel/tests/test_redaction.py --cov=sift.kernel.log --cov=sift.kernel.redaction; }
 # What Sift says its own version is. Twelve lines, and the reason it is gated is that both of its
 # branches are load-bearing: one is the number on the About screen and in every backup's name, and
 # the other is the empty string that makes the update check decline rather than invent an upgrade.
@@ -655,7 +655,7 @@ _cov_sql_splice() { _cov src/sift/kernel/tests/test_sql_splice.py --cov=sift.ker
 # can be green while the application is freezing outright, and these are what can see it, so an
 # untested branch here is not a coverage statistic, it is a screen that reads clean while somebody
 # is telling you the application is unusable.
-_cov_diagnostics() { _cov src/sift/kernel/tests/test_diagnostics.py --cov=sift.kernel.diagnostics; }
+_cov_diagnostics() { _cov src/sift/kernel/tests/test_diagnostics.py --cov=sift.kernel.diagnostics --cov=sift.kernel.crash_record; }
 # The library's shape, read for nobody. It is where the arithmetic over the whole library happens,
 # so a wrong answer here is a per-folder number that is quietly somebody else's, and nothing on
 # any screen would show it, because a pass runs for nobody and writes what it concluded.
@@ -812,7 +812,7 @@ _cov_main() {
   _cov src/sift/kernel/tests/test_main.py src/sift/kernel/tests/test_main_wiring.py \
     src/sift/kernel/tests/test_main_wiring_beat.py src/sift/kernel/tests/test_main_wiring_passes.py \
     src/sift/kernel/tests/test_main_wiring_tasks.py src/sift/kernel/tests/test_main_wiring_dry_runs.py \
-    src/sift/kernel/tests/test_main_wiring_stash_doors.py \
+    src/sift/kernel/tests/test_main_wiring_stash_doors.py src/sift/kernel/tests/test_main_wiring_held_off.py \
     src/sift/kernel/tests/test_library_preflight.py \
     src/sift/kernel/tests/test_job_schedules.py \
     tests/integration/test_clean_shutdown.py --cov=sift.main --cov=sift.wiring

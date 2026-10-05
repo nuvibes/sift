@@ -23,11 +23,12 @@ import { noServerAt } from '../../../test-setup';
 noServerAt('/api/downloads/seen');
 
 /* The press behind the leaf and the bolt, caught here: what it sends is `full-amount.test.ts`'s. */
-const presses = vi.hoisted(() => ({ asked: [] as boolean[] }));
+const presses = vi.hoisted(() => ({ asked: [] as boolean[], answer: Promise.resolve() }));
 vi.mock('./full-amount', async (original) => ({
 	...(await original<typeof import('./full-amount')>()),
 	pressFullAmount: vi.fn(async (on: boolean) => {
 		presses.asked.push(on);
+		await presses.answer;
 	})
 }));
 
@@ -56,6 +57,7 @@ afterEach(() => {
 	imports.downloadSucceeded = false;
 	imports.page = null;
 	presses.asked = [];
+	presses.answer = Promise.resolve();
 	mocks.session.isAdmin = true;
 	mocks.saved.items = [];
 	// The rail's arrangement is one object for the whole application, so a test that rearranges it
@@ -169,12 +171,18 @@ describe('the Downloads row while a download fetches', () => {
 });
 
 /** A queue page carrying only what the leaf reads. */
-function queuePage(facts: { running: number; stepping_back: boolean; full_amount: boolean }) {
+function queuePage(facts: {
+	running: number;
+	stepping_back: boolean;
+	full_amount: boolean;
+	step_back_for?: 'input' | 'others';
+}) {
 	return {
 		jobs: [],
 		counts: { running: facts.running },
 		stepping_back: facts.stepping_back,
-		full_amount: facts.full_amount
+		full_amount: facts.full_amount,
+		step_back_for: facts.step_back_for ?? null
 	} as unknown as NonNullable<typeof imports.page>;
 }
 
@@ -213,6 +221,30 @@ describe('the leaf and the bolt above the rule', () => {
 		expect(fullAmountButton()?.textContent).not.toBe(bolt);
 	});
 
+	it('dims the leaf in eco mode for other programs, and only then', () => {
+		render();
+		imports.page = queuePage({
+			running: 4,
+			stepping_back: true,
+			full_amount: false,
+			step_back_for: 'others'
+		});
+		flushSync();
+		expect(fullAmountButton()?.className).toContain('dimmed');
+		for (const page of [
+			queuePage({ running: 4, stepping_back: true, full_amount: false, step_back_for: 'input' }),
+			queuePage({ running: 4, stepping_back: false, full_amount: true, step_back_for: 'others' })
+		]) {
+			imports.page = page;
+			flushSync();
+			expect(fullAmountButton()?.className).not.toContain('dimmed');
+		}
+		const at = source.indexOf('.full-amount :global(.btn.ghost.rail-full-amount.dimmed .icon) {');
+		expect(source.slice(at, source.indexOf('}', at))).toContain(
+			'opacity: var(--disabled-opacity);'
+		);
+	});
+
 	/* Read from the stylesheet: a pressed ghost would otherwise sit in a filled circle at rest. */
 	it('draws the bolt yellow on the bare ground, its circle only under the pointer', () => {
 		const at = source.indexOf(
@@ -228,14 +260,21 @@ describe('the leaf and the bolt above the rule', () => {
 	});
 
 	it('presses for the full amount from the leaf and steps back from the bolt', async () => {
+		let answer = () => {};
+		presses.answer = new Promise<void>((done) => (answer = done));
 		render();
 		imports.page = queuePage({ running: 4, stepping_back: true, full_amount: false });
 		flushSync();
 		fullAmountButton()?.click();
+		fullAmountButton()?.click();
 		flushSync();
+		// One press at a time, and never dimmed while it is out.
 		expect(presses.asked).toEqual([true]);
-		// One press at a time: the second waits for the first to be answered.
-		await vi.waitFor(() => expect(fullAmountButton()?.disabled).toBe(false));
+		expect(fullAmountButton()?.disabled).toBe(false);
+		expect(fullAmountButton()?.className).not.toContain('dimmed');
+		answer();
+		await presses.answer;
+		await Promise.resolve();
 
 		imports.page = queuePage({ running: 8, stepping_back: false, full_amount: true });
 		flushSync();

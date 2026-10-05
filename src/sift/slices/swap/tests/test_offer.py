@@ -192,8 +192,7 @@ async def library(temp_db: Database, access: Repository) -> Library:
         (ids["collection"], _EPOCH),
     )
     await db.execute(
-        "INSERT INTO collection_items (collection_id, asset_id, position, added_at)"
-        " VALUES (?, ?, 0, ?)",
+        "INSERT INTO collection_items (collection_id, asset_id, added_at) VALUES (?, ?, ?)",
         (ids["collection"], ids["c1"], _EPOCH),
     )
     await db.execute(

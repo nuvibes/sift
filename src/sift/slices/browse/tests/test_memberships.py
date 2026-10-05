@@ -17,7 +17,7 @@ from sift.slices.browse.tests.conftest import Library, db_path, sign_in, write
 _TAG = "INSERT INTO tags (id, name, created_at) VALUES (?, ?, 0)"
 _ON = "INSERT INTO asset_tags (asset_id, tag_id) VALUES (?, ?)"
 _COLLECTION = "INSERT INTO collections (id, name, created_at) VALUES (?, ?, 0)"
-_IN = "INSERT INTO collection_items (collection_id, asset_id, position) VALUES (?, ?, 0)"
+_IN = "INSERT INTO collection_items (collection_id, asset_id) VALUES (?, ?)"
 
 
 def _ask(client: TestClient, asset_ids: list[str]) -> dict[str, object]:

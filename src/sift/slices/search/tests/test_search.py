@@ -1118,8 +1118,8 @@ def test_a_guest_cannot_tell_whether_a_restricted_asset_exists_at_all(
                 (buried, username),
             ),
             (
-                "INSERT INTO collection_items (collection_id, asset_id, position) VALUES (?,?,?)",
-                (collection, buried, 0),
+                "INSERT INTO collection_items (collection_id, asset_id) VALUES (?,?)",
+                (collection, buried),
             ),
         ],
     )

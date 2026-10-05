@@ -12,5 +12,5 @@ The first rows have no heading: the switch, how many files are scanned, when it 
 
 ## Rows the pane draws by hand
 
-- <a id="watermarks.more"></a>**More settings**: **Edit** opens what Sift runs the scan on, and a fresh copy of the models.
+- <a id="watermarks.more"></a>**More settings**: **Edit** opens what Sift runs the scan on, and a fresh copy of the models. A download that can't connect shows why and what to check. It uses the proxy set in Windows, or in `HTTPS_PROXY`. A proxy set by an automatic configuration script isn't read.
 - <a id="watermarks.forget"></a>**Watermark results**: **Delete results** deletes the results, so the next scan checks every file again.

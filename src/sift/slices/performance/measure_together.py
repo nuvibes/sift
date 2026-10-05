@@ -1,9 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""The recommended numbers run together for about a minute, stepped down until Sift keeps up.
-
-Each ladder measured one thing alone, but previews, tasks, model passes and storage reads share one
-device. Every window is judged by the readings the ladders are judged by.
-"""
+"""The recommended numbers run together for half a minute, stepped down until Sift keeps up: each
+ladder measured one thing alone, but they all share one device."""
 
 from __future__ import annotations
 
@@ -48,8 +45,8 @@ from sift.slices.performance.selftest import (
 log = get_logger(__name__)
 
 #: How long everything runs together in all, and how often it is judged.
-TOGETHER_SECONDS = 60.0
-WINDOW_SECONDS = 20.0
+TOGETHER_SECONDS = 30.0
+WINDOW_SECONDS = 15.0
 
 
 @dataclass(frozen=True)
@@ -116,7 +113,7 @@ def _times(count: int) -> str:
 
 @dataclass(frozen=True)
 class Window:
-    """One stretch of the plan, and how the server and the work fared in it."""
+    """One stretch of the plan, and how Sift and the work fared in it."""
 
     plan: Plan
     seconds: float
@@ -136,12 +133,12 @@ class Window:
 
     def why(self) -> str:
         if self.failed:
-            return f"{self.failed} of its tasks failed"
+            return f"{self.failed} of the tasks failed"
         if self.worst_lag_seconds >= TOO_BUSY_SECONDS:
-            return f"the server was held {self.worst_lag_seconds:.2f} s"
+            return f"Sift stopped responding for {self.worst_lag_seconds:.2f} s"
         if self.worst_wait_seconds >= TOO_BUSY_SECONDS:
             return f"work waited {self.worst_wait_seconds:.2f} s for a thread"
-        return f"the server fell behind {_times(self.fell_behind)}"
+        return f"Sift fell behind {_times(self.fell_behind)}"
 
 
 @dataclass(frozen=True)
@@ -175,10 +172,10 @@ class Together:
         if behind is None:
             said.append("Sift kept up, so nothing was stepped down.")
         elif settled.tasks == behind.plan.tasks:
-            said.append(f"Sift fell behind even at {settled.tasks} task: {behind.why()}.")
+            said.append(f"Even at {settled.tasks} task, {behind.why()}.")
         else:
             again = "where it kept up" if self.windows[-1].kept_up else "which wasn't run again"
-            said.append(f"At {behind.plan.tasks} tasks {behind.why()}.")
+            said.append(f"At {behind.plan.tasks} tasks, {behind.why()}.")
             said.append(
                 f"So tasks were stepped down to {settled.tasks} and previews to "
                 f"{settled.previews}, {again}."

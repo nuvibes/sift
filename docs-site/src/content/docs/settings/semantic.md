@@ -19,7 +19,7 @@ The first rows have no heading: the switch, how many files are described, when i
 
 ## Rows the pane draws by hand
 
-- <a id="semantic.more"></a>**More settings**: **Edit** opens which models Sift uses, what it runs them on, and a fresh copy of the models.
+- <a id="semantic.more"></a>**More settings**: **Edit** opens which models Sift uses, what it runs them on, and a fresh copy of the models. A download that can't connect shows why and what to check. It uses the proxy set in Windows, or in `HTTPS_PROXY`. A proxy set by an automatic configuration script isn't read.
 - <a id="semantic.forget"></a>**Smart Search index**: **Delete index** deletes every description Sift made, so describing the library again opens every file again.
 
 ## Every setting

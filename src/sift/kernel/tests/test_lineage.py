@@ -231,12 +231,11 @@ async def test_a_copy_carries_how_each_tag_and_each_person_got_there_and_when(
     assert [(row["source"], row["decided_at"]) for row in people] == [("folder", None)]
 
 
-async def test_a_copy_joins_the_collections_its_source_is_in_at_the_end(
+async def test_a_copy_joins_the_collections_its_source_is_in(
     prepared: Database, access: Repository
 ) -> None:
     """A collection is a claim about the content, and a copy is the same content: a copy left
-    outside every collection would look as if it belonged and not be there. It lands at the end,
-    after what was already there."""
+    outside every collection would look as if it belonged and not be there."""
     from sift.kernel.access import Role
     from sift.testing.fixtures import create_user
 
@@ -250,11 +249,11 @@ async def test_a_copy_joins_the_collections_its_source_is_in_at_the_end(
         (collection, admin.id, NOW),
     )
     await prepared.execute(
-        "INSERT INTO collection_items (collection_id, asset_id, position) VALUES (?, ?, 0)",
+        "INSERT INTO collection_items (collection_id, asset_id) VALUES (?, ?)",
         (collection, original),
     )
     await prepared.execute(
-        "INSERT INTO collection_items (collection_id, asset_id, position) VALUES (?, ?, 1)",
+        "INSERT INTO collection_items (collection_id, asset_id) VALUES (?, ?)",
         (collection, other),
     )
 
@@ -264,14 +263,9 @@ async def test_a_copy_joins_the_collections_its_source_is_in_at_the_end(
 
     assert inherited.collections == 1
     rows = await prepared.fetch_all(
-        "SELECT asset_id, position FROM collection_items WHERE collection_id = ? ORDER BY position",
-        (collection,),
+        "SELECT asset_id FROM collection_items WHERE collection_id = ?", (collection,)
     )
-    assert [(str(row["asset_id"]), int(row["position"])) for row in rows] == [
-        (original, 0),
-        (other, 1),
-        (copy, 2),
-    ]
+    assert sorted(str(row["asset_id"]) for row in rows) == sorted((original, other, copy))
 
 
 async def test_a_copy_does_not_inherit_a_share(prepared: Database, access: Repository) -> None:

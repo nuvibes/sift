@@ -20,9 +20,7 @@
  * free: a page opened an hour later reads the same two numbers and shows the same bar.
  */
 
-import { api } from '$lib/api/client';
-import { isFinished } from '$lib/jobs/queue.svelte';
-import { DownloadWatch } from '$lib/jobs/watch-download.svelte';
+import { ModelFetchWatch } from '$lib/jobs/model-fetch';
 import {
 	FETCHING_MODELS,
 	semanticAvailable,
@@ -40,22 +38,16 @@ const WATCH_EVERY = 2000;
 const MOST_WATCHED = 20;
 const LEAST_WATCHED = 10;
 
-/* Fetching the models: the generic download watcher, told what this particular one means.
- *
- * The machinery (the job id, the fraction, joining one already running, keeping the outcome after
- * the bar goes) is `watch-download`'s, shared with the graphics-card runtime, which fetches
- * hundreds of megabytes the same way. What stays here is the only part that is about
- * models: the sentence at the end, and the switch in the search box that turns on when it lands.
- */
-class ModelFetch extends DownloadWatch {
+/* Fetching the models: the model download watcher (`model-fetch`), with the sentence when they
+ * arrive and the switch in the search box that turns on when they do. */
+class ModelFetch extends ModelFetchWatch {
 	constructor() {
 		super(FETCHING_MODELS, async () => {
 			const state = await semanticStatus().catch(() => null);
-			// The switch in the search box turns on the moment this becomes true.
 			void availability.refresh();
 			return state?.ready
 				? 'The models are on this machine. Sift can search by meaning now.'
-				: 'The download stopped before it finished. What arrived is kept, so starting again costs only the rest.';
+				: null;
 		});
 	}
 }
@@ -138,7 +130,7 @@ class Describing {
 	 *  pane halfway through a run shows the run. */
 	async attach(): Promise<void> {
 		this.#generation += 1;
-		await this.#poll(this.#generation, { immediately: true });
+		await this.#poll(this.#generation, { immediately: true, asked: false });
 	}
 
 	/** An Identify run with Meaning was just asked for here: read afresh, and keep reading. */
@@ -146,7 +138,7 @@ class Describing {
 		this.outcome = null;
 		this.#seen = [];
 		this.#generation += 1;
-		void this.#poll(this.#generation, { immediately: false });
+		void this.#poll(this.#generation, { immediately: false, asked: true });
 	}
 
 	/** Stop reading. The counts stay on screen; only the polling ends. */
@@ -154,8 +146,13 @@ class Describing {
 		this.#generation += 1;
 	}
 
-	async #poll(mine: number, { immediately }: { immediately: boolean }): Promise<void> {
+	async #poll(
+		mine: number,
+		{ immediately, asked }: { immediately: boolean; asked: boolean }
+	): Promise<void> {
 		let first = immediately;
+		// Only a watch that asked for describing, or saw it under way, can see it stop.
+		let under = asked;
 		for (;;) {
 			if (!first) await new Promise((resume) => setTimeout(resume, WATCH_EVERY));
 			first = false;
@@ -170,9 +167,10 @@ class Describing {
 			if (!state.ready) {
 				// Switched off, or the models went. Every job stops on its own (each checks the
 				// switch first), so there is nothing to cancel, only a screen to stop lying.
-				this.outcome = 'Stopped. Nothing described so far has been lost.';
+				if (under) this.outcome = 'Stopped. Nothing described so far has been lost.';
 				return;
 			}
+			under ||= state.running_jobs > 0;
 			if (state.running_jobs > 0) continue;
 			if (state.waiting_files > 0) {
 				// Nothing running and work left. Stopped, not finished, and said so plainly, because

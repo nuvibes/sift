@@ -11,7 +11,8 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
-/* Named apart from the backend's own output file, which `spawnChild` holds as `log`. */
+import { openStart } from './backendlog';
+import { writeFacts } from './facts';
 import { log as shellLog } from './log';
 import { backendLogFile, bundlePaths } from './paths';
 import type { DataLocations } from './paths';
@@ -38,9 +39,6 @@ export const SHARED_HOST = '0.0.0.0';
 const HEALTH_TIMEOUT_MS = 90_000;
 const HEALTH_INTERVAL_MS = 250;
 
-/* A crash loop is worse than a stopped application: it burns the machine, fills the log, and hides
- * the original error behind its own repetition. Three restarts inside five minutes and we stop and
- * say so, which is what a service manager's restart policy does, and for the same reason. */
 /* How long a clean shutdown is given before it is taken instead.
  *
  * At least the backend's own grace for a running job (thirty seconds, `SHUTDOWN_GRACE_SECONDS`
@@ -50,8 +48,20 @@ const HEALTH_INTERVAL_MS = 250;
  */
 const STOP_TIMEOUT_MS = 40_000;
 
+/* Three restarts inside five minutes and it stops and says so, as a service manager would. */
 const MAX_RESTARTS = 3;
 const RESTART_WINDOW_MS = 5 * 60_000;
+
+/** How long a dead backend's last output is waited for: a native crash's record comes last. */
+export const DRAIN_MS = 2_000;
+
+/** The exit code as a person can look it up: Windows' own codes read in hex. */
+export function exitCodeWords(code: number | null): string {
+	if (code === null) return 'It ended without an exit code.';
+	const unsigned = code >>> 0;
+	const hex = unsigned >= 0x80000000 ? ` (0x${unsigned.toString(16).toUpperCase()})` : '';
+	return `It stopped with exit code ${unsigned}${hex}.`;
+}
 
 /* What the backend exits with when the stop was ASKED FOR: somebody pressed Restart in Settings,
  * which is how the graphics-card runtime is made to take effect.
@@ -86,7 +96,10 @@ export class BackendStartError extends Error {
 	constructor(
 		message: string,
 		/** Shown under the message. The backend's own last words, when it had any. */
-		readonly detail: string
+		readonly detail: string,
+		/** Whether the backend ran and died, rather than never starting. */
+		readonly crashed = false,
+		readonly code: number | null = null
 	) {
 		super(message);
 		this.name = 'BackendStartError';
@@ -138,11 +151,16 @@ export class Backend {
 	private child: ChildProcess | null = null;
 	private restarts: number[] = [];
 	private stopping = false;
+	private lastExit: number | null = null;
+	private startNumber: number | null = null;
+	/** Settles once the last child's output is all written, or DRAIN_MS after it died. */
+	private drained: Promise<void> = Promise.resolve();
 
 	constructor(
 		private readonly locations: DataLocations,
-		/** Called when the backend has died for good, so the window can say so. */
-		private readonly onGaveUp: (reason: string) => void,
+		/** Called when the backend has died for good, so the window can say so; `crashed` when it
+		 *  kept dying rather than failing to start. */
+		private readonly onGaveUp: (reason: string, crashed: boolean, code?: number | null) => void,
 		/** Whether to listen on every address rather than only on this computer's own. */
 		private shareOnNetwork = false,
 		/** Whether the caller takes a requested restart over (a library switch starts a different
@@ -152,7 +170,9 @@ export class Backend {
 		private readonly releaseFeed: string | null = null,
 		/** Where the backend asks this shell for the acts only it can do (see `shelllink.ts`). Null
 		 *  starts it with no shell to ask, as a backend run by hand has. */
-		private readonly shellLink: { url: string; token: string } | null = null
+		private readonly shellLink: { url: string; token: string } | null = null,
+		/** Face recognition, Smart Search and watermark reading held off for this launch. */
+		private readonly holdOptional = false
 	) {}
 
 	/** Start it and do not return until `/health` answers, or until we know it never will. */
@@ -163,30 +183,9 @@ export class Backend {
 	}
 
 	/**
-	 * Change whether other computers can reach this library, NOW rather than at the next launch.
-	 *
-	 * WHY THIS RESTARTS THE BACKEND INSTEAD OF FLIPPING A FLAG.
-	 *
-	 * The address a server listens on is chosen when its socket is opened and cannot be changed
-	 * afterwards. There are only two ways to make this switch mean something the moment it is
-	 * pressed: open the socket on every address all the time and refuse the requests we do not
-	 * want, or open a different socket. The first leaves the port answering the whole network
-	 * whenever Sift is running, with an application-level check as the only thing between a
-	 * stranger and the library, and a check can have a bug, where a socket that was never opened
-	 * cannot. For the one setting whose entire job is "can other machines reach my library", the
-	 * guarantee belongs at the socket.
-	 *
-	 * So it stops and starts again, which costs a few seconds and is a path Sift already takes on
-	 * every launch: unfinished jobs are requeued at boot, by design.
-	 *
-	 * ONE THING DOES NOT SURVIVE IT, and the caller has to deal with it: the master key that
-	 * unseals saved logins, stash-box keys and tunnel settings is held in memory only. A restart
-	 * seals them, exactly as a launch does, and Sift's own "unlock your saved keys" panel is what
-	 * asks for the password again. Nothing is lost; it has to be re-entered.
-	 *
-	 * Returns whether the requested address came up. `false` means the OLD one was put back and is
-	 * running: the switch did not take, and the screen must say so rather than showing a state
-	 * that is not true.
+	 * Change whether other computers can reach this library now: a socket's address is fixed when
+	 * it opens, so it stops and starts again, and saved keys are sealed as at a launch. False means
+	 * the old address was put back and the switch did not take.
 	 */
 	async listenOnNetwork(share: boolean): Promise<boolean> {
 		if (share === this.shareOnNetwork) return true;
@@ -197,7 +196,8 @@ export class Backend {
 		if (await this.relisten(previous)) return false;
 		this.onGaveUp(
 			'Sift changed the sharing setting, and then could not start its backend again on ' +
-				`either address. The reason is at the end of ${backendLogFile()}.`
+				`either address. The reason is at the end of ${backendLogFile()}.`,
+			false
 		);
 		return false;
 	}
@@ -232,8 +232,9 @@ export class Backend {
 			);
 		}
 
-		fs.mkdirSync(path.dirname(backendLogFile()), { recursive: true });
-		const log = fs.openSync(backendLogFile(), 'a');
+		writeFacts(python, this.holdOptional);
+		const log = openStart();
+		this.startNumber = log.start;
 
 		/* Everything the backend needs arrives as environment variables. It already reads every
 		 * setting from SIFT_-prefixed ones, so the shell can configure it without writing a second
@@ -265,6 +266,7 @@ export class Backend {
 			 * enables is "stop when stdin reaches EOF", and stdin is at EOF from the first instant in
 			 * any container started without `-i`. See stop_when_the_parent_lets_go in sift/main.py. */
 			SIFT_STOP_ON_STDIN_EOF: 'true',
+			...(this.holdOptional ? { SIFT_HOLD_OPTIONAL_FEATURES: 'true' } : {}),
 			/* The feed this shell installs updates from, so the backend's "a new version is out" and
 			 * the shell's Install button read one address and cannot disagree. */
 			...(this.releaseFeed === null ? {} : { SIFT_RELEASE_FEED_URL: this.releaseFeed }),
@@ -283,16 +285,18 @@ export class Backend {
 			 * the other end, so there is no port to reach and no token to leak. 'ignore' would
 			 * hand the child a null device that is at EOF immediately.
 			 */
-			stdio: ['pipe', log, log],
+			stdio: ['pipe', 'pipe', 'pipe'],
 			windowsHide: true
 		});
+		/* Through this side, so each start has a file of its own and a cap. */
+		this.child.stdout?.on('data', (chunk: Buffer) => log.write(chunk));
+		this.child.stderr?.on('data', (chunk: Buffer) => log.write(chunk));
+		const closed = new Promise<void>((done) => this.child?.once('close', () => done()));
+		void closed.then(() => log.close());
 
 		this.child.once('exit', (code) => {
-			try {
-				fs.closeSync(log);
-			} catch {
-				/* already closed */
-			}
+			this.lastExit = code;
+			this.drained = Promise.race([closed, new Promise<void>((r) => setTimeout(r, DRAIN_MS))]);
 			this.child = null;
 			if (this.stopping) {
 				shellLog.info('backend.stopped', { code });
@@ -319,7 +323,7 @@ export class Backend {
 		} catch (err) {
 			const reason = err instanceof Error ? err.message : String(err);
 			shellLog.error('backend.gave_up', { reason });
-			this.onGaveUp(reason);
+			this.onGaveUp(reason, false);
 		}
 	}
 
@@ -327,10 +331,17 @@ export class Backend {
 		const now = Date.now();
 		this.restarts = this.restarts.filter((t) => now - t < RESTART_WINDOW_MS);
 		if (this.restarts.length >= MAX_RESTARTS) {
-			shellLog.error('backend.gave_up', { restarts: this.restarts.length + 1 });
-			this.onGaveUp(
-				`Sift's backend stopped ${MAX_RESTARTS + 1} times in a few minutes, so it has not been ` +
-					`started again. The reason is at the end of ${backendLogFile()}.`
+			shellLog.error('backend.gave_up', {
+				restarts: this.restarts.length + 1,
+				code: this.lastExit
+			});
+			void this.drained.then(() =>
+				this.onGaveUp(
+					`Sift's backend stopped ${MAX_RESTARTS + 1} times in a few minutes, so it hasn't been ` +
+						`started again. ${this.lastWords()}`,
+					true,
+					this.lastExit
+				)
 			);
 			return;
 		}
@@ -346,7 +357,13 @@ export class Backend {
 		let lastError = '';
 		while (Date.now() < deadline) {
 			if (this.child === null) {
-				throw new BackendStartError('Sift stopped while it was starting up.', this.tailOfLog());
+				await this.drained;
+				throw new BackendStartError(
+					'Sift stopped while it was starting up.',
+					this.lastWords(),
+					true,
+					this.lastExit
+				);
 			}
 			try {
 				const res = await fetch(`${ORIGIN}/health`, { signal: AbortSignal.timeout(2_000) });
@@ -363,7 +380,13 @@ export class Backend {
 		);
 	}
 
-	/** The last few lines of the backend's own output: the only thing that says what went wrong. */
+	/** The exit code, then the end of the start that failed. */
+	private lastWords(): string {
+		const which = this.startNumber === null ? '' : `The end of start ${this.startNumber}:\n`;
+		return `${exitCodeWords(this.lastExit)}\n\n${which}${this.tailOfLog()}`;
+	}
+
+	/** The last lines of this start's output (the file holds no other start's). */
 	private tailOfLog(): string {
 		try {
 			const text = fs.readFileSync(backendLogFile(), 'utf8');

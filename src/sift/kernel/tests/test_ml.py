@@ -31,7 +31,9 @@ from blake3 import blake3
 
 from sift.kernel.config import Settings
 from sift.kernel.hardware import HardwareReport
-from sift.kernel.ml import runtime
+from sift.kernel.ml import child as ml_child
+from sift.kernel.ml import runtime, session
+from sift.kernel.ml.child import DeviceQuestion
 from sift.kernel.ml.runtime import (
     DEVICE_LABELS,
     DEVICES,
@@ -49,6 +51,17 @@ pytestmark = pytest.mark.unit
 
 CPU = "CPUExecutionProvider"
 CUDA = "CUDAExecutionProvider"
+
+
+@pytest.fixture(autouse=True)
+def runtime_in_this_process(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Models load here, as they do in the model process."""
+    monkeypatch.setattr(runtime, "loader", session)
+
+
+def answering(*providers: str) -> Any:
+    """The device question, answered with these and asked of no child."""
+    return patch.object(ml_child, "DEVICES", DeviceQuestion(lambda _settings: providers))
 
 
 def machine(*, cuda: bool = False) -> HardwareReport:
@@ -185,11 +198,24 @@ def test_choosing_a_device_this_installation_cannot_drive_is_REFUSED_AT_THE_SETT
 
     assert refuse("cpu") is None
 
-    with patch.object(runtime, "installed_providers", lambda: (CPU,)):
+    with answering(CPU):
         # Refused, and the refusal says where to go rather than only what is wrong.
         assert "Performance" in str(refuse("nvidia"))
-    with patch.object(runtime, "installed_providers", lambda: (CUDA, CPU)):
+    with answering(CUDA, CPU):
         assert refuse("nvidia") is None
+
+
+def test_a_card_is_refused_in_words_when_the_runtime_cannot_start() -> None:
+    def crashed(_settings: Settings) -> tuple[str, ...]:
+        raise DeviceUnavailable("it stopped with code 0xC0000005")
+
+    with patch.object(ml_child, "DEVICES", DeviceQuestion(crashed)):
+        refused = device_refusal("Recognition")("nvidia")
+
+    assert refused == (
+        "Recognition can't run on this device: the model runtime couldn't start "
+        "(it stopped with code 0xC0000005). Restart Sift to try again."
+    )
 
 
 def test_the_refusal_is_NOT_the_validator_so_a_stored_choice_is_never_rewritten() -> None:
@@ -203,7 +229,7 @@ def test_the_refusal_is_NOT_the_validator_so_a_stored_choice_is_never_rewritten(
 
     Returning a string keeps it usable only where it is asked for: the write path.
     """
-    with patch.object(runtime, "installed_providers", lambda: (CPU,)):
+    with answering(CPU):
         answer = device_refusal("Recognition")("nvidia")
 
     assert isinstance(answer, str)
@@ -213,18 +239,17 @@ def test_the_processor_is_accepted_WITHOUT_importing_the_inference_runtime() -> 
     """The default must not drag a hundred megabytes of runtime in at boot.
 
     The registry runs every setting's validator over its own default at import time, and the
-    default here is the processor. If that reached `installed_providers` the import this whole
-    module is careful to defer would happen on every start, for every installation, including the
-    overwhelming majority that never turn any of this on.
+    default here is the processor. If that reached the device question, every start would pay
+    for a child that loads the runtime.
     """
     called = False
 
-    def watch() -> tuple[str, ...]:
+    def watch(_settings: Settings) -> tuple[str, ...]:
         nonlocal called
         called = True
         return (CPU,)
 
-    with patch.object(runtime, "installed_providers", watch):
+    with patch.object(ml_child, "DEVICES", DeviceQuestion(watch)):
         assert device_refusal("Recognition")("cpu") is None
 
     assert not called
@@ -762,59 +787,102 @@ def test_dropping_the_models_gives_the_memory_back(store: WeightStore) -> None:
     assert runner._loaded == {}
 
 
-class _Offers:
-    """A runtime that answers with whatever it was last told to."""
+def test_the_providers_are_read_from_the_runtime_itself(settings: Settings) -> None:
+    providers = session.providers(settings)
 
-    def __init__(self, *providers: str) -> None:
-        self.providers = list(providers)
-
-    def get_available_providers(self) -> list[str]:
-        return self.providers
-
-
-def test_what_the_runtime_offers_is_read_through_the_one_import_site(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """No module has an `import onnxruntime` line of its own for exactly this. Each would be
-    correct alone, and each would be a way for the processor build to be the first one loaded,
-    which decides, for the life of the process, that the card cannot be used."""
-    from sift.kernel.ml import runtime as ml_runtime
-
-    monkeypatch.setattr(ml_runtime, "_runtime", lambda: _Offers("CUDAExecutionProvider", CPU))
-
-    assert ml_runtime.providers_now() == ("CUDAExecutionProvider", CPU)
-
-
-def test_what_the_runtime_offers_is_asked_again_rather_than_remembered(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """THE DIFFERENCE FROM `installed_providers`, which is cached and has to be. This is what a
-    screen asks the moment somebody changes a device, and the answer changes when a runtime is
-    installed beside the one already there, so an answer kept from before would be the settings
-    screen reporting the state of the machine as it was at boot."""
-    from sift.kernel.ml import runtime as ml_runtime
-
-    offers = _Offers(CPU)
-    monkeypatch.setattr(ml_runtime, "_runtime", lambda: offers)
-
-    assert ml_runtime.providers_now() == (CPU,)
-
-    offers.providers.insert(0, "CUDAExecutionProvider")
-
-    assert ml_runtime.providers_now() == ("CUDAExecutionProvider", CPU)
-
-
-def test_the_providers_this_installation_has_are_read_from_the_runtime_itself() -> None:
-    """Asked of the runtime rather than assumed, and never allowed to raise.
-
-    A settings screen must not fall over because an optional dependency will not import, so every
-    failure here is the same answer: no providers, which reads as "no device but the processor".
-    This is the path a real installation takes, and nothing else in this file walks it.
-    """
-    from sift.kernel.ml.runtime import installed_providers
-
-    providers = installed_providers()
-
-    assert isinstance(providers, tuple)
     # Every build of the runtime carries the processor one; a build without it could run nothing.
     assert "CPUExecutionProvider" in providers
+
+
+async def test_a_process_without_the_loader_refuses_to_load_a_model(
+    tmp_path: Path, store: WeightStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The server is such a process: a stray load there is refused, never a runtime loaded."""
+    monkeypatch.setattr(runtime, "loader", None)
+    source = tmp_path / "model.onnx"
+    source.write_bytes(b"a model")
+    weight = make_weight(b"a model")
+    await store.install_from_file(weight, source)
+
+    with pytest.raises(DeviceUnavailable, match="only in the model process"):
+        Runner(store, machine()).load(weight)
+
+
+class _Child:
+    """A runner with a child, idle, busy or gone."""
+
+    def __init__(self, answer: tuple[str, ...] | Exception | None) -> None:
+        self.answer = answer
+
+    def devices(self) -> tuple[str, ...] | None:
+        if isinstance(self.answer, Exception):
+            raise self.answer
+        return self.answer
+
+
+def test_the_device_question_is_asked_once_and_again_after_an_install(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(ml_child, "_RUNNING", set())
+    asked: list[int] = []
+
+    def one_shot(_settings: Settings) -> tuple[str, ...]:
+        asked.append(1)
+        return (CUDA, CPU) if len(asked) > 1 else (CPU,)
+
+    question = DeviceQuestion(one_shot)
+
+    assert question.ask(settings, "Recognition") == (CPU,)
+    assert question.ask(settings, "Recognition") == (CPU,)
+    assert len(asked) == 1
+    question.forget()
+    assert question.ask(settings, "Recognition") == (CUDA, CPU)
+
+
+def test_a_running_child_answers_before_a_new_one_is_started(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A busy child is passed over rather than waited on, and one that stopped is passed over."""
+    gone = _Child(DeviceUnavailable("The model process stopped while Probe was using it."))
+    busy, idle = _Child(None), _Child((CUDA, CPU))
+    monkeypatch.setattr(ml_child, "_RUNNING", [gone, busy, idle])
+
+    def never(_settings: Settings) -> tuple[str, ...]:
+        raise AssertionError("a new child was started beside a running one")
+
+    assert DeviceQuestion(never).ask(settings, "Recognition") == (CUDA, CPU)
+    monkeypatch.setattr(ml_child, "_RUNNING", [gone, busy])
+    assert DeviceQuestion(lambda _settings: (CPU,)).ask(settings, "Recognition") == (CPU,)
+
+
+def test_a_runtime_that_cannot_start_is_said_in_each_features_words_and_kept(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Kept, because a runtime that crashed as it loaded crashes the same way again."""
+    monkeypatch.setattr(ml_child, "_RUNNING", set())
+    asked: list[int] = []
+
+    def crashed(_settings: Settings) -> tuple[str, ...]:
+        asked.append(1)
+        raise RuntimeError("ImportError: DLL load failed")
+
+    question = DeviceQuestion(crashed)
+
+    for feature in ("Recognition", "Search by meaning"):
+        with pytest.raises(DeviceUnavailable) as refused:
+            question.ask(settings, feature)
+        assert str(refused.value).startswith(f"{feature} can't run on this device: ")
+        assert "(ImportError: DLL load failed)" in str(refused.value)
+    assert len(asked) == 1
+
+
+@pytest.mark.parametrize(
+    ("code", "said"),
+    [
+        (3221225477, "it stopped with code 0xC0000005"),
+        (-11, "it was ended by signal 11"),
+        (1, "it stopped with code 1"),
+    ],
+)
+def test_how_a_child_ended_is_said_the_way_its_system_names_it(code: int, said: str) -> None:
+    assert ml_child._how_it_ended(code) == said

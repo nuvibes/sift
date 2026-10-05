@@ -220,7 +220,7 @@
 		const unlocked = vault.unlocked;
 		if (unlocked === wasUnlocked) return;
 		wasUnlocked = unlocked;
-		wall.vaultChanged(!unlocked);
+		if (!mini.wall) wall.vaultChanged(!unlocked);
 	});
 
 	/*
@@ -235,6 +235,7 @@
 			showing === null
 				? null
 				: new MediaMetadata({ title: showing.original_filename ?? 'Theater', artist: 'Theater' });
+		return () => (navigator.mediaSession.metadata = null);
 	});
 
 	/* And whenever a preference moves while the screen is open (`Wall.open` re-reads preferences and

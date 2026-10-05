@@ -50,8 +50,7 @@ def test_a_machine_that_keeps_scaling_is_recommended_the_widest_level() -> None:
 
 
 def test_scaling_stops_where_more_at_once_stops_finishing_more() -> None:
-    """The whole measurement. Four at once did no more work than two, so two is the answer, and
-    the machine keeps what four would have taken."""
+    """Four at once did no more work than two, so two is the answer."""
     measurement = Measurement(
         cores=16,
         levels=(a_level(1, 1.0), a_level(2, 2.0), a_level(4, 2.05), a_level(8, 2.1)),
@@ -903,7 +902,9 @@ async def test_each_storage_measured_is_reported_as_it_lands(
     """The screen draws the storages as each is measured, not after the last."""
     seen: list[Measurement] = []
 
-    async def one_storage(one: selftest.StorageToMeasure, *, repeats: int) -> selftest.StorageCurve:
+    async def one_storage(
+        one: selftest.StorageToMeasure, *, repeats: int, deadline: object
+    ) -> selftest.StorageCurve:
         return selftest.StorageCurve(storage=one.storage, label=one.label, remote=one.remote)
 
     async def instant(*_args: object, **_kwargs: object) -> bool:
@@ -935,7 +936,9 @@ async def test_every_storage_is_measured_a_local_disk_too(
 ) -> None:
     measured: list[str] = []
 
-    async def one_storage(one: selftest.StorageToMeasure, *, repeats: int) -> selftest.StorageCurve:
+    async def one_storage(
+        one: selftest.StorageToMeasure, *, repeats: int, deadline: object
+    ) -> selftest.StorageCurve:
         measured.append(one.storage)
         return selftest.StorageCurve(storage=one.storage, label=one.label, remote=one.remote)
 
@@ -1190,12 +1193,14 @@ def test_the_spread_says_how_sure_the_number_is() -> None:
     assert "19 to 19.8 MB/s, 4% apart, inside the 5%" in sure
     assert "31% apart: wider than the 5%" in unsure
     assert selftest.sureness(None, None, 19.5, "MB/s") == ""
+    assert selftest.sureness(19.5, 19.5, 19.5, "MB/s") == "", "one take has no spread to say"
     measurement = Measurement(cores=16, levels=(replace(a_level(1, 1.0), low=0.9, high=1.1),))
     assert all("ranged from 0.9 to 1.1" in one.reason for one in recommend(measurement, current={}))
 
 
+@pytest.mark.parametrize("with_midpoint", [True, False], ids=["whole", "first part"])
 async def test_the_encoding_ladder_tries_the_midpoint_and_keeps_the_levels_in_order(
-    tmp_path: Path, settings: Settings, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, settings: Settings, monkeypatch: pytest.MonkeyPatch, with_midpoint: bool
 ) -> None:
     rates = {1: 1.0, 2: 1.9, 4: 3.0, 8: 3.2, 6: 3.25}
     asked: list[int] = []
@@ -1217,8 +1222,12 @@ async def test_the_encoding_ladder_tries_the_midpoint_and_keeps_the_levels_in_or
         worst_wait=lambda: 0.0,
         levels=(1, 2, 4, 8),
         measure_decoder=skip_decode,
+        with_midpoint=with_midpoint,
     )
 
+    if not with_midpoint:
+        assert asked == [1, 2, 4, 8], "a first part takes the doublings alone"
+        return
     assert asked == [1, 2, 4, 8, 6]
     assert [one.at_once for one in measured.levels] == [1, 2, 4, 6, 8]
     assert measured.best is not None and measured.best.at_once == 6
@@ -1370,7 +1379,7 @@ async def test_a_kept_share_number_is_judged_again_by_todays_rule(tmp_path: Path
     assert loaded is not None and loaded.reads_at_once() == {curve.storage: 2}
 
 
-async def test_a_level_taken_while_other_programs_were_busy_is_taken_again_and_marked(
+async def test_a_level_taken_while_other_programs_were_busy_is_taken_once_and_marked(
     tmp_path: Path, settings: Settings, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     seen: list[int] = []
@@ -1383,7 +1392,7 @@ async def test_a_level_taken_while_other_programs_were_busy_is_taken_again_and_m
         return True
 
     monkeypatch.setattr(selftest, "build_clip", build)
-    busy = iter([True, True, True, False])
+    busy = iter([True, False])
     measured = await selftest.measure(
         workspace=tmp_path,
         settings=settings,
@@ -1397,13 +1406,13 @@ async def test_a_level_taken_while_other_programs_were_busy_is_taken_again_and_m
         busy=lambda: next(busy, False),
     )
     assert [(one.at_once, one.busy) for one in measured.levels] == [(1, True), (2, False)]
-    assert len(seen) == 2 * 1 + 2 * 2, "each busy level twice"
+    assert len(seen) == 1 + 2, "each level once, busy or not"
     assert measured.not_measured() == [
         "Encoding 1 at the same time was measured while other programs were busy."
     ]
 
 
-async def test_a_storage_level_taken_while_busy_is_taken_again_on_new_places() -> None:
+async def test_a_storage_level_taken_while_busy_is_taken_once_and_marked() -> None:
     salts: list[int] = []
 
     async def read_level(files: list[Path], *, at_once: int, salt: int) -> selftest.StorageLevel:
@@ -1418,7 +1427,7 @@ async def test_a_storage_level_taken_while_busy_is_taken_again_on_new_places() -
         files=[Path(f"f{i}") for i in range(20)],
         busy=lambda: True,
     )
-    assert salts == [0, 1, 2, 3, 4, 5]
+    assert salts == [0, 1, 2]
     assert curve.levels[0].busy
     measurement = Measurement(cores=8, storages=(curve,))
     assert measurement.not_measured()[-1] == (
@@ -1469,3 +1478,21 @@ async def test_a_stall_under_the_worst_since_the_start_still_stops_the_ladder(
     )
     (only,) = measured.levels
     assert only.fell_behind == 1 and not only.responsive and measured.best is None
+
+
+async def test_each_storage_level_reads_places_no_level_before_it_read() -> None:
+    salts: list[int] = []
+
+    async def read_level(files: list[Path], *, at_once: int, salt: int) -> selftest.StorageLevel:
+        salts.append(salt)
+        return a_storage_level(at_once, 10.0 * at_once)
+
+    one = selftest.StorageToMeasure(storage="s", label="Photos", remote=True, roots=(Path("."),))
+    await selftest.measure_storage(
+        one,
+        levels=(1, 2),
+        read_level=read_level,
+        files=[Path(f"f{i}") for i in range(20)],
+        repeats=1,
+    )
+    assert salts == [0, 1], "not the places the system cache still holds"

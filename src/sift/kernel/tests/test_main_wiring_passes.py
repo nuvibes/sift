@@ -725,7 +725,7 @@ async def test_the_first_benchmark_reads_the_application_only_when_it_runs(
     first_folder = wiring.part_of_app(app, wiring.ON_FOLDER_ADDED)
     assert await first_folder._roots() == 2  # type: ignore[attr-defined]
 
-    [then_scan] = queue.settled
+    [then_scan] = [heard for heard in queue.settled if hasattr(heard, "_scan")]
     await then_scan._scan("r1", "u1")
     queue.off = True
     await then_scan._scan("r2", None)

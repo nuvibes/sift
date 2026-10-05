@@ -144,19 +144,6 @@ SELECT a.*,
        -- on `asset_user_state`, and the file half of the pin the five named kinds already carry.
        -- COALESCE because most files have no row here at all: an absent opinion is "not pinned".
        COALESCE(mine.pinned, 0) AS pinned,
-       -- Where this file sits in the sequence it is being listed as part of, or NULL off one.
-       --
-       -- Selected, not merely ordered by, and the reason is the write rather than the read: the
-       -- collection screen rearranges by sending a whole order back, so it has to know the stored
-       -- one. Given only what is on screen it would send the order it was DRAWN in (pinned first)
-       -- and save that as the collection's own. The client knows the arrangement it is editing
-       -- now, which is the honest shape and the only one that cannot lose somebody's work.
-       --
-       -- Guarded by the same CASE the ORDER BY arm uses, so it costs exactly what that costs: with
-       -- no collection named the planner skips the subquery and the plain grid is untouched.
-       CASE WHEN :collection_id IS NULL THEN NULL ELSE
-         (SELECT ci.position FROM collection_items ci
-           WHERE ci.collection_id = :collection_id AND ci.asset_id = a.id) END AS arranged_at,
        COUNT(*) OVER () AS total_count
   FROM assets a
   -- The stored verdict. An inner join: a file this viewer may not see has no row, and a file that
@@ -223,19 +210,8 @@ _VISIBLE_ASSETS_ACCESS = """)
    -- already excludes every concealed row, so asking for hidden-only returns nothing at all: the
    -- screen is empty until the PIN is entered, without needing a rule of its own to say so.
    AND (:hidden_only = 0 OR v.concealed = 1)
- -- A collection is a sequence somebody arranged, not a bag, so inside one the arranged order is
- -- the order. Outside one every row sorts equal here and the sort falls through to `added_at`
- -- unchanged. That is what keeps this one statement rather than two: the grid's order and a
- -- collection's order are the same ORDER BY reading different parameters, and two statements would
- -- be two chances to describe the same set differently.
- --
- -- The CASE is what keeps that free rather than merely correct. Without it the subquery is an index
- -- seek per candidate row on every grid page, for a column no grid page reads: about 5% of the
- -- query at fifty thousand files, and it grows with the library. Guarded, the planner skips it
- -- entirely when no collection is named, and the plain grid costs what it cost before.
- --
- -- NULLS LAST so that an item somehow carrying no position sits at the end of the sequence rather
- -- than jumping to the front of it, which is where ascending NULLs would otherwise put it.
+ -- What stands in front of the sort: the pin, then a photo set's own order. Neither asked, every
+ -- row sorts equal here and the sort falls through unchanged.
  ORDER BY
           -- PINNED FIRST, on the walls that HONOUR the pin, and nowhere else.
           --
@@ -246,13 +222,8 @@ _VISIBLE_ASSETS_ACCESS = """)
           -- rows for a reason it never mentions.
           --
           -- It sits above `_ORDER_TAILS` because a pin buried under the chosen sort stops working
-          -- the moment anybody changes the sort. It is not below the two arrangement arms: a
-          -- collection's arrangement is kept right at the write (the screen is handed each item's
-          -- stored position and rearranges from THAT), not by ordering beneath the pin.
+          -- the moment anybody changes the sort.
           CASE WHEN :pinned_first = 1 THEN COALESCE(mine.pinned, 0) ELSE 0 END DESC,
-          CASE WHEN :collection_id IS NULL THEN NULL ELSE
-            (SELECT ci.position FROM collection_items ci
-              WHERE ci.collection_id = :collection_id AND ci.asset_id = a.id) END ASC NULLS LAST,
           -- A photo set is a sequence for the same reason and is ordered the same way. A shoot was
           -- numbered, and showing it newest-first is showing something else.
           --
@@ -278,17 +249,17 @@ if _VISIBLE_ASSETS_HEAD.count(_TOTAL_COLUMN) != 1:  # pragma: no cover (an edit 
 _COLUMNS_AT = "\nSELECT a.*,"
 _FROM_AT = "\n  FROM assets a"
 _WHERE_AT = "\n WHERE (:asset_id IS NULL OR a.id = :asset_id)"
-_ORDER_AT = "\n -- A collection is a sequence somebody arranged"
+_ORDER_AT = "\n -- What stands in front of the sort"
 
 _CTES, _after_ctes = _VISIBLE_ASSETS_HEAD.split(_COLUMNS_AT, 1)
 _COLUMNS, _after_columns = _after_ctes.split(_FROM_AT, 1)
 _JOINS, _WHERE_OPEN = _after_columns.split(_WHERE_AT, 1)
-_CONDITIONS, _COLLECTION_ORDER = _VISIBLE_ASSETS_ACCESS.split(_ORDER_AT, 1)
+_CONDITIONS, _ARRANGED_ORDER = _VISIBLE_ASSETS_ACCESS.split(_ORDER_AT, 1)
 
 if (
     _CTES + _COLUMNS_AT + _COLUMNS + _FROM_AT + _JOINS + _WHERE_AT + _WHERE_OPEN
     != _VISIBLE_ASSETS_HEAD
-    or _CONDITIONS + _ORDER_AT + _COLLECTION_ORDER != _VISIBLE_ASSETS_ACCESS
+    or _CONDITIONS + _ORDER_AT + _ARRANGED_ORDER != _VISIBLE_ASSETS_ACCESS
 ):  # pragma: no cover (reaching this means the statement was edited across a seam)
     raise RuntimeError("the visible-assets statement no longer splits where the facet read cuts it")
 
@@ -341,15 +312,15 @@ def drive_for(permitted: int, library: int) -> str:
 
 
 # The arranged order that comes first whatever sort was named, read by the page and its position.
-_ORDERING = _ORDER_AT + _COLLECTION_ORDER
+_ORDERING = _ORDER_AT + _ARRANGED_ORDER
 
 
 def _ordered_by(sort: str, *, arranged: bool = True) -> str:
     """The complete ORDER BY for one sort, the one every ordering statement reads, so a page and a
     position on it cannot disagree. An unknown key is the default: a sort is a display preference.
 
-    `arranged` LEAVES OUT the three arms in front of the sort (the pin, a collection's position, a
-    photo set's) for a read that named none: they sort every row equal, but an expression cannot
+    `arranged` LEAVES OUT the two arms in front of the sort (the pin, a photo set's position) for
+    a read that named neither: they sort every row equal, but an expression cannot
     be answered from an index, so their presence alone makes every page a full sort.
     """
     tail = _ORDER_TAILS.get(sort, _ORDER_TAILS[DEFAULT_SORT])

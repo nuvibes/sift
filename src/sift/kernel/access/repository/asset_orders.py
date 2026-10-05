@@ -4,7 +4,12 @@ seek that continues a page after a row."""
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from sift.kernel.when import day_start, today
+
+if TYPE_CHECKING:
+    from sift.kernel.access.constraints import AssetFilter
 
 #: The width the shuffle mixes in: every product stays inside SQLite's signed 64-bit integers,
 #: where an overflow would turn the key into a float. Any odd multiplier is a bijection mod 2^32.
@@ -198,3 +203,16 @@ SIMILARITY = "similarity"
 
 #: Every sort a caller may name; the router refuses anything else with a 422.
 SORT_KEYS: frozenset[str] = frozenset(_ORDER_TAILS)
+
+
+def ordering_for(sort: str | None, asset_filter: AssetFilter, *, by_meaning: bool = False) -> str:
+    """The order a page is read in: the one named, else what the filter searched for decides."""
+    if sort is not None:
+        # Closest match with no words but a `like:` ranking is closeness to that file.
+        if sort == RELEVANCE and not asset_filter.text and asset_filter.neighbours:
+            return SIMILARITY
+        return sort
+    if asset_filter.text:
+        return SIMILARITY if by_meaning else RELEVANCE
+    # With no words, a ranking is a `like:`, which reads closest first.
+    return SIMILARITY if asset_filter.neighbours else DEFAULT_SORT

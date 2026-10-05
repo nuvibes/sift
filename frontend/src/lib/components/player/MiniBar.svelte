@@ -230,4 +230,32 @@
 		align-self: center;
 		min-inline-size: 0;
 	}
+
+	/* The Audio player: the scrub line shares the bar's columns (a clock, the picture, the
+	   transport, the ends, a clock), so the row under it starts and ends where the timeline does. */
+	:global(.mini.bar:not(.docked)) > .bar-timeline {
+		display: grid;
+		grid-template-columns: subgrid;
+	}
+
+	:global(.mini.bar:not(.docked)) > .bar-timeline > :global(.scrub-line) {
+		grid-column: 1 / -1;
+	}
+
+	:global(.mini.bar:not(.docked)) > .bar-timeline > :global(.scrub-line.clocked) {
+		grid-template-columns: subgrid;
+	}
+
+	:global(.mini.bar:not(.docked)) > .bar-timeline > :global(.scrub-line.clocked > .timeline) {
+		grid-column: 2 / 5;
+	}
+
+	:global(.mini.bar:not(.docked)) > .bar-timeline > :global(.scrub-line.clocked > .time.end) {
+		grid-column: 5;
+	}
+
+	/* No clock: the timeline starts where the picture does, one gap in. */
+	:global(.mini.bar:not(.docked)) > .bar-timeline > :global(.scrub-line:not(.clocked)) {
+		padding-inline: var(--space-3);
+	}
 </style>

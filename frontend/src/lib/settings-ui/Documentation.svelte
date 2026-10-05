@@ -1,7 +1,7 @@
 <script lang="ts">
 	/*
 	 * The docs site's pages for this version, offline, from the data `scripts/docs_pages.js` wrote.
-	 * Headings are bold lines, as the release notes draw theirs: the frame keeps one heading style.
+	 * WHY NOT SHARED: heading: a docs page's own levels, a step under the title, in the page's look.
 	 */
 	import { onMount, tick } from 'svelte';
 	import { page } from '$app/state';
@@ -9,6 +9,8 @@
 	import { BackButton, Button, Empty, Note, SettingLink, Tooltip } from '$lib/components/common';
 	import { copySectionLink, sectionAddress } from '$lib/docs/link';
 	import type { DocBlock, DocBook, DocInline, DocLink, DocMenuItem } from '$lib/docs/read';
+
+	type DocHeading = Extract<DocBlock, { kind: 'heading' }>;
 	import { settingsPath } from './sections';
 	import { COPY } from './Documentation.search';
 
@@ -28,7 +30,7 @@
 		);
 	});
 
-	/* The section pressed again in the list, or a search result, rewrites the address: follow it. */
+	/* The section pressed again, or a search result, rewrites the address: follow it. */
 	$effect(() => {
 		void page.state;
 		shown = new URLSearchParams(location.search).get('show') ?? '';
@@ -45,7 +47,7 @@
 		try {
 			replaceState(addressOf(slug), page.state);
 		} catch {
-			// Before the router has started, or in a test without one: the page still changes.
+			// No router yet, or a test without one: the page still changes.
 		}
 		await tick();
 		const target =
@@ -107,26 +109,32 @@
 	{#each (anchors ?? []).slice(1) as anchor (anchor)}<span id="doc-{anchor}"></span>{/each}
 {/snippet}
 
+{#snippet heading(block: DocHeading)}
+	{@render also(block.anchors)}{@render runs(block.inline)}
+	<span class="copy">
+		<Tooltip label="Copy link">
+			<Button
+				tone="ghost"
+				size="small"
+				icon="link"
+				aria-label="Copy link"
+				onclick={() =>
+					void copySectionLink(sectionAddress(addressOf(shown), block.anchors[0], location.origin))}
+			/>
+		</Tooltip>
+	</span>
+{/snippet}
+
 {#snippet blocks(list: DocBlock[])}
 	{#each list as block, at (at)}
-		{#if block.kind === 'heading'}
-			<p class="doc-heading" data-level={block.level} id="doc-{block.anchors[0]}">
-				{@render also(block.anchors)}{@render runs(block.inline)}
-				<span class="copy">
-					<Tooltip label="Copy link">
-						<Button
-							tone="ghost"
-							size="small"
-							icon="link"
-							aria-label="Copy link"
-							onclick={() =>
-								void copySectionLink(
-									sectionAddress(addressOf(shown), block.anchors[0], location.origin)
-								)}
-						/>
-					</Tooltip>
-				</span>
-			</p>
+		{#if block.kind === 'heading' && block.level === 2}
+			<h3 class="doc-heading" data-level="2" id="doc-{block.anchors[0]}">
+				{@render heading(block)}
+			</h3>
+		{:else if block.kind === 'heading'}
+			<h4 class="doc-heading" data-level="3" id="doc-{block.anchors[0]}">
+				{@render heading(block)}
+			</h4>
 		{:else if block.kind === 'paragraph'}
 			<p id={block.anchors ? `doc-${block.anchors[0]}` : undefined}>
 				{@render also(block.anchors)}{@render runs(block.inline)}
@@ -168,7 +176,7 @@
 	{@render blocks(whole.home)}
 	<nav class="doc-menu" aria-label={COPY.contents}>
 		{#each parts(whole.menu) as part, at (at)}
-			{#if part.label}<p class="doc-heading" data-level="2">{part.label}</p>{/if}
+			{#if part.label}<h2 class="doc-heading" data-level="2">{part.label}</h2>{/if}
 			{@render entries(part.items)}
 		{/each}
 	</nav>
@@ -179,7 +187,7 @@
 		{#each items as item, at (at)}
 			{#if 'items' in item}
 				<li class="group">
-					<p class="doc-heading" data-level="3">{item.label}</p>
+					<h3 class="doc-heading" data-level="3">{item.label}</h3>
 					{@render entries(item.items)}
 				</li>
 			{:else}
@@ -198,7 +206,7 @@
 		<Empty scope="block">{COPY.failed}</Empty>
 	{:else if book !== null && open !== null}
 		<BackButton label={COPY.contents} onback={() => void choose('')} />
-		<p class="doc-title">{open.title}</p>
+		<h2 class="doc-title">{open.title}</h2>
 		{@render blocks(open.blocks)}
 	{:else if book !== null}
 		{#if shown !== ''}<Empty scope="block">{COPY.missing}</Empty>{/if}
@@ -215,15 +223,21 @@
 		scroll-margin-block-start: var(--space-6);
 	}
 
+	.doc-title,
+	.doc-heading {
+		max-inline-size: var(--reading-measure);
+		letter-spacing: normal;
+		text-wrap: wrap;
+		color: var(--sift-ink);
+	}
+
 	.doc-title {
 		margin: var(--space-4) 0 var(--space-3);
 		font: var(--text-display);
-		color: var(--sift-ink);
 	}
 
 	.doc-heading {
 		margin: var(--space-6) 0 var(--space-2);
-		color: var(--sift-ink);
 	}
 
 	/* A zero-height box, so the press never makes the heading's line taller. */

@@ -51,7 +51,7 @@ from sift.kernel.access.constraints import (
     same_music_where,
 )
 from sift.kernel.access.repository.read_folders import _FILED_COUNTS
-from sift.kernel.access.repository.views import _optional_int, _optional_text
+from sift.kernel.access.repository.views import _optional_text
 from sift.kernel.db import Database
 from sift.kernel.ids import new_id
 from sift.kernel.tests.access_helpers import (
@@ -588,12 +588,8 @@ async def test_a_by_id_read_handed_nothing_answers_nothing_rather_than_the_first
     assert await access.vault_sources(actors.admin, ObjectType.FOLDER, world.mid) == []
 
 
-def test_a_row_that_does_not_carry_the_arranged_position_reads_as_no_position() -> None:
-    """`_optional_int` and `_optional_text` read a column that is not there as None, for a cut of
-    `arranged_at` from the hot read; both `KeyError` and `IndexError` are caught."""
-    assert _optional_int({"arranged_at": 4}, "arranged_at") == 4  # type: ignore[arg-type]
-    assert _optional_int({"arranged_at": None}, "arranged_at") is None  # type: ignore[arg-type]
-    assert _optional_int({"nothing_like_it": 1}, "arranged_at") is None  # type: ignore[arg-type]
+def test_a_row_that_does_not_carry_a_column_reads_it_as_none() -> None:
+    """`_optional_text` reads a column that is not there as None."""
     assert _optional_text({"note": "kept"}, "note") == "kept"  # type: ignore[arg-type]
     assert _optional_text({"note": None}, "note") is None  # type: ignore[arg-type]
     assert _optional_text({"nothing_like_it": "x"}, "note") is None  # type: ignore[arg-type]
@@ -802,10 +798,14 @@ async def test_a_page_continued_after_a_row_the_viewer_may_not_see_starts_from_n
 async def test_a_wall_with_something_arranged_in_front_of_the_sort_cannot_be_continued(
     access: Repository, actors: Actors, world: World
 ) -> None:
-    """Pins, arranged sequences and expression sorts cannot be seeked, and asking is refused."""
+    """Pins, a photo set's order and expression sorts cannot be seeked, and asking is refused; a
+    collection has no order of its own, so it continues as any wall does."""
+    continued = await access.visible_assets(
+        actors.admin, collection_id=world.collection, after=world.solo
+    )
+    assert continued.items == []
     for arranged in (
         {"pinned_first": True},
-        {"collection_id": world.collection},
         {"photo_set_id": world.photo_set},
         {"sort": "relevance"},
     ):

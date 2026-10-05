@@ -142,8 +142,7 @@ HER_USERNAME_NAME = "seeded_her_username"
 #: holding ONE file cannot show this fault at all (what it needs is a file on each side of the
 #: vault), so the second is written here.
 _ALSO_IN_COLLECTION = (
-    "INSERT OR IGNORE INTO collection_items (collection_id, asset_id, position, added_at)"
-    " VALUES (?, ?, 1, 0)"
+    "INSERT OR IGNORE INTO collection_items (collection_id, asset_id, added_at) VALUES (?, ?, 0)"
 )
 _ALSO_IN_PHOTO_SET = (
     "INSERT OR IGNORE INTO photo_set_items (photo_set_id, asset_id, position, added_at)"

@@ -45,7 +45,7 @@ def _index(client: TestClient) -> None:
 
 
 def _long_collection(client: TestClient, library: Library, count: int) -> tuple[str, list[str]]:
-    """A collection of `count` files arranged in the order they were made, so newest first differs."""
+    """A collection of `count` files, each made a second after the one before."""
     collection_id = make_collection(client, "Long reel")
     names = [
         "lantern dusk" if n == 7 else "harbour lantern" if n == 230 else f"clip {n:03d}"
@@ -69,9 +69,8 @@ def _long_collection(client: TestClient, library: Library, count: int) -> tuple[
                 ),
             ),
             (
-                "INSERT INTO collection_items (collection_id, asset_id, position, added_at)"
-                " VALUES (?, ?, ?, 0)",
-                (collection_id, asset_id, n),
+                "INSERT INTO collection_items (collection_id, asset_id, added_at) VALUES (?, ?, 0)",
+                (collection_id, asset_id),
             ),
         ]
     write(db_path(client), statements)
@@ -79,7 +78,7 @@ def _long_collection(client: TestClient, library: Library, count: int) -> tuple[
     return collection_id, ids
 
 
-def test_words_find_a_match_past_the_two_hundredth_in_the_arranged_order(
+def test_words_find_a_match_past_the_two_hundredth_in_the_order_asked(
     client: TestClient, library: Library
 ) -> None:
     """The screen holds 200 rows; the words are answered over the whole collection, paged."""
@@ -87,11 +86,12 @@ def test_words_find_a_match_past_the_two_hundredth_in_the_arranged_order(
     collection_id, ids = _long_collection(client, library, 250)
     address = f"/api/collections/{collection_id}/items"
 
-    found = client.get(address, params={"q": "lantern", "limit": 200}).json()
+    found = client.get(address, params={"q": "lantern", "sort": "oldest", "limit": 200}).json()
     assert [item["id"] for item in found["items"]] == [ids[7], ids[230]]
     assert found["total"] == 2
 
-    second = client.get(address, params={"q": "lantern", "limit": 1, "offset": 1}).json()
+    asked = {"q": "lantern", "sort": "oldest", "limit": 1, "offset": 1}
+    second = client.get(address, params=asked).json()
     assert [item["id"] for item in second["items"]] == [ids[230]]
     assert second["total"] == 2
 
@@ -102,9 +102,7 @@ def test_a_typed_field_narrows_as_a_pick_does(client: TestClient, library: Libra
     """`tags:` typed in the box is the language's, read by the same parser as the picks beside it."""
     sign_in(client)
     collection_id = make_collection(client, "Best of")
-    arranged = [library.third, library.second, library.first]
-    edit_items(client, collection_id, arranged)
-    edit_items(client, collection_id, arranged, action="reorder")
+    edit_items(client, collection_id, library.all_ids)
     beach, dusk = new_id(), new_id()
     write(
         db_path(client),
@@ -129,7 +127,8 @@ def test_a_typed_field_narrows_as_a_pick_does(client: TestClient, library: Libra
 def test_a_guest_searching_learns_nothing_of_a_file_not_shared(
     client: TestClient, library: Library
 ) -> None:
-    """Neither by the total under words that match only what was not shared, nor by a position."""
+    """Not by the total under words that match only what was not shared, and no row carries a
+    stored place to count by."""
     guest = sign_in(client, "guest")
     sign_in(client)
     collection_id = make_collection(client, "Mixtape")
@@ -137,7 +136,7 @@ def test_a_guest_searching_learns_nothing_of_a_file_not_shared(
     share(client, library.third, guest)
     _index(client)
     address = f"/api/collections/{collection_id}/items"
-    assert client.get(address).json()["items"][0]["position"] is not None
+    assert "position" not in client.get(address).json()["items"][0]
 
     sign_in(client, "guest")
     hidden = client.get(address, params={"q": "first"})
@@ -147,6 +146,3 @@ def test_a_guest_searching_learns_nothing_of_a_file_not_shared(
     shown = client.get(address, params={"q": "mp4"}).json()
     assert [item["id"] for item in shown["items"]] == [library.third]
     assert shown["total"] == 1
-    # Stored, it is 2: two files before it that this guest was never shown.
-    assert shown["items"][0]["position"] is None
-    assert client.get(address).json()["items"][0]["position"] is None

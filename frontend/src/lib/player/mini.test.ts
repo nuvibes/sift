@@ -460,3 +460,34 @@ describe('the panel never grows bars back', () => {
 		expect(landed.height).toBe(SMALL_WINDOW.height);
 	});
 });
+
+describe('Hidden shutting on what is in it', () => {
+	const CLIP = { id: 'c1', mediaType: 'video', art: 'a', poster: '/p', sprite: null, at: 8 };
+
+	it('keeps the id alone, and the bar it was in', () => {
+		mini.open(CLIP, WINDOW, { bar: true });
+
+		mini.veil('c1');
+
+		expect(mini.asset).toEqual({ id: 'c1', concealed: true });
+		expect(mini.bar).toBe(true);
+	});
+
+	it('leaves another file alone', () => {
+		mini.open(CLIP, WINDOW);
+
+		mini.veil('c2');
+		mini.unveil({ id: 'c1', mediaType: 'image' });
+
+		expect(mini.asset).toEqual(CLIP);
+	});
+
+	it('takes the whole file back only for the one it veiled', () => {
+		mini.open(CLIP, WINDOW);
+		mini.veil('c1');
+
+		mini.unveil(CLIP);
+
+		expect(mini.asset).toEqual(CLIP);
+	});
+});

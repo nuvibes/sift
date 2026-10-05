@@ -326,6 +326,8 @@ const BAR_END = '.actions > *';
 
 const TILE_SIZE = '.size';
 
+const PASTE_HALF = '.add .half.trail';
+
 /* Under the phone's width (`PHONE_WIDTH`) the bar is a row of squares and none of this applies. */
 
 interface Need {
@@ -364,6 +366,9 @@ class ScreenBar {
 	/** Whether the tile size is on the bar: it leaves before the centre group would slide. */
 	sizeOnBar = $state(true);
 
+	/** Whether Add's paste half is on the bar: it folds into Add after the tile size has gone. */
+	pasteOnBar = $state(true);
+
 	/** The tile size's panel on the screen's own row while it is off the top bar. Set by the bar. */
 	sizeHome = $state.raw<BarPanel | null>(null);
 
@@ -382,8 +387,10 @@ class ScreenBar {
 					gapOf(ends[0]?.parentElement ?? null) * Math.max(0, ends.length - 1)
 			);
 		const size = bar.querySelector<HTMLElement>(TILE_SIZE);
+		const pasteWidth = () => bar.querySelector(PASTE_HALF)?.getBoundingClientRect().width ?? 0;
 		let sizeRoom = 0;
-		/* The end group with the tile size counted in, so its leaving moves no threshold. */
+		let pasteRoom = 0;
+		/* The end group with all that may leave counted in, so a leaving moves no threshold. */
 		let end = 0;
 		const sum = () => 2 * (end + gapOf(bar)) + MENUS_ROOM + FIELD_FLOOR;
 		let width = Number.POSITIVE_INFINITY;
@@ -395,7 +402,9 @@ class ScreenBar {
 			const onPhone = phone?.matches ?? false;
 			this.roomOnTopBar = onPhone || width >= Math.max(sum() + raised, room);
 			// Each end must hold the whole end group beside the field's floor, or the group slides.
-			this.sizeOnBar = onPhone || width >= sum() - MENUS_ROOM;
+			const holds = (group: number) => width >= 2 * (group + gapOf(bar)) + FIELD_FLOOR;
+			this.sizeOnBar = onPhone || holds(end);
+			this.pasteOnBar = onPhone || holds(end - sizeRoom);
 		};
 		const observer = new ResizeObserver((entries) => {
 			for (const entry of entries) {
@@ -407,7 +416,9 @@ class ScreenBar {
 			const holder = ends.find((one) => size !== null && one.contains(size));
 			if (standing > 0 && holder !== undefined)
 				sizeRoom = standing + (holder.childElementCount > 1 ? gapOf(holder) : 0);
-			end = this.barEnd + (standing > 0 ? 0 : sizeRoom);
+			const pasting = pasteWidth();
+			if (pasting > 0) pasteRoom = pasting;
+			end = this.barEnd + (standing > 0 ? 0 : sizeRoom) + (pasting > 0 ? 0 : pasteRoom);
 			if (field !== null && this.roomOnTopBar && !(phone?.matches ?? false)) {
 				const has = field.getBoundingClientRect().width;
 				if (has > 0 && has < FIELD_FLOOR && Number.isFinite(width)) {
@@ -530,9 +541,8 @@ class ScreenBar {
 	}
 
 	/*
-	 * Whether somebody is typing in the panel, in which case they have not left it: a hover-opened
-	 * panel must not take a half-typed name away, as a pressed one does not. A caret, not focus,
-	 * since a ticked checkbox keeps focus. Asked of the document at the moment of shutting.
+	 * Whether somebody is typing in the panel, so has not left it. A caret, not focus, since a
+	 * ticked checkbox keeps focus.
 	 */
 	#someoneIsTyping(): boolean {
 		if (typeof document === 'undefined') return false;

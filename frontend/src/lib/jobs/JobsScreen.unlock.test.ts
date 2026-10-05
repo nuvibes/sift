@@ -49,6 +49,7 @@ const PAGE: JobsPage = {
 	stepping_back: false,
 	step_back_share: 25,
 	step_back_for: null,
+	step_back_over: [],
 	full_amount: false,
 	password_wanted: 1
 };
@@ -127,5 +128,37 @@ describe('a task parked for the password, on Now', () => {
 		await open();
 
 		expect(presses()).toHaveLength(0);
+	});
+});
+
+describe('a benchmark Sift stopped for other work', () => {
+	const STOPPED =
+		"Sift stopped the full benchmark because this device is in use. It runs again by itself once Sift has nothing else to do and nobody's using this device.";
+	const RUNNING = 'Benchmarking this device so Sift can make the best use of it.';
+	const canceled = (id: string, error: string | null): Job => ({
+		...job(id, '', false),
+		state: 'canceled',
+		name: 'Benchmarking this device',
+		type: 'performance_benchmark',
+		error,
+		note: RUNNING
+	});
+
+	it("says why on its row, whole; a person's own Cancel says only Canceled", async () => {
+		const page = { ...PAGE, jobs: [canceled('b1', STOPPED), canceled('b2', null)], total: 2 };
+		vi.stubGlobal(
+			'fetch',
+			vi.fn(async () => ({ ok: true, status: 200, json: async () => page }) as Response)
+		);
+		host = document.createElement('div');
+		document.body.append(host);
+		screen = mount(JobsScreen, { target: host });
+		await vi.waitFor(() => expect(host.textContent).toContain(STOPPED));
+		flushSync();
+
+		const why = [...host.querySelectorAll('.why')];
+		expect(why.map((one) => one.textContent)).toEqual([STOPPED]);
+		expect(why[0].classList.contains('whole')).toBe(true);
+		expect(host.textContent).not.toContain(RUNNING);
 	});
 });

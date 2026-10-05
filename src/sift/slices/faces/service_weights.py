@@ -10,14 +10,14 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 
 from sift.kernel.log import get_logger
-from sift.kernel.ml.runtime import providers_now
+from sift.kernel.ml.child import devices_here
 from sift.kernel.settings_registry import get_registered
 from sift.slices.faces import crop as cropping
 from sift.slices.faces import detect, recognize, weights
 from sift.slices.faces import settings as face_settings
 from sift.slices.faces.models import Description
 from sift.slices.faces.recognize import Recognizer
-from sift.slices.faces.runner import ChildRunner, DeviceUnavailable, resolve_provider
+from sift.slices.faces.runner import FEATURE, ChildRunner, DeviceUnavailable, resolve_provider
 from sift.slices.faces.service_base import Configured, FacesDisabled, FaceServiceBase
 from sift.slices.faces.store import Remeasured
 
@@ -166,18 +166,13 @@ class WeightsMixin(FaceServiceBase):
         """
         if not await self.enabled():
             return None
-        # THROUGH `providers_now`, NOT `import onnxruntime`. Same reason it is called here rather
-        # than at the top (the runtime is a heavy import and nothing should pull it in on an
-        # install that never switched this on), but the import has to be the one that puts the
-        # graphics-card build in front of it first. A bare import here would let the processor
-        # build be the first one loaded, and the first one in wins for the life of the process.
-        # A card that died underneath a running session is dead for this process, whatever the
-        # runtime would say about opening it again; the runner remembers why.
+        # A card that died underneath a running session stays dead until the hold passes, whatever
+        # the runtime would say about opening it again; the runner remembers why.
         if self._runner is not None and self._runner.broken is not None:
             return self._runner.broken
         configured = await self.configuration()
         try:
-            available = await asyncio.to_thread(providers_now)
+            available = await asyncio.to_thread(devices_here, self._settings, FEATURE)
             resolve_provider(configured.device, self._hardware, available)
         except DeviceUnavailable as refused:
             return str(refused)
@@ -427,6 +422,7 @@ class WeightsMixin(FaceServiceBase):
                 weight,
                 session_factory=session_factory,
                 progress=relay,
+                fresh=force,
             )
             # A partial file left beside it means the transfer stopped: on a forced fetch the old
             # model is still in place, so being installed does not say this one arrived.

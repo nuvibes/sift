@@ -12,10 +12,14 @@ is the seam the module documents and the only one either caller uses in a test.
 
 from __future__ import annotations
 
+import socket
+import ssl
 from collections.abc import AsyncIterator
 from pathlib import Path
 
+import aiohttp
 import pytest
+from aiohttp.client_reqrep import ConnectionKey
 
 from sift.kernel import fetch
 
@@ -208,8 +212,10 @@ async def test_a_status_that_is_not_a_download_is_refused_in_a_sentence(tmp_path
             session_factory=lambda: session,
         )
 
-    assert "graphics-card runtime" in str(refused.value)
-    assert "404" in str(refused.value)
+    assert str(refused.value) == (
+        "The graphics-card runtime couldn't be downloaded: example.invalid answered 404. Try again"
+        " later."
+    )
 
 
 async def test_nothing_is_written_when_the_server_refuses(tmp_path: Path) -> None:
@@ -314,10 +320,12 @@ async def test_it_makes_its_own_session_when_none_is_given(
     import aiohttp
 
     made: list[object] = []
+    trusted: list[object] = []
     session = FakeSession(FakeResponse(200, b"from a session of its own"))
 
     def _client_session(**kwargs: object) -> FakeSession:
         made.append(kwargs.get("timeout"))
+        trusted.append(kwargs.get("trust_env"))
         return session
 
     monkeypatch.setattr(aiohttp, "ClientSession", _client_session)
@@ -328,3 +336,107 @@ async def test_it_makes_its_own_session_when_none_is_given(
     timeout = made[0]
     assert getattr(timeout, "connect", None) == fetch.CONNECT_TIMEOUT
     assert getattr(timeout, "sock_read", None) == fetch.READ_TIMEOUT
+    # The environment's and the system's proxy settings, which the client ignores by default.
+    assert trusted == [True]
+
+
+# --- a connection that fails, in words -----------------------------------------------------------
+
+_KEY = ConnectionKey("models.example.test", 443, True, True, None, None, None)
+_HOST = "models.example.test"
+
+
+class Unreached:
+    """A session whose request raises what the real client raises when it cannot get through."""
+
+    def __init__(self, error: BaseException) -> None:
+        self.error = error
+
+    def get(self, url: str, headers: dict[str, str] | None = None) -> FakeResponse:
+        raise self.error
+
+    async def __aenter__(self) -> Unreached:
+        return self
+
+    async def __aexit__(self, *_: object) -> None:
+        return None
+
+
+FAILURES = [
+    (aiohttp.ClientConnectorError(_KEY, ConnectionRefusedError(61, "refused")), fetch.REFUSED),
+    (aiohttp.ClientConnectorError(_KEY, OSError(101, "Network is unreachable")), fetch.UNREACHED),
+    (aiohttp.ClientConnectorDNSError(_KEY, socket.gaierror(11001, "no name")), fetch.NOT_FOUND),
+    (aiohttp.ConnectionTimeoutError("Connection timeout"), fetch.NO_ANSWER),
+    (TimeoutError(), fetch.NO_ANSWER),
+    (
+        aiohttp.ClientConnectorCertificateError(_KEY, ssl.SSLCertVerificationError(1, "verify")),
+        fetch.UNTRUSTED,
+    ),
+    (aiohttp.ClientConnectorSSLError(_KEY, ssl.SSLError(1, "handshake")), fetch.UNTRUSTED),
+    (aiohttp.ServerFingerprintMismatch(b"a", b"b", _HOST, 443), fetch.UNTRUSTED),
+    (aiohttp.ClientProxyConnectionError(_KEY, OSError(111, "proxy down")), fetch.PROXY),
+    (aiohttp.ClientHttpProxyError(None, (), status=407), fetch.PROXY),  # type: ignore[arg-type]
+    (aiohttp.ServerDisconnectedError(), fetch.DROPPED),
+]
+
+
+@pytest.mark.parametrize(("error", "why"), FAILURES)
+async def test_a_connection_that_fails_is_a_sentence_that_says_what_to_check(
+    tmp_path: Path, error: BaseException, why: str
+) -> None:
+    with pytest.raises(fetch.FetchFailed) as failed:
+        await fetch.fetch_resumable(
+            f"https://{_HOST}/m.onnx",
+            tmp_path / "file.part",
+            what="detector model",
+            session_factory=lambda: Unreached(error),
+        )
+
+    said = f"The detector model couldn't be downloaded: {why.format(host=_HOST)}"
+    assert str(failed.value) == said, "and nothing claims that anything arrived"
+    assert failed.value.__cause__ is error
+
+
+async def test_what_arrived_is_said_to_be_kept_only_when_something_did(tmp_path: Path) -> None:
+    partial = tmp_path / "file.part"
+    partial.write_bytes(b"half")
+    refused = aiohttp.ClientConnectorError(_KEY, ConnectionRefusedError(61, "refused"))
+
+    with pytest.raises(fetch.FetchFailed) as failed:
+        await fetch.fetch_resumable(
+            f"https://{_HOST}/m", partial, session_factory=lambda: Unreached(refused)
+        )
+
+    assert str(failed.value).endswith(fetch.KEPT)
+    assert partial.read_bytes() == b"half"
+
+
+class DropsPartway(FakeResponse):
+    """Sends one chunk, then the connection goes."""
+
+    async def iter_chunked(self, size: int) -> AsyncIterator[bytes]:
+        yield b"first"
+        raise aiohttp.ClientPayloadError("connection lost")
+
+
+async def test_a_connection_that_drops_partway_keeps_what_arrived_and_says_so(
+    tmp_path: Path,
+) -> None:
+    partial = tmp_path / "file.part"
+    session = FakeSession(DropsPartway(200, b"first and the rest"))
+
+    with pytest.raises(fetch.FetchFailed) as failed:
+        await fetch.fetch_resumable(f"https://{_HOST}/m", partial, session_factory=lambda: session)
+
+    assert fetch.DROPPED.format(host=_HOST) in str(failed.value)
+    assert str(failed.value).endswith(fetch.KEPT)
+    assert partial.read_bytes() == b"first"
+
+
+async def test_an_address_with_no_host_is_named_whole(tmp_path: Path) -> None:
+    error = aiohttp.ServerDisconnectedError()
+
+    with pytest.raises(fetch.FetchFailed, match="the connection to models dropped"):
+        await fetch.fetch_resumable(
+            "models", tmp_path / "file.part", session_factory=lambda: Unreached(error)
+        )

@@ -5,8 +5,7 @@
  * an order held in the component would go with it and the shelf would come back in an order
  * nobody had chosen.
  *
- * It orders the SHELF. The sequence inside a collection is arranged by hand and is the collection
- * itself; nothing here touches it.
+ * It orders the SHELF. A collection's own files follow the wall's Sort by.
  *
  * The rule itself (read at import, refuse an order this shelf does not offer, sort anyway where
  * storage is refused) lives in `lib/grid/wall-sort`.

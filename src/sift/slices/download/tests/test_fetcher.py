@@ -30,7 +30,7 @@ def _stub_check_url(monkeypatch: pytest.MonkeyPatch) -> None:
     """Stub the address guard to a no-op. The session here is faked, so there is nothing real to
     resolve; the guard itself is exercised against real resolution in test_url_guard and test_net.
     The SSRF tests below override this to make it refuse."""
-    monkeypatch.setattr(fetcher, "check_url", lambda _url: None)
+    monkeypatch.setattr(fetcher, "check_url", lambda _url, **_k: None)
 
 
 class _Content:
@@ -517,7 +517,7 @@ async def test_a_blocked_initial_address_is_refused_before_any_socket_opens(
 ) -> None:
     session = _fake(chunks=[b"x"])
 
-    def _reject(_url: str) -> None:
+    def _reject(_url: str, **_k: object) -> None:
         raise UrlRejected("private", reason="private_address")
 
     monkeypatch.setattr(fetcher, "check_url", _reject)
@@ -536,7 +536,7 @@ async def test_a_redirect_target_is_revalidated_and_can_be_refused(
     session = _SeqSession([redirect, _Response(chunks=[b"never"])])
     seen: list[str] = []
 
-    def _guard(url: str) -> None:
+    def _guard(url: str, **_k: object) -> None:
         seen.append(url)
         if "169.254" in url:
             raise UrlRejected("private", reason="private_address")

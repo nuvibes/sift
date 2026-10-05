@@ -16,7 +16,7 @@ The first rows have no heading: the switch, how thorough Sift is, when it runs, 
 
 ## Rows the pane draws by hand
 
-- <a id="faces.more"></a>**More settings**: **Edit** opens the device and models, the lowest face quality and the longest time on one file. It also holds **Group faces again** and **Identify all files again**.
+- <a id="faces.more"></a>**More settings**: **Edit** opens the device and models, the lowest face quality and the longest time on one file. It also holds **Group faces again** and **Identify all files again**. A download that can't connect shows why and what to check. It uses the proxy set in Windows, or in `HTTPS_PROXY`. A proxy set by an automatic configuration script isn't read.
 - <a id="faces.starters"></a>**Use stash-box pictures as starters**: **Run** keeps up to five stash-box pictures of a person linked to a stash-box who has no confirmed faces.
 - **Remove** and **Create a person**, at the end of each row waiting for a matching face: forget their facial fingerprints, or create that person now. Nothing in your library changes when you remove one.
 - <a id="faces.pack-import"></a>**Add people Sift can recognize from a facial fingerprints file to your library**: **Import file** opens the file chooser. Sift can then recognize the people in the file, and nothing is added to your library.

@@ -18,9 +18,9 @@ This list is as load-bearing as the one below: without it the easy mistake is to
 
 **The process's own loops.** The write-ahead checkpoint, the statistics refresh, the job watchdog's
 sweep, a worker's heartbeat, the pool's reconfigure, the keep-awake request looked at again every
-half a minute, and the settings pushed onto the running process. Every one is a timer, none of
-them has a cadence anybody chooses, and none of them is a task: they are how the process stays
-alive. A screen listing them would be a screen of numbers with no controls.
+half a minute, the look for a quiet moment, and the settings pushed onto the running process. Every
+one is a timer, none has a cadence anybody chooses, and none is a task: they are how the process
+stays alive. A screen listing them would be a screen of numbers with no controls.
 
 **Derived counts nobody chooses a time for.** Insights' adder-up (`slices/insights/rollup.py`) adds
 up each finished day of each User a piece at a time, beside the two database loops above and started

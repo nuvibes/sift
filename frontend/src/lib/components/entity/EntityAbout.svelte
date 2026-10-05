@@ -116,10 +116,10 @@
 						<Heart {favorite} onchange={(next) => onfavorite?.(next)} size={20} />
 						<RatingChip {rating} onchange={(next) => onrate?.(next)} size={20} label={name} />
 					{/if}
-					<!-- An entity is only ever enriched by a stash-box, so `via` is supplied here, with
-					     the box's own word the mark is painted in. -->
+					<!-- An entity is only ever enriched by a stash-box, so `via` is supplied here. -->
 					<EnrichmentMarks
 						padded
+						onPage
 						sources={enrichedBy.map((one) => ({
 							via: 'stash',
 							name: one.name,
@@ -135,12 +135,14 @@
 				<p class="made-by">
 					{#if madeBy.box_name}
 						<EnrichmentMarks
+							onPage
 							said="created"
 							sources={[{ via: 'stash', name: madeBy.box_name, box: madeBy.box_slug }]}
 						/>
 					{:else if madeBy.via && madeByGlyph(madeBy)}
 						<!-- A pass of Sift's own keeps the accent; a person gets no glyph, only words. -->
 						<EnrichmentMarks
+							onPage
 							said="created"
 							sources={[{ via: madeBy.via, act: madeBy.act, name: null, box: null }]}
 						/>

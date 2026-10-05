@@ -76,8 +76,8 @@ async def test_a_filing_gives_every_kind_its_first_file(temp_db: Database, world
     assert await _cover(temp_db, "person", world.person) == world.solo
     assert (await standing(temp_db, "person", world.person)).by_default
 
-    # A collection and a Photo Set made empty, then given two pictures at once: the first by the
-    # arrangement, whatever the ids.
+    # A collection and a Photo Set made empty, then given pictures at one moment: the first filed is
+    # the cover; picked again, a collection takes the older file, a Photo Set its first in order.
     shelf, album = new_id(), new_id()
     await temp_db.execute(
         "INSERT INTO collections (id, name, created_at) VALUES (?, 'shelf', 0)", (shelf,)
@@ -85,19 +85,24 @@ async def test_a_filing_gives_every_kind_its_first_file(temp_db: Database, world
     await temp_db.execute(
         "INSERT INTO photo_sets (id, name, created_at) VALUES (?, 'album', 0)", (album,)
     )
+    filed = sorted((world.solo, world.twin, world.loose), reverse=True)
     async with temp_db.write() as connection:
-        for position, asset_id in enumerate((world.twin, world.loose)):
+        for asset_id in filed:
             await connection.execute(
-                "INSERT INTO collection_items (collection_id, asset_id, position, added_at)"
-                " VALUES (?, ?, ?, 5)",
-                (shelf, asset_id, position),
+                "INSERT INTO collection_items (collection_id, asset_id, added_at) VALUES (?, ?, 5)",
+                (shelf, asset_id),
             )
+        for position, asset_id in enumerate((world.twin, world.loose)):
             await connection.execute(
                 "INSERT INTO photo_set_items (photo_set_id, asset_id, position, added_at)"
                 " VALUES (?, ?, ?, 5)",
                 (album, asset_id, position),
             )
-    assert await _cover(temp_db, "collection", shelf) == world.twin
+    assert await _cover(temp_db, "collection", shelf) == filed[0]
+    await temp_db.execute(
+        "DELETE FROM collection_items WHERE collection_id = ? AND asset_id = ?", (shelf, filed[0])
+    )
+    assert await _cover(temp_db, "collection", shelf) == filed[2]
     assert await _cover(temp_db, "photo_set", album) == world.twin
 
 

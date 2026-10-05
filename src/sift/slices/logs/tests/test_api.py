@@ -3,7 +3,9 @@
 
 from __future__ import annotations
 
+import io
 import json
+import zipfile
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -143,11 +145,11 @@ def test_asking_for_more_lines_than_allowed_is_refused_rather_than_capped(
     assert client.get("/api/logs", params={"lines": 0}).status_code == 422
 
 
-def test_a_downloaded_copy_hides_a_personal_path_and_a_secret_whatever_the_setting(
-    client: TestClient, monkeypatch: pytest.MonkeyPatch
+def test_a_downloaded_archive_is_the_whole_log_redacted_whatever_the_setting(
+    client: TestClient, data_dir: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The log on disk may be written whole; the copy that leaves the machine never is. A record
-    is redacted field by field, a line that is not one as text, and the order is kept."""
+    """The log on disk may be written whole; the copy that leaves the machine never is. Every file
+    of it, and every line, not the screenful a filter left."""
     from sift.kernel import log as log_module
 
     sign_in(client, "admin")
@@ -157,26 +159,30 @@ def test_a_downloaded_copy_hides_a_personal_path_and_a_secret_whatever_the_setti
             "path": "C:\\Users\\someone\\Videos\\clip.mp4",
             "detail": "token=hunter22",
             "event": "file.opened",
-            "level": "info",
-            "timestamp": "2026-10-03T06:00:00Z",
+            "level": "debug",
         }
     )
-    plain = "Traceback: /home/someone/Videos/clip.mp4 cookie=hunter22"
+    # The 600 go in the rolled file: the running app appends to the current one as it likes.
+    write_log(data_dir, ["Traceback: /home/someone/a.mp4 cookie=hunter22"])
+    rolled = "\n".join([record] * 600) + "\n"
+    (data_dir / f"{LOG_FILENAME}.1").write_text(rolled, encoding="utf-8")
 
-    answer = client.post("/api/logs/redacted", json={"lines": [record, plain]})
+    answer = client.get("/api/logs/archive")
 
     assert answer.status_code == 200
-    lines = answer.json()["lines"]
-    assert len(lines) == 2
-    for line in lines:
-        assert "someone" not in line
-        assert "hunter22" not in line
-        assert "clip.mp4" in line
-    assert json.loads(lines[0])["event"] == "file.opened"
-    assert list(json.loads(lines[0])) == list(json.loads(record)), "fields keep their order"
+    assert answer.headers["content-type"] == "application/zip"
+    with zipfile.ZipFile(io.BytesIO(answer.content)) as archive:
+        names = archive.namelist()
+        older = archive.read(f"library/{LOG_FILENAME}.1").decode()
+        text = "".join(archive.read(name).decode() for name in names)
+    assert f"library/{LOG_FILENAME}" in names
+    assert older.count('"file.opened"') == 600
+    assert "someone" not in text
+    assert "hunter22" not in text
+    assert "clip.mp4" in text
 
 
-def test_a_guest_cannot_have_a_copy_redacted(client: TestClient) -> None:
+def test_a_guest_cannot_download_the_log(client: TestClient) -> None:
     sign_in(client, "guest")
 
-    assert client.post("/api/logs/redacted", json={"lines": ["one"]}).status_code == 403
+    assert client.get("/api/logs/archive").status_code == 403

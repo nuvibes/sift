@@ -38,6 +38,10 @@ import { libraryChanges } from '$lib/library/changes.svelte';
 
 export type VaultState = components['schemas']['VaultState'];
 
+/* The tabs and windows of this browser share one session, so Hidden shut in one is shut in all. */
+const SHUT = 'shut';
+const tabs = typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel('sift.vault');
+
 /** What went wrong, in words a person can act on. Anything else is rethrown. */
 export type UnlockFailure = 'wrong-pin' | 'too-many-attempts';
 
@@ -127,9 +131,15 @@ export class Vault {
 		// Locked locally either way, because that is what takes the content off this screen and
 		// there is no version of this where showing it longer is the better answer.
 		this.#adopt({ unlocked: false, pin_set: this.pinSet });
+		tabs?.postMessage(SHUT);
 		// But the caller is told, because the two states differ where it matters: a lock the server
 		// never heard leaves the vault open there, and a reload would reveal everything again.
 		return reached;
+	}
+
+	/** Another tab of this browser shut Hidden, and so shut it here. */
+	shutElsewhere(): void {
+		this.#adopt({ unlocked: false, pin_set: this.pinSet });
 	}
 
 	/* Whether this tab locked its session. Cleared by a load the server answers. */
@@ -165,6 +175,10 @@ export class Vault {
 }
 
 export const vault = new Vault();
+
+tabs?.addEventListener('message', (event) => {
+	if (event.data === SHUT) vault.shutElsewhere();
+});
 
 /**
  * Asking for the PIN, from anywhere.

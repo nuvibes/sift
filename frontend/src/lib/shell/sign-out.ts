@@ -1,6 +1,7 @@
 import { goto } from '$app/navigation';
 import { stopAccountScopedReaders } from '$lib/shell/account-scoped';
 import { api, ApiError, requestsInFlight } from '$lib/api/client';
+import { mini } from '$lib/player/mini.svelte';
 import { session } from '$lib/shell/session.svelte';
 import { theme } from '$lib/theme/theme.svelte';
 import { toasts } from '$lib/shell/toasts.svelte';
@@ -37,6 +38,8 @@ export async function signOut(): Promise<void> {
 		}
 	}
 	session.forget();
+	// The corner panel's file would be drawn again at the next sign-in in this window.
+	mini.close();
 	theme.forget();
 	await goto('/');
 }

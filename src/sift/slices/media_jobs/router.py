@@ -15,7 +15,7 @@ from typing import Annotated, cast
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import Field
 
-from sift.kernel import attention, lanes, wiring
+from sift.kernel import attention, device_load, lanes, wiring
 from sift.kernel.access import Repository, Viewer
 from sift.kernel.attention import full_amount, stepping_back
 from sift.kernel.content import ContentStore
@@ -88,8 +88,7 @@ router = APIRouter(prefix="/jobs", tags=["jobs"])
 
 
 def _database(request: Request) -> Database | None:
-    """The database, or None in a test that builds routes without one. A row then shows what the
-    work is and not which file, which is a smaller answer rather than a broken page."""
+    """The database, or None in a test built without one: its rows then name no file."""
     return part_or_none(request, DATABASE)
 
 
@@ -467,6 +466,7 @@ async def _page(
         full_amount=full_amount(),
         step_back_share=attention.ATTENTION.share,
         step_back_for=attention.ATTENTION.cause,
+        step_back_over=device_load.READER.over if attention.ATTENTION.cause == "others" else [],
         password_wanted=sum(sealed.values()),
     )
 
