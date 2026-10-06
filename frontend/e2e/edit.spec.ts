@@ -208,10 +208,20 @@ async function dragGrip(page: Page, grip: string, to: { x: number; y: number }):
 	/* Through Playwright's own checks, which wait until the handle is still and is what a press
 	   there lands on. A press sent by coordinates while the menu that opened this dialog is still
 	   closing lands on a page refusing clicks, and the drag never starts. */
+	// The sheet's entrance can still be scaling the stage on a slow machine: wait until the box
+	// has stopped moving, or the drag is read against a stage five per cent smaller than it ends.
+	const stage = page.locator('figure.stage');
+	await expect
+		.poll(async () => {
+			const before = JSON.stringify(await stage.boundingBox());
+			await page.waitForTimeout(150);
+			return before === JSON.stringify(await stage.boundingBox());
+		})
+		.toBe(true);
 	await page.locator(`[data-grip="${grip}"]`).hover();
 	await page.mouse.down();
 	// Read as the drag starts, which is when the stage reads where it is and holds it for the drag.
-	const box = (await page.locator('figure.stage').boundingBox())!;
+	const box = (await stage.boundingBox())!;
 	await page.mouse.move(box.x + box.width * to.x, box.y + box.height * to.y, { steps: 10 });
 	await page.mouse.up();
 }
