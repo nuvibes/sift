@@ -213,9 +213,9 @@ SELECT pl.id, CASE WHEN {{LOCKED}} THEN '' ELSE pl.name END AS name,
    -- The name OR one of its other names, exactly as a person and a tag are matched: a site filed
    -- as one spelling is found under another, as its FILES are, which is what the site's own record
    -- promises ("any of them finds it").
-   AND (:prefix = '' OR ({{SHOWN}} AND (pl.name LIKE :like ESCAPE '\\'
+   AND (:prefix = '' OR (CASE WHEN {{SHOWN}} THEN (pl.name LIKE :like ESCAPE '\\'
         OR EXISTS (SELECT 1 FROM site_aliases pa
-                    WHERE pa.site_id = pl.id AND pa.alias LIKE :like ESCAPE '\\'))))
+                    WHERE pa.site_id = pl.id AND pa.alias LIKE :like ESCAPE '\\')) ELSE 0 END))
    -- CONCEALED BY ITSELF **OR BY ANY SITE ABOVE IT**. Stopping at the row's own flag would take a
    -- hidden network's labels' FILES off every screen and leave the labels themselves on this wall:
    -- named, counted, and with pages that still answer 200: the disclosure concealment exists to

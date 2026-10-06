@@ -201,8 +201,8 @@ SELECT ac.id, ac.name, ac.display_name, ac.url, ac.site_id,
    -- than the whole one, so a row this keeps can never draw a card that says 0. The board's count
    -- and the panel's wall both read this statement, so the two agree by construction.
    AND (:unattached IS NULL OR :unattached = 0 OR COALESCE(c.asset_count, 0) > 0)
-   AND (:prefix = '' OR ({{SHOWN}} AND (ac.name LIKE :like ESCAPE '\\'
-        OR ac.display_name LIKE :like ESCAPE '\\')))
+   AND (:prefix = '' OR (CASE WHEN {{SHOWN}} THEN (ac.name LIKE :like ESCAPE '\\'
+        OR ac.display_name LIKE :like ESCAPE '\\') ELSE 0 END))
    -- A site this viewer has hidden takes its usernames with it, the same way it takes its files,
    -- and so does a NETWORK above that site, so a username under a label under a hidden network
    -- does not stay on the wall with its name and its count on it.

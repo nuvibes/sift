@@ -242,11 +242,11 @@ SELECT p.id, CASE WHEN {{LOCKED}} THEN '' ELSE p.name END AS name,
  -- findable by all three, as `resolve_alias_targets` says. Matching only the first would leave a
  -- search box offering nothing for a username somebody typed off one of Sift's own screens: the
  -- files findable, the person not.
- WHERE (:prefix = '' OR ({{SHOWN}} AND (p.name LIKE :like ESCAPE '\\'
+ WHERE (:prefix = '' OR (CASE WHEN {{SHOWN}} THEN (p.name LIKE :like ESCAPE '\\'
         OR EXISTS (SELECT 1 FROM people_aliases al
                     WHERE al.person_id = p.id AND al.alias LIKE :like ESCAPE '\\')
         OR EXISTS (SELECT 1 FROM usernames ac
-                    WHERE ac.person_id = p.id AND ac.name LIKE :like ESCAPE '\\'))))
+                    WHERE ac.person_id = p.id AND ac.name LIKE :like ESCAPE '\\')) ELSE 0 END))
    AND (:person_id IS NULL OR p.id = :person_id)
    -- A SET of people, for a caller holding a list of ids that needs a name for each of them.
    --

@@ -133,7 +133,8 @@ def locked_tile(kind: str, row: str) -> str:
     return _LOCKED_TILE.format(kind=kind, row=row)
 
 
-#: Anybody but an admin is matched only on what they may be shown, so hidden names cost nothing.
+#: Anybody but an admin is matched only on what they may be shown, so hidden names cost nothing:
+#: the walls test it inside a CASE, so no planner tries the name first.
 _SHOWN = (
     "(:is_admin = 1 OR {row}.id IN (SELECT nm.object_id FROM viewer_entity_counts nm"
     " WHERE nm.user_id = :viewer AND nm.kind = '{kind}' AND nm.permitted > 0))"

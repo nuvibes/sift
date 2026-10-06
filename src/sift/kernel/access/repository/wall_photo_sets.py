@@ -172,7 +172,7 @@ SELECT ps.id, CASE WHEN {{LOCKED}} THEN '' ELSE ps.name END AS name,
    -- The name, where a picker or a box is narrowing the list to what somebody is typing.
    -- Plain prefix matching on the name alone: these two carry no other names to match against,
    -- unlike a tag or a person, so there is nothing here to report having matched INSTEAD.
-   AND (:prefix = '' OR ({{SHOWN}} AND ps.name LIKE :like ESCAPE '\\'))
+   AND (:prefix = '' OR (CASE WHEN {{SHOWN}} THEN ps.name LIKE :like ESCAPE '\\' ELSE 0 END))
    AND (:reveal_named = 1 OR COALESCE(h.hidden, 0) = 0)
    AND (:list_empty = 1 OR COALESCE(n.item_count, 0) > 0)
    -- A LOCKED TILE matches no typed word: a box that finds a padlock has said the name. See

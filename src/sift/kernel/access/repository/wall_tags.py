@@ -193,9 +193,9 @@ SELECT t.id, CASE WHEN {{LOCKED}} THEN '' ELSE t.name END AS name,
    -- one finds the files), and without them here the tag itself would be unreachable by any word
    -- but the one it happened to be filed under. The record's own help text promises "any of them
    -- finds it".
-   AND (:prefix = '' OR ({{SHOWN}} AND (t.name LIKE :like ESCAPE '\\'
+   AND (:prefix = '' OR (CASE WHEN {{SHOWN}} THEN (t.name LIKE :like ESCAPE '\\'
         OR EXISTS (SELECT 1 FROM tag_aliases ta
-                    WHERE ta.tag_id = t.id AND ta.alias LIKE :like ESCAPE '\\'))))
+                    WHERE ta.tag_id = t.id AND ta.alias LIKE :like ESCAPE '\\')) ELSE 0 END))
    AND (:reveal_named = 1 OR COALESCE(h.hidden, 0) = 0)
    AND (:list_empty = 1 OR COALESCE(c.asset_count, 0) > 0)
    -- A LOCKED TILE matches no typed word: a box that finds a padlock has said the name. See

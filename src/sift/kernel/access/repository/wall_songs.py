@@ -157,9 +157,9 @@ SELECT sg.id, CASE WHEN {{LOCKED}} THEN '' ELSE sg.name END AS name,
    -- The name, where a picker or a box is narrowing the list to what somebody is typing, or the
    -- name of an artist it credits: a song is found by who sings it as well as by what it is
    -- called (the search box's dropdown reads this wall, and the Music page's box is this wall).
-   AND (:prefix = '' OR ({{SHOWN}} AND (sg.name LIKE :like ESCAPE '\\'
+   AND (:prefix = '' OR (CASE WHEN {{SHOWN}} THEN (sg.name LIKE :like ESCAPE '\\'
         OR EXISTS (SELECT 1 FROM song_artists pa JOIN artists par ON par.id = pa.artist_id
-                    WHERE pa.song_id = sg.id AND par.name LIKE :like ESCAPE '\\'))))
+                    WHERE pa.song_id = sg.id AND par.name LIKE :like ESCAPE '\\')) ELSE 0 END))
    AND (:reveal_named = 1 OR COALESCE(h.hidden, 0) = 0)
    AND (:list_empty = 1 OR COALESCE(n.item_count, 0) > 0)
    -- A LOCKED TILE matches no typed word: a box that finds a padlock has said the name. See
