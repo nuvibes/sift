@@ -175,9 +175,10 @@ def declared_node() -> str:
 
 
 def test_the_shipping_interpreter_is_declared() -> None:
-    assert re.fullmatch(r"\d+\.\d+", declared_python()), (
-        f".python-version reads {declared_python()!r}; it must be major.minor, because uv, the "
-        "release script and the Windows build all read this one file"
+    assert re.fullmatch(r"\d+\.\d+\.\d+", declared_python()), (
+        f".python-version reads {declared_python()!r}; it must be one exact version, because uv, "
+        "the release script and the Windows build all read this one file, and the suite must run "
+        "the SQLite the installer bundles"
     )
 
 
