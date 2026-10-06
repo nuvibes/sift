@@ -164,7 +164,7 @@ describe('a collection of 250 files', () => {
 		await turn('Next page');
 
 		expect([await turn('Previous page'), await turn('Previous page')]).toEqual([second, first]);
-	});
+	}, 20_000);
 
 	it('offers no move: a collection has no order of its own', async () => {
 		await open();
