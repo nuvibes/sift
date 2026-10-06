@@ -508,12 +508,12 @@ COUNTS: tuple[Drawn, ...] = (
     Drawn(
         what="a facet row under the grid's People dimension",
         where="facet_query (repository/assets.py)",
-        # By the NAME, which is what a facet row on this dimension carries: the row is pressed to
-        # write the filter that finds its own files, and the query language names people by name.
+        # A row on this dimension carries the person's ID as its value and the name as its label,
+        # so two people of one name are two rows; the row's filter finds its files by the ID.
         number=lambda client: _row(
-            _json(client, "/api/assets/facets?facet=people")["values"], "value", SUBJECT_NAME
+            _json(client, "/api/assets/facets?facet=people")["values"], "label", SUBJECT_NAME
         ).get("count", 0),
-        listing=_files_where(f"people={SUBJECT_NAME}"),
+        listing=_files_where(f"people={SUBJECT}"),
     ),
     Drawn(
         what="the faces on a person's card, on People Sift can recognize",
