@@ -272,9 +272,37 @@ export class Queue {
 		return cleared;
 	}
 
+	/* Drawn canceled on the press, over any read that left before it, and put back on a refusal. */
 	async cancel(id: string): Promise<void> {
-		await api.post(`/jobs/${id}/cancel`);
-		await this.refresh();
+		this.#canceling.add(id);
+		this.#page = this.#withCancels(this.#page);
+		try {
+			await api.post(`/jobs/${id}/cancel`);
+		} catch (error) {
+			this.#canceling.delete(id);
+			await this.refresh();
+			throw error;
+		}
+		try {
+			await this.refresh();
+		} finally {
+			this.#canceling.delete(id);
+		}
+	}
+
+	/* The jobs a cancel is out for, and the page with them drawn as canceled. */
+	#canceling = new Set<string>();
+
+	#withCancels(page: JobsPage | null): JobsPage | null {
+		if (page === null || this.#canceling.size === 0) return page;
+		return {
+			...page,
+			jobs: page.jobs.map((job) =>
+				this.#canceling.has(job.id) && !FINISHED_STATES.includes(job.state)
+					? { ...job, state: 'canceled' as const }
+					: job
+			)
+		};
 	}
 
 	/* Everything that has not finished, called off. Answers how many were stopped.
@@ -330,7 +358,7 @@ export class Queue {
 				this.#reads.again();
 				return;
 			}
-			this.#page = page;
+			this.#page = this.#withCancels(page);
 			this.#answers = asked;
 			this.#problem = null;
 			this.#live = true;

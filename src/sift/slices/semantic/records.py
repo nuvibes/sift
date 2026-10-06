@@ -61,8 +61,17 @@ _COUNT_DESCRIBED = "SELECT COUNT(*) AS total FROM semantic_indexed WHERE revisio
 _ANY_DESCRIBED = "SELECT 1 AS found FROM semantic_indexed WHERE revision = ? LIMIT 1"
 
 #: Files whose description is another model's. Out of every search until described again, and
-#: the number the settings screen says so with.
-_COUNT_BY_OTHERS = "SELECT COUNT(*) AS total FROM semantic_indexed WHERE revision != ?"
+#: the number the settings screen says so with. Two index ranges, as `!=` reads every row.
+_COUNT_BY_OTHERS = (
+    "SELECT (SELECT COUNT(*) FROM semantic_indexed WHERE revision < ?)"
+    " + (SELECT COUNT(*) FROM semantic_indexed WHERE revision > ?) AS total"
+)
+
+#: Whether any such file is left: a seek, whatever their number.
+_ANY_BY_OTHERS = (
+    "SELECT EXISTS (SELECT 1 FROM semantic_indexed WHERE revision < ?)"
+    " OR EXISTS (SELECT 1 FROM semantic_indexed WHERE revision > ?) AS found"
+)
 
 #: The records of every file a model other than this one described. Taken with the frames they
 #: describe (`VectorStore.purge_other_revisions`), or the count above would go on saying their
@@ -167,8 +176,13 @@ class Records:
     async def described_by_others(self, revision: str) -> int:
         """How many files a model other than this one described. Their numbers are in the index
         and out of every search, until the Build describes them again."""
-        row = await self._database.fetch_one(_COUNT_BY_OTHERS, (revision,))
+        row = await self._database.fetch_one(_COUNT_BY_OTHERS, (revision, revision))
         return int(row["total"]) if row is not None else 0
+
+    async def any_described_by_others(self, revision: str) -> bool:
+        """Whether `described_by_others` is above nought, without counting them."""
+        row = await self._database.fetch_one(_ANY_BY_OTHERS, (revision, revision))
+        return row is not None and bool(row["found"])
 
     async def forget_others(self, revision: str) -> int:
         """Forget which files a model other than this one described. How many records went.

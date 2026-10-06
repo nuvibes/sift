@@ -441,3 +441,52 @@ describe('a server that does not answer', () => {
 		expect((thrown as Error).name).toBe('AbortError');
 	});
 });
+
+/* A page's first draw asks for the same addresses from several places at once: a second read of
+   an address already on its way joins it rather than going again. */
+describe('a read already on its way', () => {
+	it('is joined, and each caller holds its own copy of the answer', async () => {
+		respondWith(200, { folders: [{ name: 'Holidays' }] });
+
+		const [first, second] = (await Promise.all([
+			api.get('/library/folders'),
+			api.get('/library/folders')
+		])) as { folders: { name: string }[] }[];
+
+		expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+		expect(second).toEqual(first);
+		second.folders[0].name = 'changed';
+		expect(first.folders[0].name).toBe('Holidays');
+	});
+
+	it('is asked again once the first answer has come back', async () => {
+		respondWith(200, {});
+
+		await api.get('/library/folders');
+		await api.get('/library/folders');
+
+		expect(globalThis.fetch).toHaveBeenCalledTimes(2);
+	});
+
+	it('is never joined by a write, another address, or a read with its own way to stop', async () => {
+		respondWith(200, {});
+
+		await Promise.all([
+			api.get('/library/folders'),
+			api.get('/library/folders', { query: { root: 'a' } }),
+			api.post('/library/folders'),
+			api.get('/library/folders', { signal: new AbortController().signal })
+		]);
+
+		expect(globalThis.fetch).toHaveBeenCalledTimes(4);
+	});
+
+	it('hands its refusal to every caller that joined it', async () => {
+		respondWith(503);
+
+		const both = await Promise.allSettled([api.get(ANY_PATH), api.get(ANY_PATH)]);
+
+		expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+		expect(both.map((one) => one.status)).toEqual(['rejected', 'rejected']);
+	});
+});

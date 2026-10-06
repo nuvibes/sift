@@ -703,7 +703,7 @@ class LibrariesService:
         report = await asyncio.to_thread(inspect_database, database)
         if report.verdict == VERDICT_EMPTY:
             raise NotALibrary(
-                "That library isn't there any more. If it's on a drive or a share, check it is "
+                "That library isn't there any more. If it's on a drive or a share, check it's "
                 "connected."
             )
         if report.verdict == VERDICT_NEWER:
@@ -1114,10 +1114,10 @@ class LibrariesService:
         chosen = check_name(name)
         folder = self.folder
         if any(member.name.lower() == chosen.lower() for member in await self._listing(folder)):
-            raise NameTaken("There is already a library by that name. Choose another.")
+            raise NameTaken("There's already a library by that name. Choose another.")
         root = folder / chosen
         if await asyncio.to_thread(root.exists):
-            raise NameTaken("There is already a folder by that name. Choose another.")
+            raise NameTaken("There's already a folder by that name. Choose another.")
         return root
 
     @staticmethod

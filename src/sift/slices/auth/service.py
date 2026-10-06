@@ -1071,7 +1071,7 @@ class AuthService:
         async with telling(self._db, EVERY_ADMIN, About.SETTINGS) as connection:
             existing = list(await connection.execute_fetchall(_MANAGED_USER_BY_ID, (user_id,)))
             if not existing:
-                raise NoSuchUser("there is no such user")
+                raise NoSuchUser("There's no such user.")
 
             # The cap is on renaming yourself, not on an admin renaming somebody. An admin can read
             # the user list on the same screen, so nothing here is being kept from them and a
@@ -1168,7 +1168,7 @@ class AuthService:
         """
         row = await self._db.fetch_one(_MANAGED_USER_BY_ID, (user_id,))
         if row is None:
-            raise NoSuchUser("there is no such user")
+            raise NoSuchUser("There's no such user.")
         user = _user_from_row(row)
         if user.role != "guest":
             raise NotAGuestUser("only guest users are managed here")

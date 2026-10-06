@@ -13,6 +13,7 @@ from sift.kernel.access.repository.walls import (
     _wall,
     _with_stored_counts,
     locked_tile,
+    one_row,
     shown,
 )
 from sift.kernel.access.sites import SITE_CONCEALED, SITE_REACH
@@ -379,6 +380,10 @@ _PEOPLE = _wall(_VISIBLE_PEOPLE, "_VISIBLE_PEOPLE")
 PEOPLE_POSITION = _position(_PEOPLE)
 _PEOPLE_HEAD, _PEOPLE_ACCESS = _cut(_VISIBLE_PEOPLE, "_VISIBLE_PEOPLE")
 _PEOPLE_STORED = _with_stored_counts(_VISIBLE_PEOPLE, "_VISIBLE_PEOPLE")
+
+#: One person by id, as the unfiltered wall reads it: what a cover or a page asks before it
+#: answers, at one row's cost (`one_row`).
+PERSON_BY_ID = one_row(_PEOPLE_STORED, "_PEOPLE_STORED", "person", "p", "person_id")
 
 
 def people_query(where: str, rows: str = _NOTHING) -> str:

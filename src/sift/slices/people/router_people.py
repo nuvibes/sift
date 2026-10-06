@@ -326,11 +326,10 @@ async def update_person(
     if "links" in sent:
         await _replace_links(service, viewer, person_id, body.links or [])
     # A person's name and every alias they answer to is indexed on each file they are on, and this
-    # route CAN name those files, so it rewrites exactly them, rather than queuing a rebuild of the
-    # whole index: tens of seconds of the write lock on a library of a hundred thousand files,
-    # paid the same whether the person was on ten thousand files or none. Read after the write on
-    # purpose: a rename moves no `asset_people` rows, so the answer is the same either side of it.
-    await reindexer.touched_many(await service.assets_of_person(person_id))
+    # route CAN name those files, so a job rewrites exactly them after the answer, a chunk at a
+    # time: in the request, thousands of files held every other write for seconds. Read after the
+    # write on purpose: a rename moves no `asset_people` rows, so the answer is the same either side.
+    await reindexer.queue_many(await service.assets_of_person(person_id))
     # The mark comes back with them. An edit never moves a grant, so this is the same answer the
     # list gives, but the screen replaces its row with this reply, so leaving it out is the screen
     # forgetting a restrict that is still in force.

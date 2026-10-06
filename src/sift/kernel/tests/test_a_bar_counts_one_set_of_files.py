@@ -240,7 +240,9 @@ async def test_a_count_a_bar_is_drawn_from_walks_the_library_once_and_seeks_the_
     )
     steps = [str(row["detail"]) for row in plan]
     walks = [step for step in steps if step.startswith("SCAN ")]
-    assert walks == ["SCAN a"], (label, steps)
+    # The files never read are a partial index of their own, walked instead of the library.
+    unread = label == "unread" or label.startswith("coming ")
+    assert walks == ["SCAN a USING INDEX ix_assets_unread" if unread else "SCAN a"], (label, steps)
     if "asset_locations" in statement:
         # A newer SQLite runs a correlated EXISTS as a semi-join and names the step
         # "SEARCH l EXISTS USING ...": the same seek per file, so either wording is the seek.

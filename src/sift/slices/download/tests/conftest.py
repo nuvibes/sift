@@ -232,6 +232,9 @@ class RecordingReindexer:
     async def touched_many(self, asset_ids: Sequence[str]) -> None:
         self.touched_ids.extend(asset_ids)
 
+    async def queue_many(self, asset_ids: Sequence[str]) -> None:  # pragma: no cover (no rename)
+        await self.touched_many(asset_ids)
+
     async def renamed(self) -> None:
         self.rebuilds += 1
 

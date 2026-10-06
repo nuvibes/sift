@@ -162,7 +162,8 @@ describe('the preload', () => {
 			'keepRunning',
 			'startsWithWindows',
 			'startWithWindows',
-			'setTitleBar'
+			'setTitleBar',
+			'windowStage'
 		]);
 	});
 

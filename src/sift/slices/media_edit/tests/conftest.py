@@ -61,6 +61,9 @@ class FakeReindexer:
     async def touched_many(self, asset_ids: Any) -> None:  # pragma: no cover - unused here
         self.touched_ids.extend(asset_ids)
 
+    async def queue_many(self, asset_ids: Any) -> None:  # pragma: no cover (no rename)
+        await self.touched_many(asset_ids)
+
     async def renamed(self) -> None:  # pragma: no cover - unused here
         return None
 

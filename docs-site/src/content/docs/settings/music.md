@@ -15,7 +15,7 @@ Come here to add your AcoustID key so Sift can name songs, or to choose when mus
 
 The first rows have no heading: naming songs with AcoustID, and your key. Then the pane draws one group:
 
-- <a id="music.fingerprints"></a>**Music fingerprints**: a short summary of a file's sound, made on your computer, so Sift can match files that share a song. It shows when making them runs, and **More settings**.
+- <a id="music.fingerprints"></a>**Music fingerprints**: a short summary of a file's sound, made on your computer, so Sift can match files that share a song. It shows when creating them runs, and **More settings**.
 
 ## Rows the pane draws by hand
 

@@ -208,7 +208,7 @@ def test_the_page_says_what_other_programs_keep_busy(
     assert client.get("/api/jobs").json()["step_back_over"] == ["graphics"]
 
 
-def test_the_press_for_the_full_amount_is_answered_and_every_page_follows_it(
+def test_the_press_for_turbo_mode_is_answered_and_every_page_follows_it(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The leaf and the bolt: what the route answers, and what the page says, in each state."""
@@ -221,32 +221,32 @@ def test_the_press_for_the_full_amount_is_answered_and_every_page_follows_it(
 
     def page() -> tuple[bool, bool]:
         body = client.get("/api/jobs").json()
-        return body["stepping_back"], body["full_amount"]
+        return body["stepping_back"], body["turbo_mode"]
 
     # Somebody here: stepping back, the leaf.
     reader.workers(8, step_back=True)
     assert page() == (True, False)
-    # Pressed: the full amount although somebody is here, the bolt.
-    answer = client.post("/api/jobs/full-amount", json={"on": True})
+    # Pressed: turbo mode although somebody is here, the bolt.
+    answer = client.post("/api/jobs/turbo-mode", json={"on": True})
     assert answer.status_code == 200
-    assert answer.json() == {"stepping_back": False, "full_amount": True, "pressed": True}
+    assert answer.json() == {"stepping_back": False, "turbo_mode": True, "pressed": True}
     assert page() == (False, True)
     assert reader.workers(8, step_back=True) == 8
     # Pressed again: stepping back again.
-    answer = client.post("/api/jobs/full-amount", json={"on": False})
-    assert answer.json() == {"stepping_back": True, "full_amount": False, "pressed": False}
+    answer = client.post("/api/jobs/turbo-mode", json={"on": False})
+    assert answer.json() == {"stepping_back": True, "turbo_mode": False, "pressed": False}
     assert page() == (True, False)
     assert reader.workers(8, step_back=True) == 2
     # Nobody here: neither is said, pressed or not, and the pool runs its full count by itself.
     since["seconds"] = 600.0
     assert reader.workers(8, step_back=True) == 8
     assert page() == (False, False)
-    answer = client.post("/api/jobs/full-amount", json={"on": True})
-    assert answer.json() == {"stepping_back": False, "full_amount": False, "pressed": True}
+    answer = client.post("/api/jobs/turbo-mode", json={"on": True})
+    assert answer.json() == {"stepping_back": False, "turbo_mode": False, "pressed": True}
     assert page() == (False, False)
 
 
-def test_the_press_for_the_full_amount_is_an_admins(
+def test_the_press_for_turbo_mode_is_an_admins(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from sift.kernel import attention
@@ -254,7 +254,7 @@ def test_the_press_for_the_full_amount_is_an_admins(
     reader = attention.Attention(lambda: 1.0)
     monkeypatch.setattr(attention, "ATTENTION", reader)
     sign_in(client, "guest")
-    assert client.post("/api/jobs/full-amount", json={"on": True}).status_code == 403
+    assert client.post("/api/jobs/turbo-mode", json={"on": True}).status_code == 403
     assert reader.pressed is False
 
 

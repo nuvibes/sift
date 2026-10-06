@@ -21,9 +21,9 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
 from sift.kernel.access import ObjectType, Repository, Viewer, bump_stamps_for_object
-from sift.kernel.audience import EVERY_ADMIN, Audience
+from sift.kernel.audience import Audience
 from sift.kernel.cache_stamp import bump_cache_stamp
-from sift.kernel.changes import About, announce, telling
+from sift.kernel.changes import About, announce, telling, who_may_see_a_file
 from sift.kernel.content.entity_state import opinion_before
 from sift.kernel.content.user_state import OpinionKind, record_opinion
 from sift.kernel.cover_frame import CoverFrame
@@ -50,6 +50,13 @@ def _and_the_actor(told: Audience, actor: Actor) -> Audience:
     if actor.kind == ACTOR_USER and actor.id:
         return told | Audience.of_user(actor.id)
     return told
+
+
+async def _whoever_may_see(database: Database) -> Audience:
+    """Every admin and every user given anything. Read before the write, so `telling` still says
+    nothing when no row moved."""
+    async with database.read() as connection:
+        return await who_may_see_a_file(connection)
 
 
 # The same `tags` table every other kind of thing uses. A tag called "archive" means the same thing
@@ -238,7 +245,7 @@ class CollectionService:
         starts out of the vault: concealing one is a separate, deliberate act rather than
         something a create can do on the way past.
         """
-        async with telling(self._db, EVERY_ADMIN, About.LIBRARY) as connection:
+        async with telling(self._db, await _whoever_may_see(self._db), About.LIBRARY) as connection:
             rows = list(
                 await connection.execute_fetchall(
                     _INSERT_COLLECTION,
@@ -260,7 +267,7 @@ class CollectionService:
         overwritten in place: without it, "renamed" is a line that cannot say what from.
         """
         was_called = await self._name_of(collection_id)
-        async with telling(self._db, EVERY_ADMIN, About.LIBRARY) as connection:
+        async with telling(self._db, await _whoever_may_see(self._db), About.LIBRARY) as connection:
             rows = list(
                 await connection.execute_fetchall(
                     _RENAME_COLLECTION, (name, sort_key(name), collection_id)
@@ -395,7 +402,7 @@ class CollectionService:
         return await self._db.fetch_all(_TAGS_OF_COLLECTION, (collection_id,))
 
     async def tag(self, collection_id: str, tag_id: str, *, add: bool = True) -> None:
-        async with telling(self._db, EVERY_ADMIN, About.LIBRARY) as connection:
+        async with telling(self._db, await _whoever_may_see(self._db), About.LIBRARY) as connection:
             if add:
                 await connection.execute(_TAG, (collection_id, tag_id, int(time.time())))
             else:
@@ -431,7 +438,7 @@ class CollectionService:
         The caller checks that the asset is one of the items and that the viewer may see it. This
         writes what it is given.
         """
-        async with telling(self._db, EVERY_ADMIN, About.LIBRARY) as connection:
+        async with telling(self._db, await _whoever_may_see(self._db), About.LIBRARY) as connection:
             # The cover as it WAS, in the write's own transaction: the same picture with a new
             # window is a reframe and says so. See `kernel/covers.py cover_change`.
             was = list(await connection.execute_fetchall(_CHOSEN_COVER, (collection_id,)))
@@ -506,9 +513,8 @@ class CollectionService:
                     verb="deleted",
                     subject=Subject(kind="collection", id=collection_id, name=was_called),
                 )
-                # Its grants went first and told everybody then; after that only an admin can
-                # still be drawing it, and this is the commit that takes it off their screens.
-                announce(EVERY_ADMIN, About.LIBRARY)
+                # Its grants went first, before the row: this is the commit a re-read sees it gone.
+                announce(await who_may_see_a_file(connection), About.LIBRARY)
         if not rows:
             return None
         # No name in the log. What somebody chose to collect says a great deal about what a

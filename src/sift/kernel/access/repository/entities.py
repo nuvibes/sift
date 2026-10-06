@@ -22,12 +22,14 @@ from sift.kernel.access.repository.wall_collections import collections_query as 
 from sift.kernel.access.repository.wall_loops import loops_position as loops_position
 from sift.kernel.access.repository.wall_loops import loops_query as loops_query
 from sift.kernel.access.repository.wall_people import _A_USERNAME_SHOWS_ITS_PERSON, _PEOPLE
+from sift.kernel.access.repository.wall_people import PERSON_BY_ID as PERSON_BY_ID
 from sift.kernel.access.repository.wall_people import people_position as people_position
 from sift.kernel.access.repository.wall_people import people_query as people_query
 from sift.kernel.access.repository.wall_photo_sets import _PHOTO_SETS
 from sift.kernel.access.repository.wall_photo_sets import photo_sets_position as photo_sets_position
 from sift.kernel.access.repository.wall_photo_sets import photo_sets_query as photo_sets_query
 from sift.kernel.access.repository.wall_sites import _SITES
+from sift.kernel.access.repository.wall_sites import SITE_BY_ID as SITE_BY_ID
 from sift.kernel.access.repository.wall_sites import SITES_BY_ID as SITES_BY_ID
 from sift.kernel.access.repository.wall_sites import sites_position as sites_position
 from sift.kernel.access.repository.wall_sites import sites_query as sites_query
@@ -35,6 +37,7 @@ from sift.kernel.access.repository.wall_songs import _SONGS
 from sift.kernel.access.repository.wall_songs import songs_position as songs_position
 from sift.kernel.access.repository.wall_songs import songs_query as songs_query
 from sift.kernel.access.repository.wall_tags import _TAGS
+from sift.kernel.access.repository.wall_tags import TAG_BY_ID as TAG_BY_ID
 from sift.kernel.access.repository.wall_tags import TAGS_BY_ID as TAGS_BY_ID
 from sift.kernel.access.repository.wall_tags import tags_position as tags_position
 from sift.kernel.access.repository.wall_tags import tags_query as tags_query

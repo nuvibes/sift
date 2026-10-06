@@ -28,7 +28,7 @@ const EMPTY: JobsPage = {
 	step_back_share: 25,
 	step_back_for: null,
 	step_back_over: [],
-	full_amount: false,
+	turbo_mode: false,
 	password_wanted: 0
 };
 
@@ -348,5 +348,31 @@ describe('a busy queue', () => {
 
 		expect(fetched.filter((url) => url.includes('/jobs'))).toHaveLength(2);
 		expect(queue.page?.total).toBe(2);
+	});
+});
+
+describe('a cancel', () => {
+	const running = page({ total: 1, jobs: [{ id: 'j1', state: 'running' } as never] });
+
+	it('draws the row canceled on the press, and puts it back when the server refuses', async () => {
+		const queue = new Queue();
+		serveFetch(running);
+		await queue.refresh();
+		let refuse: () => void = () => {};
+		vi.stubGlobal(
+			'fetch',
+			vi.fn(async (url: URL, init?: RequestInit) => {
+				if (init?.method === 'POST') {
+					await new Promise<void>((resolve) => (refuse = resolve));
+					return { ok: false, status: 500, json: async () => ({}) } as Response;
+				}
+				return { ok: true, status: 200, json: async () => running } as Response;
+			})
+		);
+		const canceling = queue.cancel('j1');
+		expect(queue.page?.jobs[0]?.state).toBe('canceled');
+		refuse();
+		await expect(canceling).rejects.toBeDefined();
+		expect(queue.page?.jobs[0]?.state).toBe('running');
 	});
 });

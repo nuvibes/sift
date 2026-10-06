@@ -48,6 +48,7 @@ from sift.kernel.jobs.tuning import (
     STALE_AFTER_SECONDS,
     SWEEP_INTERVAL_SECONDS,
 )
+from sift.kernel.jobs.waking import Listen, Waking, first_of
 from sift.kernel.jobs.watchdog import run_watchdog
 from sift.kernel.jobs.workspaces import Workspaces
 from sift.kernel.log import get_logger, timing_hook
@@ -869,6 +870,7 @@ class WorkerPool:
         read_config: Callable[[], Awaitable[tuple[int, Mapping[str, int]]]] | None = None,
         reconcile_interval: float = RECONFIGURE_SECONDS,
         ledger: Ledger | None = None,
+        woken_by: Sequence[Listen] = (),
     ) -> None:
         _check_concurrency(concurrency)
         _check_limits(limits)
@@ -888,6 +890,7 @@ class WorkerPool:
         #: Where what each run cost is written down, or None for a pool nobody is keeping books on.
         self._ledger = ledger
         self._stop = asyncio.Event()
+        self._waking = Waking(woken_by)
         #: The workers that should be running. Mutated only from `reconcile` and `start`/`stop`, all
         #: of which are synchronous up to the point they hand off, so the set never changes under
         #: an await, and nothing has to lock it.
@@ -933,6 +936,7 @@ class WorkerPool:
         self._stop.clear()
         await self._sweep_stale_workspaces()
         self._unlisten = self._queue.listen_for_stops(self._stop_asked)
+        self._waking.listen(self._queue.listen_for_work)
         for _ in range(self._concurrency):
             self._spawn_worker()
         if self._watchdog:
@@ -1026,6 +1030,7 @@ class WorkerPool:
         if self._unlisten is not None:
             self._unlisten()
             self._unlisten = None
+        self._waking.stop_listening()
 
     def _stop_asked(self, job_ids: Sequence[str]) -> None:
         """Somebody just asked these jobs to stop: beat now for any of them this pool is running.
@@ -1102,6 +1107,9 @@ class WorkerPool:
         loop swallows every error a worker can hit), so a done one needs nothing but forgetting."""
         self._retiring = [worker for worker in self._retiring if not worker.task.done()]
 
+    def work_arrived(self) -> None:
+        self._waking.work_arrived()
+
     async def _supervise(
         self, read_config: Callable[[], Awaitable[tuple[int, Mapping[str, int]]]]
     ) -> None:
@@ -1113,12 +1121,11 @@ class WorkerPool:
         and the wait is on the stop event so shutdown does not sit through a full interval.
         """
         while not self._stop.is_set():
-            try:
-                await asyncio.wait_for(self._stop.wait(), timeout=self._reconcile_interval)
-            except TimeoutError:
-                pass  # the interval elapsed with no shutdown: time to reconcile
-            else:
+            await first_of((self._stop, self._waking.reconfigure), self._reconcile_interval)
+            if self._stop.is_set():
                 continue  # shutdown began during the wait; the loop condition ends it
+            # Cleared before the read, so a press landing during it is another wake, not lost.
+            self._waking.reconfigure.clear()
             try:
                 concurrency, limits = await read_config()
                 self.reconcile(concurrency=concurrency, limits=limits)
@@ -1157,22 +1164,13 @@ class WorkerPool:
                 await self._idle(own_stop)
 
     async def _idle(self, own_stop: asyncio.Event) -> None:
-        """Wait out the poll interval, but wake early for either stop.
+        """Wait out the poll interval, but wake early for either stop or for work arriving.
 
         A retiring worker sitting idle would otherwise hang about for a whole poll interval before
         noticing it was told to go. Waking on its own switch as well as the pool's keeps a shrink
         prompt.
         """
-        stop = asyncio.ensure_future(self._stop.wait())
-        mine = asyncio.ensure_future(own_stop.wait())
-        try:
-            await asyncio.wait(
-                {stop, mine}, timeout=self._poll_interval, return_when=asyncio.FIRST_COMPLETED
-            )
-        finally:
-            stop.cancel()
-            mine.cancel()
-            await asyncio.gather(stop, mine, return_exceptions=True)
+        await first_of((self._stop, own_stop, self._waking.arrived), self._poll_interval)
 
     async def _run(self, job: Job, worker_id: str) -> None:
         # ASKED AGAIN, BECAUSE A SWITCH MOVES WHILE A QUEUE IS FULL. The enqueue is the gate that

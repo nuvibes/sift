@@ -324,17 +324,31 @@ describe("the shell log's detail", () => {
 describe('the log archive', () => {
 	it('is nothing in a browser and from a shell that cannot make one', async () => {
 		expect(bridge.canSaveLogArchive()).toBe(false);
-		await expect(bridge.saveLogArchive('logs.zip')).resolves.toBeNull();
+		await expect(bridge.saveLogArchive('logs.zip')).resolves.toHaveProperty('reason');
 		window.sift = { isDesktop: true };
-		await expect(bridge.saveLogArchive('logs.zip')).resolves.toBeNull();
+		await expect(bridge.saveLogArchive('logs.zip')).resolves.toHaveProperty('reason');
 	});
 
 	it('hands the shell the name and hands back where it went', async () => {
-		const saveLogArchive = vi.fn().mockResolvedValue('C:\\Saved\\logs.zip');
+		const saveLogArchive = vi.fn().mockResolvedValue({ file: 'C:\\Saved\\logs.zip' });
 		window.sift = { saveLogArchive };
 
 		expect(bridge.canSaveLogArchive()).toBe(true);
-		await expect(bridge.saveLogArchive('logs.zip')).resolves.toBe('C:\\Saved\\logs.zip');
+		await expect(bridge.saveLogArchive('logs.zip')).resolves.toEqual({
+			file: 'C:\\Saved\\logs.zip'
+		});
 		expect(saveLogArchive).toHaveBeenCalledWith('logs.zip');
+	});
+});
+
+describe('the canvas colour handed to the desktop window', () => {
+	it('is the computed colour as six hex digits, or nothing for a colour it cannot read', async () => {
+		const { canvasHex } = await import('./index');
+		const channels = (hex: string | null) =>
+			[1, 3, 5].map((at) => Number.parseInt(hex?.slice(at, at + 2) ?? '', 16));
+		expect(canvasHex('rgb(10, 11, 255)')).toHaveLength(7);
+		expect(channels(canvasHex('rgb(10, 11, 255)'))).toEqual([10, 11, 255]);
+		expect(channels(canvasHex('rgba(0, 1, 2, 1)'))).toEqual([0, 1, 2]);
+		expect(canvasHex('transparent')).toBeNull();
 	});
 });

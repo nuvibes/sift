@@ -34,11 +34,13 @@ from __future__ import annotations
 
 import json
 import time
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from stat import S_ISREG
 
 from sift.kernel.config import Settings
+from sift.kernel.db import Database, Row, in_clause
 from sift.kernel.ingress import NOTE_SUFFIX
 from sift.kernel.log import get_logger
 
@@ -237,6 +239,45 @@ def prune(settings: Settings, *, keep_days: int, now: float | None = None) -> in
     return removed
 
 
+# --- what each folder refused, read for every folder at once ------------------------------------
+
+#: Each folder's first refusals by path, every folder in one statement.
+_REFUSED_IN_ROOTS = """
+SELECT * FROM (
+  SELECT r.*, ROW_NUMBER() OVER (PARTITION BY r.root_id ORDER BY r.rel_path) AS place
+    FROM scan_rejections r
+   WHERE r.root_id IN (?*)
+) WHERE place <= ?
+ ORDER BY root_id, rel_path
+"""
+
+_REFUSED_COUNTS = """
+SELECT root_id, COUNT(*) AS n FROM scan_rejections WHERE root_id IN (?*) GROUP BY root_id
+"""
+
+#: Folders per statement: a bound list has a ceiling.
+_ROOTS_AT_ONCE = 500
+
+
+async def refused_in_roots(
+    database: Database, root_ids: Sequence[str], *, limit: int
+) -> tuple[dict[str, list[Row]], dict[str, int]]:
+    """Each folder's first `limit` refusals by path, and how many it refuses in all, by folder.
+    A folder refusing nothing is absent from both."""
+    rows: dict[str, list[Row]] = {}
+    counts: dict[str, int] = {}
+    ids = list(dict.fromkeys(root_ids))
+    for start in range(0, len(ids), _ROOTS_AT_ONCE):
+        chunk = ids[start : start + _ROOTS_AT_ONCE]
+        sql, params = in_clause(_REFUSED_IN_ROOTS, chunk)
+        for row in await database.fetch_all(sql, [*params, limit]):
+            rows.setdefault(str(row["root_id"]), []).append(row)
+        sql, params = in_clause(_REFUSED_COUNTS, chunk)
+        for row in await database.fetch_all(sql, params):
+            counts[str(row["root_id"])] = int(row["n"])
+    return rows, counts
+
+
 __all__ = [
     "DEFAULT_KEEP_DAYS",
     "KEEP_DAYS_KEY",
@@ -244,6 +285,7 @@ __all__ = [
     "keep_days_from",
     "listing",
     "prune",
+    "refused_in_roots",
     "remove",
     "resolve",
 ]

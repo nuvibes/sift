@@ -67,6 +67,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import release_bytecode
 import release_gates
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -280,20 +281,8 @@ def build_runtime() -> None:
                 f"{built} is missing or is not the file scripts/vendor_manifest.json pins. Build it "
                 f"with {wheel['recipe']}, or run scripts/fetch_vendor.py to see what differs."
             )
-        run(
-            [
-                uv,
-                "pip",
-                "install",
-                "--python",
-                str(staging / "Scripts" / "python.exe"),
-                "--no-deps",
-                "--reinstall-package",
-                str(wheel["package"]),
-                str(built),
-            ],
-            where=ROOT,
-        )
+        reinstall = ["--no-deps", "--reinstall-package", str(wheel["package"]), str(built)]
+        run([uv, "pip", "install", "--python", python, *reinstall], where=ROOT)
 
     # Headers and link libraries are for COMPILING against this interpreter, and nothing at runtime
     # can import them. They are the only things dropped: 4 MB is not worth a class of fault where
@@ -335,9 +324,11 @@ def build_runtime() -> None:
                     "is not on the user's machine."
                 )
 
+    run(release_bytecode.compile_command(RUNTIME), where=ROOT, quiet=True)
     prove_runtime_is_self_contained()
     prove_the_runtime_ignores_other_pythons()
     prove_the_runtime_ships_no_tests()
+    prove_the_runtime_ships_bytecode()
     prove_the_runtime_ships_the_site_icons()
     prove_the_runtime_carries_the_pinned_wheels(packages)
     prove_the_runtime_carries_the_cpp_runtime()
@@ -475,6 +466,12 @@ def prove_the_runtime_ships_no_tests() -> None:
             f"{', '.join(sorted(shipped)[:3])}. They cannot run where they are going and they are a "
             "third of what is installed. See the wheel's `exclude` in pyproject.toml."
         )
+
+
+def prove_the_runtime_ships_bytecode(runtime: Path = RUNTIME) -> None:
+    """Refuse a runtime where any module lacks its checked-hash `.pyc`."""
+    if found := release_bytecode.uncompiled(runtime):
+        raise ReleaseFailed(found)
 
 
 def prove_the_runtime_ships_the_site_icons() -> None:

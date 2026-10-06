@@ -11,7 +11,6 @@ from sift.kernel.access.constraints import (
 )
 from sift.kernel.access.repository.core import RepositoryCore
 from sift.kernel.access.repository.entities import (
-    _VISIBLE_COLLECTIONS,
     ENTITY_SORT_SEEN,
     _entity_sort,
     collections_position,
@@ -26,6 +25,7 @@ from sift.kernel.access.repository.views import (
     _like_anywhere,
     _like_prefix,
 )
+from sift.kernel.access.repository.wall_collections import COLLECTION_BY_ID
 from sift.kernel.access.viewer import Viewer
 from sift.kernel.paging import MAX_PAGE_SIZE
 
@@ -155,7 +155,7 @@ class CollectionReads(RepositoryCore):
         if not _is_object_id(collection_id):
             return None
         rows = await self._db.fetch_all(
-            _VISIBLE_COLLECTIONS,
+            COLLECTION_BY_ID,
             self._unfiltered()
             | self._collection_params(viewer, collection_id=collection_id, limit=1),
         )

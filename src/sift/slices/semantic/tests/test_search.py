@@ -21,6 +21,8 @@ from typing import Any
 import pytest
 
 from sift.kernel.access import Role, Viewer
+from sift.kernel.changes import About
+from sift.slices.semantic import store
 from sift.slices.semantic.search import SemanticSearch
 from sift.slices.semantic.store import Neighbour
 
@@ -101,7 +103,7 @@ async def test_only_the_last_few_queries_are_remembered() -> None:
 
     held = finder._kept["u"].vectors
     assert len(held) == REMEMBERED
-    assert "query 0" not in held and "query 3" in held
+    assert ("query 0", None) not in held and ("query 3", None) in held
 
 
 async def test_words_come_back_as_files_and_distances() -> None:
@@ -183,7 +185,7 @@ async def test_the_same_words_are_ranked_once_under_one_mark(
     answer it once while nothing has changed."""
     from sift.slices.semantic import search as module
 
-    monkeypatch.setattr(module, "current_mark", lambda: "m1")
+    monkeypatch.setattr(module, "_settled", lambda: "m1")
     service = Counting(query_vector=[1.0], found=[Neighbour("A", 0, 0.1)])
     searching = SemanticSearch(service)  # type: ignore[arg-type]
     first = await searching.neighbours("red bikini", limit=200, asker=U)
@@ -202,14 +204,51 @@ async def test_a_moved_mark_ranks_again_but_keeps_the_vector(
 ) -> None:
     from sift.slices.semantic import search as module
 
-    marks = iter(["m1", "m2"])
-    monkeypatch.setattr(module, "current_mark", lambda: next(marks))
+    monkeypatch.setattr(module, "_settled", lambda: "m1")
+    service = Counting(query_vector=[1.0], found=[Neighbour("A", 0, 0.1)])
+    searching = SemanticSearch(service)  # type: ignore[arg-type]
+    await searching.neighbours("red bikini", asker=U)
+    store._moved()
+    await searching.neighbours("red bikini", asker=U)
+    assert service.asked_for == [200, 200], "the index moved, so it is asked again"
+    assert service.described == 1, "what the words mean did not move with it"
+
+
+async def test_a_changed_setting_describes_the_words_again(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Another model's numbers for the same words would compare as noise."""
+    from sift.slices.semantic import search as module
+
+    marks = iter(["m1", "m1", "m2", "m2"])
+    monkeypatch.setattr(module, "_settled", lambda: next(marks))
     service = Counting(query_vector=[1.0], found=[Neighbour("A", 0, 0.1)])
     searching = SemanticSearch(service)  # type: ignore[arg-type]
     await searching.neighbours("red bikini", asker=U)
     await searching.neighbours("red bikini", asker=U)
-    assert service.asked_for == [200, 200], "the index moved, so it is asked again"
-    assert service.described == 1, "what the words mean did not move with it"
+    assert service.described == 2
+    assert service.asked_for == [200, 200]
+
+
+async def test_only_settings_and_the_index_move_a_kept_ranking(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Anybody's other change leaves it standing, so a repeat search's speed says nothing."""
+    from sift.slices.semantic import search as module
+
+    asked: list[tuple[About, ...]] = []
+
+    def marked(subjects: tuple[About, ...]) -> str:
+        asked.append(tuple(subjects))
+        return "m1"
+
+    monkeypatch.setattr(module, "mark_of", marked)
+    service = Counting(query_vector=[1.0], found=[Neighbour("A", 0, 0.1)])
+    searching = SemanticSearch(service)  # type: ignore[arg-type]
+    await searching.neighbours("red bikini", asker=U)
+    await searching.neighbours("red bikini", asker=U)
+    assert service.asked_for == [200]
+    assert set(asked) == {(About.SETTINGS,)}
 
 
 async def test_nothing_is_kept_when_the_words_cannot_be_described(
@@ -218,7 +257,7 @@ async def test_nothing_is_kept_when_the_words_cannot_be_described(
     """A model that is not ready yet answers nothing, and the next ask gets to find out."""
     from sift.slices.semantic import search as module
 
-    monkeypatch.setattr(module, "current_mark", lambda: "m1")
+    monkeypatch.setattr(module, "_settled", lambda: "m1")
     service = Counting(query_vector=None, found=[Neighbour("A", 0, 0.1)])
     searching = SemanticSearch(service)  # type: ignore[arg-type]
     assert await searching.neighbours("red bikini", asker=U) is None
@@ -233,7 +272,7 @@ async def test_one_users_search_is_never_quick_for_another(
     """A quick answer would tell a guest that an admin just searched those words."""
     from sift.slices.semantic import search as module
 
-    monkeypatch.setattr(module, "current_mark", lambda: "m1")
+    monkeypatch.setattr(module, "_settled", lambda: "m1")
     service = Counting(query_vector=[1.0], found=[Neighbour("A", 0, 0.1)])
     searching = SemanticSearch(service)  # type: ignore[arg-type]
     await searching.neighbours("red bikini", asker=ADMIN)
@@ -247,7 +286,7 @@ async def test_another_users_searches_never_push_out_ones_own(
 ) -> None:
     from sift.slices.semantic import search as module
 
-    monkeypatch.setattr(module, "current_mark", lambda: "m1")
+    monkeypatch.setattr(module, "_settled", lambda: "m1")
     service = Counting(query_vector=[1.0], found=[Neighbour("A", 0, 0.1)])
     searching = SemanticSearch(service)  # type: ignore[arg-type]
     await searching.neighbours("red bikini", asker=GUEST)
@@ -261,7 +300,7 @@ async def test_another_users_searches_never_push_out_ones_own(
 async def test_nothing_is_kept_without_an_asker(monkeypatch: pytest.MonkeyPatch) -> None:
     from sift.slices.semantic import search as module
 
-    monkeypatch.setattr(module, "current_mark", lambda: "m1")
+    monkeypatch.setattr(module, "_settled", lambda: "m1")
     service = Counting(query_vector=[1.0], found=[Neighbour("A", 0, 0.1)])
     searching = SemanticSearch(service)  # type: ignore[arg-type]
     await searching.neighbours("red bikini", asker=None)
@@ -303,7 +342,7 @@ async def test_a_kept_ranking_never_outlives_what_the_asker_may_see(
 
     from sift.slices.semantic import search as module
 
-    monkeypatch.setattr(module, "current_mark", lambda: "m1")
+    monkeypatch.setattr(module, "_settled", lambda: "m1")
     finder, service = search(query_vector=[1.0], found=[Neighbour("A", 0, 0.1)])
     await finder.neighbours("red bikini", asker=GUEST)
     await finder.neighbours("red bikini", asker=replace(GUEST, **changed))

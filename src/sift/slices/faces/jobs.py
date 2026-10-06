@@ -52,6 +52,7 @@ from sift.kernel.jobs.families import AGAIN, Family
 from sift.kernel.jobs.tuning import BATCH_SETTLE_SECONDS
 from sift.kernel.ledger import Actor
 from sift.kernel.log import get_logger
+from sift.kernel.ml.weights import WeightError
 from sift.kernel.paging import MAX_PAGE_SIZE
 from sift.kernel.seams import BoxPicturesSeam
 from sift.kernel.workbench import DOER, Named, Piece, Preview, Recorded, Worded
@@ -183,12 +184,9 @@ async def scan(context: JobContext, *, service: FaceService) -> None:
         return
 
     asset_id = str(context.payload["asset_id"])
-    # No depth in the payload means "whatever the settings say", NOT "fast".
-    #
-    # Defaulting to fast would quietly override the setting on every scan the sweep started, so
-    # an install set to look deeply never would, and the tuning recorded against each result would
-    # say fast while the settings screen said deep. Nothing would report it: a fast pass over a
-    # file is a perfectly good pass, it is just not the one that was asked for.
+    # No depth in the payload means "whatever the settings say", NOT "fast": a fast default would
+    # quietly override the setting on every scan a sweep starts, and the tuning recorded against
+    # each result would say fast while the settings screen said deep, with nothing to report it.
     #
     # A depth in the payload is still honoured, because that is a request for ONE file to be looked
     # at harder than the setting.
@@ -218,7 +216,15 @@ async def scan(context: JobContext, *, service: FaceService) -> None:
     # reads it: a finished pass pressed again starts from the first moment rather than carrying on
     # from where its last readable moment was. See `FaceService._resume_point`.
     again = context.payload.get(AGAIN) is True
-    status = await service.scan(asset_id, depth=depth, run=run_id, again=again)
+    try:
+        status = await service.scan(asset_id, depth=depth, run=run_id, again=again)
+    except WeightError:
+        # There a moment ago and not now (a download replacing them): held, not failed.
+        waiting = await service.weights_problem(run=run_id)
+        if waiting is None:
+            raise
+        log.info("faces.scan.held", asset_id=asset_id, reason="models missing at load")
+        raise JobBlocked(waiting) from None
     if status in _LEFT_SOMETHING_UNCLAIMED:
         await ask_for_grouping(context.queue)
     if await service.fingerprints_match_file(asset_id):

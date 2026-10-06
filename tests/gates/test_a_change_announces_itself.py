@@ -213,9 +213,7 @@ ANNOUNCERS = frozenset({"announce", "announce_arrival", "announce_now", "telling
 
 #: Writes of pictures that CANNOT announce, each with the reason, as `path:function`.
 PICTURE_WRITERS_EXCUSED: dict[str, str] = {
-    "kernel/content/schema.py:initialize_content": (
-        "a schema step at start-up, before anything is served: there is nobody connected to tell"
-    ),
+    "testing/fixture_library.py:_file_rows": "a test library planned offline, which nothing is drawing",
     "testing/library.py:seed_asset": (
         "a test seed written straight into a database that no running server holds"
     ),

@@ -80,3 +80,30 @@ describe('the last row of a list', () => {
 		expect(longer.nextOffset).toBe(page);
 	});
 });
+
+describe('a page that needs a second read', () => {
+	it('draws its first block as it lands, before the top-up is read', async () => {
+		total = 5000;
+		const fetched = (await firstPage()).items.length;
+		total = fetched + 1;
+		let release: () => void = () => {};
+		const held = new Promise<void>((resolve) => (release = resolve));
+		const real = mocked.get.getMockImplementation()!;
+		mocked.get.mockImplementation((async (path: never, options?: never) => {
+			if (mocked.get.mock.calls.length >= 2) await held;
+			return real(path, options);
+		}) as never);
+
+		const grid = new Grid();
+		grid.containerWidth = 1600;
+		grid.screenHeight = 1000;
+		mocked.get.mockClear();
+		const loading = grid.loadAt({}, { at: 0 });
+		await vi.waitFor(() => expect(mocked.get).toHaveBeenCalledTimes(2));
+		expect(grid.items).toHaveLength(fetched);
+		expect(grid.loading).toBe(false);
+		release();
+		await loading;
+		expect(grid.items).toHaveLength(fetched + 1);
+	});
+});

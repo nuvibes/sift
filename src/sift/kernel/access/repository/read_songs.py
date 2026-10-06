@@ -25,6 +25,7 @@ from sift.kernel.access.repository.views import (
     _like_prefix,
     _song_from_row,
 )
+from sift.kernel.access.repository.wall_songs import SONG_BY_ID
 from sift.kernel.access.viewer import Viewer
 from sift.kernel.paging import MAX_PAGE_SIZE
 
@@ -109,9 +110,9 @@ class SongReads(RepositoryCore):
         together, which is the only answer either should get (see `visible_collection`)."""
         if not _is_object_id(song_id):
             return None
-        where, bound = NO_FILTER.predicate()
+        _where, bound = NO_FILTER.predicate()
         rows = await self._db.fetch_all(
-            songs_query(where),
+            SONG_BY_ID,
             {
                 **bound,
                 **self._song_params(

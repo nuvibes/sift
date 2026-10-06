@@ -283,9 +283,9 @@ export const ICON_USES: Record<IconName, IconUse> = {
 			'The wall drawer in Theater, on the Center stage mode — lit when a preview comes up the moment it starts something new. The hand beside it is the other half of the same control.'
 	},
 	bolt_boost: {
-		what: 'Using the full amount of this device',
+		what: 'Turbo mode',
 		where:
-			"The sidebar's bolt, above the rule, in yellow. Background work is using the full amount of this device although it's in use, because you pressed for it. On a phone, the same row heads More."
+			"The sidebar's bolt, above the rule, in yellow. Background work is in turbo mode, using all of this device although it's in use, because you pressed for it. On a phone, the same row heads More."
 	},
 	energy_savings_leaf: {
 		what: 'Using less of this device',

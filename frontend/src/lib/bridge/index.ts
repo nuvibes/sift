@@ -194,7 +194,7 @@ interface NativeBridge {
 	 * Save every log of this app and of the library it runs, redacted, as one archive named `name`
 	 * in its `Save files to` folder. The answer is where it went; null where it couldn't be made.
 	 */
-	saveLogArchive(name: string): Promise<string | null>;
+	saveLogArchive(name: string): Promise<{ file: string } | { reason: string }>;
 	/** Whether this shell can make that archive at all. */
 	canSaveLogArchive(): boolean;
 	/** Whether Windows is letting other computers through to Sift, and on which networks. Unknown
@@ -311,6 +311,43 @@ interface NativeBridge {
 	 * browser and on a window with a real title bar.
 	 */
 	dressTitleBar(colors: { color: string; symbolColor: string }): Promise<boolean>;
+	/**
+	 * Tell the desktop window how far its page has drawn, with the look the next start's opening
+	 * frame is drawn in: the theme as this browser mirrors it, and the canvas colour. Nothing in a
+	 * browser.
+	 */
+	tellDrawn(stage: WindowStage): void;
+}
+
+/** How far the page has drawn: its first screen, or a screen ready to use. */
+type WindowStage = 'painted' | 'usable';
+
+/** What the opening frame needs of the page: never anything of the library. */
+interface Look {
+	theme: string | null;
+	canvas: string;
+}
+
+/** The page's canvas as `#rrggbb`, from the colour the browser computed for it. */
+export function canvasHex(computed: string): string | null {
+	const parts = /^rgba?\((\d+),\s*(\d+),\s*(\d+)/.exec(computed);
+	if (parts === null) return null;
+	return `#${parts
+		.slice(1, 4)
+		.map((one) => Number(one).toString(16).padStart(2, '0'))
+		.join('')}`;
+}
+
+function look(): Look | null {
+	const canvas = canvasHex(getComputedStyle(document.body).backgroundColor);
+	if (canvas === null) return null;
+	let theme: string | null = null;
+	try {
+		theme = localStorage.getItem('sift.theme');
+	} catch {
+		/* storage refused: the frame draws the default theme */
+	}
+	return { theme, canvas };
 }
 
 export type { LibraryList };
@@ -405,7 +442,7 @@ interface InjectedBridge {
 	shellVersion?: () => Promise<string | null>;
 	shellLog?: (lines: number) => Promise<ShellLog | null>;
 	shellLogDetail?: (detailed: boolean, hidePersonal?: boolean) => Promise<boolean | null>;
-	saveLogArchive?: (name: string) => Promise<string | null>;
+	saveLogArchive?: (name: string) => Promise<{ file: string } | { reason: string }>;
 	firewall?: () => Promise<FirewallReport | FirewallState>;
 	openFirewall?: (scope?: FirewallScope) => Promise<FirewallReport | FirewallState>;
 	listBrowsers?: () => Promise<BrowserChoice>;
@@ -429,6 +466,7 @@ interface InjectedBridge {
 	openLibrary?: (dataDir: string) => Promise<Settled>;
 	addLibrary?: () => Promise<Settled>;
 	forgetLibrary?: (dataDir: string) => Promise<LibraryList | null>;
+	windowStage?: (stage: WindowStage, look: Look) => Promise<boolean>;
 }
 
 declare global {
@@ -666,6 +704,13 @@ export const bridge: NativeBridge = {
 
 	canDressTitleBar: () => typeof injected()?.setTitleBar === 'function',
 
+	tellDrawn(stage: WindowStage) {
+		const tell = injected()?.windowStage;
+		if (typeof tell !== 'function') return;
+		const seen = look();
+		if (seen !== null) void tell(stage, seen).catch(() => false);
+	},
+
 	async dressTitleBar(colors: { color: string; symbolColor: string }) {
 		return (await injected()?.setTitleBar?.(colors)) ?? false;
 	},
@@ -689,7 +734,7 @@ export const bridge: NativeBridge = {
 	canReadShellLog: () => typeof injected()?.shellLog === 'function',
 
 	async saveLogArchive(name: string) {
-		return (await injected()?.saveLogArchive?.(name)) ?? null;
+		return (await injected()?.saveLogArchive?.(name)) ?? { reason: 'this app has no log maker' };
 	},
 
 	canSaveLogArchive: () => typeof injected()?.saveLogArchive === 'function',

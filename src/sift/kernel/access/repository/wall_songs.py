@@ -13,6 +13,7 @@ from sift.kernel.access.repository.walls import (
     _wall,
     _with_stored_counts,
     locked_tile,
+    one_row,
     shown,
 )
 from sift.kernel.sql_splice import splice
@@ -230,6 +231,10 @@ _SONGS = _wall(_VISIBLE_SONGS, "_VISIBLE_SONGS")
 SONGS_POSITION = _position(_SONGS)
 _SONGS_HEAD, _SONGS_ACCESS = _cut(_VISIBLE_SONGS, "_VISIBLE_SONGS")
 _SONGS_STORED = _with_stored_counts(_VISIBLE_SONGS, "_VISIBLE_SONGS")
+
+#: One song by id, as the unfiltered wall reads it: what a cover or a page asks before it
+#: answers, at one row's cost (`one_row`).
+SONG_BY_ID = one_row(_SONGS_STORED, "_SONGS_STORED", "song", "sg", "song_id")
 
 
 def songs_query(where: str, rows: str = _NOTHING) -> str:

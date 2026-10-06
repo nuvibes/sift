@@ -258,14 +258,15 @@ class LookupStarter:
             page = await self._names.not_known_page(
                 after=after, limit=CATCH_UP_PAGE, shortest_ms=SHORTEST_MS, before=_ANY_AGE
             )
-            for asset_id in page.files:
-                if await kept_local_over(self._names.database, asset_id):
-                    continue
-                unknown += 1
-                if ready and await self._names.wants_asking_again(
-                    asset_id, shortest_ms=SHORTEST_MS, before=before
-                ):
-                    files += 1
+            kept = await self._kept_local_among(page.files)
+            asked = [one for one in page.files if one not in kept]
+            unknown += len(asked)
+            if ready and asked:
+                files += len(
+                    await self._names.wanting_asking_again(
+                        asked, shortest_ms=SHORTEST_MS, before=before
+                    )
+                )
             if page.last is None:
                 return LookupPlan(files=files, not_known=unknown)
             after = page.last
@@ -419,8 +420,9 @@ class LookupStarter:
             page = await self._names.owed_lookups(
                 after=after, limit=CATCH_UP_PAGE, shortest_ms=SHORTEST_MS
             )
+            worth = await self._worth_asking_among(page.files)
             for asset_id in page.files:
-                if await self._worth_asking(asset_id):
+                if asset_id in worth:
                     files += 1
                     if len(named) < first:
                         named.append(asset_id)
@@ -434,6 +436,14 @@ class LookupStarter:
         if not await self._names.wants_lookup(asset_id, shortest_ms=SHORTEST_MS):
             return False
         return not await kept_local_over(self._names.database, asset_id)
+
+    async def _worth_asking_among(self, asset_ids: Sequence[str]) -> set[str]:
+        """`_worth_asking` of a page of files, a statement per question whatever its length."""
+        wanted = await self._names.wanting_lookup(asset_ids, shortest_ms=SHORTEST_MS)
+        return wanted - await self._kept_local_among(list(wanted))
+
+    async def _kept_local_among(self, asset_ids: Sequence[str]) -> set[str]:
+        return {one for one in asset_ids if await kept_local_over(self._names.database, one)}
 
     async def _worth_asking_again(self, asset_id: str, *, before: int) -> bool:
         """Whether this file may be asked about again: AcoustID did not know it (answered before

@@ -288,6 +288,20 @@ describe('a rename', () => {
 		expect(mocked.get).not.toHaveBeenCalled();
 		expect(mocked.put).toHaveBeenCalledWith('/tags/t7', { body: { name: 'sand' } });
 	});
+
+	it('draws the new name on the press, and puts the old one back on a refusal', async () => {
+		mocked.get.mockResolvedValueOnce(page([tag({ id: 't1', name: 'beach' })]));
+		const store = new Tags();
+		await store.load();
+		let refuse: (error: unknown) => void = () => {};
+		mocked.put.mockReturnValueOnce(new Promise((_, reject) => (refuse = reject)) as never);
+
+		const renaming = store.rename('t1', 'shore');
+		expect(store.items.map((one) => one.name)).toEqual(['shore']);
+		refuse(new Error('taken'));
+		await expect(renaming).rejects.toThrow('taken');
+		expect(store.items.map((one) => one.name)).toEqual(['beach']);
+	});
 });
 
 describe('a write while a page is still in the air', () => {

@@ -23,10 +23,11 @@ from collections import OrderedDict
 from collections.abc import Sequence
 
 from sift.kernel.access import Viewer
-from sift.kernel.changes import current_mark
+from sift.kernel.changes import About, mark_of
 from sift.kernel.log import get_logger
 from sift.kernel.memo import MarkedMemo
 from sift.slices.semantic.service import SemanticService
+from sift.slices.semantic.store import index_writes
 
 log = get_logger(__name__)
 
@@ -40,17 +41,28 @@ REMEMBERED = 16
 ASKERS = 16
 
 
+def _settled() -> str | None:
+    """The mark the Settings stand at (the switch and the model), or None while nothing listens."""
+    return mark_of((About.SETTINGS,))
+
+
+def _index_mark() -> str | None:
+    """What a ranking rests on: Settings and the index's own writes, never another's change."""
+    settled = _settled()
+    return None if settled is None else f"{settled}:{index_writes()}"
+
+
 class _NothingToRankBy(Exception):
     """The words could not be described, so there is nothing to rank by and nothing to keep."""
 
 
 class _Kept:
-    """One asker's recent questions: what the words meant, and what was closest under a mark."""
+    """One asker's recent questions: the words' meaning under a model, the closest under a mark."""
 
     __slots__ = ("ranked", "vectors")
 
     def __init__(self) -> None:
-        self.vectors: OrderedDict[str, list[float]] = OrderedDict()
+        self.vectors: OrderedDict[tuple[str, str | None], list[float]] = OrderedDict()
         self.ranked: MarkedMemo[tuple[tuple[str, float], ...]] = MarkedMemo(kept=REMEMBERED)
 
 
@@ -75,7 +87,7 @@ class SemanticSearch:
                 return await self._rank(text, limit, None, None)
             scope = (asker.role, asker.show_hidden, asker.cache_stamp)
             return await kept.ranked.get(
-                (text, limit, scope), current_mark(), lambda: self._rank(text, limit, kept, asker)
+                (text, limit, scope), _index_mark(), lambda: self._rank(text, limit, kept, asker)
             )
         except _NothingToRankBy:
             return None
@@ -100,17 +112,19 @@ class SemanticSearch:
         return tuple((neighbour.asset_id, neighbour.distance) for neighbour in found)
 
     async def _vector(self, text: str, kept: _Kept | None) -> list[float]:
+        # Under Settings' mark: another model's numbers for the same words compare as noise.
+        words = (text, _settled())
         if kept is not None:
-            held = kept.vectors.get(text)
+            held = kept.vectors.get(words)
             if held is not None:
-                kept.vectors.move_to_end(text)
+                kept.vectors.move_to_end(words)
                 return held
         vector = await self._service.describe_query(text)
         if vector is None:
             # Not kept: the model may not be ready yet, and the next ask should find out.
             raise _NothingToRankBy
         if kept is not None:
-            kept.vectors[text] = vector
+            kept.vectors[words] = vector
             while len(kept.vectors) > REMEMBERED:
                 kept.vectors.popitem(last=False)
         return vector

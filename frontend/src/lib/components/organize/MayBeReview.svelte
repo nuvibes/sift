@@ -45,6 +45,7 @@
 	import { decided, heldBoard } from '$lib/organize/organize.svelte';
 	import { people } from '$lib/people/people.svelte';
 	import { toasts } from '$lib/shell/toasts.svelte';
+	import { reloadOnLibraryChange } from '$lib/library/changes.svelte';
 	import { thing } from '$lib/components/common/toast-pieces';
 
 	/** The tab the card is on, which this page belongs to for its trail. */
@@ -106,6 +107,29 @@
 		void offset;
 		untrack(() => void load());
 	});
+
+	/* A change elsewhere (a rename, a face decided on another screen) re-reads in place; a pile gone
+	   since says so, and a failed re-read leaves the faces drawn. Not while an answer is on its way. */
+	reloadOnLibraryChange(() => void reread());
+	async function reread() {
+		if (loading || busy !== null) return;
+		const asked = { personId, pileId, offset };
+		try {
+			const [person, group] = await Promise.all([
+				people.one(personId).catch(() => null),
+				faceGroup(pileId, { limit: FACES_PER_PAGE, offset })
+			]);
+			if (asked.personId !== personId || asked.pileId !== pileId || asked.offset !== offset) return;
+			if (person && person.name !== name) name = person.name;
+			if (JSON.stringify(group.group.faces) !== JSON.stringify(faces)) faces = group.group.faces;
+			total = group.total;
+		} catch (error) {
+			if (!isMissing(error)) return;
+			missing = true;
+			faces = [];
+			total = 0;
+		}
+	}
 
 	/* A Yes on some of the faces: those are confirmed, and the rest of the group becomes questions
 	   about her, so the review carries on in her own list when anything was offered. */

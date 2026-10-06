@@ -420,6 +420,9 @@ def test_editing_only_a_usernames_address_asks_for_no_reindex(
         async def touched_many(self, asset_ids: list[str]) -> None:
             told.append(list(asset_ids))
 
+        async def queue_many(self, asset_ids: list[str]) -> None:  # pragma: no cover (no rename)
+            await self.touched_many(asset_ids)
+
         async def renamed(self) -> None: ...
 
     client.app.dependency_overrides[reindexer] = _Recorder  # type: ignore[attr-defined]

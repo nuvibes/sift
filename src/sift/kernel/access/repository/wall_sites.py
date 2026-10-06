@@ -14,6 +14,7 @@ from sift.kernel.access.repository.walls import (
     _wall,
     _with_stored_counts,
     locked_tile,
+    one_row,
     shown,
 )
 from sift.kernel.access.sites import SITE_CONCEALED, SITE_REACH, site_address
@@ -295,6 +296,10 @@ _SITES_HEAD, _SITES_ACCESS = _cut(_VISIBLE_SITES, "_VISIBLE_SITES")
 _SITES = _wall(_VISIBLE_SITES, "_VISIBLE_SITES")
 SITES_POSITION = _position(_SITES)
 _SITES_STORED = _with_stored_counts(_VISIBLE_SITES, "_VISIBLE_SITES")
+
+#: One site by id, as the unfiltered wall reads it: what a cover or a page asks before it
+#: answers, at one row's cost (`one_row`).
+SITE_BY_ID = one_row(_SITES_STORED, "_SITES_STORED", "site", "pl", "site_id")
 
 #: A handful of Sites by id: the sites wall unfiltered. A Site's files are counted in
 #: `viewer_entity_counts`, so a by-id read is one range per Site asked about, exactly as

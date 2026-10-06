@@ -21,7 +21,7 @@ import sift.slices.music.schema
 import sift.slices.stash_boxes.schema
 import sift.slices.workbench.schema  # noqa: F401
 from sift.kernel.access import Repository
-from sift.kernel.access.history import Actor, Event, count_of_asset_history, history_of_asset
+from sift.kernel.access.history import Actor, Event, history_of_asset
 from sift.kernel.access.history_folds import EPISODE_GAP
 from sift.kernel.access.sentences import MEANS
 from sift.kernel.db import Database
@@ -249,15 +249,11 @@ async def test_the_number_on_the_history_tab_is_the_length_of_the_list(
         (world.solo, LATER - 1),
     )
 
-    before = await count_of_asset_history(temp_db, access, actors.admin, world.loose)
-    for asset_id in (world.solo, world.loose):
-        drawn = await history_of_asset(temp_db, access, actors.admin, asset_id)
-        counted = await count_of_asset_history(temp_db, access, actors.admin, asset_id)
-        assert counted == len(drawn)
+    before = len(await history_of_asset(temp_db, access, actors.admin, world.loose))
     # The fingerprint and the read again are one sitting, so the four rows are three lines.
     kinds: Sequence[str] = [one.kind for one in await _lines(temp_db, access, actors, world.solo)]
     assert sorted(kinds) == ["asked", "left_out", "ready"]
-    assert before == await count_of_asset_history(temp_db, access, actors.admin, world.loose)
+    assert before == len(await history_of_asset(temp_db, access, actors.admin, world.loose))
 
 
 async def test_acoustid_s_answer_is_said_where_the_music_fingerprints_table_is_not(

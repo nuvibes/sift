@@ -8,6 +8,7 @@ import asyncio
 import random
 import threading
 import time
+from collections.abc import Mapping
 from typing import Any
 
 import pytest
@@ -289,7 +290,9 @@ class _Handed(DuplicateReads):
         super().__init__(database)
         self._rows = rows
 
-    async def fingerprints(self) -> list[Fingerprint]:
+    async def fingerprints(
+        self, *, within: tuple[str, Mapping[str, object]] | None = None
+    ) -> list[Fingerprint]:
         return self._rows
 
 

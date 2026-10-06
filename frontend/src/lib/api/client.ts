@@ -200,6 +200,18 @@ export function requestsInFlight(): boolean {
 	return inFlight > 0;
 }
 
+/*
+ * Reads on their way, by address. A page's first draw asks for the same few addresses from several
+ * places at once (who is signed in, the settings, the folders); a second ask of an address already
+ * on its way joins it instead of going again. Only a plain read joins: one with its own abort
+ * signal, or kept alive past the page, or taken as bytes, goes on its own.
+ */
+const reading = new Map<string, { read: Promise<unknown>; started: number; by: typeof fetch }>();
+
+/** How long a read on its way is joined rather than repeated: a first draw's burst is within a
+ *  frame or two, and a read that has hung for longer must not hold up a later ask of the same. */
+const JOIN_MS = 250;
+
 export async function request<T>(
 	method: string,
 	path: ApiPath,
@@ -207,21 +219,48 @@ export async function request<T>(
 ): Promise<T> {
 	inFlight += 1;
 	try {
-		return await send<T>(method, path, options);
+		if (method !== 'GET' || options.signal || options.keepalive || options.asBlob) {
+			return await send<T>(method, path, options);
+		}
+		const address = addressOf(path, options.query).toString();
+		const going = reading.get(address);
+		/* A copy for whoever joined, so no caller can change what another holds. */
+		/* Joined only while the same `fetch` is in place: a test that stands in another one, or a
+		   page that was given a new one, must not share what the old one has on its way. */
+		if (
+			going !== undefined &&
+			going.by === globalThis.fetch &&
+			performance.now() - going.started < JOIN_MS
+		) {
+			return structuredClone(await going.read) as T;
+		}
+		const read = send<T>(method, path, options);
+		const entry = { read, started: performance.now(), by: globalThis.fetch };
+		reading.set(address, entry);
+		try {
+			return await read;
+		} finally {
+			if (reading.get(address) === entry) reading.delete(address);
+		}
 	} finally {
 		inFlight -= 1;
 	}
 }
 
-async function send<T>(method: string, path: ApiPath, options: RequestOptions): Promise<T> {
+function addressOf(path: ApiPath, query: RequestOptions['query']): URL {
 	const url = new URL(API_PREFIX + path, window.location.origin);
-	for (const [key, value] of Object.entries(options.query ?? {})) {
+	for (const [key, value] of Object.entries(query ?? {})) {
 		if (value === undefined) continue;
 		// `append` per value for an array, never `set`: `set` would replace the previous one, so a
 		// list of three would arrive as its last member and read as a much wider question.
 		if (Array.isArray(value)) for (const one of value) url.searchParams.append(key, String(one));
 		else url.searchParams.set(key, String(value));
 	}
+	return url;
+}
+
+async function send<T>(method: string, path: ApiPath, options: RequestOptions): Promise<T> {
+	const url = addressOf(path, options.query);
 
 	// A file upload is multipart, and the browser has to write the content-type itself: it carries a
 	// boundary marker only it knows, so setting the header by hand produces a body the server cannot

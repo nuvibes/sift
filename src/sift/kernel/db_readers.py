@@ -119,11 +119,15 @@ def point_read(name: str, sql: str) -> PointRead:
     """Declare a statement constant-time; `name` is what its plan gate reports if it stops seeking."""
     if name in _POINT_READS:
         raise ValueError(f"point read {name!r} is registered twice")
-    if not _PLACEHOLDER.search(_SQL_COMMENT.sub(" ", sql)):
-        # A statement that binds nothing asks about no subject; knowable without a database.
+    text = _SQL_COMMENT.sub(" ", sql)
+    if not _PLACEHOLDER.search(text) and any(
+        table.lower() in LIBRARY_SIZED_TABLES for table in _TABLE_AFTER.findall(text)
+    ):
+        # Unbound over a table that grows with the library is a walk of it; a small table read
+        # whole costs what a seek does. Knowable without a database.
         raise ValueError(
-            f"point read {name!r} binds no value: a statement that asks about one subject "
-            "binds it, and one that binds nothing is a question about the whole table"
+            f"point read {name!r} binds no value over a library-sized table: a statement that "
+            "asks about one subject binds it, and one that binds nothing reads the whole table"
         )
     registered = PointRead(name, sql)
     _POINT_READS[name] = registered
@@ -133,6 +137,17 @@ def point_read(name: str, sql: str) -> PointRead:
 def registered_point_reads() -> dict[str, PointRead]:
     """Every statement declared constant-time, copied. The gate reads it; nothing mutates it."""
     return dict(_POINT_READS)
+
+
+@dataclass(frozen=True)
+class StatementRun:
+    """One statement as a step-counting database saw it: what the statement ledger records."""
+
+    stage: str
+    name: str
+    steps: int
+    sql: str
+    params: Params
 
 
 class StatementBudget:
@@ -157,6 +172,9 @@ class StatementBudget:
         self._unsettled_ms = unsettled_ms
         self._keep = keep
         self._runs: dict[str, deque[float]] = {}
+        #: None in production. A list turns step counting on for every connection opened after it
+        #: is set, and every statement run is appended to it (the statement ledger's gate).
+        self.heard: list[StatementRun] | None = None
 
     def threshold_ms(self, name: str) -> float:
         """What this statement has to beat to be worth a warning, right now."""
@@ -165,9 +183,12 @@ class StatementBudget:
             return self._unsettled_ms
         return max(self._floor_ms, statistics.median(runs) * self._factor)
 
-    def observed(self, name: str, ran_ms: float) -> None:
+    def observed(self, name: str, ran_ms: float, run: StatementRun | None = None) -> None:
         """This statement ran and took this long: only the time it RAN, never the time it waited,
-        or a queue would raise its bar and hide what this exists to catch."""
+        or a queue would raise its bar and hide what this exists to catch. `run` carries its steps
+        where they were counted."""
+        if run is not None and self.heard is not None:
+            self.heard.append(run)
         runs = self._runs.get(name)
         if runs is None:
             if len(self._runs) >= self._keep:

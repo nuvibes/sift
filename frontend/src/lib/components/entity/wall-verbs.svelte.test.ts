@@ -192,6 +192,22 @@ describe('which verbs a kind has', () => {
 });
 
 describe('renaming', () => {
+	it('draws the new name on the wall at the press, and puts it back on a refusal', async () => {
+		const { people } = await import('$lib/people/people.svelte');
+		people.items = [{ id: 'r1', name: 'Marla Quist' } as (typeof people.items)[number]];
+		let refuse: (error: unknown) => void = () => {};
+		mocked.put.mockReturnValueOnce(new Promise((_, reject) => (refuse = reject)) as never);
+		const { verbs } = wall('person');
+		verbs.askToRename(['r1']);
+		verbs.renameTo = 'Ines Dray';
+		const renaming = verbs.rename();
+		expect(people.items[0]?.name).toBe('Ines Dray');
+		refuse(new ApiError(500, 'no'));
+		await renaming;
+		expect(people.items[0]?.name).toBe('Marla Quist');
+		people.items = [];
+	});
+
 	it('sends the name alone, so nothing else about the row is replaced', async () => {
 		/* The routes read an absent field as "leave it alone". A rename that sent the vault flag it
 		   happened to be holding would write a stale one back, in the direction nobody notices,

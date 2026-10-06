@@ -11,7 +11,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ipcRenderer, resetElectronStub, sender } from '../test/electron-stub';
 import { SAVE_LOG_ARCHIVE } from './channels';
 import { notePress } from './gesture';
+import { logTo } from './log';
 import {
+	type Bundled,
 	archiveName,
 	BUNDLE_TIMEOUT_MS,
 	bundleLogs,
@@ -104,7 +106,10 @@ describe('downloading the log with no backend', () => {
 		child.stderr.emit('data', Buffer.from('The folder is read-only.\nmore\n'));
 		child.emit('close', 2);
 
-		expect(await made).toEqual({ ok: false, reason: 'The folder is read-only.' });
+		expect(await made).toEqual({
+			ok: false,
+			reason: 'The folder is read-only.'
+		});
 	});
 
 	it('says the exit code when it said nothing, or wrote no archive', async () => {
@@ -130,7 +135,10 @@ describe('downloading the log with no backend', () => {
 		const made = bundleLogs(ask());
 		await vi.advanceTimersByTimeAsync(BUNDLE_TIMEOUT_MS);
 
-		expect(await made).toEqual({ ok: false, reason: 'Making the log file took too long.' });
+		expect(await made).toEqual({
+			ok: false,
+			reason: 'Making the log file took too long.'
+		});
 		expect(child.kill).toHaveBeenCalledOnce();
 	});
 
@@ -157,9 +165,9 @@ describe('downloading the log with no backend', () => {
 
 describe('the page asking for the archive', () => {
 	const made: string[] = [];
-	const archive = async (name: string) => {
+	const archive = async (name: string): Promise<Bundled> => {
 		made.push(name);
-		return `D:\\Saved\\${name}`;
+		return { ok: true, file: `D:\\Saved\\${name}` };
 	};
 	const at =
 		(reach: Reach) =>
@@ -174,27 +182,66 @@ describe('the page asking for the archive', () => {
 	it('makes the archive under the last part of the name only', async () => {
 		registerLogArchive(at('local'), archive);
 
-		expect(await ipcRenderer.invoke(SAVE_LOG_ARCHIVE, '..\\..\\Sift log.zip')).toBe(
-			'D:\\Saved\\Sift log.zip'
-		);
-		expect(await ipcRenderer.invoke(SAVE_LOG_ARCHIVE, 'C:/Windows/x.zip')).toBe('D:\\Saved\\x.zip');
+		expect(await ipcRenderer.invoke(SAVE_LOG_ARCHIVE, '..\\..\\Sift log.zip')).toEqual({
+			file: 'D:\\Saved\\Sift log.zip'
+		});
+		expect(await ipcRenderer.invoke(SAVE_LOG_ARCHIVE, 'C:/Windows/x.zip')).toEqual({
+			file: 'D:\\Saved\\x.zip'
+		});
 		for (const refused of ['', '..', 'C:\\', 42]) {
-			expect(await ipcRenderer.invoke(SAVE_LOG_ARCHIVE, refused)).toBeNull();
+			expect(await ipcRenderer.invoke(SAVE_LOG_ARCHIVE, refused)).toHaveProperty('reason');
 		}
 		sender.senderFrame = { url: 'https://example.com/', parent: null };
-		expect(await ipcRenderer.invoke(SAVE_LOG_ARCHIVE, 'Sift log.zip')).toBeNull();
+		expect(await ipcRenderer.invoke(SAVE_LOG_ARCHIVE, 'Sift log.zip')).toEqual({
+			reason: 'the page is not one this shell serves'
+		});
 		expect(made).toEqual(['Sift log.zip', 'x.zip']);
+	});
+
+	it('writes why it refused, and why the maker threw', async () => {
+		const where = path.join(os.tmpdir(), `sift-logbundle-test-${process.pid}-${Date.now()}.log`);
+		logTo(where);
+		registerLogArchive(at('local'), async () => {
+			throw new Error('Downloads is not a folder here');
+		});
+
+		sender.senderFrame = { url: 'https://example.com/', parent: null };
+		expect(await ipcRenderer.invoke(SAVE_LOG_ARCHIVE, 'Sift log.zip')).toHaveProperty('reason');
+		sender.senderFrame = {
+			url: 'http://127.0.0.1:5171/settings',
+			parent: null
+		};
+		expect(await ipcRenderer.invoke(SAVE_LOG_ARCHIVE, 'Sift log.zip')).toEqual({
+			reason: 'Downloads is not a folder here'
+		});
+
+		const lines = fs
+			.readFileSync(where, 'utf8')
+			.trim()
+			.split('\n')
+			.map((line) => JSON.parse(line));
+		logTo(null);
+		fs.rmSync(where, { force: true });
+		expect(lines.map((line) => [line.event, line.why ?? line.reason])).toEqual([
+			['shell.log_download_refused', 'the page is not one this shell serves'],
+			['shell.log_download_failed', 'Downloads is not a folder here']
+		]);
 	});
 
 	it('makes one for a page from another computer only just after a press', async () => {
 		registerLogArchive(at('remote'), archive);
-		sender.senderFrame = { url: 'http://192.168.1.20:5171/settings', parent: null };
+		sender.senderFrame = {
+			url: 'http://192.168.1.20:5171/settings',
+			parent: null
+		};
 
-		expect(await ipcRenderer.invoke(SAVE_LOG_ARCHIVE, 'Sift log.zip')).toBeNull();
+		expect(await ipcRenderer.invoke(SAVE_LOG_ARCHIVE, 'Sift log.zip')).toEqual({
+			reason: 'no press'
+		});
 		notePress(sender.sender as object);
-		expect(await ipcRenderer.invoke(SAVE_LOG_ARCHIVE, 'Sift log.zip')).toBe(
-			'D:\\Saved\\Sift log.zip'
-		);
+		expect(await ipcRenderer.invoke(SAVE_LOG_ARCHIVE, 'Sift log.zip')).toEqual({
+			file: 'D:\\Saved\\Sift log.zip'
+		});
 		expect(made).toEqual(['Sift log.zip']);
 	});
 });

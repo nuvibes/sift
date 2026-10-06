@@ -20,6 +20,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushSync, mount, unmount } from 'svelte';
 import AssetGrid from './AssetGrid.svelte';
 import { imports } from '$lib/library/imports.svelte';
+import { libraryChanges } from '$lib/library/changes.svelte';
 
 /** What the server currently answers with. `held` is what an ANCHORED read gets back (the same
  *  files, sitting further down the library) and `fresh` is what reading a plain offset gets. */
@@ -228,6 +229,21 @@ describe('files arriving while the wall is being watched', () => {
 		await settle();
 
 		expect(tileFor('new0'), 'one arrival moved the whole wall').toBeNull();
+	});
+
+	it('offers one file in its line at once when nothing else is arriving, moving nothing', async () => {
+		vi.useFakeTimers();
+		await wall();
+		topOfWallOnScreen(true);
+
+		filesArrive(1);
+		imports.busy = 0;
+		libraryChanges.changed();
+		await settle();
+		await settle();
+
+		expect(tileFor('new0'), 'one file moved the wall by itself').toBeNull();
+		expect(host.textContent?.replace(/\s+/g, ' '), 'the file was not offered').toContain('1 new');
 	});
 
 	it('takes what was waiting when somebody scrolls back to the top', async () => {

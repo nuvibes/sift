@@ -561,15 +561,31 @@
 		compressOpen = true;
 	}
 
+	/* The record a file's own sheet already holds, which carries everything the dialog draws. */
+	function heldForEditing(id: string): EditableAsset | null {
+		const held: object | undefined = lookup(id);
+		const needs = ['media_type', 'width', 'height', 'duration_ms', 'filename', 'art', 'sprite'];
+		return held && needs.every((field) => field in held) ? (held as EditableAsset) : null;
+	}
+
+	/* Opened on the press from the held record where there is one, then read fresh in place. */
 	async function askToEdit(ids: string[], mode: 'trim' | 'gif' = 'trim') {
 		const id = ids[0];
 		if (!id) return;
+		const held = heldForEditing(id);
+		if (held) {
+			editing = held;
+			editMode = mode;
+			editOpen = true;
+		}
 		try {
-			editing = await api.get<EditableAsset>(`/assets/${encodeURIComponent(id)}`);
+			const fresh = await api.get<EditableAsset>(`/assets/${encodeURIComponent(id)}`);
+			if (held && (!editOpen || editing?.id !== id)) return;
+			editing = fresh;
 			editMode = mode;
 			editOpen = true;
 		} catch {
-			toasts.show("Sift couldn't open that file to edit it", { tone: 'error' });
+			if (!held) toasts.show("Sift couldn't open that file to edit it", { tone: 'error' });
 		}
 	}
 

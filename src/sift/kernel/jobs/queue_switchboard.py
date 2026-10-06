@@ -146,6 +146,19 @@ class SwitchboardReads(QueueCore):
             held[row["type"]] = held.get(row["type"], 0) + int(row["held"])
         return held
 
+    async def held_and_waiting_by_type(
+        self, types: frozenset[str]
+    ) -> tuple[dict[str, int], dict[str, int]]:
+        """`held_by_type` for these types, and its `waiting_only` reading, from one statement."""
+        rows = await self._db.fetch_all(_HELD_BY_TYPE, (json.dumps(sorted(types)), None, None))
+        held: dict[str, int] = {}
+        waiting: dict[str, int] = {}
+        for row in rows:
+            held[row["type"]] = held.get(row["type"], 0) + int(row["held"])
+            if row["state"] == JobState.QUEUED.value:
+                waiting[row["type"]] = waiting.get(row["type"], 0) + int(row["held"])
+        return held, waiting
+
     async def _not_ready_types(self) -> set[str]:
         """The job types whose family cannot run here now, kept `READINESS_FRESH_FOR_SECONDS`; a
         family with no answer is ready, since holding its work back would invent a fault."""

@@ -62,8 +62,8 @@ extraResources:
   # `runtime` is a real interpreter, not a virtual environment (see build_runtime in
   # scripts/release.py).
   #
-  # Its compiled bytecode ships with it. Without it, the first start on every machine writes several
-  # thousand .pyc files into the installed application's own folder.
+  # Its bytecode ships with it, compiled by build_runtime in the checked-hash form, and a runtime
+  # without it refuses the build. Without it every start after an install compiles each module first.
   - from: ../build/runtime
     to: runtime
   - from: ../vendor/bin

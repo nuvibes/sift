@@ -1,0 +1,29 @@
+{
+  "about": "Each write to a shared person, tag, collection or Loop, the subject it is announced under, and who must hear it. admins+shared: every admin and every user given anything, and never a user given nothing. Read by tests/gates/test_live_writes.py.",
+  "writes": [
+    {"write": "person created", "subject": "library", "reach": "admins+shared"},
+    {"write": "person renamed", "subject": "library", "reach": "admins+shared"},
+    {"write": "person deleted", "subject": "library", "reach": "admins+shared"},
+    {"write": "person alias added", "subject": "library", "reach": "admins+shared"},
+    {"write": "person alias ensured", "subject": "library", "reach": "admins+shared"},
+    {"write": "person alias removed", "subject": "library", "reach": "admins+shared"},
+    {"write": "person link added", "subject": "library", "reach": "admins+shared"},
+    {"write": "person link removed", "subject": "library", "reach": "admins+shared"},
+    {"write": "tag created", "subject": "library", "reach": "admins+shared"},
+    {"write": "tag renamed", "subject": "library", "reach": "admins+shared"},
+    {"write": "tag record edited", "subject": "library", "reach": "admins+shared"},
+    {"write": "tag record filled", "subject": "library", "reach": "admins+shared"},
+    {"write": "tag cover set", "subject": "library", "reach": "admins+shared"},
+    {"write": "tag deleted", "subject": "library", "reach": "admins+shared"},
+    {"write": "collection created", "subject": "library", "reach": "admins+shared"},
+    {"write": "collection renamed", "subject": "library", "reach": "admins+shared"},
+    {"write": "collection tagged", "subject": "library", "reach": "admins+shared"},
+    {"write": "collection cover set", "subject": "library", "reach": "admins+shared"},
+    {"write": "collection deleted", "subject": "library", "reach": "admins+shared"},
+    {"write": "Loop saved", "subject": "library", "reach": "admins+shared"},
+    {"write": "Loop renamed", "subject": "library", "reach": "admins+shared"},
+    {"write": "Loop tagged", "subject": "library", "reach": "admins+shared"},
+    {"write": "Loop superseded", "subject": "library", "reach": "admins+shared"},
+    {"write": "Loop forgotten", "subject": "library", "reach": "admins+shared"}
+  ]
+}

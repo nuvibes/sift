@@ -8,6 +8,8 @@ which requests WOULD have left and what the library says afterwards. No network.
 from __future__ import annotations
 
 import struct
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
@@ -15,7 +17,8 @@ from typing import Any, cast
 import pytest
 
 import sift.slices.workbench.schema  # noqa: F401 (the ledger's tables)
-from sift.kernel.db import Database
+from sift.kernel import db as db_module
+from sift.kernel.db import Database, statement_name
 from sift.kernel.jobs import JobBlocked, JobContext, JobFailedPermanently
 from sift.kernel.jobs.quiet_hours import WHEN_PRESS, WHEN_WORK
 from sift.kernel.jobs.schedules import when_key
@@ -866,5 +869,66 @@ async def test_every_answer_kept_is_told_to_every_admin_on_the_works_bell(
         assert (EVERY_ADMIN, About.JOBS) in told
         kept = await NameStore(database).lookup_of("pmv")
         assert kept is not None and kept.status == answer
+    finally:
+        await database.close()
+
+
+#: Still asked of the kernel one file at a time: Don't enrich.
+_PER_FILE_IN_THE_KERNEL = {"catalog.kept_local_over"}
+
+
+@pytest.mark.asyncio
+async def test_the_counts_beside_the_lookup_ask_a_page_in_the_same_number_of_statements(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The Music pane's owed and not-known counts: three times the files, no statement more."""
+    seen: list[str] = []
+    real = db_module._judged
+
+    @contextmanager
+    def counted(stage: str, statement: Any, *rest: Any, **options: Any) -> Iterator[Any]:
+        seen.append(statement_name(statement))
+        with real(stage, statement, *rest, **options) as timing:
+            yield timing
+
+    database = await _library(tmp_path)
+    try:
+        names = NameStore(database)
+        await LookupSettings(
+            names, SecretStore(database), cast(AcoustIDClient, None), _Settings({})
+        ).set_key("k", _MASTER)
+        starter = LookupStarter(names, _Settings({LOOKUP_KEY: True}), enqueue=_never)
+        values = struct.pack("<3I", 1, 2, 3)
+        made = 0
+
+        async def counts_after(more: int) -> tuple[int, tuple[int, int, int]]:
+            nonlocal made
+            async with database.write() as connection:
+                for _ in range(more):
+                    made += 1
+                    for kind in ("owed", "unknown"):
+                        one = f"{kind}-{made:03d}"
+                        await connection.execute(
+                            _ASSET, (one, f"i-{one}", f"{one}.mp4", _EPOCH, 187_000, None)
+                        )
+                        await connection.execute(_FINGERPRINT, (one, 184_000, values))
+                    await connection.execute(
+                        "INSERT INTO music_lookups (asset_id, looked_up_at, lengths_sent, status)"
+                        " VALUES (?, 1, '[187]', 'nothing')",
+                        (f"unknown-{made:03d}",),
+                    )
+            seen.clear()
+            with monkeypatch.context() as patched:
+                patched.setattr(db_module, "_judged", counted)
+                owed = await starter.owed()
+                again = await starter.plan_again()
+            ours = [one for one in seen if one not in _PER_FILE_IN_THE_KERNEL]
+            return len(ours), (owed, again.not_known, again.files)
+
+        few, answer = await counts_after(3)
+        assert answer == (4, 3, 3), "the library's own file is owed too"
+        many, answer = await counts_after(6)
+        assert answer == (10, 9, 9)
+        assert many == few
     finally:
         await database.close()

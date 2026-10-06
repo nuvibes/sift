@@ -17,6 +17,8 @@ from types import ModuleType
 
 import pytest
 
+from sift.kernel.access import Role, Viewer
+
 pytestmark = pytest.mark.integration
 
 _SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "scale_probe.py"
@@ -57,14 +59,13 @@ async def test_a_small_library_is_built_and_every_question_is_timed(
 async def test_the_walls_it_times_have_rows_to_draw(tmp_path: Path) -> None:
     """A wall timed while it answers nothing measures nothing: the built library has people and
     tags an admin may see."""
-    database = probe.Database(tmp_path / "probe.sqlite3", readers=1)
+    lib = await probe.fixture_library(300, 7, tmp_path / "probe.sqlite3")
+    database = probe.Database(lib.path, readers=1)
     await database.connect()
     try:
-        await database.initialize_schema()
-        ids = await probe.build(database, 300, 7)
         settings = probe.Settings(data_dir=tmp_path / "data", cache_dir=tmp_path / "cache")
         access = probe.Repository(database, probe.ContentStore(database, settings))
-        admin = probe.Viewer(id=ids["admin"], role=probe.Role.ADMIN)
+        admin = Viewer(id=lib.admin, role=Role.ADMIN)
         assert (await access.suggest_people(admin, limit=50)).items
         assert (await access.list_tags(admin, limit=50)).items
     finally:

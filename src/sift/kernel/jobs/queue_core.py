@@ -12,6 +12,7 @@ from sift.kernel.changes import About, telling
 from sift.kernel.db import Connection, Database, in_clause
 from sift.kernel.jobs.queue_rows import WorkSummary
 from sift.kernel.jobs.switchboard import QuietHold, Switchboard
+from sift.kernel.log import get_logger
 
 #: How long a whole-table work summary stays true: `WorkAhead`'s five seconds, for one dashboard.
 SUMMARY_FRESH_FOR_SECONDS = 5
@@ -29,6 +30,9 @@ UPDATE jobs
        updated_at = ?
  WHERE id IN (?*)
 """
+
+
+log = get_logger(__name__)
 
 
 class QueueCore:
@@ -52,6 +56,7 @@ class QueueCore:
         self._not_ready: tuple[int, frozenset[str]] | None = None
         #: Who is told that running jobs were asked to stop (`listen_for_stops`).
         self._stop_listeners: list[Callable[[Sequence[str]], None]] = []
+        self._work_listeners: list[Callable[[], None]] = []
         self._quiet_seen: tuple[int, QuietHold] | None = None
         #: The types whose every run writes a history line, and their task (`record_runs_of`).
         self._runs_recorded: dict[str, tuple[str, str]] = {}
@@ -79,3 +84,11 @@ class QueueCore:
             return
         sql, params = in_clause(_ROLL_UP, ids)
         await connection.execute(sql, (self._now(), *params))
+
+    def _work_arrived(self) -> None:
+        """Tell every listener a job was just queued; a listener that raises is logged."""
+        for listener in list(self._work_listeners):
+            try:
+                listener()
+            except Exception:
+                log.exception("job.work_listener_failed")

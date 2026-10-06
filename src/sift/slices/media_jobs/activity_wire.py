@@ -383,10 +383,10 @@ class JobsPage(Wire):
         description="Whether fewer tasks are running than usual because somebody is using the "
         "computer (Settings > Performance). See `kernel.attention`.",
     )
-    full_amount: bool = Field(
+    turbo_mode: bool = Field(
         default=False,
         description="Whether every task is running although somebody is using the computer, "
-        "because a person pressed for the full amount (`POST /jobs/full-amount`). Never true "
+        "because a person pressed for turbo mode (`POST /jobs/turbo-mode`). Never true "
         "beside `stepping_back`; both are false while nobody is at the keyboard.",
     )
     step_back_share: int = Field(
@@ -396,7 +396,7 @@ class JobsPage(Wire):
     )
     step_back_for: Literal["input", "playing", "others"] | None = Field(
         default=None,
-        description="Why Sift is in eco mode while `stepping_back` or `full_amount` is true: "
+        description="Why Sift is in eco mode while `stepping_back` or `turbo_mode` is true: "
         "somebody at this device (input), a video playing in Sift on any device or a Theater "
         "wall open (playing), or other programs busy (others).",
     )

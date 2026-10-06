@@ -14,11 +14,13 @@ silently falling back to the CPU and leaving someone to wonder why it is slow.
 from __future__ import annotations
 
 import asyncio
+import json
 import os
+import shutil
 import socket
 import sys
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from hashlib import sha256
 from pathlib import Path
 from typing import Any
@@ -160,6 +162,8 @@ class HardwareReport:
     operating system can address (the installed total less what the firmware reserves) and it is
     the figure any sizing has to be done against. This one is the figure a person recognises as
     their machine, and is what the description of the machine shows. None where nothing will say."""
+    answers_kept: bool = False
+    """The encoders and cards came from the last start's probe; `reprobe` asks again after this one."""
 
     @property
     def _working_card(self) -> Card | None:
@@ -665,24 +669,47 @@ def _acceleration_warnings(preference: str, *, cuda: bool, rocm: bool) -> tuple[
     return tuple(warnings)
 
 
-async def probe(settings: Settings) -> HardwareReport:
-    """Look at the machine once, and hand back what to do about it.
+#: Bumped when what the three programs' answers are read into changes, so an older file is ignored.
+_KEPT_FORMAT = 1
 
-    Run at startup; the result is kept and read from, never re-probed: the hardware does not
-    change while the process is alive, and a second probe could only disagree with the first.
-    """
-    cpu_count = os.cpu_count() or 1
-    cpu_model = await asyncio.to_thread(_cpu_model)
-    encoders = await _ffmpeg_encoders(settings)
-    # Each of these asks the filesystem whether a device is there. Startup work rather than
-    # serving work, so the cost is not the point: what matters is that the rule holds without
-    # exception, because an exception is what the next one hides behind.
-    cuda = await asyncio.to_thread(_nvidia_present)
-    rocm = await asyncio.to_thread(_amd_compute_present)
-    render_node = await asyncio.to_thread(_render_node_present)
 
+def _kept_key(settings: Settings, *, cuda: bool) -> str | None:
+    """What the kept answers depend on: ffmpeg's file, and whether a card is there. None when
+    ffmpeg cannot be found, which a kept answer must never hide."""
+    found = shutil.which(settings.ffmpeg_path)
+    if found is None:
+        return None
+    try:
+        stat = os.stat(found)
+    except OSError:
+        return None
+    return f"{_KEPT_FORMAT}|{found}|{stat.st_size}|{stat.st_mtime_ns}|{cuda}|{settings.gpu}"
+
+
+async def _ask_the_programs(settings: Settings, *, cuda: bool) -> tuple[frozenset[str], list[Card]]:
+    """The slow half of the probe: three programs, asked at once rather than in turn."""
+
+    async def nvidia() -> list[Card]:
+        return await _nvidia_identity() if cuda else []
+
+    encoders, named, adapters = await asyncio.gather(
+        _ffmpeg_encoders(settings), nvidia(), _windows_display_adapters()
+    )
+    # THE TWO SOURCES, and the order is the answer to "which one does the work". NVIDIA's own tool
+    # is exact about its own cards and knows about nothing else; Windows lists every adapter and is
+    # vague about memory. The computable ones come first so that the card Sift uses is the card the
+    # screen names first, and anything NVIDIA is dropped from the second list rather than appearing
+    # twice under a slightly different name.
+    cards = named + [
+        one for one in adapters if not (one.name or "").casefold().startswith("nvidia")
+    ]
+    return encoders, cards
+
+
+def _usable(encoders: frozenset[str], *, cuda: bool, render_node: bool) -> tuple[str, ...]:
+    """The encoders ffmpeg was built with that a present device can run."""
     present = {_NVIDIA: cuda, _RENDER: render_node}
-    transcode_encoders = tuple(
+    return tuple(
         sorted(
             name
             for name, device in _TRANSCODE_ENCODERS.items()
@@ -690,19 +717,53 @@ async def probe(settings: Settings) -> HardwareReport:
         )
     )
 
-    warnings = _acceleration_warnings(settings.gpu, cuda=cuda, rocm=rocm)
 
-    # THE TWO SOURCES, and the order is the answer to "which one does the work". NVIDIA's own tool
-    # is exact about its own cards and knows about nothing else; Windows lists every adapter and is
-    # vague about memory. The computable ones come first so that the card Sift uses is the card the
-    # screen names first, and anything NVIDIA is dropped from the second list rather than appearing
-    # twice under a slightly different name.
-    cards = await _nvidia_identity() if cuda else []
-    cards += [
-        one
-        for one in await _windows_display_adapters()
-        if not (one.name or "").casefold().startswith("nvidia")
-    ]
+def _read_kept(kept: Path, key: str) -> tuple[frozenset[str], list[Card]] | None:
+    try:
+        held = json.loads(kept.read_text(encoding="utf-8"))
+        if held["key"] != key:
+            return None
+        return frozenset(held["encoders"]), [Card(**one) for one in held["cards"]]
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+
+
+def _write_kept(kept: Path, key: str, encoders: frozenset[str], cards: Sequence[Card]) -> None:
+    body = {"key": key, "encoders": sorted(encoders), "cards": [asdict(one) for one in cards]}
+    try:
+        kept.parent.mkdir(parents=True, exist_ok=True)
+        kept.write_text(json.dumps(body), encoding="utf-8")
+    except OSError:
+        log.info("hardware.kept_unwritten", exc_info=True)
+
+
+async def probe(settings: Settings, *, kept: Path | None = None) -> HardwareReport:
+    """Look at the machine once, and hand back what to do about it.
+
+    Run at startup; the result is kept and read from. With `kept`, the three programs' answers of
+    the last start are used when ffmpeg and the card are unchanged, and `reprobe` asks again after
+    the start: nothing a request waits for depends on them.
+    """
+    cpu_count = os.cpu_count() or 1
+    cpu_model = await asyncio.to_thread(_cpu_model)
+    # Each of these asks the filesystem whether a device is there. Startup work rather than
+    # serving work, so the cost is not the point: what matters is that the rule holds without
+    # exception, because an exception is what the next one hides behind.
+    cuda = await asyncio.to_thread(_nvidia_present)
+    rocm = await asyncio.to_thread(_amd_compute_present)
+    render_node = await asyncio.to_thread(_render_node_present)
+
+    key = None if kept is None else await asyncio.to_thread(_kept_key, settings, cuda=cuda)
+    held = None if kept is None or key is None else await asyncio.to_thread(_read_kept, kept, key)
+    if held is None:
+        encoders, cards = await _ask_the_programs(settings, cuda=cuda)
+        if kept is not None and key is not None:
+            await asyncio.to_thread(_write_kept, kept, key, encoders, cards)
+    else:
+        encoders, cards = held
+
+    transcode_encoders = _usable(encoders, cuda=cuda, render_node=render_node)
+    warnings = _acceleration_warnings(settings.gpu, cuda=cuda, rocm=rocm)
 
     report = HardwareReport(
         cpu_count=cpu_count,
@@ -718,6 +779,7 @@ async def probe(settings: Settings) -> HardwareReport:
         gpu_driver=next((one.driver for one in cards if one.driver), None),
         transcode_encoders=transcode_encoders,
         warnings=warnings,
+        answers_kept=held is not None,
     )
 
     # Loud, but not fatal: the warning is logged and also carried in the report to /health, and the
@@ -732,8 +794,28 @@ async def probe(settings: Settings) -> HardwareReport:
         cuda=report.cuda,
         rocm=report.rocm,
         transcode_encoders=list(report.transcode_encoders),
+        kept=report.answers_kept,
     )
     return report
+
+
+async def reprobe(settings: Settings, report: HardwareReport, *, kept: Path) -> bool:
+    """Ask the three programs again after a start that used kept answers, and keep the new ones.
+
+    True when they differ from what this run is using: the next start takes them, and the log says
+    so now.
+    """
+    key = await asyncio.to_thread(_kept_key, settings, cuda=report.cuda)
+    if key is None:
+        return False
+    encoders, cards = await _ask_the_programs(settings, cuda=report.cuda)
+    await asyncio.to_thread(_write_kept, kept, key, encoders, cards)
+    render_node = await asyncio.to_thread(_render_node_present)
+    usable = _usable(encoders, cuda=report.cuda, render_node=render_node)
+    changed = usable != report.transcode_encoders or tuple(cards) != report.gpu_cards
+    if changed:
+        log.info("hardware.changed", transcode_encoders=list(usable), cards=len(cards))
+    return changed
 
 
 def machine_name() -> str | None:

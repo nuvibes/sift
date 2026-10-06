@@ -87,6 +87,8 @@ class StoreCore:
         #: Whether any row waits to be re-identified, once asked. See `legacy_identities_remain`.
         self._legacy_remaining: bool | None = None
         self._clock = clock
+        #: The library's counts, each with the announcements it was taken at. See `Counts._held`.
+        self._held_counts: dict[tuple[object, ...], tuple[str, float, object]] = {}
 
     def _now(self) -> int:
         return int(self._clock())

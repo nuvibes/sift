@@ -16,7 +16,7 @@ import { imports } from '$lib/library/imports.svelte';
 import type { WallMedia } from './wall-media.svelte';
 import type { WallOrder } from './wall-order.svelte';
 
-/** How long a few arrivals wait for more before coming in on their own. */
+/** How long a few arrivals wait for more while files are pouring in. */
 const SETTLED_MS = 1500;
 
 /** What a wall's re-reads read and touch. */
@@ -36,6 +36,8 @@ export class WallCatchUp {
 	private owed = false;
 	private settling: ReturnType<typeof setTimeout> | undefined;
 	private settledWas: number;
+	/** A take of the newer files is on its way, so the line offering them is not drawn for it. */
+	takingIn = $state(false);
 
 	constructor(wall: WallParts) {
 		this.wall = wall;
@@ -116,7 +118,18 @@ export class WallCatchUp {
 	   start, so a page further down catches up without jumping to the top. Not quiet: it was pressed. */
 	takeTheNewOnes(): void {
 		const { grid, order } = this.wall;
-		void grid.loadAt(order.fullQuery, { at: grid.askedAt }).then(() => this.wall.remember());
+		this.takingIn = true;
+		void grid
+			.loadAt(order.fullQuery, { at: grid.askedAt })
+			.then(() => this.wall.remember())
+			.finally(() => (this.takingIn = false));
+	}
+
+	/** The "new" line, for what a take does not already have on its way; a lone newcomer waits
+	 *  behind it even at the top, since nothing on a page moves by itself. */
+	get offersTheNew(): boolean {
+		const grid = this.wall.grid;
+		return grid.newer > 0 && !this.takingIn;
 	}
 
 	/** Whether the newest file this page holds is on screen; no before the observer has run. */

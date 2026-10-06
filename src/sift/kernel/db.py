@@ -9,13 +9,11 @@ TABLES: each registers an initializer (`db_schema`), run at boot in dependency o
 from __future__ import annotations
 
 import asyncio
-import hashlib
-import re
 import sqlite3
 import threading
 import time
-from collections.abc import AsyncIterator, Callable, Iterator, Sequence
-from contextlib import asynccontextmanager, contextmanager, suppress
+from collections.abc import AsyncIterator, Callable, Sequence
+from contextlib import asynccontextmanager, suppress
 from contextvars import ContextVar
 from dataclasses import dataclass
 from pathlib import Path
@@ -33,6 +31,23 @@ from sift.kernel.db_base import (
     IntegrityError,
     Params,
     Row,
+)
+from sift.kernel.db_judged import (
+    _BUDGET,
+    _ITER_CHUNK,
+    _NAME_SAFE,
+    _NAMES,
+    _PLACEHOLDER_RUN,
+    _STEP_CELLS,
+    STEP_EVERY,
+    _counting_cell,
+    _judged,
+    _JudgedWriter,
+    _ran_on,
+    _readable,
+    _step_counter,
+    statement_budget,
+    statement_name,
 )
 from sift.kernel.db_library import (
     VERDICT_CURRENT,
@@ -74,6 +89,7 @@ from sift.kernel.db_readers import (
     STATEMENTS_KEPT,
     PointRead,
     StatementBudget,
+    StatementRun,
     _all_rows,
     _one_row,
     _parse_the_schema,
@@ -100,7 +116,7 @@ from sift.kernel.db_schema import (
     registered_invariants,
     too_old_to_bring_forward,
 )
-from sift.kernel.log import Timing, get_logger, timing_hook
+from sift.kernel.log import get_logger, timing_hook
 
 log = get_logger(__name__)
 
@@ -125,6 +141,7 @@ __all__ = [
     "STATISTICS_INTERVAL_SECONDS",
     "STATISTICS_MIN_INTERVAL_SECONDS",
     "STEPS_LAST_SHIPPED_IN",
+    "STEP_EVERY",
     "VERDICT_CURRENT",
     "VERDICT_EMPTY",
     "VERDICT_NEWER",
@@ -167,6 +184,7 @@ __all__ = [
     "SchemaComponent",
     "SqliteCapabilities",
     "StatementBudget",
+    "StatementRun",
     "_all_rows",
     "_extension_loading_available",
     "_fts5_present",
@@ -413,67 +431,6 @@ def in_clause(sql: str, values: Sequence[Any]) -> tuple[str, list[Any]]:
     return sql.replace(IN_MARKER, placeholders), list(values)
 
 
-# A statement's name says which one a timing is about, without its SQL.
-
-
-#: A run of bound values: `IN (?,?,?)` and `IN (?,?)` are one statement.
-_PLACEHOLDER_RUN = re.compile(r"\?(?:\s*,\s*\?)+")
-
-#: What may appear in the readable half of a name; the rest is dropped, since logs stay ASCII.
-_NAME_SAFE = re.compile(r"[^a-z0-9_]")
-
-#: Every name already worked out, by statement: naming costs about a point read. Cleared when full.
-_NAMES: dict[str, str] = {}
-
-
-def _readable(word: str) -> str:
-    """One identifier, lowercased and cut to a length a log line can carry."""
-    return _NAME_SAFE.sub("", word.lower())[:32] or "-"
-
-
-def statement_name(statement: str | PointRead) -> str:
-    """A short, stable name for a statement, carrying none of its text: a declared statement's own
-    name, or the verb, the first table and four bytes of digest (`select:asset_people#1f3c9a2b`),
-    over the text with comments, whitespace and placeholder runs folded so a reformat keeps it."""
-    if isinstance(statement, PointRead):
-        return statement.name
-    known = _NAMES.get(statement)
-    if known is not None:
-        return known
-    flat = " ".join(_SQL_COMMENT.sub(" ", statement).split())
-    shape = _PLACEHOLDER_RUN.sub("?", flat)
-    digest = hashlib.blake2s(shape.encode("utf-8", "replace"), digest_size=4).hexdigest()
-    head = shape.lstrip("(").split(None, 1)
-    verb = _readable(head[0]) if head else "sql"
-    tables = _TABLE_AFTER.findall(shape)
-    name = f"{verb}:{_readable(tables[0]) if tables else '-'}#{digest}"
-    if len(_NAMES) >= NAMES_KEPT:
-        _NAMES.clear()
-    _NAMES[statement] = name
-    return name
-
-
-#: The running cost of every statement this process has run. One per process, like the log itself.
-_BUDGET = StatementBudget()
-
-
-def statement_budget() -> StatementBudget:
-    """The process's statement budget. Tests reach for it; nothing else should have to."""
-    return _BUDGET
-
-
-@contextmanager
-def _judged(stage: str, statement: str | PointRead, sql: str) -> Iterator[Timing]:
-    """Time one statement, judge it against its own usual cost, and remember what it cost: the
-    record is told the NAME, and a statement that FAILED is not a reading at all."""
-    name = statement_name(statement)
-    with timing_hook(
-        stage, sql=sql, statement=name, level="debug", slow_ms=_BUDGET.threshold_ms(name)
-    ) as timing:
-        yield timing
-    _BUDGET.observed(name, timing.ran_ms)
-
-
 # Whether this TASK is already inside one of the two exclusive guards, where a second would
 # deadlock: per task, since another task waiting its turn is right. Checked before the lock.
 _IN_WRITE: ContextVar[bool] = ContextVar("sift_db_in_write", default=False)
@@ -537,7 +494,7 @@ class Database:
             return
 
         await asyncio.to_thread(self.path.parent.mkdir, parents=True, exist_ok=True)
-        self._writer = await self._open()
+        self._writer = await self._open(writer=True)
         self._sweeper = await self._open()
         for _ in range(self._readers):
             self._read_pool.put_nowait(await self._open())
@@ -565,6 +522,9 @@ class Database:
             connection.execute(pragma)
         # Sealed shut as well as refused by `_refuse_writes`, so no form of write can pass.
         connection.execute("PRAGMA query_only=ON")
+        cell = _counting_cell(connection)
+        if cell is not None:
+            connection.set_progress_handler(_step_counter(cell), STEP_EVERY)
         self._point = connection
         self._point_thread = threading.get_ident()
         await self._parse_point_schema(connection)
@@ -638,6 +598,7 @@ class Database:
             for _ in range(self._readers - wanted):
                 connection = await self._read_pool.get()
                 self._open_connections.remove(connection)
+                _STEP_CELLS.pop(id(connection), None)
                 await connection.close()
 
         self._readers = wanted
@@ -649,8 +610,17 @@ class Database:
         its name is absent. Empty before the database is open."""
         return self._extensions
 
-    async def _open(self) -> aiosqlite.Connection:
-        connection = await aiosqlite.connect(self.path)
+    async def _open(self, *, writer: bool = False) -> aiosqlite.Connection:
+        if writer:
+            path = str(self.path)
+            connection: aiosqlite.Connection = await _JudgedWriter(
+                lambda: sqlite3.connect(path), _ITER_CHUNK
+            )
+        else:
+            connection = await aiosqlite.connect(self.path)
+        cell = _counting_cell(connection)
+        if cell is not None:
+            await connection.set_progress_handler(_step_counter(cell), STEP_EVERY)
         connection.row_factory = aiosqlite.Row
         for pragma in PRAGMAS:
             await connection.execute(pragma)
@@ -742,11 +712,13 @@ class Database:
 
     async def close(self) -> None:
         for connection in self._open_connections:
+            _STEP_CELLS.pop(id(connection), None)
             await connection.close()
         self._open_connections.clear()
         if self._point_parsing is not None:
             await self._point_parsing
         if self._point is not None:
+            _STEP_CELLS.pop(id(self._point), None)
             self._point.close()
             self._point = None
             self._point_thread = None
@@ -854,9 +826,10 @@ class Database:
     ) -> list[aiosqlite.Row]:
         """One whole-library read through the lane, the single-statement form of `sweep`."""
         _refuse_writes(sql)
-        with _judged("db.sweep", sql, sql) as timing:
+        with _judged("db.sweep", sql, sql, params) as timing:
             async with self.sweep(what) as connection:
                 timing.acquired()
+                _ran_on(timing, connection)
                 cursor = await connection.execute(sql, params)
                 try:
                     rows = list(await cursor.fetchall())
@@ -868,19 +841,22 @@ class Database:
 
     async def execute(self, sql: str, params: Params = ()) -> None:
         """Run one write statement and commit it."""
-        with _judged("db.write", sql, sql) as timing:
+        with _judged("db.write", sql, sql, params) as timing:
             async with self.write() as connection:
                 # Everything before this was queueing behind whoever held the writer, and the wait
                 # is not the statement. See `Timing.acquired`.
                 timing.acquired()
-                await connection.execute(sql, params)
+                _ran_on(timing, connection)
+                # The plain form: this statement is already judged, with its wait.
+                await aiosqlite.Connection.execute(connection, sql, params)
 
     async def fetch_all(self, statement: str | PointRead, params: Params = ()) -> list[Row]:
         sql = statement.sql if isinstance(statement, PointRead) else statement
         _refuse_writes(sql)
         inline = self._inline(statement)
-        with _judged("db.read", statement, sql) as timing:
+        with _judged("db.read", statement, sql, params) as timing:
             if inline is not None:
+                _ran_on(timing, inline)
                 # No `acquired()`: nothing was queued for, so the whole of this is the work and
                 # splitting it into a wait and a run would report a wait that never happened.
                 rows = _all_rows(inline, sql, params)
@@ -889,6 +865,7 @@ class Database:
             async with self.read() as connection:
                 # Borrowing a connection can WAIT, and the wait is not the query.
                 timing.acquired()
+                _ran_on(timing, connection)
                 cursor = await connection.execute(sql, params)
                 try:
                     rows = list(await cursor.fetchall())
@@ -902,11 +879,13 @@ class Database:
         sql = statement.sql if isinstance(statement, PointRead) else statement
         _refuse_writes(sql)
         inline = self._inline(statement)
-        with _judged("db.read", statement, sql) as timing:
+        with _judged("db.read", statement, sql, params) as timing:
             if inline is not None:
+                _ran_on(timing, inline)
                 return _one_row(inline, sql, params)
             async with self.read() as connection:
                 timing.acquired()
+                _ran_on(timing, connection)
                 cursor = await connection.execute(sql, params)
                 try:
                     return await cursor.fetchone()

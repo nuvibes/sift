@@ -89,6 +89,10 @@ _SAYS = (*_ANNOUNCES, *_WRAPPERS)
 #: screen draws it, which is the question that has no other way of being asked. A screen left stale
 #: is never an entry: the write announces, or its caller does, and the reason names which.
 SILENT: dict[str, str] = {
+    # The two halves of clearing the Smart Search index: `clear` announces once every batch has
+    # landed, which is the one moment the size on the settings screen is right.
+    "semantic.store._delete_in_batches": "a batch of `clear`, which announces when all have landed",
+    "semantic.store._forget_in_batches": "a batch of `clear`, which announces when all have landed",
     # Sessions and credentials. These decide whether a request is answered at all; a screen drawing
     # them would be a screen showing somebody's session tokens.
     "auth.admin_cli.reset_password": (

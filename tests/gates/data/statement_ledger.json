@@ -1,0 +1,3571 @@
+{
+ "3.50.4": {
+  "access.any_grant": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 16,
+    "80000": 16
+   },
+   "count": 1
+  },
+  "access.collection_by_id": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 384,
+    "80000": 384
+   },
+   "count": 1
+  },
+  "access.entity_count": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 32,
+    "80000": 32
+   },
+   "count": 1
+  },
+  "access.facet_presence": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 32,
+    "80000": 32
+   },
+   "count": 1
+  },
+  "access.one_asset": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 384,
+    "80000": 384
+   },
+   "count": 4
+  },
+  "access.person_by_id": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 656,
+    "80000": 656
+   },
+   "count": 2
+  },
+  "access.photo_set_by_id": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 464,
+    "80000": 464
+   },
+   "count": 1
+  },
+  "access.site_by_id": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 512,
+    "80000": 512
+   },
+   "count": 2
+  },
+  "access.song_by_id": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 464,
+    "80000": 464
+   },
+   "count": 1
+  },
+  "access.tag_branches": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1
+  },
+  "access.tag_by_id": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 544,
+    "80000": 544
+   },
+   "count": 2
+  },
+  "access.user_by_id": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 32,
+    "80000": 32
+   },
+   "count": 2
+  },
+  "access.viewer_stats": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 32,
+    "80000": 32
+   },
+   "count": 3
+  },
+  "access.words_stand_on": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 32,
+    "80000": 32
+   },
+   "count": 1
+  },
+  "auth.session_by_token": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 32,
+    "80000": 32
+   },
+   "count": 2
+  },
+  "catalog.kept_local_over": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 48,
+    "80000": 48
+   },
+   "count": 1,
+   "scans": [
+    "folders"
+   ],
+   "why": "costs this before the ledger: a debt on the record, not a decision"
+  },
+  "catalog.person_kept_local": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1
+  },
+  "catalog.site_kept_local": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1
+  },
+  "catalog.tag_kept_local": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1
+  },
+  "content.asset_states": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 2320,
+    "80000": 2320
+   },
+   "count": 1
+  },
+  "content.roots": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 128,
+    "80000": 128
+   },
+   "count": 1
+  },
+  "create:-#4505b03c": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1
+  },
+  "create:-#cd6bb9f4": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1
+  },
+  "create:undo_rows#c3247bda": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1
+  },
+  "delete:acl_grants#17414ca6": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 5248,
+    "80000": 5248
+   },
+   "count": 1
+  },
+  "delete:acl_grants#1c4214ce": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 5248,
+    "80000": 5248
+   },
+   "count": 1
+  },
+  "delete:acl_grants#56e9a3dd": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 5232,
+    "80000": 5232
+   },
+   "count": 1
+  },
+  "delete:asset_locations#637e2906": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 90656,
+    "80000": 48992
+   },
+   "count": 1
+  },
+  "delete:asset_people#bfac4959": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 5216,
+    "80000": 5216
+   },
+   "count": 1
+  },
+  "delete:asset_person_refusals#222dd36d": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1
+  },
+  "delete:asset_tags#08a540b4": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 47664,
+    "80000": 41088
+   },
+   "count": 10
+  },
+  "delete:assets#9cddc538": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 39744,
+    "80000": 636496
+   },
+   "count": 1,
+   "per": "library",
+   "why": "costs this before the ledger: a debt on the record, not a decision"
+  },
+  "delete:assets_fts#1b5b099c": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 112,
+    "80000": 112
+   },
+   "count": 10
+  },
+  "delete:assets_fts#4e33d47b": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 272,
+    "80000": 272
+   },
+   "count": 2
+  },
+  "delete:assets_fts_rows#3c4e59bf": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 240,
+    "80000": 240
+   },
+   "count": 2
+  },
+  "delete:assets_fts_rows#b897dae1": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 128,
+    "80000": 128
+   },
+   "count": 20
+  },
+  "delete:face_asset_people#3e908e85": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1
+  },
+  "delete:face_pile_proposals#ffa78078": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1
+  },
+  "delete:face_references#563ad497": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 16,
+    "80000": 16
+   },
+   "count": 1
+  },
+  "delete:face_rejections#3fcce5d0": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1
+  },
+  "delete:face_starter_refusals#f4ef127c": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 16,
+    "80000": 16
+   },
+   "count": 1
+  },
+  "delete:folder_people#618bd708": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1
+  },
+  "delete:folder_refusals#7efd7160": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1
+  },
+  "delete:people#e8951392": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 10000,
+    "80000": 10000
+   },
+   "count": 1
+  },
+  "delete:people_aliases#cde3ec18": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 16,
+    "80000": 16
+   },
+   "count": 1
+  },
+  "delete:people_links#423945c5": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 16,
+    "80000": 16
+   },
+   "count": 1
+  },
+  "delete:person_stash_box_links#9aeacce5": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1
+  },
+  "delete:person_tags#86401be4": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1
+  },
+  "delete:person_user_state#f46191c4": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 5232,
+    "80000": 5232
+   },
+   "count": 1
+  },
+  "delete:said_times#4c34d49f": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1
+  },
+  "delete:stash_box_kept#1a3f6179": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1
+  },
+  "delete:stash_box_undecided#b8bf33c7": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1
+  },
+  "history.kept_mine": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 16,
+    "80000": 16
+   },
+   "count": 1
+  },
+  "insert:-#05509c68": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 698960,
+    "80000": 15312
+   },
+   "count": 1
+  },
+  "insert:-#56a334a3": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 80,
+    "80000": 80
+   },
+   "count": 20
+  },
+  "insert:-#5d063211": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 64,
+    "80000": 64
+   },
+   "count": 20
+  },
+  "insert:-#5de1700b": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 32,
+    "80000": 32
+   },
+   "count": 1
+  },
+  "insert:-#6687227f": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 44912,
+    "80000": 41296
+   },
+   "count": 10
+  },
+  "insert:-#78156dd3": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 128,
+    "80000": 128
+   },
+   "count": 20
+  },
+  "insert:-#7f09d6b1": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 5328,
+    "80000": 5328
+   },
+   "count": 1
+  },
+  "insert:-#81f9b390": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 96,
+    "80000": 96
+   },
+   "count": 1
+  },
+  "insert:-#84170590": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 36144,
+    "80000": 35456
+   },
+   "count": 1
+  },
+  "insert:-#c8c8789c": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 80,
+    "80000": 80
+   },
+   "count": 20
+  },
+  "insert:-#d6de358c": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 1209312,
+    "80000": 8205216
+   },
+   "count": 1,
+   "per": "library",
+   "why": "costs this before the ledger: a debt on the record, not a decision"
+  },
+  "insert:-#e4e9367f": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 2103584,
+    "80000": 6986336
+   },
+   "count": 1,
+   "per": "library",
+   "why": "costs this before the ledger: a debt on the record, not a decision"
+  },
+  "insert:-#f50f81e1": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 80,
+    "80000": 80
+   },
+   "count": 20
+  },
+  "insert:jobs#8ea1fe4f": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 192,
+    "80000": 192
+   },
+   "count": 1
+  },
+  "insert:json_each#9ce0d1a0": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 6368,
+    "80000": 6368
+   },
+   "count": 1
+  },
+  "insert:json_each#e84558e3": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 72656,
+    "80000": 78816
+   },
+   "count": 2
+  },
+  "insert:json_each#f367f4b3": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 1130400,
+    "80000": 4466096
+   },
+   "count": 2,
+   "per": "library",
+   "why": "costs this before the ledger: a debt on the record, not a decision"
+  },
+  "pragma:-#0110e23b": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1
+  },
+  "pragma:-#04e9c4a1": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 7664,
+    "80000": 7664
+   },
+   "count": 1
+  },
+  "pragma:-#19baeb3e": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 6288,
+    "80000": 6288
+   },
+   "count": 1
+  },
+  "pragma:-#3d394736": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1
+  },
+  "pragma:-#55175e82": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1
+  },
+  "pragma:-#582b20a1": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1
+  },
+  "pragma:-#8e04bfad": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1
+  },
+  "select:acl_grants#2e72381d": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 224,
+    "80000": 224
+   },
+   "count": 1
+  },
+  "select:acl_grants#5fbb1707": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 48,
+    "80000": 32
+   },
+   "count": 1
+  },
+  "select:acl_grants#92bd0a54": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 704,
+    "80000": 704
+   },
+   "count": 1
+  },
+  "select:acl_grants#dec3496e": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 32,
+    "80000": 32
+   },
+   "count": 1
+  },
+  "select:app_settings#b0efc436": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1
+  },
+  "select:asset_links#07c09c15": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1
+  },
+  "select:asset_locations#000d7023": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 108848,
+    "80000": 435168
+   },
+   "count": 1,
+   "scans": [
+    "asset_locations"
+   ],
+   "per": "library",
+   "why": "costs this before the ledger: a debt on the record, not a decision"
+  },
+  "select:asset_locations#0258a988": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 32,
+    "80000": 32
+   },
+   "count": 2
+  },
+  "select:asset_locations#0c91c39f": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 242336,
+    "80000": 962304
+   },
+   "count": 2,
+   "scans": [
+    "assets"
+   ],
+   "per": "library",
+   "why": "costs this before the ledger: a debt on the record, not a decision"
+  },
+  "select:asset_locations#0e98860d": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 32,
+    "80000": 32
+   },
+   "count": 1
+  },
+  "select:asset_locations#18b701b0": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 4624,
+    "80000": 4608
+   },
+   "count": 20
+  },
+  "select:asset_locations#4eb7f254": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 1024,
+    "80000": 1008
+   },
+   "count": 1
+  },
+  "select:asset_locations#658fe017": {
+   "stage": "db.sweep",
+   "steps": {
+    "20000": 619296,
+    "80000": 2474864
+   },
+   "count": 1,
+   "scans": [
+    "asset_locations"
+   ],
+   "why": "costs this before the ledger: a debt on the record, not a decision"
+  },
+  "select:asset_locations#95c698dc": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 192,
+    "80000": 144
+   },
+   "count": 1
+  },
+  "select:asset_locations#da2aa158": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 3488,
+    "80000": 3072
+   },
+   "count": 1
+  },
+  "select:asset_locations#db4c60df": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 1408,
+    "80000": 1392
+   },
+   "count": 1
+  },
+  "select:asset_people#620fb24b": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 31328,
+    "80000": 126928
+   },
+   "count": 1,
+   "per": "library",
+   "why": "costs this before the ledger: a debt on the record, not a decision"
+  },
+  "select:asset_people#ae4b35ee": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 16,
+    "80000": 16
+   },
+   "count": 2
+  },
+  "select:asset_person_refusals#7c912b73": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 16,
+    "80000": 16
+   },
+   "count": 1
+  },
+  "select:asset_replay_heat#f2c76f84": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1
+  },
+  "select:asset_stash_box_matches#2a7cbdb3": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1
+  },
+  "select:asset_stash_box_matches#739f9417": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 3
+  },
+  "select:asset_stash_box_matches#cc67c50b": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 144,
+    "80000": 128
+   },
+   "count": 1
+  },
+  "select:asset_tags#b532c8a4": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 368,
+    "80000": 1296
+   },
+   "count": 1,
+   "per": "library",
+   "why": "costs this before the ledger: a debt on the record, not a decision"
+  },
+  "select:asset_user_state#bd4b4c14": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 208,
+    "80000": 208
+   },
+   "count": 2
+  },
+  "select:asset_user_state#c9ce0ce6": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 16,
+    "80000": 16
+   },
+   "count": 1
+  },
+  "select:asset_user_state#db4da315": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 16,
+    "80000": 16
+   },
+   "count": 1
+  },
+  "select:asset_usernames#13c12b3e": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 32,
+    "80000": 32
+   },
+   "count": 1
+  },
+  "select:asset_usernames#5605f804": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 2096,
+    "80000": 2096
+   },
+   "count": 1
+  },
+  "select:asset_usernames#8a36f8b2": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 16,
+    "80000": 16
+   },
+   "count": 1
+  },
+  "select:asset_usernames#d7c4bbec": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 32,
+    "80000": 32
+   },
+   "count": 1
+  },
+  "select:asset_usernames#df3290e9": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 32,
+    "80000": 16
+   },
+   "count": 1
+  },
+  "select:assets#00624922": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 799424,
+    "80000": 3198096
+   },
+   "count": 1,
+   "scans": [
+    "assets"
+   ],
+   "per": "library",
+   "why": "costs this before the ledger: a debt on the record, not a decision"
+  },
+  "select:assets#02140b2c": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 275568,
+    "80000": 1105600
+   },
+   "count": 1,
+   "scans": [
+    "assets"
+   ],
+   "per": "library",
+   "why": "costs this before the ledger: a debt on the record, not a decision"
+  },
+  "select:assets#1fc1f571": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 758528,
+    "80000": 3035200
+   },
+   "count": 1,
+   "scans": [
+    "assets"
+   ],
+   "per": "library",
+   "why": "costs this before the ledger: a debt on the record, not a decision"
+  },
+  "select:assets#3f418fd5": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 9696,
+    "80000": 10928
+   },
+   "count": 1,
+   "scans": [
+    "assets"
+   ],
+   "why": "costs this before the ledger: a debt on the record, not a decision"
+  },
+  "select:assets#4a1d80e1": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 799424,
+    "80000": 3198096
+   },
+   "count": 1,
+   "scans": [
+    "assets"
+   ],
+   "per": "library",
+   "why": "costs this before the ledger: a debt on the record, not a decision"
+  },
+  "select:assets#55ea207b": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 900000,
+    "80000": 3600000
+   },
+   "count": 2,
+   "scans": [
+    "assets"
+   ],
+   "per": "library",
+   "why": "costs this before the ledger: a debt on the record, not a decision"
+  },
+  "select:assets#5f65504e": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 117072,
+    "80000": 470432
+   },
+   "count": 1,
+   "scans": [
+    "assets"
+   ],
+   "per": "library",
+   "why": "costs this before the ledger: a debt on the record, not a decision"
+  },
+  "select:assets#6aab5116": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 48,
+    "80000": 48
+   },
+   "count": 2
+  },
+  "select:assets#755f1016": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 1104,
+    "80000": 1104
+   },
+   "count": 1
+  },
+  "select:assets#87da1faf": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 340000,
+    "80000": 1360000
+   },
+   "count": 1,
+   "scans": [
+    "assets"
+   ],
+   "per": "library",
+   "why": "costs this before the ledger: a debt on the record, not a decision"
+  },
+  "select:assets#b0d710b6": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 4912,
+    "80000": 6096
+   },
+   "count": 1,
+   "scans": [
+    "asset_locations"
+   ],
+   "why": "costs this before the ledger: a debt on the record, not a decision"
+  },
+  "select:assets#b7544f39": {
+   "stage": "db.sweep",
+   "steps": {
+    "20000": 280000,
+    "80000": 1120000
+   },
+   "count": 1,
+   "scans": [
+    "assets"
+   ],
+   "why": "costs this before the ledger: a debt on the record, not a decision"
+  },
+  "select:assets#c93e113a": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 960000,
+    "80000": 3840000
+   },
+   "count": 2,
+   "scans": [
+    "assets"
+   ],
+   "per": "library",
+   "why": "costs this before the ledger: a debt on the record, not a decision"
+  },
+  "select:assets#eca8438b": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 32,
+    "80000": 32
+   },
+   "count": 1
+  },
+  "select:assets#fb3ce0a9": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 3024,
+    "80000": 3024
+   },
+   "count": 207
+  },
+  "select:assets#ffd34c29": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 318560,
+    "80000": 1275248
+   },
+   "count": 2,
+   "scans": [
+    "assets"
+   ],
+   "per": "library",
+   "why": "costs this before the ledger: a debt on the record, not a decision"
+  },
+  "select:assets_fts_rows#d45813cf": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 16,
+    "80000": 16
+   },
+   "count": 20
+  },
+  "select:audio_fingerprints#1139ec80": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 2096,
+    "80000": 8304
+   },
+   "count": 1,
+   "per": "library",
+   "why": "costs this before the ledger: a debt on the record, not a decision"
+  },
+  "select:collection_items#32052bc5": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 336,
+    "80000": 912
+   },
+   "count": 1,
+   "per": "library",
+   "why": "costs this before the ledger: a debt on the record, not a decision"
+  },
+  "select:collections#1f89853e": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 112,
+    "80000": 112
+   },
+   "count": 1
+  },
+  "select:collections#5236458b": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1
+  },
+  "select:dedup_candidates#2baa27ce": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1
+  },
+  "select:dedup_candidates#cdbfc673": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 108608,
+    "80000": 434400
+   },
+   "count": 1,
+   "per": "library",
+   "why": "costs this before the ledger: a debt on the record, not a decision"
+  },
+  "select:dedup_candidates#d17f2beb": {
+   "stage": "db.sweep",
+   "steps": {
+    "20000": 217216,
+    "80000": 868784
+   },
+   "count": 1
+  },
+  "select:derivatives#000a7c47": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 60048,
+    "80000": 240048
+   },
+   "count": 1,
+   "scans": [
+    "assets"
+   ],
+   "per": "library",
+   "why": "costs this before the ledger: a debt on the record, not a decision"
+  },
+  "select:derivatives#00bcf9d6": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 16,
+    "80000": 16
+   },
+   "count": 1
+  },
+  "select:derivatives#195afc4a": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 80,
+    "80000": 80
+   },
+   "count": 1
+  },
+  "select:derivatives#31c5f539": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 60048,
+    "80000": 240048
+   },
+   "count": 1,
+   "scans": [
+    "assets"
+   ],
+   "per": "library",
+   "why": "costs this before the ledger: a debt on the record, not a decision"
+  },
+  "select:derivatives#33684e46": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 60048,
+    "80000": 240048
+   },
+   "count": 1,
+   "scans": [
+    "assets"
+   ],
+   "per": "library",
+   "why": "costs this before the ledger: a debt on the record, not a decision"
+  },
+  "select:derivatives#4370316a": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 80,
+    "80000": 80
+   },
+   "count": 1
+  },
+  "select:derivatives#61788a2c": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 48,
+    "80000": 48
+   },
+   "count": 1
+  },
+  "select:derivatives#6bf08163": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 80,
+    "80000": 80
+   },
+   "count": 1
+  },
+  "select:derivatives#a0c6fdb0": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 60048,
+    "80000": 240048
+   },
+   "count": 1,
+   "scans": [
+    "assets"
+   ],
+   "per": "library",
+   "why": "costs this before the ledger: a debt on the record, not a decision"
+  },
+  "select:derivatives#f132ac3a": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 60048,
+    "80000": 240048
+   },
+   "count": 1,
+   "scans": [
+    "assets"
+   ],
+   "per": "library",
+   "why": "costs this before the ledger: a debt on the record, not a decision"
+  },
+  "select:derivatives#fa5cb5d6": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 60048,
+    "80000": 240048
+   },
+   "count": 1,
+   "scans": [
+    "assets"
+   ],
+   "per": "library",
+   "why": "costs this before the ledger: a debt on the record, not a decision"
+  },
+  "select:downloads#727e5698": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1
+  },
+  "select:downloads#b3269ef6": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 2
+  },
+  "select:enrichment_runs#5078e648": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 32,
+    "80000": 32
+   },
+   "count": 1
+  },
+  "select:enrichment_runs#9125bafc": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 32,
+    "80000": 32
+   },
+   "count": 1
+  },
+  "select:enrichment_runs#d2598688": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 32,
+    "80000": 32
+   },
+   "count": 1
+  },
+  "select:face_confirmations#73b11429": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 16,
+    "80000": 16
+   },
+   "count": 1
+  },
+  "select:face_references#f22ff848": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 5312,
+    "80000": 18208
+   },
+   "count": 1,
+   "per": "library",
+   "why": "costs this before the ledger: a debt on the record, not a decision"
+  },
+  "select:face_rejections#4069db34": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 16,
+    "80000": 16
+   },
+   "count": 1
+  },
+  "select:face_tracks#11b9355b": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 16,
+    "80000": 0
+   },
+   "count": 2
+  },
+  "select:file_verdicts#c6f4a6d5": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 48,
+    "80000": 48
+   },
+   "count": 1
+  },
+  "select:file_verdicts#f177cb47": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1
+  },
+  "select:file_verdicts#f382177f": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1
+  },
+  "select:file_verdicts#f7a491ce": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 60016,
+    "80000": 240016
+   },
+   "count": 1,
+   "scans": [
+    "assets"
+   ],
+   "per": "library",
+   "why": "costs this before the ledger: a debt on the record, not a decision"
+  },
+  "select:folder_claims#ad579f7f": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1
+  },
+  "select:folder_people#b713c0a5": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1
+  },
+  "select:folder_people#bec855c0": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1
+  },
+  "select:folder_user_state#9f3b1896": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 5392,
+    "80000": 21984
+   },
+   "count": 1,
+   "scans": [
+    "folders"
+   ],
+   "per": "library",
+   "why": "costs this before the ledger: a debt on the record, not a decision"
+  },
+  "select:folders#81d09873": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 2
+  },
+  "select:folders#87809a03": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 16,
+    "80000": 16
+   },
+   "count": 2
+  },
+  "select:folders#d99080bc": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 2800,
+    "80000": 17840
+   },
+   "count": 1,
+   "scans": [
+    "folder_ancestry"
+   ],
+   "per": "library",
+   "why": "costs this before the ledger: a debt on the record, not a decision",
+   "boot_why": "the check at boot that the stored folder ancestry matches the folder tree: it reads folders, which number in the hundreds on a library of a hundred thousand files, and no request may read a tree that disagrees with itself"
+  },
+  "select:folders#fea8adfd": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1,
+   "scans": [
+    "folders"
+   ],
+   "why": "costs this before the ledger: a debt on the record, not a decision"
+  },
+  "select:insight_days#6ccf1270": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1
+  },
+  "select:insight_days#d783a4a8": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1
+  },
+  "select:insight_days#fafdcb25": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 16,
+    "80000": 16
+   },
+   "count": 1
+  },
+  "select:insight_progress#98c7d83a": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1
+  },
+  "select:interface_state#827fa201": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 16,
+    "80000": 0
+   },
+   "count": 1
+  },
+  "select:job_tallies#1989728c": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 240,
+    "80000": 224
+   },
+   "count": 4
+  },
+  "select:job_tallies#f71ab1e8": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 112,
+    "80000": 112
+   },
+   "count": 1
+  },
+  "select:jobs#04ae5861": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 4576,
+    "80000": 18320
+   },
+   "count": 2,
+   "per": "library",
+   "why": "costs this before the ledger: a debt on the record, not a decision"
+  },
+  "select:jobs#266fb86a": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 112,
+    "80000": 112
+   },
+   "count": 1
+  },
+  "select:jobs#28d45b7d": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 32,
+    "80000": 32
+   },
+   "count": 3
+  },
+  "select:jobs#39a5485f": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 624,
+    "80000": 624
+   },
+   "count": 1
+  },
+  "select:jobs#3e910d7c": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 192,
+    "80000": 192
+   },
+   "count": 1
+  },
+  "select:jobs#44bbdc96": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 4112,
+    "80000": 3920
+   },
+   "count": 1
+  },
+  "select:jobs#46d76970": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 16,
+    "80000": 16
+   },
+   "count": 1
+  },
+  "select:jobs#47ecedfc": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 1168,
+    "80000": 1168
+   },
+   "count": 1
+  },
+  "select:jobs#4e7a32a9": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 48,
+    "80000": 48
+   },
+   "count": 1
+  },
+  "select:jobs#4f03d689": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 15376,
+    "80000": 60912
+   },
+   "count": 3,
+   "per": "library",
+   "why": "costs this before the ledger: a debt on the record, not a decision"
+  },
+  "select:jobs#597de67a": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 272,
+    "80000": 368
+   },
+   "count": 2
+  },
+  "select:jobs#5a7d16c4": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 176,
+    "80000": 176
+   },
+   "count": 2
+  },
+  "select:jobs#5c07de56": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 48,
+    "80000": 48
+   },
+   "count": 1
+  },
+  "select:jobs#65eb48bf": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 240,
+    "80000": 240
+   },
+   "count": 1
+  },
+  "select:jobs#78d81ce7": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1
+  },
+  "select:jobs#78f271fa": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 2800,
+    "80000": 2896
+   },
+   "count": 2
+  },
+  "select:jobs#87535d3e": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 704,
+    "80000": 704
+   },
+   "count": 1
+  },
+  "select:jobs#8da72ad2": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 128,
+    "80000": 128
+   },
+   "count": 1
+  },
+  "select:jobs#91490520": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 928,
+    "80000": 928
+   },
+   "count": 1
+  },
+  "select:jobs#9530b7b4": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 176,
+    "80000": 176
+   },
+   "count": 1
+  },
+  "select:jobs#993a252c": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 64,
+    "80000": 64
+   },
+   "count": 4
+  },
+  "select:jobs#9bc71fb1": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 80,
+    "80000": 80
+   },
+   "count": 1
+  },
+  "select:jobs#a1fa04f7": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 192,
+    "80000": 192
+   },
+   "count": 1
+  },
+  "select:jobs#a91e01d6": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 48,
+    "80000": 48
+   },
+   "count": 1
+  },
+  "select:jobs#d886afa2": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 96,
+    "80000": 256
+   },
+   "count": 1
+  },
+  "select:jobs#ed866eb0": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 16,
+    "80000": 16
+   },
+   "count": 1
+  },
+  "select:json_each#2a3fb357": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 224,
+    "80000": 224
+   },
+   "count": 1
+  },
+  "select:json_each#c56f50e3": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 208,
+    "80000": 208
+   },
+   "count": 1
+  },
+  "select:json_each#deae33bc": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 80,
+    "80000": 80
+   },
+   "count": 1
+  },
+  "select:library_roots#3915581c": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1
+  },
+  "select:library_roots#a1220660": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 192,
+    "80000": 192
+   },
+   "count": 1
+  },
+  "select:library_roots#b8449464": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 16,
+    "80000": 16
+   },
+   "count": 4
+  },
+  "select:loops#d1bff95e": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1
+  },
+  "select:machine_rates#037bbf84": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1
+  },
+  "select:music_lookup_key#457985f4": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1
+  },
+  "select:music_waiting#0b4e98a2": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1
+  },
+  "select:music_waiting#1a130e06": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 60016,
+    "80000": 240016
+   },
+   "count": 1,
+   "scans": [
+    "assets"
+   ],
+   "per": "library",
+   "why": "costs this before the ledger: a debt on the record, not a decision"
+  },
+  "select:music_waiting#4f9e6196": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 48,
+    "80000": 48
+   },
+   "count": 1
+  },
+  "select:opinions#f0caac2f": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 48,
+    "80000": 48
+   },
+   "count": 1
+  },
+  "select:people#119db958": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 16,
+    "80000": 16
+   },
+   "count": 1
+  },
+  "select:people#57c9abc5": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 48,
+    "80000": 48
+   },
+   "count": 2
+  },
+  "select:people#5c4b862e": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 1104,
+    "80000": 1104
+   },
+   "count": 1
+  },
+  "select:people#732ffbda": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 32,
+    "80000": 32
+   },
+   "count": 8
+  },
+  "select:people#971d9906": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 96,
+    "80000": 0
+   },
+   "count": 1
+  },
+  "select:people#c002cb14": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 7
+  },
+  "select:people#e4156e5d": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 1984,
+    "80000": 1200
+   },
+   "count": 2
+  },
+  "select:people#f2b022ad": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 688,
+    "80000": 2768
+   },
+   "count": 1,
+   "per": "library",
+   "why": "costs this before the ledger: a debt on the record, not a decision"
+  },
+  "select:people_aliases#09b26172": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 2
+  },
+  "select:people_aliases#a52d4e3a": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1
+  },
+  "select:people_aliases#be307cc2": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 2
+  },
+  "select:people_links#9bf154b5": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 2
+  },
+  "select:people_links#dcf2bb4f": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 2
+  },
+  "select:person_stash_box_links#0b16ca0e": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 16,
+    "80000": 16
+   },
+   "count": 2
+  },
+  "select:person_tags#7abd077a": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1
+  },
+  "select:person_tags#b88118c3": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1
+  },
+  "select:photo_set_items#6ed31a76": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 223264,
+    "80000": 1381392
+   },
+   "count": 1,
+   "per": "library",
+   "why": "costs this before the ledger: a debt on the record, not a decision"
+  },
+  "select:photo_sets#22432706": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 16,
+    "80000": 16
+   },
+   "count": 1
+  },
+  "select:plays#3d927b3a": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 16,
+    "80000": 16
+   },
+   "count": 1
+  },
+  "select:plays#9fd7e6f8": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 144,
+    "80000": 144
+   },
+   "count": 1
+  },
+  "select:recaps#58b99fcd": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 16,
+    "80000": 16
+   },
+   "count": 1
+  },
+  "select:recaps#9269c207": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 32,
+    "80000": 32
+   },
+   "count": 2
+  },
+  "select:root_import_prefs#3ff3ee0d": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 16,
+    "80000": 16
+   },
+   "count": 11
+  },
+  "select:root_user_state#6e2a9180": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1
+  },
+  "select:saved_searches#3830d256": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1
+  },
+  "select:scan_rejections#41a29646": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 128,
+    "80000": 128
+   },
+   "count": 1
+  },
+  "select:scan_rejections#71150793": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 16,
+    "80000": 0
+   },
+   "count": 1
+  },
+  "select:scan_rejections#a8a47375": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 144,
+    "80000": 144
+   },
+   "count": 1
+  },
+  "select:schema_version#44bee547": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1
+  },
+  "select:semantic_indexed#911b1bf8": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 11088,
+    "80000": 44272
+   },
+   "count": 1,
+   "per": "library",
+   "why": "costs this before the ledger: a debt on the record, not a decision"
+  },
+  "select:shoot_proposals#0271c065": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 16,
+    "80000": 16
+   },
+   "count": 1
+  },
+  "select:shoot_proposals#2479cf80": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1
+  },
+  "select:site_connections#d69e9933": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 272,
+    "80000": 272
+   },
+   "count": 1
+  },
+  "select:sites#7bba4ea3": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 16,
+    "80000": 16
+   },
+   "count": 1
+  },
+  "select:songs#bae914a1": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 16,
+    "80000": 16
+   },
+   "count": 1
+  },
+  "select:sqlite_master#1deab927": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 4288,
+    "80000": 4288
+   },
+   "count": 1
+  },
+  "select:sqlite_master#2f6283ec": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 3216,
+    "80000": 3216
+   },
+   "count": 1
+  },
+  "select:sqlite_master#5f549a39": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 2752,
+    "80000": 2752
+   },
+   "count": 37
+  },
+  "select:sqlite_master#8ed94938": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 3136,
+    "80000": 3136
+   },
+   "count": 3
+  },
+  "select:sqlite_master#930e4d41": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 2944,
+    "80000": 2944
+   },
+   "count": 2
+  },
+  "select:sqlite_master#adff5704": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 2736,
+    "80000": 2736
+   },
+   "count": 1
+  },
+  "select:sqlite_master#c08cb70a": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 3536,
+    "80000": 3536
+   },
+   "count": 1
+  },
+  "select:sqlite_master#cf2b3d26": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 2752,
+    "80000": 2752
+   },
+   "count": 1
+  },
+  "select:sqlite_master#f3582845": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 2944,
+    "80000": 2928
+   },
+   "count": 1
+  },
+  "select:stash_boxes#050c5c4f": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 16,
+    "80000": 0
+   },
+   "count": 1
+  },
+  "select:stash_boxes#180362f0": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 5440,
+    "80000": 19120
+   },
+   "count": 1,
+   "per": "library",
+   "why": "costs this before the ledger: a debt on the record, not a decision"
+  },
+  "select:stash_boxes#8cec7360": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 27200,
+    "80000": 108768
+   },
+   "count": 1,
+   "per": "library",
+   "why": "costs this before the ledger: a debt on the record, not a decision"
+  },
+  "select:stash_boxes#b46da71a": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 120208,
+    "80000": 485680
+   },
+   "count": 1,
+   "per": "library",
+   "why": "costs this before the ledger: a debt on the record, not a decision"
+  },
+  "select:stash_waiting#e4c66b98": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1
+  },
+  "select:swap_sessions#777a62d0": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 32,
+    "80000": 32
+   },
+   "count": 1
+  },
+  "select:tag_aliases#4f99472f": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1
+  },
+  "select:tags#0fdf430e": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 16,
+    "80000": 16
+   },
+   "count": 1
+  },
+  "select:tags#1ac06d8a": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 16,
+    "80000": 16
+   },
+   "count": 1
+  },
+  "select:tags#288b7cdc": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1
+  },
+  "select:tags#403a7c80": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 2
+  },
+  "select:tags#44b1be0c": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 16,
+    "80000": 16
+   },
+   "count": 1
+  },
+  "select:tags#51565032": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 48,
+    "80000": 48
+   },
+   "count": 2
+  },
+  "select:theater_sessions#20cf8a76": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1
+  },
+  "select:tidy_surveys#e689ccbd": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 2
+  },
+  "select:user_settings#09d14425": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1
+  },
+  "select:username_numbers_waiting#d2c282d5": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1
+  },
+  "select:usernames#6745262c": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 2
+  },
+  "select:usernames#96cf5c4a": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 2
+  },
+  "select:usernames#cce4994c": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 112,
+    "80000": 112
+   },
+   "count": 1
+  },
+  "select:usernames#efbbd237": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1
+  },
+  "select:users#07304174": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 48,
+    "80000": 48
+   },
+   "count": 1
+  },
+  "select:users#2af03e7a": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1
+  },
+  "select:users#85060a2c": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1
+  },
+  "select:users#91ed94f3": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 16,
+    "80000": 16
+   },
+   "count": 1
+  },
+  "select:users#9430e585": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1
+  },
+  "select:users#984d05c9": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 32,
+    "80000": 32
+   },
+   "count": 1
+  },
+  "select:users#b42b5ef9": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1
+  },
+  "select:viewer_assets#155945d6": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 448,
+    "80000": 448
+   },
+   "count": 2
+  },
+  "select:viewer_assets#434a846b": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 976,
+    "80000": 1168
+   },
+   "count": 1
+  },
+  "select:viewer_entity_counts#08ae82ed": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 48,
+    "80000": 48
+   },
+   "count": 2
+  },
+  "select:viewer_entity_counts#dc58010f": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 5968,
+    "80000": 17072
+   },
+   "count": 1,
+   "per": "library",
+   "why": "costs this before the ledger: a debt on the record, not a decision"
+  },
+  "select:viewer_entity_counts#f55237e5": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 96,
+    "80000": 80
+   },
+   "count": 1
+  },
+  "select:viewer_stats#ba7cef47": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1
+  },
+  "select:work_runs#55ccd370": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1
+  },
+  "select:work_runs#ad3f2c44": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 48,
+    "80000": 48
+   },
+   "count": 3
+  },
+  "select:work_runs#d5614470": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1
+  },
+  "select:workbench_decision_subjects#1e53cb5a": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 3024,
+    "80000": 3024
+   },
+   "count": 1
+  },
+  "select:workbench_decision_subjects#5d4dc0be": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 128,
+    "80000": 128
+   },
+   "count": 1
+  },
+  "select:workbench_decision_subjects#b12c39f8": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 32,
+    "80000": 32
+   },
+   "count": 1
+  },
+  "select:workbench_decision_subjects#bd96a800": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 3568,
+    "80000": 3568
+   },
+   "count": 3
+  },
+  "select:workbench_decision_subjects#c75ec867": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 512,
+    "80000": 512
+   },
+   "count": 1
+  },
+  "select:workbench_decisions#07353861": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 48,
+    "80000": 48
+   },
+   "count": 1
+  },
+  "select:workbench_decisions#250b1da4": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 2
+  },
+  "select:workbench_decisions#2d088466": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1
+  },
+  "select:workbench_decisions#6f2862c5": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 26272,
+    "80000": 105072
+   },
+   "count": 3,
+   "per": "library",
+   "why": "costs this before the ledger: a debt on the record, not a decision"
+  },
+  "select:workbench_decisions#91dee4e8": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 32,
+    "80000": 32
+   },
+   "count": 1
+  },
+  "select:workbench_decisions#e2251af2": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 96,
+    "80000": 96
+   },
+   "count": 1
+  },
+  "settings.app_value": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 16,
+    "80000": 16
+   },
+   "count": 51
+  },
+  "settings.user_value": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 16,
+    "80000": 16
+   },
+   "count": 5
+  },
+  "stash_boxes.person_links": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1
+  },
+  "stash_boxes.site_links": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1
+  },
+  "stash_boxes.tag_links": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1
+  },
+  "update:-#0db5b7f1": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 16,
+    "80000": 16
+   },
+   "count": 1
+  },
+  "update:-#20aae525": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1,
+   "scans": [
+    "face_rejected"
+   ],
+   "why": "costs this before the ledger: a debt on the record, not a decision"
+  },
+  "update:-#273161e2": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1
+  },
+  "update:-#295b91ab": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 16,
+    "80000": 16
+   },
+   "count": 1
+  },
+  "update:-#34651d28": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 42576,
+    "80000": 5216
+   },
+   "count": 1
+  },
+  "update:-#43d0d8bb": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1
+  },
+  "update:-#44435227": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1
+  },
+  "update:-#451eca4a": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1
+  },
+  "update:-#488f2182": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 6656,
+    "80000": 26560
+   },
+   "count": 1,
+   "per": "library",
+   "why": "costs this before the ledger: a debt on the record, not a decision"
+  },
+  "update:-#53957e17": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1
+  },
+  "update:-#55e68208": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1
+  },
+  "update:-#691d6bed": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 16,
+    "80000": 16
+   },
+   "count": 1
+  },
+  "update:-#6df60e17": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1
+  },
+  "update:-#6ea648a3": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1
+  },
+  "update:-#79e6a7aa": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 16,
+    "80000": 16
+   },
+   "count": 1
+  },
+  "update:-#7f390349": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 32,
+    "80000": 32
+   },
+   "count": 3
+  },
+  "update:-#8d61fcc3": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1
+  },
+  "update:-#903134e3": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1
+  },
+  "update:-#924adca5": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 33904,
+    "80000": 38256
+   },
+   "count": 1
+  },
+  "update:-#92d26b3a": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1
+  },
+  "update:-#955c7858": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1
+  },
+  "update:-#a74e3093": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1
+  },
+  "update:-#a8b4b4c8": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 80,
+    "80000": 16
+   },
+   "count": 1
+  },
+  "update:-#a955dd06": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1
+  },
+  "update:-#b22993d5": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1
+  },
+  "update:-#c136de3c": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 32,
+    "80000": 32
+   },
+   "count": 1
+  },
+  "update:-#c3226fdd": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1
+  },
+  "update:-#cc4a580b": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 16,
+    "80000": 16
+   },
+   "count": 1
+  },
+  "update:-#dd0a9624": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1
+  },
+  "update:-#e0736c0b": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1
+  },
+  "update:-#e6b3acdf": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1
+  },
+  "update:-#e6d2f4c2": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 64,
+    "80000": 64
+   },
+   "count": 2
+  },
+  "update:-#e975cde1": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 176,
+    "80000": 176
+   },
+   "count": 1
+  },
+  "update:-#e9aa589b": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1
+  },
+  "update:-#f26335f6": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 5408,
+    "80000": 5408
+   },
+   "count": 1
+  },
+  "update:-#f3ddde83": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 272,
+    "80000": 272
+   },
+   "count": 1
+  },
+  "update:-#f83c698a": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 16,
+    "80000": 16
+   },
+   "count": 1
+  },
+  "update:acl_grants#8446ee99": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 176,
+    "80000": 176
+   },
+   "count": 2
+  },
+  "update:asset_people#22cff55b": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 5248,
+    "80000": 5248
+   },
+   "count": 1
+  },
+  "update:asset_people#4a1de7f7": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 144,
+    "80000": 144
+   },
+   "count": 1
+  },
+  "update:jobs#63c6cd1a": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 32,
+    "80000": 32
+   },
+   "count": 1
+  },
+  "update:people#09cbb6db": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 400,
+    "80000": 400
+   },
+   "count": 1
+  },
+  "update:people#4383e0ff": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 112,
+    "80000": 112
+   },
+   "count": 1
+  },
+  "update:workbench_decisions#dabd60bd": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 27520,
+    "80000": 105936
+   },
+   "count": 1,
+   "per": "library",
+   "why": "costs this before the ledger: a debt on the record, not a decision"
+  },
+  "with:downloads#0b33ebfc": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 16,
+    "80000": 16
+   },
+   "count": 1
+  },
+  "with:downloads#8455cf5b": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 32,
+    "80000": 32
+   },
+   "count": 1
+  },
+  "with:downloads#c46ef327": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 32,
+    "80000": 32
+   },
+   "count": 1
+  },
+  "with:jobs#2952c2b5": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 2656,
+    "80000": 2656
+   },
+   "count": 1
+  },
+  "with:jobs#4f2205cc": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 192,
+    "80000": 192
+   },
+   "count": 1
+  },
+  "with:json_each#08186d72": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 86112,
+    "80000": 154512
+   },
+   "count": 1,
+   "scans": [
+    "asset_tags",
+    "derivatives"
+   ],
+   "per": "library",
+   "why": "costs this before the ledger: a debt on the record, not a decision"
+  },
+  "with:json_each#0c2512c3": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 26768,
+    "80000": 23760
+   },
+   "count": 3
+  },
+  "with:json_each#0e005c0c": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 997680,
+    "80000": 3933376
+   },
+   "count": 1,
+   "scans": [
+    "assets"
+   ],
+   "per": "library",
+   "why": "costs this before the ledger: a debt on the record, not a decision"
+  },
+  "with:json_each#0fd4e87c": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 2416,
+    "80000": 2416
+   },
+   "count": 1
+  },
+  "with:json_each#10ec55ba": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 269520,
+    "80000": 891264
+   },
+   "count": 1,
+   "scans": [
+    "asset_locations",
+    "viewer_assets"
+   ],
+   "per": "library",
+   "why": "costs this before the ledger: a debt on the record, not a decision"
+  },
+  "with:json_each#15709396": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 61120,
+    "80000": 112592
+   },
+   "count": 1,
+   "per": "library",
+   "why": "costs this before the ledger: a debt on the record, not a decision"
+  },
+  "with:json_each#190902a5": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 128912,
+    "80000": 498000
+   },
+   "count": 1,
+   "per": "library",
+   "why": "costs this before the ledger: a debt on the record, not a decision"
+  },
+  "with:json_each#1ae5eaa5": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 949392,
+    "80000": 963552
+   },
+   "count": 1
+  },
+  "with:json_each#1fc6ea99": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 688,
+    "80000": 688
+   },
+   "count": 1
+  },
+  "with:json_each#2993778b": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 368,
+    "80000": 368
+   },
+   "count": 1
+  },
+  "with:json_each#2a26472e": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 339984,
+    "80000": 1359600
+   },
+   "count": 1,
+   "scans": [
+    "assets"
+   ],
+   "per": "library",
+   "why": "costs this before the ledger: a debt on the record, not a decision"
+  },
+  "with:json_each#2b02e8c3": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 69520,
+    "80000": 135952
+   },
+   "count": 1,
+   "scans": [
+    "asset_tags"
+   ],
+   "per": "library",
+   "why": "costs this before the ledger: a debt on the record, not a decision"
+  },
+  "with:json_each#366830a1": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 29648,
+    "80000": 127712
+   },
+   "count": 1,
+   "scans": [
+    "folders"
+   ],
+   "per": "library",
+   "why": "costs this before the ledger: a debt on the record, not a decision"
+  },
+  "with:json_each#3fdf1a71": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 1995072,
+    "80000": 7956896
+   },
+   "count": 1,
+   "per": "library",
+   "why": "costs this before the ledger: a debt on the record, not a decision"
+  },
+  "with:json_each#40f14311": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 688,
+    "80000": 688
+   },
+   "count": 1
+  },
+  "with:json_each#4880742a": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 340240,
+    "80000": 1360240
+   },
+   "count": 1,
+   "scans": [
+    "assets"
+   ],
+   "per": "library",
+   "why": "costs this before the ledger: a debt on the record, not a decision"
+  },
+  "with:json_each#541860c4": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 75648,
+    "80000": 286128
+   },
+   "count": 1,
+   "scans": [
+    "asset_usernames"
+   ],
+   "per": "library",
+   "why": "costs this before the ledger: a debt on the record, not a decision"
+  },
+  "with:json_each#566836d3": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 1136,
+    "80000": 1136
+   },
+   "count": 1
+  },
+  "with:json_each#5e579e4c": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 176,
+    "80000": 176
+   },
+   "count": 1
+  },
+  "with:json_each#647b5359": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 19616,
+    "80000": 19728
+   },
+   "count": 1
+  },
+  "with:json_each#683e0cf7": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 146064,
+    "80000": 491184
+   },
+   "count": 1,
+   "per": "library",
+   "why": "costs this before the ledger: a debt on the record, not a decision"
+  },
+  "with:json_each#6afcea55": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 510512,
+    "80000": 2041952
+   },
+   "count": 1,
+   "per": "library",
+   "why": "costs this before the ledger: a debt on the record, not a decision"
+  },
+  "with:json_each#7869d890": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 4048,
+    "80000": 4144
+   },
+   "count": 1
+  },
+  "with:json_each#7af35273": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 912,
+    "80000": 560
+   },
+   "count": 1,
+   "scans": [
+    "collection_items"
+   ],
+   "why": "costs this before the ledger: a debt on the record, not a decision"
+  },
+  "with:json_each#7edc5982": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 6240,
+    "80000": 5152
+   },
+   "count": 3
+  },
+  "with:json_each#82613fe1": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 2048,
+    "80000": 1664
+   },
+   "count": 1
+  },
+  "with:json_each#852f62c4": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 1735904,
+    "80000": 6928128
+   },
+   "count": 1,
+   "per": "library",
+   "why": "costs this before the ledger: a debt on the record, not a decision"
+  },
+  "with:json_each#8a27fa00": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 51248,
+    "80000": 201376
+   },
+   "count": 1,
+   "per": "library",
+   "why": "costs this before the ledger: a debt on the record, not a decision"
+  },
+  "with:json_each#8e427dc9": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 335792,
+    "80000": 718880
+   },
+   "count": 1,
+   "per": "library",
+   "why": "costs this before the ledger: a debt on the record, not a decision"
+  },
+  "with:json_each#916918b6": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 25408,
+    "80000": 36256
+   },
+   "count": 1,
+   "scans": [
+    "assets"
+   ],
+   "why": "costs this before the ledger: a debt on the record, not a decision"
+  },
+  "with:json_each#91dc6a41": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 529088,
+    "80000": 2116208
+   },
+   "count": 1,
+   "per": "library",
+   "why": "costs this before the ledger: a debt on the record, not a decision"
+  },
+  "with:json_each#93c3cc99": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 415696,
+    "80000": 1575456
+   },
+   "count": 1,
+   "scans": [
+    "assets"
+   ],
+   "per": "library",
+   "why": "costs this before the ledger: a debt on the record, not a decision"
+  },
+  "with:json_each#95d88adc": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 16,
+    "80000": 16
+   },
+   "count": 1
+  },
+  "with:json_each#991d8216": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 248688,
+    "80000": 471728
+   },
+   "count": 1,
+   "per": "library",
+   "why": "costs this before the ledger: a debt on the record, not a decision"
+  },
+  "with:json_each#9a5072d1": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 272816,
+    "80000": 896272
+   },
+   "count": 1,
+   "scans": [
+    "asset_locations",
+    "viewer_assets"
+   ],
+   "per": "library",
+   "why": "costs this before the ledger: a debt on the record, not a decision"
+  },
+  "with:json_each#9fc2ef86": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 17584,
+    "80000": 17808
+   },
+   "count": 1
+  },
+  "with:json_each#c147a84f": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 17072,
+    "80000": 17072
+   },
+   "count": 1
+  },
+  "with:json_each#c406cd71": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 6672,
+    "80000": 6672
+   },
+   "count": 1
+  },
+  "with:json_each#c893bf74": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 368528,
+    "80000": 926080
+   },
+   "count": 1,
+   "per": "library",
+   "why": "costs this before the ledger: a debt on the record, not a decision"
+  },
+  "with:json_each#cc24830b": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 125056,
+    "80000": 242848
+   },
+   "count": 1,
+   "per": "library",
+   "why": "costs this before the ledger: a debt on the record, not a decision"
+  },
+  "with:json_each#cfeabf41": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 371600,
+    "80000": 872032
+   },
+   "count": 1,
+   "per": "library",
+   "why": "costs this before the ledger: a debt on the record, not a decision"
+  },
+  "with:json_each#d1e0cfae": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 20192,
+    "80000": 20192
+   },
+   "count": 1
+  },
+  "with:json_each#d8dda200": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 10368,
+    "80000": 10304
+   },
+   "count": 1
+  },
+  "with:json_each#e64ea84c": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 42208,
+    "80000": 134352
+   },
+   "count": 1,
+   "per": "library",
+   "why": "costs this before the ledger: a debt on the record, not a decision"
+  },
+  "with:json_each#f0a4ac60": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 19712,
+    "80000": 19712
+   },
+   "count": 1
+  },
+  "with:json_each#fe74ca2c": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 20672,
+    "80000": 22624
+   },
+   "count": 1,
+   "scans": [
+    "assets"
+   ],
+   "why": "costs this before the ledger: a debt on the record, not a decision"
+  },
+  "with:json_each#feb6123b": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 16192,
+    "80000": 63712
+   },
+   "count": 1,
+   "per": "library",
+   "why": "costs this before the ledger: a debt on the record, not a decision"
+  },
+  "with:music_pairs#78d4552b": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 160,
+    "80000": 160
+   },
+   "count": 1
+  },
+  "with:people#a9d5ac82": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 6480,
+    "80000": 15600
+   },
+   "count": 1,
+   "per": "library",
+   "why": "costs this before the ledger: a debt on the record, not a decision"
+  },
+  "with:sites#52712882": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 100864,
+    "80000": 186544
+   },
+   "count": 1,
+   "per": "library",
+   "why": "costs this before the ledger: a debt on the record, not a decision"
+  },
+  "with:viewer_entity_counts#0c106aeb": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 1744,
+    "80000": 2032
+   },
+   "count": 1
+  },
+  "with:viewer_entity_counts#8dd77e1e": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 7648,
+    "80000": 8080
+   },
+   "count": 1
+  },
+  "with:viewer_entity_counts#94263008": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 7344,
+    "80000": 8112
+   },
+   "count": 1
+  },
+  "with:workbench_decisions#0b00ecf0": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 2928048,
+    "80000": 11707680
+   },
+   "count": 1,
+   "per": "library",
+   "why": "costs this before the ledger: a debt on the record, not a decision"
+  }
+ }
+}

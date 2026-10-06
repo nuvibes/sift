@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { reloadOnLibraryChange } from '$lib/library/changes.svelte';
+	import { HeldNewcomers, reloadOnLibraryChange } from '$lib/library/changes.svelte';
+	import { Button } from '$lib/components/common';
 	/*
 	 * The collections screen: every collection, what it holds, and the making of one.
 	 *
@@ -133,7 +134,24 @@
 	   it again on a new question would start the new one at the old one's position. */
 	let arriving = true;
 
-	const shown = $derived(collections.items);
+	/* What a bell brings while somebody is reading further down is held, so nothing they are
+	   reading moves; at the top it comes straight in and the rows below slide. */
+	const held = new HeldNewcomers<(typeof collections.items)[number]>();
+	let fromBell = false;
+	$effect(() => {
+		const items = collections.items;
+		untrack(() => held.take(items, fromBell));
+	});
+	const shown = $derived(held.shown);
+	/* One function for the life of the screen: a new one each render would re-attach the wall. */
+	function measureWall(wall: HTMLElement): () => void {
+		const stop = held.watch(wall);
+		const measured = paging.cards(wall);
+		return () => {
+			stop();
+			measured();
+		};
+	}
 
 	/*
 	 * What this wall offers the bar above it.
@@ -287,7 +305,8 @@
 	 */
 	/* Read the wall again, at the page, the order and the search it is showing. */
 	function reread() {
-		void collections.fill(paging, order, undefined, prefix);
+		fromBell = true;
+		void collections.fill(paging, order, undefined, prefix).finally(() => (fromBell = false));
 	}
 
 	const verbs = new WallVerbs({
@@ -337,7 +356,7 @@
 	drawn={shown.length}
 	total={collections.total}
 	loading={collections.loading}
-	measure={paging.cards}
+	measure={measureWall}
 	page={paging.showing}
 	failed={collections.failed ? "The collections couldn't be loaded." : null}
 	empty={emptyWallSays(
@@ -361,6 +380,16 @@
 			onlast={() => paging.last(collections.total)}
 			onjump={(position) => paging.goTo(position - 1, collections.total)}
 		/>
+	{/snippet}
+
+	<!-- Beside the title, so the line coming and going moves nothing under it. -->
+	{#snippet beside()}
+		{#if held.waiting > 0}
+			<Button size="small" tone="secondary" icon="arrow_upward" onclick={() => held.letIn()}>
+				{held.waiting.toLocaleString()}
+				new
+			</Button>
+		{/if}
 	{/snippet}
 
 	{#snippet controls()}

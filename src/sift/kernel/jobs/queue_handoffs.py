@@ -32,6 +32,18 @@ class HandOffs(QueueCore):
 
         return unlisten
 
+    def listen_for_work(self, listener: Callable[[], None]) -> Callable[[], None]:
+        """Be told that a job was just queued, so an idle worker claims it at once rather than at
+        its next poll. Called after the commit; a listener must not block, and one that raises is
+        logged. Returns the way to stop hearing."""
+        self._work_listeners.append(listener)
+
+        def unlisten() -> None:
+            if listener in self._work_listeners:
+                self._work_listeners.remove(listener)
+
+        return unlisten
+
     def _stop_asked(self, job_ids: Sequence[str]) -> None:
         """Tell every listener these jobs were just asked to stop; never called with none."""
         for listener in list(self._stop_listeners):

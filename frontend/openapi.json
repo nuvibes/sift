@@ -8306,21 +8306,6 @@
         "title": "ForgetLoops",
         "type": "object"
       },
-      "FullAmountAsked": {
-        "description": "Whether to use the full amount of this device although it is in use.",
-        "properties": {
-          "on": {
-            "description": "True runs every task although somebody is at the keyboard; false steps back again while they are.",
-            "title": "On",
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "on"
-        ],
-        "title": "FullAmountAsked",
-        "type": "object"
-      },
       "GeneratedUserResponse": {
         "description": "A guest Sift invented, and the password that goes with it.\n\nThe only time the password exists in the clear: never stored that way, returned or logged, so\na lost one is reset. Its own shape so no user listing is ever built from one carrying it.",
         "properties": {
@@ -10153,12 +10138,6 @@
             "title": "Families",
             "type": "object"
           },
-          "full_amount": {
-            "default": false,
-            "description": "Whether every task is running although somebody is using the computer, because a person pressed for the full amount (`POST /jobs/full-amount`). Never true beside `stepping_back`; both are false while nobody is at the keyboard.",
-            "title": "Full Amount",
-            "type": "boolean"
-          },
           "housekeeping": {
             "default": [],
             "items": {
@@ -10210,7 +10189,7 @@
                 "type": "null"
               }
             ],
-            "description": "Why Sift is in eco mode while `stepping_back` or `full_amount` is true: somebody at this device (input), a video playing in Sift on any device or a Theater wall open (playing), or other programs busy (others).",
+            "description": "Why Sift is in eco mode while `stepping_back` or `turbo_mode` is true: somebody at this device (input), a video playing in Sift on any device or a Theater wall open (playing), or other programs busy (others).",
             "title": "Step Back For"
           },
           "step_back_over": {
@@ -10251,6 +10230,12 @@
             "title": "Total",
             "type": "integer"
           },
+          "turbo_mode": {
+            "default": false,
+            "description": "Whether every task is running although somebody is using the computer, because a person pressed for turbo mode (`POST /jobs/turbo-mode`). Never true beside `stepping_back`; both are false while nobody is at the keyboard.",
+            "title": "Turbo Mode",
+            "type": "boolean"
+          },
           "work": {
             "additionalProperties": {
               "$ref": "#/components/schemas/KindOfWork"
@@ -10271,7 +10256,7 @@
           "families",
           "housekeeping",
           "stepping_back",
-          "full_amount",
+          "turbo_mode",
           "step_back_share",
           "step_back_for",
           "step_back_over",
@@ -22559,13 +22544,8 @@
       "StepBack": {
         "description": "What background work is doing about somebody using the computer, after a press.",
         "properties": {
-          "full_amount": {
-            "description": "As on the jobs page.",
-            "title": "Full Amount",
-            "type": "boolean"
-          },
           "pressed": {
-            "description": "Whether the full amount is pressed for, whether or not anybody is at the keyboard now: held until Sift stops or the next press.",
+            "description": "Whether turbo mode is pressed for, whether or not anybody is at the keyboard now: held until Sift stops or the next press.",
             "title": "Pressed",
             "type": "boolean"
           },
@@ -22573,11 +22553,16 @@
             "description": "As on the jobs page.",
             "title": "Stepping Back",
             "type": "boolean"
+          },
+          "turbo_mode": {
+            "description": "As on the jobs page.",
+            "title": "Turbo Mode",
+            "type": "boolean"
           }
         },
         "required": [
           "stepping_back",
-          "full_amount",
+          "turbo_mode",
           "pressed"
         ],
         "title": "StepBack",
@@ -25048,6 +25033,21 @@
           "can_host"
         ],
         "title": "TunnelItem",
+        "type": "object"
+      },
+      "TurboModeAsked": {
+        "description": "Whether to turn turbo mode on: every task runs although this device is in use.",
+        "properties": {
+          "on": {
+            "description": "True runs every task although somebody is at the keyboard; false goes back to eco mode while they are.",
+            "title": "On",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "on"
+        ],
+        "title": "TurboModeAsked",
         "type": "object"
       },
       "Turn": {
@@ -37510,48 +37510,6 @@
         ]
       }
     },
-    "/api/jobs/full-amount": {
-      "post": {
-        "description": "Use the full amount of this device although it is in use, or step back again.\n\nHeld in memory, not stored; the pool reaches it at its next reconfigure, a few seconds later.",
-        "operationId": "press_full_amount_api_jobs_full_amount_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/FullAmountAsked"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/StepBack"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Press Full Amount",
-        "tags": [
-          "jobs"
-        ]
-      }
-    },
     "/api/jobs/rebuild-previews": {
       "get": {
         "description": "How many hover clips are not the shape that is set. Queues nothing, and must not.\n\nZero is the ordinary answer and is worth having: it is how the screen can say the library is\nalready up to date rather than offering a button whose effect would be nothing.",
@@ -37675,6 +37633,48 @@
           }
         },
         "summary": "Retry Failed Jobs",
+        "tags": [
+          "jobs"
+        ]
+      }
+    },
+    "/api/jobs/turbo-mode": {
+      "post": {
+        "description": "Turn turbo mode on although this device is in use, or go back to eco mode.\n\nHeld in memory, not stored; the press wakes the pool, which takes it within a moment.",
+        "operationId": "press_turbo_mode_api_jobs_turbo_mode_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TurboModeAsked"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StepBack"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Press Turbo Mode",
         "tags": [
           "jobs"
         ]

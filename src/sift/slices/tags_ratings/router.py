@@ -515,10 +515,10 @@ async def update_tag(
             raise _loop() from None
     # Every file carrying this tag now has different indexed text: other names are indexed the
     # same way the name is, so both halves of the write above are covered by one pass. The files CAN
-    # be named here, so they are, rather than a rebuild of the whole index: many seconds of the
-    # write lock on a large library, for a tag that may be on none of them. Read after the write,
-    # because a rename moves no assignment.
-    await reindexer.touched_many(await service.assets_with(tag_id))
+    # be named here, so a job rewrites exactly them after the answer, a chunk at a time, rather than
+    # holding the write lock for seconds in the request. Read after the write, because a rename
+    # moves no assignment.
+    await reindexer.queue_many(await service.assets_with(tag_id))
     marks = await access.visible_marks(viewer, ObjectType.TAG, [tag.id])
     return _view(tag, mark=marks.get(tag.id)).model_copy(
         update={"record": await service.record_of(tag_id)}

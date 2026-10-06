@@ -146,6 +146,8 @@ ORDER BY added_at, id
 LIMIT ?
 """
 
+_ANY_UNCLASSIFIED = "SELECT EXISTS (SELECT 1 FROM assets WHERE classified_version < ?) AS found"
+
 # What a re-read decided, in these columns and no others; length and rate are the probe's.
 _RECLASSIFY = """
 UPDATE assets SET media_type = ?, mime = ?, container = ?, classified_version = ? WHERE id = ?
@@ -393,6 +395,11 @@ class Probes(StoreCore):
         an unchanged file, so it would never look again."""
         rows = await self._db.fetch_all(_UNCLASSIFIED, (CLASSIFIER_VERSION, limit))
         return [row["id"] for row in rows]
+
+    async def any_unclassified(self) -> bool:
+        """Whether any file is below the classifier line: a seek of its index, for a start."""
+        (row,) = await self._db.fetch_all(_ANY_UNCLASSIFIED, (CLASSIFIER_VERSION,))
+        return bool(row["found"])
 
     async def reclassify(self, asset_id: str, media: MediaType | None) -> None:
         """Record what the classifier in use says a file is (`None`: it refuses it, and the row is

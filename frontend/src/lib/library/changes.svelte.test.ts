@@ -20,8 +20,15 @@ vi.mock('$lib/api/client', () => ({
 }));
 vi.mock('$lib/shell/toasts.svelte', () => ({ toasts: { show: vi.fn() } }));
 
-const { libraryChanges, recorded, rereadOnHistoryChange, HISTORY_SETTLE_MS } =
-	await import('./changes.svelte');
+const {
+	libraryChanges,
+	recorded,
+	rereadOnHistoryChange,
+	reloadOnLibraryChange,
+	HeldNewcomers,
+	HISTORY_SETTLE_MS
+} = await import('./changes.svelte');
+const { imports } = await import('./imports.svelte');
 const { Library } = await import('./library.svelte');
 
 function root(id = 'r1') {
@@ -131,5 +138,94 @@ describe('a history thread re-reading itself', () => {
 
 		vi.advanceTimersByTime(HISTORY_SETTLE_MS * 4);
 		expect(reread).not.toHaveBeenCalled();
+	});
+});
+
+describe('a list re-reading when the files on their way in have landed', () => {
+	function watching(reload: () => void): () => void {
+		const stop = $effect.root(() => {
+			reloadOnLibraryChange(reload);
+		});
+		flushSync();
+		return stop;
+	}
+
+	it('asks once when the work ends, and never while files are still arriving', () => {
+		const reload = vi.fn();
+		const stop = watching(reload);
+
+		imports.busy = 3;
+		imports.settled += 1;
+		flushSync();
+		expect(reload, 'asked while files were still arriving').not.toHaveBeenCalled();
+
+		imports.busy = 0;
+		imports.settled += 1;
+		flushSync();
+		expect(reload).toHaveBeenCalledTimes(1);
+		stop();
+	});
+
+	it('asks nothing on the first run', () => {
+		const reload = vi.fn();
+		const stop = watching(reload);
+		flushSync();
+		expect(reload).not.toHaveBeenCalled();
+		stop();
+	});
+});
+
+describe('a newcomer to a list somebody is reading', () => {
+	/** A list drawn in a box that scrolls, scrolled `down` pixels, rows a hundred high. */
+	function list(down: number) {
+		const box = document.createElement('div');
+		box.style.overflowY = 'auto';
+		Object.defineProperty(box, 'scrollHeight', { value: 1000 });
+		Object.defineProperty(box, 'clientHeight', { value: 100 });
+		box.scrollTop = down;
+		const wall = document.createElement('div');
+		const row = document.createElement('div');
+		Object.defineProperty(row, 'offsetHeight', { value: 100 });
+		wall.append(row);
+		box.append(wall);
+		document.body.append(box);
+		const held = new HeldNewcomers<{ id: string }>();
+		const stop = held.watch(wall);
+		held.take([{ id: 'b' }, { id: 'c' }], false);
+		return { box, held, stop };
+	}
+
+	it('comes straight in while the top of the list is on screen', () => {
+		const { box, held, stop } = list(0);
+		held.take([{ id: 'a' }, { id: 'b' }, { id: 'c' }], true);
+		expect(held.shown.map((row) => row.id)).toEqual(['a', 'b', 'c']);
+		expect(held.waiting).toBe(0);
+		stop();
+		box.remove();
+	});
+
+	it('is held with a count while somebody reads further down, and comes in at the top', () => {
+		const { box, held, stop } = list(500);
+		held.take([{ id: 'a' }, { id: 'b' }, { id: 'c' }], true);
+		expect(
+			held.shown.map((row) => row.id),
+			'the rows being read moved'
+		).toEqual(['b', 'c']);
+		expect(held.waiting).toBe(1);
+
+		box.scrollTop = 0;
+		box.dispatchEvent(new Event('scroll'));
+		expect(held.shown.map((row) => row.id)).toEqual(['a', 'b', 'c']);
+		expect(held.waiting).toBe(0);
+		stop();
+		box.remove();
+	});
+
+	it('draws a new question as it is, wherever the list was scrolled', () => {
+		const { box, held, stop } = list(500);
+		held.take([{ id: 'x' }, { id: 'y' }], false);
+		expect(held.shown.map((row) => row.id)).toEqual(['x', 'y']);
+		stop();
+		box.remove();
 	});
 });

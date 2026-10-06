@@ -5119,28 +5119,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/jobs/full-amount": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Press Full Amount
-         * @description Use the full amount of this device although it is in use, or step back again.
-         *
-         *     Held in memory, not stored; the pool reaches it at its next reconfigure, a few seconds later.
-         */
-        post: operations["press_full_amount_api_jobs_full_amount_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/jobs/rebuild-previews": {
         parameters: {
             query?: never;
@@ -5238,6 +5216,28 @@ export interface paths {
          *     Nothing to retry is a success with a zero, not a 404.
          */
         post: operations["retry_failed_jobs_api_jobs_retry_failed_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/turbo-mode": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Press Turbo Mode
+         * @description Turn turbo mode on although this device is in use, or go back to eco mode.
+         *
+         *     Held in memory, not stored; the press wakes the pool, which takes it within a moment.
+         */
+        post: operations["press_turbo_mode_api_jobs_turbo_mode_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -15801,17 +15801,6 @@ export interface components {
             loop_ids: string[];
         };
         /**
-         * FullAmountAsked
-         * @description Whether to use the full amount of this device although it is in use.
-         */
-        FullAmountAsked: {
-            /**
-             * On
-             * @description True runs every task although somebody is at the keyboard; false steps back again while they are.
-             */
-            on: boolean;
-        };
-        /**
          * GeneratedUserResponse
          * @description A guest Sift invented, and the password that goes with it.
          *
@@ -16727,12 +16716,6 @@ export interface components {
                 [key: string]: components["schemas"]["FamilyOfWork"];
             };
             /**
-             * Full Amount
-             * @description Whether every task is running although somebody is using the computer, because a person pressed for the full amount (`POST /jobs/full-amount`). Never true beside `stepping_back`; both are false while nobody is at the keyboard.
-             * @default false
-             */
-            full_amount: boolean;
-            /**
              * Housekeeping
              * @default []
              */
@@ -16759,7 +16742,7 @@ export interface components {
             password_wanted: number;
             /**
              * Step Back For
-             * @description Why Sift is in eco mode while `stepping_back` or `full_amount` is true: somebody at this device (input), a video playing in Sift on any device or a Theater wall open (playing), or other programs busy (others).
+             * @description Why Sift is in eco mode while `stepping_back` or `turbo_mode` is true: somebody at this device (input), a video playing in Sift on any device or a Theater wall open (playing), or other programs busy (others).
              */
             step_back_for: ("input" | "playing" | "others") | null;
             /**
@@ -16789,6 +16772,12 @@ export interface components {
             };
             /** Total */
             total: number;
+            /**
+             * Turbo Mode
+             * @description Whether every task is running although somebody is using the computer, because a person pressed for turbo mode (`POST /jobs/turbo-mode`). Never true beside `stepping_back`; both are false while nobody is at the keyboard.
+             * @default false
+             */
+            turbo_mode: boolean;
             /** Work */
             work: {
                 [key: string]: components["schemas"]["KindOfWork"];
@@ -22705,13 +22694,8 @@ export interface components {
          */
         StepBack: {
             /**
-             * Full Amount
-             * @description As on the jobs page.
-             */
-            full_amount: boolean;
-            /**
              * Pressed
-             * @description Whether the full amount is pressed for, whether or not anybody is at the keyboard now: held until Sift stops or the next press.
+             * @description Whether turbo mode is pressed for, whether or not anybody is at the keyboard now: held until Sift stops or the next press.
              */
             pressed: boolean;
             /**
@@ -22719,6 +22703,11 @@ export interface components {
              * @description As on the jobs page.
              */
             stepping_back: boolean;
+            /**
+             * Turbo Mode
+             * @description As on the jobs page.
+             */
+            turbo_mode: boolean;
         };
         /**
          * StepSummary
@@ -23909,6 +23898,17 @@ export interface components {
             running: boolean;
             /** Up */
             up: boolean;
+        };
+        /**
+         * TurboModeAsked
+         * @description Whether to turn turbo mode on: every task runs although this device is in use.
+         */
+        TurboModeAsked: {
+            /**
+             * On
+             * @description True runs every task although somebody is at the keyboard; false goes back to eco mode while they are.
+             */
+            on: boolean;
         };
         /**
          * Turn
@@ -31326,39 +31326,6 @@ export interface operations {
             };
         };
     };
-    press_full_amount_api_jobs_full_amount_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["FullAmountAsked"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["StepBack"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     count_rebuildable_previews_api_jobs_rebuild_previews_get: {
         parameters: {
             query?: never;
@@ -31475,6 +31442,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Retried"];
+                };
+            };
+        };
+    };
+    press_turbo_mode_api_jobs_turbo_mode_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TurboModeAsked"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StepBack"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

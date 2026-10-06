@@ -36,9 +36,9 @@ from sift.kernel.access import (
 )
 from sift.kernel.access.repository.walls import shown
 from sift.kernel.access.tag_tree import TAGS_ABOVE
-from sift.kernel.audience import EVERY_ADMIN, NOBODY, Audience
+from sift.kernel.audience import NOBODY, Audience
 from sift.kernel.cache_stamp import bump_cache_stamp
-from sift.kernel.changes import About, announce, telling
+from sift.kernel.changes import About, announce, telling, who_may_see_a_file
 from sift.kernel.content.entity_state import opinion_before
 from sift.kernel.content.user_state import OpinionKind, record_opinion
 from sift.kernel.cover_frame import CoverFrame
@@ -66,6 +66,13 @@ def _and_the_actor(told: Audience, actor: Actor) -> Audience:
     if actor.kind == ACTOR_USER and actor.id:
         return told | Audience.of_user(actor.id)
     return told
+
+
+async def _whoever_may_see(database: Database) -> Audience:
+    """Every admin and every user given anything. Read before the write, so `telling` still says
+    nothing when no row moved."""
+    async with database.read() as connection:
+        return await who_may_see_a_file(connection)
 
 
 class TagLoop(Exception):
@@ -396,7 +403,7 @@ class TagService:
         built by the route: a second one for the user would be two arguments for one fact, free
         to disagree.
         """
-        async with telling(self._db, EVERY_ADMIN, About.LIBRARY) as connection:
+        async with telling(self._db, await _whoever_may_see(self._db), About.LIBRARY) as connection:
             rows = list(
                 await connection.execute_fetchall(
                     _INSERT_TAG,
@@ -418,7 +425,7 @@ class TagService:
     async def update(self, viewer: Viewer, tag_id: str, name: str) -> Tag | None:
         """Rename. None when there is no such tag, `DuplicateTag` when it is taken."""
         was = await self.get(viewer, tag_id)
-        async with telling(self._db, EVERY_ADMIN, About.LIBRARY) as connection:
+        async with telling(self._db, await _whoever_may_see(self._db), About.LIBRARY) as connection:
             rows = list(
                 await connection.execute_fetchall(_UPDATE_TAG, (name, sort_key(name), tag_id))
             )
@@ -505,7 +512,7 @@ class TagService:
         wanted = (parent or "").strip()
         parent_id = await self._parent_named(tag_id, wanted, actor=actor) if wanted else None
         held = await self._alias_moments(tag_id)
-        async with telling(self._db, EVERY_ADMIN, About.LIBRARY) as connection:
+        async with telling(self._db, await _whoever_may_see(self._db), About.LIBRARY) as connection:
             await self._write_record(
                 connection, tag_id, description, category, aliases, held=held, now=self._now()
             )
@@ -585,7 +592,7 @@ class TagService:
         aliases"). The person writer's `merge_person_record` writes no event for the same reason.
         """
         held = await self._alias_moments(tag_id)
-        async with telling(self._db, EVERY_ADMIN, About.LIBRARY) as connection:
+        async with telling(self._db, await _whoever_may_see(self._db), About.LIBRARY) as connection:
             await self._write_record(
                 connection, tag_id, description, category, aliases, held=held, now=self._now()
             )
@@ -660,7 +667,7 @@ class TagService:
         concealed comes out as no cover rather than as a leak. The same division People and
         Sites use.
         """
-        async with telling(self._db, EVERY_ADMIN, About.LIBRARY) as connection:
+        async with telling(self._db, await _whoever_may_see(self._db), About.LIBRARY) as connection:
             # The cover as it WAS, in the write's own transaction: the same picture with a new
             # window is a reframe and says so. See `kernel/covers.py cover_change`.
             was = list(await connection.execute_fetchall(_CHOSEN_COVER, (tag_id,)))
@@ -841,9 +848,8 @@ class TagService:
                     verb="deleted",
                     subject=Subject(kind="tag", id=tag_id, name=was_called),
                 )
-                # Its grants went first and told everybody then; after that only an admin can
-                # still be drawing it, and this is the commit that takes it off their screens.
-                announce(EVERY_ADMIN, About.LIBRARY)
+                # Its grants went first, before the row: this is the commit a re-read sees it gone.
+                announce(await who_may_see_a_file(connection), About.LIBRARY)
         deleted = bool(rows)
         if deleted:
             # No name in the log. A tag list says a great deal about what a library is for, which

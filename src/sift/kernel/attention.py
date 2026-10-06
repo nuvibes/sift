@@ -4,9 +4,10 @@ keeping the device busy, so background work can step back to a share of it meanw
 
 The pool asks `Attention.workers` on its reconfigure timer. Input is read with Windows'
 `GetLastInputInfo`; other programs' load is `kernel.device_load`'s; playing is `PLAYED`, marked by
-the player's reads and an open Theater wall from any device. A press for the full amount
+the player's reads and an open Theater wall from any device. A press for turbo mode
 (`Attention.press`) overrules every cause until Sift stops or the next press; it is held in memory
-because it answers a moment, not a standing choice.
+because it answers a moment, not a standing choice. A press wakes whoever listens (the pool), so it
+takes effect at once rather than at the next reconfigure.
 """
 
 from __future__ import annotations
@@ -167,6 +168,7 @@ class Attention:
         self._event = "attention.full_count"
         self._full_by_hand = False
         self._share = STEP_BACK_SHARE
+        self._listeners: list[Callable[[], None]] = []
 
     @property
     def holding(self) -> bool:
@@ -189,25 +191,40 @@ class Attention:
         return self._share if self.holding else WHOLE_DEVICE
 
     @property
-    def full_amount(self) -> bool:
+    def turbo_mode(self) -> bool:
         """Whether background work uses the full count by a press although a cause holds."""
         return self._cause is not None and self._full_by_hand
 
     @property
     def pressed(self) -> bool:
-        """Whether the press for the full amount is on, in play or not."""
+        """Whether the press for turbo mode is on, in play or not."""
         return self._full_by_hand
 
+    def listen(self, listener: Callable[[], None]) -> Callable[[], None]:
+        """Be told of every press that changes something; returns the way to stop hearing."""
+        self._listeners.append(listener)
+
+        def unlisten() -> None:
+            if listener in self._listeners:
+                self._listeners.remove(listener)
+
+        return unlisten
+
     def press(self, *, full: bool) -> None:
-        """Use the full amount although a cause holds (`full`), or step back again."""
+        """Turn turbo mode on although a cause holds (`full`), or go back to eco mode."""
         if full == self._full_by_hand:
             return
         self._full_by_hand = full
         log.info(
-            "attention.full_amount_pressed" if full else "attention.step_back_pressed",
+            "attention.turbo_mode_pressed" if full else "attention.step_back_pressed",
             in_use=self._cause is not None,
         )
         announce_now(EVERY_ADMIN, About.JOBS)
+        for listener in list(self._listeners):
+            try:
+                listener()
+            except Exception:
+                log.exception("attention.listener_failed")
 
     def workers(
         self,
@@ -221,7 +238,7 @@ class Attention:
         """How many workers to run now, out of `full`.
 
         `share` percent of `full`, rounded up and never below one, while input or a clip played was
-        inside `ATTENTION_SECONDS` (with `step_back` on) or `others_busy`, unless the full amount was
+        inside `ATTENTION_SECONDS` (with `step_back` on) or `others_busy`, unless turbo mode was
         pressed for. Never while `measuring`: a benchmark reads the whole device.
         """
         self._share = min(WHOLE_DEVICE, max(1, share))
@@ -243,7 +260,7 @@ class Attention:
         elif effective < full:
             event = "attention.stepping_back"
         else:
-            event = "attention.full_amount"
+            event = "attention.turbo_mode"
         # A press is logged here too, on the tick it takes effect, not only a cause's change.
         if cause != self._cause or event != self._event:
             log.info(event, workers=effective, full=full, share=self._share, cause=cause)
@@ -262,9 +279,9 @@ def stepping_back() -> bool:
     return ATTENTION.holding
 
 
-def full_amount() -> bool:
+def turbo_mode() -> bool:
     """Whether the worker pool runs its full count by a press although a cause holds."""
-    return ATTENTION.full_amount
+    return ATTENTION.turbo_mode
 
 
 __all__ = [
@@ -275,9 +292,9 @@ __all__ = [
     "Cause",
     "Played",
     "elapsed_seconds",
-    "full_amount",
     "seconds_since_input",
     "stand_in_file_seconds",
     "stand_in_seconds",
     "stepping_back",
+    "turbo_mode",
 ]

@@ -37,7 +37,7 @@ from sift.kernel.cache_stamp import bump_cache_stamp
 from sift.kernel.changes import About, announce, announce_arrival, telling
 from sift.kernel.config import Settings
 from sift.kernel.content.identity import Location, check_rel_path, location_from_row
-from sift.kernel.db import Connection, Database, Row, in_clause
+from sift.kernel.db import Connection, Database, Row, in_clause, point_read
 from sift.kernel.ids import is_id, new_id
 from sift.kernel.ledger import Actor, record_event
 from sift.kernel.log import get_logger
@@ -47,8 +47,7 @@ from sift.kernel.vocabulary import Subject
 
 log = get_logger(__name__)
 
-#: The folder row standing for the root directory itself. Empty because it is the path of the root
-#: relative to the root. Every other folder's path is relative to this one.
+#: The folder row standing for the root itself: its path relative to the root, so empty.
 ROOT_REL_PATH = ""
 
 MAX_NAME_LENGTH = 100
@@ -302,6 +301,7 @@ _GRANTS = "SELECT * FROM browse_grants ORDER BY abs_path"
 _DELETE_GRANT = "DELETE FROM browse_grants WHERE id = ? RETURNING *"
 
 _ROOTS = "SELECT * FROM library_roots ORDER BY id"
+_ROOTS_READ = point_read("content.roots", _ROOTS)
 _ROOT_BY_ID = "SELECT * FROM library_roots WHERE id = ?"
 _DELETE_ROOT = "DELETE FROM library_roots WHERE id = ? RETURNING *"
 
@@ -645,7 +645,7 @@ class LibraryStore:
         return root
 
     async def roots(self) -> list[Root]:
-        rows = await self._db.fetch_all(_ROOTS)
+        rows = await self._db.fetch_all(_ROOTS_READ)
         return [root_from_row(row) for row in rows]
 
     async def get_root(self, root_id: str) -> Root | None:

@@ -43,8 +43,11 @@ import {
 	type LibraryReport
 } from './libraries';
 import { firewallState, openFirewall } from './firewall';
+import { StartFrame } from './opening';
 import { log, tail as tailShellLog } from './log';
 import { registerLogArchive } from './logbundle';
+import { saveWithoutAsking } from './saving';
+import { registerWindowStage } from './stage';
 import { machineName } from './machine';
 import { watchGestures } from './gesture';
 import {
@@ -126,6 +129,9 @@ const crashDialog = wayBack({
 const startedAt = Date.now();
 let shownOnce = false;
 
+/* Sift's own frame over the window while the first page loads (`opening.ts`). */
+const frame = new StartFrame(startedAt);
+
 /* THE SMOKE RUN COMES FIRST, BEFORE THE LOCK: Sift exits 0 when another copy holds the lock, so a
  * smoke run after it would pass without starting anything (`smoke.ts`; main.test.ts holds the
  * order). It takes no lock and opens nothing. */
@@ -154,7 +160,8 @@ async function main(): Promise<void> {
 	log.info('shell.started', {
 		version: app.getVersion(),
 		packaged: app.isPackaged,
-		mode: settings.mode ?? 'not chosen'
+		mode: settings.mode ?? 'not chosen',
+		uptime_ms: Math.round(process.uptime() * 1000)
 	});
 
 	/* Anything a previous run fetched to drag is thrown away at STARTUP, since a crash never reaches
@@ -172,6 +179,7 @@ async function main(): Promise<void> {
 		return reachOf(settings, url);
 	};
 	registerLogArchive(trust, crashDialog.archive);
+	registerWindowStage(trust, frame.drawn);
 	registerVerbs(trust, {
 		/* Read through a function, as the trust check is. */
 		feedUrl: () => settings.feedUrl,
@@ -314,7 +322,22 @@ async function main(): Promise<void> {
 	 * that call `advanceFirstRun`, the shape `/connect` has.
 	 */
 	mainWindow = createWindow();
+	/* On screen at once in Sift's own frame, unless Windows started Sift at sign-in (`reveal`). */
+	const window = mainWindow;
+	if (!signInStart) {
+		frame.open(window, SHELL_ORIGIN, () => {
+			if (shownOnce) return false;
+			reveal(window, true);
+			return true;
+		});
+	}
 	await advanceFirstRun();
+}
+
+/** Load the window's page under the frame. */
+async function loadPage(window: BrowserWindow, address: string): Promise<void> {
+	await window.loadURL(address);
+	frame.loaded(address, SHELL_ORIGIN);
 }
 
 /* Put the icon in the notification area, or take it away, to match the setting. Idempotent; an icon
@@ -348,8 +371,9 @@ function reveal(window: BrowserWindow, needsSomebody: boolean): void {
 	signInStart = false;
 	if (!shownOnce) {
 		shownOnce = true;
-		log.info('window.first_shown', { how, after_ms: Date.now() - startedAt });
-	}
+		const frameShown = { frame: frame.framed, uptime_ms: Math.round(process.uptime() * 1000) };
+		log.info('window.first_shown', { how, after_ms: Date.now() - startedAt, ...frameShown });
+	} else if (frame.takeShown() && how === 'show') return;
 	if (how === 'tray') return;
 	/* A never-shown window minimised appears minimised on the taskbar, which is what is wanted. */
 	if (how === 'taskbar') window.minimize();
@@ -537,7 +561,7 @@ async function advanceFirstRun(): Promise<void> {
 
 	const asking = firstRunRoute(settings);
 	if (asking !== null) {
-		await window.loadURL(`${SHELL_ORIGIN}${asking}`);
+		await loadPage(window, `${SHELL_ORIGIN}${asking}`);
 		/* Shown after the page loads, so no empty frame is seen; idempotent across answers. */
 		reveal(window, true);
 		return;
@@ -548,7 +572,7 @@ async function advanceFirstRun(): Promise<void> {
 
 	try {
 		const target = await prepareTarget();
-		await window.loadURL(target);
+		await loadPage(window, target);
 		reveal(window, false);
 	} catch (err) {
 		/* In client mode a failed load is a server that stopped answering: the connect screen, not
@@ -557,11 +581,12 @@ async function advanceFirstRun(): Promise<void> {
 			connectProblem = `Sift could not reach ${settings.lastServer ?? 'the saved address'}. ${
 				err instanceof Error ? err.message : String(err)
 			}`;
-			await window.loadURL(`${SHELL_ORIGIN}/connect`);
+			await loadPage(window, `${SHELL_ORIGIN}/connect`);
 			reveal(window, true);
 			return;
 		}
 		/* No `app.quit()`: the offer decides, and may be "set it up again". */
+		frame.failed();
 		showStartFailure(err);
 	}
 }
@@ -1098,32 +1123,6 @@ async function requireSignIn(origin: string): Promise<void> {
  */
 const TITLE_BAR_HEIGHT = 36;
 
-/*
- * Where a saved file goes, without asking: Chromium's Save As would be a second decision, in the
- * operating system's dialog. The asked-for name is kept with Windows' counter for a taken one, and a
- * folder since removed falls back to this machine's Downloads.
- */
-function saveWithoutAsking(folder: () => string): void {
-	session.defaultSession.on('will-download', (_event, item) => {
-		let directory = folder();
-		if (!fs.existsSync(directory)) directory = app.getPath('downloads');
-		item.setSavePath(path.join(directory, uniqueIn(directory, item.getFilename())));
-	});
-}
-
-/** `name` in `directory`, or the same name with a counter where it is already taken. */
-function uniqueIn(directory: string, name: string): string {
-	if (!fs.existsSync(path.join(directory, name))) return name;
-	const extension = path.extname(name);
-	const stem = name.slice(0, name.length - extension.length);
-	// Bounded: a thousand copies of one file is a key held down.
-	for (let counter = 1; counter < 1000; counter += 1) {
-		const tried = `${stem} (${counter})${extension}`;
-		if (!fs.existsSync(path.join(directory, tried))) return tried;
-	}
-	return name;
-}
-
 function createWindow(): BrowserWindow {
 	const icon = appIconFile();
 	const window = new BrowserWindow({
@@ -1132,8 +1131,8 @@ function createWindow(): BrowserWindow {
 		minWidth: 960,
 		minHeight: 600,
 		show: false,
-		// The page's own canvas colour, so the frame does not flash white before the app paints.
-		backgroundColor: '#0a0b10',
+		// The page's own canvas colour as the last start saw it, so nothing flashes before it paints.
+		backgroundColor: frame.look.canvas,
 		autoHideMenuBar: true,
 		/*
 		 * NO OPERATING-SYSTEM TITLE BAR: a fixed-colour caption strip reads as somebody else's window.

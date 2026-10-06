@@ -6,7 +6,7 @@
 	import Copyable from '$lib/components/record/Copyable.svelte';
 	import { offerViewer } from '$lib/remote/offer.svelte';
 	import { judge, tally } from '$lib/library/judgement.svelte';
-	import { api, ApiError } from '$lib/api/client';
+	import { api, ApiError, isMissing } from '$lib/api/client';
 	import AssetDetailControls from '$lib/components/AssetDetailControls.svelte';
 	import { thumbUrl } from '$lib/entity/art';
 	import { runNowVerb, type Verb } from '$lib/grid/verbs';
@@ -411,24 +411,24 @@
 		untrack(() => void load());
 	});
 
-	/* Either bell re-reads the record and band in place, never the whole `load`, which blanks them. */
-	let following: ReturnType<typeof setTimeout> | null = null;
+	/* Re-read in place, never the whole `load`, which blanks; only the queue's chatter settles. */
+	let following: ReturnType<typeof setTimeout> | undefined;
 
-	function followSoon(withHistory: boolean) {
-		// The thread has its own settle, shared with every other bell it hears.
-		if (withHistory) thread.soon(() => id);
-		if (following !== null) clearTimeout(following);
-		following = setTimeout(() => {
-			following = null;
-			void rereadRecord();
-			void band.load(id);
-		}, HISTORY_SETTLE_MS);
+	function followNow() {
+		clearTimeout(following);
+		void rereadRecord();
+		void band.load(id);
 	}
-
-	whenChanged(libraryChanges, () => followSoon(false));
-	whenChanged(jobChanges, () => followSoon(true));
+	/* The record once a bell has settled: its re-read restarts the sitting's dwell. */
+	function followSoon() {
+		clearTimeout(following);
+		following = setTimeout(followNow, HISTORY_SETTLE_MS);
+	}
+	whenChanged(libraryChanges, () => (void band.load(id), followSoon()));
+	// The thread has its own settle, shared with every other bell it hears.
+	whenChanged(jobChanges, () => (thread.soon(() => id), followSoon()));
 	$effect(() => () => {
-		if (following !== null) clearTimeout(following);
+		clearTimeout(following);
 		thread.stop();
 	});
 
@@ -442,13 +442,13 @@
 			if (JSON.stringify(loaded) === JSON.stringify(asset)) return;
 			asset = loaded;
 			onloaded?.(loaded);
-		} catch {
-			// See above: the record on screen stays.
+		} catch (error) {
+			// Gone since it was drawn: said as a fresh load says it. Anything else keeps the record.
+			if (isMissing(error) && wanted === id) failed = true;
 		}
 	}
 
-	/* How long a still has been on screen (`$lib/player/sitting`), its own, since the corner panel
-	   and a full-size view can both be up. */
+	/* A still's own time on screen (`$lib/player/sitting`): panel and full size can both be up. */
 	const sitting = newSitting();
 
 	/* Where a sitting here happens: the panel, over the screen it was opened from (`panelPlace`). */

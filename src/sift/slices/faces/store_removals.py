@@ -16,7 +16,7 @@ from sift.kernel.access import (
     refuse_person_on,
 )
 from sift.kernel.audience import EVERY_ADMIN, NOBODY
-from sift.kernel.changes import About, announce
+from sift.kernel.changes import About, announce, who_may_see_a_file
 from sift.kernel.db import Connection, Row, in_clause
 from sift.kernel.ids import new_id
 from sift.kernel.vocabulary import (
@@ -147,7 +147,7 @@ class RemovalsStore(TracksStore):
                 # A person is what a share or a hide is attached to, so who is on a file moves
                 # what somebody may see. In the same transaction, as every filing does.
                 told = await bump_stamps_for_object(connection, ObjectType.PERSON, person_id)
-                announce(told | EVERY_ADMIN, About.LIBRARY)
+                announce(told | await who_may_see_a_file(connection), About.LIBRARY)
         return taken
 
     async def put_filed_back(self, person_id: str, rows: Sequence[FiledOff]) -> list[str]:
@@ -181,7 +181,7 @@ class RemovalsStore(TracksStore):
                     back.append(row.asset_id)
             if back:
                 told = await bump_stamps_for_object(connection, ObjectType.PERSON, person_id)
-                announce(told | EVERY_ADMIN, About.LIBRARY)
+                announce(told | await who_may_see_a_file(connection), About.LIBRARY)
         return back
 
     # --- faces somebody removed --------------------------------------------------------------
@@ -532,5 +532,5 @@ async def _bring_into_line(
         moved_by[asset_id] = (added, removed)
     # Once, over everybody who moved, in the transaction: who is on a file moves what
     # somebody may see.
-    announce(moved, About.LIBRARY)
+    announce(moved | await who_may_see_a_file(connection), About.LIBRARY)
     return moved_by

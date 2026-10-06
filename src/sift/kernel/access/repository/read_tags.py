@@ -14,6 +14,7 @@ from sift.kernel.access.constraints import (
 from sift.kernel.access.repository.core import RepositoryCore
 from sift.kernel.access.repository.entities import (
     ENTITY_SORT_SEEN,
+    TAG_BY_ID,
     TAGS_BY_ID,
     _entity_sort,
     tags_position,
@@ -160,11 +161,13 @@ class TagReads(RepositoryCore):
         """One tag, if this viewer may be shown it. See `visible_collection`."""
         if not _is_object_id(tag_id):
             return None
-        found = await self.visible_tags(viewer, [tag_id])
-        if tag_id not in found:
+        rows = await self._db.fetch_all(
+            TAG_BY_ID, self._unfiltered() | self._tag_params(viewer, tag_id=tag_id, limit=1)
+        )
+        if not rows:
             self._log_denied(viewer, tag_id)
             return None
-        return found[tag_id]
+        return _tag_from_row(rows[0])
 
     async def visible_tags(
         self, viewer: Viewer, tag_ids: Sequence[str]

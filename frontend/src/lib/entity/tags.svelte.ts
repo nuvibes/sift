@@ -244,16 +244,27 @@ export class Tags {
 	}
 
 	/**
-	 * A new name.
+	 * A new name, drawn on the press and put back if the server refuses it.
 	 *
 	 * Only the name is sent. A tag has no colour, so there is nothing to carry alongside it and
 	 * nothing to read first.
 	 */
 	async rename(id: string, name: string): Promise<Tag> {
-		const updated = await api.put<Tag>(`/tags/${id}`, { body: { name } });
+		const existing = this.items.find((tag) => tag.id === id);
+		const named = (to: string) =>
+			(this.items = this.items
+				.map((tag) => (tag.id === id ? { ...tag, name: to } : tag))
+				.sort(byUseThenName));
+		if (existing) named(name);
+		let updated: Tag;
+		try {
+			updated = await api.put<Tag>(`/tags/${id}`, { body: { name } });
+		} catch (error) {
+			if (existing) named(existing.name);
+			throw error;
+		}
 		// The server does not recount on a rename, so the count this list already holds is kept
 		// rather than taking the zero the write replies with.
-		const existing = this.items.find((tag) => tag.id === id);
 		const merged = { ...updated, asset_count: existing?.asset_count ?? updated.asset_count };
 		this.items = this.items.map((tag) => (tag.id === id ? merged : tag)).sort(byUseThenName);
 		return merged;
@@ -376,7 +387,8 @@ export class Tags {
 		);
 		// A line in each file's history, which the server may tell nobody about (see `recorded`).
 		recorded.changed();
-		await this.load();
+		// The counts follow; the press answers on the write.
+		void this.load();
 		return done;
 	}
 

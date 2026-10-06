@@ -43,6 +43,7 @@ vi.mock('$lib/api/client', () => ({
 vi.mock('$lib/shell/session.svelte', () => ({ session: { isAdmin: true } }));
 
 const FacetPanel = (await import('./FacetPanel.svelte')).default;
+const { facetCounts } = await import('./facet-counts.svelte');
 
 let host: HTMLElement | undefined;
 let drawn: Record<string, unknown> | undefined;
@@ -58,6 +59,8 @@ afterEach(() => {
 	   one test that changed them would decide what the next one opened on, and a passing check
 	   could be asserting the columns another test had left behind. */
 	localStorage.clear();
+	/* The counts are held for the tab, so one test's answers would be the next one's. */
+	facetCounts.reset();
 });
 
 /** The panel, on a screen asking nothing in particular. */
@@ -168,7 +171,12 @@ describe('what the panel asks the server for', () => {
 			dateColumnShowing(),
 			'the date column was never paged to, so the check below is empty'
 		).toBe(true);
-		expect(asked, 'the later columns were never reached').toContain('acodec');
+		/* Paged past at speed, the pages between are never asked (one batch out, the newest next). */
+		const firstFive = ['media', 'tags', 'people', 'in', 'rating'];
+		expect(
+			asked.some((key) => !firstFive.includes(key)),
+			'the later columns were never reached'
+		).toBe(true);
 		expect(asked, 'the server has no such dimension and answers 422').not.toContain('added');
 	});
 
@@ -238,7 +246,27 @@ describe('what somebody sees when the panel opens again', () => {
 		 * showing include them, so a key that ignored the vault would draw those numbers for a moment
 		 * after somebody locked it, which is the one thing locking it is for.
 		 */
-		expect(SOURCE).toMatch(/vault\.generation/);
+		const STORE = readFileSync(
+			join(dirname(fileURLToPath(import.meta.url)), 'facet-counts.svelte.ts'),
+			'utf8'
+		);
+		expect(STORE).toMatch(/function keyOf[\s\S]*?vault\.generation/);
+	});
+
+	it('opens on counts the bar asked for before it opened, with no "Counting..." frame', async () => {
+		facetCounts.ask({
+			noun: 'asset',
+			facets: ['media', 'tags', 'people', 'in', 'rating'],
+			query: {},
+			within: {}
+		});
+		await new Promise((settle) => setTimeout(settle, 0));
+		asked.length = 0;
+		draw();
+		flushSync();
+		expect(host!.textContent).toContain('video');
+		expect(host!.textContent).not.toContain('Counting');
+		expect(asked, 'the panel asked again for counts it was handed').toEqual([]);
 	});
 });
 

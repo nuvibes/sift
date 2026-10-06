@@ -47,7 +47,7 @@ class Reads:
     def __init__(self, *fingerprints: Fingerprint) -> None:
         self._fingerprints = list(fingerprints)
 
-    async def fingerprints(self) -> list[Any]:
+    async def fingerprints(self, *, within: object = None) -> list[Any]:
         return list(self._fingerprints)
 
 

@@ -37,6 +37,9 @@ NOT_RESULTS: dict[tuple[str, str], str] = {
     ("semantic_frames", "revision"): "the key the vectors of each model revision are kept under; "
     "which files are described at the current one is semantic_indexed.revision",
     ("semantic_pooled", "revision"): "the same key, for the pooled vectors",
+    ("semantic_files", "revision"): "the same key, for the files' index",
+    ("semantic_frame_keys", "revision"): "the same key, for the frames' file keys",
+    ("semantic_file_keys", "revision"): "the same key, for the files' keys",
     ("watermark_reads", "revision"): "copied from the file's scan row in the same write; the "
     "count compares watermark_scans.revision",
 }

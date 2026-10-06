@@ -12,23 +12,33 @@
 
 import { api } from '$lib/api/client';
 import type { components } from '$lib/api/schema';
+import { arrivals, downloadChanges } from '$lib/library/changes.svelte';
 
 class CreatorArt {
 	/** The names, lowercased, or null until the one request has come back. */
 	#names = $state<Set<string> | null>(null);
 	#asking: Promise<void> | null = null;
+	/* A download may have brought a picture since: the next card drawn asks again, and none before. */
+	#stale = false;
+
+	constructor() {
+		arrivals.subscribe(() => (this.#stale = true));
+		downloadChanges.subscribe(() => (this.#stale = true));
+	}
 
 	/** Whether this name has a picture. Starts the one request if nothing has yet. */
 	has(name: string): boolean {
-		if (this.#names === null) {
-			void this.load();
-			return false;
-		}
+		if (this.#names === null || this.#stale) void this.load();
+		if (this.#names === null) return false;
 		return this.#names.has(name.trim().toLowerCase());
 	}
 
 	/** Ask, once per page. A second caller waits on the first rather than making a second request. */
 	load(): Promise<void> {
+		if (this.#stale) {
+			this.#stale = false;
+			this.#asking = null;
+		}
 		this.#asking ??= api
 			.get<components['schemas']['CreatorsWithArt']>('/creator-art')
 			.then((answer) => {

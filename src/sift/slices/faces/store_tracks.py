@@ -118,6 +118,17 @@ SELECT * FROM face_tracks
 """
 
 
+#: Several people's matched faces, the surest `?` of each, in one statement for a page of cards.
+_SUREST_MATCHED_HEADS = """
+SELECT t.* FROM json_each(?) p
+  JOIN face_tracks t ON t.id IN (
+       SELECT x.id FROM face_tracks x
+        WHERE x.person_id = p.value AND x.attribution = 'matched' AND x.confidence IS NOT NULL
+        ORDER BY x.confidence DESC, x.id LIMIT ?)
+ ORDER BY t.person_id, t.confidence DESC, t.id
+"""
+
+
 # The two reads behind every face picture served, declared point reads so they run on the event
 # loop where the machine allows it: a wall of groups asks for hundreds.
 _TRACK = point_read("faces.track", "SELECT * FROM face_tracks WHERE id = ?")
@@ -404,6 +415,22 @@ class TracksStore(PicturesStore):
         the first of these on a file the viewer may see is the answer."""
         rows = await self._db.fetch_all(_SUREST_MATCHED, (person_id, limit, offset))
         return [_track(row) for row in rows]
+
+    async def surest_matched_heads(
+        self, person_ids: Sequence[str], *, each: int
+    ) -> dict[str, list[StoredTrack]]:
+        """`surest_matched`'s first page for each of these people, by person: one statement for a
+        page of cards. A person with no matched face is absent."""
+        if not person_ids or each <= 0:
+            return {}
+        rows = await self._db.fetch_all(
+            _SUREST_MATCHED_HEADS, (json.dumps(list(dict.fromkeys(person_ids))), each)
+        )
+        found: dict[str, list[StoredTrack]] = {}
+        for row in rows:
+            track = _track(row)
+            found.setdefault(str(track.person_id), []).append(track)
+        return found
 
     async def attributed_to(self, person_id: str, *, most: int) -> list[StoredTrack]:
         """ONE person's attributed appearances, most recent decision first.

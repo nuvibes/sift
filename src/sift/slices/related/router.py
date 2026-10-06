@@ -11,18 +11,15 @@ it is not one.
 
 ## Why it is not six requests
 
-Because it is one question. Every wall here is the same statement with the same filter spliced
-into it, asked at `limit=1` so the page of rows is thrown away and the scoped total is kept. Six
-requests would be six round trips for one answer, and worse, six chances for the numbers on one
-strip to have been taken at six different moments.
+Because it is one question, taken at one moment: the subject's own row (its files), one statement
+for every tab its card carries (`card_counts`), and a listing at one row for the rest.
 
-## The number and the wall come from ONE statement
+## The number and the wall answer ONE question
 
-**This is the rule that matters and it is easy to get wrong.** A count must never come from
-`facet_counts` while the wall under it comes from the listing: they are two statements over two
-populations, and the day either changes they stop agreeing, with nothing on screen to say which
-one is lying. So every number here is the `total` of the very listing the tab will draw, asked with
-the identical filter. There is no second counting path in this file and there must never be one.
+A number here is the `total` of the very listing its tab draws, or the stored answer the cards read,
+which the gate below holds to that listing. Never `facet_counts` or a count written here: two
+populations drift apart with nothing on screen to say which one is lying. A subject this viewer may
+not be shown is counted off the listings alone.
 
 **History keeps that rule the hard way.** A thread is not a table: it is several statements
 grouped by day, capped and sorted, so there is no statement that counts what it comes to, and one
@@ -41,7 +38,7 @@ library's number instead would publish the size of the set the whole model is ke
 
 **History is the exception, and it has to be.** The reads behind a thread are unscoped by design
 and rely on the caller having resolved the subject first, which is what every `.../history` route
-does. So this file makes exactly one by-id visibility read, for that one number, and answers
+does. So the subject is resolved first, by one by-id visibility read, and History answers
 nothing at all where it fails. See `_history`. Without it the one number here that is not about
 files would say a hidden tag has twelve things recorded against it while every wall beside it said
 nought.
@@ -55,7 +52,18 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from sift.kernel import wiring
-from sift.kernel.access import EntityNarrowing, Repository, Viewer, related_filter
+from sift.kernel.access import (
+    CollectionView,
+    EntityNarrowing,
+    PersonSuggestion,
+    PhotoSetView,
+    Repository,
+    SiteSuggestion,
+    SongView,
+    TagSuggestion,
+    Viewer,
+    related_filter,
+)
 from sift.kernel.access.history_entity import history_count_of_entity
 from sift.kernel.access.history_person import history_count_of_person
 from sift.kernel.db import Database
@@ -185,26 +193,61 @@ async def related_counts(
     if wanted is None:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, f"unknown kind {kind!r}")
 
+    subject = await _RESOLVE[kind](access, viewer, entity_id)
+    counts = RelatedCounts()
+    if subject is None:
+        await _count_by_listing(counts, wanted, kind, entity_id, access, viewer)
+    else:
+        # The subject's own row carries its files and their size, off the stored count the cards
+        # read, and one statement answers every other tab its card carries.
+        counts.files, counts.files_bytes = _files_of(subject)
+        cells = (await access.card_counts(viewer, kind, [entity_id]))[entity_id]
+        for wall in wanted:
+            if wall in cells:
+                setattr(counts, wall, cells[wall])
+        rest = [wall for wall in wanted if wall != "files" and wall not in cells]
+        await _count_by_listing(counts, rest, kind, entity_id, access, viewer, subject=subject)
+    counts.history = await _history(database, viewer, kind, entity_id, subject)
+    # The mark beside History, deliberately not one of the `walls`: each of those is counted off
+    # the listing its tab draws. This is a question about the RECORD (where a stash-box disagrees
+    # with it), asked through a seam because it is another slice's.
+    counts.disagreements, counts.disagreement_boxes = await waiting.disagreement_mark(
+        viewer, kind, entity_id
+    )
+    return counts
+
+
+def _files_of(subject: object) -> tuple[int, int]:
+    """The files a visible subject's row counts, and their size: its Files tab's two numbers."""
+    match subject:
+        case PersonSuggestion() | SiteSuggestion() | TagSuggestion():
+            return subject.asset_count, subject.size_bytes
+        case CollectionView() | PhotoSetView() | SongView():
+            return subject.item_count, subject.size_bytes
+    raise TypeError(f"no files count on {type(subject).__name__}")
+
+
+async def _count_by_listing(
+    counts: RelatedCounts,
+    wanted: tuple[str, ...] | list[str],
+    kind: str,
+    entity_id: str,
+    access: Repository,
+    viewer: Viewer,
+    *,
+    subject: object | None = None,
+) -> None:
+    """Each wanted tab's number off the listing that tab draws, asked at one row."""
     # The filtering every wall on this page gets. `people` is the one exception and it is handled
     # where it is counted. See `_seen_with`.
     narrowing = related_filter(**{kind: entity_id})
-    # A mapping rather than a chain of `elif`s, for the reason the kernel's `_LEAF` is one: a wall
-    # added to the table above and forgotten here fails LOUDLY instead of quietly counting nothing.
-    # A silent nothing is the worse failure: it draws a tab with no number, which is exactly the
-    # state this endpoint was built to end, and it would look like a slow request rather than a bug.
-    #
-    # Each entry makes its request when it is CALLED, not when the mapping is built. Written as
-    # plain coroutines, a person's page would build seven and await six, and the seventh would
-    # warn on every request that it was never awaited.
     # The files wall is read once and answers two fields: its total and the size of those files,
     # which are one read's two halves (`AssetPage.total_bytes`), so the two cannot describe
     # different sets.
-    files_bytes: int | None = None
 
     async def files() -> int:
-        nonlocal files_bytes
         page = await access.visible_assets(viewer, limit=_ONE, asset_filter=narrowing)
-        files_bytes = page.total_bytes
+        counts.files_bytes = page.total_bytes
         return page.total
 
     walls: dict[str, Ask] = {
@@ -247,30 +290,19 @@ async def related_counts(
         ),
         # The Music tab: the songs this page's files carry, off the very listing the tab draws.
         "songs": lambda: _total(access.list_songs(viewer, limit=_ONE, asset_filter=narrowing)),
-        "people": lambda: _people(access, viewer, kind, entity_id, narrowing),
+        "people": lambda: _people(access, viewer, kind, entity_id, narrowing, subject),
     }
 
-    counts = RelatedCounts()
     for wall in wanted:
         setattr(counts, wall, await walls[wall]())
-    counts.files_bytes = files_bytes
-    counts.history = await _history(database, access, viewer, kind, entity_id)
-    # The mark beside History, deliberately not one of the `walls`: each of those is counted off
-    # the listing its tab draws. This is a question about the RECORD (where a stash-box disagrees
-    # with it), asked through a seam because it is another slice's.
-    counts.disagreements, counts.disagreement_boxes = await waiting.disagreement_mark(
-        viewer, kind, entity_id
-    )
-
-    return counts
 
 
 async def _history(
     database: Database,
-    access: Repository,
     viewer: Viewer,
     kind: str,
     entity_id: str,
+    subject: object | None,
 ) -> int | None:
     """How many lines this thing's History tab has, or None where it may not be shown at all.
 
@@ -288,10 +320,9 @@ async def _history(
     which is what it already does for a wall this page has not got. A guest is told the same thing
     by an id that was never minted.
 
-    The one by-id read this route makes. It is the same lookup the subject's own page has already
-    done to draw anything at all, so nothing here is asking a question the page has not asked.
+    `subject` is the route's one by-id read, the lookup the subject's own page has already made.
     """
-    if await _RESOLVE[kind](access, viewer, entity_id) is None:
+    if subject is None:
         return None
     if kind == "person":
         return await history_count_of_person(database, viewer, entity_id)
@@ -310,6 +341,7 @@ async def _people(
     kind: str,
     entity_id: str,
     narrowing: object,
+    subject: object | None,
 ) -> int:
     """How many people this page's files reach, and on a PERSON's page, how many others.
 
@@ -331,5 +363,4 @@ async def _people(
     )
     if page.total == 0:
         return 0
-    themselves = await access.visible_person(viewer, entity_id)
-    return page.total - 1 if themselves is not None else page.total
+    return page.total - 1 if subject is not None else page.total

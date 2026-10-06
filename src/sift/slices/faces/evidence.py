@@ -19,6 +19,7 @@ and work that comes back after being dismissed is worse than work that was never
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import replace
 from typing import Protocol
 
 from sift.kernel.attribution import FolderFaces, FolderStamp
@@ -72,13 +73,11 @@ _LOOKED_AT = "SELECT asset_id, status FROM face_scans WHERE asset_id IN (?*)"
 # index with each group then probed by its key, and multiplied by every chunk of every folder on the
 # Folders page. The rows are identical either way; only the walk differs.
 _PILES_OVER = """
-SELECT t.pile_id AS pile_id,
-       COUNT(DISTINCT t.asset_id) AS files,
-       MIN(t.id) AS portrait
+SELECT t.pile_id AS pile_id, t.asset_id AS asset_id, MIN(t.id) AS portrait
   FROM face_tracks t
   CROSS JOIN face_piles p ON p.id = t.pile_id AND p.status = 'open'
  WHERE t.person_id IS NULL AND t.asset_id IN (?*)
- GROUP BY t.pile_id
+ GROUP BY t.pile_id, t.asset_id
 """
 
 # The people already recognized in these files, each against how many of them they are in.
@@ -88,10 +87,9 @@ SELECT t.pile_id AS pile_id,
 # without asking on the answer. A face Sift is only asking about puts nobody on its own file, so it
 # may not put anybody on a folder.
 _NAMED_OVER = """
-SELECT t.person_id AS person_id, COUNT(DISTINCT t.asset_id) AS files
+SELECT DISTINCT t.person_id AS person_id, t.asset_id AS asset_id
   FROM face_tracks t
  WHERE t.person_id IS NOT NULL AND t.asset_id IN (?*) AND t.attribution IN (?, ?)
- GROUP BY t.person_id
 """
 
 # Which of these files carry a face that says it is somebody ELSE, and none of the person's own.
@@ -124,15 +122,9 @@ SELECT DISTINCT t.asset_id AS asset_id
                     WHERE o.asset_id = t.asset_id AND o.person_id IS ?)
 """
 
-# Which of these files carry a face and none of it in the group asked about.
-_DISSENTING_OVER = """
-SELECT DISTINCT t.asset_id AS asset_id
-  FROM face_tracks t
- WHERE t.asset_id IN (?*)
-   AND t.pile_id IS NOT ?
-   AND NOT EXISTS (SELECT 1 FROM face_tracks o
-                    WHERE o.asset_id = t.asset_id AND o.pile_id IS ?)
-"""
+# The groups the faces of these files are in: a file with a face and none in a folder's leading
+# group dissents from it.
+_GROUPS_OF_FILES = "SELECT DISTINCT asset_id, pile_id FROM face_tracks WHERE asset_id IN (?*)"
 
 # The cheap whole-library read, per FILE. Turned into a per-folder number in memory against the
 # mapping the kernel supplies. See the module docstring.
@@ -275,50 +267,58 @@ class FaceEvidence:
         }
 
     async def faces_in(self, folder_id: str) -> FolderFaces:
-        assets = await self._tree.assets_under(folder_id)
-        if not assets:
-            return FolderFaces()
+        return (await self.faces_in_many([folder_id]))[folder_id]
 
-        looked_at = 0
-        with_faces = 0
-        piles: dict[str, int] = {}
-        portraits: dict[str, str] = {}
-        named: dict[str, int] = {}
-
-        for batch in _batched(assets):
+    async def faces_in_many(self, folder_ids: Sequence[str]) -> dict[str, FolderFaces]:
+        """`faces_in` for each of these folders, the faces read once for all of their files."""
+        under = await self._tree.assets_under_many(folder_ids)
+        every = list(dict.fromkeys(asset for assets in under.values() for asset in assets))
+        status: dict[str, str] = {}
+        piles_of: dict[str, dict[str, str]] = {}
+        named_of: dict[str, set[str]] = {}
+        for batch in _batched(every):
             query, bound = in_clause(_LOOKED_AT, batch)
             for row in await self._db.fetch_all(query, bound):
-                looked_at += 1
-                if str(row["status"]) != "no_faces":
-                    with_faces += 1
+                status[str(row["asset_id"])] = str(row["status"])
             query, bound = in_clause(_PILES_OVER, batch)
             for row in await self._db.fetch_all(query, bound):
-                pile_id = str(row["pile_id"])
-                piles[pile_id] = piles.get(pile_id, 0) + int(row["files"])
-                portraits.setdefault(pile_id, str(row["portrait"]))
+                piles_of.setdefault(str(row["asset_id"]), {})[str(row["pile_id"])] = str(
+                    row["portrait"]
+                )
             query, bound = in_clause(_NAMED_OVER, batch)
             for row in await self._db.fetch_all(query, [*bound, *_NAMES_THE_FILE]):
-                person_id = str(row["person_id"])
-                named[person_id] = named.get(person_id, 0) + int(row["files"])
+                named_of.setdefault(str(row["asset_id"]), set()).add(str(row["person_id"]))
 
-        dissenting: tuple[str, ...] = ()
-        if piles:
-            leader = max(piles.items(), key=lambda pair: (pair[1], pair[0]))[0]
-            found: list[str] = []
-            for batch in _batched(assets):
-                query, bound = in_clause(_DISSENTING_OVER, batch)
-                rows = await self._db.fetch_all(query, [*bound, leader, leader])
-                found.extend(str(row["asset_id"]) for row in rows)
-            dissenting = tuple(sorted(found))
-
-        return FolderFaces(
-            looked_at=looked_at,
-            with_faces=with_faces,
-            piles=piles,
-            named=named,
-            portraits=portraits,
-            dissenting=dissenting,
+        found = {
+            one: _folder_faces(assets, status, piles_of, named_of) for one, assets in under.items()
+        }
+        # Only where a folder has a leading group is anything dissenting from it.
+        led = list(
+            dict.fromkeys(
+                asset for one, assets in under.items() if found[one].piles for asset in assets
+            )
         )
+        groups_of: dict[str, set[str | None]] = {}
+        for batch in _batched(led):
+            query, bound = in_clause(_GROUPS_OF_FILES, batch)
+            for row in await self._db.fetch_all(query, bound):
+                pile = row["pile_id"]
+                groups_of.setdefault(str(row["asset_id"]), set()).add(
+                    None if pile is None else str(pile)
+                )
+        for one, faces in found.items():
+            if not faces.piles:
+                continue
+            leader = max(faces.piles.items(), key=lambda pair: (pair[1], pair[0]))[0]
+            dissenting = sorted(
+                {
+                    asset
+                    for asset in under[one]
+                    if asset in groups_of and leader not in groups_of[asset]
+                }
+            )
+            found[one] = replace(faces, dissenting=tuple(dissenting))
+        return found
 
     async def contradicting(self, person_id: str, asset_ids: Sequence[str]) -> set[str]:
         """Of these files, the ones whose faces say they are not this person's.
@@ -469,6 +469,34 @@ class FaceEvidence:
     async def withdraw_proposals(self, folder_id: str, person_id: str) -> int:
         """This folder no longer has a main group for this person: take back what is pending."""
         return await self._store.withdraw_pile_proposals(folder_id, person_id)
+
+
+def _folder_faces(
+    assets: Sequence[str],
+    status: dict[str, str],
+    piles_of: dict[str, dict[str, str]],
+    named_of: dict[str, set[str]],
+) -> FolderFaces:
+    """One folder's counts out of what was read for every folder's files. Dissent comes after."""
+    if not assets:
+        return FolderFaces()
+    looked_at = with_faces = 0
+    piles: dict[str, int] = {}
+    portraits: dict[str, str] = {}
+    named: dict[str, int] = {}
+    for asset in assets:
+        if asset in status:
+            looked_at += 1
+            if status[asset] != "no_faces":
+                with_faces += 1
+        for pile_id, portrait in piles_of.get(asset, {}).items():
+            piles[pile_id] = piles.get(pile_id, 0) + 1
+            portraits[pile_id] = min(portraits.get(pile_id, portrait), portrait)
+        for person_id in named_of.get(asset, ()):
+            named[person_id] = named.get(person_id, 0) + 1
+    return FolderFaces(
+        looked_at=looked_at, with_faces=with_faces, piles=piles, named=named, portraits=portraits
+    )
 
 
 def _batched(ids: Sequence[str]) -> list[list[str]]:

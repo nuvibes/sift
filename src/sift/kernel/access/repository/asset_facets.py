@@ -14,6 +14,7 @@ from sift.kernel.access.constraints import (
 from sift.kernel.access.sites import SITE_CONCEALED
 from sift.kernel.content.identity import VerdictProduct
 from sift.kernel.content.user_state import RESUMING
+from sift.kernel.db import point_read
 
 #: Dimensions only an admin may ask about. Not about access (every file counted is one the asker
 #: may see): `sharing` describes the decisions of the person running Sift, not the media.
@@ -348,3 +349,122 @@ def concealed_value(facet: str) -> str:
     """The clause that keeps a name this viewer may not be told about out of the grouping, or the
     empty string for a dimension nothing conceals."""
     return _CONCEALED_BY_FACET.get(facet, "")
+
+
+# --- the columns read off the stored counts, for a question that narrows nothing ----------------
+
+#: One stored count row (`c`) by the page's two vault rules: what a column counts of its files.
+_SHOWN = (
+    "CASE WHEN :hidden_only = 1 THEN CASE WHEN :reveal = 1 THEN c.concealed ELSE 0 END"
+    " ELSE c.permitted - CASE WHEN :reveal = 1 THEN 0 ELSE c.concealed END END"
+)
+
+#: Per value: the kind its count is kept under, the table naming it, the hiding per user, the
+#: column both key it by, and the memberships two values sharing one name are counted from.
+_STORED_NAMED: dict[str, tuple[str, str, str, str, str]] = {
+    "tags": ("tag", "tags", "tag_user_state", "tag_id", "asset_tags"),
+    "collections": (
+        "collection",
+        "collections",
+        "collection_user_state",
+        "collection_id",
+        "collection_items",
+    ),
+    "photo_sets": (
+        "photo_set",
+        "photo_sets",
+        "photo_set_user_state",
+        "photo_set_id",
+        "photo_set_items",
+    ),
+    "songs": ("song", "songs", "song_user_state", "song_id", "song_files"),
+}
+
+# A column grouped by NAME: each name one count row answers is read off it; a name two rows share
+# (two photo sets of one name) counts its files once, from those rows' memberships alone.
+_NAMED_COLUMN = """
+WITH named(facet_value, object_id, files) AS (
+  SELECT fx.name, c.object_id, <<SHOWN>>
+    FROM viewer_entity_counts c
+    JOIN <<TABLE>> fx ON fx.id = c.object_id
+    LEFT JOIN <<HIDING>> fxh ON fxh.<<KEY>> = fx.id AND fxh.user_id = :viewer
+   WHERE c.user_id = :viewer AND c.kind = '<<KIND>>'<<CONCEALED>>
+),
+counted(facet_value, object_id, files) AS (
+  SELECT facet_value, object_id, files FROM named
+   WHERE files > 0 AND facet_value IS NOT NULL AND facet_value <> ''
+),
+shared(facet_value) AS (
+  SELECT facet_value FROM counted GROUP BY facet_value HAVING COUNT(*) > 1
+)
+SELECT facet_value, files FROM counted
+ WHERE facet_value NOT IN (SELECT facet_value FROM shared)
+UNION ALL
+SELECT s.facet_value, COUNT(DISTINCT m.asset_id)
+  FROM shared h CROSS JOIN counted s ON s.facet_value = h.facet_value
+  CROSS JOIN <<MEMBERS>> m ON m.<<KEY>> = s.object_id
+  CROSS JOIN viewer_assets v ON v.user_id = :viewer AND v.asset_id = m.asset_id
+ WHERE (:reveal = 1 OR v.concealed = 0) AND (:hidden_only = 0 OR v.concealed = 1)
+ GROUP BY s.facet_value
+ ORDER BY files DESC, facet_value ASC
+ LIMIT :limit
+"""
+
+# People by id, named beside it.
+_PEOPLE_COLUMN = """
+SELECT c.object_id AS facet_value, <<SHOWN>> AS files, fx.name AS facet_label
+  FROM viewer_entity_counts c
+  JOIN people fx ON fx.id = c.object_id
+  LEFT JOIN person_user_state fxh ON fxh.person_id = fx.id AND fxh.user_id = :viewer
+ WHERE c.user_id = :viewer AND c.kind = 'person'<<CONCEALED>> AND <<SHOWN>> > 0
+ ORDER BY files DESC, facet_value ASC
+ LIMIT :limit
+"""
+
+# A column whose value is the count row's own key: the kind of file, a folder's name.
+_KEYED_COLUMN = """
+SELECT c.object_id AS facet_value, <<SHOWN>> AS files
+  FROM viewer_entity_counts c
+ WHERE c.user_id = :viewer AND c.kind = '<<KIND>>' AND c.object_id <> '' AND <<SHOWN>> > 0
+ ORDER BY files DESC, facet_value ASC
+ LIMIT :limit
+"""
+
+# How many files carry any of one dimension (`has_<facet>`), for its Has and No rows.
+_PRESENCE = """
+SELECT <<SHOWN>> AS files
+  FROM viewer_entity_counts c
+ WHERE c.user_id = :viewer AND c.kind = :presence AND c.object_id = 'any'
+"""
+
+
+def _column(template: str, **parts: str) -> str:
+    """A stored column's statement: module constants filled with module constants."""
+    for name, value in parts.items():
+        template = template.replace("<<" + name + ">>", value)
+    return template
+
+
+#: The Has row of a stored column, a seek on one count row.
+STORED_PRESENCE = point_read("access.facet_presence", _column(_PRESENCE, SHOWN=_SHOWN))
+
+#: Every column a stored count answers, by facet: the rest are counted from the page's statement.
+STORED_COLUMNS: dict[str, str] = {
+    facet: _column(
+        _NAMED_COLUMN,
+        SHOWN=_SHOWN,
+        KIND=kind,
+        TABLE=table,
+        HIDING=hiding,
+        KEY=key,
+        MEMBERS=members,
+        CONCEALED=concealed_value(facet),
+    )
+    for facet, (kind, table, hiding, key, members) in _STORED_NAMED.items()
+} | {
+    "people": _column(_PEOPLE_COLUMN, SHOWN=_SHOWN, CONCEALED=concealed_value("people")),
+    "media": _column(_KEYED_COLUMN, SHOWN=_SHOWN, KIND="media"),
+    # By name, as `in:` reads it. A shut vault leaves out a hidden folder's own name, so where
+    # placeholders show what it holds the column is counted from the page's statement instead.
+    "in": _column(_KEYED_COLUMN, SHOWN=_SHOWN, KIND="place"),
+}

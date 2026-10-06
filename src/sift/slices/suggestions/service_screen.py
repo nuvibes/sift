@@ -65,9 +65,30 @@ class ScreenMixin(SuggestionBase):
         # The picture for each folder on the page: sorting a folder's files is asked for these
         # and never for the whole list.
         covers = await self._access.folder_covers(viewer, [folder.id for _c, folder, _f in shown])
+        faces: dict[str, FolderFaces] = {}
+        for claim, _folder, _files in shown:
+            if claim.folder_id not in faces:
+                faces[claim.folder_id] = await self._faces.faces_in(claim.folder_id)
+        # Everything else a row asks, asked once for the page.
+        dissenting = await self._access.visible_of(
+            viewer, sorted({one for found in faces.values() for one in found.dissenting})
+        )
+        nearly = {claim.id: _the_near_miss(claim, names) for claim, _folder, _files in shown}
+        wanted = sorted({one for one in nearly.values() if one is not None})
+        people = await self._access.visible_people(viewer, wanted) if wanted else {}
+        sites = sorted({claim.folder_id for claim, _f, _n in shown if claim.kind == "site"})
+        filenames = await self._store.filenames_by_folder(sites) if sites else {}
         items = [
-            await self._resolve(
-                viewer, claim, folder, files, covers.get(folder.id, ""), names=names
+            _resolved(
+                viewer,
+                claim,
+                folder,
+                files,
+                covers.get(folder.id, ""),
+                faces=faces[claim.folder_id],
+                dissenting=dissenting,
+                near_miss=nearly[claim.id] if nearly[claim.id] in people else None,
+                filenames=filenames.get(claim.folder_id, []),
             )
             for claim, folder, files in shown
         ]
@@ -165,54 +186,57 @@ class ScreenMixin(SuggestionBase):
             scoped.append((folder, person))
         return scoped
 
-    async def _resolve(
-        self,
-        viewer: Viewer,
-        claim: Claim,
-        folder: Folder,
-        files: int,
-        cover: str,
-        *,
-        names: Sequence[tuple[str, str]],
-    ) -> Proposal:
-        """One claim as this user may be told about it, given the folder and its count."""
-        faces = await self._faces.faces_in(claim.folder_id)
-        # The dissenting files are scoped too. They are asset ids on a screen, and a screen that
-        # offered a concealed file for unticking would have named it.
-        dissenting = tuple(sorted(await self._access.visible_of(viewer, faces.dissenting)))
-        nearly = near_misses(claim.proposed, names)
-        near_miss = nearly[0] if len(nearly) == 1 else None
-        if near_miss is not None and await self._access.visible_person(viewer, near_miss) is None:
-            # A near miss is a NAME, and a name is the most identifying column there is. One this
-            # user may not be shown is not mentioned as a possible merge either.
-            near_miss = None
-        per_file: tuple[str, ...] = ()
-        if claim.kind == "site":
-            filenames = await self._store.filenames_in(claim.folder_id)
-            # One name however its files spell it: the first spelling seen stands for the rest.
-            by_fold: dict[str, str] = {}
-            for name in filenames:
-                found = person_in_filename(name, after_prefix=True)
-                if found and fold(found) not in by_fold:
-                    by_fold[fold(found)] = found
-            per_file = tuple(sorted(by_fold.values()))
-        face_id = _a_face_to_show(claim.group_id, faces)
-        return Proposal(
-            id=claim.id,
-            folder_id=claim.folder_id,
-            kind=claim.kind,
-            proposed=claim.proposed,
-            evidence=claim.evidence,
-            folder=folder.name,
-            path=folder.rel_path,
-            files=files,
-            group_id=claim.group_id,
-            face_id=face_id,
-            face_art=None if face_id is None else face_version(viewer.cache_stamp),
-            near_miss=near_miss,
-            site=claim.site,
-            is_username=claim.is_username,
-            dissenting=dissenting,
-            per_file=per_file,
-            cover=cover,
-        )
+
+def _the_near_miss(claim: Claim, names: Sequence[tuple[str, str]]) -> str | None:
+    """The one person a claim's name nearly matches, or None for none or several."""
+    nearly = near_misses(claim.proposed, names)
+    return nearly[0] if len(nearly) == 1 else None
+
+
+def _resolved(
+    viewer: Viewer,
+    claim: Claim,
+    folder: Folder,
+    files: int,
+    cover: str,
+    *,
+    faces: FolderFaces,
+    dissenting: set[str],
+    near_miss: str | None,
+    filenames: Sequence[str],
+) -> Proposal:
+    """One claim as this user may be told about it, out of what the page has already read.
+
+    The dissenting files are only the ones this user may see: a screen that offered a concealed
+    file for unticking would have named it. A near miss is a NAME, and one this user may not be
+    shown is not mentioned as a possible merge either.
+    """
+    per_file: tuple[str, ...] = ()
+    if claim.kind == "site":
+        # One name however its files spell it: the first spelling seen stands for the rest.
+        by_fold: dict[str, str] = {}
+        for name in filenames:
+            found = person_in_filename(name, after_prefix=True)
+            if found and fold(found) not in by_fold:
+                by_fold[fold(found)] = found
+        per_file = tuple(sorted(by_fold.values()))
+    face_id = _a_face_to_show(claim.group_id, faces)
+    return Proposal(
+        id=claim.id,
+        folder_id=claim.folder_id,
+        kind=claim.kind,
+        proposed=claim.proposed,
+        evidence=claim.evidence,
+        folder=folder.name,
+        path=folder.rel_path,
+        files=files,
+        group_id=claim.group_id,
+        face_id=face_id,
+        face_art=None if face_id is None else face_version(viewer.cache_stamp),
+        near_miss=near_miss,
+        site=claim.site,
+        is_username=claim.is_username,
+        dissenting=tuple(sorted({one for one in faces.dissenting if one in dissenting})),
+        per_file=per_file,
+        cover=cover,
+    )

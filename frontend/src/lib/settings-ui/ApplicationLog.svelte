@@ -268,9 +268,12 @@
 		const name = COPY.fileName(stampForAFileName(new Date()));
 		try {
 			if (bridge.canSaveLogArchive()) {
-				const saved = await bridge.saveLogArchive(name);
-				if (saved === null) throw new Error('not made');
-				toasts.show(COPY.savedTo(saved), { tone: 'success' });
+				const made = await bridge.saveLogArchive(name);
+				if ('reason' in made) {
+					toasts.show(COPY.cannotCreate(made.reason), { tone: 'error' });
+					return;
+				}
+				toasts.show(COPY.savedTo(made.file), { tone: 'success' });
 				return;
 			}
 			const archive = await api.get<Blob>('/logs/archive', { asBlob: true });
@@ -365,7 +368,7 @@
 				onclick={() => void download()}
 				busy={downloading}
 			>
-				{COPY.download}
+				{downloading ? COPY.creating : COPY.download}
 			</Button>
 			<span class="trailer">{COPY.downloadTrailer}</span>
 		</div>

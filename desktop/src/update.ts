@@ -55,7 +55,10 @@ const MAX_FEED_BYTES = 256 * 1024;
 /** What an update turned out to be. Every failure is named, because every one is actionable. */
 export type UpdateOutcome =
 	| { ok: true; version: string }
-	| { ok: false; reason: 'none' | 'unreachable' | 'incomplete' | 'unverified' | 'failed' };
+	| {
+			ok: false;
+			reason: 'none' | 'unreachable' | 'incomplete' | 'unverified' | 'failed';
+	  };
 
 /** The signed description of one release. Every field is covered by the signature. */
 export interface Manifest {
@@ -250,6 +253,15 @@ export interface LaunchHooks {
 	 * run. Told the version about to be installed, which an ask from another computer answers with
 	 * before the backend it came through stops. */
 	beforeLaunch?: (version: string) => Promise<void>;
+	/** After the installer is opened: this copy leaves, so the installer never finds it running.
+	 *  The shell's own quit by default; a test hands in a fake. */
+	afterLaunch?: () => void;
+}
+
+/** Through `before-quit`, which lets a close-to-tray window close, so the installer never finds
+ *  this copy running and stops it by force; a test hands in its own. */
+function leaveForTheInstaller(hooks: LaunchHooks): void {
+	(hooks.afterLaunch ?? (() => app.quit()))();
 }
 
 export async function applyUpdate(
@@ -334,5 +346,6 @@ export async function applyUpdate(
 	await hooks.beforeLaunch?.(manifest.version);
 	const failure = await shell.openPath(target);
 	if (failure !== '') return { ok: false, reason: 'failed' };
+	leaveForTheInstaller(hooks);
 	return { ok: true, version: manifest.version };
 }

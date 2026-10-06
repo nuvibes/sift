@@ -14,7 +14,7 @@
 	 */
 	import SectionHeading from '$lib/components/common/SectionHeading.svelte';
 	import DestinationList, { type Destination } from '$lib/components/shell/DestinationList.svelte';
-	import FullAmountRow from '$lib/components/shell/FullAmountRow.svelte';
+	import TurboModeRow from '$lib/components/shell/TurboModeRow.svelte';
 	import PageFrame from '$lib/components/shell/PageFrame.svelte';
 	import PageHeader from '$lib/components/shell/PageHeader.svelte';
 	import { session } from '$lib/shell/session.svelte';
@@ -64,7 +64,7 @@
 
 	<div class="section-stack">
 		<!-- The rail's leaf or bolt, on the device that has no rail; nothing while it has nothing to say. -->
-		<FullAmountRow />
+		<TurboModeRow />
 		<SectionHeading>Settings</SectionHeading>
 		{#each groups as group (group.heading)}
 			<SectionHeading band>{group.heading}</SectionHeading>

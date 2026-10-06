@@ -1113,3 +1113,143 @@ def test_the_label_is_for_a_person_and_says_only_what_it_knows() -> None:
     # A probe that could not name a part leaves it out rather than saying "Unknown".
     assert _report().profile_label == "16 threads"
     assert _report(gpu_cards=(Card(name=None),)).profile_label == "16 threads"
+
+
+# --- the three programs' answers, kept between starts ---------------------------------------
+
+
+def _counted_programs(monkeypatch: pytest.MonkeyPatch, encoders: list[frozenset[str]]) -> list[int]:
+    asked: list[int] = []
+
+    async def _fake_encoders(_: Settings) -> frozenset[str]:
+        asked.append(1)
+        return encoders[0]
+
+    async def _named() -> list[Card]:
+        return [Card(name="A Card", driver="1.0", vram_bytes=8 * 2**30, can_compute=True)]
+
+    monkeypatch.setattr(hardware, "_ffmpeg_encoders", _fake_encoders)
+    monkeypatch.setattr(hardware, "_nvidia_identity", _named)
+    monkeypatch.setattr(hardware, "_nvidia_present", lambda: True)
+    monkeypatch.setattr(hardware, "_render_node_present", lambda: False)
+    monkeypatch.setattr(hardware, "_amd_compute_present", lambda: False)
+    return asked
+
+
+@pytest.mark.unit
+async def test_a_start_uses_the_programs_answers_the_last_start_kept(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    asked = _counted_programs(monkeypatch, [REAL_ENCODERS])
+    tool = tmp_path / "ffmpeg.exe"
+    tool.write_bytes(b"a build")
+    settings = Settings(ffmpeg_path=str(tool))
+    kept = tmp_path / "hardware-probe.json"
+
+    first = await probe(settings, kept=kept)
+    second = await probe(settings, kept=kept)
+
+    assert asked == [1]
+    assert (first.answers_kept, second.answers_kept) == (False, True)
+    assert second.transcode_encoders == first.transcode_encoders
+    assert second.gpu_cards == first.gpu_cards
+    assert second.profile == first.profile
+
+
+@pytest.mark.unit
+async def test_a_changed_ffmpeg_is_asked_again_at_once(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    asked = _counted_programs(monkeypatch, [REAL_ENCODERS])
+    tool = tmp_path / "ffmpeg.exe"
+    tool.write_bytes(b"a build")
+    settings = Settings(ffmpeg_path=str(tool))
+    kept = tmp_path / "hardware-probe.json"
+
+    await probe(settings, kept=kept)
+    tool.write_bytes(b"a newer build")
+    again = await probe(settings, kept=kept)
+
+    assert asked == [1, 1]
+    assert again.answers_kept is False
+
+
+@pytest.mark.unit
+async def test_without_a_kept_file_nothing_is_kept(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    asked = _counted_programs(monkeypatch, [REAL_ENCODERS])
+    tool = tmp_path / "ffmpeg.exe"
+    tool.write_bytes(b"a build")
+
+    await probe(Settings(ffmpeg_path=str(tool)))
+    await probe(Settings(ffmpeg_path=str(tool)))
+
+    assert asked == [1, 1]
+
+
+@pytest.mark.unit
+async def test_asked_again_after_the_start_the_next_one_takes_the_new_answers(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    answers = [REAL_ENCODERS]
+    _counted_programs(monkeypatch, answers)
+    tool = tmp_path / "ffmpeg.exe"
+    tool.write_bytes(b"a build")
+    settings = Settings(ffmpeg_path=str(tool))
+    kept = tmp_path / "hardware-probe.json"
+    await probe(settings, kept=kept)
+    running = await probe(settings, kept=kept)
+
+    answers[0] = frozenset()
+    assert await hardware.reprobe(settings, running, kept=kept) is True
+    after = await probe(settings, kept=kept)
+
+    assert after.answers_kept is True
+    assert after.transcode_encoders == ()
+    assert await hardware.reprobe(settings, after, kept=kept) is False
+
+
+@pytest.mark.unit
+async def test_a_kept_answer_is_never_used_for_an_ffmpeg_that_cannot_be_found(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    asked = _counted_programs(monkeypatch, [REAL_ENCODERS])
+    settings = Settings(ffmpeg_path=str(tmp_path / "not-here.exe"))
+    kept = tmp_path / "hardware-probe.json"
+
+    report = await probe(settings, kept=kept)
+    await probe(settings, kept=kept)
+
+    assert asked == [1, 1]
+    assert not kept.exists()
+    assert await hardware.reprobe(settings, report, kept=kept) is False
+
+
+@pytest.mark.unit
+async def test_a_kept_file_that_cannot_be_read_or_written_is_asked_past(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    asked = _counted_programs(monkeypatch, [REAL_ENCODERS])
+    tool = tmp_path / "ffmpeg.exe"
+    tool.write_bytes(b"a build")
+    settings = Settings(ffmpeg_path=str(tool))
+    garbled = tmp_path / "garbled.json"
+    garbled.write_text("{not json", encoding="utf-8")
+    unwritable = tmp_path / "a-file" / "hardware-probe.json"
+    (tmp_path / "a-file").write_text("", encoding="utf-8")
+
+    await probe(settings, kept=garbled)
+    await probe(settings, kept=unwritable)
+    await probe(settings, kept=unwritable)
+
+    assert asked == [1, 1, 1]
+
+
+@pytest.mark.unit
+def test_a_kept_key_needs_ffmpeg_to_be_readable(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    gone = str(tmp_path / "ffmpeg.exe")
+    monkeypatch.setattr("shutil.which", lambda _: gone)
+    assert hardware._kept_key(Settings(ffmpeg_path=gone), cuda=False) is None

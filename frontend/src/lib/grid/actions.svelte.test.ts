@@ -443,3 +443,40 @@ describe('a move from the bar', () => {
 		expect(mocked.post).not.toHaveBeenCalled();
 	});
 });
+
+describe('removing files', () => {
+	function wall(items: Actionable[]) {
+		const forget = vi.fn();
+		const refresh = vi.fn();
+		const actions = new AssetActions<Actionable>({
+			lookup: (id) => items.find((one) => one.id === id),
+			selection: new Selection(),
+			forget,
+			refresh
+		});
+		return { actions, forget, refresh };
+	}
+
+	it('drops the rows on the press, before the server answers', async () => {
+		let answer: (value: unknown) => void = () => {};
+		mocked.post.mockReturnValueOnce(new Promise((resolve) => (answer = resolve)) as never);
+		const { actions, forget, refresh } = wall([file('a'), file('b')]);
+		const removing = actions.remove(['a', 'b'], 'sift');
+		expect(forget.mock.calls.map((call) => call[0])).toEqual(['a', 'b']);
+		answer({ ...done, changed: 2 });
+		await removing;
+		expect(refresh).not.toHaveBeenCalled();
+	});
+
+	it('reads the rows back when the server refuses the whole set, or part of it', async () => {
+		mocked.post.mockRejectedValueOnce(new Error('down'));
+		const whole = wall([file('a')]);
+		await whole.actions.remove(['a'], 'sift');
+		expect(whole.refresh).toHaveBeenCalledTimes(1);
+
+		mocked.post.mockResolvedValueOnce({ ...done, changed: 1, skipped: 1 } as never);
+		const part = wall([file('a'), file('b')]);
+		await part.actions.remove(['a', 'b'], 'sift');
+		expect(part.refresh).toHaveBeenCalledTimes(1);
+	});
+});

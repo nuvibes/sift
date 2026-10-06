@@ -730,7 +730,7 @@ class Fingerprints:
     def __init__(self, *rows: tuple[str, str]) -> None:
         self._rows = rows
 
-    async def fingerprints(self) -> list[Any]:
+    async def fingerprints(self, *, within: object = None) -> list[Any]:
         from dataclasses import make_dataclass
 
         Row = make_dataclass(

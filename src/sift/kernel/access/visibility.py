@@ -38,6 +38,7 @@ import re
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
 
+from sift.kernel.access import visibility_panel
 from sift.kernel.access.sites import FILES_SITES_REACH, SITE_REACH
 from sift.kernel.access.viewer import Viewer, reveals_existence
 from sift.kernel.db import (
@@ -68,7 +69,7 @@ def _filled(template: str, **names: str) -> str:
 
 
 COMPONENT = "visibility"
-VERSION = 15
+VERSION = 16
 
 # --- the tables ----------------------------------------------------------------------------
 
@@ -456,6 +457,7 @@ _KERNEL_COUNTED: tuple[Counted, ...] = (
         keys=(("id",), ("root_id", "rel_path")),
         sized=True,
     ),
+    *visibility_panel.kinds(),
     # A SITE: every file filed under a username on it or on any site below it, counted once. Over
     # `asset_usernames`, like the `username` kind, so a filing arriving or going moves both through
     # the one set of triggers on that table; a username moving site, a label moving network and
@@ -1595,7 +1597,6 @@ def _triggers(halves: _Recompute, watched: Sequence[Counted]) -> list[tuple[str,
         table: str,
         before: Sequence[str],
         after: Sequence[str],
-        *,
         when: str = "",
     ) -> None:
         # The guard is the BEFORE half's alone: AFTER fires only for a change that landed.
@@ -1702,6 +1703,9 @@ def _triggers(halves: _Recompute, watched: Sequence[Counted]) -> list[tuple[str,
             ],
         ),
     )
+    by_table = _watching(watched)
+    panel = visibility_panel.triggers(halves, by_table.pop("assets", None))
+    add_pair(*panel.renamed)
 
     # A file going. Its rows and counts are taken away BEFORE the row goes, while its copies
     # and memberships are still there to say what the counts were. The foreign keys then cascade
@@ -1719,15 +1723,8 @@ def _triggers(halves: _Recompute, watched: Sequence[Counted]) -> list[tuple[str,
         ),
     )
 
-    # A file's SIZE or running time changing (the probe writes the second after the file is
-    # counted): the file taken away with its old values and given back with its new ones.
-    add_pair(
-        "vis_assets_size",
-        "UPDATE OF size_bytes, duration_ms",
-        "assets",
-        *halves.split(_EVERY_USER_ONE_FILE.format(asset="NEW.id")),
-        when="OLD.size_bytes IS NOT NEW.size_bytes OR OLD.duration_ms IS NOT NEW.duration_ms",
-    )
+    # A file's SIZE, running time or a column a kind counts off its own row changing.
+    add_pair(*panel.sized)
 
     # A copy of a file, or a membership of one, appearing, changing or going.
     #
@@ -1741,7 +1738,6 @@ def _triggers(halves: _Recompute, watched: Sequence[Counted]) -> list[tuple[str,
     # the engine fires it before deciding whether the row will land, and a write it then ignores
     # as a duplicate would leave the taken half standing with nothing to put it back. A delete
     # needs no guard: a row that is not there fires nothing.
-    by_table = _watching(watched)
     unwatched = sorted(set(_MEMBERSHIP_TABLES) - set(by_table))
     if unwatched:  # pragma: no cover (an edit that took a membership table out of the kinds)
         raise RuntimeError(f"membership tables {unwatched} are not counted, so carry no keys")
@@ -1940,9 +1936,10 @@ def _triggers(halves: _Recompute, watched: Sequence[Counted]) -> list[tuple[str,
 
     # The steps every trigger above calls, each written once (see `RECOMPUTE`).
     if not halves.version_13:
+        made += panel.emptied
         for step, body in (
             ("take", halves.taken),
-            ("give", halves.given),
+            ("give", panel.given),
             ("user", halves.rebuilt("NEW.user_id")),
         ):
             name = "vis_recompute_" + step
@@ -2366,6 +2363,9 @@ async def initialize(connection: Connection, on_disk: int) -> None:
     # Version 15: the running time beside each size, counted from the stored rows.
     if 13 <= on_disk < 15:
         await time_the_counts(connection)
+    # Version 16: the Filter panel's kinds counted (every step above counted them already).
+    if on_disk == 15:
+        await visibility_panel.count_the_panel(connection)
 
 
 async def _add_columns(connection: Connection, table: str, columns: Sequence[str]) -> None:

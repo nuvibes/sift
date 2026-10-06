@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { refusedMark } from '$lib/swap/refused';
-	import { reloadOnLibraryChange } from '$lib/library/changes.svelte';
+	import { HeldNewcomers, reloadOnLibraryChange } from '$lib/library/changes.svelte';
+	import { Button } from '$lib/components/common';
 	/*
 	 * The tag screen: every tag, what it holds, and the editing of it.
 	 *
@@ -103,7 +104,24 @@
 	   it again on a new question would start the new one at the old one's position. */
 	let arriving = true;
 
-	const shown = $derived(tags.items);
+	/* What a bell brings while somebody is reading further down is held, so nothing they are
+	   reading moves; at the top it comes straight in and the rows below slide. */
+	const held = new HeldNewcomers<(typeof tags.items)[number]>();
+	let fromBell = false;
+	$effect(() => {
+		const items = tags.items;
+		untrack(() => held.take(items, fromBell));
+	});
+	const shown = $derived(held.shown);
+	/* One function for the life of the screen: a new one each render would re-attach the wall. */
+	function measureWall(wall: HTMLElement): () => void {
+		const stop = held.watch(wall);
+		const measured = paging.cards(wall);
+		return () => {
+			stop();
+			measured();
+		};
+	}
 
 	/*
 	 * What this wall offers the bar above it.
@@ -285,7 +303,8 @@
 	/* Read the wall again, at the page, the order and the search it is showing. Called bare it
 	   would ask for the first page at a size nothing chose. See the note below. */
 	function reread() {
-		void tags.fill(paging, order, undefined, prefix);
+		fromBell = true;
+		void tags.fill(paging, order, undefined, prefix).finally(() => (fromBell = false));
 	}
 
 	const verbs = new WallVerbs({
@@ -344,7 +363,7 @@
 	total={tags.total}
 	loading={tags.loading}
 	failed={tags.failed ? "The tags couldn't be loaded." : null}
-	measure={paging.cards}
+	measure={measureWall}
 	page={paging.showing}
 	empty={emptyWallSays(
 		'tags',
@@ -367,6 +386,16 @@
 			onlast={() => paging.last(tags.total)}
 			onjump={(position) => paging.goTo(position - 1, tags.total)}
 		/>
+	{/snippet}
+
+	<!-- Beside the title, so the line coming and going moves nothing under it. -->
+	{#snippet beside()}
+		{#if held.waiting > 0}
+			<Button size="small" tone="secondary" icon="arrow_upward" onclick={() => held.letIn()}>
+				{held.waiting.toLocaleString()}
+				new
+			</Button>
+		{/if}
 	{/snippet}
 
 	{#snippet controls()}

@@ -519,7 +519,7 @@ REJECTIONS_PAGE = 500
 @router.get("/quarantine", response_model=QuarantineView)
 async def quarantined(
     library: Annotated[LibraryStore, Depends(wiring.library)],
-    service: Annotated[LibraryService, Depends(_service)],
+    database: Annotated[Database, Depends(wiring.database)],
     settings: Annotated[Settings, Depends(wiring.settings)],
     preferences: Annotated[SettingsSeam, Depends(wiring.settings_hub)],
     viewer: Annotated[Viewer, Depends(require_admin)],
@@ -538,6 +538,9 @@ async def quarantined(
     Admin-only, like everything else here: it names files on the server's disk.
     """
     roots = await library.roots()
+    refused, counts = await quarantine.refused_in_roots(
+        database, [root.id for root in roots], limit=REJECTIONS_PAGE
+    )
     left_alone = [
         RootRejectionsView(
             root_id=root.id,
@@ -551,9 +554,9 @@ async def quarantined(
                     first_seen_at=int(row["first_seen_at"]),
                     last_seen_at=int(row["last_seen_at"]),
                 )
-                for row in await service.rejections_in_root(root.id, limit=REJECTIONS_PAGE)
+                for row in refused.get(root.id, [])
             ],
-            rejections_total=await service.rejection_count_in_root(root.id),
+            rejections_total=counts.get(root.id, 0),
         )
         for root in roots
     ]

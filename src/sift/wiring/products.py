@@ -108,7 +108,7 @@ def _register_pictures(
                 governed_by=picture.job_type,
                 # A press on a file that has this picture makes it again: `build_picture` honours
                 # the key. See `Product.again`.
-                doing=f"Making {picture.label.lower()} for",
+                doing=f"Creating {picture.label.lower()} for",
                 again=True,
             )
         )

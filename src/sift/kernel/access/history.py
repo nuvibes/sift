@@ -235,7 +235,6 @@ __all__ = [
     "actor_of_source",
     "box_filled_in",
     "by_of",
-    "count_of_asset_history",
     "details_of",
     "enriched_by_box",
     "episodes",
@@ -810,43 +809,3 @@ def _pressed_fingerprints(event: Event, pressers: Pressers) -> Event:
         actor_name=actor_name,
         pieces=say.fingerprinted_by(by, empty=empty),
     )
-
-
-async def count_of_asset_history(
-    database: Database,
-    access: Repository,
-    viewer: Viewer,
-    asset_id: str,
-    *,
-    limit: int = MAX_LIMIT,
-) -> int:
-    """How many lines a file's history pane will have, without drawing them: the history route's
-    `total`, which is the whole thread up to the most one read assembles, never one page of it.
-
-    For the NUMBER ON THE TAB, which has to be there before anybody presses it, as the About and
-    Media counts are.
-
-    ## It is the length of the same list, and that is the decision
-
-    A count assembled separately (a `COUNT(*)` union over the tables this file reads) is the
-    cheaper shape and it is the wrong one, because the number would then be able to disagree with
-    the pane. The disagreement is not hypothetical: a move or a decision that was TAKEN BACK is two
-    lines and one row, the sharing lines are an admin's only, and the whole thing is capped at
-    `limit` with the newest kept. Three rules, in two places, in two languages, and the way that
-    fails is the worst way a count can fail: the tab says nine, somebody presses it to see the nine,
-    and the pane draws seven. A number that changes under the hand that reaches for it is worse than
-    no number.
-
-    So there is one assembly and this asks it how long it is. What it does NOT do is ask for the
-    Undo: `final_queues` decides whether an event carries one, which changes no event's existence,
-    so this needs neither the registry nor the workbench to get the same answer.
-
-    ## What it costs
-
-    The reads, and almost nothing else. The dozen point reads below are the whole expense of a
-    history and any count worth trusting has to run them too; what is skipped here is the second
-    half (the lookup of users' names and the sentences), which is a handful of dataclasses. The
-    trade being made is a dozen point reads on the file's own detail read, and it buys a strip whose
-    three numbers are all true at the moment it is drawn.
-    """
-    return len(await history_of_asset(database, access, viewer, asset_id, limit=limit))

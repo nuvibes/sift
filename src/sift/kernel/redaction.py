@@ -8,6 +8,7 @@ stay, since a diagnosis needs them. Standard library only, so it runs where nati
 
 from __future__ import annotations
 
+import functools
 import json
 import os
 import re
@@ -96,6 +97,14 @@ _SECRET_VALUE_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"(?i)\b(bearer|basic)\s+\S+"),
     _KEY_LED_SECRET,
     re.compile(r"\b[A-Za-z0-9+/]{23,}={1,2}(?![A-Za-z0-9+/=])"),
+)
+
+
+# What every secret rule needs somewhere in a value; a value with none of it skips all eight.
+_SECRET_HINT = re.compile(
+    r"://|\t|\\t|[A-Za-z0-9_\-]{32,}|[A-Za-z0-9+/]{23,}="
+    r"|(?i:cookie|address|bearer|basic|password|passwd|pwd|secret|api[_-]?key|apikey"
+    r"|token|sessionid|phpsessid|session[_-]?id)"
 )
 
 
@@ -213,40 +222,66 @@ def _own_hostname() -> str | None:
 
 _OS_USERNAME = _own_username()
 _HOSTNAME = _own_hostname()
+_hostname_pattern: tuple[str, re.Pattern[str]] | None = None
+
+
+def _hostname_matcher() -> re.Pattern[str] | None:
+    """The machine's name as a word, compiled once per name (a test may set another)."""
+    global _hostname_pattern
+    if not _HOSTNAME:
+        return None
+    if _hostname_pattern is None or _hostname_pattern[0] != _HOSTNAME:
+        _hostname_pattern = (_HOSTNAME, re.compile(rf"(?i)\b{re.escape(_HOSTNAME)}\b"))
+    return _hostname_pattern[1]
 
 
 def _hide_own_names(text: str) -> str:
     """The account and machine names wherever they appear: `/data/kate`, an ffmpeg error."""
     result = text
 
-    if _OS_USERNAME:
+    if _OS_USERNAME and _OS_USERNAME in result:
         for sep in ("/", "\\"):
             result = result.replace(f"{sep}{_OS_USERNAME}{sep}", f"{sep}{REDACTED}{sep}")
             if result.endswith(f"{sep}{_OS_USERNAME}"):
                 result = result[: -len(_OS_USERNAME)] + REDACTED
 
-    if _HOSTNAME:
-        result = re.sub(rf"(?i)\b{re.escape(_HOSTNAME)}\b", REDACTED, result)
+    if _HOSTNAME and _HOSTNAME.lower() in result.lower():
+        matcher = _hostname_matcher()
+        if matcher is not None:
+            result = matcher.sub(REDACTED, result)
 
     return result
+
+
+# What every home-segment and path rule needs somewhere in the text, in a decoded value or in a
+# JSON line (whose backslashes are doubled: a single one is still inside the pair).
+_HOME_HINTS = ("/home/", "/users/", "/volumes/", "users\\", "\\\\")
+
+
+def _may_hold_a_home(text: str) -> bool:
+    lowered = text.lower()
+    return any(hint in lowered for hint in _HOME_HINTS)
 
 
 def hide_identity(value: str) -> str:
     """Names out of free text, each ending at whitespace unless a separator ends it."""
     result = value
-    for pattern in _HOME_SEGMENT_PATTERNS:
-        result = pattern.sub(lambda m: m.group(1) + REDACTED, result)
+    if _may_hold_a_home(result):
+        for pattern in _HOME_SEGMENT_PATTERNS:
+            result = pattern.sub(lambda m: m.group(1) + REDACTED, result)
     return _hide_own_names(result)
 
 
 def hide_identity_in_path(value: str) -> str:
     """Names out of a value that is wholly a path."""
     result = value
-    for pattern in _PATH_SEGMENT_PATTERNS:
-        result = pattern.sub(lambda m: m.group(1) + REDACTED, result)
+    if _may_hold_a_home(result):
+        for pattern in _PATH_SEGMENT_PATTERNS:
+            result = pattern.sub(lambda m: m.group(1) + REDACTED, result)
     return _hide_own_names(result)
 
 
+@functools.lru_cache(maxsize=4096)
 def _key_is_secret(key: str) -> bool:
     lowered = key.lower()
     if lowered in _ALLOWED_KEYS:
@@ -254,6 +289,7 @@ def _key_is_secret(key: str) -> bool:
     return any(part in lowered for part in _SECRET_KEY_PARTS)
 
 
+@functools.lru_cache(maxsize=4096)
 def _key_is_personal(key: str) -> bool:
     lowered = key.lower()
     if lowered in _ALLOWED_KEYS:
@@ -269,6 +305,21 @@ def _key_is_pathlike(key: str) -> bool:
     return any(part in lowered for part in _PATHLIKE_KEY_PARTS)
 
 
+def _redact_text(value: str, personal: bool) -> str:
+    """Free text: the secret rules where a hint of one is present, then names and addresses."""
+    result = value
+    if _SECRET_HINT.search(result) is not None:
+        for pattern in _SECRET_VALUE_PATTERNS:
+            result = pattern.sub(_redact_secret, result)
+    if personal:
+        # Paths arrive inside tracebacks and tool output, under no key.
+        result = hide_identity(result)
+        if "@" in result or ' - "' in result:
+            for pattern in _PII_VALUE_PATTERNS:
+                result = pattern.sub(REDACTED, result)
+    return result
+
+
 def redact(value: Any, _key: str = "", *, personal: bool) -> Any:
     """Credentials always, and personal identifiers when `personal` says so."""
     if _key and _key_is_secret(_key):
@@ -281,15 +332,7 @@ def redact(value: Any, _key: str = "", *, personal: bool) -> Any:
         return REDACTED
 
     if isinstance(value, str):
-        result = value
-        for pattern in _SECRET_VALUE_PATTERNS:
-            result = pattern.sub(_redact_secret, result)
-        if personal:
-            # Paths arrive inside tracebacks and tool output, under no key.
-            result = hide_identity(result)
-            for pattern in _PII_VALUE_PATTERNS:
-                result = pattern.sub(REDACTED, result)
-        return result
+        return _redact_text(value, personal)
 
     if isinstance(value, dict):
         return {k: redact(v, str(k), personal=personal) for k, v in value.items()}

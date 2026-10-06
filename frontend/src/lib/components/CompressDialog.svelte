@@ -48,6 +48,7 @@
 		type Preset
 	} from '$lib/library/compress.svelte';
 	import { toasts } from '$lib/shell/toasts.svelte';
+	import { libraryChanges, whenChanged } from '$lib/library/changes.svelte';
 
 	interface Props {
 		open?: boolean;
@@ -146,6 +147,20 @@
 			})
 			.finally(() => {
 				asking = false;
+			});
+	});
+
+	/* A change elsewhere while open (a file gone, a Kept local set) asks the same question again in
+	   place: the answer drawn stays until a different one lands. */
+	whenChanged(libraryChanges, () => {
+		if (!open || assetIds.length === 0 || asking) return;
+		const asked = { ...request };
+		void askServer(asked)
+			.then((result) => {
+				if (open && JSON.stringify(result) !== JSON.stringify(answer)) answer = result;
+			})
+			.catch(() => {
+				// The answer as drawn stays.
 			});
 	});
 

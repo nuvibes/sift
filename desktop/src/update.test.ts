@@ -11,7 +11,14 @@ import { generateKeyPairSync, sign as signWith } from 'node:crypto';
 
 import { describe, expect, it } from 'vitest';
 
-import { PUBLIC_KEY_BASE64, compareVersions, feedAddress, DEFAULT_FEED_URL, manifestFrom, signatureIsGood } from './update';
+import {
+	PUBLIC_KEY_BASE64,
+	compareVersions,
+	feedAddress,
+	DEFAULT_FEED_URL,
+	manifestFrom,
+	signatureIsGood
+} from './update';
 
 /* A minisign key, in the published form: two bytes naming the algorithm, eight of key id, then the
  * raw Ed25519 key. Built here because the real key's private half is deliberately not anywhere a
@@ -74,7 +81,9 @@ describe('signatureIsGood', () => {
 
 	it('refuses a signature carrying somebody else key id', () => {
 		const pair = aKeyPair();
-		const wrongId = signatureFile(CONTENT, pair, { keyId: Buffer.alloc(8, 0xff) });
+		const wrongId = signatureFile(CONTENT, pair, {
+			keyId: Buffer.alloc(8, 0xff)
+		});
 
 		expect(signatureIsGood(CONTENT, wrongId, pair.published)).toBe(false);
 	});
@@ -118,7 +127,11 @@ describe('signatureIsGood', () => {
 });
 
 describe('manifestFrom', () => {
-	const GOOD = { version: '0.2.1', installer: 'Sift-0.2.1-x64-setup.exe', sha256: 'a'.repeat(64) };
+	const GOOD = {
+		version: '0.2.1',
+		installer: 'Sift-0.2.1-x64-setup.exe',
+		sha256: 'a'.repeat(64)
+	};
 
 	it('reads the three fields a release carries', () => {
 		expect(manifestFrom(JSON.stringify(GOOD))).toEqual(GOOD);
@@ -174,7 +187,9 @@ describe('the feed address', () => {
 	it('is Sift own unless the settings file names another', () => {
 		expect(feedAddress(null)).toBe(DEFAULT_FEED_URL);
 		expect(feedAddress('  ')).toBe(DEFAULT_FEED_URL);
-		expect(feedAddress('https://mirror.example/latest.json')).toBe('https://mirror.example/latest.json');
+		expect(feedAddress('https://mirror.example/latest.json')).toBe(
+			'https://mirror.example/latest.json'
+		);
 	});
 });
 
@@ -195,13 +210,7 @@ import * as nodePath from 'node:path';
 
 import { afterEach, beforeEach } from 'vitest';
 
-import {
-	fetchAnswers,
-	openedPaths,
-	paths,
-	reply,
-	resetElectronStub
-} from '../test/electron-stub';
+import { fetchAnswers, openedPaths, paths, reply, resetElectronStub } from '../test/electron-stub';
 import { applyUpdate } from './update';
 
 const INSTALLER = Buffer.from('this stands in for a 300 MB installer');
@@ -211,9 +220,18 @@ function releaseFeed(tag = 'v0.2.1') {
 	return {
 		tag_name: tag,
 		assets: [
-			{ name: 'Sift-0.2.1-x64-setup.exe', browser_download_url: 'https://x/setup.exe' },
-			{ name: 'Sift-0.2.1-x64-setup.exe.sha256', browser_download_url: 'https://x/setup.sha256' },
-			{ name: 'Sift-0.2.1-x64-setup.exe.manifest.json', browser_download_url: 'https://x/manifest' },
+			{
+				name: 'Sift-0.2.1-x64-setup.exe',
+				browser_download_url: 'https://x/setup.exe'
+			},
+			{
+				name: 'Sift-0.2.1-x64-setup.exe.sha256',
+				browser_download_url: 'https://x/setup.sha256'
+			},
+			{
+				name: 'Sift-0.2.1-x64-setup.exe.manifest.json',
+				browser_download_url: 'https://x/manifest'
+			},
 			{
 				name: 'Sift-0.2.1-x64-setup.exe.manifest.json.minisig',
 				browser_download_url: 'https://x/manifest.minisig'
@@ -262,7 +280,9 @@ describe('applyUpdate', () => {
 		const pair = aKeyPair();
 		queue(INSTALLER, pair);
 
-		const outcome = await applyUpdate('https://feed', pair.published, { running: RUNNING });
+		const outcome = await applyUpdate('https://feed', pair.published, {
+			running: RUNNING
+		});
 
 		expect(outcome).toEqual({ ok: true, version: '0.2.1' });
 		expect(openedPaths).toHaveLength(1);
@@ -286,6 +306,36 @@ describe('applyUpdate', () => {
 		expect(openedPaths).toHaveLength(1);
 	});
 
+	it('leaves once the installer is open, and only then', async () => {
+		const pair = aKeyPair();
+		queue(INSTALLER, pair);
+		const leftWhenOpened: number[] = [];
+
+		const outcome = await applyUpdate('https://feed', pair.published, {
+			running: RUNNING,
+			afterLaunch: () => {
+				leftWhenOpened.push(openedPaths.length);
+			}
+		});
+
+		expect(outcome).toEqual({ ok: true, version: '0.2.1' });
+		expect(leftWhenOpened).toEqual([1]);
+	});
+
+	it('stays for a release that does not verify', async () => {
+		queue(INSTALLER, aKeyPair());
+		let left = 0;
+
+		await applyUpdate('https://feed', aKeyPair().published, {
+			running: RUNNING,
+			afterLaunch: () => {
+				left += 1;
+			}
+		});
+
+		expect(left).toBe(0);
+	});
+
 	it('stops nothing for a release that does not verify', async () => {
 		queue(INSTALLER, aKeyPair());
 		let stopped = 0;
@@ -305,7 +355,9 @@ describe('applyUpdate', () => {
 	it('launches nothing when the signature is not this key', async () => {
 		queue(INSTALLER, aKeyPair());
 
-		const outcome = await applyUpdate('https://feed', aKeyPair().published, { running: RUNNING });
+		const outcome = await applyUpdate('https://feed', aKeyPair().published, {
+			running: RUNNING
+		});
 
 		expect(outcome).toEqual({ ok: false, reason: 'unverified' });
 		expect(openedPaths).toEqual([]);
@@ -318,7 +370,10 @@ describe('applyUpdate', () => {
 		['an older version', '0.2.0', '0.2.1']
 	])('installs nothing for %s', async (_why, version, running) => {
 		const pair = aKeyPair();
-		queue(INSTALLER, pair, { described: manifest(INSTALLER, version), tag: `v${version}` });
+		queue(INSTALLER, pair, {
+			described: manifest(INSTALLER, version),
+			tag: `v${version}`
+		});
 		let stopped = 0;
 
 		const outcome = await applyUpdate('https://feed', pair.published, {
@@ -348,7 +403,10 @@ describe('applyUpdate', () => {
 		const pair = aKeyPair();
 		queue(INSTALLER, pair);
 
-		expect(await applyUpdate('https://feed', pair.published)).toEqual({ ok: false, reason: 'none' });
+		expect(await applyUpdate('https://feed', pair.published)).toEqual({
+			ok: false,
+			reason: 'none'
+		});
 		expect(openedPaths).toEqual([]);
 	});
 
@@ -369,9 +427,13 @@ describe('applyUpdate', () => {
 	 * check passes and the file still must not run, which is why there are two checks and not one. */
 	it('launches nothing, and keeps nothing, when the bytes do not match the hash', async () => {
 		const pair = aKeyPair();
-		queue(Buffer.from('something else entirely'), pair, { described: manifest(INSTALLER) });
+		queue(Buffer.from('something else entirely'), pair, {
+			described: manifest(INSTALLER)
+		});
 
-		const outcome = await applyUpdate('https://feed', pair.published, { running: RUNNING });
+		const outcome = await applyUpdate('https://feed', pair.published, {
+			running: RUNNING
+		});
 
 		expect(outcome).toEqual({ ok: false, reason: 'unverified' });
 		expect(openedPaths).toEqual([]);
@@ -397,7 +459,9 @@ describe('applyUpdate', () => {
 			})
 		} as unknown as Response);
 
-		const outcome = await applyUpdate('https://feed', pair.published, { running: RUNNING });
+		const outcome = await applyUpdate('https://feed', pair.published, {
+			running: RUNNING
+		});
 
 		expect(outcome).toEqual({ ok: false, reason: 'unreachable' });
 		expect(openedPaths).toEqual([]);
@@ -413,7 +477,11 @@ describe('applyUpdate', () => {
 		feed.assets = feed.assets.filter((asset) => !asset.name.includes('manifest'));
 		fetchAnswers.push(reply(feed));
 
-		expect(await applyUpdate('https://feed', aKeyPair().published, { running: RUNNING })).toEqual({
+		expect(
+			await applyUpdate('https://feed', aKeyPair().published, {
+				running: RUNNING
+			})
+		).toEqual({
 			ok: false,
 			reason: 'incomplete'
 		});
@@ -436,7 +504,11 @@ describe('applyUpdate', () => {
 
 	it('says so when the feed cannot be read at all', async () => {
 		fetchAnswers.push(new Error('ENOTFOUND'));
-		expect(await applyUpdate('https://feed', aKeyPair().published, { running: RUNNING })).toEqual({
+		expect(
+			await applyUpdate('https://feed', aKeyPair().published, {
+				running: RUNNING
+			})
+		).toEqual({
 			ok: false,
 			reason: 'unreachable'
 		});
@@ -444,7 +516,11 @@ describe('applyUpdate', () => {
 
 	it('says so when the feed is not the shape a feed is', async () => {
 		fetchAnswers.push(reply('<html>a proxy sign-in page</html>'));
-		expect(await applyUpdate('https://feed', aKeyPair().published, { running: RUNNING })).toEqual({
+		expect(
+			await applyUpdate('https://feed', aKeyPair().published, {
+				running: RUNNING
+			})
+		).toEqual({
 			ok: false,
 			reason: 'unreachable'
 		});

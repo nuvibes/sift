@@ -16,12 +16,15 @@ building them through the ingest path would be testing the ingest path.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
+from typing import Any
 
 import pytest
 
+from sift.kernel import db as db_module
 from sift.kernel.config import Settings
-from sift.kernel.db import Database
+from sift.kernel.db import Database, statement_name
 from sift.slices.faces import settings as face_settings
 from sift.slices.faces.evidence import FaceEvidence
 from sift.slices.faces.jobs import FACE_REMATCH
@@ -688,3 +691,54 @@ async def test_a_proposal_goes_with_its_group(evidence: FaceEvidence, temp_db: D
     await temp_db.execute("DELETE FROM face_piles WHERE id = ?", (PILE,))
 
     assert await _proposals(temp_db) == []
+
+
+async def test_a_page_of_folders_is_read_in_the_same_number_of_statements(
+    evidence: FaceEvidence, temp_db: Database, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Three times the folders on the Folders page and no statement more, each folder's answer
+    the one it gets asked alone."""
+    seen: list[str] = []
+    real = db_module._judged
+
+    @contextmanager
+    def counted(stage: str, statement: Any, *rest: Any, **options: Any) -> Iterator[Any]:
+        seen.append(statement_name(statement))
+        with real(stage, statement, *rest, **options) as timing:
+            yield timing
+
+    folders: list[str] = []
+
+    async def read_after(more: int) -> int:
+        for _ in range(more):
+            index = len(folders)
+            folder_id = f"01HX00000000000000000009{index:02d}"
+            folders.append(folder_id)
+            await temp_db.execute(
+                "INSERT INTO folders (id, root_id, parent_id, rel_path, name)"
+                " VALUES (?, ?, ?, ?, ?)",
+                (folder_id, ROOT, TOP, f"F{index}", f"F{index}"),
+            )
+            mine, other, named = (f"f{index}-{one}" for one in ("mine", "other", "named"))
+            for asset_id in (mine, other, named):
+                await _file(temp_db, asset_id, f"F{index}/{asset_id}.mp4", folder_id)
+                await _looked(temp_db, asset_id, "none_identified")
+            await _track(temp_db, f"t{index}-a", mine, pile_id=f"pile-{index}")
+            await _track(temp_db, f"t{index}-b", mine, pile_id=f"pile-{index}")
+            await _track(temp_db, f"t{index}-c", other, pile_id=OTHER_PILE)
+            await _track(
+                temp_db, f"t{index}-d", named, person_id=HER, attribution=Attribution.CONFIRMED
+            )
+        asked = [*folders, TOP, EMPTY]
+        seen.clear()
+        with monkeypatch.context() as patched:
+            patched.setattr(db_module, "_judged", counted)
+            many = await evidence.faces_in_many(asked)
+        ours = len(seen)
+        for folder_id in asked:
+            assert many[folder_id] == await evidence.faces_in(folder_id)
+        assert many[folders[0]].dissenting == ("f0-named", "f0-other")
+        return ours
+
+    few = await read_after(2)
+    assert await read_after(4) == few

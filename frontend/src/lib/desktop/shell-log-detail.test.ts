@@ -70,7 +70,7 @@ describe('the shell told the log detail', () => {
 
 	it('is asked by the root layout once an admin is signed in and unlocked', () => {
 		expect(layout).toMatch(
-			/if \(!session\.adminUnlocked \|\| account === undefined\) return;\s*void tellShellLogDetail\(\);/
+			/if \(!session\.adminUnlocked \|\| account === undefined(?: \|\| !screenAsked)?\) return;\s*void tellShellLogDetail\(\);/
 		);
 	});
 });

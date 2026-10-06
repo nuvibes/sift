@@ -121,13 +121,15 @@ class ReindexSeam(Protocol):
     """Telling the search index that text it already holds has changed.
 
     A slice that changes what a clip matches must not know there is an index. `touched` names one
-    asset; `touched_many` a set, in one transaction rather than one per asset; `renamed` queues a
+    asset; `touched_many` a set, in one transaction rather than one per asset; `queue_many` a set
+    too, by a job after the answer, for a name many files carry; `renamed` queues a
     whole rebuild and is the LAST resort, since it holds the write lock for the whole library: only
     a write whose affected set is decided inside a transaction it cannot see (a merge) uses it.
     """
 
     async def touched(self, asset_id: str) -> None: ...
     async def touched_many(self, asset_ids: Sequence[str]) -> None: ...
+    async def queue_many(self, asset_ids: Sequence[str]) -> None: ...
     async def renamed(self) -> None: ...
 
 

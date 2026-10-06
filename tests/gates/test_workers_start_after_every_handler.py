@@ -89,7 +89,13 @@ def check(*sources: str) -> list[str]:
     builder = functions.get("build_workers")
     if builder is not None and _starts_the_pool(builder):
         problems.append("build_workers starts the pool itself, before the handlers after it")
-    starts = [index for index, stmt in enumerate(start_up.body) if _starts_the_pool(stmt)]
+    # The pool may start inside a function the start-up calls or schedules (the work after ready).
+    starters = {name for name, node in functions.items() if _starts_the_pool(node)}
+    starts = [
+        index
+        for index, stmt in enumerate(start_up.body)
+        if _starts_the_pool(stmt) or _called_names(stmt) & starters
+    ]
     if len(starts) != 1:
         return [*problems, f"the start-up starts the pool {len(starts)} times, not once"]
     for index, stmt in enumerate(start_up.body):

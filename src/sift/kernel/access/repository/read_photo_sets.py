@@ -25,6 +25,7 @@ from sift.kernel.access.repository.views import (
     _like_prefix,
     _photo_set_from_row,
 )
+from sift.kernel.access.repository.wall_photo_sets import PHOTO_SET_BY_ID
 from sift.kernel.access.viewer import Viewer
 from sift.kernel.paging import MAX_PAGE_SIZE
 
@@ -122,9 +123,9 @@ class PhotoSetReads(RepositoryCore):
     async def visible_photo_set(self, viewer: Viewer, photo_set_id: str) -> PhotoSetView | None:
         """One photo set, if this viewer may be shown it. None means "no such set" and "not for
         you" together, which is the only answer either should get (see `visible_collection`)."""
-        where, bound = NO_FILTER.predicate()
+        _where, bound = NO_FILTER.predicate()
         rows = await self._db.fetch_all(
-            photo_sets_query(where),
+            PHOTO_SET_BY_ID,
             {
                 **bound,
                 **self._photo_set_params(

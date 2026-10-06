@@ -383,6 +383,39 @@ export const session = {
 	}
 };
 
+/** A view laid over a window's page: the opening frame (`opening.ts`). */
+export class WebContentsView {
+	static instances: WebContentsView[] = [];
+	background: string | null = null;
+	bounds: { x: number; y: number; width: number; height: number } | null = null;
+	closed = false;
+	loaded: string[] = [];
+	private readonly once = new Map<string, () => void>();
+	webContents = {
+		loadURL: (url: string): Promise<void> => {
+			this.loaded.push(url);
+			/* Drawn as soon as asked, as a local page is. */
+			queueMicrotask(() => this.once.get('did-finish-load')?.());
+			return Promise.resolve();
+		},
+		once: (event: string, listener: () => void): void => {
+			this.once.set(event, listener);
+		},
+		close: (): void => {
+			this.closed = true;
+		}
+	};
+	constructor(readonly options: unknown) {
+		WebContentsView.instances.push(this);
+	}
+	setBackgroundColor(colour: string): void {
+		this.background = colour;
+	}
+	setBounds(bounds: { x: number; y: number; width: number; height: number }): void {
+		this.bounds = bounds;
+	}
+}
+
 export class BrowserWindow {
 	static instances: BrowserWindow[] = [];
 	/** The main process asks this to find the window a call came from. */
@@ -405,6 +438,23 @@ export class BrowserWindow {
 	};
 	constructor(readonly options: unknown) {
 		BrowserWindow.instances.push(this);
+	}
+	/** The views laid over the page, in order. */
+	readonly views: WebContentsView[] = [];
+	contentView = {
+		addChildView: (view: WebContentsView): void => {
+			this.views.push(view);
+		},
+		removeChildView: (view: WebContentsView): void => {
+			this.views.splice(this.views.indexOf(view), 1);
+		}
+	};
+	getContentBounds(): { x: number; y: number; width: number; height: number } {
+		return { x: 0, y: 0, width: 1400, height: 900 };
+	}
+	removeListener(event: string): this {
+		this.listeners.delete(event);
+		return this;
 	}
 	/** Every address the window was pointed at, in order. */
 	loaded: string[] = [];
@@ -478,6 +528,7 @@ export function resetElectronStub(): void {
 	trays.length = 0;
 	BrowserWindow.instances = [];
 	BrowserWindow.loadFailures = [];
+	WebContentsView.instances = [];
 	appListeners.clear();
 	appCalls.quit = 0;
 	appCalls.exit = [];

@@ -271,13 +271,16 @@ describe('an exit the backend asked for', () => {
 		spawned.exited?.(1);
 
 		expect(said.map(([level, event]) => `${level} ${event}`)).toEqual([
+			'info backend.spawned',
 			'info backend.restart_asked',
+			'info backend.spawned',
 			'info backend.started_again',
 			'warning backend.exited',
+			'info backend.spawned',
 			'info backend.started_again'
 		]);
-		expect(said[2]?.[2]).toEqual({ code: 1 });
-		expect(said[3]?.[2]).toEqual({ why: 'stopped' });
+		expect(said[4]?.[2]).toEqual({ code: 1 });
+		expect(said[6]?.[2]).toEqual({ why: 'stopped' });
 	});
 
 	/* A death that `stop` asked for is the end of it: started again, it would be a backend nobody
@@ -461,5 +464,49 @@ describe('the output of a start', () => {
 		expect(options.stdio).toEqual(['pipe', 'pipe', 'pipe']);
 		expect(starts.written).toEqual(['a line\n', 'a line\n']);
 		expect(starts.closed).toBe(1);
+	});
+});
+
+/* Ready is the backend's own line on stdout, said once its socket listens, rather than the next
+   poll of /health: a line split across two reads still counts, and a line that only contains the
+   words does not. */
+describe('the backend saying it is listening', () => {
+	function heard(...chunks: string[]): boolean {
+		const backend = new Backend({ dataDir: 'D:\\data', cacheDir: 'D:\\cache' }, () => {});
+		(backend as unknown as { spawnChild(): void }).spawnChild();
+		const [, take] = spawned.stdout.on.mock.calls.at(-1) as [string, (chunk: Buffer) => void];
+		for (const chunk of chunks) take(Buffer.from(chunk));
+		return (backend as unknown as { listening: boolean }).listening;
+	}
+
+	it('is heard on its own line, whole or split', () => {
+		expect(heard('{"event":"boot.ready"}\n', 'sift.listening\n')).toBe(true);
+		expect(heard('{"event":"boot.ready"}\nsift.lis', 'tening\r\n')).toBe(true);
+	});
+
+	it('is not heard inside another line, or before its line ends', () => {
+		expect(heard('{"said":"sift.listening"}\n')).toBe(false);
+		expect(heard('sift.listening')).toBe(false);
+	});
+
+	it('ends the wait for ready without another poll', async () => {
+		vi.useFakeTimers();
+		const backend = new Backend({ dataDir: 'D:\\data', cacheDir: 'D:\\cache' }, () => {});
+		(backend as unknown as { spawnChild(): void }).spawnChild();
+		const [, take] = spawned.stdout.on.mock.calls.at(-1) as [string, (chunk: Buffer) => void];
+		let asked = 0;
+		vi.stubGlobal('fetch', async () => {
+			asked += 1;
+			throw new Error('nothing is listening yet');
+		});
+		const waited = (backend as unknown as { waitForHealth(): Promise<void> }).waitForHealth();
+		await vi.advanceTimersByTimeAsync(10);
+		take(Buffer.from('sift.listening\n'));
+		await vi.advanceTimersByTimeAsync(0);
+
+		await expect(waited).resolves.toBeUndefined();
+		expect(asked).toBe(1);
+		vi.unstubAllGlobals();
+		vi.useRealTimers();
 	});
 });

@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 /*
  * THE LEAF AND THE BOLT: eco mode, where background work keeps to a share of this device while
- * somebody is working, a video is playing or other programs are busy, and a press for the full
- * amount until Sift stops or the next press. Nothing is drawn while no task runs, outside eco mode,
+ * somebody is working, a video is playing or other programs are busy, and a press for turbo mode
+ * until Sift stops or the next press. Nothing is drawn while no task runs, outside eco mode,
  * or for a guest. Read from the queue's first page, which the shell already keeps current.
  */
 
@@ -25,7 +25,7 @@ type StepBackFacts = Partial<
 	Pick<
 		components['schemas']['JobsPage'],
 		| 'stepping_back'
-		| 'full_amount'
+		| 'turbo_mode'
 		| 'counts'
 		| 'step_back_share'
 		| 'step_back_for'
@@ -87,34 +87,42 @@ export function usingShare(
 }
 
 /** Which of the two is drawn, or neither. */
-type FullAmountState = 'less' | 'full' | null;
+type TurboModeState = 'less' | 'full' | null;
 
 /** The words the leaf and the bolt say, on the rail's tooltip and on a phone's More screen. */
-export const FULL_AMOUNT_COPY = {
+export const TURBO_MODE_COPY = {
 	/* The control's name, the same in both states; pressed or not is said by `aria-pressed`. */
-	name: 'Use the full amount of this device',
-	lessPress: 'Press to use the full amount.',
-	full: (why: string, of = device(false)) =>
-		`Out of eco mode: using the full amount of ${of} although ${why}`,
+	name: 'Turbo mode',
+	lessPress: 'Press for turbo mode.',
+	full: (why: string, of = device(false)) => `Out of eco mode: turbo mode on ${of} although ${why}`,
 	fullPress: 'Press to go back to eco mode.',
 	/* The press on a phone's row, where there is room for a verb. */
-	useFull: 'Use the full amount',
+	useTurbo: 'Use turbo mode',
 	stepBack: 'Use eco mode',
 	failed: "Sift couldn't change how much of this device it uses"
 } as const;
 
 /** What is drawn for one read of the queue. Public because it is the seam the tests drive. */
-export function fullAmountState(page: StepBackFacts | null, isAdmin: boolean): FullAmountState {
+export function turboModeState(page: StepBackFacts | null, isAdmin: boolean): TurboModeState {
 	if (!isAdmin || page === null) return null;
 	if ((page.counts?.running ?? 0) === 0) return null;
-	if (page.full_amount === true) return 'full';
+	if (page.turbo_mode === true) return 'full';
 	if (page.stepping_back === true) return 'less';
 	return null;
 }
 
+/* The press's own answer, laid over any queue read that left before it until one asked after it
+   lands: a slow read must not flip the bolt back. */
+type Pressed = Pick<StepBackFacts, 'stepping_back' | 'turbo_mode'>;
+let pressedFor: Pressed | null = null;
+
+function withPress<T extends StepBackFacts>(page: T | null): T | null {
+	return page === null || pressedFor === null ? page : { ...page, ...pressedFor };
+}
+
 /** The current state, from the queue page the shell keeps. */
-export function currentFullAmount(isAdmin: boolean): FullAmountState {
-	return fullAmountState(imports.page, isAdmin);
+export function currentTurboMode(isAdmin: boolean): TurboModeState {
+	return turboModeState(withPress(imports.page), isAdmin);
 }
 
 /** The share the step back keeps to, as the queue page the shell keeps says it. */
@@ -133,15 +141,15 @@ function currentOver(): BusyWith[] {
 
 /** Whether the leaf is dimmed: eco mode for other programs, not for somebody working. */
 export function leafDimmed(
-	state: FullAmountState,
+	state: TurboModeState,
 	cause: StepBackCause | null = currentCause()
 ): boolean {
 	return state === 'less' && cause === 'others';
 }
 
 /** The state's first sentence: what is happening. */
-export function fullAmountSays(
-	state: Exclude<FullAmountState, null>,
+export function turboModeSays(
+	state: Exclude<TurboModeState, null>,
 	share: number,
 	cause: StepBackCause | null = currentCause(),
 	over: readonly BusyWith[] = currentOver(),
@@ -149,45 +157,54 @@ export function fullAmountSays(
 ): string {
 	return state === 'less'
 		? usingShare(share, cause, over, elsewhere)
-		: FULL_AMOUNT_COPY.full(ecoWhy(cause, over, elsewhere), device(elsewhere));
+		: TURBO_MODE_COPY.full(ecoWhy(cause, over, elsewhere), device(elsewhere));
 }
 
 /** The tooltip's two sentences for a state: what is happening, then what a press does. */
-export function fullAmountTip(
-	state: Exclude<FullAmountState, null>,
+export function turboModeTip(
+	state: Exclude<TurboModeState, null>,
 	share: number = currentShare(),
 	cause: StepBackCause | null = currentCause(),
 	over: readonly BusyWith[] = currentOver(),
 	elsewhere: boolean = siftElsewhere.yes
 ): string {
-	const press = state === 'less' ? FULL_AMOUNT_COPY.lessPress : FULL_AMOUNT_COPY.fullPress;
-	return `${fullAmountSays(state, share, cause, over, elsewhere)}. ${press}`;
+	const press = state === 'less' ? TURBO_MODE_COPY.lessPress : TURBO_MODE_COPY.fullPress;
+	return `${turboModeSays(state, share, cause, over, elsewhere)}. ${press}`;
 }
 
-const PRESS = '/jobs/full-amount';
+const PRESS = '/jobs/turbo-mode';
+
+function holdPress(pressed: Pressed | null): void {
+	pressedFor = pressed;
+	if (pressed !== null && imports.page !== null) imports.page = { ...imports.page, ...pressed };
+}
 
 /**
- * Press for the full amount (`on`), or go back to eco mode.
+ * Press for turbo mode (`on`), or go back to eco mode.
  *
- * The press's own answer is drawn at once: a queue read can take seconds on a busy device, and
- * one asked while the queue keeps moving is joined to every read after it.
+ * Drawn on the press, and put back if the server refuses; the server's answer then stands over
+ * every queue read that left before it, until one asked after it lands.
  */
-export async function pressFullAmount(on: boolean): Promise<void> {
+export async function pressTurboMode(on: boolean): Promise<void> {
+	const page = imports.page;
+	const before: Pressed | null =
+		page === null ? null : { stepping_back: page.stepping_back, turbo_mode: page.turbo_mode };
+	const inPlay = page?.stepping_back === true || page?.turbo_mode === true;
+	holdPress({ stepping_back: !on && inPlay, turbo_mode: on && inPlay });
 	let answer: components['schemas']['StepBack'];
 	try {
 		answer = await api.post<components['schemas']['StepBack']>(PRESS, { body: { on } });
 	} catch (error) {
-		toasts.show(error instanceof ApiError ? FULL_AMOUNT_COPY.failed : UNREACHABLE, {
+		holdPress(null);
+		if (before !== null && imports.page !== null) imports.page = { ...imports.page, ...before };
+		toasts.show(error instanceof ApiError ? TURBO_MODE_COPY.failed : UNREACHABLE, {
 			tone: 'error'
 		});
 		return;
 	}
-	if (imports.page !== null) {
-		imports.page = {
-			...imports.page,
-			stepping_back: answer.stepping_back,
-			full_amount: answer.full_amount
-		};
-	}
-	void imports.refresh();
+	const answered: Pressed = { stepping_back: answer.stepping_back, turbo_mode: answer.turbo_mode };
+	holdPress(answered);
+	void imports.refresh().finally(() => {
+		if (pressedFor === answered) pressedFor = null;
+	});
 }

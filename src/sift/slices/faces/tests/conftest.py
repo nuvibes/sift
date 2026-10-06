@@ -132,10 +132,9 @@ class FakeDetector:
             for box, score in self.placed.get(timestamp_ms, [])
         ]
 
-    #: Make the closer look hand back landmarks that are wrong rather than absent: the eyes still
-    #: apart, the nose out past one of them, which is what `frontality` reads as zero and what a
-    #: failed refinement produces on a real file. Fully collapsed landmarks are a different case
-    #: and `align` already refuses those outright.
+    #: The closer look hands back landmarks that are wrong rather than absent (the eyes apart, the
+    #: nose out past one), which `frontality` reads as zero, as a failed refinement produces on a
+    #: real file; fully collapsed landmarks `align` refuses outright.
     ruin_refine: bool = False
 
     #: Make the FIRST look report landmarks that are wrong and the closer one correct them, which
@@ -274,6 +273,9 @@ class RecordingReindexer:
     async def touched_many(self, asset_ids: Sequence[str]) -> None:
         self.bulk_calls.append(tuple(asset_ids))
         self.touched_ids.extend(asset_ids)
+
+    async def queue_many(self, asset_ids: Sequence[str]) -> None:  # pragma: no cover (no rename)
+        await self.touched_many(asset_ids)
 
     async def renamed(self) -> None:  # pragma: no cover (nothing here renames a person)
         raise AssertionError("the face feature never renames anybody")

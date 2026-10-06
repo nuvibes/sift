@@ -1387,3 +1387,22 @@ def test_leaving_hide_personal_out_keeps_the_answer_already_set() -> None:
         assert log_module.redacts_personal() is False
     finally:
         log_module._redact_personal = True
+
+
+def test_the_database_drivers_lines_never_reach_the_file(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The driver logs every statement with its bound values at debug; the detail switch must not
+    let them through."""
+    configure_logging("INFO", redact_personal=True)
+    log_module.apply_log_preferences(detailed=True, per_file_bytes=1_000_000)
+    capsys.readouterr()
+
+    logging.getLogger("aiosqlite").debug(
+        "executing SELECT title FROM assets WHERE title = 'canary-x9'"
+    )
+    logging.getLogger("sift.kernel.db").debug("timing", extra={"statement": "select:assets#1"})
+
+    output = capsys.readouterr().out
+    assert "canary-x9" not in output
+    assert "timing" in output, "Sift's own debug line is what the detail switch is for"

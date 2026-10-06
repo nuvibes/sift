@@ -62,6 +62,14 @@ describe('the live-subjects gate', () => {
 		expect(judge(marked, nowhere, unread)).toBeNull();
 	});
 
+	it('sees a read whose call is written across two lines', () => {
+		const split = READS_AND_HOLDS.replace(
+			"api.get('/tunnels')",
+			"api\n\t\t\t.get<string[]>('/tunnels')"
+		);
+		expect(judge(split, nowhere, unread)).toMatch(/names no bell/);
+	});
+
 	it('is not the business of a helper that holds nothing', () => {
 		const helper = `import { api } from '$lib/api/client';\nexport const read = () => api.get('/x');`;
 		expect(judge(helper, nowhere, unread)).toBeNull();

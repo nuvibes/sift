@@ -18,6 +18,7 @@ from sift.kernel.access.repository.core import _POINT_WHERE, RepositoryCore
 from sift.kernel.access.repository.entities import (
     _ALIAS_TARGETS,
     ENTITY_SORT_SEEN,
+    PERSON_BY_ID,
     _entity_sort,
     people_position,
     people_query,
@@ -32,6 +33,7 @@ from sift.kernel.access.repository.views import (
     _like_prefix,
     _suggested,
 )
+from sift.kernel.access.repository.walls import _one_seam
 from sift.kernel.access.viewer import Viewer
 from sift.kernel.paging import MAX_PAGE_SIZE
 
@@ -56,9 +58,14 @@ def username_sites_of(asset_filter: AssetFilter) -> str | None:
     return json.dumps([str(one) for one in leaf.values])
 
 
-#: One person, or a handful, as the unfiltered People wall draws them, off the stored counts: the
-#: live form resolves every person before the by-id condition, so one name would cost the wall.
-_PEOPLE_BY_ID = people_query(_POINT_WHERE)
+#: A handful of people by id, as the unfiltered People wall draws them, off the stored counts, each
+#: sought by its id: the wall's own `:person_ids` test reads every person to keep a few.
+_PEOPLE_BY_IDS = _one_seam(
+    people_query(_POINT_WHERE),
+    "people_query",
+    "AND (:person_ids IS NULL OR p.id IN (SELECT value FROM json_each(:person_ids)))",
+    "AND p.id IN (SELECT value FROM json_each(:person_ids))",
+)
 
 
 class PeopleReads(RepositoryCore):
@@ -253,7 +260,7 @@ class PeopleReads(RepositoryCore):
         if not _is_object_id(person_id):
             return None
         rows = await self._db.fetch_all(
-            _PEOPLE_BY_ID,
+            PERSON_BY_ID,
             self._unfiltered() | self._person_params(viewer, person_id=person_id, limit=1),
         )
         return _suggested(rows[0]) if rows else None
@@ -271,7 +278,7 @@ class PeopleReads(RepositoryCore):
         for start in range(0, len(wanted), MAX_PAGE_SIZE):
             chunk = wanted[start : start + MAX_PAGE_SIZE]
             rows = await self._db.fetch_all(
-                _PEOPLE_BY_ID,
+                _PEOPLE_BY_IDS,
                 self._unfiltered()
                 | self._person_params(
                     viewer, person_id=None, person_ids=json.dumps(chunk), limit=len(chunk)

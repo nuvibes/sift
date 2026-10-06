@@ -513,9 +513,12 @@ describe("a copy set up for its own library", () => {
   it("makes the page's log archive the same way, into the save folder", async () => {
     await boot({ mode: "standalone", ...LIBRARY, downloadDir: "E:\\Saved" });
 
-    expect(await scene.logArchive("Sift log.zip")).toBe("C:\\Downloads\\Sift log.zip");
+    expect(await scene.logArchive("Sift log.zip")).toEqual({
+      ok: true,
+      file: "C:\\Downloads\\Sift log.zip",
+    });
     scene.bundleAnswer = { ok: false, reason: "no room" };
-    expect(await scene.logArchive("Sift log.zip")).toBeNull();
+    expect(await scene.logArchive("Sift log.zip")).toMatchObject({ ok: false });
 
     const asked = scene.bundled[0] as { name: string; into: string; libraryLogs: string };
     expect(asked).toMatchObject({ name: "Sift log.zip", into: "E:\\Saved", libraryLogs: LIBRARY.dataDir });

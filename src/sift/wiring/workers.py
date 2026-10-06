@@ -187,12 +187,10 @@ class _PoolConfig:
         # or half the workers when automatic), so the encoding cap tracks the worker count above it
         # rather than the hardware default the merge started from.
         #
-        # A CEILING, NOT AN ENTITLEMENT IN THE DIVISION BELOW. It is a throughput knee, the point
-        # past which another simultaneous encode finishes no more work, written by the self-test
-        # from the encode ladder it ran. A limit set from what the work can absorb sits behind the
-        # bottleneck, so handing it idle shares would only put more encodes on a processor already
-        # full. An install the self-test has never run on stores nothing here and gets half the
-        # workers.
+        # A CEILING, NOT AN ENTITLEMENT IN THE DIVISION BELOW: a throughput knee, the point past
+        # which another simultaneous encode finishes no more work, written by the self-test from
+        # the encode ladder it ran; idle shares handed to it would only put more encodes on a full
+        # processor. An install the self-test has never run on stores nothing and gets half.
         generation = performance.resolve_generation_limit(
             await get_app(performance.GENERATION_LIMIT_KEY), concurrency
         )
@@ -361,6 +359,8 @@ async def build_workers(
         limits=initial_limits,
         read_config=read_pool_config,
         ledger=book,
+        # A press for turbo mode or eco mode takes effect now, not at the next reconfigure.
+        woken_by=(attention.ATTENTION.listen,),
     )
     provide(app, wiring.QUEUE, queue)
     provide(app, wiring.POOL, pool)

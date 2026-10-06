@@ -33,7 +33,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const SOURCE = join(HERE, '..', 'src');
 
 /** A read of a server subject. */
-const READS = /\bapi\.get\s*[<(]/;
+const READS = /\bapi\s*\.\s*get\s*[<(]/;
 
 /** Holding the answer, so it can go stale. A plain helper that hands a read back holds nothing. */
 const HOLDS = /\$state\s*[<(]/;

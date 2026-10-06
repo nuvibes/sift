@@ -15,7 +15,8 @@
 	import { dwell } from '$lib/player/dwell.svelte';
 	import { mini } from '$lib/player/mini.svelte';
 	import { spriteUrl } from '$lib/entity/art';
-	import { api } from '$lib/api/client';
+	import { api, isMissing } from '$lib/api/client';
+	import { libraryChanges, whenChanged } from '$lib/library/changes.svelte';
 	import type { components } from '$lib/api/schema';
 	import { ACTS, keyOf } from '$lib/player/acts';
 	import type Player from './Player.svelte';
@@ -75,6 +76,20 @@
 				})
 				.catch(() => {});
 		});
+	});
+
+	/* A change elsewhere: the name is asked again, and a file gone since it was put here leaves. */
+	whenChanged(libraryChanges, () => {
+		const id = asset.id;
+		if (concealed) return;
+		void api
+			.get<components['schemas']['AssetDetail']>(`/assets/${id}`)
+			.then((file) => {
+				if (docked && mini.asset?.id === id) named = file.filename ?? '';
+			})
+			.catch((error) => {
+				if (isMissing(error) && mini.asset?.id === id) mini.close();
+			});
 	});
 </script>
 

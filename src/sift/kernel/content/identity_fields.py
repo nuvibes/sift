@@ -13,7 +13,7 @@ from typing import Any
 from sift.kernel.changes import About, announce, who_may_see_a_file
 from sift.kernel.content import songs
 from sift.kernel.content.identity_store import StoreCore
-from sift.kernel.db import Connection, Database, in_clause, point_read
+from sift.kernel.db import Connection, Database, Row, in_clause, point_read
 from sift.kernel.ids import new_id
 from sift.kernel.ledger import Actor, Object, Reversal, record_event
 from sift.kernel.urls import cleaned_for_record
@@ -338,6 +338,10 @@ _SONGS_OF = (
 #: The two facts about the FILE that decide whether its sound is worth asking AcoustID about.
 _SONG_AND_LENGTH = "SELECT music, duration_ms FROM assets WHERE id = ?"
 
+_SONGS_AND_LENGTHS = "SELECT id, music, duration_ms FROM assets WHERE id IN (?*)"
+
+_SONGS_AT_ONCE = 500
+
 
 async def songs_of(database: Database, asset_ids: Sequence[str]) -> dict[str, str]:
     """The song each of these files carries, stripped. Unscoped (Sift asks, before writing a
@@ -361,8 +365,23 @@ async def song_and_length(database: Database, asset_id: str) -> SongAndLength | 
     """The song on this file and its length, or None where the file is not there. See `songs_of`
     for why this is asked of the kernel."""
     row = await database.fetch_one(_SONG_AND_LENGTH, (asset_id,))
-    if row is None:
-        return None
+    return None if row is None else _song_and_length(row)
+
+
+async def songs_and_lengths(
+    database: Database, asset_ids: Sequence[str]
+) -> dict[str, SongAndLength]:
+    """`song_and_length` for a page of files, by id; a file not there is absent."""
+    wanted = list(dict.fromkeys(asset_ids))
+    found: dict[str, SongAndLength] = {}
+    for start in range(0, len(wanted), _SONGS_AT_ONCE):
+        sql, params = in_clause(_SONGS_AND_LENGTHS, wanted[start : start + _SONGS_AT_ONCE])
+        for row in await database.fetch_all(sql, params):
+            found[str(row["id"])] = _song_and_length(row)
+    return found
+
+
+def _song_and_length(row: Row) -> SongAndLength:
     music = row["music"]
     duration = row["duration_ms"]
     return SongAndLength(

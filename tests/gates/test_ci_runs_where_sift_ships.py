@@ -504,6 +504,8 @@ GATES = REPO / "tests" / "gates"
 #: detected, so a new gate is placed on purpose: marked `unit`, or named here.
 WHOLE_RUN_ONLY: dict[str, str] = {
     "test_a_cover_write_answers_with_the_row.py": "builds the application",
+    "test_live_writes.py": "builds a library and its services for every write kind",
+    "test_statement_ledger.py": "builds two libraries and walks every screen, about a minute",
     "test_a_kept_filter_names_things_by_id.py": "builds a library and runs its schema steps",
     "test_a_point_read_is_not_a_library_read.py": "opens a database",
     "test_a_refusal_takes_back_what_it_filed.py": "builds a library from every component",

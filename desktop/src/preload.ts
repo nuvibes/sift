@@ -66,6 +66,7 @@ const GET_DOWNLOAD_DIR = 'sift:getDownloadDir';
 const SET_DOWNLOAD_DIR = 'sift:setDownloadDir';
 const SHOW_IN_FOLDER = 'sift:showInFolder';
 const SET_TITLE_BAR = 'sift:setTitleBar';
+const WINDOW_STAGE = 'sift:windowStage';
 const GET_KEEP_RUNNING = 'sift:getKeepRunning';
 const SET_KEEP_RUNNING = 'sift:setKeepRunning';
 const GET_START_WITH_WINDOWS = 'sift:startsWithWindows';
@@ -297,7 +298,7 @@ const api = {
 	shellLogDetail: (detailed: boolean, hidePersonal?: boolean): Promise<boolean | null> =>
 		ipcRenderer.invoke(SHELL_LOG_DETAIL, detailed, hidePersonal),
 	/* Download log: the path of the archive made, or null. Only the name crosses. */
-	saveLogArchive: (name: string): Promise<string | null> =>
+	saveLogArchive: (name: string): Promise<{ file: string } | { reason: string }> =>
 		ipcRenderer.invoke(SAVE_LOG_ARCHIVE, name),
 
 	/* Whether Windows is letting anything through to that port, and asking it to. BOTH TAKE
@@ -408,7 +409,11 @@ const api = {
 		}[];
 	} | null> => ipcRenderer.invoke(FORGET_LIBRARY, dataDir),
 	setTitleBar: (colors: { color: string; symbolColor: string }): Promise<boolean> =>
-		ipcRenderer.invoke(SET_TITLE_BAR, colors)
+		ipcRenderer.invoke(SET_TITLE_BAR, colors),
+	windowStage: (
+		stage: 'painted' | 'usable',
+		look: { theme: string | null; canvas: string }
+	): Promise<boolean> => ipcRenderer.invoke(WINDOW_STAGE, stage, look)
 };
 
 /* The channel each method speaks on, so the list the main process answers can be applied here. */
@@ -457,7 +462,8 @@ const CHANNEL_OF: Record<Exclude<keyof typeof api, 'isDesktop'>, string> = {
 	openLibrary: OPEN_LIBRARY,
 	addLibrary: ADD_LIBRARY,
 	forgetLibrary: FORGET_LIBRARY,
-	setTitleBar: SET_TITLE_BAR
+	setTitleBar: SET_TITLE_BAR,
+	windowStage: WINDOW_STAGE
 };
 
 /* Which channels this page may use, asked once, as the page loads and before its own scripts run.

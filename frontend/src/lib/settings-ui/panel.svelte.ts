@@ -43,20 +43,39 @@ export class SettingsPanel {
 		whenChanged(settingChanges, () => void this.load());
 	}
 
+	/* Whether the pane has drawn an answer: a re-read after that is in place, never a loading state. */
+	#drawn = false;
+
+	/* When each key's last write landed (endless while it is out): a re-read asked before then may
+	   answer the value from before it, so that key keeps the one drawn. */
+	#stamp = 0;
+	#written = new Map<string, number>();
+
 	async load(): Promise<void> {
-		this.loading = true;
-		this.failed = false;
+		const asked = this.#stamp;
+		const first = !this.#drawn;
+		if (first) {
+			this.loading = true;
+			this.failed = false;
+		}
 		try {
 			const sections = await fetchSettings();
+			if (JSON.stringify(sections) === JSON.stringify(this.sections)) return;
 			this.sections = sections;
 			const values: Record<string, unknown> = {};
 			for (const section of sections) {
 				for (const entry of section.settings ?? []) values[entry.key] = entry.value;
 			}
+			for (const [key, stamp] of this.#written) {
+				if (stamp > asked) values[key] = this.#values[key];
+				else this.#written.delete(key);
+			}
 			this.#values = values;
 		} catch {
-			this.failed = true;
+			// A re-read that fails leaves the pane as drawn.
+			if (first) this.failed = true;
 		} finally {
+			if (!this.failed) this.#drawn = true;
 			this.loading = false;
 		}
 	}
@@ -89,12 +108,15 @@ export class SettingsPanel {
 	/** Write one setting. Shows the new value at once, and puts the old one back if it is refused. */
 	async save(key: string, next: unknown): Promise<void> {
 		const previous = this.#values[key];
+		this.#written.set(key, Number.POSITIVE_INFINITY);
 		this.#values = { ...this.#values, [key]: next };
 		try {
 			await saveSettings({ [key]: next });
 		} catch {
 			this.#values = { ...this.#values, [key]: previous };
 			toasts.show("That couldn't be saved", { tone: 'error' });
+		} finally {
+			this.#written.set(key, ++this.#stamp);
 		}
 	}
 }

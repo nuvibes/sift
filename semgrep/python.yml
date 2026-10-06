@@ -83,10 +83,12 @@ rules:
     paths:
       exclude:
         - src/sift/kernel/db.py
-        # The halves `kernel/db.py` is split into: the connection, the library files, the readers.
+        # The parts `kernel/db.py` is split into: the connection, the library files, the
+        # readers, the judged statements.
         - src/sift/kernel/db_base.py
         - src/sift/kernel/db_library.py
         - src/sift/kernel/db_readers.py
+        - src/sift/kernel/db_judged.py
         - src/sift/kernel/tests/test_db.py
         - src/sift/kernel/tests/test_db_lead_and_inline_reads.py
         - src/sift/kernel/tests/test_db_blocking.py

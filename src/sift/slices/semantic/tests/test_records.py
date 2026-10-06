@@ -116,6 +116,25 @@ async def test_how_many_files_another_model_described(temp_db: Database, records
     assert await records.described_by_others(NEW) == 1
     assert await records.described_by_others(OLD) == 1
     assert await records.described_by_others("siglip2-newest") == 2
+    assert await records.any_described_by_others(NEW)
+    assert await records.any_described_by_others("siglip2-a")
+    await records.mark("b", revision=NEW, frames=3, at_ms=1)
+    assert not await records.any_described_by_others(NEW)
+    assert await records.described_by_others(NEW) == 0
+
+
+async def test_asking_about_another_models_files_seeks_rather_than_reads_them(
+    temp_db: Database, records: Records
+) -> None:
+    """Asked by every readiness check: `!=` walks every file ever described."""
+    from sift.slices.semantic import records as module
+
+    for statement in (module._COUNT_BY_OTHERS, module._ANY_BY_OTHERS):
+        plan = await temp_db.fetch_all(
+            "EXPLAIN QUERY PLAN " + statement,  # nosemgrep: sift-no-string-built-sql
+            (NEW, NEW),
+        )
+        assert not [row["detail"] for row in plan if str(row["detail"]).startswith("SCAN sem")]
 
 
 async def test_describing_a_file_twice_replaces_the_record(

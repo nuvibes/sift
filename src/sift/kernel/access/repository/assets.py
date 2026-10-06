@@ -278,6 +278,16 @@ if _JOINS.count(_VERDICT_JOIN) != 1:  # pragma: no cover (an edit across the sea
         "the visible-assets statement no longer joins the verdict where the page expects"
     )
 
+#: The two rankings, read only by the orders that rank: an ids-first walk under any other order
+#: leaves them out, as a ranking joined per row costs every row of the walk.
+_RANKED_JOINS = (
+    "\n  LEFT JOIN relevance     rl ON rl.asset_id = a.id"
+    "\n  LEFT JOIN semantic      sm ON sm.asset_id = a.id"
+)
+
+if _JOINS.count(_RANKED_JOINS) != 1:  # pragma: no cover (an edit across the seam)
+    raise RuntimeError("the visible-assets statement no longer joins the rankings in one place")
+
 #: Walk the sort index, probe the verdict. For a user who may see most of the library.
 DRIVE_LIBRARY = "library"
 #: Walk the user's verdict rows, then sort them. For a user who may see little of it.
@@ -386,25 +396,31 @@ def assets_query(
     drive: str = DRIVE_LIBRARY,
     continued: bool = False,
     outer: str | None = None,
+    narrowed: bool = False,
 ) -> str:
     """The visible-assets statement, filtered by `where` and ordered by `sort`.
 
     The resolve, the filter in its parentheses, then the permission rules and the window, so a
     filter can only narrow. `drive` names the side walked first (`drive_for`). `continued` starts
     after `:after_key` and `:after_id`, here so the count, which takes `where` alone, never does.
-    An order no index walks sorts the ids first, then reads those rows alone under `outer` (by
-    default `where`), as the first step applied all of it.
+    An order no index walks, or a `narrowed` page the planner may read from its members and sort,
+    sorts the ids first, then reads those rows alone under `outer` (by default `where`), as the
+    first step applied all of it.
     """
     columns = _COLUMNS if counted else _COLUMNS.replace(_TOTAL_COLUMN, "")
     from_at, joins = _DRIVES[drive]
     narrowing = where + _SEEK_OPEN + _SEEK_AFTER[sort] + _SEEK_CLOSE if continued else where
     ordered = _ordered_by(sort, arranged=arranged)
-    walked = (
-        from_at + joins + _WHERE_AT + _WHERE_OPEN + narrowing + _CONDITIONS + ordered + _PAGE_TAIL
+    tail = _WHERE_AT + _WHERE_OPEN + narrowing + _CONDITIONS + ordered + _PAGE_TAIL
+    if counted or not (narrowed or _sorts_ids_first(sort, arranged=arranged)):
+        return _CTES + _COLUMNS_AT + columns + from_at + joins + tail
+    walked = from_at + (
+        joins if sort in (RELEVANCE, SIMILARITY) else joins.replace(_RANKED_JOINS, "")
     )
-    if counted or not _sorts_ids_first(sort, arranged=arranged):
-        return _CTES + _COLUMNS_AT + columns + walked
-    # The second read keeps every rule and the order, so it can only drop a row, never add one.
+    walked += tail
+    # The second read keeps every rule and the order, so it can only drop a row, never add one. A
+    # narrowed page's ids already passed its filter, which would only build its members again.
+    again = "1" if narrowed else where if outer is None else outer
     return (
         _CTES
         + ",\npaged(paged_id) AS (\nSELECT a.id"
@@ -416,7 +432,7 @@ def assets_query(
         + _JOINS
         + _WHERE_AT
         + _WHERE_OPEN
-        + (where if outer is None else outer)
+        + again
         + _SEEK_OPEN
         + _PAGED_IDS
         + _SEEK_CLOSE

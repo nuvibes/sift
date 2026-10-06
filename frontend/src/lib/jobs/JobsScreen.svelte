@@ -46,7 +46,7 @@
 	import { canCancel, canRetry, offeredWhileViewing, startsIn } from './labels';
 	import { OWNED, addressOf, landingFor, type ActivityTab } from './tabs';
 	import { COPY } from './JobsScreen.search';
-	import { currentFullAmount } from '$lib/components/shell/full-amount';
+	import { currentTurboMode } from '$lib/components/shell/turbo-mode';
 	import Ledger from '$lib/settings-ui/Ledger.svelte';
 	import UnlockField from '$lib/settings-ui/UnlockField.svelte';
 	import { session } from '$lib/shell/session.svelte';
@@ -188,7 +188,7 @@
 	const jobs = $derived(queue.listed?.jobs ?? []);
 	const counts = $derived(queue.page?.counts ?? {});
 	/* From the rail's own read, so a press there answers here at once too. Activity is an admin's. */
-	const eco = $derived(currentFullAmount(true));
+	const eco = $derived(currentTurboMode(true));
 
 	// Only the states that exist right now, so the row of tallies is not mostly zeroes. Ordered by the
 	// list rather than by the object's keys: what comes back from the server is a tally, and the order

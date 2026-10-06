@@ -32,6 +32,7 @@ import {
 	type Arriving
 } from './assets';
 import { PORT } from './backend';
+import { WINDOW_STAGE } from './opening';
 import { describe as describeStorage, move as moveStorage, type StorageReport } from './storage';
 import type { DataLocations } from './paths';
 import { installed as installedBrowsers, type Browser } from './browsers';
@@ -145,10 +146,8 @@ export interface Setup {
 	/** Settle the library folder: the suggested one, or one chosen from the machine's own dialog.
 	 *  `told` hears each step as it starts, for the screen to say. */
 	library(pick: boolean, told: (step: SetupStep) => void): Promise<Settled>;
-	/**
-	 * Unsay the mode, so the question before this one is asked again. No step counter: the screen
-	 * shown is DERIVED from which answers exist, so going back removes an answer, by one rule both ways.
-	 */
+	/** Unsay the mode, so the question before it is asked again: the screen shown is derived from
+	 *  which answers exist, so going back removes an answer, by one rule both ways. */
 	back(): Promise<Settled>;
 }
 
@@ -231,13 +230,14 @@ export const REMOTE_VERBS: ReadonlySet<string> = new Set([
 	GET_START_WITH_WINDOWS,
 	SET_START_WITH_WINDOWS,
 	FORGET_MODE,
-	SAVE_LOG_ARCHIVE
+	SAVE_LOG_ARCHIVE,
+	WINDOW_STAGE
 ]);
 
 /** Every channel the page can be offered, read off `channels.ts` so a new one cannot be missed. */
-const EVERY_VERB: readonly string[] = (Object.values(channels) as string[]).filter(
-	(name) => name !== channels.BRIDGE_VERBS
-);
+const EVERY_VERB: readonly string[] = (Object.values(channels) as string[])
+	.filter((name) => name !== channels.BRIDGE_VERBS)
+	.concat(WINDOW_STAGE);
 
 /** The channels a page with this reach may use. The preload builds `window.sift` from this list. */
 export function verbsFor(reach: Reach | null): string[] {
@@ -827,11 +827,8 @@ export function registerVerbs(reachOf: ReachCheck, hooks: ShellHooks = {}): void
 		return { chosen: links.chosen(), browsers: await installedBrowsers() };
 	});
 
-	/*
-	 * The page picks the shade; the operating system keeps the buttons. Only the two colours reach
-	 * `setTitleBarOverlay`, with the height chosen at creation, and only as plain `#rgb`/`#rrggbb`,
-	 * since the string reaches the operating system.
-	 */
+	/* The page picks the shade; the operating system keeps the buttons. Only the two colours reach
+	 * `setTitleBarOverlay`, as plain `#rgb`/`#rrggbb`, since the string reaches the operating system. */
 	ipcMain.handle(SET_TITLE_BAR, async (event, colors: unknown): Promise<boolean> => {
 		const frame = askingFrame(event, reachOf, SET_TITLE_BAR);
 		if (frame === null) return false;

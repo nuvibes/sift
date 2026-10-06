@@ -310,7 +310,7 @@ MATRIX: dict[tuple[str, str], Case] = {
     ("POST", "/api/jobs/retry-canceled"): Case(Policy.ADMIN, destructive=True),
     ("POST", "/api/jobs/clear-canceled"): Case(Policy.ADMIN, destructive=True),
     # The whole installation's pool.
-    ("POST", "/api/jobs/full-amount"): Case(Policy.ADMIN, body={"on": False}),
+    ("POST", "/api/jobs/turbo-mode"): Case(Policy.ADMIN, body={"on": False}),
     # A guest's screen goes stale as an admin's does; a message names a kind, never carries a row.
     ("GET", "/api/live"): Case(Policy.AUTHENTICATED),
     (WEBSOCKET, "/api/live/stream"): Case(Policy.AUTHENTICATED),

@@ -6,6 +6,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+from sift.kernel.db import PointRead, point_read
+
 #: What a wall of things may be ordered by, bound as a value, in the file grid's own words; the id
 #: is a ULID minted in time order; `largest` counts files, `largest_total` bytes, `longest_total` time.
 ENTITY_SORT_SEEN = "seen"
@@ -231,6 +233,13 @@ def _one_seam(statement: str, name: str, seam: str, replacement: str, *, expecte
     if found != expected:  # pragma: no cover (reaching this means a statement was edited across it)
         raise RuntimeError(f"{name} has {found} copies of a by-id seam, expected {expected}")
     return statement.replace(seam, replacement)
+
+
+def one_row(stored: str, name: str, kind: str, row: str, key: str) -> PointRead:
+    """An unfiltered wall read for the one row `:key` names, declared a point read: the row is
+    sought by its id, so the cost is one row's at any size."""
+    text = _one_seam(stored, name, f"(:{key} IS NULL OR {row}.id = :{key})", f"{row}.id = :{key}")
+    return point_read(f"access.{kind}_by_id", text)
 
 
 def _narrowed(where: str) -> bool:

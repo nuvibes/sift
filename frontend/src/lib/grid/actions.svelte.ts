@@ -365,8 +365,8 @@ export class AssetActions<Item extends Actionable> {
 	 * screen holding a list would re-read once per file. The work is never the cost; the round
 	 * trips are.
 	 *
-	 * So the rows go together, once, after the answer arrives. The wall changes in one step, which
-	 * is what somebody who pressed one button is expecting to see.
+	 * So the rows go together, once, on the press, and come back if the server refuses any of them.
+	 * The wall changes in one step, which is what somebody who pressed one button expects to see.
 	 *
 	 * **It is not a transaction and must not become one.** Bytes deleted from a disk cannot be put
 	 * back, so a set that fails partway really has deleted what it deleted: the server counts
@@ -383,6 +383,8 @@ export class AssetActions<Item extends Actionable> {
 		   where somebody finds out. `components` is generated from the schema the server produces
 		   and CI refuses a mismatch, so this cannot drift without something saying so. */
 		let answer: BulkWriteDone;
+		const forget = this.#around.forget;
+		if (forget) for (const id of ids) forget(id);
 		try {
 			answer = await overChunks(ids, (chunk) =>
 				api.post<BulkWriteDone>('/assets/delete', {
@@ -390,8 +392,9 @@ export class AssetActions<Item extends Actionable> {
 				})
 			);
 		} catch (failure) {
-			// The whole request failed rather than individual files: nothing was deleted, so
-			// nothing is dropped from the wall.
+			// The whole request failed rather than individual files: nothing was deleted, so the
+			// rows dropped on the press are read back.
+			if (forget) this.#around.refresh?.();
 			this.#selection.clear();
 			toasts.show(
 				failure instanceof ApiError ? (failure.detail ?? failure.message) : "Couldn't delete those",
@@ -410,8 +413,7 @@ export class AssetActions<Item extends Actionable> {
 		 * Dropping a guess would leave a tile missing for a file that is still there.
 		 */
 		if (answer.skipped === 0) {
-			for (const id of ids) this.#around.forget?.(id);
-			if (!this.#around.forget) this.#around.refresh?.();
+			if (!forget) this.#around.refresh?.();
 		} else {
 			this.#around.refresh?.();
 		}

@@ -371,17 +371,13 @@ class SemanticService:
         if revision is not None:
             vector = await self._frames_of(asset_id, revision)
             if vector:
-                found = await self._store.nearest(
-                    vector, revision=revision, limit=limit, asker=asker
+                found = await self._store.nearest_files(
+                    vector, revision=revision, limit=limit + 1, asker=asker
                 )
                 return Similar(
                     tier=Tier.LOOKS,
-                    neighbours=tuple(
-                        (neighbour.asset_id, neighbour.distance)
-                        for neighbour in found
-                        # Every file is nearest to itself, and that is not an answer.
-                        if neighbour.asset_id != asset_id
-                    ),
+                    # Every file is nearest to itself, and that is not an answer.
+                    neighbours=tuple(one for one in found if one[0] != asset_id)[:limit],
                 )
         if self._similar is None:
             return Similar(tier=Tier.MATCHES, neighbours=())

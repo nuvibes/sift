@@ -168,6 +168,8 @@ PROCESS_LOOPS: dict[str, str] = {
     "tasks.keep_awake": "the keep-awake request",
     "performance.when_quiet": "the look for a quiet moment",
     "settings.applier": "the settings pushed onto the running process",
+    "boot.after_ready": "the work after ready",
+    "client.files": "the client's file list",
 }
 
 #: The lifespan, where the process's own loops are started.

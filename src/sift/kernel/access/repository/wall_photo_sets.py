@@ -13,6 +13,7 @@ from sift.kernel.access.repository.walls import (
     _wall,
     _with_stored_counts,
     locked_tile,
+    one_row,
     shown,
 )
 from sift.kernel.sql_splice import splice
@@ -246,6 +247,12 @@ _PHOTO_SETS = _wall(_VISIBLE_PHOTO_SETS, "_VISIBLE_PHOTO_SETS")
 PHOTO_SETS_POSITION = _position(_PHOTO_SETS)
 _PHOTO_SETS_HEAD, _PHOTO_SETS_ACCESS = _cut(_VISIBLE_PHOTO_SETS, "_VISIBLE_PHOTO_SETS")
 _PHOTO_SETS_STORED = _with_stored_counts(_VISIBLE_PHOTO_SETS, "_VISIBLE_PHOTO_SETS")
+
+#: One photo set by id, as the unfiltered wall reads it: what a cover or a page asks before it
+#: answers, at one row's cost (`one_row`).
+PHOTO_SET_BY_ID = one_row(
+    _PHOTO_SETS_STORED, "_PHOTO_SETS_STORED", "photo_set", "ps", "photo_set_id"
+)
 
 
 def photo_sets_query(where: str, rows: str = _NOTHING) -> str:

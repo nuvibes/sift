@@ -1,31 +1,3 @@
-<script module lang="ts">
-	import type { FacetValue } from './facet-labels';
-
-	type Value = FacetValue;
-
-	/*
-	 * What the same question answered last time, kept outside the component.
-	 *
-	 * The panel unmounts when the menu shuts, so without this every reopen draws "Counting..." for a
-	 * round trip; it is seeded from here and re-asks in the background. Keyed on the question, the
-	 * columns and `vault.generation`, so counts taken with the vault open are unreachable once it
-	 * locks. Bounded, oldest out first. `<script module>`, since an instance `const` is rebuilt by
-	 * the mount it serves.
-	 */
-	const REMEMBERED = new Map<string, Record<string, Value[]>>();
-	const REMEMBER_AT_MOST = 12;
-
-	function remember(key: string, answer: Record<string, Value[]>) {
-		REMEMBERED.delete(key);
-		REMEMBERED.set(key, answer);
-		while (REMEMBERED.size > REMEMBER_AT_MOST) {
-			const oldest = REMEMBERED.keys().next().value;
-			if (oldest === undefined) break;
-			REMEMBERED.delete(oldest);
-		}
-	}
-</script>
-
 <script lang="ts">
 	import { untrack, type Snippet } from 'svelte';
 	import BarPanel from '$lib/components/common/BarPanel.svelte';
@@ -37,8 +9,7 @@
 	 * the statement that decides what the grid shows, so on a person's page the numbers are theirs.
 	 */
 	import { goto } from '$app/navigation';
-	import { clearStored, readStored, writeStored } from '$lib/shell/remembered.svelte';
-	import { api } from '$lib/api/client';
+	import { writeStored } from '$lib/shell/remembered.svelte';
 	import { Button, DateRange, NarrowBox, Pressable, Select } from '$lib/components/common';
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
 	import Checkbox, { type CheckState } from '$lib/components/common/Checkbox.svelte';
@@ -46,22 +17,25 @@
 	import Scroller from '$lib/components/common/Scroller.svelte';
 	import { quoted } from '$lib/search/search.svelte';
 	import { counted, filesSaid } from '$lib/entity/entity-counts';
-	import { session } from '$lib/shell/session.svelte';
-	import { vault } from '$lib/shell/vault.svelte';
 	import { arrivals, libraryChanges } from '$lib/library/changes.svelte';
 	import {
 		facetIcon,
 		facetLabel,
 		bandOrder,
 		countsUp,
-		facetRoute,
-		facetsFor,
 		facetValueIcon,
 		facetValueLabel,
-		rememberFacetNames,
-		type FacetCounts,
+		type FacetValue as Value,
 		type Subject
 	} from './facet-labels';
+	import {
+		COLUMNS,
+		columnsKey,
+		facetCounts,
+		isASpan as spanOf,
+		offeredFacets,
+		rememberedColumns
+	} from './facet-counts.svelte';
 	import { stage } from './stage.svelte';
 	import type { Pointing } from './screen-bar.svelte';
 	import { PRESENCE_COLUMNS } from './filter-bar.svelte';
@@ -153,13 +127,11 @@
 	 * question for what to draw and what not to ask about.
 	 */
 	function isASpan(key: string): boolean {
-		return facetsFor(subject).some((one) => one.key === key && one.span === true);
+		return spanOf(subject, key);
 	}
 
 	/** The dimensions this account may ask about, for the noun on this wall. */
-	const OFFERED = $derived(
-		facetsFor(subject).filter((one) => (!one.admin || session.isAdmin) && !fixed.includes(one.key))
-	);
+	const OFFERED = $derived(offeredFacets(subject, fixed));
 
 	/*
 	 * The order the columns come in: `OFFERED`'s, with any lead first, both keeping their own order,
@@ -174,60 +146,14 @@
 		];
 	});
 
-	/** Five at a time, each header swapping what it shows, so every filter is one click away; five,
-	 *  not six, so a name still fits a column on a 1280 screen. */
-	const COLUMNS = 5;
-
 	/*
-	 * Which dimension each column is showing, remembered between visits.
-	 *
-	 * Not in the address (a way of looking, not the question), and in the browser, as the panel's
-	 * open state is, so nothing reshuffles after load. Validated on the way back in (a dropped or
-	 * admin-only dimension, duplicates) and topped up from the ordinary order. Per noun, since
-	 * walls share no columns.
+	 * Which dimension each column is showing, remembered between visits per noun, in the browser
+	 * (`facet-counts`), so the bar can ask for the same columns before the panel opens.
 	 */
-	const COLUMNS_KEY = 'sift.filters.columns';
-
-	/** Where this noun's columns are remembered. */
-	function columnsKey(noun: Subject): string {
-		return `${COLUMNS_KEY}.${noun}`;
-	}
-
-	/*
-	 * A note kept under the file wall's older key is moved to its own key rather than dropped: from
-	 * `remembered`, so a browser that never opens this is never written, and with no "done" flag.
-	 */
-	function movedToTheFileWall(): void {
-		const old = readStored(COLUMNS_KEY);
-		if (old === null) return;
-		if (readStored(columnsKey('asset')) === null) writeStored(columnsKey('asset'), old);
-		clearStored(COLUMNS_KEY);
-	}
-
-	function firstFive(): string[] {
-		return ORDER.slice(0, COLUMNS).map((one) => one.key);
-	}
-
-	function remembered(): string[] {
-		movedToTheFileWall();
-		const stored = readStored(columnsKey(subject));
-		if (!stored) return firstFive();
-		/* Widened: an `as const` key set refuses to be asked about any other string, which is the job. */
-		const offered: Set<string> = new Set(OFFERED.map((one) => one.key));
-		const kept: string[] = [];
-		for (const key of stored.split(',')) {
-			if (offered.has(key) && !kept.includes(key)) kept.push(key);
-		}
-		for (const key of firstFive()) {
-			if (kept.length >= COLUMNS) break;
-			if (!kept.includes(key)) kept.push(key);
-		}
-		return kept.slice(0, COLUMNS);
-	}
 
 	/** The five columns to open on: the lead's, when there is one, otherwise what was remembered. */
 	function seeded(led: string): string[] {
-		return led ? ORDER.slice(0, COLUMNS).map((one) => one.key) : remembered();
+		return led ? ORDER.slice(0, COLUMNS).map((one) => one.key) : rememberedColumns(subject, fixed);
 	}
 
 	/* Seeded at INIT, not by the effect below, which runs after mount and would undo a press made
@@ -305,59 +231,31 @@
 		);
 	}
 
-	/* What came back, per dimension, replaced WHOLE, so no older numbers linger under a new question. */
+	/*
+	 * The counts are the store's (`facet-counts`), asked by the bar as the screen settles, so the
+	 * panel opens on them. A span is drawn from the query and never asked about.
+	 */
+	const question = $derived({
+		noun: subject,
+		facets: showing.filter((facet) => !isASpan(facet)),
+		query,
+		within
+	});
+	const answer = $derived(facetCounts.answerTo(question));
+
+	/* The numbers on screen stay while a new question is out; "Counting..." only before any. */
 	let counts = $state<Record<string, Value[]>>({});
-	let asking = $state(false);
-	/* The question last asked, without the bells, so a bell's re-count can be told from a new one. */
-	let lastQuestion = '';
-
-	const asked = $derived(
-		JSON.stringify(
-			[query, within].map((one) =>
-				Object.entries(one).sort(([name], [other]) => name.localeCompare(other))
-			)
-		)
-	);
-
+	const asking = $derived(answer === undefined);
 	$effect(() => {
-		void asked;
-		/* A span is drawn from the query and has nothing to count, so it is never asked about. */
-		const wanted = showing.filter((facet) => !isASpan(facet));
-		/* The NOUN is in the key: `tags` counts files on one wall and people on another. */
-		const noun = subject;
-		/* The bells too, so a change elsewhere re-counts; the numbers on screen stay meanwhile. */
-		const key = `${vault.generation}|${libraryChanges.generation}|${arrivals.generation}|${noun}|${wanted.join(',')}|${asked}`;
-		/* Seeded before the request, so "Counting..." shows only for a question never asked. */
-		const known = REMEMBERED.get(key);
-		if (known) counts = known;
-		const question = `${noun}|${wanted.join(',')}|${asked}`;
-		const moved = question !== lastQuestion;
-		lastQuestion = question;
-		void (async () => {
-			asking = known === undefined && moved;
-			try {
-				const answers = await Promise.all(
-					wanted.map(async (facet) => {
-						try {
-							const answer = await api.get<FacetCounts>(facetRoute(noun), {
-								query: { ...queryFor(facet), facet, limit: 200 }
-							});
-							/* The names beside the ids, kept for the chips, which hold only the id. */
-							rememberFacetNames(facet, answer.values);
-							return [facet, answer.values] as const;
-						} catch {
-							// A column that could not be filled draws nothing; the rest still holds.
-							return [facet, []] as const;
-						}
-					})
-				);
-				const next = Object.fromEntries(answers);
-				counts = next;
-				remember(key, next);
-			} finally {
-				asking = false;
-			}
-		})();
+		if (answer !== undefined) counts = answer;
+	});
+
+	/* Asked here too for a question the bar did not ask (a swapped column, an edit's draft), and on
+	   every bell, so a change elsewhere re-counts in place. */
+	$effect(() => {
+		void libraryChanges.generation;
+		void arrivals.generation;
+		facetCounts.ask(question);
 	});
 
 	/* How many values a column shows before "view more", per column. */
@@ -384,8 +282,9 @@
 	 * What one column holds once the box has filtered it, in band order where there is one: matched
 	 * against the words on screen ("1 to 3 minutes") and the stored value (`60s..<3m`) alike.
 	 */
-	function narrowed(facet: string): Value[] {
-		const all = (counts[facet] ?? []).filter((one) => !heads(facet).includes(one));
+	function narrowedFrom(facet: string): Value[] {
+		const top = new Set(heads(facet));
+		const all = (counts[facet] ?? []).filter((one) => !top.has(one));
 		const needle = (narrowing[facet] ?? '').trim().toLowerCase();
 		const kept = needle
 			? all.filter(
@@ -395,6 +294,15 @@
 				)
 			: all;
 		return inBandOrder(facet, kept) ?? kept;
+	}
+
+	/* Worked out once per change rather than once per row drawn: a column holds up to 200 values. */
+	const narrowedOf = $derived(
+		Object.fromEntries(showing.map((facet) => [facet, narrowedFrom(facet)]))
+	);
+
+	function narrowed(facet: string): Value[] {
+		return narrowedOf[facet] ?? narrowedFrom(facet);
 	}
 
 	function shown(facet: string): Value[] {
@@ -416,11 +324,17 @@
 	}
 
 	/** "Has" and "No" on a named-thing column: above its values, outside the cut and the box. */
-	function heads(facet: string): Value[] {
+	function headsFrom(facet: string): Value[] {
 		if (!(subject === 'asset' ? PRESENCE_COLUMNS.includes(facet) : facet === 'tags')) return [];
 		const rows = counts[facet] ?? [];
 		// Has before No, whatever their counts: the walls of things send them in count order.
 		return ['any', 'none'].flatMap((value) => rows.filter((one) => one.value === value));
+	}
+
+	const headsOf = $derived(Object.fromEntries(showing.map((facet) => [facet, headsFrom(facet)])));
+
+	function heads(facet: string): Value[] {
+		return headsOf[facet] ?? headsFrom(facet);
 	}
 
 	/*
@@ -428,16 +342,6 @@
 	 * alternative shows what it would give if picked, instead of the column emptying itself. Every
 	 * other column applies, and `within` applies to all, a repeat meaning "and".
 	 */
-	function queryFor(facet: string): Record<string, string | string[]> {
-		const { [facet]: _mine, ...rest } = query;
-		const out: Record<string, string | string[]> = { ...rest };
-		for (const [name, value] of Object.entries(within)) {
-			const held = [out[name] ?? [], value].flat();
-			out[name] = held.length === 1 ? held[0] : held;
-		}
-		return out;
-	}
-
 	/**
 	 * What a value READS as: the server's `label` first, the only source of a name for an id value,
 	 * else derived from the value (`facet-labels`).

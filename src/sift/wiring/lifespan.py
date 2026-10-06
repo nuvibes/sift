@@ -2,8 +2,9 @@
 """Build the application in order, and take it down in the reverse of that order.
 
 Boot order matters and is deliberate: settings, then directories, then the database, then the
-worker pool, then the routes. Nothing accepts a request until everything it depends on is proven to
-work: a failure at boot is loud and fixable, and the same failure on the first request is a mystery.
+worker pool (started once ready), then the routes. Nothing accepts a request until everything it
+depends on is proven to work: a failure at boot is loud and fixable, and the same failure on the
+first request is a mystery.
 
 The order is the signatures, not a comment between two statements. Start-up is a run of named
 steps, each taking what it needs and handing back what the next ones need. A step that has to come
@@ -24,14 +25,16 @@ import asyncio
 # The suppression has to be on the IMPORT LINE: semgrep honours `nosemgrep` on the line it
 # flags or the one directly above, and a reason written five lines up is not read at all.
 import sqlite3  # nosemgrep: sift-no-database-driver-outside-kernel
-from collections.abc import AsyncIterator, Awaitable, Callable
-from contextlib import AsyncExitStack, asynccontextmanager, suppress
+import time
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
+from contextlib import AsyncExitStack, asynccontextmanager, contextmanager, suppress
 from dataclasses import dataclass
 from typing import Any
 
 from fastapi import FastAPI
 
 import sift
+from sift import client
 
 # `log_settings` also declares two settings about the log at import, the way a slice declares its
 # own. The logger is configured before there is a database to ask, so these are what it becomes
@@ -84,7 +87,7 @@ from sift.wiring.diagnostics import start_diagnostics
 from sift.wiring.downloads import build_download_handlers, build_downloads
 from sift.wiring.file_actions import build_file_actions
 from sift.wiring.imports import build_imports
-from sift.wiring.machine import build_benchmark, build_machine, build_self_test
+from sift.wiring.machine import build_benchmark, build_machine, build_self_test, probe_again
 from sift.wiring.playback import build_playback
 from sift.wiring.preferences import build_preferences
 from sift.wiring.products import build_products
@@ -107,6 +110,32 @@ log = get_logger(__name__)
 #: converges on, and for the same reason: a change made on a settings screen should take hold while
 #: somebody is still looking at the screen, and neither read costs anything worth counting.
 SETTINGS_APPLY_SECONDS = 3.0
+
+#: How long the workers wait after ready for the first screen to be drawn, at most, when a desktop
+#: shell started this process: no job competes with the window's first paint.
+FIRST_SCREEN_SECONDS = 5.0
+_FIRST_SCREEN_BEAT = 0.05
+
+
+@contextmanager
+def _step(name: str) -> Iterator[None]:
+    began = time.perf_counter()
+    yield
+    log.info("boot.step", step=name, ms=round((time.perf_counter() - began) * 1000))
+
+
+async def first_screen_or(
+    bus: ChangeBus, limit: float, *, beat: float = _FIRST_SCREEN_BEAT
+) -> bool:
+    """Wait for somebody's first screen (its first connection to the change stream, which a page
+    opens once it has drawn) or `limit` seconds. True when a screen came first."""
+    deadline = time.monotonic() + limit
+    while bus.open_connections() == 0:
+        left = deadline - time.monotonic()
+        if left <= 0:
+            return False
+        await asyncio.sleep(min(beat, left))
+    return True
 
 
 async def keep_the_settings_applied(
@@ -357,21 +386,10 @@ async def _before_the_workers(
     store: Storage,
     built: _Built,
 ) -> tuple[WorkerPool, tasks.TasksService, TaskClock]:
-    """Every handler a worker could claim work for, registered before the pool starts."""
+    """Every handler a worker could claim work for, registered before the pool starts. The pool
+    is built here and started after ready (`_after_ready`)."""
     pool = await build_workers(
         app, store, built.queue, hardware, built.hub, built.master_keys, accelerator
-    )
-    await catch_up(
-        store.content,
-        built.queue,
-        built.marks,
-        built.downloads.service,
-        built.hub,
-        settings.data_dir,
-        built.understanding.faces,
-        wiring.part_of_app(app, player.SEGMENT_CACHE),
-        wiring.part_of_app(app, photo_sets.SERVICE),
-        wiring.part_of_app(app, semantic.WHOLE_PICTURE),
     )
     await build_backup(app, settings, store, built.hub, pool, built.queue)
     await build_libraries(app, settings, store)
@@ -528,17 +546,22 @@ async def start_up(app: FastAPI, teardown: AsyncExitStack) -> None:
     """
     # First in, so last out: after the database, whatever step below opened these.
     teardown.callback(_let_go_of_the_process_wide_parts)
-    settings, hardware, accelerator, store = await _ground(app, teardown)
-    built = await _build_features(app, teardown, settings, hardware, accelerator, store)
-    pool, task_service, task_clock = await _before_the_workers(
-        app, teardown, settings, hardware, accelerator, store, built
-    )
+    # The client's file list, walked beside the steps rather than on the first page's request.
+    listing = asyncio.create_task(client.files(), name="client.files")
+    teardown.push_async_callback(_end_task, listing)
+    with _step("ground"):
+        settings, hardware, accelerator, store = await _ground(app, teardown)
+    with _step("features"):
+        built = await _build_features(app, teardown, settings, hardware, accelerator, store)
+    with _step("services"):
+        pool, task_service, task_clock = await _before_the_workers(
+            app, teardown, settings, hardware, accelerator, store, built
+        )
     # Handed over before the start, so a start that fails half way still stops the workers it
     # began. They stop before the database they write to closes.
     teardown.push_async_callback(pool.stop)
-    # THE WORKERS START HERE, after every handler above is registered: see `build_workers`.
-    await pool.start()
-    await _after_the_workers(app, teardown, store, built, task_service, task_clock)
+    with _step("watching"):
+        await _after_the_workers(app, teardown, store, built, task_service, task_clock)
     _listen_for_changes(app, teardown)
     # The numeric thread pools are held to one thread at package import, because a process
     # holding one cannot reliably start another program. Reported rather than merely done: it is
@@ -556,4 +579,76 @@ async def start_up(app: FastAPI, teardown: AsyncExitStack) -> None:
     # nothing and reports nothing.
     for name in retired_variables_in_use():
         log.warning("config.retired", variable=name, why=RETIRED_VARIABLES[name])
+    await listing
     log.info("boot.ready", port=settings.port)
+    resuming = asyncio.create_task(
+        _after_ready(
+            app,
+            settings,
+            hardware,
+            store,
+            built,
+            pool,
+            hold=FIRST_SCREEN_SECONDS if settings.stop_on_stdin_eof else 0.0,
+        ),
+        name="boot.after_ready",
+    )
+    # Before the workers stop, so a shutdown during the hold never starts them on the way out.
+    teardown.push_async_callback(_end_task, resuming)
+
+
+async def _end_task(task: asyncio.Task[Any]) -> None:
+    task.cancel()
+    with suppress(asyncio.CancelledError):
+        await task
+
+
+async def _after_ready(
+    app: FastAPI,
+    settings: Settings,
+    hardware: HardwareReport,
+    store: Storage,
+    built: _Built,
+    pool: WorkerPool,
+    *,
+    hold: float,
+) -> None:
+    """What a request never waits for: the work a start owes (it only queues jobs), then the
+    workers, after the first screen has drawn or `hold` seconds, then the hardware asked again.
+
+    THE WORKERS START AFTER THE CATCH-UP, as they did when both ran before ready: a download its
+    worker left running is settled before anything can claim it again.
+    """
+    ready = time.monotonic()
+    try:
+        with _step("catch_up"):
+            await catch_up(
+                store.content,
+                built.queue,
+                built.marks,
+                built.downloads.service,
+                built.hub,
+                settings.data_dir,
+                built.understanding.faces,
+                wiring.part_of_app(app, player.SEGMENT_CACHE),
+                wiring.part_of_app(app, photo_sets.SERVICE),
+                wiring.part_of_app(app, semantic.WHOLE_PICTURE),
+            )
+    except Exception:
+        # Said, and the workers start anyway: without them no work at all would run.
+        log.exception("boot.catch_up_failed")
+    drawn = False
+    left = hold - (time.monotonic() - ready)
+    if left > 0:
+        drawn = await first_screen_or(wiring.part_of_app(app, wiring.CHANGES), left)
+    # THE WORKERS START HERE, after every handler is registered: see `build_workers`.
+    await pool.start()
+    log.info(
+        "jobs.resumed",
+        after_ready_ms=round((time.monotonic() - ready) * 1000),
+        first_screen=drawn,
+    )
+    try:
+        await probe_again(settings, hardware)
+    except Exception:
+        log.exception("hardware.reprobe_failed")

@@ -37,6 +37,7 @@ a function for each, exactly as it does for the counters on `WorkAhead`, and thi
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
@@ -124,6 +125,7 @@ class Switchboard:
         self._asks: dict[Family, Ask] = {}
         self._windows: dict[Family, Opens] = {}
         self._quiet: AskQuiet | None = None
+        self._asking: asyncio.Future[dict[Family, Readiness]] | None = None
 
     # --- the switch ----------------------------------------------------------------------
 
@@ -181,8 +183,19 @@ class Switchboard:
         A family whose answer cannot be read is LEFT OUT rather than reported as not ready, for the
         reason `WorkAhead` leaves a failed counter out: "not known" is the honest answer to a read
         that did not come back, and a screen that said "waiting for the runtime" over an
-        unreachable endpoint would be inventing a fault.
+        unreachable endpoint would be inventing a fault. Callers arriving while one ask is out
+        share its answer: every worker claims at once, and each would ask every feature again.
         """
+        if self._asking is None or self._asking.get_loop() is not asyncio.get_running_loop():
+            self._asking = asyncio.ensure_future(self._ask_every_family())
+            self._asking.add_done_callback(self._asked)
+        return dict(await asyncio.shield(self._asking))
+
+    def _asked(self, done: asyncio.Future[dict[Family, Readiness]]) -> None:
+        if self._asking is done:
+            self._asking = None
+
+    async def _ask_every_family(self) -> dict[Family, Readiness]:
         answers: dict[Family, Readiness] = {}
         for family, ask in self._asks.items():
             try:

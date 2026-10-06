@@ -13,6 +13,7 @@ import { bothNarrowings } from '$lib/components/shell/facet-labels';
 import type { RowSource } from '$lib/grid/grid.svelte';
 import {
 	DEFAULT_SORT,
+	FAVORITED_ORDERS,
 	gridSort,
 	mintSeed,
 	RANDOM,
@@ -28,6 +29,17 @@ import {
 	type SimilarTo
 } from '$lib/grid/sort-state.svelte';
 import { FIELDS } from '$lib/search/search.svelte';
+
+/* The filters and orders whose answer is this account's own heart, stars or views. */
+const OPINION_FILTERS = ['fav', 'rating', 'o_count'];
+const OPINION_SORTS: ReadonlySet<string> = new Set([
+	'favorite',
+	'rating',
+	'viewed',
+	'most_viewed',
+	'o_count',
+	...FAVORITED_ORDERS
+]);
 
 /* What the bar writes to the address, which is all of it a wall reads as filters. */
 const FILTER_PARAMS: ReadonlySet<string> = new Set<string>(['q', ...FIELDS]);
@@ -165,6 +177,18 @@ export class WallOrder {
 
 	/* Whether the answer depends on what Sift has described so far. */
 	readonly describedMatters = $derived.by(() => this.byMeaning || this.sort === SIMILARITY);
+
+	/* Whether a heart, stars or a view set elsewhere can move a file into, out of or along this
+	   question, so the wall re-reads on one rather than only restyling the tile it holds. */
+	readonly hangsOnOpinions = $derived.by(() => {
+		const asked: Record<string, string | string[] | undefined> = this.fullQuery;
+		const words = [asked.q ?? ''].flat().join(' ');
+		return (
+			OPINION_FILTERS.some((name) => name in asked) ||
+			OPINION_SORTS.has(this.sort) ||
+			/(^|[\s(])(fav|rating|o_count):/i.test(words)
+		);
+	});
 
 	readonly fullQuery = $derived.by(() => ({
 		...bothNarrowings(this.fromAddress, this.wall.query()),

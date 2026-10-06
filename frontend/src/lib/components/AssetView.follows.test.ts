@@ -12,7 +12,7 @@ import AssetView from './AssetView.svelte';
 import { api } from '$lib/api/client';
 import { jobChanges, libraryChanges } from '$lib/library/changes.svelte';
 
-const served = vi.hoisted(() => ({ detail: {} as Record<string, unknown> }));
+const served = vi.hoisted(() => ({ detail: {} as Record<string, unknown>, gone: false }));
 
 vi.mock('$lib/shell/session.svelte', () => ({ session: { isAdmin: true, canSave: false } }));
 
@@ -23,8 +23,11 @@ vi.mock('$app/state', () => ({
 vi.mock('$lib/shell/toasts.svelte', () => ({ toasts: { show: () => {} } }));
 
 vi.mock('$lib/api/client', () => ({
+	isMissing: (error: unknown) => (error as { status?: number })?.status === 404,
 	api: {
 		get: vi.fn(async (path: string) => {
+			if (served.gone && /^\/assets\/[^/]+$/.test(path))
+				throw Object.assign(new Error('gone'), { status: 404 });
 			if (path === '/collections' || path === '/photo-sets' || path === '/songs')
 				return { items: [] };
 			// The field registry the record grid reads on its first draw. See the record test.
@@ -80,6 +83,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+	served.gone = false;
 	if (instance) unmount(instance);
 	instance = null;
 	host.remove();
@@ -151,5 +155,30 @@ describe('a bell while the file is open', () => {
 		// Both bells, one read: they are settled together.
 		expect(recordReads() - before).toBe(1);
 		expect(onloaded.mock.calls.length, 'the same answer was put on screen again').toBe(told);
+	});
+
+	it('asks for the record once the library bell has settled, never on the bell itself', async () => {
+		served.detail = detail();
+		await show(() => {});
+		const before = recordReads();
+
+		libraryChanges.changed();
+		flushSync();
+
+		expect(recordReads(), 'a re-read of the file restarts the sitting it reports').toBe(before);
+		await vi.waitFor(() => expect(recordReads()).toBe(before + 1));
+	});
+
+	it('says the file is gone when it was deleted somewhere else', async () => {
+		served.detail = detail();
+		await show(() => {});
+
+		served.gone = true;
+		libraryChanges.changed();
+
+		await vi.waitFor(() => {
+			flushSync();
+			if (!host.textContent?.includes('Not found.')) throw new Error('still drawn as here');
+		});
 	});
 });

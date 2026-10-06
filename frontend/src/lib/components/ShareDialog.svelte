@@ -28,7 +28,7 @@
 	import Icon from '$lib/components/Icon.svelte';
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
 	import Modal from '$lib/components/common/Modal.svelte';
-	import { libraryChanges } from '$lib/library/changes.svelte';
+	import { libraryChanges, whenChanged } from '$lib/library/changes.svelte';
 	import { loadCounts } from '$lib/entity/related.svelte';
 	import { toasts } from '$lib/shell/toasts.svelte';
 	import {
@@ -144,6 +144,33 @@
 				loading = false;
 			}
 		})();
+	});
+
+	/* A change elsewhere while open: what is recorded is asked again in place; staged choices stay. */
+	/* The bell this panel rang itself, which it has already drawn. */
+	let rang = -1;
+	whenChanged(libraryChanges, () => {
+		const opened = targets;
+		if (!open || opened.length === 0 || loading || saving) return;
+		if (libraryChanges.generation === rang) return;
+		void Promise.all([
+			fetchUsers(),
+			Promise.all(opened.map((target) => fetchGrants(target))),
+			opened.length === 1 ? fetchSources(opened[0]) : Promise.resolve([]),
+			opened.length === 1 ? fetchVaultSources(opened[0]) : Promise.resolve([])
+		])
+			.then(([everybody, current, from, hiddenBy]) => {
+				if (targets !== opened || !open) return;
+				const same = (held: unknown, read: unknown) =>
+					JSON.stringify(held) === JSON.stringify(read);
+				if (!same(users, everybody)) users = everybody;
+				if (!same(recorded, current)) recorded = current;
+				if (!same(sources, from)) sources = from;
+				if (!same(concealing, hiddenBy)) concealing = hiddenBy;
+			})
+			.catch(() => {
+				// The panel as drawn stays.
+			});
 	});
 
 	/*
@@ -334,6 +361,7 @@
 			// Whatever came back out is on somebody's screen again now, and if this was the last
 			// thing hiding the file, the file is too.
 			libraryChanges.changed();
+			rang = libraryChanges.generation;
 		} catch {
 			toasts.show("That couldn't be unhidden", { tone: 'error' });
 		} finally {

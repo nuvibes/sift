@@ -1,12 +1,13 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """The walls of files: a page, its total, its facets, a position on it, and the files a list of
-ids comes to for one viewer.
-"""
+ids comes to for one viewer."""
 
 from __future__ import annotations
 
+import hashlib
 import json
-from collections.abc import Mapping, Sequence
+from collections import OrderedDict
+from collections.abc import Awaitable, Callable, Hashable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from pathlib import PurePosixPath
 
@@ -19,7 +20,12 @@ from sift.kernel.access.constraints import (
     Not,
     Where,
 )
-from sift.kernel.access.repository.asset_facets import FACET_PRESENCE, PRESENCE_WORDS
+from sift.kernel.access.repository.asset_facets import (
+    FACET_PRESENCE,
+    PRESENCE_WORDS,
+    STORED_COLUMNS,
+    STORED_PRESENCE,
+)
 from sift.kernel.access.repository.assets import (
     _PRESENT_LOCATIONS_OF_ASSETS,
     DEFAULT_SORT,
@@ -48,17 +54,45 @@ from sift.kernel.access.repository.views import (
     _is_object_id,
 )
 from sift.kernel.access.viewer import Viewer
+from sift.kernel.changes import current_mark
 from sift.kernel.db import Row, in_clause, point_read
 from sift.kernel.paging import MAX_PAGE_SIZE
 
-# The stored counts for one user and the highest row number handed out (one seek, not a pass),
-# read on every page. See `drive_for`.
+# A user's stored counts and the highest row number handed out, one seek per page (`drive_for`).
 _VIEWER_STATS = point_read(
     "access.viewer_stats",
     "SELECT s.permitted, s.concealed, s.permitted_bytes, s.concealed_bytes,"
     " (SELECT MAX(rowid) FROM assets) AS library"
     " FROM viewer_stats s WHERE s.user_id = ?",
 )
+
+# One thing's stored counts for one user, kept as the walls' are; no row is nothing permitted.
+_ENTITY_COUNT = point_read(
+    "access.entity_count",
+    "SELECT permitted, concealed, permitted_bytes, concealed_bytes FROM viewer_entity_counts"
+    " WHERE user_id = ? AND kind = ? AND object_id = ?",
+)
+
+# Whether a tag has a tag filed under it, which `tags:` then takes in.
+_TAG_BRANCHES = point_read("access.tag_branches", "SELECT 1 FROM tags WHERE parent_id = ? LIMIT 1")
+
+#: The one-value conditions a stored count answers exactly, and the kind it is stored under.
+_STORED_KINDS = {
+    "people": "person",
+    "usernames": "username",
+    "collections": "collection",
+    "photo_sets": "photo_set",
+    "songs": "song",
+    "sites": "site",
+    "tags": "tag",
+    "media_type": "media",
+}
+
+# Whether this user hides any folder, which a shut vault's placeholders leave its name out for.
+_HIDES_A_FOLDER = "SELECT 1 FROM folder_user_state WHERE user_id = ? AND hidden = 1 LIMIT 1"
+
+#: How many questions' totals are carried to the pages that continue them.
+_TOTALS_KEPT = 256
 
 # Which of a list of files this user may act on: a row per permitted file, with the vault's answer.
 # Absent means refused, or not there: the same answer on purpose.
@@ -139,6 +173,34 @@ def _asks_words(node: Node) -> bool:
     return _is_word(node)
 
 
+def _constrains(node: Node) -> bool:
+    """Whether a tree narrows anything: ALL of nothing, however nested, does not."""
+    if isinstance(node, AllOf):
+        return any(_constrains(part) for part in node.parts)
+    return True
+
+
+def _terms(node: Node) -> tuple[Node, ...]:
+    """The conditions that must all hold, nested ALLs opened."""
+    if isinstance(node, AllOf):
+        return tuple(term for part in node.parts for term in _terms(part))
+    return (node,)
+
+
+def _shown(row: Row | None, *, reveal: int, named: int, hidden_only: bool) -> tuple[int, int]:
+    """`(files, bytes)` of a stored count by the page's own two vault rules; no row is none."""
+    if row is None:
+        return 0, 0
+    permitted, concealed = int(row["permitted"]), int(row["concealed"])
+    permitted_bytes, concealed_bytes = int(row["permitted_bytes"]), int(row["concealed_bytes"])
+    if hidden_only:
+        return (concealed if reveal else 0), (concealed_bytes if named else 0)
+    return (
+        permitted if reveal else permitted - concealed,
+        permitted_bytes if named else permitted_bytes - concealed_bytes,
+    )
+
+
 def _conjuncts(asset_filter: AssetFilter) -> tuple[Node, ...]:
     root = asset_filter.where
     return root.parts if isinstance(root, AllOf) else (root,)
@@ -211,8 +273,7 @@ class FileReads(RepositoryCore):
     """The scoped reads of many files at once."""
 
     async def visible_counts(self, viewer: Viewer) -> tuple[int, int]:
-        """How many files this viewer may see, and how many of those the vault holds back: one
-        probe, and any change to what they may see moves one of them."""
+        """How many files this viewer may see and how many the vault holds back, in one probe."""
         row = await self._db.fetch_one(_VIEWER_STATS, (viewer.id,))
         if row is None:
             return (0, 0)
@@ -249,25 +310,38 @@ class FileReads(RepositoryCore):
         words: WordMatches | None = None,
     ) -> list[FacetCount]:
         """How many of the files this query reaches carry each value of one dimension, from the
-        statement that decides what those files are; a concealed value is absent, never a zero."""
+        statement that decides what those files are, or for a question that narrows nothing from
+        the stored counts kept by the same rules; a concealed value is absent, never a zero."""
         joins, value = FACETS[facet]
         label = FACET_LABELS.get(facet, "")
         # A concealed value never reaches the group; its files count under their other values.
         extra = concealed_value(facet)
+        reveal = self._reveal_existence(viewer)
+        asked = _Asked(DEFAULT_SORT, None, None, None, hidden_only, False, None)
+        stored, whole, asset_filter = await self._stored_terms(viewer, asset_filter, asked)
+        if 0 in (_shown(row, reveal=reveal, named=1, hidden_only=hidden_only)[0] for row in stored):
+            return []
         where, _, bound = _narrowed(viewer, asset_filter, words)
-        query = facet_query(where, joins=joins, value=value, label=label, extra=extra)
-        params = self._params(
+        unnarrowed = not _constrains(asset_filter.where)
+        stored_column = unnarrowed and facet in STORED_COLUMNS
+        # Placeholders behind a shut vault: a hidden name is left out, its files still counted.
+        locked = reveal == 1 and not self._reveal_named(viewer)
+        if stored_column and facet == "in" and locked:
+            stored_column = await self._db.fetch_one(_HIDES_A_FOLDER, (viewer.id,)) is None
+        query = (
+            STORED_COLUMNS[facet]
+            if stored_column
+            else facet_query(where, joins=joins, value=value, label=label, extra=extra)
+        )
+        params = self._asked_params(
             viewer,
-            asset_id=None,
-            reveal=self._reveal_existence(viewer),
+            asked,
+            reveal=reveal,
             limit=max(1, min(limit, MAX_PAGE_SIZE)),
             offset=0,
-            tag_id=None,
-            collection_id=None,
-            photo_set_id=None,
-            hidden_only=hidden_only,
+            pinned_first=False,
             bound=bound,
-        ) | {"reveal_named": self._reveal_named(viewer)}
+        )
         rows = await self._db.fetch_all(query, params)
         counted = [
             FacetCount(
@@ -278,17 +352,40 @@ class FileReads(RepositoryCore):
             )
             for row in rows
         ]
+        return await self._facet_presence(
+            viewer, facet, counted, params, asset_filter, asked, where, bound, stored, whole, locked
+        )
+
+    async def _facet_presence(
+        self,
+        viewer: Viewer,
+        facet: str,
+        counted: list[FacetCount],
+        params: dict[str, object],
+        asset_filter: AssetFilter,
+        asked: _Asked,
+        where: str,
+        bound: Mapping[str, object],
+        stored: list[Row | None],
+        whole: bool,
+        locked: bool,
+    ) -> list[FacetCount]:
+        """A presence facet's counts with its Has and No rows first; any other's as counted."""
         if facet not in FACET_PRESENCE:
             return counted
+        reveal = self._reveal_existence(viewer)
         # "Has" from the link, "No" as the rest of the wall's total. Only a locked tile behind a shut
-        # vault can carry nothing but hidden things.
+        # vault can carry nothing but hidden things, which the stored count cannot tell.
         link, kept = FACET_PRESENCE[facet]
-        locked = self._reveal_existence(viewer) and not self._reveal_named(viewer)
-        has = await self._db.fetch_all(
-            facet_query(where, joins=link, value="'any'", extra=kept if locked else ""), params
+        has = (
+            await self._db.fetch_all(STORED_PRESENCE, params | {"presence": "has_" + facet})
+            if not locked and not _constrains(asset_filter.where)
+            else await self._db.fetch_all(
+                facet_query(where, joins=link, value="'any'", extra=kept if locked else ""),
+                params,
+            )
         )
         stats = await self._db.fetch_one(_VIEWER_STATS, (viewer.id,))
-        asked = _Asked(DEFAULT_SORT, None, None, None, hidden_only, False, None)
         total, _ = await self._page_total(
             viewer,
             stats,
@@ -296,9 +393,10 @@ class FileReads(RepositoryCore):
             asked,
             where,
             bound,
-            reveal=self._reveal_existence(viewer),
+            reveal=reveal,
             limit=1,
             offset=0,
+            stored=stored if whole else None,
         )
         some = int(has[0]["files"]) if has else 0
         heads = [FacetCount(value="any", count=some), FacetCount(value="none", count=total - some)]
@@ -329,29 +427,31 @@ class FileReads(RepositoryCore):
         `pinned_first` is whether THIS wall floats the pin; `words`, from `word_matches`.
         """
         limit = _page_size(limit, offset)
+        if collection_id is not None:
+            # A collection's wall is its membership as the filter asks it, which a count is kept for.
+            terms = (*_terms(asset_filter.where), Where("collections", (collection_id,)))
+            asset_filter, collection_id = replace(asset_filter, where=AllOf(terms)), None
         asked = _Asked(sort, tag_id, collection_id, photo_set_id, hidden_only, pinned_first, seed)
         reveal = self._reveal_existence(viewer)
+        stored, whole, asset_filter = await self._stored_terms(viewer, asset_filter, asked)
+        # A term nothing is shown under empties the wall, whatever else is asked.
+        if 0 in (_shown(row, reveal=reveal, named=1, hidden_only=hidden_only)[0] for row in stored):
+            return AssetPage(items=[], total=0)
         where, outer, bound = _narrowed(viewer, asset_filter, words)
+        count_where, count_bound = where, bound
         # A sequence or a pin in front of the sort costs the whole set: no index answers it.
-        sequence = photo_set_id is not None
-        arranged = pinned_first or sequence
-        if after is not None:
-            if arranged or sort not in SEEKABLE_SORTS:
-                raise ValueError("this wall cannot be continued from a row; page by offset")
-            continued = await self._continued(viewer, sort, after, reveal=reveal, bound=bound)
-            if continued is None:
-                return AssetPage(items=[], total=0)
-            bound = continued
+        arranged = pinned_first or photo_set_id is not None
+        seek = await self._continued(viewer, asked, after, reveal=reveal, bound=bound)
+        if seek is None:
+            return AssetPage(items=[], total=0)
         # The stored counts choose the side walked first and answer an unfiltered total.
         stats = await self._db.fetch_one(_VIEWER_STATS, (viewer.id,))
         drive = _drive_of(stats)
         pinned: list[Row] = []
-        count_where, count_bound = where, bound
-        if pinned_first and not sequence:
-            pinned = await self._pins(
+        if pinned_first and photo_set_id is None:
+            pinned, where, outer, seek = await self._pins(
                 viewer, asset_filter, words, asked, drive=drive, reveal=reveal
             )
-            where, outer, bound = _narrowed(viewer, asset_filter, words, Not(Where("pinned")))
             arranged = False
         # A page begun among the pins takes the rest, then fills from the walk.
         pins_here = pinned[offset : offset + limit]
@@ -359,7 +459,7 @@ class FileReads(RepositoryCore):
             viewer,
             asked,
             where,
-            bound,
+            seek,
             reveal=reveal,
             drive=drive,
             arranged=arranged,
@@ -367,6 +467,7 @@ class FileReads(RepositoryCore):
             offset=max(0, offset - len(pinned)),
             limit=limit - len(pins_here),
             outer=outer,
+            narrowed=_constrains(asset_filter.where),
         )
         items = [_asset_view(row, viewer) for row in (*pins_here, *rows)]
         total, total_bytes = await self._page_total(
@@ -379,6 +480,8 @@ class FileReads(RepositoryCore):
             reveal=reveal,
             limit=limit,
             offset=offset,
+            stored=stored if whole else None,
+            continued=after is not None,
         )
         return AssetPage(items=items, total=total, total_bytes=total_bytes)
 
@@ -411,11 +514,21 @@ class FileReads(RepositoryCore):
         )
 
     async def _continued(
-        self, viewer: Viewer, sort: str, after: str, *, reveal: int, bound: Mapping[str, object]
+        self,
+        viewer: Viewer,
+        asked: _Asked,
+        after: str | None,
+        *,
+        reveal: int,
+        bound: dict[str, object],
     ) -> dict[str, object] | None:
-        """The binds that continue a wall from the row `after`, or None where it names no row this
-        viewer may see."""
-        anchor = await self._db.fetch_one(seek_anchor(sort), (after,))
+        """The binds that continue a wall from the row `after` (`bound` without one), or None where
+        it names no row this viewer may see."""
+        if after is None:
+            return bound
+        if asked.pinned_first or asked.photo_set_id is not None or asked.sort not in SEEKABLE_SORTS:
+            raise ValueError("this wall cannot be continued from a row; page by offset")
+        anchor = await self._db.fetch_one(seek_anchor(asked.sort), (after,))
         if anchor is None or await self._one(viewer, after, reveal=reveal) is None:
             return None
         return {**bound, "after_key": anchor["key"], "after_id": after}
@@ -429,11 +542,11 @@ class FileReads(RepositoryCore):
         *,
         drive: str,
         reveal: int,
-    ) -> list[Row]:
-        """The pinned files of a wall that floats them, in the sort's order: the page walks the
-        index with them excluded, so between them exactly the files the total counts."""
+    ) -> tuple[list[Row], str, str | None, dict[str, object]]:
+        """The pinned files of a wall that floats them, in the sort's order, and the filter the walk
+        after them reads: the index with them excluded, so between them exactly what is counted."""
         pins_where, _, pins_bound = _narrowed(viewer, asset_filter, words, Where("pinned"))
-        return await self._db.fetch_all(
+        pinned = await self._db.fetch_all(
             assets_query(asked.sort, pins_where, arranged=False, counted=False, drive=drive),
             self._asked_params(
                 viewer,
@@ -445,6 +558,7 @@ class FileReads(RepositoryCore):
                 bound=pins_bound,
             ),
         )
+        return pinned, *_narrowed(viewer, asset_filter, words, Not(Where("pinned")))
 
     async def _walk(
         self,
@@ -460,6 +574,7 @@ class FileReads(RepositoryCore):
         offset: int,
         limit: int,
         outer: str | None = None,
+        narrowed: bool = False,
     ) -> list[Row]:
         """The rows of a page past its pins, walked in the sort's order; none for no room left."""
         if limit <= 0:
@@ -481,6 +596,7 @@ class FileReads(RepositoryCore):
             drive=drive,
             continued=continued,
             outer=outer,
+            narrowed=narrowed,
         )
         return await self._db.fetch_all(walk, params)
 
@@ -496,28 +612,21 @@ class FileReads(RepositoryCore):
         reveal: int,
         limit: int,
         offset: int,
+        stored: Sequence[Row | None] | None = None,
+        continued: bool = False,
     ) -> tuple[int, int]:
-        """`(files, bytes)` on the whole wall, pins included: stored for an unfiltered wall, else
-        counted from the page's own seams. A vaulted file adds no bytes while the vault is shut."""
+        """`(files, bytes)` on the whole wall, pins included: stored for an unfiltered wall or one
+        narrowed by one stored term (`stored`, every term of the question), else counted from the
+        page's own seams, once a question. A vaulted file adds no bytes while the vault is shut."""
         named = self._reveal_named(viewer)
         narrowed = (
-            asset_filter != NO_FILTER
+            _constrains(asset_filter.where)
             or asked.tag_id is not None
             or asked.collection_id is not None
-            or asked.photo_set_id is not None
         )
-        if not narrowed:
-            permitted = 0 if stats is None else int(stats["permitted"])
-            concealed = 0 if stats is None else int(stats["concealed"])
-            permitted_bytes = 0 if stats is None else int(stats["permitted_bytes"])
-            concealed_bytes = 0 if stats is None else int(stats["concealed_bytes"])
-            if asked.hidden_only:
-                total = concealed if reveal else 0
-                total_bytes = concealed_bytes if named else 0
-            else:
-                total = permitted if reveal else permitted - concealed
-                total_bytes = permitted_bytes if named else permitted_bytes - concealed_bytes
-            return total, total_bytes
+        if not narrowed or (stored is not None and len(stored) == 1):
+            row = stats if not narrowed or stored is None else stored[0]
+            return _shown(row, reveal=reveal, named=named, hidden_only=asked.hidden_only)
         params = self._asked_params(
             viewer,
             asked,
@@ -527,23 +636,116 @@ class FileReads(RepositoryCore):
             pinned_first=asked.pinned_first,
             bound=bound,
         )
-        counted = await self._db.fetch_all(assets_count_query(where), params)
-        return int(counted[0]["total_count"]), int(counted[0]["total_bytes"])
+
+        async def count() -> tuple[int, int]:
+            counted = await self._db.fetch_all(assets_count_query(where), params)
+            return int(counted[0]["total_count"]), int(counted[0]["total_bytes"])
+
+        question = (
+            viewer.id,
+            viewer.cache_stamp,
+            reveal,
+            named,
+            asked.hidden_only,
+            asked.tag_id,
+            asked.collection_id,
+            # A digest, as a guest's words bind every file they match.
+            hashlib.blake2b(
+                repr(
+                    (where, sorted((name, repr(value)) for name, value in bound.items()))
+                ).encode(),
+                digest_size=16,
+            ).digest(),
+        )
+        return await self._once(question, continued, count)
+
+    _kept_totals: OrderedDict[tuple[Hashable, str], tuple[int, int]] | None = None
+
+    async def _once(
+        self,
+        question: Hashable,
+        continued: bool,
+        count: Callable[[], Awaitable[tuple[int, int]]],
+    ) -> tuple[int, int]:
+        """A question's total, counted on its first page and carried to the pages continuing it
+        while nothing has been announced since (the change bus's mark)."""
+        mark = current_mark()
+        if self._kept_totals is None:
+            self._kept_totals = OrderedDict()
+        kept = self._kept_totals
+        held = kept.get((question, mark)) if continued and mark is not None else None
+        if held is not None:
+            return held
+        total = await count()
+        if mark is not None:
+            kept[(question, mark)] = total
+            while len(kept) > _TOTALS_KEPT:
+                kept.popitem(last=False)
+        return total
+
+    async def _stored_terms(
+        self, viewer: Viewer, asset_filter: AssetFilter, asked: _Asked
+    ) -> tuple[list[Row | None], bool, AssetFilter]:
+        """The stored count of each term of this question that one count answers, whether those
+        terms are the whole question, and the filter with them first, fewest files first: the
+        planner reads the first one's members and tests the rest."""
+        wanted: list[tuple[str, str]] = []
+        if asked.tag_id is not None:
+            wanted.append(("tag", asked.tag_id))
+        if asked.collection_id is not None:
+            wanted.append(("collection", asked.collection_id))
+        rows = [
+            await self._db.fetch_one(_ENTITY_COUNT, (viewer.id, kind, object_id))
+            for kind, object_id in wanted
+        ]
+        counted: list[tuple[int, Node]] = []
+        rest: list[Node] = []
+        for term in _terms(asset_filter.where):
+            kind = await self._stored_kind(viewer, term)
+            if kind is None or not isinstance(term, Where):
+                rest.append(term)
+                continue
+            row = await self._db.fetch_one(_ENTITY_COUNT, (viewer.id, kind, str(term.values[0])))
+            rows.append(row)
+            counted.append((0 if row is None else int(row["permitted"]), term))
+        if counted and len(counted) + len(rest) > 1:
+            first = [term for _files, term in sorted(counted, key=lambda one: one[0])]
+            asset_filter = replace(asset_filter, where=AllOf((*first, *rest)))
+        return rows, not rest, asset_filter
+
+    async def _stored_kind(self, viewer: Viewer, term: Node) -> str | None:
+        """The kind a stored count of this one condition is kept under, or None for none."""
+        if not isinstance(term, Where) or len(term.values) != 1:
+            return None
+        kind = _STORED_KINDS.get(term.key)
+        # A tag takes in its branch. Asked for an admin only, so what is filed under a tag a guest
+        # is shown nothing of never changes how long their read takes.
+        if kind == "tag" and (
+            not viewer.is_admin
+            or await self._db.fetch_one(_TAG_BRANCHES, (term.values[0],)) is not None
+        ):
+            return None
+        return kind
 
     async def count_visible(self, viewer: Viewer, asset_filter: AssetFilter) -> int:
         """How many files this filter finds for this viewer: the Files wall's own total, no page,
-        for a number that opens that wall. The same count statement `visible_assets` uses."""
+        for a number that opens that wall, read as `visible_assets` reads it."""
+        asked = _Asked(DEFAULT_SORT, None, None, None, False, False, None)
+        stored, whole, asset_filter = await self._stored_terms(viewer, asset_filter, asked)
         where, bound = asset_filter.predicate()
-        params = self._params(
+        total, _ = await self._page_total(
             viewer,
-            asset_id=None,
+            await self._db.fetch_one(_VIEWER_STATS, (viewer.id,)),
+            asset_filter,
+            asked,
+            where,
+            bound,
             reveal=self._reveal_existence(viewer),
             limit=1,
             offset=0,
-            bound=bound,
-        ) | {"reveal_named": self._reveal_named(viewer)}
-        counted = await self._db.fetch_all(assets_count_query(where), params)
-        return int(counted[0]["total_count"])
+            stored=stored if whole else None,
+        )
+        return total
 
     async def position_of(
         self,
@@ -592,16 +794,13 @@ class FileReads(RepositoryCore):
         return int(rows[0]["position"]) - 1
 
     async def visible_of(self, viewer: Viewer, asset_ids: Sequence[str]) -> set[str]:
-        """Which of these files this viewer may see. A membership test, not a page: the caller's own
-        list bounds it, where `visible_assets(limit=len(ids))` would be cut at the page cap and
-        report everything past it as refused. Asked a page at a time through `assets_of`.
-        """
+        """Which of these files this viewer may see: a membership test bounded by the caller's list,
+        not a page, which the page cap would cut short. Asked a page at a time (`assets_of`)."""
         return set(await self.assets_of(viewer, asset_ids))
 
     async def assets_of(self, viewer: Viewer, asset_ids: Sequence[str]) -> dict[str, AssetView]:
-        """The rows for these ids that this viewer may see, keyed by id. Absent means not allowed
-        or not there, and a caller must not tell those apart. Chunked a page at a time, so the
-        caller's own list bounds it."""
+        """The rows for these ids that this viewer may see, keyed by id, a page at a time. Absent
+        means not allowed or not there, and a caller must not tell those apart."""
         wanted = sorted(set(asset_ids))
         found: dict[str, AssetView] = {}
         for start in range(0, len(wanted), MAX_PAGE_SIZE):
@@ -617,9 +816,8 @@ class FileReads(RepositoryCore):
     async def newest_under_usernames(
         self, viewer: Viewer, username_ids: Sequence[str]
     ) -> dict[str, str]:
-        """The newest file this viewer may see under each of these usernames, keyed by username:
-        the picture beside a username, read through the wall's own statement so it is never a file
-        this viewer may not see. Absent means nothing to see or no such username, alike."""
+        """The newest file this viewer may see under each of these usernames, through the wall's own
+        statement, keyed by username. Absent means nothing to see or no such username, alike."""
         wanted = [one for one in dict.fromkeys(username_ids) if _is_object_id(one)]
         if not wanted:
             return {}
@@ -640,35 +838,15 @@ class FileReads(RepositoryCore):
 
     async def standing_of(self, viewer: Viewer, asset_ids: Sequence[str]) -> dict[str, bool]:
         """Which of these files this viewer may be shown, each with whether their vault conceals
-        it. Absent means not allowed or not there, alike.
-
-        `actionable_of`'s probe without the reasons or the denial log, for a screen deciding what to
-        draw. A concealed file is present only where the grid would show it. `assets_of` is the
-        call when a name or a size is wanted.
-        """
-        wanted = [asset_id for asset_id in dict.fromkeys(asset_ids) if _is_object_id(asset_id)]
+        it; absent means not allowed or not there, alike, and a concealed file is present only where
+        the grid would show it. `actionable_of`'s probe without the reasons or the denial log, for a
+        screen deciding what to draw; `assets_of` when a name or a size is wanted."""
         revealed = self._reveal_existence(viewer) == 1
-        standing: dict[str, bool] = {}
-        for start in range(0, len(wanted), MAX_PAGE_SIZE):
-            chunk = wanted[start : start + MAX_PAGE_SIZE]
-            sql, values = in_clause(_STANDING_OF, chunk)
-            rows = await self._db.fetch_all(sql, [viewer.id, *values])
-            standing.update(
-                (str(row["asset_id"]), bool(row["concealed"]))
-                for row in rows
-                if revealed or not row["concealed"]
-            )
-        return standing
+        standing = await self._standing(viewer, asset_ids)
+        return {one: hidden for one, hidden in standing.items() if revealed or not hidden}
 
-    async def actionable_of(self, viewer: Viewer, asset_ids: Sequence[str]) -> Actionable:
-        """Which of these a viewer may WRITE to, and why not for the rest: the batch form of
-        `open_asset`, so a write over a selection has the whole answer before it writes.
-
-        A viewer may act on exactly what they may open (a placeholder is not something to tag). An
-        id that appears only with THIS viewer's vault open is concealed by their own lock; anything
-        still absent is refused. One statement per page of ids. A refusal is logged, a concealment
-        is not, as `is_concealed` does.
-        """
+    async def _standing(self, viewer: Viewer, asset_ids: Sequence[str]) -> dict[str, bool]:
+        """Each of these files this viewer is permitted, with whether their vault conceals it."""
         wanted = [asset_id for asset_id in dict.fromkeys(asset_ids) if _is_object_id(asset_id)]
         standing: dict[str, bool] = {}
         for start in range(0, len(wanted), MAX_PAGE_SIZE):
@@ -676,6 +854,15 @@ class FileReads(RepositoryCore):
             sql, values = in_clause(_STANDING_OF, chunk)
             rows = await self._db.fetch_all(sql, [viewer.id, *values])
             standing.update((str(row["asset_id"]), bool(row["concealed"])) for row in rows)
+        return standing
+
+    async def actionable_of(self, viewer: Viewer, asset_ids: Sequence[str]) -> Actionable:
+        """Which of these a viewer may WRITE to, and why not for the rest: the batch form of
+        `open_asset`, so a write over a selection has the whole answer before it writes. A viewer
+        may act on exactly what they may open; an id only THEIR open vault shows is concealed by
+        their own lock, anything else absent is refused. A refusal is logged, a concealment is not.
+        """
+        standing = await self._standing(viewer, asset_ids)
         allowed: list[str] = []
         concealed: list[str] = []
         refused: list[str] = []
@@ -697,10 +884,8 @@ class FileReads(RepositoryCore):
         """How many of these files carry each person, Site, collection, photo set, song and tag:
         what a picker needs to draw a tick or a half tick.
 
-        **Hand it only ids `actionable_of` allowed.** It takes no viewer, so reading it cannot leave
-        anybody thinking a scope was applied (the statements say why there is none). Paged, since
-        SQLite binds one value per placeholder and a selection runs to thousands.
-        """
+        **Hand it only ids `actionable_of` allowed.** It takes no viewer, so nobody can read a scope
+        into it (the statements say why there is none). Paged: a selection runs to thousands."""
         wanted = [asset_id for asset_id in dict.fromkeys(asset_ids) if _is_object_id(asset_id)]
         tallies: list[dict[str, int]] = [{}, {}, {}, {}, {}, {}]
         statements = (
@@ -740,9 +925,8 @@ class FileReads(RepositoryCore):
         ceiling: int = 0,
     ) -> tuple[list[tuple[str, int]], int]:
         """One page of the groups waiting, each with how many faces this viewer may see, and the
-        total, scoped and paged by one statement so the two describe the same groups. `floor` and
-        `ceiling` bound a group by the faces this viewer may see; one and no ceiling is every group.
-        """
+        total, from one statement so the two agree. `floor` and `ceiling` bound a group by the faces
+        this viewer may see; one and no ceiling is every group."""
         _where, bound = NO_FILTER.predicate()
         rows = await self._db.fetch_all(
             waiting_pile_page_query(),
@@ -798,14 +982,10 @@ class FileReads(RepositoryCore):
         return int(rows[0]["position"]) - 1 if rows else None
 
     async def names_on_disk(self, viewer: Viewer, asset_ids: Sequence[str]) -> dict[str, str]:
-        """What each of these files is called now, keyed by asset id, for the ones this viewer may
-        have and that are somewhere Sift can see: the imported `original_filename` never changes,
-        and a renamed file would go on wearing it.
-
-        The location's relative path, not the resolved one, which can end in a content-addressed
-        name; the first present copy, as `locate` serves. Absent means not allowed, not there or no
-        copy present, alike.
-        """
+        """What each of these files is called now (a renamed file keeps its `original_filename`),
+        keyed by asset id: the first present copy's relative path, as `locate` serves, not the
+        resolved one, which can be a content address. Absent means not allowed, not there or no
+        copy present, alike."""
         allowed = await self.assets_of(viewer, asset_ids)
         if not allowed:
             return {}

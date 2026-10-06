@@ -113,6 +113,31 @@ async def test_a_readiness_that_cannot_be_read_is_left_out_rather_than_called_no
     assert Family.IDENTIFY not in answers
 
 
+@pytest.mark.unit
+async def test_callers_arriving_together_share_one_ask_and_a_later_caller_asks_again() -> None:
+    asked = 0
+    gate = asyncio.Event()
+
+    async def slow() -> Readiness:
+        nonlocal asked
+        asked += 1
+        await gate.wait()
+        return Readiness(ready=True)
+
+    board = Switchboard()
+    board.declare_ready(Family.SEMANTIC, slow)
+    callers = [asyncio.ensure_future(board.readiness()) for _ in range(8)]
+    await asyncio.sleep(0)
+    gate.set()
+    answers = await asyncio.gather(*callers)
+
+    assert asked == 1
+    assert all(one == {Family.SEMANTIC: Readiness(ready=True)} for one in answers)
+    answers[0].clear()
+    assert await board.readiness() == {Family.SEMANTIC: Readiness(ready=True)}
+    assert asked == 2
+
+
 # --- the queue refuses to write the work down ---------------------------------------------------
 
 

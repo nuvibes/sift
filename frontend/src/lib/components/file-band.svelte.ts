@@ -65,6 +65,10 @@ async function membershipsOf(assetId: string): Promise<Membership[]> {
 	];
 }
 
+function moved(held: unknown, read: unknown): boolean {
+	return JSON.stringify(held) !== JSON.stringify(read);
+}
+
 export class FileBand {
 	people = $state<PersonRef[]>([]);
 	/* Which Sites the file is filed under: a file reaches a Site through an account, so its own list. */
@@ -101,33 +105,39 @@ export class FileBand {
 		this.bandFor = null;
 	}
 
-	/** Read the lists for this file, each on its own. */
+	/** Read the lists for this file all at once, each drawn as it lands. */
 	async load(wanted: string): Promise<void> {
-		try {
-			const inIt = await api.get<PersonRef[]>(`/assets/${wanted}/people`);
-			if (wanted === this.current()) this.people = inIt;
-		} catch {
-			// Left empty: no row is drawn.
-		}
-		try {
-			const under = await filingsOf(wanted);
-			if (wanted === this.current()) this.filings = under;
-		} catch {
-			// Left empty, which draws as a file filed under nothing.
-		}
-		try {
-			const held = await membershipsOf(wanted);
-			if (wanted === this.current()) this.partOf = held;
-		} catch {
-			if (wanted === this.current()) this.partOf = [];
-		}
-		try {
-			const put = await api.get<TagRef[]>(`/assets/${wanted}/tags`);
-			if (wanted === this.current()) this.tags = put;
-		} catch {
-			if (wanted === this.current()) this.tags = [];
-		}
-		if (wanted === this.current()) this.bandFor = wanted;
+		/* A re-read that found nothing new writes nothing, so no chip is drawn twice. */
+		const here = () => wanted === this.current();
+		await Promise.all([
+			api
+				.get<PersonRef[]>(`/assets/${wanted}/people`)
+				.then((inIt) => {
+					if (here() && moved(this.people, inIt)) this.people = inIt;
+				})
+				.catch(() => {
+					// Kept as drawn: no row, on a first read.
+				}),
+			filingsOf(wanted)
+				.then((under) => {
+					if (here() && moved(this.filings, under)) this.filings = under;
+				})
+				.catch(() => {
+					// Kept as drawn, which on a first read is a file filed under nothing.
+				}),
+			membershipsOf(wanted)
+				.catch(() => [])
+				.then((held) => {
+					if (here() && moved(this.partOf, held)) this.partOf = held;
+				}),
+			api
+				.get<TagRef[]>(`/assets/${wanted}/tags`)
+				.catch(() => [])
+				.then((put) => {
+					if (here() && moved(this.tags, put)) this.tags = put;
+				})
+		]);
+		if (here()) this.bandFor = wanted;
 	}
 
 	/** Take this file out of a collection, a photo set or a song, as the entity's page does. */

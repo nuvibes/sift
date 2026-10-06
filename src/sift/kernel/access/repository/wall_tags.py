@@ -14,6 +14,7 @@ from sift.kernel.access.repository.walls import (
     _wall,
     _with_stored_counts,
     locked_tile,
+    one_row,
     shown,
 )
 from sift.kernel.sql_splice import splice
@@ -291,6 +292,10 @@ TAGS_POSITION = _position(_TAGS)
 # unfiltered wall has nothing to splice there.
 _TAGS_STORED = _with_stored_counts(_VISIBLE_TAGS, "_VISIBLE_TAGS")
 
+#: One tag by id, as the unfiltered wall reads it: what a cover or a page asks before it
+#: answers, at one row's cost (`one_row`).
+TAG_BY_ID = one_row(_TAGS_STORED, "_TAGS_STORED", "tag", "t", "tag_id")
+
 
 #: A handful of tags by id: the tags wall unfiltered, counted off the stored numbers, with the
 #: one-tag condition widened to a list. The ids bind as ONE JSON array under `:ids`, so an id that
@@ -299,7 +304,7 @@ _TAGS_STORED = _with_stored_counts(_VISIBLE_TAGS, "_VISIBLE_TAGS")
 #: Not the LIVE-count form (`_VISIBLE_TAGS`), which resolves every tag's files through the verdict
 #: before the by-id condition is reached: several times the cost of the stored form, for the same
 #: rows. Unfiltered the two forms answer the same number (see `_STORED_COUNTS`), so this is the
-#: wall's own answer read the way the wall reads it, as `_PEOPLE_BY_ID` is for people.
+#: wall's own answer read the way the wall reads it, as `PERSON_BY_ID` is for people.
 TAGS_BY_ID = _one_seam(
     _TAGS_STORED,
     "_TAGS_STORED",

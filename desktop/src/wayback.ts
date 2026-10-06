@@ -56,7 +56,7 @@ export interface WayBack {
 	/** Said once a backend is up, if it is the start without them. */
 	started(): void;
 	/** The archive under this name in the save folder: its path, or null. */
-	archive(name: string): Promise<string | null>;
+	archive(name: string): Promise<Bundled>;
 }
 
 export interface Ways {
@@ -72,6 +72,17 @@ export function wayBack(ways: Ways): WayBack {
 	/* Where the log was saved, said once by the dialog that comes back after it. */
 	let saved = '';
 
+	/** The chosen folder, else Downloads; a machine whose Downloads folder cannot be resolved
+	 *  (a profile with it redirected or missing) gets this app's own data folder, which exists. */
+	function saveFolder(settings: DesktopSettings): string {
+		if (settings.downloadDir) return settings.downloadDir;
+		try {
+			return app.getPath('downloads');
+		} catch {
+			return app.getPath('userData');
+		}
+	}
+
 	/** The one way the log archive is made, for the dialog and the page alike. */
 	async function makeLogArchive(name?: string): Promise<Bundled> {
 		const settings = ways.settings();
@@ -81,7 +92,7 @@ export function wayBack(ways: Ways): WayBack {
 			appLogs: app.getPath('userData'),
 			libraryLogs: settings.mode === 'standalone' ? locations(settings).dataDir : null,
 			facts: startFacts(python, holding),
-			into: settings.downloadDir ?? app.getPath('downloads'),
+			into: saveFolder(settings),
 			...(name === undefined ? {} : { name })
 		});
 		if (made.ok) log.info('shell.log_downloaded', { file: made.file });
@@ -201,9 +212,6 @@ export function wayBack(ways: Ways): WayBack {
 		offer,
 		holding: () => holding,
 		started,
-		archive: async (name) => {
-			const made = await makeLogArchive(name);
-			return made.ok ? made.file : null;
-		}
+		archive: (name) => makeLogArchive(name)
 	};
 }

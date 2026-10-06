@@ -32,6 +32,7 @@ import time
 import traceback
 from collections.abc import Awaitable, Callable, Sequence
 from pathlib import Path
+from typing import Any
 
 from fastapi import FastAPI, Request, Response
 from fastapi.encoders import jsonable_encoder
@@ -56,7 +57,7 @@ from sift.kernel.db import (
 from sift.kernel.http import is_https
 from sift.kernel.ids import new_id
 from sift.kernel.jobs import JobSwitchedOff
-from sift.kernel.log import LOG_FILENAME, configure_logging, get_logger
+from sift.kernel.log import LOG_FILENAME, configure_logging, get_logger, tell_the_shell
 from sift.kernel.wire import Refused
 
 # Imported for its side effect: it declares the look-and-feel preferences, gone without it.
@@ -426,6 +427,75 @@ def answer_about_a_library(argv: Sequence[str], say: Callable[[str], None]) -> i
     return 0
 
 
+#: Said on stdout once the server is listening, when a desktop shell started it: the shell loads
+#: the window on this line instead of polling for it.
+READY_LINE = "sift.listening"
+
+
+#: A name rather than the test inline, so the type checker keeps both branches.
+_WINDOWS = sys.platform == "win32"
+
+
+def since_the_process_began_ms() -> int | None:
+    """Wall time since this process was created, or None where the operating system will not say."""
+    if _WINDOWS:  # pragma: no cover (the other operating system's branch)
+        import ctypes
+        from ctypes import wintypes
+
+        times = [wintypes.FILETIME() for _ in range(4)]
+        kernel32 = ctypes.WinDLL("kernel32")  # type: ignore[attr-defined, unused-ignore]
+        # Declared, so the process handle is passed whole on a 64-bit machine.
+        kernel32.GetCurrentProcess.restype = wintypes.HANDLE
+        kernel32.GetProcessTimes.argtypes = [wintypes.HANDLE] + [
+            ctypes.POINTER(wintypes.FILETIME)
+        ] * 4
+        if not kernel32.GetProcessTimes(
+            kernel32.GetCurrentProcess(), *(ctypes.byref(one) for one in times)
+        ):
+            return None
+        ticks = (times[0].dwHighDateTime << 32) | times[0].dwLowDateTime
+        # 100 ns ticks since 1601, the Windows epoch.
+        return round((time.time() - (ticks / 10_000_000 - 11_644_473_600)) * 1000)
+    try:
+        fields = Path("/proc/self/stat").read_text(encoding="ascii").rsplit(")", 1)[1].split()
+        began = int(fields[19]) / os.sysconf("SC_CLK_TCK")  # type: ignore[attr-defined, unused-ignore]
+        uptime = float(Path("/proc/uptime").read_text(encoding="ascii").split()[0])
+    except (OSError, ValueError, IndexError):
+        return None
+    return int((uptime - began) * 1000)
+
+
+def say_when_listening(server: Any, say: Callable[[str], None]) -> None:
+    """Say `READY_LINE` once uvicorn's socket is listening, which is after the lifespan's start."""
+    startup = server.startup
+
+    async def startup_then_say(sockets: Any = None) -> None:
+        await startup(sockets=sockets)
+        if server.started:
+            say(READY_LINE)
+
+    server.startup = startup_then_say
+
+
+def _settings_or_a_sentence() -> Settings:
+    """The settings read, the directories proven writable and SQLite checked BEFORE the server
+    starts: raised inside the server's startup these come out as a traceback, and the one line a
+    self-hoster can act on (a mistyped path) would be buried under twenty that do not."""
+    try:
+        settings = get_settings()
+        ensure_directories(settings)
+        # Quiet: logging is not configured yet. The application's own startup logs it.
+        check_sqlite_capabilities(announce=False)
+    except (ConfigError, DatabaseError) as exc:
+        # The technical detail is one environment variable away rather than discarded.
+        if os.environ.get("SIFT_LOG_LEVEL", "").upper() == "DEBUG":
+            detail = "\n" + "".join(traceback.format_exception(exc))
+        else:
+            detail = "\nSet SIFT_LOG_LEVEL=DEBUG for the full technical detail.\n"
+        raise SystemExit(f"\n{exc}\n{detail}") from None
+    return settings
+
+
 def main() -> None:
     # BEFORE the settings are read, deliberately. Every question takes its path as an argument and
     # answers about THAT path, so requiring a valid SIFT_DATA_DIR in the environment first would
@@ -436,28 +506,7 @@ def main() -> None:
 
     import uvicorn
 
-    # Settings are read, the directories proven writable, and SQLite checked BEFORE the server
-    # starts. Anything raised inside the server's startup instead comes back out as a traceback,
-    # and a traceback is not an error message: the one line that says what to do gets buried under
-    # twenty that do not. These are the failures a self-hoster can actually fix, so they are caught
-    # where they can still be phrased as a sentence.
-    try:
-        settings = get_settings()
-        ensure_directories(settings)
-        # Quiet: logging is not configured yet, so a line written here would be formatted
-        # differently from every other one. The application's own startup logs it.
-        check_sqlite_capabilities(announce=False)
-    except (ConfigError, DatabaseError) as exc:
-        # The plain sentence is what a self-hoster needs: they have mistyped a path, and a stack
-        # trace does not tell them that. But it is not the whole story for whoever wants more,
-        # so the technical detail is one environment variable away rather than discarded.
-        detail = ""
-        if os.environ.get("SIFT_LOG_LEVEL", "").upper() == "DEBUG":
-            detail = "\n" + "".join(traceback.format_exception(exc))
-        else:
-            detail = "\nSet SIFT_LOG_LEVEL=DEBUG for the full technical detail.\n"
-        raise SystemExit(f"\n{exc}\n{detail}") from None
-
+    settings = _settings_or_a_sentence()
     # Before uvicorn starts, so its own startup lines are scrubbed and formatted like everything
     # else. Configured inside the lifespan as well, for the case where Sift is served by another
     # ASGI server that never calls this.
@@ -467,6 +516,11 @@ def main() -> None:
         log_file=settings.data_dir / LOG_FILENAME,
         max_bytes=settings.log_max_bytes,
         backups=settings.log_backups,
+    )
+    log.info(
+        "boot.imported",
+        since_process_ms=since_the_process_began_ms(),
+        modules=len(sys.modules),
     )
 
     # THE APP THIS MODULE BUILT, not its own name. Named as "sift.main:app", uvicorn imports the
@@ -496,6 +550,7 @@ def main() -> None:
         # and `can_restart` answers no so the screen says so instead of taking the library off the
         # air to find out. See sift/kernel/lifecycle.py.
         lifecycle.stops_with(lambda: setattr(server, "should_exit", True))
+        say_when_listening(server, tell_the_shell)
     server.run()
     if lifecycle.was_asked_to_restart():
         # The clean shutdown has already run: the database is closed and the log is folded. All that

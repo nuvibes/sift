@@ -17,7 +17,7 @@ from pydantic import Field
 
 from sift.kernel import attention, device_load, lanes, wiring
 from sift.kernel.access import Repository, Viewer
-from sift.kernel.attention import full_amount, stepping_back
+from sift.kernel.attention import stepping_back, turbo_mode
 from sift.kernel.content import ContentStore
 from sift.kernel.content.identity_counts import UNREAD_KINDS
 from sift.kernel.content.library import LibraryStore, names_for_assets, names_for_roots
@@ -464,7 +464,7 @@ async def _page(
         families=families,
         housekeeping=await _housekeeping(queue, summary, ledger, pool, held, sealed),
         stepping_back=stepping_back(),
-        full_amount=full_amount(),
+        turbo_mode=turbo_mode(),
         step_back_share=attention.ATTENTION.share,
         step_back_for=attention.ATTENTION.cause,
         step_back_over=device_load.READER.over if attention.ATTENTION.cause == "others" else [],
@@ -1412,12 +1412,12 @@ async def cancel_everything(
     return Stopped(stopped=await queue.cancel_everything())
 
 
-class FullAmountAsked(Wire):
-    """Whether to use the full amount of this device although it is in use."""
+class TurboModeAsked(Wire):
+    """Whether to turn turbo mode on: every task runs although this device is in use."""
 
     on: bool = Field(
-        description="True runs every task although somebody is at the keyboard; false steps back "
-        "again while they are."
+        description="True runs every task although somebody is at the keyboard; false goes back "
+        "to eco mode while they are."
     )
 
 
@@ -1425,26 +1425,26 @@ class StepBack(Wire):
     """What background work is doing about somebody using the computer, after a press."""
 
     stepping_back: bool = Field(description="As on the jobs page.")
-    full_amount: bool = Field(description="As on the jobs page.")
+    turbo_mode: bool = Field(description="As on the jobs page.")
     pressed: bool = Field(
-        description="Whether the full amount is pressed for, whether or not anybody is at the "
+        description="Whether turbo mode is pressed for, whether or not anybody is at the "
         "keyboard now: held until Sift stops or the next press."
     )
 
 
-@router.post("/full-amount", dependencies=[Depends(csrf_protect)])
-async def press_full_amount(
-    body: FullAmountAsked,
+@router.post("/turbo-mode", dependencies=[Depends(csrf_protect)])
+async def press_turbo_mode(
+    body: TurboModeAsked,
     viewer: Annotated[Viewer, Depends(require_admin)],
 ) -> StepBack:
-    """Use the full amount of this device although it is in use, or step back again.
+    """Turn turbo mode on although this device is in use, or go back to eco mode.
 
-    Held in memory, not stored; the pool reaches it at its next reconfigure, a few seconds later.
+    Held in memory, not stored; the press wakes the pool, which takes it within a moment.
     """
     reading = attention.ATTENTION
     reading.press(full=body.on)
     return StepBack(
-        stepping_back=reading.holding, full_amount=reading.full_amount, pressed=reading.pressed
+        stepping_back=reading.holding, turbo_mode=reading.turbo_mode, pressed=reading.pressed
     )
 
 

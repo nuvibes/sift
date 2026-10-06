@@ -6,6 +6,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 
 from sift.kernel.access.viewer import Viewer
+from sift.kernel.content.duplicates import FINGERPRINTS_WITHIN
 from sift.kernel.db import Database
 
 #: The viewer's own files, their vault's only while it is open. Binds `:viewer` and `:open`.
@@ -15,6 +16,10 @@ VIEWER_FILES = (
 )
 
 _HIDES_ANY = "SELECT 1 FROM viewer_assets WHERE user_id = ? AND concealed = 1 LIMIT 1"
+
+#: The fingerprints of the viewer's own files, for the cheap Similar: the set's cost, never the
+#: library's. Binds what `VIEWER_FILES` binds.
+FINGERPRINTS_OF_VIEWER = FINGERPRINTS_WITHIN.replace("{{FILES}}", VIEWER_FILES)
 
 
 async def ranked_among(database: Database, viewer: Viewer) -> Mapping[str, object] | None:

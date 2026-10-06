@@ -214,3 +214,74 @@ def test_the_handler_is_registered_under_the_name_the_queue_knows(
     from sift.kernel.jobs import registered_handlers
 
     assert FTS_REINDEX in registered_handlers()
+
+
+def test_the_job_reindexes_named_assets_a_chunk_at_a_time_and_tells_the_library(
+    client: TestClient, world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A rename's job: exactly its files, one write per chunk, and LIBRARY said once at the end."""
+    from sift.kernel import changes
+    from sift.slices.search import jobs
+
+    told: list[object] = []
+    monkeypatch.setattr(jobs, "IDS_PER_WRITE", 1)
+    monkeypatch.setattr(jobs, "announce", lambda _audience, about: told.append(about))
+    written: list[list[str]] = []
+    from sift.kernel.access import index_assets as real
+
+    async def counting(database: Database, **kwargs: object) -> int:
+        written.append(list(kwargs["asset_ids"]))  # type: ignore[call-overload]
+        return await real(database, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(jobs, "index_assets", counting)
+    write(db_path(client), [("DELETE FROM assets_fts", ())])
+
+    asyncio.run(_run_job(db_path(client), {"asset_ids": [world.beach, world.walk]}))
+
+    assert written == [[world.beach], [world.walk]]
+    assert sorted(str(row["asset_id"]) for row in _index(client)) == sorted(
+        [world.beach, world.walk]
+    )
+    assert told == [changes.About.LIBRARY]
+
+
+@pytest.mark.parametrize("named", ["one", [7]])
+def test_the_job_refuses_named_assets_that_are_not_ids(
+    client: TestClient, world: World, named: object
+) -> None:
+    with pytest.raises(ValueError, match="asset_ids"):
+        asyncio.run(_run_job(db_path(client), {"asset_ids": named}))
+
+
+@pytest.mark.anyio
+async def test_queue_many_queues_jobs_of_named_files_and_nothing_for_none() -> None:
+    from sift.kernel.jobs.quiet_hours import AT_NOW
+    from sift.slices.search import jobs
+    from sift.slices.search.reindex import Reindexer
+
+    asked: list[tuple[str, list[object], dict[str, object]]] = []
+
+    class Queue:
+        async def enqueue_many(self, job_type: str, payloads: list[object], **how: object) -> None:
+            asked.append((job_type, payloads, how))
+
+    seam = Reindexer(database=None, queue=Queue())  # type: ignore[arg-type]
+    await seam.queue_many([])
+    assert asked == []
+    ids = [f"a{index}" for index in range(jobs.IDS_PER_JOB + 1)]
+    await seam.queue_many(ids)
+    ((job_type, payloads, how),) = asked
+    assert job_type == FTS_REINDEX
+    assert payloads == [{"asset_ids": ids[: jobs.IDS_PER_JOB]}, {"asset_ids": ids[-1:]}]
+    assert how["at"] == AT_NOW
+
+
+@pytest.mark.anyio
+async def test_queue_many_logs_a_queue_that_refuses_and_raises_nothing() -> None:
+    from sift.slices.search.reindex import Reindexer
+
+    class Broken:
+        async def enqueue_many(self, *_: object, **__: object) -> None:
+            raise RuntimeError("the queue is unavailable")
+
+    await Reindexer(database=None, queue=Broken()).queue_many(["a"])  # type: ignore[arg-type]

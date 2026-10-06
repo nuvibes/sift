@@ -30,10 +30,11 @@ from sift.kernel.jobs import (
     WAITED_ON_PRIORITY,
     JobQueue,
     JobState,
+    TaskRun,
     family_of,
 )
 from sift.kernel.jobs.failure_words import in_plain_words
-from sift.kernel.jobs.families import LONG_PASSES
+from sift.kernel.jobs.families import LONG_PASSES, Family
 from sift.kernel.jobs.ledger import Ledger, RunRecord
 from sift.kernel.jobs.queue import LiveProducts
 from sift.kernel.jobs.quiet_hours import (
@@ -151,6 +152,15 @@ class QuietHours:
     open: bool
     opens_at: int
     closes_at: int | None
+
+
+def _last_job_of(run: TaskRun | None) -> LastRun | None:
+    """A one-job task's last finished run in the row's words, or None."""
+    if run is None or run.finished_at is None:
+        return None
+    return LastRun(
+        ended_at=run.finished_at, outcome=run.state.value, seconds=run.seconds, said=run.note
+    )
 
 
 def _last_of(run: RunRecord | None) -> LastRun | None:
@@ -368,11 +378,15 @@ class TasksService:
         tasks = [declared[task_id] for task_id in self._order]
         live = await self._queue.live_by_type()
         hold = await self.quiet_hold()
-        held = await self._queue.held_by_type(hold.types)
-        held_waiting = await self._queue.held_by_type(hold.types, waiting_only=True)
+        held, held_waiting = await self._queue.held_and_waiting_by_type(hold.types)
         carried = await self._queue.live_products(sorted(self._carriers))
         quiet = await self.quiet_hours()
         rehearsed, rehearsing = await self._last_dry_runs()
+        # Every task's next moment and last run, a statement per relation rather than per task.
+        due = await self._queue.next_scheduled_of(
+            [task.job_type for task in tasks if task.every is not None and task.job_type]
+        )
+        lasts = await self._lasts(tasks, viewer)
         answers: list[TaskState] = []
         for task in tasks:
             values = {key: await self._read(key) for key in task.keys_read()}
@@ -388,11 +402,8 @@ class TasksService:
             waiting, held_now = work.waiting, work.held
             # A timed task's clock keeps its next run as a queued row. That row is said as "Next"
             # with its moment, and is not work waiting.
-            if (
-                task.every is not None
-                and task.job_type is not None
-                and await self._queue.next_scheduled(task.job_type) is not None
-            ):
+            moment = due.get(task.job_type or "")
+            if task.every is not None and moment is not None:
                 waiting = max(0, waiting - 1)
                 held_now = min(held_now, waiting)
             answers.append(
@@ -402,8 +413,8 @@ class TasksService:
                     on=task.is_on(values),
                     cadence=task.cadence(values),
                     labels=task.when_labels(values),
-                    last=await self._last(task, viewer),
-                    next_run=await self._next(task, values, quiet, work.holding),
+                    last=lasts.get(task.id),
+                    next_run=self._next(task, values, quiet, work.holding, moment),
                     waiting=waiting,
                     held=held_now,
                     running=work.running,
@@ -516,8 +527,13 @@ class TasksService:
         plan = await planner(only, viewer)
         return plan.reported(title)
 
-    async def _next(
-        self, task: ScheduledTask, values: Mapping[str, Any], quiet: QuietHours, holding: int
+    def _next(
+        self,
+        task: ScheduledTask,
+        values: Mapping[str, Any],
+        quiet: QuietHours,
+        holding: int,
+        moment: int | None,
     ) -> int | None:
         """When it next starts on its own, or None: press-only, or it waits for work to arrive.
 
@@ -528,7 +544,6 @@ class TasksService:
         if not task.is_on(values):
             return None
         if task.every is not None and task.job_type is not None:
-            moment = await self._queue.next_scheduled(task.job_type)
             if moment is None:
                 return None
             if task.when(values) == WHEN_QUIET and not quiet.open:
@@ -537,6 +552,36 @@ class TasksService:
         if task.when(values) == WHEN_QUIET and holding > 0:
             return int(self._now()) if quiet.open else quiet.opens_at
         return None
+
+    async def _lasts(
+        self, tasks: Sequence[ScheduledTask], viewer: Viewer
+    ) -> dict[str, LastRun | None]:
+        """`_last` for every task, the ledger's product runs and the queue's one-job runs each
+        asked once for all the tasks that read them."""
+        by_products: list[tuple[ScheduledTask, Sequence[str], Family]] = []
+        one_job: list[ScheduledTask] = []
+        lasts: dict[str, LastRun | None] = {}
+        for task in tasks:
+            products = self._products.get(task.id)
+            family = None if task.job_type is None else family_of(task.job_type)
+            if task.records_runs or family is None:
+                lasts[task.id] = await self._last(task, viewer)
+            elif products and self._ledger is not None:
+                by_products.append((task, products, family))
+            elif family not in LONG_PASSES:
+                one_job.append(task)
+            else:
+                lasts[task.id] = await self._last(task, viewer)
+        if by_products and self._ledger is not None:
+            runs = await self._ledger.last_runs_for([(p, f) for _t, p, f in by_products])
+            for (task, _products, _family), run in zip(by_products, runs, strict=True):
+                lasts[task.id] = _last_of(run)
+        finished = await self._queue.last_finished_runs(
+            sorted({task.job_type for task in one_job if task.job_type is not None})
+        )
+        for task in one_job:
+            lasts[task.id] = _last_job_of(finished.get(task.job_type or ""))
+        return lasts
 
     async def _last(self, task: ScheduledTask, viewer: Viewer) -> LastRun | None:
         """How the last run ended. From the history for a task that writes its own line there, and
@@ -586,12 +631,7 @@ class TasksService:
         showed each one's run. A run still going is not the last one that ran; the one before it is.
         """
         # The one answer, which Activity's housekeeping row reads too: see `last_finished_runs`.
-        run = (await self._queue.last_finished_runs([job_type])).get(job_type)
-        if run is None or run.finished_at is None:
-            return None
-        return LastRun(
-            ended_at=run.finished_at, outcome=run.state.value, seconds=run.seconds, said=run.note
-        )
+        return _last_job_of((await self._queue.last_finished_runs([job_type])).get(job_type))
 
     # --- running one -------------------------------------------------------------------------
 

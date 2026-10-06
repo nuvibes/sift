@@ -52,7 +52,9 @@ it("asks a locked session for nothing of the account's: preferences, the queue, 
 	);
 	const queue = script.indexOf('imports.forgetRefusal();');
 	const effect = script.slice(script.lastIndexOf('$effect(', queue), script.indexOf('});', queue));
-	expect(effect).toMatch(/if \(!session\.adminUnlocked \|\| account === undefined\) return;/);
+	expect(effect).toMatch(
+		/if \(!session\.adminUnlocked \|\| account === undefined(?: \|\| !screenAsked)?\) return;/
+	);
 	expect(effect).toMatch(/return \(\) => imports\.stop\(\);/);
 	expect(script).toMatch(
 		/if \(session\.viewer\?\.locked === true\) return;\s*void rail\.hydrate\(account\);/

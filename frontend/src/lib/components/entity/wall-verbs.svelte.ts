@@ -39,6 +39,8 @@ import type { MergeableKind } from '$lib/entity/merge.svelte';
 import { pageOf, type EntityKind } from '$lib/entity/related.svelte';
 import type { ShareTarget, ShareableType } from '$lib/library/sharing';
 import { tags as tagStore } from '$lib/entity/tags.svelte';
+import { collections } from '$lib/library/collections.svelte';
+import { people, sites } from '$lib/people/people.svelte';
 import { toasts } from '$lib/shell/toasts.svelte';
 import { vault } from '$lib/shell/vault.svelte';
 import type { EntityVerbHandlers } from './verbs';
@@ -282,6 +284,29 @@ async function writeName(
 		return;
 	}
 	await api.put(`/${wall}/${id}` as ApiPath, { body: { name } });
+}
+
+/* The walls whose rows a store holds, so a rename is drawn there on the press. A tag's store does
+   its own (`tags.rename`); a tab wall reads again when the write lands. */
+function heldBy(kind: EntityKind): { items: { id: string; name: string }[] } | null {
+	if (kind === 'person') return people;
+	if (kind === 'site') return sites;
+	if (kind === 'collection') return collections;
+	return null;
+}
+
+/** Draw the new name now; the function returned puts the old one back. */
+function drawName(kind: EntityKind, id: string, name: string): () => void {
+	const store = heldBy(kind);
+	const before = store?.items.find((one) => one.id === id)?.name;
+	if (!store || before === undefined) return () => {};
+	const swap = (from: string, to: string) => {
+		store.items = store.items.map((one) =>
+			one.id === id && one.name === from ? { ...one, name: to } : one
+		);
+	};
+	swap(before, name);
+	return () => swap(name, before);
 }
 
 /**
@@ -564,10 +589,12 @@ export class WallVerbs {
 		this.renaming = null;
 		if (!row || !wanted || wanted === row.name) return;
 		const facts = this.facts;
+		const putBack = drawName(this.#around.kind(), row.id, wanted);
 		try {
 			await writeName(this.#around.kind(), facts.wall, row.id, wanted);
 			this.#around.changed();
 		} catch (error) {
+			putBack();
 			// 409 is the one worth naming: the name is taken, perhaps in another capitalisation,
 			// which a wall showing only one of them cannot convey. Every kind says so.
 			toasts.show(

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 from contextlib import AbstractAsyncContextManager
+from typing import cast
 
 import pytest
 from fastapi.testclient import TestClient
@@ -29,20 +30,29 @@ from sift.slices.search.tests.conftest import (
 pytestmark = [pytest.mark.integration]
 
 
-def _drain(client: TestClient) -> None:
-    """Run the rebuild the last write queued, and nothing if it queued none, so the code under test
-    must have asked for it."""
-    queued = read(
+def _queued(client: TestClient) -> list[dict[str, object]]:
+    rows = read(
         db_path(client),
-        "SELECT payload FROM jobs WHERE type = ? AND state = ?",
+        "SELECT id, payload FROM jobs WHERE type = ? AND state = ?",
         ("fts_reindex", "queued"),
     )
-    # Run the job actually queued: only the whole-library pass sees an edit, not a catch-up.
+    return [{"id": row["id"], **json.loads(str(row["payload"]))} for row in rows]
+
+
+def _drain(client: TestClient) -> None:
+    """Run the reindex the last write queued, and nothing if it queued none, so the code under
+    test must have asked for it: a rename's named files, or a whole-library pass."""
+    queued = _queued(client)
+    for job in queued:
+        named = job.get("asset_ids")
+        if isinstance(named, list):
+            reindex(db_path(client), asset_ids=[str(one) for one in named])
+            write(db_path(client), [("DELETE FROM jobs WHERE id = ?", (job["id"],))])
+    # Only the whole-library pass sees an edit, not a catch-up.
     whole_library = [
-        row
-        for row in queued
-        if json.loads(str(row["payload"])).get("scope") != "catch_up"
-        and json.loads(str(row["payload"])).get("asset_id") is None
+        job
+        for job in queued
+        if job.get("scope") != "catch_up" and job.get("asset_id") is None and "asset_ids" not in job
     ]
     if not whole_library:
         return
@@ -158,8 +168,8 @@ def test_putting_a_person_on_a_clip_makes_it_findable_by_their_name(
 def test_renaming_a_tag_rewrites_its_own_files_and_rebuilds_nothing(
     client: TestClient, world: World
 ) -> None:
-    """A tag rename rewrites its own files and queues no whole-library rebuild. The control: a file
-    the tag is not on stays findable only by its old filename."""
+    """A tag rename queues its own files for a job and no whole-library rebuild. The control: a
+    file the tag is not on stays findable only by its old filename."""
     sign_in(client)
     write(
         db_path(client),
@@ -179,14 +189,14 @@ def test_renaming_a_tag_rewrites_its_own_files_and_rebuilds_nothing(
     client.put(f"/api/tags/{world.tag_beach}", json={"name": "seaside"})
     client.put(f"/api/tags/{world.tag_city}", json={"name": "urban"})
 
-    queued = read(
-        db_path(client),
-        "SELECT id FROM jobs WHERE type = ? AND state = ?",
-        ("fts_reindex", "queued"),
-    )
-    assert queued == [], "renaming a tag still queues a rebuild of the whole index"
+    queued = _queued(client)
+    assert all("asset_ids" in job for job in queued), "a rename queued a whole-library rebuild"
+    named = sorted(str(one) for job in queued for one in cast(list[str], job["asset_ids"]))
+    assert named == sorted([world.beach, world.walk, world.beach, world.beach, world.walk])
+    # The answer came first: nothing was rewritten inside the requests.
+    assert found(client, q="urban")[0] == []
 
-    # Nothing drained: both files the tag is on were rewritten inside the request that renamed it.
+    _drain(client)
     assert sorted(found(client, q="urban")[0]) == sorted([world.beach, world.walk])
     assert world.beach in found(client, q="seaside")[0]
 

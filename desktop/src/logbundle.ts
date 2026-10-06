@@ -10,13 +10,16 @@ import * as path from 'node:path';
 import { INTERPRETER_ARGS } from './backend';
 import { SAVE_LOG_ARCHIVE } from './channels';
 import { takeGesture } from './gesture';
-import type { Fields } from './log';
+import { log, type Fields } from './log';
 import { askingFrame, type ReachCheck } from './verbs';
 
 /** Long enough for a few megabytes of logs; a scrubber that hangs is ended and said. */
 export const BUNDLE_TIMEOUT_MS = 60_000;
 
 export type Bundled = { ok: true; file: string } | { ok: false; reason: string };
+
+/** What the page is told: the file's path, or why there is none. */
+export type LogArchiveOutcome = { file: string } | { reason: string };
 
 export interface BundleAsk {
 	python: string;
@@ -49,7 +52,10 @@ export function bundleLogs(ask: BundleAsk): Promise<Bundled> {
 				.join('')
 		);
 	} catch (err) {
-		return Promise.resolve({ ok: false, reason: err instanceof Error ? err.message : String(err) });
+		return Promise.resolve({
+			ok: false,
+			reason: err instanceof Error ? err.message : String(err)
+		});
 	}
 	const args = [
 		...INTERPRETER_ARGS,
@@ -88,7 +94,10 @@ export function bundleLogs(ask: BundleAsk): Promise<Bundled> {
 		child.once('close', (code) => {
 			if (code === 0 && fs.existsSync(out)) return done({ ok: true, file: out });
 			const line = said.trim().split('\n')[0]?.trim();
-			done({ ok: false, reason: line || `The log maker stopped with exit code ${String(code)}.` });
+			done({
+				ok: false,
+				reason: line || `The log maker stopped with exit code ${String(code)}.`
+			});
 		});
 	});
 }
@@ -97,13 +106,26 @@ export function bundleLogs(ask: BundleAsk): Promise<Bundled> {
  *  only the name's last part is taken, so the archive lands in the save folder whatever was sent. */
 export function registerLogArchive(
 	reachOf: ReachCheck,
-	archive: (name: string) => Promise<string | null>
+	archive: (name: string) => Promise<Bundled>
 ): void {
-	ipcMain.handle(SAVE_LOG_ARCHIVE, async (event, name: unknown): Promise<string | null> => {
+	ipcMain.handle(SAVE_LOG_ARCHIVE, async (event, name: unknown): Promise<LogArchiveOutcome> => {
+		const refused = (why: string): LogArchiveOutcome => {
+			log.error('shell.log_download_refused', { why });
+			return { reason: why };
+		};
 		const frame = askingFrame(event, reachOf, SAVE_LOG_ARCHIVE);
-		if (frame === null || typeof name !== 'string') return null;
-		if (reachOf(frame.url) === 'remote' && !takeGesture(event.sender)) return null;
+		if (frame === null) return refused('the page is not one this shell serves');
+		if (typeof name !== 'string') return refused('no file name');
+		if (reachOf(frame.url) === 'remote' && !takeGesture(event.sender)) return refused('no press');
 		const base = path.win32.basename(name);
-		return base === '' || base === '.' || base === '..' ? null : archive(base);
+		if (base === '' || base === '.' || base === '..') return refused('an empty file name');
+		try {
+			const made = await archive(base);
+			return made.ok ? { file: made.file } : { reason: made.reason };
+		} catch (err) {
+			const reason = err instanceof Error ? err.message : String(err);
+			log.error('shell.log_download_failed', { reason });
+			return { reason };
+		}
 	});
 }

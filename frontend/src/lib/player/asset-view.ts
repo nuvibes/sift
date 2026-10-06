@@ -225,6 +225,7 @@ export const OPENS_NO_FILE: readonly string[] = [
 	'/collections',
 	'/collections/new',
 	'/connect',
+	'/opening',
 	'/design',
 	'/design/bar',
 	'/design/charts',

@@ -34,7 +34,7 @@ export const COPY = {
 	},
 	others: {
 		name: 'Other tasks',
-		help: 'Work Sift does for the library as a whole, such as finding duplicates and making backups.'
+		help: 'Work Sift does for the library as a whole, such as finding duplicates and creating backups.'
 	},
 	other: {
 		name: 'Other settings',

@@ -75,6 +75,7 @@
 	import PageHeader from '$lib/components/shell/PageHeader.svelte';
 	import { calendarDay } from '$lib/shell/when';
 	import { clock } from '$lib/shell/clock.svelte';
+	import { onAssetStateChange, reloadOnLibraryChange } from '$lib/library/changes.svelte';
 
 	let { data }: { data: Place } = $props();
 
@@ -120,6 +121,37 @@
 			current = false;
 		};
 	});
+
+	/* A change elsewhere re-reads in place: the page as drawn stays until a different answer lands.
+	   One read at a time, and one more after it if a bell rang meanwhile. */
+	let rereading = false;
+	let rereadOwed = false;
+	async function rereadQuietly(): Promise<void> {
+		if (rereading) {
+			rereadOwed = true;
+			return;
+		}
+		rereading = true;
+		const period = data.period;
+		const at = data.at;
+		try {
+			const found = await api.get<InsightsPage>('/insights', {
+				query: { period, at: at ?? undefined }
+			});
+			if (loading || period !== data.period || at !== data.at) return;
+			if (JSON.stringify(found) !== JSON.stringify(answer)) answer = found;
+		} catch {
+			// The page as drawn stays.
+		} finally {
+			rereading = false;
+			if (rereadOwed) {
+				rereadOwed = false;
+				void rereadQuietly();
+			}
+		}
+	}
+	reloadOnLibraryChange(() => void rereadQuietly());
+	onAssetStateChange(() => void rereadQuietly());
 
 	const tabs = $derived(tabsFor(data));
 	const steps = $derived(answer && !loading ? stepsFrom(answer) : { earlier: null, later: null });

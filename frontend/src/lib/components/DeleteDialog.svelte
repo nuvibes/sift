@@ -33,6 +33,7 @@
 	 * on their own either way; this is what the screen knows, never the guard.
 	 */
 	import { api } from '$lib/api/client';
+	import { libraryChanges, whenChanged } from '$lib/library/changes.svelte';
 	import type { components } from '$lib/api/schema';
 	import {
 		Checkbox,
@@ -93,6 +94,22 @@
 			})
 			.catch(() => {
 				// Unknown: the card stays offered and the delete route says why if it refuses.
+			});
+	});
+
+	/* A change elsewhere while open asks again in place, keeping the answer drawn until then. */
+	whenChanged(libraryChanges, () => {
+		if (!open || !canDeleteFromDisk || ids.length === 0) return;
+		const asked = ids;
+		void api
+			.post<DeleteReach>('/assets/delete/check', { body: { asset_ids: asked } })
+			.then((answer) => {
+				if (asked !== ids || JSON.stringify(answer) === JSON.stringify(reach)) return;
+				reach = answer;
+				if (answer.inside_archives >= count) mode = 'sift';
+			})
+			.catch(() => {
+				// The answer as drawn stays.
 			});
 	});
 

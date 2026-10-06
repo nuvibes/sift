@@ -64,6 +64,16 @@ SELECT DISTINCT l.asset_id AS id
  WHERE an.ancestor_id = :folder_id
 """
 
+# The same for several folders at once, each file named with the folder it was asked under.
+_ASSETS_UNDER_MANY = """
+SELECT DISTINCT an.ancestor_id AS folder, l.asset_id AS id
+  FROM folder_ancestry an
+  JOIN asset_locations l ON l.folder_id = an.folder_id
+ WHERE an.ancestor_id IN (?*)
+"""
+
+_FOLDERS_AT_ONCE = 500
+
 # The names of the files sitting DIRECTLY in one folder, which is a different question from the one
 # above: a naming convention shared by a parent and a child is two facts, not one.
 _FILENAMES_IN = """
@@ -216,6 +226,16 @@ class TreeReads:
         """Every file in a folder and everything below it."""
         rows = await self._db.fetch_all(_ASSETS_UNDER, {"folder_id": folder_id})
         return [str(row["id"]) for row in rows]
+
+    async def assets_under_many(self, folder_ids: Sequence[str]) -> dict[str, list[str]]:
+        """`assets_under` for each of these folders, every one of them a key."""
+        wanted = list(dict.fromkeys(folder_ids))
+        under: dict[str, list[str]] = {one: [] for one in wanted}
+        for start in range(0, len(wanted), _FOLDERS_AT_ONCE):
+            sql, params = in_clause(_ASSETS_UNDER_MANY, wanted[start : start + _FOLDERS_AT_ONCE])
+            for row in await self._db.fetch_all(sql, params):
+                under[str(row["folder"])].append(str(row["id"]))
+        return under
 
     async def filenames_in(self, folder_id: str) -> list[str]:
         """What the files sitting directly in one folder are called."""

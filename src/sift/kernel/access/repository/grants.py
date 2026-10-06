@@ -92,7 +92,7 @@ SELECT object_id,
 
 #: Whether anything has ever been shared with anybody. The cheap answer for an install with no
 #: guests on it, which is most of them (see `_asset_marks`).
-_ANY_GRANT_AT_ALL = "SELECT 1 FROM acl_grants LIMIT 1"
+_ANY_GRANT_AT_ALL = point_read("access.any_grant", "SELECT 1 FROM acl_grants LIMIT 1")
 
 #: What each of these files' sharing actually comes to, counting everything above it.
 #:
@@ -131,7 +131,9 @@ subjects(subject) AS (
 -- Every user with a grant, against every file asked about. The bits are the same three the
 -- stored verdict is built from (where the copies sit, what the file belongs to, the item's own
 -- grant), spliced from the one place they are written.
-standing(asset_id, user_id, ph, lo, it) AS (
+-- MATERIALIZED, so each bit is worked out once per user and file: flattened into the ladder below,
+-- every mention of a bit ran its subquery again.
+standing(asset_id, user_id, ph, lo, it) AS MATERIALIZED (
   SELECT p.asset_id, p.user_id,
          COALESCE({{PHYSICAL_BITS}}, 0),
          COALESCE({{LOGICAL_BITS}}, 0),

@@ -92,6 +92,13 @@ SELECT id, SUM(ahead) OVER (ORDER BY priority, id) AS place FROM stretch
 """
 
 _LIST_HEAD = "SELECT * FROM jobs"
+#: A total by state and type alone, read off the tallies the table's triggers keep, of the types
+#: `:only_types` names where given; a few dozen rows, so the guarded terms cost nothing.
+_TALLIED_TOTAL = """
+SELECT COALESCE(SUM(n), 0) AS total FROM job_tallies
+ WHERE (:state IS NULL OR state = :state) AND (:job_type IS NULL OR type = :job_type)
+   AND (:only_types IS NULL OR type IN (SELECT value FROM json_each(:only_types)))
+"""
 _COUNT_HEAD = "SELECT COUNT(*) AS total FROM jobs"
 #: The rows of a few named types, for the total a listing that leaves them out subtracts, walked
 #: from the list (`CROSS JOIN`) so each type is a probe of `ix_jobs_last_run`.
@@ -351,8 +358,9 @@ class Pages(QueueCore):
             "limit": limit,
             "offset": offset,
         }
-        # The page walks newest first and stops at the limit; the TOTAL subtracts the rows of the
-        # left-out types, a probe of `ix_jobs_last_run`, rather than read every row's type.
+        # The page walks newest first and stops at the limit; the TOTAL is the tallies' where only
+        # state and type filter it, and otherwise subtracts the left-out types' rows, a probe of
+        # `ix_jobs_last_run`, rather than read every row's type.
         left_out = json.dumps(sorted(set(leaving_out))) if leaving_out else None
         kept_quiet = json.dumps(sorted(set(quiet))) if quiet else None
         paged = {
@@ -372,13 +380,12 @@ class Pages(QueueCore):
             }
             total = sum(by_state.values()) if folded is None else by_state.get(folded.value, 0)
             return JobPage(jobs=[_to_job(row) for row in rows], total=total, by_state=by_state)
-        # A COUNT always returns its row; a window count would vanish on a page past the end.
-        (counted,) = await self._db.fetch_all(_list_total(params), params)
-        total = int(counted["total"])
-        if left_out is not None:
-            only = {**params, "only_types": left_out}
-            (upkeep,) = await self._db.fetch_all(_upkeep_total(only), only)
-            total -= int(upkeep["total"])
+        if params["parent_id"] is None and params["tops_only"] is None and params["among"] is None:
+            total = await self._tallied({**params, "only_types": None})
+            if left_out is not None:
+                total -= await self._tallied({**params, "only_types": left_out})
+        else:
+            total = await self._counted(params, left_out)
         if kept_quiet is not None:
             # Disjoint from the upkeep above by declaration (`register_handler` refuses a type
             # that is both), so the two subtractions never count one row twice.
@@ -387,6 +394,20 @@ class Pages(QueueCore):
             total -= int(hushed["total"])
 
         return JobPage(jobs=[_to_job(row) for row in rows], total=total)
+
+    async def _tallied(self, params: Mapping[str, Any]) -> int:
+        (row,) = await self._db.fetch_all(_TALLIED_TOTAL, params)
+        return int(row["total"])
+
+    async def _counted(self, params: Mapping[str, Any], left_out: str | None) -> int:
+        # A COUNT always returns its row; a window count would vanish on a page past the end.
+        (counted,) = await self._db.fetch_all(_list_total(params), params)
+        total = int(counted["total"])
+        if left_out is not None:
+            only = {**params, "only_types": left_out}
+            (upkeep,) = await self._db.fetch_all(_upkeep_total(only), only)
+            total -= int(upkeep["total"])
+        return total
 
     async def quiet_by_state(self, quiet: Sequence[str]) -> dict[str, int]:
         """How many quiet rows of these types are in each state: what the tallies above Activity's

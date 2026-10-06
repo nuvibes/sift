@@ -11,12 +11,16 @@ undo is broken.
 from __future__ import annotations
 
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from typing import Any
 
 import pytest
 
+from sift.kernel import db as db_module
 from sift.kernel.access import Viewer
+from sift.kernel.db import Database
+from sift.kernel.ids import new_id
 from sift.kernel.workbench import ASSET
 from sift.slices.suggestions.queue import FiledQueue, FolderQueue
 from sift.slices.suggestions.service import SuggestionService
@@ -350,3 +354,67 @@ async def test_the_board_card_resolves_no_folder(
     assert len(outline.covers) == 3, "every still is on the card"
     assert asked == [], f"the card read the faces of {len(asked)} folders and draws none of them"
     assert [claim for claim, _cover in outline.covers] == [one.id for one in page.items]
+
+
+#: People, and a folder named one letter off each: every question has a near miss to check.
+_NEARLY = [
+    ("Marlowe", "Marlowa"),
+    ("Quentin", "Quentyn"),
+    ("Rosalind", "Rosalynd"),
+    ("Tobiah", "Tobiax"),
+    ("Isadora", "Isadorx"),
+    ("Leopold", "Leopolt"),
+    ("Ottilie", "Ottilia"),
+    ("Severin", "Severyn"),
+    ("Augustin", "Augustyn"),
+]
+
+
+async def test_a_page_of_questions_is_read_in_the_same_number_of_statements(
+    service: SuggestionService,
+    temp_db: Database,
+    library: Library,
+    add_file: Callable[..., Any],
+    faces: FakeFaces,
+    name_folders: Callable[[], Any],
+    admin: Viewer,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Three times the rows on the Folders page, each with a near miss and files that disagree,
+    and not one statement more."""
+    seen: list[str] = []
+    real = db_module._judged
+
+    @contextmanager
+    def counted(stage: str, statement: Any, *rest: Any, **options: Any) -> Iterator[Any]:
+        seen.append(db_module.statement_name(statement))
+        with real(stage, statement, *rest, **options) as timing:
+            yield timing
+
+    made = 0
+
+    async def page_after(more: int) -> int:
+        nonlocal made
+        for person, folder in _NEARLY[made : made + more]:
+            for index in range(5):
+                await add_file(library, f"{folder}/clip{index}.mp4")
+            await temp_db.execute(
+                "INSERT INTO people (id, name, created_at) VALUES (?, ?, 0)",
+                (new_id(), person),
+            )
+            faces.looked[folder] = (5, 5)
+            faces.piles_here[folder] = {f"pile-{made}": 5}
+            faces.dissenting[folder] = (new_id(),)
+            made += 1
+        await name_folders()
+        await service.rebuild()
+        seen.clear()
+        with monkeypatch.context() as patched:
+            patched.setattr(db_module, "_judged", counted)
+            page = await service.pending(admin, limit=50)
+        assert len(page.items) == made
+        assert all(item.near_miss is not None for item in page.items)
+        return len(seen)
+
+    few = await page_after(3)
+    assert await page_after(6) == few

@@ -8,6 +8,42 @@ version's section, dated, when that version is published.
 
 ### What changed for you
 
+- **Browse, the Filter panel and every wall answer from stored counts.** A page of Browse and its
+  total cost 99.8% fewer database steps than before on a library of 102,579 files (83 ms to
+  1.8 ms); the Filter panel's five columns 99.8% fewer (567 ms to 2 ms), and its numbers are
+  drawn the moment it opens, never "Counting..." first; a person's or a Site's tab numbers come
+  from one statement (74 to 86% fewer steps); a cover picture's check is 56 to 93% cheaper.
+- **The Tasks screen and Activity read stored tallies.** The jobs summary costs 99.8% fewer steps,
+  and the passes' "still to do" numbers are no longer recounted from every file every half minute
+  while a screen is open.
+- **Similar files compares whole files**, ranked in a files index: 86% less time for an admin and
+  94% less for a guest, and the strip shows the files that look like this one as a whole.
+- **Every screen stays current without a reload.** Favorites, a file's page, Insights, the
+  Settings panes, the hover card and the players follow changes made elsewhere within a second, in
+  place; a settings change no longer blanks its pane; a new row at the top of Tags or Collections
+  slides in while the top is on screen and waits behind a quiet "N new" when you're reading
+  further down; guests are told of renames and new tags and collections they can see.
+- **Sift's window is on screen as soon as it starts**, drawing the sign-in frame in your theme
+  while the library opens, and the real screen takes its place without anything moving; the
+  installer ships compiled code (40% less load time); background work starts after the first
+  screen has drawn.
+- **Turbo mode** is the name of the press out of eco mode, on every screen and in the API, and the
+  press takes effect on the workers at once instead of at their next three-second tick.
+- **Renaming a person, a tag or a collection answers at once**; the search index catches up as a
+  job, so a person with thousands of files no longer holds the app for a minute.
+- **Presses answer on the press.** Remove from Sift, Modify, Cancel and a tag added show their
+  effect at once and come back only if the server refuses.
+- **Download log is three times as fast and says why when it fails.** The archive of a 38 MB
+  log took 11 seconds and takes about 3.5 now. When the file can't be created, the message says
+  the reason instead of "Try again," the button reads "Creating the log file..." while it works,
+  and a computer whose Downloads folder can't be found gets the file in Sift's own folder.
+- **The log's Detailed setting no longer writes database statements with their values** (a file's
+  name, a folder, the words of a search) into the log.
+- **Download and install closes Sift for the installer.** Sift quits itself once the installer
+  opens, so the installer's "Sift is running" page no longer appears.
+- **A face scan whose models go missing mid-way waits for them**, as when the models are being
+  downloaded again, instead of failing three times with "the detector model has not been
+  installed yet."
 - **The desktop app connected to a library on another computer now says when its own copy is
   behind.** It compared the library's computer with the newest release and said "This is the newest
   version" while the copy in front of you was older. The line now reads "Sift 0.2.1 is available for

@@ -53,7 +53,7 @@ async def _files_owed_a_read(content: ContentStore, queue: JobQueue) -> None:
     # Files a scan took in and never read (a scan cut off by a stop hands out no reads for them,
     # and a rescan skips them as unchanged) are read now: the scan's own floor, the read and the
     # picture, and nothing past it. What the switches build is the Build's to offer.
-    if await content.unread_count():
+    if await content.any_unread():
         await queue.enqueue_when_settled(media_jobs.READ_UNREAD, priority=BACKGROUND_PRIORITY)
 
 
@@ -119,7 +119,7 @@ async def _rows_owed(
 
     # Read again what each file IS where an older generation of the ingress classifier typed it.
     # Only the rows a change can reach are below the line (see `ingress.CLASSIFIER_VERSION`).
-    if await content.unclassified(1):
+    if await content.any_unclassified():
         await queue.enqueue_when_settled(media_jobs.RECLASSIFY, priority=BACKGROUND_PRIORITY)
 
     # Rebuild the hover clips of a library whose previews were built to a different shape, because

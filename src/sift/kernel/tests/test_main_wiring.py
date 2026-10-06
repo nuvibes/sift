@@ -708,8 +708,8 @@ class _CatchUpContent:
     async def legacy_identities_remain(self) -> bool:
         return self.owed.get("legacy", False)
 
-    async def unread_count(self) -> int:
-        return 1 if self.owed.get("unread", False) else 0
+    async def any_unread(self) -> bool:
+        return self.owed.get("unread", False)
 
     async def assets_lacking_probe_rows(self, _limit: int) -> list[str]:
         return ["01HX0000000000000000000002"] if self.owed.get("probes", False) else []
@@ -717,9 +717,8 @@ class _CatchUpContent:
     async def previews_of_another_recipe_count(self, _params: object) -> int:
         return 1 if self.owed.get("previews", False) else 0
 
-    # A list, as the real store answers.
-    async def unclassified(self, _limit: int) -> list[str]:
-        return ["01HX0000000000000000000001"] if self.owed.get("unclassified", False) else []
+    async def any_unclassified(self) -> bool:
+        return self.owed.get("unclassified", False)
 
 
 class _Recognition:
@@ -1017,6 +1016,10 @@ class _Uvicorn:
     def Server(self, config: dict[str, Any]) -> _Uvicorn:
         assert config is self.ran, "the server was built from some other configuration"
         return self
+
+    async def startup(self, sockets: Any = None) -> None:
+        """uvicorn's own: the lifespan, then the socket; `started` says the socket is open."""
+        self.started += 1
 
     def run(self) -> None:
         self.started += 1

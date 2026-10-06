@@ -12,7 +12,7 @@ from sift.kernel.db import Connection, register_schema_initializer
 from sift.kernel.migrations import column_exists
 
 COMPONENT = "jobs"
-VERSION = 15
+VERSION = 16
 
 # The state list is repeated in `JobState`, since a CHECK takes no placeholder; a test holds the two
 # in step. `paused` is a state, not a flag, so nothing that asks of the state can claim it.
@@ -124,6 +124,62 @@ _BY_TYPE_INDEXES = (
 )
 
 
+# The rows by type and state, kept by the table's own triggers, so the tallies above the queue are
+# a read of a few dozen rows rather than of every job a week holds. Version 16.
+_CREATE_TALLIES = """
+CREATE TABLE IF NOT EXISTS job_tallies (
+  type  TEXT NOT NULL,
+  state TEXT NOT NULL,
+  n     INTEGER NOT NULL,
+  PRIMARY KEY (type, state)
+) WITHOUT ROWID
+"""
+
+_TALLY_TRIGGERS = (
+    """
+CREATE TRIGGER IF NOT EXISTS jobs_tally_added AFTER INSERT ON jobs BEGIN
+  INSERT INTO job_tallies (type, state, n) VALUES (NEW.type, NEW.state, 1)
+  ON CONFLICT(type, state) DO UPDATE SET n = n + 1;
+END
+""",
+    """
+CREATE TRIGGER IF NOT EXISTS jobs_tally_removed AFTER DELETE ON jobs BEGIN
+  UPDATE job_tallies SET n = n - 1 WHERE type = OLD.type AND state = OLD.state;
+END
+""",
+    """
+CREATE TRIGGER IF NOT EXISTS jobs_tally_moved AFTER UPDATE OF type, state ON jobs
+ WHEN OLD.type IS NOT NEW.type OR OLD.state IS NOT NEW.state BEGIN
+  UPDATE job_tallies SET n = n - 1 WHERE type = OLD.type AND state = OLD.state;
+  INSERT INTO job_tallies (type, state, n) VALUES (NEW.type, NEW.state, 1)
+  ON CONFLICT(type, state) DO UPDATE SET n = n + 1;
+END
+""",
+)
+
+_COUNT_INTO_TALLIES = """
+INSERT INTO job_tallies (type, state, n) SELECT type, state, COUNT(*) FROM jobs GROUP BY type, state
+"""
+
+# The settled rows of the current run and of the last minutes, read without the week behind them.
+# Partial, and each WHERE is its reader's term word for word (`queue_reads`), or the planner cannot
+# use it.
+_SETTLED_INDEXES = (
+    "CREATE INDEX IF NOT EXISTS ix_jobs_settled_by_created ON jobs(created_at, state, type)"
+    " WHERE state IN ('done', 'failed')",
+    "CREATE INDEX IF NOT EXISTS ix_jobs_done_by_updated ON jobs(updated_at, type)"
+    " WHERE state = 'done'",
+)
+
+
+async def _keep_tallies(connection: Connection) -> None:
+    await connection.execute(_CREATE_TALLIES)
+    await connection.execute("DELETE FROM job_tallies")
+    await connection.execute(_COUNT_INTO_TALLIES)
+    for statement in (*_TALLY_TRIGGERS, *_SETTLED_INDEXES):
+        await connection.execute(statement)
+
+
 async def initialize(connection: Connection, on_disk: int) -> None:
     if on_disk < 1:
         await connection.execute(_CREATE_TABLE)
@@ -137,6 +193,8 @@ async def initialize(connection: Connection, on_disk: int) -> None:
         await connection.execute(_CLAIM_INDEX)
     if 0 < on_disk < 15 and not await column_exists(connection, "jobs", "to_read"):
         await connection.execute("ALTER TABLE jobs ADD COLUMN to_read TEXT")
+    if on_disk < 16:
+        await _keep_tallies(connection)
 
 
 register_schema_initializer(COMPONENT, VERSION, initialize, baseline=12)

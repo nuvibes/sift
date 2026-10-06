@@ -3,7 +3,7 @@
 
 Driven with a stand-in for the time since the last input, so the minute can be crossed in both
 directions without waiting for one, and with the tick counter's wrap worked through by hand. A
-person's press for the full amount, and pressing again to step back, are driven the same way.
+person's press for turbo mode, and pressing again to step back, are driven the same way.
 """
 
 from __future__ import annotations
@@ -133,12 +133,12 @@ def test_other_programs_busy_step_back_too_and_say_so_while_input_comes_first() 
     assert reader.cause is None
 
 
-def test_the_full_amount_overrules_the_other_programs_cause_too() -> None:
+def test_turbo_mode_overrules_the_other_programs_cause_too() -> None:
     reader = Attention(_Input(None))
     reader.press(full=True)
     assert reader.workers(8, step_back=True, others_busy=True) == 8
     # Still said, so the bolt can say what it overrules.
-    assert (reader.full_amount, reader.holding, reader.cause) == (True, False, "others")
+    assert (reader.turbo_mode, reader.holding, reader.cause) == (True, False, "others")
     reader.press(full=False)
     assert reader.workers(8, step_back=True, others_busy=True) == 2
 
@@ -315,25 +315,25 @@ def test_a_negative_stand_in_fails_the_boot(
         _stand_in_from_the_environment(monkeypatch, tmp_path, "-1")
 
 
-def _full_amount(reader: Attention) -> bool:
-    return reader.full_amount
+def _turbo_mode(reader: Attention) -> bool:
+    return reader.turbo_mode
 
 
 def test_a_press_runs_the_full_count_while_somebody_is_here_and_a_second_press_steps_back() -> None:
     since = _Input(2.0)
     reader = Attention(since)
     assert reader.workers(8, step_back=True) == 2
-    assert (_holding(reader), _full_amount(reader)) == (True, False)
+    assert (_holding(reader), _turbo_mode(reader)) == (True, False)
     # The leaf pressed: every worker although the input is recent, said at once.
     reader.press(full=True)
-    assert (_holding(reader), _full_amount(reader)) == (False, True)
+    assert (_holding(reader), _turbo_mode(reader)) == (False, True)
     assert reader.workers(8, step_back=True) == 8
     # Still somebody here a minute later: the press holds.
     since.seconds = 1.0
     assert reader.workers(8, step_back=True) == 8
     # The bolt pressed: a quarter again.
     reader.press(full=False)
-    assert (_holding(reader), _full_amount(reader)) == (True, False)
+    assert (_holding(reader), _turbo_mode(reader)) == (True, False)
     assert reader.workers(8, step_back=True) == 2
 
 
@@ -350,8 +350,8 @@ def test_the_log_says_when_a_press_takes_effect_not_only_when_the_cause_changes(
         reader.press(full=False)
         reader.workers(8, step_back=True)
     assert [(one["event"], one.get("workers")) for one in logs] == [
-        ("attention.full_amount_pressed", None),
-        ("attention.full_amount", 8),
+        ("attention.turbo_mode_pressed", None),
+        ("attention.turbo_mode", 8),
         ("attention.step_back_pressed", None),
         ("attention.stepping_back", 2),
     ]
@@ -362,36 +362,36 @@ def test_nobody_here_is_the_full_count_by_itself_with_nothing_to_press() -> None
     since = _Input(ATTENTION_SECONDS + 1)
     reader = Attention(since)
     assert reader.workers(8, step_back=True) == 8
-    assert (_holding(reader), _full_amount(reader)) == (False, False)
+    assert (_holding(reader), _turbo_mode(reader)) == (False, False)
     # A press while nobody is here is kept, and says nothing until somebody comes back.
     reader.press(full=True)
     assert reader.pressed is True
-    assert _full_amount(reader) is False
+    assert _turbo_mode(reader) is False
     assert reader.workers(8, step_back=True) == 8
     since.seconds = 0.5
     assert reader.workers(8, step_back=True) == 8
-    assert _full_amount(reader) is True
+    assert _turbo_mode(reader) is True
     # Gone again: still the full count, and nothing to say.
     since.seconds = ATTENTION_SECONDS * 2
     assert reader.workers(8, step_back=True) == 8
-    assert (_holding(reader), _full_amount(reader)) == (False, False)
+    assert (_holding(reader), _turbo_mode(reader)) == (False, False)
 
 
 def test_the_setting_off_puts_nothing_in_play_pressed_or_not() -> None:
     reader = Attention(_Input(0.0))
     reader.press(full=True)
     assert reader.workers(8, step_back=False) == 8
-    assert (_holding(reader), _full_amount(reader)) == (False, False)
+    assert (_holding(reader), _turbo_mode(reader)) == (False, False)
     reader.press(full=False)
     assert reader.workers(8, step_back=False) == 8
-    assert (_holding(reader), _full_amount(reader)) == (False, False)
+    assert (_holding(reader), _turbo_mode(reader)) == (False, False)
 
 
 def test_a_pool_of_one_puts_nothing_in_play_pressed_or_not() -> None:
     reader = Attention(_Input(0.0))
     reader.press(full=True)
     assert reader.workers(1, step_back=True) == 1
-    assert (_holding(reader), _full_amount(reader)) == (False, False)
+    assert (_holding(reader), _turbo_mode(reader)) == (False, False)
 
 
 def test_every_window_is_told_when_the_step_back_comes_and_goes_and_on_each_press(
@@ -455,13 +455,13 @@ def test_the_fixed_stand_in_wins_over_the_file(
     assert attention.seconds_since_input() == 0.0
 
 
-def test_the_shared_reading_is_what_full_amount_reports(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_the_shared_reading_is_what_turbo_mode_reports(monkeypatch: pytest.MonkeyPatch) -> None:
     reader = Attention(_Input(1.0))
     monkeypatch.setattr(attention, "ATTENTION", reader)
     reader.workers(6, step_back=True)
-    assert attention.full_amount() is False
+    assert attention.turbo_mode() is False
     reader.press(full=True)
-    assert attention.full_amount() is True
+    assert attention.turbo_mode() is True
 
 
 class _Held:
@@ -495,8 +495,8 @@ async def test_the_pool_follows_the_reading_and_the_press_and_finishes_every_tas
     """Wired the way it ships: the pool asks the reading on its timer and converges on it.
 
     Nobody here: four workers, four tasks in hand. Somebody arrives: the pool is cut to its share
-    (half, here) and the two workers told to go still hold their tasks (nothing cancelled). The
-    full amount pressed: four again although somebody is here. Pressed again: two. Every task ends
+    (half, here) and the two workers told to go still hold their tasks (nothing cancelled). Turbo
+    mode pressed: four again although somebody is here. Pressed again: two. Every task ends
     done.
     """
     held = _Held()
@@ -542,3 +542,84 @@ async def test_the_pool_follows_the_reading_and_the_press_and_finishes_every_tas
         job = await job_queue.get(job_id)
         assert job is not None
         assert job.state is JobState.DONE
+
+
+def test_a_press_tells_its_listeners_once_and_a_failing_one_is_logged(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    uncached_log(monkeypatch, attention)
+    reader = Attention(_Input(2.0))
+    heard: list[str] = []
+
+    def broken() -> None:
+        raise RuntimeError("boom")
+
+    unlisten = reader.listen(lambda: heard.append("pressed"))
+    reader.listen(broken)
+    with capture_logs() as logs:
+        reader.press(full=True)
+        reader.press(full=True)  # no change, nobody told
+    assert heard == ["pressed"]
+    assert "attention.listener_failed" in [one["event"] for one in logs]
+    unlisten()
+    unlisten()
+    reader.press(full=False)
+    assert heard == ["pressed"]
+
+
+@pytest.mark.integration
+async def test_a_press_takes_effect_at_once_not_at_the_next_reconfigure(
+    job_queue: JobQueue,
+) -> None:
+    """The supervisor's interval is a minute here: only the press's wake can move the pool."""
+    held = _Held()
+    register_handler("probe", held.handler, name="Test job")
+    for index in range(4):
+        await job_queue.enqueue("probe", {"asset_id": f"a{index}"})
+    reader = Attention(_Input(0.0))
+    reader.workers(4, step_back=True, share=50)
+
+    async def read_config() -> tuple[int, dict[str, int]]:
+        return reader.workers(4, step_back=True, share=50), {}
+
+    pool = WorkerPool(
+        job_queue,
+        concurrency=2,
+        poll_interval=0.01,
+        read_config=read_config,
+        reconcile_interval=60.0,
+        woken_by=(reader.listen,),
+    )
+    await pool.start()
+    try:
+        await _until(lambda: held.active == 2)
+        started = time.monotonic()
+        reader.press(full=True)
+        await _until(lambda: pool.concurrency == 4, give_up_after=1.0)
+        assert time.monotonic() - started < 0.1
+        reader.press(full=False)
+        await _until(lambda: pool.concurrency == 2, give_up_after=1.0)
+    finally:
+        held.release.set()
+        await pool.stop()
+    # Stopped: a press no longer reaches the pool.
+    reader.press(full=True)
+    assert pool.concurrency == 2
+
+
+@pytest.mark.integration
+async def test_work_arriving_is_claimed_at_once_not_at_the_next_poll(job_queue: JobQueue) -> None:
+    held = _Held()
+    register_handler("probe", held.handler, name="Test job")
+    pool = WorkerPool(job_queue, concurrency=2, poll_interval=60.0, watchdog=False)
+    await pool.start()
+    try:
+        await asyncio.sleep(0.05)  # both workers find nothing and go idle for a minute
+        await job_queue.enqueue("probe", {"asset_id": "a0"})
+        started = time.monotonic()
+        pool.work_arrived()
+        await _until(lambda: held.active == 1, give_up_after=1.0)
+        assert time.monotonic() - started < 0.1
+    finally:
+        held.release.set()
+        await pool.stop()

@@ -39,6 +39,11 @@ export const SHARED_HOST = '0.0.0.0';
 const HEALTH_TIMEOUT_MS = 90_000;
 const HEALTH_INTERVAL_MS = 250;
 
+/* What the backend says on stdout once it is listening (`READY_LINE` in sift/main.py): the start
+ * is over on that line, not at the next poll of /health. */
+export const READY_LINE = 'sift.listening';
+const READY = /(?:^|\n)sift\.listening\r?\n/;
+
 /* How long a clean shutdown is given before it is taken instead.
  *
  * At least the backend's own grace for a running job (thirty seconds, `SHUTDOWN_GRACE_SECONDS`
@@ -155,6 +160,9 @@ export class Backend {
 	private startNumber: number | null = null;
 	/** Settles once the last child's output is all written, or DRAIN_MS after it died. */
 	private drained: Promise<void> = Promise.resolve();
+	/** Whether this child has said `READY_LINE`, and who is waiting to hear it. */
+	private listening = false;
+	private heard: (() => void) | null = null;
 
 	constructor(
 		private readonly locations: DataLocations,
@@ -232,7 +240,6 @@ export class Backend {
 			);
 		}
 
-		writeFacts(python, this.holdOptional);
 		const log = openStart();
 		this.startNumber = log.start;
 
@@ -288,8 +295,20 @@ export class Backend {
 			stdio: ['pipe', 'pipe', 'pipe'],
 			windowsHide: true
 		});
+		shellLog.info('backend.spawned', { uptime_ms: Math.round(process.uptime() * 1000) });
+		/* After the spawn: the interpreter starts while the facts are read. */
+		void writeFacts(python, this.holdOptional);
 		/* Through this side, so each start has a file of its own and a cap. */
-		this.child.stdout?.on('data', (chunk: Buffer) => log.write(chunk));
+		this.listening = false;
+		let tail = '\n';
+		this.child.stdout?.on('data', (chunk: Buffer) => {
+			log.write(chunk);
+			if (this.listening) return;
+			tail = (tail + chunk.toString('utf8')).slice(-256);
+			if (!READY.test(tail)) return;
+			this.listening = true;
+			this.heard?.();
+		});
 		this.child.stderr?.on('data', (chunk: Buffer) => log.write(chunk));
 		const closed = new Promise<void>((done) => this.child?.once('close', () => done()));
 		void closed.then(() => log.close());
@@ -365,6 +384,7 @@ export class Backend {
 					this.lastExit
 				);
 			}
+			if (this.listening) return;
 			try {
 				const res = await fetch(`${ORIGIN}/health`, { signal: AbortSignal.timeout(2_000) });
 				if (res.ok) return;
@@ -372,12 +392,26 @@ export class Backend {
 			} catch (err) {
 				lastError = err instanceof Error ? err.message : String(err);
 			}
-			await new Promise((r) => setTimeout(r, HEALTH_INTERVAL_MS));
+			await this.untilHeardOr(HEALTH_INTERVAL_MS);
 		}
 		throw new BackendStartError(
 			'Sift started but never became ready.',
 			`${lastError}\n\n${this.tailOfLog()}`
 		);
+	}
+
+	/** The interval's sleep, cut short by the backend saying it is listening. */
+	private untilHeardOr(ms: number): Promise<void> {
+		return new Promise<void>((done) => {
+			const timer = setTimeout(finish, ms);
+			function finish(): void {
+				clearTimeout(timer);
+				done();
+			}
+			this.heard = finish;
+		}).finally(() => {
+			this.heard = null;
+		});
 	}
 
 	/** The exit code, then the end of the start that failed. */

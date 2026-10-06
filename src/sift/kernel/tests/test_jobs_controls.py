@@ -758,6 +758,24 @@ async def test_a_listener_that_raises_does_not_stop_the_pause_or_the_other_liste
     assert heard == [[job_id]], "heard the first, and nothing once it stopped listening"
 
 
+async def test_a_queued_job_is_told_to_whoever_listens_for_work(job_queue: JobQueue) -> None:
+    """An idle worker hears a press at once rather than at its next poll; a listener that raises
+    is logged, not fatal, and one that stopped listening hears nothing."""
+    heard: list[int] = []
+
+    def broken() -> None:
+        raise RuntimeError("a listener with a fault of its own")
+
+    job_queue.listen_for_work(broken)
+    unlisten = job_queue.listen_for_work(lambda: heard.append(1))
+    await job_queue.enqueue("download", require_handler=False)
+    await job_queue.enqueue_many("download", [{}, {}], require_handler=False)
+    unlisten()
+    await job_queue.enqueue("download", require_handler=False)
+
+    assert heard == [1, 1], "once per enqueue call, and nothing once it stopped listening"
+
+
 @pytest.mark.integration
 async def test_a_resume_while_the_handler_is_still_stopping_withdraws_the_pause(
     job_queue: JobQueue,

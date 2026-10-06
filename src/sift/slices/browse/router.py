@@ -40,7 +40,6 @@ from sift.kernel.access.catalog import refused_for_swaps_among
 from sift.kernel.access.history import (
     DEFAULT_LIMIT,
     MAX_LIMIT,
-    count_of_asset_history,
     history_of_asset,
 )
 from sift.kernel.access.history_boxes import unshown_said
@@ -542,8 +541,7 @@ async def get_asset(
         download_url=view.asset.download_url,
         release_date=view.asset.release_date,
         unreachable=view.unreachable,
-        # What the History tab wears before it is opened: its number, and the mark beside it.
-        history_count=await count_of_asset_history(database, access, viewer, view.asset.id),
+        # The History tab's mark; its number is the History read's own `total`.
         disagreements=(marked := await waiting.disagreement_mark(viewer, "asset", asset_id))[0],
         disagreement_boxes=marked[1],
         details=view.asset.details,
@@ -587,9 +585,7 @@ async def get_asset(
         sprite=_sheet_layout(
             await service.sprite_sheet(viewer, view.asset.id), view.asset.duration_ms
         ),
-        playback_repair=await _repair_state(
-            access, viewer, view.asset, repairing=await _repairing(request)
-        ),
+        playback_repair=await _repair_state(request, access, viewer, view.asset),
         # Why this file has none of the four numbers other files are compared by.
         fingerprint_verdict=_standing(
             await content.verdict_of(view.asset.id, VerdictProduct.FINGERPRINTS)
@@ -635,16 +631,17 @@ _REPAIR_AT = NEEDS_REPAIR_BYTES
 
 
 async def _repair_state(
-    access: Repository, viewer: Viewer, asset: Asset, *, repairing: bool = True
+    request: Request, access: Repository, viewer: Viewer, asset: Asset
 ) -> str | None:
-    """Whether this file needed repairing, and what is happening about it."""
+    """Whether this file needed repairing, and what is happening about it. The setting is read
+    only for a file that needs it."""
     gap = asset.interleave_gap
     if gap is None or gap < _REPAIR_AT:
         return None
     repaired = await access.locate_derivative(viewer, asset.id, DerivativeKind.REMUX)
     if repaired:
         return "repaired"
-    return "pending" if repairing else "off"
+    return "pending" if await _repairing(request) else "off"
 
 
 async def _where_on_disk(

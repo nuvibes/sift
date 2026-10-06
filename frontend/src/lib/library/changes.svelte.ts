@@ -1,5 +1,7 @@
-import { untrack } from 'svelte';
+import { tick, untrack } from 'svelte';
 import type { components } from '$lib/api/schema';
+import { imports } from '$lib/library/imports.svelte';
+import { durationToken, easingToken, measure, motion } from '$lib/shell/motion.svelte';
 
 /* The bells the whole application rings when something it is drawing has moved.
  *
@@ -96,6 +98,21 @@ export function reloadOnLibraryChange(reload: () => void): void {
 	 * site forgets. The asset grid watches the library bell directly, so a file's star never
 	 * costs it a page read. */
 	whenChanged(mine, reload);
+	reloadOnFilesSettled(reload);
+}
+
+/**
+ * Re-read once the files on their way in have all landed, so a list's counts follow a scan or a
+ * download: one read when the work ends, never one per file, which is what `arrivals` would cost.
+ */
+export function reloadOnFilesSettled(reload: () => void): void {
+	let seen = untrack(() => imports.settled);
+	$effect(() => {
+		const now = imports.settled;
+		if (now === seen) return;
+		seen = now;
+		if (untrack(() => imports.busy) === 0) untrack(reload);
+	});
 }
 
 /** What one file is to the person looking at it, plus which file: the server's generated shape. */
@@ -179,4 +196,85 @@ export function rereadOnHistoryChange(reread: () => void, settle = HISTORY_SETTL
 	$effect(() => () => {
 		if (pending !== null) clearTimeout(pending);
 	});
+}
+
+/**
+ * Each row from where it was drawn to where it is, before the frame is painted: the browser's own
+ * animation, which moves what is seen without moving the layout, so nothing reads as a jump.
+ */
+function slideFrom(were: Map<Element, DOMRect>): void {
+	if (motion.reduced) return;
+	const duration = motion.duration(durationToken('--dur-fast', 140));
+	const easing = `cubic-bezier(${easingToken('--ease', [0.2, 0, 0, 1]).join(', ')})`;
+	for (const [row, was] of were) {
+		if (!row.isConnected) continue;
+		const now = row.getBoundingClientRect();
+		const dx = was.left - now.left;
+		const dy = was.top - now.top;
+		if (Math.abs(dx) < 1 && Math.abs(dy) < 1) continue;
+		row.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: 'none' }], {
+			duration,
+			easing
+		});
+	}
+}
+
+/** The box a list scrolls in: the nearest ancestor that scrolls. */
+function scrollerOf(element: HTMLElement | null): HTMLElement | null {
+	for (let at = element?.parentElement ?? null; at; at = at.parentElement) {
+		const overflow = getComputedStyle(at).overflowY;
+		if ((overflow === 'auto' || overflow === 'scroll') && at.scrollHeight > at.clientHeight)
+			return at;
+	}
+	return null;
+}
+
+/**
+ * A list's newcomers, let in at once while its top is on screen (the rows below slide, see
+ * `slideFrom`), and otherwise held back with a quiet "N new" line until the reader scrolls up or
+ * presses it, so nothing under somebody reading further down moves. Draw `shown`; hand it every
+ * answer, saying whether a bell asked for it.
+ */
+export class HeldNewcomers<T extends { id: string }> {
+	shown: T[] = $state([]);
+	/** How many arrived above and are held: the number the line says. */
+	waiting = $state(0);
+	#latest: T[] = [];
+	#wall: HTMLElement | null = null;
+
+	/** The answer to the question on screen. A new question (a page, an order) is drawn as it is. */
+	take(items: T[], fromBell: boolean): void {
+		this.#latest = items;
+		if (!fromBell || this.shown.length === 0) return this.letIn();
+		const drawn = new Set(this.shown.map((row) => row.id));
+		const fresh = items.filter((row) => !drawn.has(row.id)).length;
+		if (fresh === 0 || this.#atTop()) return this.letIn();
+		this.shown = items.filter((row) => drawn.has(row.id));
+		this.waiting = fresh;
+	}
+
+	letIn(): void {
+		const were = this.#wall ? measure(this.#wall.children) : null;
+		this.shown = this.#latest;
+		this.waiting = 0;
+		if (were) void tick().then(() => slideFrom(were));
+	}
+
+	/** The element the rows are drawn in; scrolling back to the top lets in what is held. */
+	watch(wall: HTMLElement): () => void {
+		this.#wall = wall;
+		const scroller = scrollerOf(wall);
+		const back = () => {
+			if (this.waiting > 0 && this.#atTop()) this.letIn();
+		};
+		scroller?.addEventListener('scroll', back, { passive: true });
+		return () => scroller?.removeEventListener('scroll', back);
+	}
+
+	/** Whether the first row is on screen: the list scrolled less than half a row. */
+	#atTop(): boolean {
+		const scroller = scrollerOf(this.#wall);
+		const row = this.#wall?.firstElementChild as HTMLElement | null | undefined;
+		return !scroller || scroller.scrollTop < (row?.offsetHeight ?? 0) / 2;
+	}
 }

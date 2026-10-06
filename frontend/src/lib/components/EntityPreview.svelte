@@ -55,6 +55,7 @@
 	import EntityCounts from '$lib/components/entity/EntityCounts.svelte';
 	import EnrichmentMarks from '$lib/components/entity/EnrichmentMarks.svelte';
 	import { api } from '$lib/api/client';
+	import { reloadOnLibraryChange } from '$lib/library/changes.svelte';
 	import {
 		madeByGlyph,
 		madeBySaid,
@@ -170,6 +171,11 @@
 			pmvCreator = false;
 			if (showing) ask();
 		});
+	});
+
+	/* An open card follows a change elsewhere: its counts and marks are asked again in place. */
+	reloadOnLibraryChange(() => {
+		if (showing) ask();
 	});
 
 	function opened(open: boolean): void {

@@ -40,7 +40,7 @@ the sizes.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
 from sift.kernel.content.identity import LocationStatus, VerdictProduct
@@ -178,6 +178,13 @@ SELECT id, identity, media_type, phash, videohash, video_phash, duration_ms,
  ORDER BY id
 """
 
+#: The same read within a set of files: a caller composes the set's statement into `{{FILES}}`
+#: once, at import, and hands the whole statement back with what it binds.
+FINGERPRINTS_WITHIN = _FINGERPRINTS.replace(
+    " WHERE phash IS NOT NULL OR video_phash IS NOT NULL\n",
+    " WHERE (phash IS NOT NULL OR video_phash IS NOT NULL)\n   AND id IN ({{FILES}})\n",
+)
+
 # Videos the fingerprint pass has not reached yet.
 #
 # The same WHERE as the pass's own batch query, deliberately, so the number on the screen and the
@@ -200,7 +207,9 @@ SELECT id, identity, media_type, phash, videohash, video_phash, duration_ms,
 # the pass, or the screen says "nothing waiting" while the pass works through thousands.
 _AWAITING_FINGERPRINT = """
 SELECT COUNT(*) AS total FROM assets a
- WHERE (a.oshash IS NULL OR a.fingerprint_version < ?) AND a.media_type = 'video'
+ WHERE a.id IN (SELECT id FROM assets WHERE media_type = 'video' AND oshash IS NULL
+                UNION
+                SELECT id FROM assets WHERE fingerprint_version < ? AND media_type = 'video')
    AND NOT EXISTS (SELECT 1 FROM file_verdicts v
                     WHERE v.asset_id = a.id AND v.product = ? AND v.transient = 0)
 """
@@ -378,8 +387,11 @@ class DuplicateReads:
     def __init__(self, database: Database) -> None:
         self._db = database
 
-    async def fingerprints(self) -> list[Fingerprint]:
-        """Every fingerprinted asset, for the matcher to compare.
+    async def fingerprints(
+        self, *, within: tuple[str, Mapping[str, object]] | None = None
+    ) -> list[Fingerprint]:
+        """Every fingerprinted asset, for the matcher to compare; only those `within` (a statement
+        composed from `FINGERPRINTS_WITHIN`, and what it binds) where one is given.
 
         Read in one go rather than streamed. A library large enough for this to matter is tens of
         thousands of rows of a few hundred bytes (tens of megabytes, held for the length of a
@@ -390,7 +402,12 @@ class DuplicateReads:
         # Deliberately whole-library, and it stays that way: the block index the matcher
         # is built on is built from every fingerprint at once, so there is no narrower
         # question to ask. What it needs is the lane, not a narrower read.
-        rows = await self._db.sweep_all(_FINGERPRINTS, what="duplicate fingerprints")
+        if within is None:
+            rows = await self._db.sweep_all(_FINGERPRINTS, what="duplicate fingerprints")
+        else:
+            # The set's size, not the library's: a viewer's own files.
+            statement, binds = within
+            rows = await self._db.fetch_all(statement, binds)
         # On a thread: one object per fingerprinted file, a whole library's worth.
         return await asyncio.to_thread(_fingerprints_of, rows)
 

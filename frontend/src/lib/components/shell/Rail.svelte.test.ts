@@ -22,11 +22,11 @@ import { noServerAt } from '../../../test-setup';
 /* Left unanswered on purpose: the note that the Downloads outcomes were seen, which this file does not follow. */
 noServerAt('/api/downloads/seen');
 
-/* The press behind the leaf and the bolt, caught here: what it sends is `full-amount.test.ts`'s. */
+/* The press behind the leaf and the bolt, caught here: what it sends is `turbo-mode.test.ts`'s. */
 const presses = vi.hoisted(() => ({ asked: [] as boolean[], answer: Promise.resolve() }));
-vi.mock('./full-amount', async (original) => ({
-	...(await original<typeof import('./full-amount')>()),
-	pressFullAmount: vi.fn(async (on: boolean) => {
+vi.mock('./turbo-mode', async (original) => ({
+	...(await original<typeof import('./turbo-mode')>()),
+	pressTurboMode: vi.fn(async (on: boolean) => {
 		presses.asked.push(on);
 		await presses.answer;
 	})
@@ -174,37 +174,37 @@ describe('the Downloads row while a download fetches', () => {
 function queuePage(facts: {
 	running: number;
 	stepping_back: boolean;
-	full_amount: boolean;
+	turbo_mode: boolean;
 	step_back_for?: 'input' | 'others';
 }) {
 	return {
 		jobs: [],
 		counts: { running: facts.running },
 		stepping_back: facts.stepping_back,
-		full_amount: facts.full_amount,
+		turbo_mode: facts.turbo_mode,
 		step_back_for: facts.step_back_for ?? null
 	} as unknown as NonNullable<typeof imports.page>;
 }
 
 /** The leaf or bolt's button, or null. */
-function fullAmountButton(): HTMLButtonElement | null {
-	return host.querySelector('.full-amount button');
+function turboModeButton(): HTMLButtonElement | null {
+	return host.querySelector('.turbo-mode button');
 }
 
 describe('the leaf and the bolt above the rule', () => {
 	it('draws the leaf, not pressed, while tasks run on fewer workers because the device is in use', () => {
 		render();
-		imports.page = queuePage({ running: 4, stepping_back: true, full_amount: false });
+		imports.page = queuePage({ running: 4, stepping_back: true, turbo_mode: false });
 		flushSync();
 
-		const button = fullAmountButton();
+		const button = turboModeButton();
 		expect(button).not.toBeNull();
 		expect(button?.getAttribute('aria-pressed')).toBe('false');
-		expect(button?.getAttribute('aria-label')).toBe('Use the full amount of this device');
+		expect(button?.getAttribute('aria-label')).toBe('Turbo mode');
 		// Above the rule, in the bottom half.
 		const footer = host.querySelector('.group.footer') as HTMLElement;
 		const rule = footer.querySelector('.rail-rule') as HTMLElement;
-		const holder = footer.querySelector('.full-amount') as HTMLElement;
+		const holder = footer.querySelector('.turbo-mode') as HTMLElement;
 		expect(holder.compareDocumentPosition(rule) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 	});
 
@@ -212,25 +212,25 @@ describe('the leaf and the bolt above the rule', () => {
 		(window as { sift?: unknown }).sift = { isDesktop: true, localHardware: async () => ({}) };
 		try {
 			render();
-			imports.page = queuePage({ running: 4, stepping_back: true, full_amount: false });
+			imports.page = queuePage({ running: 4, stepping_back: true, turbo_mode: false });
 			flushSync();
-			expect(fullAmountButton()).not.toBeNull();
+			expect(turboModeButton()).not.toBeNull();
 		} finally {
 			delete (window as { sift?: unknown }).sift;
 		}
 	});
 
-	it('draws the bolt, pressed, while the full amount runs although the device is in use', () => {
+	it('draws the bolt, pressed, while turbo mode runs although the device is in use', () => {
 		render();
-		imports.page = queuePage({ running: 8, stepping_back: false, full_amount: true });
+		imports.page = queuePage({ running: 8, stepping_back: false, turbo_mode: true });
 		flushSync();
 
-		expect(fullAmountButton()?.getAttribute('aria-pressed')).toBe('true');
-		const bolt = fullAmountButton()?.textContent;
+		expect(turboModeButton()?.getAttribute('aria-pressed')).toBe('true');
+		const bolt = turboModeButton()?.textContent;
 		expect(bolt?.trim()).toBe(String.fromCodePoint(parseInt(codepoints.bolt_boost, 16)));
-		imports.page = queuePage({ running: 8, stepping_back: true, full_amount: false });
+		imports.page = queuePage({ running: 8, stepping_back: true, turbo_mode: false });
 		flushSync();
-		expect(fullAmountButton()?.textContent).not.toBe(bolt);
+		expect(turboModeButton()?.textContent).not.toBe(bolt);
 	});
 
 	it('dims the leaf in eco mode for other programs, and only then', () => {
@@ -238,20 +238,20 @@ describe('the leaf and the bolt above the rule', () => {
 		imports.page = queuePage({
 			running: 4,
 			stepping_back: true,
-			full_amount: false,
+			turbo_mode: false,
 			step_back_for: 'others'
 		});
 		flushSync();
-		expect(fullAmountButton()?.className).toContain('dimmed');
+		expect(turboModeButton()?.className).toContain('dimmed');
 		for (const page of [
-			queuePage({ running: 4, stepping_back: true, full_amount: false, step_back_for: 'input' }),
-			queuePage({ running: 4, stepping_back: false, full_amount: true, step_back_for: 'others' })
+			queuePage({ running: 4, stepping_back: true, turbo_mode: false, step_back_for: 'input' }),
+			queuePage({ running: 4, stepping_back: false, turbo_mode: true, step_back_for: 'others' })
 		]) {
 			imports.page = page;
 			flushSync();
-			expect(fullAmountButton()?.className).not.toContain('dimmed');
+			expect(turboModeButton()?.className).not.toContain('dimmed');
 		}
-		const at = source.indexOf('.full-amount :global(.btn.ghost.rail-full-amount.dimmed .icon) {');
+		const at = source.indexOf('.turbo-mode :global(.btn.ghost.rail-turbo-mode.dimmed .icon) {');
 		expect(source.slice(at, source.indexOf('}', at))).toContain(
 			'opacity: var(--disabled-opacity);'
 		);
@@ -260,69 +260,69 @@ describe('the leaf and the bolt above the rule', () => {
 	/* Read from the stylesheet: a pressed ghost would otherwise sit in a filled circle at rest. */
 	it('draws the bolt yellow on the bare ground, its circle only under the pointer', () => {
 		const at = source.indexOf(
-			".full-amount :global(.btn.ghost.rail-full-amount[aria-pressed='true']:hover:not(:disabled)) {"
+			".turbo-mode :global(.btn.ghost.rail-turbo-mode[aria-pressed='true']:hover:not(:disabled)) {"
 		);
 		expect(at, 'the pressed rule moved').toBeGreaterThan(-1);
 		const body = source.slice(at, source.indexOf('}', at));
 		expect(body).toContain('--btn-ground: transparent;');
 		expect(body).toContain('color: var(--sift-warn);');
 		expect(source).not.toMatch(
-			/rail-full-amount\[aria-pressed='true'\]\)\s*\{[^}]*background-color/
+			/rail-turbo-mode\[aria-pressed='true'\]\)\s*\{[^}]*background-color/
 		);
 	});
 
-	it('presses for the full amount from the leaf and steps back from the bolt', async () => {
+	it('presses for turbo mode from the leaf and steps back from the bolt', async () => {
 		let answer = () => {};
 		presses.answer = new Promise<void>((done) => (answer = done));
 		render();
-		imports.page = queuePage({ running: 4, stepping_back: true, full_amount: false });
+		imports.page = queuePage({ running: 4, stepping_back: true, turbo_mode: false });
 		flushSync();
-		fullAmountButton()?.click();
-		fullAmountButton()?.click();
+		turboModeButton()?.click();
+		turboModeButton()?.click();
 		flushSync();
 		// One press at a time, and never dimmed while it is out.
 		expect(presses.asked).toEqual([true]);
-		expect(fullAmountButton()?.disabled).toBe(false);
-		expect(fullAmountButton()?.className).not.toContain('dimmed');
+		expect(turboModeButton()?.disabled).toBe(false);
+		expect(turboModeButton()?.className).not.toContain('dimmed');
 		answer();
 		await presses.answer;
 		await Promise.resolve();
 
-		imports.page = queuePage({ running: 8, stepping_back: false, full_amount: true });
+		imports.page = queuePage({ running: 8, stepping_back: false, turbo_mode: true });
 		flushSync();
-		fullAmountButton()?.click();
+		turboModeButton()?.click();
 		flushSync();
 		expect(presses.asked).toEqual([true, false]);
 	});
 
 	it('draws nothing with no tasks running, or with nobody at the device', () => {
 		render();
-		imports.page = queuePage({ running: 0, stepping_back: true, full_amount: false });
+		imports.page = queuePage({ running: 0, stepping_back: true, turbo_mode: false });
 		flushSync();
-		expect(fullAmountButton()).toBeNull();
+		expect(turboModeButton()).toBeNull();
 
 		// Nobody here: the full count by itself, neither flag set.
-		imports.page = queuePage({ running: 12, stepping_back: false, full_amount: false });
+		imports.page = queuePage({ running: 12, stepping_back: false, turbo_mode: false });
 		flushSync();
-		expect(fullAmountButton()).toBeNull();
+		expect(turboModeButton()).toBeNull();
 	});
 
 	it('is not offered to a guest, whose window never reads the queue', () => {
 		mocks.session.isAdmin = false;
 		render();
-		imports.page = queuePage({ running: 4, stepping_back: true, full_amount: false });
+		imports.page = queuePage({ running: 4, stepping_back: true, turbo_mode: false });
 		flushSync();
-		expect(fullAmountButton()).toBeNull();
+		expect(turboModeButton()).toBeNull();
 	});
 
 	it('keeps its place on the icons-only rail', () => {
 		rail.collapsed = true;
 		try {
 			render();
-			imports.page = queuePage({ running: 4, stepping_back: true, full_amount: false });
+			imports.page = queuePage({ running: 4, stepping_back: true, turbo_mode: false });
 			flushSync();
 			expect(host.querySelector('nav.rail')?.className).toContain('collapsed');
-			expect(fullAmountButton()).not.toBeNull();
+			expect(turboModeButton()).not.toBeNull();
 		} finally {
 			rail.collapsed = false;
 		}

@@ -15,11 +15,13 @@ from sift.kernel.db import Database
 from sift.kernel.forgetting import forget_everywhere
 from sift.slices.semantic.store import (
     _CREATE,
+    _CREATE_FILES,
     DIMENSION,
     EXTENSION,
     K_LIMIT,
     VectorStore,
     VectorStoreUnavailable,
+    _pack,
 )
 
 pytestmark = pytest.mark.integration
@@ -67,6 +69,7 @@ def test_the_add_on_loads_on_this_machine(temp_db: Database) -> None:
 def test_the_width_in_the_table_is_the_width_the_code_believes_in() -> None:
     """The table's width is the width the code expects, or every write is refused."""
     assert f"float[{DIMENSION}]" in _CREATE
+    assert f"float[{DIMENSION}]" in _CREATE_FILES
 
 
 def test_a_machine_without_the_add_on_says_so_rather_than_failing_oddly(
@@ -575,3 +578,160 @@ async def test_a_file_described_with_no_frames_has_no_description_at_all(
 
     assert await store.describes_many(["blank"], revision=REVISION) == {}
     assert await temp_db.fetch_all("SELECT 1 FROM semantic_pooled WHERE asset_id = 'blank'") == []
+
+
+# --- the keys and the files' index ---------------------------------------------------------------
+
+
+async def _keys(database: Database) -> tuple[list[str], list[str]]:
+    frames = await database.fetch_all("SELECT asset_id FROM semantic_frame_keys ORDER BY frame")
+    files = await database.fetch_all("SELECT asset_id FROM semantic_file_keys ORDER BY asset_id")
+    return [str(row["asset_id"]) for row in frames], [str(row["asset_id"]) for row in files]
+
+
+async def _files_held(database: Database) -> int:
+    (row,) = await database.fetch_all("SELECT COUNT(*) AS total FROM semantic_files")
+    return int(row["total"])
+
+
+async def test_every_vector_is_kept_by_its_files_key(temp_db: Database, store: VectorStore) -> None:
+    await store.put("clip", [(0, unit(1.0)), (10, unit(0.0, 1.0))], revision=REVISION)
+    await store.put("still", [(0, unit(1.0))], revision=REVISION)
+    await store.put("clip", [(0, unit(1.0))], revision=REVISION)
+
+    assert await _keys(temp_db) == (["still", "clip"], ["clip", "still"])
+    assert await _files_held(temp_db) == 2
+
+
+async def test_forgetting_pruning_and_clearing_take_the_keys(
+    temp_db: Database, store: VectorStore
+) -> None:
+    """A key left behind would scope a search to a vector that is gone, or rank a file twice."""
+    for one in ("a", "b", "c"):
+        await store.put(one, [(0, unit(1.0))], revision=REVISION)
+
+    await store.forget("a")
+    await store.prune(["b"])
+    assert await _keys(temp_db) == (["c"], ["c"])
+    assert await _files_held(temp_db) == 1
+
+    await store.clear()
+    assert await _keys(temp_db) == ([], [])
+    assert await _files_held(temp_db) == 0
+
+
+async def test_a_file_is_ranked_by_its_whole_description(store: VectorStore) -> None:
+    await store.put("clip", [(0, unit(1.0)), (10, unit(0.0, 1.0))], revision=REVISION)
+    await store.put("near", [(0, unit(1.0, 0.9))], revision=REVISION)
+    await store.put("far", [(0, unit(0.0, 0.0, 1.0))], revision=REVISION)
+
+    found = await store.nearest_files(unit(1.0, 1.0), revision=REVISION, limit=2)
+
+    assert [one for one, _ in found] == ["clip", "near"]
+    assert found[0][1] == pytest.approx(0.0, abs=1e-6)
+
+
+async def test_ranking_files_of_an_index_never_built_finds_nothing(store: VectorStore) -> None:
+    assert await store.nearest_files(unit(1.0), revision=REVISION, limit=5) == ()
+
+
+async def test_a_purge_takes_the_old_models_keys_and_files(
+    temp_db: Database, store: VectorStore
+) -> None:
+    await store.put("old", [(0, unit(1.0))], revision="an-older-model")
+    await store.put("new", [(0, unit(1.0))], revision=REVISION)
+
+    await store.purge_other_revisions(REVISION)
+
+    assert await _keys(temp_db) == (["new"], ["new"])
+    assert await _files_held(temp_db) == 1
+
+
+async def test_every_write_moves_the_index_mark(store: VectorStore) -> None:
+    from sift.slices.semantic.store import index_writes
+
+    before = index_writes()
+    await store.put("clip", [(0, unit(1.0))], revision=REVISION)
+    await store.forget("clip")
+
+    assert index_writes() == before + 2
+
+
+async def _as_before_the_keys(database: Database) -> None:
+    """The index as an older Sift left it: frames, some pooled rows, no keys, no files' index."""
+    async with database.write() as connection:
+        await connection.execute("DELETE FROM semantic_frame_keys")
+        await connection.execute("DELETE FROM semantic_file_keys")
+        await connection.execute("DROP TABLE semantic_files")
+        await connection.execute("DELETE FROM semantic_pooled WHERE asset_id = 'clip'")
+
+
+async def test_an_index_made_before_the_keys_is_brought_forward(
+    temp_db: Database, store: VectorStore
+) -> None:
+    from sift.slices.semantic.store import index_files
+
+    await store.put("clip", [(0, unit(1.0)), (10, unit(0.0, 1.0))], revision=REVISION)
+    await store.put("still", [(0, unit(0.0, 1.0))], revision=REVISION)
+    # One more frame of the first file after the second's: its frames are not one run.
+    async with temp_db.write() as connection:
+        await connection.execute(
+            "INSERT INTO semantic_frames(revision, asset_id, at_ms, embedding) VALUES (?, ?, ?, ?)",
+            (REVISION, "clip", 20, _pack(unit(1.0))),
+        )
+    await _as_before_the_keys(temp_db)
+
+    async with temp_db.write() as connection:
+        await index_files(connection)
+
+    assert await _keys(temp_db) == (["clip", "clip", "still", "clip"], ["clip", "still"])
+    pooled = await store.describes("clip", revision=REVISION)
+    assert pooled[:2] == [pytest.approx(2 / math.sqrt(5.0)), pytest.approx(1 / math.sqrt(5.0))]
+    found = await store.nearest_files(unit(1.0, 1.0), revision=REVISION, limit=5)
+    assert [one for one, _ in found] == ["clip", "still"]
+
+
+async def test_the_add_ons_storage_is_read_whole_and_agrees_with_the_table(
+    temp_db: Database, store: VectorStore
+) -> None:
+    """Read by chunk only on the layout this was written against; a new layout reads row by row."""
+    from sift.slices.semantic.store import _Frames
+
+    await store.put("clip", [(0, unit(1.0)), (10, unit(0.0, 1.0))], revision=REVISION)
+    async with temp_db.write() as connection:
+        keys = [
+            int(row[0])
+            for row in await connection.execute_fetchall(
+                "SELECT frame FROM semantic_frame_keys ORDER BY frame", ()
+            )
+        ]
+        frames = _Frames(connection)
+        await frames.settle(keys[0])
+        await frames.between(keys[0], keys[-1])
+        by_chunk = await frames.read(keys)
+
+    assert frames._chunked
+    assert by_chunk == [_pack(unit(1.0)), _pack(unit(0.0, 1.0))]
+
+
+async def test_an_index_this_machine_cannot_read_is_described_again(
+    temp_db: Database, store: VectorStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from sift.slices.semantic import store as module
+
+    await temp_db.execute(
+        "INSERT INTO assets (id, identity, media_type, size_bytes, added_at) "
+        "VALUES ('clip', 'digest-clip', 'image', 1, 1700000000)"
+    )
+    await temp_db.execute(
+        "INSERT INTO semantic_indexed (asset_id, revision, frames, indexed_at) "
+        "VALUES ('clip', ?, 1, 1)",
+        (REVISION,),
+    )
+    await store.put("clip", [(0, unit(1.0))], revision=REVISION)
+    monkeypatch.setattr(module, "_ADD_ON_HERE", "SELECT 1 WHERE 0")
+
+    async with temp_db.write() as connection:
+        await module.index_files(connection)
+
+    assert await temp_db.fetch_all("SELECT asset_id FROM semantic_indexed") == []

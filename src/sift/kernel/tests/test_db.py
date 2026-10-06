@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import re
 import sqlite3
 from collections.abc import Iterator
 from dataclasses import dataclass, field
@@ -24,13 +23,11 @@ from sift.kernel import db as db_module
 from sift.kernel.db import (
     DEFAULT_READERS,
     PRAGMAS,
-    SLOW_QUERY_MS,
     Connection,
     Database,
     DatabaseError,
     Initializer,
     SqliteCapabilities,
-    StatementBudget,
     _refuse_writes,
     after_commit,
     check_sqlite_capabilities,
@@ -43,8 +40,6 @@ from sift.kernel.db import (
     register_connection_extension,
     register_schema_initializer,
     registered_point_reads,
-    statement_budget,
-    statement_name,
 )
 
 pytestmark = pytest.mark.usefixtures("clean_registry")
@@ -1701,10 +1696,20 @@ def test_the_same_point_read_name_twice_is_refused() -> None:
 
 
 @pytest.mark.unit
-def test_a_statement_that_binds_nothing_cannot_be_a_point_read() -> None:
-    """It asks about no particular subject, so nothing about it is bounded by construction."""
+def test_a_statement_that_binds_nothing_over_the_library_cannot_be_a_point_read() -> None:
+    """It asks about no particular subject, so over a table that grows with the library it walks
+    the whole of it."""
     with pytest.raises(ValueError, match="binds no value"):
-        point_read("test.everything", "SELECT v FROM t")
+        point_read("test.everything", "SELECT id FROM assets")
+    with pytest.raises(ValueError, match="binds no value"):
+        point_read("test.joined", "SELECT r.id FROM library_roots r JOIN folders f ON 1")
+
+
+@pytest.mark.unit
+def test_a_small_table_read_whole_can_be_a_point_read(clean_registry: None) -> None:
+    """A table that does not grow with the library costs what a seek does, read whole."""
+    declared = point_read("test.small", "SELECT v FROM t")
+    assert registered_point_reads()["test.small"] is declared
 
 
 @pytest.mark.unit
@@ -1712,7 +1717,7 @@ def test_a_comment_holding_a_placeholder_does_not_make_a_statement_a_question() 
     """`?` inside a comment binds nothing, and reading it as a binding would let a whole-table
     read in through the one check that is made without a database."""
     with pytest.raises(ValueError, match="binds no value"):
-        point_read("test.commented", "SELECT v FROM t -- takes no ? at all")
+        point_read("test.commented", "SELECT id FROM assets -- takes no ? at all")
 
 
 @pytest.mark.unit
@@ -1927,156 +1932,6 @@ async def test_two_writes_do_not_see_each_other_s_work(tmp_path: Path) -> None:
         await database.close()
 
 
-# --- what a statement is called ---------------------------------------------------------------
-#
-# The log identifies a statement by name, not by carrying it: the whole query on every line makes a
-# log of a hundred megabytes that names no fault. A name is what a record carries, and these hold
-# the three properties that make a name worth having: it is the same every time for the same
-# statement, it is different for a different one, and it is not the SQL.
-
-
-@pytest.mark.unit
-def test_a_declared_statement_is_named_by_the_name_it_was_declared_under() -> None:
-    """`point_read` already asks for a name that says which read it is. Inventing a second one for
-    the same statement would mean the log and the plan gate calling it two different things."""
-    read = point_read("access.one_note", "SELECT id FROM notes WHERE id = ?")
-    assert statement_name(read) == "access.one_note"
-
-
-@pytest.mark.unit
-def test_a_plain_statement_is_named_from_its_verb_its_table_and_a_digest() -> None:
-    name = statement_name("SELECT who FROM asset_people WHERE asset_id = ?")
-    assert re.fullmatch(r"select:asset_people#[0-9a-f]{8}", name), name
-
-
-@pytest.mark.unit
-def test_a_name_survives_reformatting_a_comment_and_a_longer_bound_list() -> None:
-    """A name that moved when somebody reflowed a query, or when a bound list happened to be one
-    longer, would file the same statement under a new heading and lose everything known about it,
-    which is precisely when it stops being able to judge itself."""
-    plain = statement_name("SELECT who FROM notes WHERE id IN (?,?,?)")
-    dressed = statement_name(
-        "SELECT who\n"
-        "  FROM notes\n"
-        " -- the list is as long as the caller's list, which is not a property of the statement\n"
-        " WHERE id IN (?, ?, ?, ?, ?)"
-    )
-    assert plain == dressed
-
-
-@pytest.mark.unit
-def test_two_statements_over_one_table_are_named_apart() -> None:
-    """The table alone is not a name: half the reads in the application are about `assets`."""
-    assert statement_name("SELECT a FROM notes WHERE id = ?") != statement_name(
-        "SELECT b FROM notes WHERE id = ?"
-    )
-
-
-@pytest.mark.unit
-def test_a_name_is_ascii_and_carries_none_of_the_statement() -> None:
-    name = statement_name("SELECT rude_column FROM notes WHERE stored_path = ? -- \u00e9")
-    name.encode("ascii")
-    assert "rude_column" not in name and "stored_path" not in name and "WHERE" not in name
-
-
-# --- what counts as slow, per statement --------------------------------------------------------
-
-
-@pytest.mark.unit
-def test_a_statement_keeps_the_flat_bar_until_it_has_a_number_of_its_own() -> None:
-    """The flat bar is the starting point, so a rarely-run statement loses nothing."""
-    budget = StatementBudget(settled=5)
-    for _ in range(4):
-        budget.observed("select:notes#0000", 1.0)
-    assert budget.threshold_ms("select:notes#0000") == SLOW_QUERY_MS
-    budget.observed("select:notes#0000", 1.0)
-    assert budget.threshold_ms("select:notes#0000") < SLOW_QUERY_MS
-
-
-@pytest.mark.unit
-def test_a_statement_that_is_always_this_slow_stops_warning_and_a_sudden_one_does_not() -> None:
-    """A statement that honestly costs a hundred milliseconds is over the flat bar on every single
-    run: thousands of warnings an afternoon, not one of them a fault. Judged against itself, its
-    bar is eight hundred, and the run that takes eight hundred is the one worth a line."""
-    budget = StatementBudget(settled=5)
-    for _ in range(5):
-        budget.observed("select:notes#0000", 100.0)
-    assert budget.threshold_ms("select:notes#0000") == pytest.approx(800.0)
-
-
-@pytest.mark.unit
-def test_a_cheap_statement_is_not_judged_at_a_tenth_of_a_millisecond() -> None:
-    """Eight times the usual cost of a point read is under two milliseconds, which the loop's own
-    backlog moves on its own. The floor is what stops the bar becoming noise."""
-    budget = StatementBudget(settled=3)
-    for _ in range(3):
-        budget.observed("access.one_note", 0.2)
-    assert budget.threshold_ms("access.one_note") == pytest.approx(50.0)
-
-
-@pytest.mark.unit
-def test_the_window_forgets_so_a_growing_library_moves_the_bar_with_it() -> None:
-    """A statement over a table that has grown a hundredfold is honestly slower. A window that
-    never forgot would go on judging today against the day the library was empty."""
-    budget = StatementBudget(window=4, settled=4)
-    for _ in range(4):
-        budget.observed("select:notes#0000", 1.0)
-    assert budget.threshold_ms("select:notes#0000") == pytest.approx(50.0)
-    for _ in range(4):
-        budget.observed("select:notes#0000", 100.0)
-    assert budget.threshold_ms("select:notes#0000") == pytest.approx(800.0)
-
-
-@pytest.mark.unit
-def test_only_so_many_statements_are_remembered_and_the_rest_keep_the_flat_bar() -> None:
-    """A bound on a mistake rather than on ordinary use: the set of statements is fixed by the
-    code. Past it the answer is the flat bar, which is the safe direction."""
-    budget = StatementBudget(settled=1, keep=2)
-    for name in ("a", "b", "c"):
-        budget.observed(name, 1.0)
-    assert budget.watching() == 2
-    assert budget.threshold_ms("c") == SLOW_QUERY_MS
-
-
-@pytest.mark.unit
-async def test_a_read_teaches_the_budget_what_it_costs(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """The wiring, which nothing else would catch: a budget nobody reports to answers the flat bar
-    for ever and reads exactly like having no budget at all."""
-    budget = StatementBudget(settled=2)
-    monkeypatch.setattr(db_module, "_BUDGET", budget)
-    database = Database(tmp_path / "budget.sqlite3")
-    await database.connect()
-    try:
-        for _ in range(3):
-            await database.fetch_all("SELECT 1 FROM sqlite_schema WHERE name = ?", ("nothing",))
-        assert budget.watching() == 1
-    finally:
-        await database.close()
-
-
-@pytest.mark.unit
-async def test_a_slow_statement_is_named_in_the_warning_and_its_text_is_not(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """The redaction policy's shape, applied to the noisiest line in the log."""
-    from sift.kernel.log import configure_logging
-
-    monkeypatch.setattr(db_module, "_BUDGET", StatementBudget(unsettled_ms=0.0))
-    database = Database(tmp_path / "loud.sqlite3")
-    await database.connect()
-    configure_logging("INFO", redact_personal=True)
-    try:
-        await database.fetch_all("SELECT name FROM sqlite_schema WHERE name = ?", ("rude",))
-    finally:
-        await database.close()
-    output = capsys.readouterr().out
-    assert '"stage": "db.read"' in output, "a statement over its bar is still escalated"
-    assert "select:sqlite_schema#" in output, "and it says which statement it was"
-    assert "SELECT name" not in output, "and it does not carry the statement"
-
-
 # --- keeping the query planner's statistics true ------------------------------------------------
 #
 # SQLite chooses between indexes from counts it writes only when it is asked to, and asked nothing
@@ -2196,29 +2051,6 @@ async def test_a_keeper_told_to_stop_before_it_starts_does_nothing(tmp_path: Pat
         keep_the_statistics_current(Database(tmp_path / "never.sqlite3"), stop, interval=0.01),
         timeout=1.0,
     )
-
-
-@pytest.mark.unit
-def test_the_statement_names_are_a_bounded_memo(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Every distinct statement text is a key, and a process that builds SQL with its values
-    inside would grow the memo forever. Past the bound it starts again rather than growing."""
-    monkeypatch.setattr(db_module, "NAMES_KEPT", 1)
-    first = statement_name("SELECT a FROM bounded_one WHERE id = ?")
-    second = statement_name("SELECT b FROM bounded_two WHERE id = ?")
-    assert first != second
-    assert len(db_module._NAMES) == 1
-    # Forgotten is not wrong: the name is worked out again, identically.
-    assert statement_name("SELECT a FROM bounded_one WHERE id = ?") == first
-
-
-@pytest.mark.unit
-def test_the_process_budget_is_one_object_and_forgetting_empties_it() -> None:
-    assert statement_budget() is db_module._BUDGET
-    budget = StatementBudget(settled=1)
-    budget.observed("select:notes#1", 3.0)
-    assert budget.watching() == 1
-    budget.forget()
-    assert budget.watching() == 0
 
 
 @pytest.mark.unit

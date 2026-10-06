@@ -4,6 +4,7 @@
  */
 
 import { api, type ApiPath } from '$lib/api/client';
+import { libraryChanges, whenChanged } from '$lib/library/changes.svelte';
 import type { components } from '$lib/api/schema';
 import type { CheckState } from '$lib/components/common/Checkbox.svelte';
 import { SAME_MUSIC_FIELD } from '$lib/player/music';
@@ -104,6 +105,57 @@ export function pick(
 	if (going === 'out') excluded.values.push(value);
 
 	where.write(placed(where.read(), facet, spelled(subject, included, excluded)));
+}
+
+/**
+ * A pick drawn on the press, until the address it wrote says the same, keyed by facet and value.
+ * Another screen is another address: nothing pressed on the last one stands there.
+ */
+export class PendingPicks {
+	#held = $state<Record<string, CheckState>>({});
+	#on = '';
+	readonly #now: () => { subject: Subject; narrowing: Narrowing; path: string };
+
+	constructor(now: () => { subject: Subject; narrowing: Narrowing; path: string }) {
+		this.#now = now;
+		$effect(() => this.#settle());
+	}
+
+	stance(facet: string, value: string, where: Narrowing): CheckState {
+		const held = where === this.#now().narrowing ? this.#held[`${facet}\n${value}`] : undefined;
+		return held ?? stanceOf(facet, value, where);
+	}
+
+	pick(facet: string, value: string, next: CheckState | undefined, where: Narrowing): void {
+		const going = next ?? cycle(stanceOf(facet, value, where));
+		const now = this.#now();
+		if (where === now.narrowing) {
+			this.#on = now.path;
+			this.#held = { ...this.#held, [`${facet}\n${value}`]: going };
+		}
+		pick(now.subject, facet, value, going, where);
+	}
+
+	/* Let go of every pick the address now agrees with. */
+	#settle(): void {
+		const held = this.#held;
+		const keys = Object.keys(held);
+		if (keys.length === 0) return;
+		const now = this.#now();
+		if (now.path !== this.#on) {
+			this.#held = {};
+			return;
+		}
+		const read = now.narrowing.read();
+		const where: Narrowing = { read: () => read, write: () => {} };
+		const still = keys.filter((key) => {
+			const [facet = '', value = ''] = key.split('\n');
+			return stanceOf(facet, value, where) !== held[key];
+		});
+		if (still.length < keys.length) {
+			this.#held = Object.fromEntries(still.map((key) => [key, held[key] as CheckState]));
+		}
+	}
 }
 
 /** One facet's parameters as the noun spells them. */
@@ -343,8 +395,15 @@ export class ChipNames {
 		})
 	);
 
+	/* Moved by the library bell, so every name is asked again: a rename elsewhere reaches the chips. */
+	private round = $state(0);
+
 	constructor(from: ChipSources) {
 		this.from = from;
+		whenChanged(libraryChanges, () => {
+			this.asked.clear();
+			this.round += 1;
+		});
 		$effect(() => this.askFolders());
 		$effect(() => this.askFacetNames());
 		$effect(() => this.askFileNames());
@@ -354,6 +413,7 @@ export class ChipNames {
 
 	/** Whether this key is asked for the first time, and so to be asked now. */
 	private first(key: string): boolean {
+		void this.round;
 		if (this.asked.has(key)) return false;
 		this.asked.add(key);
 		return true;

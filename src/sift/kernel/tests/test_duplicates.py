@@ -12,7 +12,7 @@ from typing import Any
 import pytest
 
 from sift.kernel.content import duplicates
-from sift.kernel.content.duplicates import Copy, DuplicateReads, Redundancy
+from sift.kernel.content.duplicates import FINGERPRINTS_WITHIN, Copy, DuplicateReads, Redundancy
 from sift.kernel.content.identity import LocationStatus
 from sift.kernel.db import Database
 from sift.kernel.ids import new_id
@@ -216,6 +216,21 @@ async def test_a_fingerprint_carries_the_digest(db: Database, reads: DuplicateRe
     (found,) = await reads.fingerprints()
 
     assert found.identity == "aaaa"
+
+
+async def test_fingerprints_can_be_read_within_a_set_of_files(
+    db: Database, reads: DuplicateReads
+) -> None:
+    """A viewer's cheap Similar reads their files, never the library's."""
+    for asset_id in ("aaa", "bbb", "ccc"):
+        await add_asset(db, asset_id)
+
+    statement = FINGERPRINTS_WITHIN.replace(
+        "{{FILES}}", "SELECT :one AS asset_id UNION SELECT :two"
+    )
+    found = await reads.fingerprints(within=(statement, {"one": "aaa", "two": "ccc"}))
+
+    assert [row.asset_id for row in found] == ["aaa", "ccc"]
 
 
 async def test_fingerprints_come_back_in_a_settled_order(

@@ -27,15 +27,12 @@ from enum import StrEnum
 from typing import Any
 
 from sift.kernel.changes import AssetOpinion, announce_opinion
-from sift.kernel.db import Connection, Database, Row, in_clause
+from sift.kernel.db import Connection, Database, Row, point_read
 from sift.kernel.ids import is_id, new_id
 
-# A star rating, or no rating at all. Zero is not "unrated": somebody who clears a rating gets
-# NULL back, and a query for "rated 1 or more" must not find them.
-#
-# Always out of TEN, whatever scale the screens are set to draw. The scale is a display setting
-# and nothing below this line knows about it: five stars on a five-point screen arrive here as
-# ten, so switching the setting never rewrites a row and never loses what somebody meant.
+# A star rating out of TEN whatever scale the screens draw (five stars on a five-point screen
+# arrive as ten, so the setting never rewrites a row), or NULL: zero is not "unrated", and a query
+# for "rated 1 or more" must not find a cleared one.
 MIN_RATING = 1
 MAX_RATING = 10
 
@@ -591,10 +588,14 @@ WHERE asset_id = ? AND user_id = ?
 ORDER BY bucket
 """
 
-_STATE_OF = "SELECT * FROM asset_user_state WHERE asset_id = ? AND user_id = ?"
-
-# The user comes first so the expanded id list is appended, not spliced into the middle.
-_STATES_OF = "SELECT * FROM asset_user_state WHERE user_id = ? AND asset_id IN (?*)"
+_STATE_OF = point_read(
+    "content.asset_state", "SELECT * FROM asset_user_state WHERE asset_id = ? AND user_id = ?"
+)
+_STATES_OF = point_read(
+    "content.asset_states",
+    "SELECT s.* FROM json_each(?) w"
+    " JOIN asset_user_state s ON s.asset_id = w.value AND s.user_id = ?",
+)
 
 
 class UserStateStore:
@@ -912,8 +913,7 @@ class UserStateStore:
         wanted = [asset_id for asset_id in asset_ids if is_id(asset_id)]
         if not wanted or not is_id(user_id):
             return {}
-        sql, values = in_clause(_STATES_OF, wanted)
-        rows = await self._db.fetch_all(sql, [user_id, *values])
+        rows = await self._db.fetch_all(_STATES_OF, (json.dumps(wanted), user_id))
         return {row["asset_id"]: state_from_row(row) for row in rows}
 
     async def _write_state(

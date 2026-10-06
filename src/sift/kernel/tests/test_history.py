@@ -36,7 +36,6 @@ from sift.kernel.access.history import (
     Detail,
     Event,
     Link,
-    count_of_asset_history,
     files_called,
     history_of_asset,
 )
@@ -1698,7 +1697,6 @@ async def test_the_count_on_the_tab_follows_the_fold(
 
     events = await history_of_asset(temp_db, access, actors.admin, ASSET)
 
-    assert await count_of_asset_history(temp_db, access, actors.admin, ASSET) == len(events)
     assert len(events) == 2
 
 
@@ -2008,7 +2006,6 @@ async def test_the_count_is_the_length_of_the_history_with_one_of_everything_in_
 
     events = await history_of_asset(temp_db, access, actors.admin, ASSET)
 
-    assert await count_of_asset_history(temp_db, access, actors.admin, ASSET) == len(events)
     assert len(events) == 10
 
 
@@ -2024,12 +2021,8 @@ async def test_the_count_answers_each_viewer_what_that_viewer_would_be_shown(
     await make_file(temp_db)
     await access.grant(ObjectType.ITEM, ASSET, actors.guest.id, Effect.SHARE)
 
-    for who in (actors.admin, actors.guest):
-        assert await count_of_asset_history(temp_db, access, who, ASSET) == len(
-            await history_of_asset(temp_db, access, who, ASSET)
-        )
-    assert await count_of_asset_history(temp_db, access, actors.admin, ASSET) == 2
-    assert await count_of_asset_history(temp_db, access, actors.guest, ASSET) == 1
+    assert len(await history_of_asset(temp_db, access, actors.admin, ASSET)) == 2
+    assert len(await history_of_asset(temp_db, access, actors.guest, ASSET)) == 1
 
 
 async def test_the_count_is_capped_the_way_the_pane_is(
@@ -2045,18 +2038,15 @@ async def test_the_count_is_capped_the_way_the_pane_is(
     await tag_it(temp_db, source=None, at=TAGGED_AT)
     await file_under_site(temp_db)
 
-    assert await count_of_asset_history(temp_db, access, actors.admin, ASSET) == 4
-    assert await count_of_asset_history(temp_db, access, actors.admin, ASSET, limit=2) == 2
+    assert len(await history_of_asset(temp_db, access, actors.admin, ASSET)) == 4
+    assert len(await history_of_asset(temp_db, access, actors.admin, ASSET, limit=2)) == 2
 
 
 async def test_a_file_that_is_not_there_counts_nothing(
     temp_db: Database, access: Repository, actors: Actors
 ) -> None:
     """Zero rather than one: there is no arrival line for a file that never arrived."""
-    assert (
-        await count_of_asset_history(temp_db, access, actors.admin, "01HX00000000000000000005ZZ")
-        == 0
-    )
+    assert await history_of_asset(temp_db, access, actors.admin, "01HX00000000000000000005ZZ") == []
 
 
 #: A second person, tag and box, for the presses that touch more than one thing.

@@ -491,9 +491,8 @@ async def update_collection(
     if visible is None:
         raise _missing()  # pragma: no cover (a rename cannot conceal anything)
     # The name is indexed on every asset in the collection and on no other, so those are exactly
-    # what the rename changed. Unlike a tag rename this route CAN name them, and asking is one
-    # indexed read against a whole-library rebuild that holds the write lock for seconds.
-    await reindexer.touched_many(await service.members(collection_id))
+    # what the rename changed: a job rewrites them after the answer, a chunk at a time.
+    await reindexer.queue_many(await service.members(collection_id))
     # With the mark, because the screen replaces its row with this reply, and a reply that omits
     # a restrict is a badge that stops being drawn while the grant is still in force.
     marks = await access.visible_marks(viewer, ObjectType.COLLECTION, [collection_id])

@@ -246,16 +246,11 @@ def test_a_decision_of_a_kind_that_can_never_be_undone_offers_no_button(
     assert offered == {None, ordinary}
 
 
-def test_the_file_itself_carries_how_many_lines_its_history_has(
+def test_the_history_read_says_how_many_lines_the_tab_wears(
     client: TestClient, library: Library
 ) -> None:
-    """The number the History tab wears before anybody opens the pane.
-
-    Asserted against the length of the PANE'S OWN reply rather than against a literal, because the
-    property that matters is that the two agree: a tab saying two over a pane drawing one is the
-    fault this field exists to end, and it is the only way this can go wrong that nobody would
-    notice until they pressed it.
-    """
+    """The History tab's number is the pane's own total, so the two cannot disagree; the file's
+    record does not count it."""
     sign_in(client, "admin")
     tag = new_id()
     write(
@@ -270,11 +265,9 @@ def test_the_file_itself_carries_how_many_lines_its_history_has(
         ],
     )
 
-    detail = client.get(f"/api/assets/{library.shared}").json()
-    events = client.get(f"/api/assets/{library.shared}/history").json()["items"]
+    page = client.get(f"/api/assets/{library.shared}/history").json()
 
-    assert detail["history_count"] == len(events)
-    assert detail["history_count"] == 2
+    assert page["total"] == len(page["items"]) == 2
 
 
 def test_a_read_shorter_than_the_history_says_the_whole_total_and_so_does_the_tab(
@@ -297,11 +290,9 @@ def test_a_read_shorter_than_the_history_says_the_whole_total_and_so_does_the_ta
     )
 
     page = client.get(f"/api/assets/{library.shared}/history?limit=1").json()
-    detail = client.get(f"/api/assets/{library.shared}").json()
 
     assert [one["kind"] for one in page["items"]] == ["tagged"]
     assert page["total"] == 2
-    assert detail["history_count"] == 2
 
 
 def test_the_file_carries_its_disagreement_count_for_the_history_tabs_mark(

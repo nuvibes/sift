@@ -54,11 +54,11 @@
 		flip,
 		keptOnThisScreen,
 		opposite,
-		pick as pickIn,
+		PendingPicks,
 		placed,
-		sides,
-		stanceOf as stanceIn
+		sides
 	} from './filter-bar.svelte';
+	import { countsAhead } from './facet-counts.svelte';
 	import { partsOf, sameFilters, taken, written } from '$lib/search/query-parts';
 	import FilterChip from './FilterChip.svelte';
 	import ContextMenu from '$lib/components/common/ContextMenu.svelte';
@@ -460,13 +460,16 @@
 		return [...included.values, ...excluded.values];
 	}
 
+	/* A pick is drawn on the press, while its address is on its way; the counts are asked ahead. */
+	const picks = new PendingPicks(() => ({ subject, narrowing, path: page.url.pathname }));
+	countsAhead(() => (editingHere === null ? { query: panelQuery, within: panelWithin } : null));
 	/** Which of the three a single value is in. */
 	function stanceOf(facet: string, value: string, where: Narrowing = narrowing): CheckState {
-		return stanceIn(facet, value, where);
+		return picks.stance(facet, value, where);
 	}
 
 	function pick(facet: string, value: string, next?: CheckState, where: Narrowing = narrowing) {
-		pickIn(subject, facet, value, next, where);
+		picks.pick(facet, value, next, where);
 	}
 
 	/* Replace a whole named filter with one value, or clear it: `added:` takes a span, not ticks. */

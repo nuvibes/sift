@@ -9,7 +9,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushSync, mount, unmount } from 'svelte';
 import AssetGrid from './AssetGrid.svelte';
-import { arrivals, libraryChanges } from '$lib/library/changes.svelte';
+import { arrivals, assetState, libraryChanges } from '$lib/library/changes.svelte';
 import { vault } from '$lib/shell/vault.svelte';
 import { LOOP_SOURCE, type RowSource } from '$lib/grid/grid.svelte';
 
@@ -311,5 +311,34 @@ describe('opening and shutting Hidden', () => {
 		expect(asked.queries[0], 'the wall was re-read from the beginning').not.toHaveProperty(
 			'offset'
 		);
+	});
+});
+
+describe('a heart set elsewhere', () => {
+	const hearted = {
+		asset_id: 'elsewhere',
+		favorite: true,
+		rating: null,
+		views: 0,
+		o_count: 0,
+		pinned: false
+	};
+
+	it('re-reads a wall whose question asks for hearts, so the file can join it', async () => {
+		await grid({ query: { fav: 'yes' } });
+
+		assetState.changed(hearted);
+		await settle();
+
+		expect(asked.queries.length, 'Favorites never asked again').toBe(1);
+	});
+
+	it('asks nothing of a wall a heart cannot move a file into', async () => {
+		await grid();
+
+		assetState.changed(hearted);
+		await settle();
+
+		expect(asked.queries.length).toBe(0);
 	});
 });

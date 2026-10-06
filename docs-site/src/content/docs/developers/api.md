@@ -248,13 +248,13 @@ This reference lists every route Sift answers, grouped by what it's about. The f
 - `POST /api/jobs/cancel-all`: Cancel Everything
 - `POST /api/jobs/clear-canceled`: Clear Canceled Jobs
 - `POST /api/jobs/clear-failed`: Clear Failed Jobs
-- `POST /api/jobs/full-amount`: Press Full Amount
 - `GET /api/jobs/rebuild-previews`: Count Rebuildable Previews
 - `POST /api/jobs/rebuild-previews`: Rebuild Previews
 - `GET /api/jobs/rebuild-thumbnails`: Count Rebuildable
 - `POST /api/jobs/rebuild-thumbnails`: Rebuild Thumbnails
 - `POST /api/jobs/retry-canceled`: Retry Canceled Jobs
 - `POST /api/jobs/retry-failed`: Retry Failed Jobs
+- `POST /api/jobs/turbo-mode`: Press Turbo Mode
 - `POST /api/jobs/{job_id}/cancel`: Cancel Job
 - `POST /api/jobs/{job_id}/retry`: Retry Job
 - `GET /api/jobs/{job_id}/steps`: List Steps

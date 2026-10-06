@@ -325,8 +325,8 @@ INTERNAL_EXCEPTIONS = frozenset(
 
 #: A domain exception's name, or a class built to carry a sentence.
 _REFUSAL = re.compile(
-    r"^(?:HTTPException|Not[A-Z]\w*|No[A-Z]\w*|\w+(?:Refused|Rejected|Error|NotFound|NotAllowed"
-    r"|Invalid|Missing|Report|Unavailable|Conflict))$"
+    r"^(?:HTTPException|Not[A-Z]\w*|No[A-Z]\w*|TooMany\w*|\w+(?:Refused|Rejected|Error|NotFound"
+    r"|NotAllowed|Invalid|Missing|Report|Unavailable|Conflict|Taken))$"
 )
 
 #: Calls whose arguments are for a log, not a screen.

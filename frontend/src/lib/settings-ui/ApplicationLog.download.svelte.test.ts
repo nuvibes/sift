@@ -144,7 +144,7 @@ describe('Download log', () => {
 
 	it('has the shell make the archive of both places where it can, and names the file', async () => {
 		shellArchives.on = true;
-		saveLogArchive.mockResolvedValue('C:\\Saved\\sift-log.zip');
+		saveLogArchive.mockResolvedValue({ file: 'C:\\Saved\\sift-log.zip' });
 		pressDownload();
 		await vi.waitFor(() => expect(show).toHaveBeenCalled());
 
@@ -153,12 +153,17 @@ describe('Download log', () => {
 		expect(show).toHaveBeenCalledWith('Saved to C:\\Saved\\sift-log.zip', { tone: 'success' });
 	});
 
-	it("says so when the shell couldn't make it", async () => {
+	it("says why when the shell couldn't make it", async () => {
 		shellArchives.on = true;
-		saveLogArchive.mockResolvedValue(null);
+		saveLogArchive.mockResolvedValue({ reason: 'the log maker took too long' });
 		pressDownload();
 		await vi.waitFor(() => expect(show).toHaveBeenCalled());
-		expect(show).toHaveBeenCalledWith(COPY.cannotDownload, { tone: 'error' });
+		expect(show).toHaveBeenCalledWith(
+			"Couldn't create the log file: the log maker took too long.",
+			{
+				tone: 'error'
+			}
+		);
 	});
 
 	it('saves nothing when the server refuses the archive', async () => {

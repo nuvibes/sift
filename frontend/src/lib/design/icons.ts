@@ -113,7 +113,7 @@ export const ICON_NAMES = [
 	   saying the controls are down here and come up when you point at them. */
 	'expand_circle_up',
 	'bolt',
-	/* The rail's bolt: the full amount of this device, pressed for although it is in use. */
+	/* The rail's bolt: turbo mode, all of this device pressed for although it is in use. */
 	'bolt_boost',
 	/* The rail's leaf, its other state: background work using less of this device because it is in
 	   use. A leaf for consideration rather than a gauge for a number: what it says is that Sift is

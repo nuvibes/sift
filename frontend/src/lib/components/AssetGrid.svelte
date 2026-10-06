@@ -269,11 +269,9 @@
 		swapPicks.toggle(item.id);
 	}
 
-	/* A heart or a rating set elsewhere lands on the tile at once, and `stillBelongs` takes the row
-	 * off a screen it no longer answers. */
+	/* Hearts and stars set elsewhere land at once; `stillBelongs` drops a row that no longer fits. */
 	onAssetStateChange((state) => {
-		// By FILE, so a heart set in the player reaches every row about that file, which on a wall
-		// of moments is more than one tile.
+		// By FILE: a heart reaches every row about it, several on a wall of moments.
 		for (const row of rowsAbout(state.asset_id)) {
 			grid.setState(
 				row,
@@ -281,6 +279,8 @@
 				stillBelongs
 			);
 		}
+		// A file this wall does not hold may now answer it: Favorites gaining a heart.
+		if (order.hangsOnOpinions) void current.catchUp();
 	});
 
 	/* Escape lets go of a selection from wherever the focus is, on the window, and only while
@@ -791,7 +791,7 @@
 						{/if}
 						<!-- What has arrived above this page, held still for somebody reading further down,
 						     and the press that takes it. The count is the label. -->
-						{#if grid.newer > 0}
+						{#if current.offersTheNew}
 							<Button
 								size="small"
 								tone="secondary"

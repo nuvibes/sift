@@ -25,7 +25,7 @@ LIBRARY_COMPONENT = "library"
 LIBRARY_VERSION = 7
 
 CONTENT_COMPONENT = "content"
-CONTENT_VERSION = 29
+CONTENT_VERSION = 30
 
 USER_STATE_COMPONENT = "user_state"
 USER_STATE_VERSION = 6
@@ -407,6 +407,17 @@ _INDEX_KEPT_FROM_SWAPS = (
     "CREATE INDEX IF NOT EXISTS ix_assets_kept_from_swaps ON assets(id) WHERE keep_from_swaps = 1"
 )
 
+#: Content version 30: the rows a start and the duplicates screen ask about (unread, typed by an
+#: older classifier, a video with no fingerprint or an older one's), so each is a seek on a library
+#: that has none rather than a walk of every file.
+_START_INDEXES = (
+    "CREATE INDEX IF NOT EXISTS ix_assets_unread ON assets(added_at, id) WHERE probed_at IS NULL",
+    "CREATE INDEX IF NOT EXISTS ix_assets_classified ON assets(classified_version)",
+    "CREATE INDEX IF NOT EXISTS ix_assets_video_unhashed ON assets(id)"
+    " WHERE media_type = 'video' AND oshash IS NULL",
+    "CREATE INDEX IF NOT EXISTS ix_assets_print_version ON assets(fingerprint_version)",
+)
+
 _CONTENT_INDEXES = (
     # Near-duplicate search sorts on this.
     "CREATE INDEX IF NOT EXISTS ix_assets_phash ON assets(phash)",
@@ -571,6 +582,18 @@ async def initialize_library(connection: Connection, on_disk: int) -> None:
             await connection.execute(statement)
 
 
+_STEPS: tuple[tuple[int, tuple[str, ...]], ...] = (
+    (23, (_DROP_UNDEPTHED_INDEX,)),
+    (24, (_ADD_KEPT_FROM_SWAPS, _INDEX_KEPT_FROM_SWAPS)),
+    (25, (_ADD_STILL_AT,)),
+    (26, (_DROP_STILLS_UNMEASURED_INDEX,)),
+    (27, (_DROP_AVIF_PREVIEWS_CUT_FROM_THE_COVER,)),
+    (28, (_RECLASSIFY_THE_WEBP_AND_HEIF_ROWS,)),
+    (29, (_REREAD_THE_HEIF_STILLS,)),
+    (30, _START_INDEXES),
+)
+
+
 async def initialize_content(connection: Connection, on_disk: int) -> None:
     if on_disk < 1:
         for statement in (
@@ -583,23 +606,13 @@ async def initialize_content(connection: Connection, on_disk: int) -> None:
             _CREATE_ASSET_PROBES,
             _CREATE_OPINIONS,
             *_OPINION_INDEXES,
+            *_START_INDEXES,
         ):
             await connection.execute(statement)
-    if 0 < on_disk < 23:
-        await connection.execute(_DROP_UNDEPTHED_INDEX)
-    if 0 < on_disk < 24:
-        await connection.execute(_ADD_KEPT_FROM_SWAPS)
-        await connection.execute(_INDEX_KEPT_FROM_SWAPS)
-    if 0 < on_disk < 25:
-        await connection.execute(_ADD_STILL_AT)
-    if 0 < on_disk < 26:
-        await connection.execute(_DROP_STILLS_UNMEASURED_INDEX)
-    if 0 < on_disk < 27:
-        await connection.execute(_DROP_AVIF_PREVIEWS_CUT_FROM_THE_COVER)
-    if 0 < on_disk < 28:
-        await connection.execute(_RECLASSIFY_THE_WEBP_AND_HEIF_ROWS)
-    if 0 < on_disk < 29:
-        await connection.execute(_REREAD_THE_HEIF_STILLS)
+    for version, statements in _STEPS:
+        if 0 < on_disk < version:
+            for statement in statements:
+                await connection.execute(statement)
 
 
 async def initialize_user_state(connection: Connection, on_disk: int) -> None:

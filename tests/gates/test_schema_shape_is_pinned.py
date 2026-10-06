@@ -55,7 +55,7 @@ _FTS5_SHADOWS = ("data", "idx", "content", "docsize", "config")
 #: Virtual tables a feature makes when it first stores something, not when the schema is built. A
 #: new library has none of them, so they and the storage their module makes beside them are left
 #: out of the comparison rather than pinned.
-MADE_ON_FIRST_USE = ("semantic_frames",)
+MADE_ON_FIRST_USE = ("semantic_frames", "semantic_files")
 
 #: A table constraint begins with one of these words; anything else in the list is a column.
 _CONSTRAINT_WORDS = frozenset({"constraint", "primary", "unique", "check", "foreign"})

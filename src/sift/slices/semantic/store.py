@@ -30,16 +30,18 @@ needs it, and `available` is the honest answer everywhere else.
 from __future__ import annotations
 
 import asyncio
-import math
 import struct
 from collections.abc import Sequence
 from dataclasses import dataclass
 
+import numpy as np
+import numpy.typing as npt
+
 from sift.kernel.access.ranked import VIEWER_FILES, ranked_among
 from sift.kernel.access.viewer import Viewer
 from sift.kernel.audience import EVERY_ADMIN
-from sift.kernel.changes import About, announce
-from sift.kernel.db import Database, in_clause
+from sift.kernel.changes import About, announce_now
+from sift.kernel.db import Connection, Database, in_clause
 from sift.kernel.forgetting import register_forgetting
 from sift.kernel.log import get_logger
 from sift.kernel.sql_splice import splice
@@ -114,6 +116,28 @@ _INSERT = "INSERT INTO semantic_frames(revision, asset_id, at_ms, embedding) VAL
 
 _FORGET = "DELETE FROM semantic_frames WHERE asset_id = ?"
 
+# One pooled vector per file, the index "like this file" ranks first: a quarter of the frames' rows,
+# and no frame read. Its rowid is the file's key in `semantic_file_keys`.
+_CREATE_FILES = """
+CREATE VIRTUAL TABLE IF NOT EXISTS semantic_files USING vec0(
+  revision  TEXT partition key,
+  embedding float[768]
+)
+"""
+_INSERT_FILE = "INSERT INTO semantic_files(revision, embedding) VALUES (?, ?)"
+_FORGET_FILE = "DELETE FROM semantic_files WHERE rowid = ?"
+_FORGET_FILES_OF_REVISION = "DELETE FROM semantic_files WHERE revision = ?"
+
+# Each vector's file kept by key in an ordinary table, so a viewer's scope is an index join; the
+# file id inside the virtual table is text read row by row.
+_KEEP_FRAME_KEY = "INSERT INTO semantic_frame_keys (frame, asset_id, revision) VALUES (?, ?, ?)"
+_FORGET_FRAME_KEYS = "DELETE FROM semantic_frame_keys WHERE asset_id = ?"
+_FORGET_FRAME_KEYS_OF_REVISION = "DELETE FROM semantic_frame_keys WHERE revision = ?"
+_KEEP_FILE_KEY = "INSERT INTO semantic_file_keys (file, asset_id, revision) VALUES (?, ?, ?)"
+_FILE_KEY_OF = "SELECT file FROM semantic_file_keys WHERE asset_id = ?"
+_FORGET_FILE_KEY = "DELETE FROM semantic_file_keys WHERE asset_id = ?"
+_FORGET_FILE_KEYS_OF_REVISION = "DELETE FROM semantic_file_keys WHERE revision = ?"
+
 # One file's whole description, kept in an ordinary table beside the frames. See
 # `slices/semantic/schema.py` for why it exists and what it costs. Written where the frames are
 # written, out of the same numbers, and read by primary key.
@@ -153,13 +177,20 @@ _FORGET_POOLED_REVISION = "DELETE FROM semantic_pooled WHERE revision = ?"
 _HELD_IDS = "SELECT DISTINCT asset_id FROM semantic_frames"
 _COUNT = "SELECT COUNT(*) AS total FROM semantic_frames"
 _FRAMES_OF = "SELECT embedding FROM semantic_frames WHERE asset_id = ? AND revision = ?"
-_EXISTS = "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'semantic_frames'"
+# The files' table, made after the frames' in the same write: holding it means holding both.
+_EXISTS = "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'semantic_files'"
 # A batch per write, so removing the index never holds the one writer for minutes. The frames by
 # rowid, one at a time: a vec0 table answers a rowid lookup, and an IN over a scan of it would not.
 _SOME_FRAMES = "SELECT rowid FROM semantic_frames LIMIT ?"
 _CLEAR_FRAME = "DELETE FROM semantic_frames WHERE rowid = ?"
 _CLEAR_POOLED = (
     "DELETE FROM semantic_pooled WHERE rowid IN (SELECT rowid FROM semantic_pooled LIMIT ?)"
+)
+_SOME_FILES = "SELECT rowid FROM semantic_files LIMIT ?"
+# Last, after the vectors they name: a key left by a stop names nothing and is harmless.
+_CLEAR_KEYS = (
+    "DELETE FROM semantic_file_keys WHERE file IN (SELECT file FROM semantic_file_keys LIMIT ?)",
+    "DELETE FROM semantic_frame_keys WHERE frame IN (SELECT frame FROM semantic_frame_keys LIMIT ?)",
 )
 #: Rows one write of the removal takes.
 CLEAR_BATCH = 500
@@ -168,14 +199,41 @@ _NEAREST = (
     "WHERE embedding MATCH ? AND k = ? AND revision = ? ORDER BY distance"
 )
 # Only the asker's own files are ranked, so a hidden file can neither fill the page nor shorten it.
-# By rowid: the index tests a text IN against every listed file per frame, a rowid IN by search.
+# By rowid, from the keys: the index tests a rowid IN by search.
 _NEAREST_AMONG = splice(
     "SELECT asset_id, at_ms, distance FROM semantic_frames"
     " WHERE embedding MATCH :vector AND k = :k AND revision = :revision"
-    " AND rowid IN (SELECT f.rowid FROM semantic_frames f WHERE f.revision = :revision"
-    " AND +f.asset_id IN ({{VIEWER_FILES}})) ORDER BY distance",
+    " AND rowid IN (SELECT fk.frame FROM semantic_frame_keys fk"
+    " WHERE fk.asset_id IN ({{VIEWER_FILES}})) ORDER BY distance",
     VIEWER_FILES=VIEWER_FILES,
 )
+_NEAREST_FILES = (
+    "WITH near AS (SELECT rowid, distance FROM semantic_files"
+    " WHERE embedding MATCH :vector AND k = :k AND revision = :revision)"
+    " SELECT fk.asset_id AS asset_id, near.distance AS distance FROM near"
+    " JOIN semantic_file_keys fk ON fk.file = near.rowid ORDER BY near.distance"
+)
+_NEAREST_FILES_AMONG = splice(
+    "WITH near AS (SELECT rowid, distance FROM semantic_files"
+    " WHERE embedding MATCH :vector AND k = :k AND revision = :revision"
+    " AND rowid IN (SELECT fk.file FROM semantic_file_keys fk"
+    " WHERE fk.asset_id IN ({{VIEWER_FILES}})))"
+    " SELECT fk.asset_id AS asset_id, near.distance AS distance FROM near"
+    " JOIN semantic_file_keys fk ON fk.file = near.rowid ORDER BY near.distance",
+    VIEWER_FILES=VIEWER_FILES,
+)
+
+#: Writes to the index in this process: what a kept ranking is kept under (`index_writes`).
+_WRITES = [0]
+
+
+def index_writes() -> int:
+    """How many times this process has written to the index. Moves on every write, and only then."""
+    return _WRITES[0]
+
+
+def _moved() -> None:
+    _WRITES[0] += 1
 
 
 class VectorStoreUnavailable(RuntimeError):
@@ -201,7 +259,7 @@ def _unpack(raw: bytes) -> tuple[float, ...]:
     return struct.unpack(f"{len(raw) // 4}f", raw)
 
 
-def _pooled(vectors: Sequence[Sequence[float]]) -> list[float]:
+def _pooled(vectors: Sequence[Sequence[float]] | npt.NDArray[np.float32]) -> list[float]:
     """One set of numbers standing for a whole file: the average of its frames, back to length one.
 
     The ONE place that rule is written. It is applied twice (once where the frames are stored, to
@@ -212,16 +270,14 @@ def _pooled(vectors: Sequence[Sequence[float]]) -> list[float]:
     Empty for no frames, and empty for frames that cancel out exactly: there is no direction to
     scale, and a zero vector would compare as equally near everything.
     """
-    if not vectors:
+    if len(vectors) == 0:
         return []
-    total = [0.0] * DIMENSION
-    for vector in vectors:
-        for index, value in enumerate(vector):
-            total[index] += value
-    length = math.sqrt(sum(value * value for value in total))
+    total = np.asarray(vectors, dtype=np.float64).sum(axis=0)
+    length = float(np.linalg.norm(total))
     if length == 0.0:
         return []
-    return [value / length for value in total]
+    pooled: list[float] = (total / length).tolist()
+    return pooled
 
 
 def _pack(vector: Sequence[float]) -> bytes:
@@ -231,6 +287,29 @@ def _pack(vector: Sequence[float]) -> bytes:
     six times the bytes and a parse on both sides of every write.
     """
     return struct.pack(f"{len(vector)}f", *vector)
+
+
+async def _forget_file(connection: Connection, asset_id: str) -> None:
+    """Take one file out of the files' index, by its key."""
+    for row in await connection.execute_fetchall(_FILE_KEY_OF, (asset_id,)):
+        await connection.execute(_FORGET_FILE, (int(row[0]),))
+    await connection.execute(_FORGET_FILE_KEY, (asset_id,))
+
+
+async def _forget_in(connection: Connection, asset_id: str) -> None:
+    """Everything held about one file, inside the caller's write."""
+    await connection.execute(_FORGET, (asset_id,))
+    await connection.execute(_FORGET_FRAME_KEYS, (asset_id,))
+    await connection.execute(_FORGET_POOLED, (asset_id,))
+    await _forget_file(connection, asset_id)
+
+
+async def _keep_file(connection: Connection, asset_id: str, revision: str, pooled: bytes) -> None:
+    """One file's pooled description, kept and put in the files' index in the caller's write."""
+    await connection.execute(_KEEP_POOLED, (asset_id, revision, pooled))
+    await _forget_file(connection, asset_id)
+    cursor = await connection.execute(_INSERT_FILE, (revision, pooled))
+    await connection.execute(_KEEP_FILE_KEY, (cursor.lastrowid, asset_id, revision))
 
 
 class VectorStore:
@@ -275,6 +354,7 @@ class VectorStore:
             return
         async with self._database.write() as connection:
             await connection.execute(_CREATE)
+            await connection.execute(_CREATE_FILES)
         self._ready = True
 
     async def built(self) -> bool:
@@ -305,28 +385,32 @@ class VectorStore:
         """
         await self.ensure_ready()
         async with self._database.write() as connection:
-            await connection.execute(_FORGET, (asset_id,))
-            await connection.execute(_FORGET_POOLED, (asset_id,))
+            await _forget_in(connection, asset_id)
             for at_ms, vector in frames:
                 if len(vector) != DIMENSION:
                     raise ValueError(
                         f"a frame description has {len(vector)} numbers, and this index holds "
                         f"{DIMENSION}"
                     )
-                await connection.execute(_INSERT, (revision, asset_id, at_ms, _pack(vector)))
+                cursor = await connection.execute(
+                    _INSERT, (revision, asset_id, at_ms, _pack(vector))
+                )
+                await connection.execute(_KEEP_FRAME_KEY, (cursor.lastrowid, asset_id, revision))
             # The whole-file description, from the numbers already in hand. Nothing is read to
             # build it, and it saves the scan `describes` would otherwise be. See `_KEEP_POOLED`.
             pooled = _pooled([vector for _, vector in frames])
             if pooled:
-                await connection.execute(_KEEP_POOLED, (asset_id, revision, _pack(pooled)))
+                await _keep_file(connection, asset_id, revision, _pack(pooled))
+        # After the commit: a ranking taken while the write was open is kept under the old count.
+        _moved()
 
     async def forget(self, asset_id: str) -> None:
         """Drop everything held about one file. Safe when there is nothing."""
         if not self.available or not await self.built():
             return
         async with self._database.write() as connection:
-            await connection.execute(_FORGET, (asset_id,))
-            await connection.execute(_FORGET_POOLED, (asset_id,))
+            await _forget_in(connection, asset_id)
+        _moved()
 
     async def nearest(
         self,
@@ -371,6 +455,30 @@ class VectorStore:
                 break
         return list(best.values())
 
+    async def nearest_files(
+        self,
+        vector: Sequence[float],
+        *,
+        revision: str,
+        limit: int,
+        asker: Viewer | None = None,
+    ) -> tuple[tuple[str, float], ...]:
+        """The files whose whole description sits nearest these numbers, nearest first, among the
+        files `asker` may see; every file for a pass with no asker.
+
+        One pooled vector per file, so a file is ranked as a file and no frame is read: the
+        question "what looks like this file" asks it."""
+        self.require()
+        if not await self.built():
+            return ()
+        asked = {"vector": _pack(vector), "k": min(limit, K_LIMIT), "revision": revision}
+        among = None if asker is None else await ranked_among(self._database, asker)
+        if among is None:
+            rows = await self._database.fetch_all(_NEAREST_FILES, asked)
+        else:
+            rows = await self._database.fetch_all(_NEAREST_FILES_AMONG, {**asked, **among})
+        return tuple((str(row["asset_id"]), float(row["distance"])) for row in rows)
+
     async def describes(self, asset_id: str, *, revision: str) -> list[float]:
         """One set of numbers standing for a whole file, or empty when it has none.
 
@@ -404,7 +512,8 @@ class VectorStore:
         pooled = _pooled([_unpack(row["embedding"]) for row in rows])
         if pooled:
             async with self._database.write() as connection:
-                await connection.execute(_KEEP_POOLED, (asset_id, revision, _pack(pooled)))
+                await _keep_file(connection, asset_id, revision, _pack(pooled))
+            _moved()
         return pooled
 
     async def describes_many(
@@ -461,10 +570,10 @@ class VectorStore:
             return 0
         async with self._database.write() as connection:
             for asset_id in gone:
-                await connection.execute(_FORGET, (asset_id,))
-                # And the pooled reading of those frames, which has no key reaching it either:
-                # deliberately, so that it goes at the same moment they do. See the schema.
-                await connection.execute(_FORGET_POOLED, (asset_id,))
+                # The frames, and the pooled reading and the keys of them, which no foreign key
+                # reaches either: deliberately, so that they go at the same moment. See the schema.
+                await _forget_in(connection, asset_id)
+        _moved()
         log.info("semantic.index.pruned", files=len(gone))
         return len(gone)
 
@@ -480,23 +589,35 @@ class VectorStore:
         """
         if not self.available or not await self.built():
             return
-        while True:
-            async with self._database.write() as connection:
-                cursor = await connection.execute(_CLEAR_POOLED, (CLEAR_BATCH,))
-            if not cursor.rowcount:
-                break
-            await asyncio.sleep(0)
-        while True:
-            async with self._database.write() as connection:
-                rows = list(await connection.execute_fetchall(_SOME_FRAMES, (CLEAR_BATCH,)))
-                await connection.executemany(_CLEAR_FRAME, [(int(row[0]),) for row in rows])
-                if not rows:
-                    # Settings > Smart Search draws the index's size; an open pane re-reads on this.
-                    announce(EVERY_ADMIN, About.SETTINGS)
-            if not rows:
-                break
-            await asyncio.sleep(0)
+        await self._delete_in_batches(_CLEAR_POOLED)
+        await self._forget_in_batches(_SOME_FILES, _FORGET_FILE)
+        await self._forget_in_batches(_SOME_FRAMES, _CLEAR_FRAME)
+        # Settings > Smart Search draws the index's size; an open pane re-reads on this. Every
+        # batch has committed, so it is told now rather than after a write.
+        announce_now(EVERY_ADMIN, About.SETTINGS)
+        for clear_keys in _CLEAR_KEYS:
+            await self._delete_in_batches(clear_keys)
+        _moved()
         log.info("semantic.index.cleared")
+
+    async def _delete_in_batches(self, statement: str) -> None:
+        """A bounded delete at a time, the loop between each, until none is left."""
+        while True:
+            async with self._database.write() as connection:
+                cursor = await connection.execute(statement, (CLEAR_BATCH,))
+            if not cursor.rowcount:
+                return
+            await asyncio.sleep(0)
+
+    async def _forget_in_batches(self, some: str, forget: str) -> None:
+        """A batch of rowids read, then forgotten one by one, until none is left."""
+        while True:
+            async with self._database.write() as connection:
+                rows = list(await connection.execute_fetchall(some, (CLEAR_BATCH,)))
+                await connection.executemany(forget, [(int(row[0]),) for row in rows])
+            if not rows:
+                return
+            await asyncio.sleep(0)
 
     async def revisions_held(self) -> dict[str, int]:
         """Which models' numbers are in the index, and how many frames each has.
@@ -536,9 +657,174 @@ class VectorStore:
             for one in stale:
                 await connection.execute(_FORGET_REVISION, (one,))
                 await connection.execute(_FORGET_POOLED_REVISION, (one,))
+                await connection.execute(_FORGET_FILES_OF_REVISION, (one,))
+                await connection.execute(_FORGET_FILE_KEYS_OF_REVISION, (one,))
+                await connection.execute(_FORGET_FRAME_KEYS_OF_REVISION, (one,))
                 dropped += held[one]
+        _moved()
         log.info("semantic.index.purged", revisions=len(stale), frames=dropped)
         return dropped
+
+
+# --- bringing an index made before the keys forward ---------------------------------------------
+
+_HOLDS_FRAMES = "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'semantic_frames'"
+_ADD_ON_HERE = "SELECT 1 FROM pragma_function_list WHERE name = 'vec_version'"
+_DESCRIBE_AGAIN = "DELETE FROM semantic_indexed"
+_KEY_EVERY_FRAME = (
+    "INSERT INTO semantic_frame_keys (frame, asset_id, revision)"
+    " SELECT rowid, asset_id, revision FROM semantic_frames"
+)
+# In frame order, so one file's frames, written in one transaction, arrive together.
+_KEYS_AFTER = (
+    "SELECT frame, asset_id, revision FROM semantic_frame_keys"
+    " WHERE frame > ? ORDER BY frame LIMIT ?"
+)
+_ONE_FRAME = "SELECT embedding FROM semantic_frames WHERE rowid = ?"
+
+# The add-on's own storage, read only here: a vector read through the table walks its chunk from
+# the start, half a millisecond a row, and a chunk read whole is a thousand rows at once. Trusted
+# only where the layout is the one expected and a vector read both ways agrees.
+_LAYOUT = (
+    "SELECT"
+    " (SELECT COUNT(*) FROM pragma_table_info('semantic_frames_rowids')"
+    "  WHERE name IN ('chunk_id', 'chunk_offset')) = 2"
+    " AND (SELECT COUNT(*) FROM pragma_table_info('semantic_frames_vector_chunks00')"
+    "  WHERE name = 'vectors') = 1"
+)
+_SLOTS = (
+    "SELECT rowid, chunk_id, chunk_offset FROM semantic_frames_rowids WHERE rowid BETWEEN ? AND ?"
+)
+_CHUNK = "SELECT vectors FROM semantic_frames_vector_chunks00 WHERE rowid = ?"
+_POOLED_OF = "SELECT asset_id, revision, pooled FROM semantic_pooled WHERE asset_id IN (?*)"
+_LAST_FILE = "SELECT COALESCE(MAX(file), 0) FROM semantic_file_keys"
+_INSERT_FILE_AT = "INSERT INTO semantic_files(rowid, revision, embedding) VALUES (?, ?, ?)"
+# Files whose frames are not one run of keys: another file's frames lie between theirs.
+_SPLIT_FILES = (
+    "SELECT asset_id, revision FROM semantic_frame_keys k GROUP BY asset_id, revision"
+    " HAVING COUNT(*) != (SELECT COUNT(*) FROM semantic_frame_keys r"
+    " WHERE r.frame BETWEEN MIN(k.frame) AND MAX(k.frame))"
+)
+_FRAMES_OF_FILE = (
+    "SELECT frame FROM semantic_frame_keys WHERE asset_id = ? AND revision = ? ORDER BY frame"
+)
+#: Frame keys read, and files written, per statement of the step below.
+INDEX_BATCH = 5000
+
+
+class _Frames:
+    """Frames read by key for the step below, a chunk at a time where the layout allows."""
+
+    def __init__(self, connection: Connection) -> None:
+        self._connection = connection
+        self._chunked = False
+        self._slots: dict[int, tuple[int, int]] = {}
+        self._chunk: tuple[int, bytes] | None = None
+
+    async def settle(self, sample: int) -> None:
+        """Read by chunk only where the layout is known and agrees with the table on `sample`."""
+        (row,) = await self._connection.execute_fetchall(_LAYOUT, ())
+        if not row[0]:
+            return
+        by_table = await self.read([sample])
+        self._chunked = True
+        await self.between(sample, sample)
+        self._chunked = await self.read([sample]) == by_table
+
+    async def between(self, first: int, last: int) -> None:
+        """Where the frames keyed `first` to `last` sit, read in one statement."""
+        if self._chunked:
+            rows = await self._connection.execute_fetchall(_SLOTS, (first, last))
+            self._slots = {int(row[0]): (int(row[1]), int(row[2])) for row in rows}
+
+    async def read(self, frames: Sequence[int]) -> list[bytes]:
+        found: list[bytes] = []
+        width = DIMENSION * 4
+        for frame in frames:
+            if not self._chunked:
+                rows = await self._connection.execute_fetchall(_ONE_FRAME, (frame,))
+                found.extend(bytes(row[0]) for row in rows)
+                continue
+            chunk, slot = self._slots[frame]
+            if self._chunk is None or self._chunk[0] != chunk:
+                (held,) = await self._connection.execute_fetchall(_CHUNK, (chunk,))
+                self._chunk = (chunk, bytes(held[0]))
+            found.append(self._chunk[1][slot * width : (slot + 1) * width])
+        return found
+
+
+async def index_files(connection: Connection) -> None:
+    """Key every frame by its file and put every file in the files' index, pooling the files
+    described before the pooled table existed; for the schema step that adds the keys.
+
+    Nothing to do where no frame was ever stored. Where the add-on is not loaded here the frames
+    cannot be read, so the record of what was described is cleared and the files are described
+    again once it loads.
+    """
+    if not await connection.execute_fetchall(_HOLDS_FRAMES, ()):
+        return
+    if not await connection.execute_fetchall(_ADD_ON_HERE, ()):
+        await connection.execute(_DESCRIBE_AGAIN)
+        return
+    await connection.execute(_CREATE_FILES)
+    await connection.execute(_KEY_EVERY_FRAME)
+    split = {
+        (str(row[0]), str(row[1])) for row in await connection.execute_fetchall(_SPLIT_FILES, ())
+    }
+    frames = _Frames(connection)
+    files: list[tuple[str, str, list[int]]] = []
+    after = 0
+    while rows := list(await connection.execute_fetchall(_KEYS_AFTER, (after, INDEX_BATCH))):
+        if after == 0:
+            await frames.settle(int(rows[0][0]))
+        for row in rows:
+            frame, asset_id, revision = int(row[0]), str(row[1]), str(row[2])
+            if (asset_id, revision) in split:
+                continue
+            if files and files[-1][:2] == (asset_id, revision):
+                files[-1][2].append(frame)
+            else:
+                files.append((asset_id, revision, [frame]))
+        after = int(rows[-1][0])
+        # The last file's frames may go on in the next batch.
+        await _index_many(connection, frames, files[:-1])
+        files = files[-1:]
+    await _index_many(connection, frames, files)
+    for asset_id, revision in sorted(split):
+        keys = await connection.execute_fetchall(_FRAMES_OF_FILE, (asset_id, revision))
+        await _index_many(connection, frames, [(asset_id, revision, [int(row[0]) for row in keys])])
+
+
+async def _index_many(
+    connection: Connection, frames: _Frames, files: Sequence[tuple[str, str, list[int]]]
+) -> None:
+    if not files:
+        return
+    await frames.between(files[0][2][0], files[-1][2][-1])
+    asked, values = in_clause(_POOLED_OF, sorted({asset_id for asset_id, _, _ in files}))
+    held = {
+        (str(row[0]), str(row[1])): bytes(row[2])
+        for row in await connection.execute_fetchall(asked, values)
+    }
+    ((last,),) = await connection.execute_fetchall(_LAST_FILE, ())
+    pooled_rows: list[tuple[str, str, bytes]] = []
+    file_rows: list[tuple[int, str, bytes]] = []
+    key_rows: list[tuple[int, str, str]] = []
+    for asset_id, revision, keys in files:
+        pooled = held.get((asset_id, revision))
+        if pooled is None:
+            raw = b"".join(await frames.read(keys))
+            made = _pooled(np.frombuffer(raw, dtype=np.float32).reshape(-1, DIMENSION))
+            if not made:
+                continue
+            pooled = _pack(made)
+            pooled_rows.append((asset_id, revision, pooled))
+        last += 1
+        file_rows.append((last, revision, pooled))
+        key_rows.append((last, asset_id, revision))
+    await connection.executemany(_KEEP_POOLED, pooled_rows)
+    await connection.executemany(_INSERT_FILE_AT, file_rows)
+    await connection.executemany(_KEEP_FILE_KEY, key_rows)
 
 
 #: The vector table. Published so an operator can be told the add-on did not load, and why.
@@ -568,11 +854,11 @@ class _ForgetFromVectors:
 
     name = "vector-index"
 
-    #: The vectors and the pooled reading of them. `semantic_indexed` beside them is an ordinary
-    #: table with a real foreign key, so it goes on its own and naming it here would claim work
-    #: nothing does; `semantic_pooled` has no key on purpose (see the schema), so it is swept
-    #: here, with the frames it is an average of.
-    tables = ("semantic_frames", "semantic_pooled")
+    #: The vectors, the pooled reading of them and their keys. `semantic_indexed` beside them is an
+    #: ordinary table with a real foreign key, so it goes on its own and naming it here would claim
+    #: work nothing does; `semantic_pooled` and the keys have no key on purpose (see the schema),
+    #: so they are swept here, with the frames.
+    tables = ("semantic_frames", "semantic_pooled", "semantic_frame_keys", "semantic_file_keys")
 
     def __init__(self, database: Database) -> None:
         self._database = database

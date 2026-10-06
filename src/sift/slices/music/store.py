@@ -20,7 +20,8 @@ from sift.kernel import chromaprint
 from sift.kernel.audience import EVERY_ADMIN
 from sift.kernel.changes import About, announce, telling, who_may_see_a_file
 from sift.kernel.content import Lack
-from sift.kernel.content.identity import song_and_length, songs_of
+from sift.kernel.content.identity import songs_of
+from sift.kernel.content.identity_fields import songs_and_lengths
 from sift.kernel.db import Connection, Database
 from sift.kernel.log import get_logger
 from sift.kernel.sql_splice import splice
@@ -533,7 +534,7 @@ _UNREFUSE = "DELETE FROM music_name_refusals WHERE asset_id = ? AND song = ?"
 #: lookup that ended in a refusal or a failure is asked again; one that named a song or found
 #: nothing is not.
 #:
-#: The file's own song and length are asked of the kernel first (`song_and_length`), because a
+#: The file's own song and length are asked of the kernel first (`songs_and_lengths`), because a
 #: feature does not read the files' table: `:length_ms` is the file's length where it has one, and
 #: this statement is asked only of a file that carries no song.
 #:
@@ -546,16 +547,16 @@ LENGTH(f.fingerprint) > 0
                     AND l.status IN ('named', 'nothing'))
 """
 
-#: One file asked one of the two questions below, long enough for a song.
-_ONE_FILE = """
-SELECT 1 AS wants
+#: A page of files asked one of the two questions below, in one statement. Whether each is long
+#: enough for a song is decided beside it (`NameStore._wanting`), with the file's own length first.
+_PAGE_OF_FILES = """
+SELECT f.asset_id AS asset_id, f.duration_ms AS duration_ms
   FROM audio_fingerprints f
- WHERE f.asset_id = :asset
-   AND COALESCE(:length_ms, f.duration_ms) >= :shortest_ms
+ WHERE f.asset_id IN (SELECT value FROM json_each(:assets))
    AND {{RULE}}
 """
 
-_WANTS_LOOKUP = splice(_ONE_FILE, RULE=_STILL_OWED)
+_WANTS_LOOKUP = splice(_PAGE_OF_FILES, RULE=_STILL_OWED)
 
 #: The same question asked of the library, a page at a time in id order: what the catch-up walks
 #: and what its count is made of. The length here is the sound the fingerprint covers, because the
@@ -586,7 +587,7 @@ LENGTH(f.fingerprint) > 0
                 AND l.status = 'nothing' AND l.looked_up_at < :before)
 """
 
-_WANTS_AGAIN = splice(_ONE_FILE, RULE=_ASKED_AND_NOT_KNOWN)
+_WANTS_AGAIN = splice(_PAGE_OF_FILES, RULE=_ASKED_AND_NOT_KNOWN)
 
 #: The same asked of the library a page at a time in id order, as `_OWED_LOOKUPS` is.
 _NOT_KNOWN_PAGE = splice(
@@ -681,42 +682,54 @@ class NameStore:
         """Take back a "no" to this song on this file: somebody put it there by hand."""
         await connection.execute(_UNREFUSE, (asset_id, song))
 
-    async def _songless(self, asset_id: str) -> tuple[bool, int | None]:
-        """Whether this file carries no song, and its own length: asked of the kernel, because a
-        feature does not read the files' table. A file that carries one is asked nothing more."""
-        own = await song_and_length(self._db, asset_id)
-        if own is None or (own.music or "").strip():
-            return False, None
-        return True, own.duration_ms
-
     async def wants_lookup(self, asset_id: str, *, shortest_ms: int) -> bool:
         """Whether AcoustID should be asked about this file. See `_WANTS_LOOKUP`."""
-        songless, length_ms = await self._songless(asset_id)
-        if not songless:
-            return False
-        found = await self._db.fetch_one(
-            _WANTS_LOOKUP,
-            {"asset": asset_id, "length_ms": length_ms, "shortest_ms": shortest_ms},
-        )
-        return found is not None
+        return asset_id in await self.wanting_lookup([asset_id], shortest_ms=shortest_ms)
 
     async def wants_asking_again(self, asset_id: str, *, shortest_ms: int, before: int) -> bool:
         """Whether AcoustID may be asked again about this file: its last answer was that it did not
         know it, given before `before` (nought: any age), and it still has no song. See
         `_ASKED_AND_NOT_KNOWN`."""
-        songless, length_ms = await self._songless(asset_id)
-        if not songless:
-            return False
-        found = await self._db.fetch_one(
-            _WANTS_AGAIN,
-            {
-                "asset": asset_id,
-                "length_ms": length_ms,
-                "shortest_ms": shortest_ms,
-                "before": before or _ANY_AGE,
-            },
+        found = await self.wanting_asking_again([asset_id], shortest_ms=shortest_ms, before=before)
+        return asset_id in found
+
+    async def wanting_lookup(self, asset_ids: Sequence[str], *, shortest_ms: int) -> set[str]:
+        """Which of these files `wants_lookup`, asked of the page at once."""
+        return await self._wanting(_WANTS_LOOKUP, asset_ids, shortest_ms=shortest_ms)
+
+    async def wanting_asking_again(
+        self, asset_ids: Sequence[str], *, shortest_ms: int, before: int
+    ) -> set[str]:
+        """Which of these files `wants_asking_again`, asked of the page at once."""
+        return await self._wanting(
+            _WANTS_AGAIN, asset_ids, shortest_ms=shortest_ms, before=before or _ANY_AGE
         )
-        return found is not None
+
+    async def _wanting(
+        self, statement: str, asset_ids: Sequence[str], *, shortest_ms: int, **bound: object
+    ) -> set[str]:
+        # Long enough by the file's own length where it has one, else by what the fingerprint covers.
+        lengths = await self._songless_lengths(asset_ids)
+        if not lengths:
+            return set()
+        rows = await self._db.fetch_all(statement, {"assets": json.dumps(list(lengths)), **bound})
+        wanted: set[str] = set()
+        for row in rows:
+            asset_id = str(row["asset_id"])
+            own = lengths[asset_id]
+            length = own if own is not None else row["duration_ms"]
+            if length is not None and int(length) >= shortest_ms:
+                wanted.add(asset_id)
+        return wanted
+
+    async def _songless_lengths(self, asset_ids: Sequence[str]) -> dict[str, int | None]:
+        """Each of these files that carries no song, with its own length (None where it has none)."""
+        own = await songs_and_lengths(self._db, asset_ids)
+        return {
+            asset_id: found.duration_ms
+            for asset_id in dict.fromkeys(asset_ids)
+            if (found := own.get(asset_id)) is not None and not (found.music or "").strip()
+        }
 
     async def not_known_page(
         self, *, after: str, limit: int, shortest_ms: int, before: int

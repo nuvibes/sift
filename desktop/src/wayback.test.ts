@@ -280,13 +280,13 @@ describe('the order the dialog decides in', () => {
 });
 
 describe('the archive for the page', () => {
-	it('answers its path, or null, with no library logs in client mode', async () => {
+	it('answers its path, or the reason, with no library logs in client mode', async () => {
 		settings = { ...settings, mode: 'client' };
 		const back = way();
 
-		expect(await back.archive('Sift log.zip')).toBe('C:\\Saved\\Sift log.zip');
+		expect(await back.archive('Sift log.zip')).toEqual({ ok: true, file: 'C:\\Saved\\Sift log.zip' });
 		bundle.answer = { ok: false, reason: 'no room' };
-		expect(await back.archive('Sift log.zip')).toBeNull();
+		expect(await back.archive('Sift log.zip')).toMatchObject({ ok: false });
 
 		expect(bundle.asked[0]).toMatchObject({ name: 'Sift log.zip', libraryLogs: null });
 		expect(dialogCalls).toHaveLength(0);

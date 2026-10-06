@@ -103,3 +103,27 @@ async def test_a_record_cannot_name_a_file_that_does_not_exist(temp_db: Database
 
     with pytest.raises(IntegrityError):
         await _mark_described(temp_db, "never-existed")
+
+
+async def test_an_index_described_before_the_keys_is_keyed_when_the_library_opens(
+    temp_db: Database,
+) -> None:
+    """The step that adds the keys fills them from the frames already held."""
+    from sift.slices.semantic.store import DIMENSION, VectorStore
+
+    await temp_db.initialize_schema()
+    await VectorStore(temp_db).put("clip", [(0, [1.0] + [0.0] * (DIMENSION - 1))], revision="r1")
+    async with temp_db.write() as connection:
+        await connection.execute("DELETE FROM semantic_frame_keys")
+        await connection.execute("DELETE FROM semantic_file_keys")
+        await connection.execute("DROP TABLE semantic_files")
+        await connection.execute(
+            "UPDATE schema_version SET version = 2 WHERE component = ?", (COMPONENT,)
+        )
+
+    await temp_db.initialize_schema()
+
+    assert await temp_db.schema_version(COMPONENT) == VERSION
+    frames = await temp_db.fetch_all("SELECT asset_id FROM semantic_frame_keys")
+    files = await temp_db.fetch_all("SELECT asset_id FROM semantic_file_keys")
+    assert [row["asset_id"] for row in frames] == [row["asset_id"] for row in files] == ["clip"]

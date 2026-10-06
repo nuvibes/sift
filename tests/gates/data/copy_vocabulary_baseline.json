@@ -58,8 +58,6 @@
 		"src/sift/kernel/tunnels/process.py": 7,
 		"src/sift/kernel/tunnels/store.py": 2,
 		"src/sift/slices/auth/admin_cli.py": 2,
-		"src/sift/slices/auth/service.py": 2,
-		"src/sift/slices/backup/libraries.py": 1,
 		"src/sift/slices/browse/router.py": 2,
 		"src/sift/slices/capture/pipeline.py": 3,
 		"src/sift/slices/capture/router.py": 2,

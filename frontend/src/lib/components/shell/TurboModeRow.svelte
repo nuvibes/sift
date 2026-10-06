@@ -5,27 +5,27 @@
 	 * list of everything the rail does not put on a tab.
 	 *
 	 * A row rather than the bare glyph, because a finger never sees a tooltip. Drawn in exactly the
-	 * states the rail draws the glyph in (`full-amount.ts`), dimmed as the rail dims it.
+	 * states the rail draws the glyph in (`turbo-mode.ts`), dimmed as the rail dims it.
 	 */
 	import ActionRow from '$lib/settings-ui/ActionRow.svelte';
 	import { session } from '$lib/shell/session.svelte';
 	import {
-		currentFullAmount,
+		currentTurboMode,
 		currentShare,
-		FULL_AMOUNT_COPY,
-		fullAmountSays,
+		TURBO_MODE_COPY,
+		turboModeSays,
 		leafDimmed,
-		pressFullAmount
-	} from './full-amount';
+		pressTurboMode
+	} from './turbo-mode';
 
-	const shown = $derived(currentFullAmount(session.isAdmin));
+	const shown = $derived(currentTurboMode(session.isAdmin));
 	const share = $derived(currentShare());
 	let pressing = $state(false);
 
 	async function press(): Promise<void> {
 		pressing = true;
 		try {
-			await pressFullAmount(shown !== 'full');
+			await pressTurboMode(shown !== 'full');
 		} finally {
 			pressing = false;
 		}
@@ -33,11 +33,11 @@
 </script>
 
 {#if shown !== null}
-	<div class="full-amount-row" class:full={shown === 'full'} class:dimmed={leafDimmed(shown)}>
+	<div class="turbo-mode-row" class:full={shown === 'full'} class:dimmed={leafDimmed(shown)}>
 		<ActionRow
 			icon={shown === 'full' ? 'bolt_boost' : 'energy_savings_leaf'}
-			label={fullAmountSays(shown, share)}
-			action={shown === 'full' ? FULL_AMOUNT_COPY.stepBack : FULL_AMOUNT_COPY.useFull}
+			label={turboModeSays(shown, share)}
+			action={shown === 'full' ? TURBO_MODE_COPY.stepBack : TURBO_MODE_COPY.useTurbo}
 			busy={pressing}
 			onclick={() => void press()}
 		/>
@@ -46,15 +46,15 @@
 
 <style>
 	/* The press's glyph as on the rail, the leaf green and the bolt yellow; the words keep their ink. */
-	.full-amount-row > :global(.row > .control > .press > .btn > .icon) {
+	.turbo-mode-row > :global(.row > .control > .press > .btn > .icon) {
 		color: var(--sift-ok);
 	}
 
-	.full-amount-row.full > :global(.row > .control > .press > .btn > .icon) {
+	.turbo-mode-row.full > :global(.row > .control > .press > .btn > .icon) {
 		color: var(--sift-warn);
 	}
 
-	.full-amount-row.dimmed > :global(.row > .control > .press > .btn > .icon) {
+	.turbo-mode-row.dimmed > :global(.row > .control > .press > .btn > .icon) {
 		opacity: var(--disabled-opacity);
 	}
 </style>

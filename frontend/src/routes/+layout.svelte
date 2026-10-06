@@ -32,6 +32,7 @@
 	import { matches } from '$lib/shell/shortcuts';
 	import Icon from '$lib/components/Icon.svelte';
 	import { api } from '$lib/api/client';
+	import { bridge } from '$lib/bridge';
 	import { session } from '$lib/shell/session.svelte';
 	import { theme } from '$lib/theme/theme.svelte';
 	import { vault, vaultPrompt } from '$lib/shell/vault.svelte';
@@ -92,7 +93,7 @@
 
 	/* Screens the DESKTOP SHELL draws before there is a server at all: real routes, so they use the
 	 * same components and tokens rather than a second design system inside the shell. */
-	const SHELL_ROUTES = ['/connect', '/start', '/library-location'];
+	const SHELL_ROUTES = ['/connect', '/start', '/library-location', '/opening'];
 	const onShellScreen = $derived(SHELL_ROUTES.includes(page.url.pathname));
 
 	// Not a 401, which the session handles: the server down or broken. Without this nothing renders.
@@ -112,6 +113,10 @@
 	 */
 	let launched = $state(false);
 	let launching = false;
+
+	/* Whether the framed screen has drawn and sent its own reads: the shell's background reads (the
+	 * queue's glance, the log detail) wait for it, so the screen's read is not queued behind them. */
+	let screenAsked = $state(false);
 	$effect(() => {
 		if (launching || !ready || !session.isSignedIn) return;
 		/* A locked session shut Hidden with it and refuses every vault request. */
@@ -293,7 +298,7 @@
 	$effect(() => {
 		// Keyed on who is signed in: a remembered refusal ends when somebody else signs in.
 		const account = session.viewer?.id;
-		if (!session.adminUnlocked || account === undefined) return;
+		if (!session.adminUnlocked || account === undefined || !screenAsked) return;
 		imports.forgetRefusal();
 		void imports.refresh();
 		void imports.readDownloads();
@@ -304,7 +309,7 @@
 	 * (`shell-log-detail.ts`). */
 	$effect(() => {
 		const account = session.viewer?.id;
-		if (!session.adminUnlocked || account === undefined) return;
+		if (!session.adminUnlocked || account === undefined || !screenAsked) return;
 		void tellShellLogDetail();
 	});
 
@@ -356,9 +361,15 @@
 	});
 
 	/* Whether this session's saved keys are locked, asked at the same moment: a restart seals them
-	 * while the window believes otherwise (`session.recheck`). */
+	 * while the window believes otherwise (`session.recheck`). Not on the page's first connection,
+	 * which comes a moment after the page asked who this is. */
+	let firstConnection = true;
 	$effect(() => {
 		if (!session.isSignedIn || !live.live) return;
+		if (firstConnection) {
+			firstConnection = false;
+			return;
+		}
 		untrack(() => void session.recheck());
 	});
 
@@ -442,6 +453,54 @@
 			!shut &&
 			launched
 	);
+
+	/*
+	 * The desktop window's opening frame (`routes/opening`) goes once this page has drawn a screen of
+	 * its own, a frame after it is on the page; the sign-in form, a question or a message is ready to
+	 * use as drawn, and a framed screen once its first picture has loaded.
+	 */
+	const drawnScreen = $derived(onShellScreen || unreachable || (ready && onAuthScreen) || framed);
+	let toldDrawn = false;
+	$effect(() => {
+		if (framed && !screenAsked) whenOnPage(null, () => (screenAsked = true));
+	});
+	$effect(() => {
+		if (!drawnScreen || toldDrawn || page.url.pathname === '/opening') return;
+		toldDrawn = true;
+		const usable = !framed;
+		/* The sign-in card waits on a question before it draws: the frame stays until it has. */
+		whenOnPage(onAuthScreen ? 'form' : null, () => {
+			bridge.tellDrawn('painted');
+			if (usable) bridge.tellDrawn('usable');
+		});
+	});
+
+	/* `then`, a frame after `selector` is on the page (two seconds at most), or after the next frame. */
+	function whenOnPage(selector: string | null, then: () => void, frames = 120) {
+		requestAnimationFrame(() => {
+			if (selector !== null && frames > 0 && document.querySelector(selector) === null) {
+				whenOnPage(selector, then, frames - 1);
+				return;
+			}
+			requestAnimationFrame(then);
+		});
+	}
+	onMount(() => {
+		const firstPicture = (event: Event) => {
+			if (!framed || !(event.target instanceof HTMLImageElement)) return;
+			if (event.target.closest('main') === null) return;
+			document.removeEventListener('load', firstPicture, true);
+			requestAnimationFrame(() => bridge.tellDrawn('usable'));
+		};
+		document.addEventListener('load', firstPicture, true);
+		return () => document.removeEventListener('load', firstPicture, true);
+	});
+	/* The look handed again when the theme changes, so the next start's frame matches the page. */
+	$effect(() => {
+		void theme.choice;
+		if (!toldDrawn) return;
+		requestAnimationFrame(() => bridge.tellDrawn('painted'));
+	});
 </script>
 
 <svelte:window onpaste={onPaste} onkeydown={onShortcut} />

@@ -11,8 +11,8 @@ What belongs here is the job: WHEN the index is rebuilt, and how a change become
 scheduling decision, and it is this feature's, because this feature is the only thing that reads
 the index.
 
-Two shapes, one handler. With an `asset_id` in the payload it reindexes that one asset. Without, it
-rebuilds the whole thing, which is always safe: the index is a cache, so a rebuild is never a repair
+Three shapes, one handler. With an `asset_id` in the payload it reindexes that one asset; with
+`asset_ids`, those assets a chunk at a time (a rename's). Without either, it rebuilds the whole thing, which is always safe: the index is a cache, so a rebuild is never a repair
 with state to get wrong.
 
 ## How the index gets filled, and why nothing runs on a timer
@@ -56,6 +56,7 @@ from sift.kernel.access import (
     index_new_assets,
     unindexed_count,
 )
+from sift.kernel.changes import About, announce, who_may_see_a_file
 from sift.kernel.db import Database
 from sift.kernel.jobs import JobContext, JobQueue, JobState, register_handler
 from sift.kernel.log import get_logger
@@ -126,6 +127,28 @@ def keep_days_from(value: object) -> int:
         return DEFAULT_KEEP_DAYS
 
 
+#: The files one queued job names, and how many of them one write transaction rewrites: a chunk
+#: holds the write lock for a fraction of a second, so no other write waits on a rename's files.
+ASSET_IDS = "asset_ids"
+IDS_PER_JOB = 2000
+IDS_PER_WRITE = 100
+
+
+async def _reindex_named(context: JobContext, database: Database, asset_ids: object) -> None:
+    """Rewrite these assets' rows a chunk at a time, then tell whoever may be searching them."""
+    if not isinstance(asset_ids, list) or not all(isinstance(one, str) for one in asset_ids):
+        raise ValueError("asset_ids must be a list of asset ids")
+    written = 0
+    for at in range(0, len(asset_ids), IDS_PER_WRITE):
+        await context.raise_if_canceled()
+        written += await index_assets(database, asset_ids=asset_ids[at : at + IDS_PER_WRITE])
+        await context.set_progress(min(1.0, (at + IDS_PER_WRITE) / len(asset_ids)))
+    # A search on screen reads again now its words have moved; word only, each re-reads its own.
+    async with database.write() as connection:
+        announce(await who_may_see_a_file(connection), About.LIBRARY)
+    log.info("search.reindexed", assets=written, whole_library=False)
+
+
 #: Which kind of pass a queued job is. The payload carries it so one handler serves both and there
 #: is one place that knows how a row is written.
 SCOPE = "scope"
@@ -151,6 +174,9 @@ async def reindex(context: JobContext, *, database: Database) -> None:
     if asset_id is not None:
         written = await index_assets(database, asset_id=asset_id)
         log.info("search.reindexed", assets=written, whole_library=False)
+        return
+    if ASSET_IDS in context.payload:
+        await _reindex_named(context, database, context.payload[ASSET_IDS])
         return
 
     catching_up = context.payload.get(SCOPE) == CATCH_UP
@@ -217,7 +243,11 @@ def _is_whole_library(payload: dict[str, Any]) -> bool:
     and is deliberately blind to edits: an asset whose tag changed already has a row, so it is
     never revisited.
     """
-    return payload.get("asset_id") is None and payload.get(SCOPE) != CATCH_UP
+    return (
+        payload.get("asset_id") is None
+        and ASSET_IDS not in payload
+        and payload.get(SCOPE) != CATCH_UP
+    )
 
 
 async def rebuild_pending(queue: JobQueue) -> bool:

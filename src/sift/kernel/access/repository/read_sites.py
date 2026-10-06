@@ -15,6 +15,7 @@ from sift.kernel.access.repository.core import RepositoryCore
 from sift.kernel.access.repository.entities import (
     _VISIBLE_USERNAMES,
     ENTITY_SORT_SEEN,
+    SITE_BY_ID,
     SITES_BY_ID,
     _entity_sort,
     sites_position,
@@ -419,11 +420,14 @@ class SiteReads(RepositoryCore):
         """One site, if this viewer may be shown it. See `visible_collection`."""
         if not _is_object_id(site_id):
             return None
-        found = await self.visible_sites(viewer, [site_id])
-        if site_id not in found:
+        rows = await self._db.fetch_all(
+            SITE_BY_ID,
+            self._unfiltered() | self._site_params(viewer, site_id=site_id, limit=1),
+        )
+        if not rows:
             self._log_denied(viewer, site_id)
             return None
-        return found[site_id]
+        return _site_from_row(rows[0])
 
     async def visible_sites(
         self, viewer: Viewer, site_ids: Sequence[str]

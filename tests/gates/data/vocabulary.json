@@ -28,6 +28,7 @@
 		{ "word": "Activity", "means": "the screen that lists tasks; never the Jobs screen" },
 		{ "word": "Quiet hours", "means": "the hours heavy tasks wait for; never Tonight, Overnight" },
 		{ "word": "eco mode", "means": "background tasks keeping to a share of this device while somebody is working or other programs are busy, the leaf its sign; lower case; never stepping back, using less, the step back" },
+		{ "word": "turbo mode", "means": "background tasks using all of this device although somebody is working, because a person pressed for it, the bolt its sign; lower case; never the full amount, full power, boost" },
 		{ "word": "this device", "means": "the machine Sift runs on; never this computer, this machine, server" },
 		{ "word": "your device", "means": "the viewer's phone or tablet" },
 		{ "word": "CPU", "means": "never processor" },
@@ -178,7 +179,7 @@
 			{ "verb": "No", "why": "an answer to the question a card asks; the result is the question's" }
 		],
 		"replaces": [
-			{ "pattern": "^(?:make|build)\\b", "instead": "Create, or Generate for derived files", "example": "Make the folder and open" },
+			{ "pattern": "\\b(?:make|makes|making|build|builds|building)\\b", "instead": "Create, or Generate for derived files", "example": "Make the folder and open" },
 			{ "pattern": "^rebuild\\b", "instead": "Generate", "example": "Rebuild them" },
 			{ "pattern": "^settle\\b", "instead": "Optimize, or Confirm", "example": "Settle it" },
 			{ "pattern": "^(?:take\\b.*\\boff\\b|put\\b|hand\\b)", "instead": "Remove, or Undo (Take on its own is accepting what another source offers)", "example": "Take this tag off" },
@@ -197,6 +198,8 @@
 
 	"wrong_words": [
 		{ "word": "platform", "instead": "Site", "why": "the object's old name" },
+		{ "word": "full amount", "instead": "turbo mode", "why": "the press out of eco mode has one name on every screen" },
+		{ "word": "making", "instead": "creating", "why": "Sift creates a file, a backup or a Loop; it never makes one" },
 		{ "word": "platforms", "instead": "Sites", "why": "the same" },
 		{ "word": "performer", "instead": "person", "why": "a stash-box's word for a Person" },
 		{ "word": "performers", "instead": "People", "why": "the same" },

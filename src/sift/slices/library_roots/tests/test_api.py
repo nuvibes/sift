@@ -13,6 +13,7 @@ import sqlite3  # nosemgrep: sift-no-database-driver-outside-kernel
 import sys
 import time
 from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -20,12 +21,14 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from sift.kernel import db as db_module
 from sift.kernel import library_write
 from sift.kernel.access import Repository
 from sift.kernel.config import get_settings
 from sift.kernel.content import library as library_module
 from sift.kernel.content.library import NotWritable
 from sift.kernel.http import CSRF_HEADER_NAME, SESSION_COOKIE_NAME
+from sift.kernel.ids import new_id
 from sift.kernel.jobs.tuning import DEFAULT_PRIORITY, WAITED_ON_PRIORITY
 from sift.kernel.jobs.worker_pool import WorkerPool
 from sift.kernel.paths import presence
@@ -1620,3 +1623,61 @@ def test_telling_sift_a_library_moved_somewhere_that_is_not_there_is_refused_in_
     )
 
     assert answer.status_code == 400
+
+
+@pytest.fixture
+def statements(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    """Every statement run from here on, by name."""
+    seen: list[str] = []
+    real = db_module._judged
+
+    @contextmanager
+    def counted(stage: str, statement: Any, *rest: Any, **options: Any) -> Iterator[Any]:
+        seen.append(db_module.statement_name(statement))
+        with real(stage, statement, *rest, **options) as timing:
+            yield timing
+
+    monkeypatch.setattr(db_module, "_judged", counted)
+    return seen
+
+
+def test_the_quarantine_reads_every_folder_in_the_same_number_of_statements(
+    idle_client: TestClient, tmp_path: Path, statements: list[str]
+) -> None:
+    """Three times the folders, each refusing files, and not one statement more."""
+    client = idle_client
+    sign_in(client, "admin")
+    db_path = client.app.state.database.path  # type: ignore[attr-defined]
+    made: list[str] = []
+
+    def read_after(more: int) -> int:
+        for _ in range(more):
+            directory = tmp_path / f"refusing-{len(made)}"
+            directory.mkdir()
+            answer = client.post(ROOTS, json={"abs_path": str(directory), "scan": False})
+            root = str(answer.json()["id"])
+            made.append(root)
+            write_rows(
+                db_path,
+                [
+                    (
+                        "INSERT INTO scan_rejections (id, root_id, rel_path, size_bytes, mtime_ns,"
+                        " reason, detected, first_seen_at, last_seen_at)"
+                        " VALUES (?, ?, ?, 12, 0, 'not_decodable', 'text', 0, 0)",
+                        (new_id(), root, name),
+                    )
+                    for name in ("b/two.mp4", "a/one.mp4")
+                ],
+            )
+        statements.clear()
+        answer = client.get(QUARANTINE)
+        assert answer.status_code == 200
+        piles = {one["root_id"]: one for one in answer.json()["left_alone"]}
+        assert set(piles) == set(made)
+        for pile in piles.values():
+            assert [one["rel_path"] for one in pile["rejections"]] == ["a/one.mp4", "b/two.mp4"]
+            assert pile["rejections_total"] == 2
+        return len(statements)
+
+    few = read_after(2)
+    assert read_after(4) == few

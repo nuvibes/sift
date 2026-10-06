@@ -108,6 +108,18 @@ def _redaction_processor(
 _boot_level = logging.INFO
 
 
+def tell_the_shell(line: str) -> None:
+    """One fixed word to the process that started this one, on its stdout, which the desktop shell
+    reads for the moment the socket is open. No payload, so nothing to redact."""
+    print(line, flush=True)
+
+
+def _pin_driver_logger() -> None:
+    """The database driver's debug lines print every statement with its bound values (a file's
+    name, a search's words), so they never reach the file, whatever the detail switch says."""
+    logging.getLogger("aiosqlite").setLevel(logging.INFO)
+
+
 def apply_log_preferences(
     *, detailed: bool, per_file_bytes: int, hide_personal: bool | None = None
 ) -> None:
@@ -146,6 +158,7 @@ def apply_log_preferences(
     # level down to DEBUG; turning it off returns to whatever the environment asked for, and where
     # that is louder than INFO (a boot at DEBUG) that level is kept exactly.
     root.setLevel(logging.DEBUG if detailed else max(_boot_level, logging.INFO))
+    _pin_driver_logger()
     for handler in root.handlers:
         if isinstance(handler, RotatingFileHandler):
             # `maxBytes` is read on every emit, so this takes effect on the next line written.
@@ -284,7 +297,7 @@ def configure_logging(
         third_party = logging.getLogger(name)
         third_party.handlers = []
         third_party.propagate = True
-
+    _pin_driver_logger()
     # The access log is silenced HERE, and `access_log=False` at the call to uvicorn is not what
     # does it.
     #

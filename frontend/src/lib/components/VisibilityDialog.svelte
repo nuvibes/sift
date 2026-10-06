@@ -26,6 +26,7 @@
 	import { setKeptLocal } from '$lib/entity/enrichment.svelte';
 	import { setKeptFromSwaps, type RefusalSubject } from '$lib/components/swap/swap';
 	import { sayAgo } from '$lib/shell/when';
+	import { libraryChanges, whenChanged } from '$lib/library/changes.svelte';
 	import Modal from '$lib/components/common/Modal.svelte';
 	import Scroller from '$lib/components/common/Scroller.svelte';
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
@@ -199,6 +200,22 @@
 	 * middle of a report about permissions, which is exactly where somebody should not have to
 	 * work out which of the two they are reading.
 	 */
+	/* A change elsewhere while open: the report is asked again and replaces the drawn one in place. */
+	whenChanged(libraryChanges, () => {
+		const asked = target;
+		if (!open || !asked || loading) return;
+		void fetchReach(asked)
+			.then(async (found) => {
+				if (target !== asked || !open) return;
+				if (JSON.stringify(found) === JSON.stringify(report)) return;
+				report = found;
+				await explain(asked, found);
+			})
+			.catch(() => {
+				// The report as drawn stays.
+			});
+	});
+
 	async function explain(asked: ShareTarget, found: ReachReport): Promise<void> {
 		const owed = found.users.filter((user) => unexplained(user));
 		await Promise.all(

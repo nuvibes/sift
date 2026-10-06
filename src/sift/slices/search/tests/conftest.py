@@ -153,7 +153,9 @@ def read(db_path: Path, sql: str, params: tuple[object, ...] = ()) -> list[dict[
     return asyncio.run(run())
 
 
-def reindex(db_path: Path, *, asset_id: str | None = None) -> int:
+def reindex(
+    db_path: Path, *, asset_id: str | None = None, asset_ids: list[str] | None = None
+) -> int:
     """Build the search index the way the job does: through the job's own function.
 
     Called from the tests rather than left to a worker, so that a test asserting what a search
@@ -164,6 +166,8 @@ def reindex(db_path: Path, *, asset_id: str | None = None) -> int:
         database = Database(db_path, readers=1)
         await database.connect()
         try:
+            if asset_ids is not None:
+                return await index_assets(database, asset_ids=asset_ids)
             return await index_assets(database, asset_id=asset_id, rebuild=asset_id is None)
         finally:
             await database.close()

@@ -4,9 +4,11 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping, Sequence
-from typing import Any
+from collections.abc import Awaitable, Callable, Mapping, Sequence
+from time import monotonic
+from typing import Any, TypeVar, cast
 
+from sift.kernel.changes import About, mark_of
 from sift.kernel.content.identity_models import (
     _EVERY_READ_FILE,
     RECIPE_VERSIONS,
@@ -25,6 +27,19 @@ from sift.kernel.content.presence import HAS_A_PRESENT_COPY
 from sift.kernel.db import in_clause
 from sift.kernel.ingress import Kind
 from sift.kernel.sql_splice import splice
+
+_T = TypeVar("_T")
+
+#: What can move a count of the library: a pass or a decision writing (`LIBRARY`), a file arriving
+#: or leaving (`ARRIVALS`), a switch or a folder's rule (`SETTINGS`), and any job's progress (`JOBS`).
+#: A count is held until one of them is announced, as the workbench holds its piles.
+MOVED_BY = frozenset({About.LIBRARY, About.ARRIVALS, About.SETTINGS, About.JOBS})
+
+#: The longest a count is held all the same: what bounds a change nobody announced.
+HELD_AT_MOST_SECONDS = 300.0
+
+#: How many counts are held; a few per product and folder choice.
+_HELD_KEPT = 256
 
 #: A file in no refusing folder, or also in one that does not refuse: `ImportPolicy._on`'s EITHER
 #: rule as a condition. The refusing roots bind twice, one JSON array each time.
@@ -88,6 +103,15 @@ SELECT COUNT(*) AS total FROM assets a
  WHERE a.probed_at IS NULL
    AND NOT EXISTS (SELECT 1 FROM file_verdicts v
                     WHERE v.asset_id = a.id AND v.product = ? AND v.transient = 0)
+"""
+
+#: Whether any file is so, for a start: a seek of the unread rows' own index.
+_ANY_UNREAD = """
+SELECT EXISTS (SELECT 1 FROM assets a
+                WHERE a.probed_at IS NULL
+                  AND NOT EXISTS (SELECT 1 FROM file_verdicts v
+                                   WHERE v.asset_id = a.id AND v.product = ? AND v.transient = 0))
+       AS found
 """
 
 #: For the pass at start that hands out the probes a cut-off scan never did.
@@ -350,20 +374,47 @@ def _lacking_statement(
 class Counts(StoreCore):
     """How much each pass has left, and the pages it reads."""
 
+    async def _held(self, key: tuple[object, ...], count: Callable[[], Awaitable[_T]]) -> _T:
+        """The count `key` names, taken again only once the library has moved since it was taken:
+        a screen opened on a library at rest reads the answer, not every file again."""
+        mark = mark_of(MOVED_BY)
+        if mark is None:
+            return await count()
+        held = self._held_counts.get(key)
+        if held is not None and held[0] == mark and monotonic() - held[1] < HELD_AT_MOST_SECONDS:
+            return cast(_T, held[2])
+        taken_at = monotonic()
+        value = await count()
+        # Moved while counting: the answer may already be old, so it is not held.
+        if mark_of(MOVED_BY) == mark:
+            if len(self._held_counts) >= _HELD_KEPT:
+                self._held_counts.clear()
+            self._held_counts[key] = (mark, taken_at, value)
+        return value
+
     async def asset_count(self, within: Within | None = None) -> int:
         """How many files the library holds (of those `within` wants): the denominator for a
         feature that may not query the asset table itself."""
-        return await self._count_within(_COUNT_PLACED if within is None else _COUNT_ASSETS, within)
+        statement = _COUNT_PLACED if within is None else _COUNT_ASSETS
+        return await self._held(
+            ("asset_count", within), lambda: self._count_within(statement, within)
+        )
 
     async def wanting_count(self, product: str, within: Within | None = None) -> int:
         """How many files want this product, read or coming, done or not: its bar's whole."""
         statement = _COUNT_WANTING_OF.get(product, _COUNT_WANTING_OF[None])
-        return await self._count_bound(statement, (VerdictProduct.PROBE.value, product), within)
+        params = (VerdictProduct.PROBE.value, product)
+        return await self._held(
+            ("wanting", product, within), lambda: self._count_bound(statement, params, within)
+        )
 
     async def coming_count(self, product: str, within: Within | None = None) -> int:
         """How many unread files want this product: what `count_lacking` cannot see."""
         statement = _COUNT_COMING_OF.get(product, _COUNT_COMING_OF[None])
-        return await self._count_bound(statement, (VerdictProduct.PROBE.value, product), within)
+        params = (VerdictProduct.PROBE.value, product)
+        return await self._held(
+            ("coming", product, within), lambda: self._count_bound(statement, params, within)
+        )
 
     async def _count_bound(
         self, statement: str, params: tuple[Any, ...], within: Within | None
@@ -425,11 +476,16 @@ class Counts(StoreCore):
         if len(flags) != len(lacks):
             raise ValueError("count_lacking needs one tick per term")
         params = [*_term_params(lacks), *_roots_bound(roots)]
-        (row,) = await self._db.fetch_all(_lacking_statement(lacks, flags, roots=roots), params)
-        return Lacking(
-            each=tuple(int(row[f"n{n}"]) for n in range(len(lacks))),
-            files=int(row["files"]),
-        )
+        statement = _lacking_statement(lacks, flags, roots=roots)
+
+        async def count() -> Lacking:
+            (row,) = await self._db.fetch_all(statement, params)
+            return Lacking(
+                each=tuple(int(row[f"n{n}"]) for n in range(len(lacks))),
+                files=int(row["files"]),
+            )
+
+        return await self._held((statement, *params), count)
 
     async def count_lacking_by_kind(
         self,
@@ -450,14 +506,18 @@ class Counts(StoreCore):
             lacks, flags, statement=_COUNT_LACKING_BY_KIND, roots=roots, among=among
         )
         params = [*_term_params(lacks), *_roots_bound(roots), *_roots_bound(among)]
-        rows = await self._db.fetch_all(statement, params)
-        return {
-            str(row["kind"]): Lacking(
-                each=tuple(int(row[f"n{n}"]) for n in range(len(lacks))),
-                files=int(row["files"]),
-            )
-            for row in rows
-        }
+
+        async def count() -> dict[str, Lacking]:
+            rows = await self._db.fetch_all(statement, params)
+            return {
+                str(row["kind"]): Lacking(
+                    each=tuple(int(row[f"n{n}"]) for n in range(len(lacks))),
+                    files=int(row["files"]),
+                )
+                for row in rows
+            }
+
+        return dict(await self._held((statement, *params), count))
 
     async def kinds_of(self, asset_ids: Sequence[str]) -> dict[str, str]:
         """The media kind of each of these files, by id. An id not in the library is absent."""
@@ -482,5 +542,14 @@ class Counts(StoreCore):
     async def unread_count(self) -> int:
         """How many files have never been read: a stalled read leaves them looking imported, and
         this number is the only way to notice. A scan re-reads exactly these."""
-        (row,) = await self._db.fetch_all(_COUNT_UNREAD, (VerdictProduct.PROBE.value,))
-        return int(row["total"])
+
+        async def count() -> int:
+            (row,) = await self._db.fetch_all(_COUNT_UNREAD, (VerdictProduct.PROBE.value,))
+            return int(row["total"])
+
+        return await self._held(("unread",), count)
+
+    async def any_unread(self) -> bool:
+        """Whether `unread_count` is above nought, without counting."""
+        (row,) = await self._db.fetch_all(_ANY_UNREAD, (VerdictProduct.PROBE.value,))
+        return bool(row["found"])

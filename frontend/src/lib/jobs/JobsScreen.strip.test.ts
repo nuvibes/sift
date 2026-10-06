@@ -55,7 +55,7 @@ function page(jobs: Job[], total = 9): JobsPage {
 		step_back_share: 25,
 		step_back_for: null,
 		step_back_over: [],
-		full_amount: false,
+		turbo_mode: false,
 		password_wanted: 0
 	};
 }
@@ -282,10 +282,10 @@ describe('eco mode, under the strip', () => {
 		imports.page = { ...EVERYTHING, stepping_back: true, step_back_for: 'input' };
 		flushSync();
 		expect(host.textContent).toContain(WORDS);
-		imports.page = { ...EVERYTHING, full_amount: true, step_back_for: 'input' };
+		imports.page = { ...EVERYTHING, turbo_mode: true, step_back_for: 'input' };
 		flushSync();
 		expect(host.textContent).toContain(
-			"Out of eco mode: using the full amount of this device although you're working."
+			"Out of eco mode: turbo mode on this device although you're working."
 		);
 	});
 

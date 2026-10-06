@@ -203,3 +203,42 @@ async def test_a_shut_vault_is_not_ranked_and_an_open_one_is(library: Library) -
     assert shut == [library.subject, *library.visible[:49]]
     assert (complete, asked) == (True, [200])
     assert opened[:2] == [library.subject, library.hidden[0]]
+
+
+async def test_files_are_ranked_among_what_the_guest_may_see(library: Library) -> None:
+    found = await library.store.nearest_files(
+        unit(1.0), revision=REVISION, limit=10, asker=library.guest
+    )
+
+    assert [one for one, _ in found] == [library.subject, *library.visible[:9]]
+
+
+async def test_a_shut_vault_is_not_ranked_by_file_and_an_open_one_is(library: Library) -> None:
+    shut = await library.store.nearest_files(
+        unit(1.0), revision=REVISION, limit=10, asker=library.keeper
+    )
+    opened = await library.store.nearest_files(
+        unit(1.0), revision=REVISION, limit=10, asker=replace(library.keeper, show_hidden=True)
+    )
+
+    assert [one for one, _ in shut] == [library.subject, *library.visible[:9]]
+    assert [one for one, _ in opened] == [library.subject, *library.hidden[:9]]
+
+
+async def test_an_admin_ranks_files_by_the_plain_statement(
+    library: Library, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    asked: list[str] = []
+    reads = library.db.fetch_all
+
+    async def reading(sql: Any, *args: Any) -> Any:
+        asked.append(sql)
+        return await reads(sql, *args)
+
+    monkeypatch.setattr(library.db, "fetch_all", reading)
+    found = await library.store.nearest_files(
+        unit(1.0), revision=REVISION, limit=400, asker=library.admin
+    )
+
+    assert len(found) == 1 + VISIBLE + HIDDEN_NEARER
+    assert asked == [store_module._NEAREST_FILES]

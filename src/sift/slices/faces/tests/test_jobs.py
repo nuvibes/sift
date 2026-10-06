@@ -24,6 +24,7 @@ from sift.kernel.changes import About
 from sift.kernel.jobs import registered_handlers
 from sift.kernel.jobs.families import AGAIN
 from sift.kernel.jobs.queue import JobBlocked, JobCanceled, WaitingForPassword
+from sift.kernel.ml.weights import WeightError
 from sift.kernel.paging import MAX_PAGE_SIZE
 from sift.slices.faces import jobs as face_jobs
 from sift.slices.faces import service as face_service
@@ -390,6 +391,53 @@ async def test_a_scan_with_no_models_yet_waits_rather_than_failing() -> None:
     assert service.asked == [], "nothing was read and nothing was written"
     assert service.asked_about_weights == ["the-run"], "the RUN's family, not today's"
     assert context.progress is None
+
+
+async def test_a_scan_whose_models_vanish_under_it_waits_too() -> None:
+    """The check passed, then the load found no file: a download replacing the models, or their
+    folder moved. The job waits for them like one that never had them, costing no attempt."""
+
+    class Vanishing(Recording):
+        async def weights_problem(self, *, run: str | None = None) -> str | None:
+            self.asked_about_weights.append(run)
+            return None if len(self.asked_about_weights) == 1 else "The models are not on disk."
+
+        async def scan(
+            self,
+            asset_id: str,
+            *,
+            depth: Depth | None = None,
+            run: str | None = None,
+            again: bool = False,
+        ) -> ScanStatus:
+            raise WeightError("the detector model has not been installed yet")
+
+    service = Vanishing()
+    context = Context(payload={"asset_id": "asset-1", "run": "the-run"})
+
+    with pytest.raises(JobBlocked, match="not on disk"):
+        await face_jobs.scan(context, service=service)  # type: ignore[arg-type]
+
+    assert service.asked_about_weights == ["the-run", "the-run"]
+
+
+async def test_a_models_failure_with_the_models_present_is_a_failure() -> None:
+    """A damaged file says so once, against the file, rather than waiting for a download that
+    would change nothing."""
+
+    class Damaged(Recording):
+        async def scan(
+            self,
+            asset_id: str,
+            *,
+            depth: Depth | None = None,
+            run: str | None = None,
+            again: bool = False,
+        ) -> ScanStatus:
+            raise WeightError("the detector model on disk is not the one Sift expects.")
+
+    with pytest.raises(WeightError, match="not the one"):
+        await face_jobs.scan(Context(payload={"asset_id": "asset-1"}), service=Damaged())  # type: ignore[arg-type]
 
 
 async def test_a_scan_asks_about_the_models_before_it_opens_anything() -> None:

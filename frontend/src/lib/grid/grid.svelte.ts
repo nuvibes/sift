@@ -701,6 +701,8 @@ export class Grid {
 				// was all duplicates is not.
 				if (answer.items.length < size) break;
 				if (fromEnd && at === 0) break;
+				// The first block is drawn as it lands; the rows that top the page up follow it.
+				this.#drawFirst({ attempt, fromEnd, quiet: options.quiet }, query, collected, began, known);
 			}
 
 			if (generation !== this.#generation) return;
@@ -789,6 +791,34 @@ export class Grid {
 				this.#payOwed(query, options);
 			}
 		}
+	}
+
+	/* A page's first block on screen before its top-up is read: the old page leaves on one answer. */
+	#drawFirst(
+		read: { attempt: number; fromEnd: boolean; quiet?: boolean },
+		query: WallQuery,
+		collected: readonly GridItem[],
+		began: number,
+		known: {
+			total: number;
+			totalBytes: number | null;
+			complete: boolean;
+			problems: FilterProblem[];
+			username: NarrowedToUsername | null;
+		}
+	): void {
+		if (read.attempt > 0 || read.fromEnd || read.quiet || collected.length === 0) return;
+		this.#fromEnd = false;
+		this.items = [...collected];
+		this.offset = began;
+		this.#show(query, began);
+		this.loaded = collected.length;
+		this.total = known.total;
+		this.totalBytes = known.totalBytes;
+		this.complete = known.complete;
+		this.problems = known.problems;
+		this.username = known.username;
+		this.loading = false;
 	}
 
 	/*

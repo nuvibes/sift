@@ -24,12 +24,12 @@
 	import { rail, type RailRegion } from './rail-state.svelte';
 	import { isActive, navItem, RAIL_DIVIDER, type NavItem } from './nav';
 	import {
-		currentFullAmount,
-		FULL_AMOUNT_COPY,
-		fullAmountTip,
+		currentTurboMode,
+		TURBO_MODE_COPY,
+		turboModeTip,
 		leafDimmed,
-		pressFullAmount
-	} from './full-amount';
+		pressTurboMode
+	} from './turbo-mode';
 
 	/*
 	 * The rail is 208 wide with labels and 64 with icons alone, narrow for a small window or a
@@ -57,15 +57,15 @@
 	 */
 	const settingsWorking = $derived(imports.working > 0);
 
-	/* The leaf or the bolt above the rule, or neither. See `full-amount.ts`. */
-	const fullAmount = $derived(currentFullAmount(session.isAdmin));
+	/* The leaf or the bolt above the rule, or neither. See `turbo-mode.ts`. */
+	const turboMode = $derived(currentTurboMode(session.isAdmin));
 	let pressing = false; // One press at a time; not `disabled`, which dims it like other programs' leaf.
 
 	async function press(): Promise<void> {
 		if (pressing) return;
 		pressing = true;
 		try {
-			await pressFullAmount(fullAmount !== 'full');
+			await pressTurboMode(turboMode !== 'full');
 		} finally {
 			pressing = false;
 		}
@@ -608,19 +608,19 @@
 			<!-- The bottom of the rail, and the rule above it: a position in the arrangement, not a wall. -->
 			<!-- svelte-ignore a11y_no_static_element_interactions -->
 			<div class="group footer" class:zoned={rail.editing} class:over={overZone === 'below'}>
-				<!-- The leaf in eco mode, the bolt for the full amount (`full-amount.ts`); not while arranging. -->
-				{#if fullAmount !== null && !rail.editing}
-					<div class="full-amount">
-						<Tooltip label={fullAmountTip(fullAmount)} placement="right">
+				<!-- The leaf in eco mode, the bolt for turbo mode (`turbo-mode.ts`); not while arranging. -->
+				{#if turboMode !== null && !rail.editing}
+					<div class="turbo-mode">
+						<Tooltip label={turboModeTip(turboMode)} placement="right">
 							<Button
 								tone="ghost"
 								shape="circle"
-								class={leafDimmed(fullAmount) ? 'rail-full-amount dimmed' : 'rail-full-amount'}
-								icon={fullAmount === 'full' ? 'bolt_boost' : 'energy_savings_leaf'}
+								class={leafDimmed(turboMode) ? 'rail-turbo-mode dimmed' : 'rail-turbo-mode'}
+								icon={turboMode === 'full' ? 'bolt_boost' : 'energy_savings_leaf'}
 								iconSize={20}
 								iconFilled
-								aria-label={FULL_AMOUNT_COPY.name}
-								pressed={fullAmount === 'full'}
+								aria-label={TURBO_MODE_COPY.name}
+								pressed={turboMode === 'full'}
 								onclick={() => void press()}
 							/>
 						</Tooltip>
@@ -681,28 +681,28 @@
 	}
 
 	/* Fixed colours, not the accent a person may have recoloured: the leaf green, the bolt yellow. */
-	.full-amount {
+	.turbo-mode {
 		display: flex;
 		/* No inline padding: the button is a row's glyph cell wide, so the centres line up. */
 		padding-block-end: var(--space-2);
 	}
 
-	.rail.collapsed .full-amount {
+	.rail.collapsed .turbo-mode {
 		justify-content: center;
 	}
 
-	.full-amount :global(.btn.ghost.rail-full-amount),
-	.full-amount :global(.btn.ghost.rail-full-amount:hover:not(:disabled)) {
+	.turbo-mode :global(.btn.ghost.rail-turbo-mode),
+	.turbo-mode :global(.btn.ghost.rail-turbo-mode:hover:not(:disabled)) {
 		color: var(--sift-ok);
 	}
 
-	.full-amount :global(.btn.ghost.rail-full-amount.dimmed .icon) {
+	.turbo-mode :global(.btn.ghost.rail-turbo-mode.dimmed .icon) {
 		opacity: var(--disabled-opacity);
 	}
 
 	/* Pressed keeps the ghost's bare ground, so the circle shows only under the pointer. */
-	.full-amount :global(.btn.ghost.rail-full-amount[aria-pressed='true']),
-	.full-amount :global(.btn.ghost.rail-full-amount[aria-pressed='true']:hover:not(:disabled)) {
+	.turbo-mode :global(.btn.ghost.rail-turbo-mode[aria-pressed='true']),
+	.turbo-mode :global(.btn.ghost.rail-turbo-mode[aria-pressed='true']:hover:not(:disabled)) {
 		--btn-ground: transparent;
 		color: var(--sift-warn);
 	}

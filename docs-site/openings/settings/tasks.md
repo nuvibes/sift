@@ -15,7 +15,7 @@ Come here to run a task now, change when it runs, or find out what happened to a
 
 - <a id="tasks.quiet-hours"></a>**Quiet hours**: a stretch of each day when your computer is usually free. A task set to run during quiet hours waits for it to begin and pauses when it ends. **Edit** changes the hours.
 - <a id="tasks.stages"></a>**Import tasks**: Scan, Generate and Identify, the three things Sift does with each file as it arrives.
-- **Other tasks**: work Sift does for the library as a whole, such as finding duplicates and making backups.
+- **Other tasks**: work Sift does for the library as a whole, such as finding duplicates and creating backups.
 - **Other settings**: settings filed with the tasks that belong to no task above.
 
 ## On the App History tab

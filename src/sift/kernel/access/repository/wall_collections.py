@@ -13,6 +13,7 @@ from sift.kernel.access.repository.walls import (
     _wall,
     _with_stored_counts,
     locked_tile,
+    one_row,
     shown,
 )
 from sift.kernel.sql_splice import splice
@@ -199,6 +200,12 @@ _COLLECTIONS_HEAD, _COLLECTIONS_ACCESS = _cut(_VISIBLE_COLLECTIONS, "_VISIBLE_CO
 _COLLECTIONS = _wall(_VISIBLE_COLLECTIONS, "_VISIBLE_COLLECTIONS")
 COLLECTIONS_POSITION = _position(_COLLECTIONS)
 _COLLECTIONS_STORED = _with_stored_counts(_VISIBLE_COLLECTIONS, "_VISIBLE_COLLECTIONS")
+
+#: One collection by id, as the unfiltered wall reads it: what a cover or a page asks before it
+#: answers, at one row's cost (`one_row`).
+COLLECTION_BY_ID = one_row(
+    _COLLECTIONS_STORED, "_COLLECTIONS_STORED", "collection", "c", "collection_id"
+)
 
 
 def collections_query(where: str, rows: str = _NOTHING) -> str:

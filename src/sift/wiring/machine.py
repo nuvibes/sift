@@ -14,7 +14,7 @@ from sift.kernel import sampling, wiring
 from sift.kernel.config import Settings
 from sift.kernel.content.mounts import storage_of
 from sift.kernel.db import check_sqlite_capabilities
-from sift.kernel.hardware import HardwareReport, probe
+from sift.kernel.hardware import HardwareReport, probe, reprobe
 from sift.kernel.jobs import JobContext, JobQueue, JobSwitchedOff, register_handler
 from sift.kernel.jobs.families import Family
 from sift.kernel.jobs.worker_pool import registered_handlers
@@ -60,11 +60,22 @@ async def build_machine(app: FastAPI, settings: Settings) -> HardwareReport:
     # that library loaded wins for the life of the process, and here nothing has run yet to race it.
     accelerated = accel.enable(settings)
     log.info("boot.accelerator", enabled=accelerated)
-    hardware = await probe(settings)
+    hardware = await probe(settings, kept=kept_probe(settings))
     # Every background tool is held to its share of this machine's memory from here on.
     set_machine_memory(hardware.total_ram_bytes)
     provide(app, wiring.HARDWARE, hardware)
     return hardware
+
+
+def kept_probe(settings: Settings) -> Path:
+    """Where the hardware probe's program answers are kept between starts."""
+    return settings.cache_dir / "hardware-probe.json"
+
+
+async def probe_again(settings: Settings, hardware: HardwareReport) -> None:
+    """After a start that used kept answers, ask the programs again for the next start."""
+    if hardware.answers_kept:
+        await reprobe(settings, hardware, kept=kept_probe(settings))
 
 
 def build_self_test(

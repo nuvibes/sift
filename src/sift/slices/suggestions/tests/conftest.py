@@ -87,6 +87,9 @@ class FakeFaces:
             dissenting=self.dissenting.get(name, ()),
         )
 
+    async def faces_in_many(self, folder_ids: Sequence[str]) -> dict[str, FolderFaces]:
+        return {one: await self.faces_in(one) for one in folder_ids}
+
     async def name_group(self, connection: Connection, group_id: str, person_id: str) -> int:
         return len(await self.name_group_recording(connection, group_id, person_id))
 

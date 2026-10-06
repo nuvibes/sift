@@ -102,11 +102,11 @@ describe('the facts of a start', () => {
 		expect(facts['optional_features']).toBe('held off for this start');
 	});
 
-	it('are written to the app log as one line', () => {
+	it('are written to the app log as one line', async () => {
 		const file = path.join(folder, 'shell.log');
 		logTo(file);
 
-		const facts = writeFacts(path.join(folder, 'python.exe'), false);
+		const facts = await writeFacts(path.join(folder, 'python.exe'), false);
 
 		const line = JSON.parse(fs.readFileSync(file, 'utf8').trim()) as Record<string, unknown>;
 		expect(line['event']).toBe('backend.facts');

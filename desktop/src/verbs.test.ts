@@ -168,6 +168,8 @@ import {
 	REMOTE_VERBS,
 	verbsFor
 } from './verbs';
+import { screenOf, WINDOW_STAGE } from './opening';
+import { registerWindowStage } from './stage';
 
 const TRUSTED = 'http://127.0.0.1:5171';
 
@@ -663,10 +665,11 @@ describe('a page served by another computer', () => {
 				channels.GET_START_WITH_WINDOWS,
 				channels.SET_START_WITH_WINDOWS,
 				channels.FORGET_MODE,
-				channels.SAVE_LOG_ARCHIVE
+				channels.SAVE_LOG_ARCHIVE,
+				WINDOW_STAGE
 			].sort()
 		);
-		const every = Object.values(channels).filter((one) => one !== BRIDGE_VERBS);
+		const every = [...Object.values(channels).filter((one) => one !== BRIDGE_VERBS), WINDOW_STAGE];
 		expect(verbsFor('local').sort()).toEqual([...every].sort());
 		expect(verbsFor(null)).toEqual([]);
 	});
@@ -927,5 +930,43 @@ describe('which share paths a remote server may name', () => {
 
 		expect(isShareFromElsewhere('\\\\192.168.1.24\\media\\clip.mp4')).toBe(false);
 		delete machineInterfaces['Ethernet'];
+	});
+});
+
+/* The page saying how far it has drawn: the opening frame goes on it, and the look rides along. */
+describe('the window stage', () => {
+	function armed(): [string, unknown, string][] {
+		resetElectronStub();
+		const told: [string, unknown, string][] = [];
+		registerVerbs(localAt(TRUSTED), {});
+		registerWindowStage(localAt(TRUSTED), (stage, look, screen) =>
+			told.push([stage, look, screen])
+		);
+		return told;
+	}
+
+	it('hands the stage, the look and the screen on, from a page Sift trusts', async () => {
+		const told = armed();
+		sender.senderFrame = { url: `${TRUSTED}/people/01HX0000000000000000000007`, parent: null };
+		const look = { theme: '{}', canvas: '#0a0b10' };
+
+		expect(await ipcRenderer.invoke(WINDOW_STAGE, 'painted', look)).toBe(true);
+		expect(told).toEqual([['painted', look, '/people']]);
+	});
+
+	it('refuses a stage it does not know, a frame inside the page, and a page it does not trust', async () => {
+		const told = armed();
+		expect(await ipcRenderer.invoke(WINDOW_STAGE, 'loaded', null)).toBe(false);
+		sender.senderFrame = { url: `${TRUSTED}/browse`, parent: {} };
+		expect(await ipcRenderer.invoke(WINDOW_STAGE, 'painted', null)).toBe(false);
+		sender.senderFrame = { url: 'https://example.com/browse', parent: null };
+		expect(await ipcRenderer.invoke(WINDOW_STAGE, 'painted', null)).toBe(false);
+		expect(told).toEqual([]);
+	});
+
+	it('names a screen by its first segment only, never a file or a person', () => {
+		expect(screenOf('http://127.0.0.1:5171/asset/01HX0000000000000000000007')).toBe('/asset');
+		expect(screenOf('sift-shell://app/connect')).toBe('/connect');
+		expect(screenOf('not an address')).toBe('/');
 	});
 });

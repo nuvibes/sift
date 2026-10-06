@@ -29,12 +29,13 @@ own source (its cover the same, bit for bit) below photographs 14 to 18 bits awa
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
+from typing import Literal
 
 from sift.kernel.access import Viewer
-from sift.kernel.access.ranked import VIEWER_FILES, ranked_among
+from sift.kernel.access.ranked import FINGERPRINTS_OF_VIEWER, ranked_among
 from sift.kernel.content import perceptual
 from sift.kernel.content.duplicates import DuplicateReads, Fingerprint
 from sift.kernel.db import Database
@@ -91,23 +92,25 @@ class SimilarFinder:
         made-up distance, and neither does one further apart than the content layer's edge. The
         comparison itself belongs to the content layer; this only sorts what it says.
         """
-        among = await self._among(asker)
-        fingerprints = await self._reads.fingerprints()
-        # On a thread: one comparison per fingerprinted file.
-        found = await asyncio.to_thread(_nearest, fingerprints, asset_id, limit, among)
+        within = await self._within(asker)
+        if within is False:
+            return Similar(tier=Tier.MATCHES, neighbours=())
+        fingerprints = await self._reads.fingerprints(within=within)
+        # On a thread: one comparison per fingerprinted file the asker may see.
+        found = await asyncio.to_thread(_nearest, fingerprints, asset_id, limit, None)
         return Similar(tier=Tier.MATCHES, neighbours=found)
 
-    async def _among(self, asker: Viewer | None) -> frozenset[str] | None:
-        """The files `asker` may see, or None where every file may be ranked."""
+    async def _within(
+        self, asker: Viewer | None
+    ) -> tuple[str, Mapping[str, object]] | Literal[False] | None:
+        """The files `asker` may see as a statement to read within, None where every file may be
+        ranked, False where nothing may."""
         if asker is None:
             return None
         if self._database is None:
-            return frozenset()
+            return False
         binds = await ranked_among(self._database, asker)
-        if binds is None:
-            return None
-        rows = await self._database.sweep_all(VIEWER_FILES, binds, what="files to rank")
-        return frozenset(str(row["asset_id"]) for row in rows)
+        return None if binds is None else (FINGERPRINTS_OF_VIEWER, binds)
 
 
 def _nearest(
