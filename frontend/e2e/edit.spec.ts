@@ -219,9 +219,9 @@ async function dragGrip(page: Page, grip: string, to: { x: number; y: number }):
 		})
 		.toBe(true);
 	await page.locator(`[data-grip="${grip}"]`).hover();
-	await page.mouse.down();
-	// Read as the drag starts, which is when the stage reads where it is and holds it for the drag.
+	// Read before the press, as the stage does, before anything the press redraws moves it.
 	const box = (await stage.boundingBox())!;
+	await page.mouse.down();
 	await page.mouse.move(box.x + box.width * to.x, box.y + box.height * to.y, { steps: 10 });
 	await page.mouse.up();
 }

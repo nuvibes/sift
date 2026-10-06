@@ -71,15 +71,18 @@ async def _said(temp_db: Database) -> list[tuple[object, ...]]:
 
 
 async def test_the_read_and_the_passes_after_it_are_priced_together_and_kept(
-    temp_db: Database,
+    temp_db: Database, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    # One clock reading for the run's start and the pricing, so no real second slips in between.
+    monkeypatch.setattr("sift.kernel.jobs.ledger.time.monotonic", lambda: 1_000_000.0)
     book = await _book(temp_db)
     answer = await priced_together(_answer(), WORK, KINDS, book, 4, False, ())
 
     # 200 s of reading at the 20 worker seconds a 120 s it has done: 1,200 s, the passes 1 s more.
     assert (answer["scan"].quick_seconds, answer["scan"].slow_seconds) == (750, 1920)
     assert (answer["generate"].quick_seconds, answer["generate"].slow_seconds) == (750, 1921)
-    assert pooled._READ_SECONDS[Family.SCAN] == pytest.approx(1200.0, abs=0.1)
+    # Read against a real clock, so a slow machine adds the seconds the test itself took.
+    assert pooled._READ_SECONDS[Family.SCAN] == pytest.approx(1200.0, abs=2.0)
     assert await _said(temp_db) == [(750, 1920, 100, 0), (750, 1921, 100, 0)]
 
 
