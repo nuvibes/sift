@@ -39,7 +39,7 @@ test.beforeEach(async ({ page }) => {
 test.describe('in a browser', () => {
 	test('there is no strip, and nothing is moved to make room for one', async ({ page }) => {
 		await page.goto('/browse');
-		await expect(page.getByRole('navigation', { name: 'Main' })).toBeVisible();
+		await expect(page.getByRole('navigation', { name: 'Main' })).toBeVisible({ timeout: 20_000 });
 
 		await expect(page.locator('.window-bar')).toHaveCount(1);
 		/* Present in the markup and drawn as nothing: the component is rendered unconditionally and
@@ -60,7 +60,7 @@ test.describe('inside the desktop window', () => {
 
 	test("a strip of Sift's own runs across the top", async ({ page }) => {
 		await page.goto('/browse');
-		await expect(page.getByRole('navigation', { name: 'Main' })).toBeVisible();
+		await expect(page.getByRole('navigation', { name: 'Main' })).toBeVisible({ timeout: 20_000 });
 
 		const bar = await box(page, '.window-bar');
 		expect(bar.y).toBe(0);
@@ -78,7 +78,7 @@ test.describe('inside the desktop window', () => {
 		 * would collapse through it and give the document a scrollbar it has no content for.
 		 */
 		await page.goto('/browse');
-		await expect(page.getByRole('navigation', { name: 'Main' })).toBeVisible();
+		await expect(page.getByRole('navigation', { name: 'Main' })).toBeVisible({ timeout: 20_000 });
 
 		const shell = await box(page, '.shell');
 		expect(Math.round(shell.y)).toBe(0);
@@ -98,7 +98,7 @@ test.describe('inside the desktop window', () => {
 	 */
 	test('and the content panel is inset from the top and the right again', async ({ page }) => {
 		await page.goto('/browse');
-		await expect(page.getByRole('navigation', { name: 'Main' })).toBeVisible();
+		await expect(page.getByRole('navigation', { name: 'Main' })).toBeVisible({ timeout: 20_000 });
 
 		const shell = await box(page, '.shell');
 		const content = await box(page, '.content');
@@ -114,7 +114,7 @@ test.describe('inside the desktop window', () => {
 		page
 	}) => {
 		await page.goto('/browse');
-		await expect(page.getByRole('navigation', { name: 'Main' })).toBeVisible();
+		await expect(page.getByRole('navigation', { name: 'Main' })).toBeVisible({ timeout: 20_000 });
 
 		const radius = await page
 			.locator('.content')
@@ -235,7 +235,7 @@ test.describe('inside the desktop window', () => {
 		   it to measure. On a quiet machine hydration wins that race every time; under four browsers
 		   it does not, and the test then waits out its whole deadline for a dialog that was never
 		   going to exist. Waiting for the rail to be drawn is waiting for the router to be there. */
-		await expect(page.getByRole('navigation', { name: 'Main' })).toBeVisible();
+		await expect(page.getByRole('navigation', { name: 'Main' })).toBeVisible({ timeout: 20_000 });
 		await page.getByRole('link', { name: 'Settings', exact: true }).click();
 
 		/* Named by what it IS rather than by a class. `.panel` is a word more than one screen

@@ -77,8 +77,10 @@ def test_an_admin_reads_the_end_of_the_log_oldest_first(client: TestClient, data
     assert answer.status_code == 200
     found = answer.json()
     assert found["present"] is True
-    assert [one["event"] for one in found["lines"]] == ["first", "then"]
-    assert [one["level"] for one in found["lines"]] == ["info", "warning"]
+    # Only the planted lines: the app writes its own into the same log while the test runs.
+    planted = [one for one in found["lines"] if one["event"] in ("first", "then")]
+    assert [one["event"] for one in planted] == ["first", "then"]
+    assert [one["level"] for one in planted] == ["info", "warning"]
     assert found["size_bytes"] > 0
 
 

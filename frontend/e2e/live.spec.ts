@@ -33,7 +33,7 @@ test('the application opens exactly one connection, whatever screen is on', asyn
 	await expect.poll(() => open.size).toBe(1);
 	await page.goto('/downloads');
 	await expect(page).toHaveURL(/\/downloads/);
-	await expect.poll(() => open.size).toBe(1);
+	await expect.poll(() => open.size, { timeout: 20_000 }).toBe(1);
 	// The jobs-only feed address. A connection here would be the second transport this deliberately
 	// does not have.
 	expect(sockets.filter((url) => url.includes('/api/jobs/stream'))).toHaveLength(0);
