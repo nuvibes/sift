@@ -1356,11 +1356,7 @@ def gh_program() -> str:
 
 
 def run_gh(args: list[str], stdin: str | None, *, where: Path = ARTIFACTS) -> GhRun:
-    """Run the GitHub CLI from the artefacts folder.
-
-    Every file is handed over as a bare name, which reads the same to a Windows program and to one
-    started through WSL. A `.cmd` or `.bat` needs a shell on Windows, as `run` explains.
-    """
+    """Run the GitHub CLI from the artefacts folder, files by bare name; a `.bat` needs a shell."""
     argv = [gh_program(), *args]
     script = sys.platform == "win32" and argv[0].lower().endswith((".cmd", ".bat"))
     done = subprocess.run(
@@ -1379,7 +1375,10 @@ def run_gh(args: list[str], stdin: str | None, *, where: Path = ARTIFACTS) -> Gh
 
 def _github(gh: Gh, path: str) -> dict[str, object] | None:
     """One read of GitHub's API: the document, or None when GitHub answers 404."""
-    done = gh(["api", path], None)
+    # A query goes as fields: a `&` on the line would end the command in a Windows shell.
+    route, _, query = path.partition("?")
+    fields = [part for pair in query.split("&") if pair for part in ("-f", pair)]
+    done = gh(["api", *(["--method", "GET"] if fields else []), route, *fields], None)
     if done.exit_code != 0:
         if "HTTP 404" in done.error or "Not Found" in done.error:
             return None

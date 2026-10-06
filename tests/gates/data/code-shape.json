@@ -2,7 +2,7 @@
 	"_note": "Python modules over 1000 lines, functions over 80 lines or 10 branches, test files over 2000, and files of 50 or more non-blank lines, test files included, whose prose is over 25%. Each may only fall: scripts/check_code_shape.py, and record a fall with python scripts/check_code_shape.py --record",
 	"module_lines": {
 		"scripts/build_site_icons.py": 1805,
-		"scripts/release.py": 2012,
+		"scripts/release.py": 2011,
 		"src/sift/kernel/access/history_entity.py": 1395,
 		"src/sift/kernel/access/repository/views.py": 1347,
 		"src/sift/kernel/access/schema.py": 1712,

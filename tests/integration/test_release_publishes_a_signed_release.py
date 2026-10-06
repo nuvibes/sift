@@ -101,7 +101,7 @@ class FakeGh:
     def __call__(self, args: list[str], stdin: str | None) -> Any:
         self.calls.append((args, stdin))
         if args[0] == "api":
-            found = self.documents.get(args[1])
+            found = self.documents.get(_asked(args))
             if found is None:
                 return release.GhRun(1, "", "gh: Not Found (HTTP 404)")
             return release.GhRun(0, json.dumps(found), "")
@@ -109,6 +109,14 @@ class FakeGh:
 
     def writes(self) -> list[list[str]]:
         return [args for args, _stdin in self.calls if args[0] != "api"]
+
+
+def _asked(args: list[str]) -> str:
+    """The route a read asked for, with its fields back as the query they stand for."""
+    rest = [one for one in args[1:] if one not in ("--method", "GET")]
+    route = next(one for one in rest if not one.startswith("-") and "=" not in one)
+    fields = [rest[i + 1] for i, one in enumerate(rest) if one == "-f"]
+    return route + ("?" + "&".join(fields) if fields else "")
 
 
 def _github(release_document: dict[str, Any] | None, *, tagged: bool = True) -> FakeGh:
@@ -320,9 +328,16 @@ def test_a_commit_the_suite_passed_may_be_published(signer: Signer) -> None:
     release.check_the_suite(gh, COMMIT)
 
     [(read, _stdin)] = gh.calls
+    # The query as fields: a `&` on the line would end the command in a Windows shell.
     assert read == [
         "api",
-        f"repos/{REPOSITORY}/actions/workflows/suite.yml/runs?head_sha={COMMIT}&per_page=100",
+        "--method",
+        "GET",
+        f"repos/{REPOSITORY}/actions/workflows/suite.yml/runs",
+        "-f",
+        f"head_sha={COMMIT}",
+        "-f",
+        "per_page=100",
     ]
 
 
