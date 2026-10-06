@@ -4,7 +4,7 @@ What each release of Sift changes, newest first. A version's section is its rele
 release page and the Updates screen both show it. Changes land under Unreleased and move into a
 version's section, dated, when that version is published.
 
-## Unreleased
+## 0.2.1 - 2026-10-05
 
 ### What changed for you
 
