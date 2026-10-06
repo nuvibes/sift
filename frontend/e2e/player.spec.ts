@@ -737,15 +737,13 @@ test("the progress line takes the bar's place when the controls fade", async ({ 
 
 	// Nobody looking: the bar is out of the way and the line is what is left.
 	await page.mouse.move(0, 0);
-	await page.waitForTimeout(400);
-	expect(await opacity(bar)).toBe('0');
-	expect(await opacity(line), 'nothing says how far through the clip is').toBe('1');
+	await expect.poll(() => opacity(bar)).toBe('0');
+	await expect.poll(() => opacity(line), 'nothing says how far through the clip is').toBe('1');
 
 	// Looking at it: the bar is back and the line gives way rather than doubling up under it.
 	await page.locator('.stage').hover({ position: { x: 40, y: 40 } });
-	await page.waitForTimeout(400);
-	expect(await opacity(bar)).toBe('1');
-	expect(await opacity(line), 'two progress indicators two pixels apart').toBe('0');
+	await expect.poll(() => opacity(bar)).toBe('1');
+	await expect.poll(() => opacity(line), 'two progress indicators two pixels apart').toBe('0');
 
 	// Fullscreen, where the bar waits on the idle clock rather than on the pointer.
 	/* The bar is out of reach until the pointer is on the stage: it fades in on `.stage.pointed`,
@@ -754,8 +752,10 @@ test("the progress line takes the bar's place when the controls fade", async ({ 
 	await page.locator('.player-bar').getByRole('button', { name: 'Full screen' }).click();
 	await expect(page.locator('.stage.fullscreen')).toBeVisible();
 	await expect(page.locator('.stage.resting')).toBeVisible({ timeout: 5000 });
-	expect(await opacity(bar)).toBe('0');
-	expect(await opacity(line), 'the fullscreen case is the one that gets forgotten').toBe('1');
+	await expect.poll(() => opacity(bar)).toBe('0');
+	await expect
+		.poll(() => opacity(line), 'the fullscreen case is the one that gets forgotten')
+		.toBe('1');
 });
 
 test('the mini player survives moving around the app, and stays where it is put', async ({

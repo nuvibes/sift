@@ -10,6 +10,7 @@ and which parts were on screen.
 from __future__ import annotations
 
 import json
+from typing import Any
 
 import pytest
 
@@ -24,6 +25,11 @@ pytestmark = pytest.mark.unit
 async def _rows(database: Database) -> list[dict[str, object]]:
     found = await database.fetch_all("SELECT * FROM plays ORDER BY id")
     return [dict(row) for row in found]
+
+
+def _within_a_second(row: Any, seconds_before: int) -> bool:
+    """`started_at` against `made_at`, which two clock reads a second apart can put a second off."""
+    return abs(int(str(row["started_at"])) - (int(str(row["made_at"])) - seconds_before)) <= 1
 
 
 async def test_a_sitting_is_kept_whole(
@@ -46,7 +52,7 @@ async def test_a_sitting_is_kept_whole(
     # Sparse and in order, so a glance at a long film is two entries rather than a hundred zeroes.
     assert json.loads(str(row["heat"])) == {"1": 800, "3": 1200}
     # Derived: the report landed at `made_at` and the sitting was 42 seconds of it.
-    assert int(str(row["started_at"])) == int(str(row["made_at"])) - 42
+    assert _within_a_second(row, 42)
 
 
 async def test_a_sitting_records_the_length_of_its_file(
@@ -119,8 +125,8 @@ async def test_the_second_piece_of_a_sitting_counts_back_over_the_whole_of_it(
     )
 
     first, second = await _rows(temp_db)
-    assert int(str(first["started_at"])) == int(str(first["made_at"])) - 30
-    assert int(str(second["started_at"])) == int(str(second["made_at"])) - 50
+    assert _within_a_second(first, 30)
+    assert _within_a_second(second, 50)
     # Each row's own piece, never a running total: the times add up to the sitting.
     assert first["duration_ms"] == 30_000 and second["duration_ms"] == 20_000
 
@@ -226,7 +232,7 @@ async def test_two_pieces_of_one_sitting_are_one_row(
     # later map alone would throw away the first half of the sitting.
     assert json.loads(str(row["heat"])) == {"1": 10_000, "4": 5_000}
     # The sitting began where its FIRST piece said, not where the second one would have derived.
-    assert int(str(row["started_at"])) == int(str(row["made_at"])) - 30
+    assert _within_a_second(row, 30)
 
 
 @pytest.mark.parametrize("stored", ["not json", "[1, 2]", '{"one": 5}'])

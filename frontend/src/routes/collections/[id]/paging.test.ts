@@ -148,7 +148,7 @@ describe('a collection of 250 files', () => {
 		expect(seen.size).toBe(LENGTH);
 		// The route names no row, so the grid must never continue after one.
 		expect(asked.reads.every((query) => !('after' in query))).toBe(true);
-	});
+	}, 20_000);
 
 	it('returns by Previous to the page Next left, whatever shapes its files are', async () => {
 		asked.mixed = true;

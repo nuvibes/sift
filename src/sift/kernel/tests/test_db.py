@@ -1726,8 +1726,7 @@ def test_the_registry_is_copied_rather_than_handed_out(clean_registry: None) -> 
 
 @pytest.mark.unit
 async def test_a_point_read_runs_on_the_loop_when_the_disk_is_fast_enough(tmp_path: Path) -> None:
-    """The whole decision, end to end: a fast disk opens the inline connection and the statement
-    that was declared constant-time goes through it."""
+    """End to end: a fast disk opens the inline connection and a point read goes through it."""
     declared = point_read("test.by_id", "SELECT v FROM t WHERE id = ?")
     database = Database(tmp_path / "test.sqlite3", readers=1)
     await database.connect()
@@ -1737,6 +1736,12 @@ async def test_a_point_read_runs_on_the_loop_when_the_disk_is_fast_enough(tmp_pa
             await connection.execute("CREATE TABLE t (id TEXT PRIMARY KEY, v INTEGER)")
             await connection.execute("INSERT INTO t VALUES ('a', 1)")
 
+        # The write moved the schema, so the inline connection parses it again on a thread first.
+        for _ in range(500):
+            if database._inline(declared) is not None:
+                break
+            await asyncio.sleep(0.01)
+        assert database._inline(declared) is not None, "the inline connection never caught up"
         row = await database.fetch_one(declared, ("a",))
         rows = await database.fetch_all(declared, ("a",))
     finally:
@@ -1751,12 +1756,7 @@ async def test_a_point_read_runs_on_the_loop_when_the_disk_is_fast_enough(tmp_pa
 async def test_a_read_from_another_thread_takes_the_driver_rather_than_the_connection(
     tmp_path: Path,
 ) -> None:
-    """A SQLite connection belongs to the thread that opened it.
-
-    Sift has one event loop on one thread, so this cannot happen today. It is checked because the
-    alternative to checking it is an error out of the driver in whatever future arrangement adds a
-    second one, and the fallback is the answer that keeps working.
-    """
+    """A connection belongs to its thread; from another, the driver answers instead of an error."""
     declared = point_read("test.by_id", "SELECT v FROM t WHERE id = ?")
     database = Database(tmp_path / "test.sqlite3", readers=1)
     await database.connect()
