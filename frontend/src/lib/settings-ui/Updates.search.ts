@@ -19,6 +19,7 @@ export const COPY = {
 	running: 'You are running',
 	fromSource: 'from source',
 	available: (version: string) => `Sift ${version} is available.`,
+	availableHere: (version: string) => `Sift ${version} is available for this copy.`,
 	newest: 'This is the newest version.',
 	unchecked: "Sift hasn't been able to check for a newer version. Everything else works as normal.",
 	lastChecked: (when: string) => `Last checked ${when}.`,

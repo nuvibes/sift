@@ -4,6 +4,15 @@ What each release of Sift changes, newest first. A version's section is its rele
 release page and the Updates screen both show it. Changes land under Unreleased and move into a
 version's section, dated, when that version is published.
 
+## Unreleased
+
+### What changed for you
+
+- **The desktop app connected to a library on another computer now says when its own copy is
+  behind.** It compared the library's computer with the newest release and said "This is the newest
+  version" while the copy in front of you was older. The line now reads "Sift 0.2.1 is available for
+  this copy," and Download and install updates this computer.
+
 ## 0.2.1 - 2026-10-05
 
 ### What changed for you

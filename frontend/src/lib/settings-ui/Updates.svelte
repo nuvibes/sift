@@ -43,6 +43,7 @@
 		type NotesInline
 	} from '$lib/shell/updates.svelte';
 	import { COPY } from './Updates.search';
+	import { isNewer } from '$lib/shell/version-order';
 	import { explainAbsentRows } from '$lib/settings-ui/settings-anchor.svelte';
 	/* The versions of the programs Sift downloads with, and the yt-dlp check. Here because
 	   "is what Sift runs up to date" is this pane's question, and a newer yt-dlp arrives with a newer
@@ -128,6 +129,11 @@
 
 	const current = $derived(updates.state);
 	const lastChecked = $derived(current ? describeLastChecked(current.last_checked) : '');
+	/* The verdict for THIS copy: the state's own is the library's machine against the feed, which
+	 * says nothing about a client two releases behind it. */
+	const behindHere = $derived(
+		here !== null && !!current?.latest_version && isNewer(current.latest_version, here)
+	);
 
 	/*
 	 * WHETHER SIFT LOOKS FOR A NEW VERSION ON ITS OWN: the one request it makes to the internet
@@ -313,7 +319,9 @@
 				{@render sayVersion(current.current_version)}
 			</p>
 		{/if}
-		{#if current.update_available}
+		{#if behindHere}
+			<p class="available">{COPY.availableHere(current.latest_version ?? '')}</p>
+		{:else if current.update_available}
 			<p class="available">{COPY.available(current.latest_version ?? '')}</p>
 		{:else if current.latest_version}
 			<p class="quiet">{COPY.newest}</p>

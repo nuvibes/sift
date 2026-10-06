@@ -412,6 +412,41 @@ describe('when the application and the library are different computers', () => {
 		expect(text()).toContain('another device');
 	});
 
+	/* THE VERDICT IS THIS COPY'S. The state's own verdict is the library's machine against the
+	 * feed, so a client behind that machine would read "the newest version" from a number that was
+	 * never its own. */
+	it('says a newer version is available for a copy behind the library it shows', async () => {
+		const answer = Promise.resolve('0.2.0');
+		window.sift = { shellVersion: () => answer };
+		show({
+			...NOTHING_KNOWN,
+			current_version: '0.2.1',
+			latest_version: '0.2.1',
+			update_available: false,
+			last_checked: Math.floor(Date.now() / 1000)
+		});
+
+		await settled(answer);
+		expect(text()).toContain(COPY.availableHere('0.2.1'));
+		expect(text()).not.toContain(COPY.newest);
+	});
+
+	it('says the newest version only once this copy has it', async () => {
+		const answer = Promise.resolve('0.2.1');
+		window.sift = { shellVersion: () => answer };
+		show({
+			...NOTHING_KNOWN,
+			current_version: '0.2.1',
+			latest_version: '0.2.1',
+			update_available: false,
+			last_checked: Math.floor(Date.now() / 1000)
+		});
+
+		await settled(answer);
+		expect(text()).toContain(COPY.newest);
+		expect(text()).not.toContain('is available');
+	});
+
 	/* The known negative. On the machine holding the library the backend travels inside the
 	 * application, so there is no second version: the shell answers nothing there, and a screen
 	 * saying it twice would invite somebody to look for a difference that cannot exist. */
