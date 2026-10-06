@@ -990,6 +990,7 @@ describe('testing this machine', () => {
 			flushSync();
 		}
 		const said = () => panel()?.querySelector('[data-testid="self-test-set-by-sift"]');
+		const notSet = () => panel()?.querySelector('[data-testid="self-test-not-set"]');
 		const labels = (testid: string) =>
 			[...(panel()?.querySelectorAll(`[data-testid="${testid}"] dt`) ?? [])].map(
 				(one) => one.textContent
@@ -1000,6 +1001,7 @@ describe('testing this machine', () => {
 
 			expect(said()?.textContent).toContain('set this number from it');
 			expect(labels('self-test-set')).toEqual([TASKS.label]);
+			expect(notSet()?.textContent?.trim()).toBe("Sift didn't set this number.");
 			expect(labels('self-test-suggested')).toEqual([PREVIEWS.label]);
 			expect(applyButton()?.textContent).toContain('Apply this number');
 		});
@@ -1010,6 +1012,7 @@ describe('testing this machine', () => {
 
 			expect(said()?.textContent).toContain('set these numbers from it');
 			expect(labels('self-test-set')).toEqual([TASKS.label, PREVIEWS.label]);
+			expect(notSet()).toBeNull();
 			expect(applyButton()).toBeNull();
 		});
 
@@ -1025,6 +1028,7 @@ describe('testing this machine', () => {
 			await after('set', TASKS_SET, [moved, PREVIEWS]);
 
 			expect(said()).toBeNull();
+			expect(notSet()).toBeNull();
 			expect(labels('self-test-suggested')).toEqual([TASKS.label, PREVIEWS.label]);
 			expect(applyButton()?.textContent).toContain('Apply these 2 numbers');
 		});

@@ -57,6 +57,7 @@ function item(status: string, known: Partial<DownloadItem> = {}): DownloadItem {
 		remembered_filename: null,
 		files_offered: null,
 		files_left_out: null,
+		reads_refused: null,
 		shown_url: 'example.test/clip',
 		site_key: null,
 		site_name: null,

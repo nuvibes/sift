@@ -76,7 +76,7 @@
 		 */
 		filled?: boolean;
 		/** Drawn at the start of the transport row, left of the transport. The cell picker. */
-		picker?: Snippet;
+		picker?: Snippet<[number]>;
 	}
 
 	let { wall, cell, index, position, duration, onseek, filled = false, picker }: Props = $props();

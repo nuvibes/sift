@@ -13,11 +13,8 @@ from sift.kernel.wire import Wire
 
 
 class SemanticStatus(Wire):
-    """What the settings screen draws, and what the feature can currently do.
-
-    Three different states: not supported means no switch will help on this machine; enabled
-    without ready is the ordinary moment after turning it on, and reads as "fetch the models".
-    """
+    """What the settings screen draws, and what the feature can currently do. Enabled without
+    ready is the ordinary moment after turning it on, and reads as "fetch the models"."""
 
     supported: bool
     enabled: bool
@@ -28,6 +25,8 @@ class SemanticStatus(Wire):
     indexed_frames: int = 0
     described_files: int = 0
     waiting_files: int = 0
+    #: Files not read yet, which `waiting_files` cannot see.
+    unread_files: int = 0
     #: This feature's unfinished jobs: tells "work left" from "work left and being done", which a
     #: progress bar must not confuse.
     running_jobs: int = 0

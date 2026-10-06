@@ -88,7 +88,8 @@ _RECORD_ITEM = (
 _SET_DONE = (
     "UPDATE downloads SET state = ?, asset_id = ?, site = ?, username = ?, username_from = ?,"
     " filename = ?, finished_at = ?, seen_at = NULL, post_id = ?, title = ?, posted = ?,"
-    " original = ?, files_offered = ?, files_left_out = ?, site_id = ?, person_id = ? WHERE id = ?"
+    " original = ?, files_offered = ?, files_left_out = ?, site_id = ?, person_id = ?,"
+    " reads_refused = ? WHERE id = ?"
 )
 
 #: The earlier rows of the same link whose file has since been deleted, given the file this one
@@ -279,6 +280,7 @@ class DownloadLedger(DownloadControls):
         named_from: naming.Facts | None = None,
         offered: int = 0,
         left_out: int = 0,
+        reads_refused: str | None = None,
     ) -> None:
         """Record a finished download: `duplicate` where every file was already in the library.
 
@@ -311,6 +313,7 @@ class DownloadLedger(DownloadControls):
                     left_out or None,
                     site_id,
                     person_id,
+                    reads_refused,
                     download_id,
                 ),
             )

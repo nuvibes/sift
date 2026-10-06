@@ -495,6 +495,17 @@
 		color: inherit;
 		font: inherit;
 		cursor: inherit;
+		white-space: nowrap;
+	}
+
+	/* One line: in a narrow place only the label gives way, to its ellipsis. */
+	.body > :global(*) {
+		flex: none;
+	}
+
+	.body > .label {
+		flex: 0 1 auto;
+		min-inline-size: 0;
 	}
 
 	button.body:not(:disabled) {

@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncio
 import socket
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, nullcontext
 from dataclasses import dataclass, field
 from functools import partial
 from pathlib import Path
@@ -415,7 +415,10 @@ def _the_tunnel(router: EgressRouter) -> TunnelProcess:
 
 
 async def test_the_reads_after_the_tool_go_out_on_the_route_still_held(
-    asked: list[str], landed: Callable[..., Awaitable[str]], monkeypatch: pytest.MonkeyPatch
+    asked: list[str],
+    landed: Callable[..., Awaitable[str]],
+    monkeypatch: pytest.MonkeyPatch,
+    download_service: DownloadService,
 ) -> None:
     seen: dict[str, Any] = {}
     async with _standing(_Site(0)) as ground:
@@ -433,10 +436,15 @@ async def test_the_reads_after_the_tool_go_out_on_the_route_still_held(
     assert _the_tunnel(router)._leases == 0
     assert ground.site.direct("GET") == 0 and ground.site.carried("GET") == 2
     assert asked == []
+    row = await download_service.get("d1")
+    assert row is not None and row.reads_refused is None, "every read went through"
 
 
 async def test_a_tunnel_stopped_after_the_tool_sends_nothing_more_and_says_so(
-    asked: list[str], landed: Callable[..., Awaitable[str]], monkeypatch: pytest.MonkeyPatch
+    asked: list[str],
+    landed: Callable[..., Awaitable[str]],
+    monkeypatch: pytest.MonkeyPatch,
+    download_service: DownloadService,
 ) -> None:
     said: list[dict[str, Any]] = []
     monkeypatch.setattr(attempt.log, "warning", lambda event, **fields: said.append(fields))
@@ -459,6 +467,12 @@ async def test_a_tunnel_stopped_after_the_tool_sends_nothing_more_and_says_so(
     # The creator read (this host's page might name one) and the art read, each refused by name.
     assert [one["read"] for one in said] == ["creator", "art"]
     assert all("Sweden" in one["detail"] for one in said)
+    row = await download_service.get("d1")
+    assert row is not None
+    assert (
+        row.reads_refused
+        == f"Sift didn't read who posted it or the Site's pictures. {said[0]['detail']}"
+    )
 
 
 @pytest.mark.parametrize("stopped", [False, True])
@@ -467,6 +481,7 @@ async def test_the_music_read_is_made_on_the_held_route_or_not_at_all(
     asked: list[str],
     landed: Callable[..., Awaitable[str]],
     monkeypatch: pytest.MonkeyPatch,
+    download_service: DownloadService,
 ) -> None:
     """The one Site that records music; its page is asked on the route the row names, or never."""
     reads: list[tuple[str | None, int]] = []
@@ -486,6 +501,12 @@ async def test_the_music_read_is_made_on_the_held_route_or_not_at_all(
     assert status == "done"
     assert reads == ([] if stopped else [(_proxy(ground), 2)])
     assert ground.site.direct("GET") == 0 and asked == []
+    row = await download_service.get("d1")
+    assert row is not None
+    said = row.reads_refused or ""
+    assert (
+        said.startswith("Sift didn't read who posted it or the music. The tunnel Sweden") is stopped
+    )
 
 
 async def test_a_creator_read_after_its_tunnel_stopped_is_not_made() -> None:
@@ -499,14 +520,25 @@ async def test_a_creator_read_after_its_tunnel_stopped_is_not_made() -> None:
         return "someone"
 
     attribution = Attribution(site="Example", username=None, names_creators=True)
-    reach = partial(EgressRouter({}, ensure_started=down).through, "t1")
+    reach = attempt.Reach(partial(EgressRouter({}, ensure_started=down).through, "t1"))
     who = await who_posted(attribution, Fetched(files=[]), "https://x.test/", reach, read_creator)
     assert who.username is None and asks == []
+    assert reach.said() == "Sift didn't read who posted it. The tunnel Sweden is not available."
 
 
 async def test_a_direct_read_after_the_tool_is_made_with_no_proxy() -> None:
-    reach = partial(EgressRouter({}).through, None)
+    reach = attempt.Reach(partial(EgressRouter({}).through, None))
     assert await attempt.on_route(reach, lambda proxy: _answer(proxy), what="art") == "none"
+    assert reach.said() is None
+
+
+def test_the_row_names_every_read_its_tunnel_refused_in_the_tunnels_own_words() -> None:
+    reach = attempt.Reach(lambda: nullcontext(None))
+    reach.refused.update(creator="The tunnel Sweden is turned off.", art="Later.", music="Later.")
+    assert reach.said() == (
+        "Sift didn't read who posted it, the Site's pictures or the music. "
+        "The tunnel Sweden is turned off."
+    )
 
 
 async def _answer(proxy: str | None) -> str:

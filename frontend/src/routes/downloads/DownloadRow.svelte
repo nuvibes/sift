@@ -445,11 +445,8 @@
 		return sayWhen(item.finished_at ?? item.created_at, now);
 	});
 
-	/*
-	 * THE MOMENT THAT COLUMN SAYS, for its hover: "10 minutes ago" is a live list's answer, and the
-	 * exact moment is one gesture away on every other screen that says one (`$lib/shell/when`). Null where
-	 * it says a speed or a place in the queue, read off the same branches as `when`.
-	 */
+	/* The exact moment for the column's hover (`$lib/shell/when`); null where it says a speed or a
+	   place in the queue. */
 	const whenAt = $derived.by((): number | null => {
 		if (running && item.progress) return null;
 		if (item.status === 'queued') return null;
@@ -457,11 +454,7 @@
 		return item.finished_at ?? item.created_at;
 	});
 
-	/*
-	 * An album that landed without some of its files (out of the size settings, or gone from the
-	 * Site), said on the second line from the counts the row stored when it finished. Nothing for a
-	 * row that lost none.
-	 */
+	/* An album that landed without some of its files (size settings, or gone from the Site). */
 	const leftOut = $derived.by(() => {
 		const offered = item.files_offered ?? 0;
 		const lost = item.files_left_out ?? 0;
@@ -469,8 +462,10 @@
 		return `${counted(offered - lost)} of ${counted(offered)} files, ${counted(lost)} left out`;
 	});
 
-	/* The way it went out, on the second line: a tunnel by name, since which one is the part worth
-	   reading. Recorded as it went, so a route changed later does not rewrite it. */
+	/* Reads after the file landed that its tunnel refused; the row stays done. */
+	const refused = $derived(settled ? (item.reads_refused ?? '') : '');
+
+	/* The way it went out, recorded as it went: a tunnel by name. */
 	const via = $derived.by(() => {
 		if (!item.via) return null;
 		if (item.via.toLowerCase() === 'direct') return null;
@@ -819,9 +814,6 @@
 				Everything else about a download is reference and lives behind the chevron, but a
 				transfer in flight is the one thing somebody is watching rather than looking up, and
 				a bar that has to be opened to be seen is not a bar.
-
-				A total nobody knows is a sweep rather than a bar at zero: the two mean different
-				things and a bar stuck at nothing reads as a download that is not moving.
 			-->
 			<ProgressBar
 				value={barValue}
@@ -863,6 +855,7 @@
 				{/if}
 			{/if}
 		</span>
+		{#if refused}<span class="whose refused">{refused}</span>{/if}
 	</span>
 {/snippet}
 
@@ -1200,5 +1193,9 @@
 	/* A file the album lost is worth a glance: the caution ink, on the row's second line. */
 	.left-out {
 		color: var(--sift-warn);
+	}
+
+	.refused {
+		font: var(--text-body-sm);
 	}
 </style>

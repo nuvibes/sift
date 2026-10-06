@@ -55,6 +55,9 @@ version's section, dated, when that version is published.
   place. The largest move the wrong way was 53 px and is now under 2 px.
 - **The keyboard reaches Theater's bar.** Tab brings the bars up and goes into them, and B brings
   them back as well as sending them away.
+- **Nine cells fit a narrow window.** When the bar can't fit every cell number, they fold into one
+  press that names the cell it's on and opens the numbers as a menu. At 900 wide with 9 cells,
+  three pairs of controls overlapped; now none do.
 
 **Search, filters and the top bar**
 
@@ -112,11 +115,24 @@ version's section, dated, when that version is published.
 - **A big first import is searchable sooner.** While a folder is still being read, reading its
   files comes first. On a 1,220-file folder on a network share every file was read 269 seconds
   after the count, where it took 1,068 (75% sooner).
+- **No task reads as further along than the scan.** Identify and Smart Search counted files the
+  scan hadn't read as done: on a half-read library of 94,268 files Identify said 188,532 of
+  188,538 and now says 84,543 of 188,440. The settings lines for Faces, Smart Search and
+  watermarks say how many files are waiting to be scanned beside what's left to do.
+- **A share's number the benchmark measured the same isn't suggested back to Automatic.**
+- **Time left holds steady.** It prices what's left as work over your computer's workers and
+  shows a range that counts down, moving only when the truth has moved. On seven recorded imports
+  the rows whose range held the real finish through every third of their life went from 3 of 21
+  to 12 of 21, and the Scan row's words changed 5 times an hour where they changed 91. A row that
+  has stopped says "Waiting for other work." A finished run's Report says how often its time left
+  was right.
 - **A tool that can't start says why.** Its task fails with "A tool Sift runs couldn't start,
   because a file it needs was in use or missing." where it said "no detail".
 - **Eco mode has a name.** While you're working, Sift is in eco mode and the leaf says so. A new
   setting, Use less system resources while other programs are busy, adds that reason too: it's off
   until you turn it on and works on Windows only. The leaf is then dimmed and says what is busy.
+  A video playing in Sift on any device, or Theater open, is a reason too, and in the desktop
+  app's client mode the leaf says it's the device running Sift.
 - **A press for the full amount shows at once.** During a big import the leaf went gray and could
   take seconds to change.
 - **Activity's totals leave out files whose folder you removed.** On 101,619 files, that makes the

@@ -85,6 +85,7 @@ class DownloadView:
     #: How many files the link offered and how many were left out for good (`mark_done`).
     files_offered: int | None = None
     files_left_out: int | None = None
+    reads_refused: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -295,7 +296,7 @@ SELECT d.id, d.state, d.dest_folder_id,
        d.username,
        d.asset_id, d.error, d.created_at, d.finished_at, d.error_code, d.error_tier, d.via,
        d.via_address, d.folder_id,
-       d.url, d.filename AS remembered_filename, d.files_offered, d.files_left_out,
+       d.url, d.filename AS remembered_filename, d.files_offered, d.files_left_out, d.reads_refused,
        d.site_id AS site_id,
        d.person_id AS person_id,
        d.job_id,
@@ -722,6 +723,7 @@ class DownloadListing(DownloadBase):
                 position=None if row["position"] is None else int(row["position"]),
                 files_offered=row["files_offered"],
                 files_left_out=row["files_left_out"],
+                reads_refused=row["reads_refused"],
             )
             for row in rows
         ]
@@ -865,4 +867,5 @@ class DownloadListing(DownloadBase):
             job_id=row["job_id"],
             files_offered=row["files_offered"],
             files_left_out=row["files_left_out"],
+            reads_refused=row["reads_refused"],
         )

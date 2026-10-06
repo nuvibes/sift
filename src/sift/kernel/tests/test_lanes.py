@@ -8,8 +8,10 @@ coroutines through a real lane and count how many were inside at once.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
+from contextlib import AbstractAsyncContextManager
 from pathlib import Path
 
 import pytest
@@ -556,3 +558,100 @@ def test_a_reader_keeps_its_storages_measured_number_of_files_open() -> None:
         assert lanes_module.reads_at_once(Path("/nas/x")) == 5
     finally:
         lanes_module.install(None)
+
+
+async def test_a_files_read_goes_after_readers_that_go_first_and_before_the_rest(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(lanes_module, "READS_FIRST", True)
+    lanes = StorageLanes(network_reads_at_once=1)
+    order: list[str] = []
+    holder = asyncio.Event()
+
+    async def hold() -> None:
+        async with lanes.reading(Path("/nas/a/held")):
+            await holder.wait()
+
+    async def read(name: str, kind: Callable[[], AbstractAsyncContextManager[None]]) -> None:
+        async with kind(), lanes.reading(Path("/nas/a") / name):
+            order.append(name)
+
+    holding = asyncio.create_task(hold())
+    await asyncio.sleep(0)
+    waiting = [
+        asyncio.create_task(read(name, kind))
+        for name, kind in (
+            ("ordinary", contextlib.nullcontext),
+            ("read", lanes_module.the_read),
+            ("first", lanes_module.first),
+        )
+    ]
+    await asyncio.sleep(0)
+    assert lanes.lane_for(Path("/nas/a/x")).urgent_waiting == 2
+    holder.set()
+    await asyncio.gather(holding, *waiting)
+
+    assert order == ["first", "read", "ordinary"]
+
+
+async def test_every_fourth_place_goes_to_the_kinds_below_by_the_same_rule() -> None:
+    lanes = StorageLanes(network_reads_at_once=1)
+    lane = lanes.lane_for(Path("/nas/a/x"))
+    await lane.take(lanes_module.ORDINARY)
+    order: list[str] = []
+
+    async def wait(kind: int, name: str) -> None:
+        await lane.take(kind)
+        order.append(name)
+
+    names = {lanes_module.FIRST: "F", lanes_module.READ: "R", lanes_module.ORDINARY: "O"}
+    waiting = [
+        asyncio.create_task(wait(kind, name)) for kind, name in names.items() for _ in range(13)
+    ]
+    await asyncio.sleep(0)
+    for _ in range(16):
+        lane.give_back()
+        await asyncio.sleep(0)
+
+    assert "".join(order) == "FFFRFFFRFFFRFFFO"
+    for task in waiting:
+        task.cancel()
+    await asyncio.gather(*waiting, return_exceptions=True)
+
+
+async def test_with_reads_first_off_a_files_read_waits_in_line(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(lanes_module, "READS_FIRST", False)
+    async with lanes_module.the_read():
+        assert lanes_module._RANK.get() == lanes_module.ORDINARY
+
+
+async def test_a_files_read_inside_a_reader_that_goes_first_still_goes_first(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(lanes_module, "READS_FIRST", True)
+    async with lanes_module.first(), lanes_module.the_read():
+        assert lanes_module._RANK.get() == lanes_module.FIRST
+    async with lanes_module.the_read():
+        assert lanes_module._RANK.get() == lanes_module.READ
+    assert lanes_module._RANK.get() == lanes_module.ORDINARY
+
+
+async def test_the_shares_where_files_were_read_first_lately(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(lanes_module, "READS_FIRST", True)
+    lanes = StorageLanes(network_reads_at_once=2)
+    async with lanes.reading(Path("/nas/ordinary")), lanes.reading(Path("/disk/a")):
+        pass
+    assert lanes.reading_first(60) == set()
+
+    async with lanes_module.the_read(), lanes.reading(Path("/nas/read")):
+        pass
+    assert lanes.reading_first(60) == {NAS.key}
+
+    lane = lanes.lane_for(Path("/nas/x"))
+    assert lane.read_at is not None
+    lane.read_at -= 61
+    assert lanes.reading_first(60) == set()

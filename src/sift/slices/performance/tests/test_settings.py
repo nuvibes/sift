@@ -150,7 +150,10 @@ def test_the_step_back_share_is_a_quarter_on_every_install_and_lives_on_performa
     assert declared.unit == "%"
     assert (declared.minimum, declared.maximum) == (10, 100)
     assert declared.label == "System resource usage in eco mode"
-    assert "eco mode while you're working or other programs are busy" in declared.help
+    assert (
+        "eco mode while you're working, a video is playing or other programs are busy"
+        in declared.help
+    )
 
 
 @pytest.mark.parametrize(("raw", "share"), [(25, 25), (60, 60), (100, 100), (250, 100)])

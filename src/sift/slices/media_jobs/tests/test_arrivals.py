@@ -5,13 +5,14 @@ while only the arriving files run, the time left is theirs."""
 from __future__ import annotations
 
 import time
+from dataclasses import dataclass, field
 
 import pytest
 
 from sift.kernel.db import Database
 from sift.kernel.jobs import register_handler
 from sift.kernel.jobs.families import Family
-from sift.kernel.jobs.ledger import FileCount, Ledger
+from sift.kernel.jobs.ledger import Ledger
 from sift.kernel.jobs.queue_rows import LiveWork
 from sift.kernel.jobs.switchboard import Switchboard
 from sift.slices.media_jobs.presses import Presses
@@ -23,6 +24,12 @@ pytestmark = pytest.mark.integration
 POLLS = ((17, 2729, 30, 0), (33, 2727, 40, 2), (71, 2727, 24, 33))
 FINISHED = 136
 STANDING = 2691
+
+
+@dataclass
+class _Pool:
+    concurrency: int = 1
+    limits: dict[str, int] = field(default_factory=dict)
 
 
 async def _nothing(_context: object) -> None:
@@ -46,13 +53,9 @@ def _running_for(book: Ledger, seconds: float, files: int) -> None:
     book.started("facing")
     run = book.open_run(Family.IDENTIFY)
     assert run is not None
-    now = time.monotonic()
-    run.began = now - seconds
-    run.completions.extend(
-        (now - seconds + (index + 1) * seconds / files, 1) for index in range(files)
-    )
-    if files:
-        run.files["video"] = FileCount(n=files, ms=files * 12_000.0)
+    run.began = time.monotonic() - seconds
+    for _ in range(files):
+        book.finished("facing", duration_ms=12_000.0, ok=True, media_type="video")
 
 
 async def _identify(book: Ledger, waiting: int, outstanding: int, **asked: object) -> FamilyOfWork:
@@ -84,8 +87,8 @@ async def test_while_only_arriving_files_run_the_time_left_is_theirs(temp_db: Da
         assert row.for_task == "2,691 more wait for their task."
         assert row.waiting == waiting
 
-    # The last poll is the first with a pace of its own; the whole backlog at it was hours.
-    before = await _identify(book, 2727, 24)
+    # Priced together over one worker, the whole backlog at the last poll was hours.
+    before = await _identify(book, 2727, 24, pool=_Pool())
     assert before.quick_seconds is not None and before.quick_seconds > 3600
     assert before.for_task is None
 

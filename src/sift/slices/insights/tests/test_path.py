@@ -470,16 +470,20 @@ class Counted:
 
     files: int
     lacking: int
+    coming: int = 0
 
     async def asset_count(self) -> int:
         return self.files
+
+    async def coming_count(self, product: str) -> int:
+        return self.coming
 
     async def count_lacking(self, lacks: Sequence[object]) -> Lacking:
         return Lacking(each=(self.lacking,), files=self.lacking)
 
 
-def counted(files: int, lacking: int) -> ContentStore:
-    return cast(ContentStore, Counted(files, lacking))
+def counted(files: int, lacking: int, coming: int = 0) -> ContentStore:
+    return cast(ContentStore, Counted(files, lacking, coming))
 
 
 async def test_the_helper_freezes_what_it_may_judge_once(library: Library) -> None:
@@ -500,11 +504,12 @@ async def test_the_helper_freezes_what_it_may_judge_once(library: Library) -> No
 async def test_every_file_fingerprinted_is_an_admins_and_only_when_it_is_true(
     library: Library,
 ) -> None:
-    for files, lacking in ((0, 0), (3, 1)):
+    # A file not read yet is a file not fingerprinted yet.
+    for files, lacking, coming in ((0, 0, 0), (3, 1, 0), (3, 0, 2)):
         made = await path.make_due(
-            library.db, library.admin.id, TODAY, content=counted(files, lacking)
+            library.db, library.admin.id, TODAY, content=counted(files, lacking, coming)
         )
-        assert made == [], (files, lacking)
+        assert made == [], (files, lacking, coming)
     assert await path.make_due(library.db, library.guest.id, TODAY, content=counted(3, 0)) == []
     # No fingerprinting run on record: dated the day it was noticed.
     whole = await path.library_fingerprinted(library.db, counted(3, 0), TODAY)

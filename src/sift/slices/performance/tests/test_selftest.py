@@ -1496,3 +1496,23 @@ async def test_each_storage_level_reads_places_no_level_before_it_read() -> None
         repeats=1,
     )
     assert salts == [0, 1], "not the places the system cache still holds"
+
+
+def test_a_number_every_share_measured_is_not_advised_back_to_automatic() -> None:
+    """Automatic would read each share at the number already set, so nothing would change today."""
+    four = a_share(a_storage_level(2, 95), a_storage_level(4, 170), a_storage_level(8, 120))
+    found = selftest.recommend_share_reads([four], current={selftest.SHARE_READS_KEY: 4})
+    assert found is not None
+    assert (found.current, found.suggested) == (4, 4)
+    assert not found.changes_anything
+    assert found.reason.endswith(selftest.SAME_AS_MEASURED)
+
+    weak = selftest.StorageCurve(
+        storage="\\\\old\\share\\",
+        label="Old NAS",
+        remote=True,
+        levels=(a_storage_level(1, 30), a_storage_level(2, 50), a_storage_level(4, 20)),
+    )
+    found = selftest.recommend_share_reads([four, weak], current={selftest.SHARE_READS_KEY: 4})
+    assert found is not None and found.suggested == selftest.AS_MEASURED
+    assert found.reason.endswith(selftest.ONE_FOR_EVERY_SHARE)

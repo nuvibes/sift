@@ -85,9 +85,9 @@ Automatic reads each share at the number the benchmark measured for it, and two 
 
 ### Use less system resources while you're working
 
-While you're typing or moving the mouse, Sift is in eco mode. Background tasks then use only a share of this device, so the computer stays quick.
+While you're typing or moving the mouse, or a video is playing in Sift, Sift is in eco mode. Background tasks then use only a share of this device, so the computer stays quick.
 
-Sift checks every few seconds. Once nobody has touched the keyboard or mouse for a minute, it goes back to its usual number of tasks. This works only on Windows.
+Sift checks every few seconds. After a minute with no keyboard, mouse or video playing in Sift, it goes back to its usual number of tasks. Reading the keyboard and mouse works only on Windows.
 
 - **Path**: [Settings > Performance > Use less system resources while you're working](/settings/performance#performance.step_back_while_used)
 - **Default**: On
@@ -109,7 +109,7 @@ Sift checks every few seconds how busy the CPU and GPU are with other programs, 
 
 ### System resource usage in eco mode
 
-How much of this device background tasks use in eco mode. Sift is in eco mode while you're working or other programs are busy, as the two settings above choose.
+How much of this device background tasks use in eco mode. Sift is in eco mode while you're working, a video is playing or other programs are busy, as the two settings above choose.
 
 Every kind of task shares this amount. A task's own share, such as the one for recognizing faces, is a share of it.
 

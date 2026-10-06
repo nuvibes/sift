@@ -11375,6 +11375,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/theater/watching": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Theater Open
+         * @description A wall is open, playing or paused, on any device: eco mode holds as it does for a clip.
+         */
+        post: operations["theater_open_api_theater_watching_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/tidy": {
         parameters: {
             query?: never;
@@ -14202,6 +14222,8 @@ export interface components {
             /** Position */
             position: number | null;
             progress: components["schemas"]["DownloadProgress"] | null;
+            /** Reads Refused */
+            reads_refused: string | null;
             /** Remembered Filename */
             remembered_filename: string | null;
             /** Sentence */
@@ -14753,6 +14775,11 @@ export interface components {
              * @default 0
              */
             scanned_under_older_rules: number;
+            /**
+             * Unread Files
+             * @default 0
+             */
+            unread_files: number;
         };
         /**
          * FacesDecided
@@ -14924,7 +14951,7 @@ export interface components {
             outstanding: number;
             /**
              * Pace
-             * @description What sets the pace of the read, in one sentence, or null: the network share whose readers waited most of the last minute, named by its library folders.
+             * @description What sets the pace, in one sentence, or null: on the read, the network share whose readers waited most of the last minute; on a pass after it, the share whose files are read first. Each named by its library folders.
              */
             pace: string | null;
             /**
@@ -16732,9 +16759,9 @@ export interface components {
             password_wanted: number;
             /**
              * Step Back For
-             * @description Why Sift is in eco mode while `stepping_back` or `full_amount` is true: somebody at this device (input) or other programs busy (others).
+             * @description Why Sift is in eco mode while `stepping_back` or `full_amount` is true: somebody at this device (input), a video playing in Sift on any device or a Theater wall open (playing), or other programs busy (others).
              */
-            step_back_for: ("input" | "others") | null;
+            step_back_for: ("input" | "playing" | "others") | null;
             /**
              * Step Back Over
              * @description What other programs keep busy while `step_back_for` is others: the CPU (processor), the GPU (graphics) or memory. What the leaf and the Activity line name.
@@ -21644,10 +21671,8 @@ export interface components {
         };
         /**
          * SemanticStatus
-         * @description What the settings screen draws, and what the feature can currently do.
-         *
-         *     Three different states: not supported means no switch will help on this machine; enabled
-         *     without ready is the ordinary moment after turning it on, and reads as "fetch the models".
+         * @description What the settings screen draws, and what the feature can currently do. Enabled without
+         *     ready is the ordinary moment after turning it on, and reads as "fetch the models".
          */
         SemanticStatus: {
             /**
@@ -21687,6 +21712,11 @@ export interface components {
             running_jobs: number;
             /** Supported */
             supported: boolean;
+            /**
+             * Unread Files
+             * @default 0
+             */
+            unread_files: number;
             /**
              * Waiting Files
              * @default 0
@@ -24467,13 +24497,8 @@ export interface components {
          * WatermarkStatus
          * @description What the settings screen draws, and what the feature can currently do.
          *
-         *     `enabled` and `ready` are two different things and the screen needs both. Enabled without ready
-         *     is the ordinary state one second after somebody turns it on, and has to read as "fetch the
-         *     models" rather than as something broken.
-         *
-         *     There is no `supported`, unlike search-by-meaning: that feature can be impossible on a machine
-         *     whose database cannot hold its index, and this one needs nothing the application does not
-         *     already have.
+         *     Enabled without ready is the ordinary state just after it is turned on, and reads as "fetch
+         *     the models". No `supported`: this needs nothing the application does not already have.
          */
         WatermarkStatus: {
             /** Device */
@@ -24504,6 +24529,11 @@ export interface components {
              * @default 0
              */
             running_jobs: number;
+            /**
+             * Unread Files
+             * @default 0
+             */
+            unread_files: number;
             /**
              * Waiting Files
              * @default 0
@@ -40595,6 +40625,24 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
+            };
+        };
+    };
+    theater_open_api_theater_watching_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

@@ -10,6 +10,7 @@ notice.
 
 from __future__ import annotations
 
+import importlib
 import os
 import subprocess
 import sys
@@ -18,11 +19,14 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+from sift.kernel.attention import Played
 from sift.kernel.ids import new_id
 from sift.slices.player import tuning
 from sift.slices.player.tests.conftest import MODERN, Library, db_path, sign_in, write
 
 pytestmark = [pytest.mark.integration]
+
+_ROUTES = importlib.import_module("sift.slices.player.router")
 
 
 #: The process listing, per platform. Both produce `pid parent name`, one process a line.
@@ -98,6 +102,26 @@ def test_a_playable_file_is_direct_played(client: TestClient, library: Library) 
     assert plan["route"] == "direct"
     assert plan["url"].endswith("/stream")
     assert plan["streamable"] is True
+
+
+@pytest.mark.parametrize("headers", [{}, {"range": "bytes=0-"}], ids=["whole", "range"])
+@pytest.mark.parametrize(("kind", "heard"), [("video", True), ("image", False)])
+def test_a_clip_read_is_heard_as_playing_and_a_picture_is_not(
+    client: TestClient,
+    library: Library,
+    monkeypatch: pytest.MonkeyPatch,
+    headers: dict[str, str],
+    kind: str,
+    heard: bool,
+) -> None:
+    sign_in(client)
+    asset_id = library.id_of("h264")
+    write(db_path(client), [("UPDATE assets SET media_type = ? WHERE id = ?", (kind, asset_id))])
+    played = Played(clock=lambda: 50.0)
+    monkeypatch.setattr(_ROUTES, "PLAYED", played)
+
+    assert client.get(f"/api/assets/{asset_id}/stream", headers=headers).status_code in (200, 206)
+    assert (played.seconds_since() == 0.0) is heard
 
 
 def test_direct_play_spawns_no_ffmpeg(client: TestClient, library: Library) -> None:

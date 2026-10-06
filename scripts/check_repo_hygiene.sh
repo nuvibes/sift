@@ -120,7 +120,7 @@ binary_source=$(git ls-files -z -- src tests scripts .github README.md SECURITY.
     ':(exclude,icase)*.gif' ':(exclude,icase)*.webp' ':(exclude,icase)*.heic' \
     ':(exclude,icase)*.ico' ':(exclude,icase)*.mp4' ':(exclude,icase)*.mov' \
     ':(exclude,icase)*.mkv' ':(exclude,icase)*.webm' ':(exclude,icase)*.woff2' \
-    ':(exclude,icase)*.sql.gz' \
+    ':(exclude,icase)*.sql.gz' ':(exclude,icase)*.csv.gz' \
   | xargs -0 grep -laUP '\x00' 2>/dev/null || true)
 
 if [ -n "$binary_source" ]; then

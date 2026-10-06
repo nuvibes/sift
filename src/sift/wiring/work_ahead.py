@@ -99,8 +99,8 @@ async def _product_left(
     place a switch is consulted: a product whose switch is off answers with no condition at all
     and is counted as nothing waiting. Over one key the union IS that key's own count.
 
-    AND THE FILES NOT READ YET, which lack it as surely and which that count cannot see: it reads
-    only files that have been read. See `Product.coming`.
+    AND THE FILES NOT READ YET, which lack it as surely and which that count cannot see, by the
+    library's one rule for every product (`ContentStore.coming_count`).
     """
     lacking = await importing.files_lacking(products, [key], content)
     product = products.get(key)
@@ -112,7 +112,7 @@ async def _product_left(
     term = replace(lack, product=key, within=within)
     under_way = await content.count_lacking_by_kind([term], among=live) if live else {}
     arriving = {kind: one.files for kind, one in under_way.items()}
-    coming = 0 if product.coming is None else await product.coming(within)
+    coming = await content.coming_count(key, within)
     return Split(lacking + coming, max(0, lacking - sum(arriving.values())), arriving)
 
 
@@ -129,18 +129,15 @@ async def _product_wanted(
 ) -> int:
     """How many files want this product at all, done or not. The denominator of its bar.
 
-    The library, when the product is switched on; nought when it is off, because nothing wants
-    work nobody asked for and a bar over it would be measuring a pass that is not going to run.
-    Filtered by the same folder term the count of what is lacking carries (`products.within`), so
-    a folder that refused the work leaves both ends of the bar rather than only the numerator.
+    The files it is made for, read or coming (`ContentStore.wanting_count`), when the product is
+    switched on; nought when it is off, because nothing wants work nobody asked for. Filtered by
+    the same folder term the count of what is lacking carries (`products.within`), so a folder that
+    refused the work leaves both ends of the bar rather than only the numerator.
     """
     product = products.get(key)
     if product is None or await product.lack() is None:
         return 0
-    within = await products.within(product)
-    if product.wants is not None:
-        return await product.wants(within)
-    return await content.asset_count(within)
+    return await content.wanting_count(key, await products.within(product))
 
 
 def _register_products(

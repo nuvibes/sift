@@ -971,6 +971,28 @@ async def test_an_album_that_lost_a_file_keeps_how_many_on_its_row(
     assert listed == {album: (219, 1), whole: (None, None)}
 
 
+async def test_a_read_its_tunnel_refused_stays_on_a_row_that_landed(
+    download_service: DownloadService, registered_download: None, temp_db: Database
+) -> None:
+    from sift.slices.download.router import _item
+
+    await _insert_asset(temp_db, "a1")
+    one = await download_service.submit_url(url=_URL, dest_folder_id=None)
+    said = "Sift didn't read the music. The tunnel Sweden is turned off, so nothing was sent."
+
+    await download_service.mark_done(
+        one, asset_id="a1", site="TikTok", username=None, reads_refused=said
+    )
+
+    view = await _view(download_service, one)
+    assert view.status == "done" and view.reads_refused == said
+    assert _item(view).reads_refused == said
+    page = await download_service.list_downloads(limit=10)
+    assert [row.reads_refused for row in page.downloads] == [said]
+    await download_service.mark_done(one, asset_id="a1", site="TikTok", username=None)
+    assert (await _view(download_service, one)).reads_refused is None
+
+
 async def test_a_ledger_row_with_no_address_seeds_nothing(
     download_service: DownloadService, registered_download: None, temp_db: Database
 ) -> None:

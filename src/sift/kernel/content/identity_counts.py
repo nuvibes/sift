@@ -23,6 +23,7 @@ from sift.kernel.content.identity_store import StoreCore
 from sift.kernel.content.perceptual import FINGERPRINT_VERSION
 from sift.kernel.content.presence import HAS_A_PRESENT_COPY
 from sift.kernel.db import in_clause
+from sift.kernel.ingress import Kind
 from sift.kernel.sql_splice import splice
 
 #: A file in no refusing folder, or also in one that does not refuse: `ImportPolicy._on`'s EITHER
@@ -110,25 +111,34 @@ _COUNT_ASSETS = splice("SELECT COUNT(*) AS total FROM assets a WHERE {{PLACE}}",
 
 _COUNT_PLACED = "SELECT COUNT(DISTINCT asset_id) AS total FROM asset_locations"
 
-_COUNT_WITH_AUDIO = splice(
-    "SELECT COUNT(*) AS total FROM assets a WHERE {{PLACE}} AND a.acodec IS NOT NULL",
-    PLACE=_HAS_A_PLACE,
-)
-
-#: `_MADE_FOR` before a file is read: its kind is known, its running time is not, so an unread
-#: video counts as wanting a strip.
-_MADE_FOR_UNREAD: Mapping[DerivativeKind, str] = {
-    DerivativeKind.PREVIEW: "(a.media_type <> 'image')",
-    DerivativeKind.SPRITE: "(a.media_type <> 'image')",
+#: Which read files want each product, by its key, where not every one does.
+_MADE_FOR_READ: Mapping[str, str] = {
+    VerdictProduct.PREVIEWS.value: _made_for_sql(DerivativeKind.PREVIEW),
+    VerdictProduct.SPRITES.value: _made_for_sql(DerivativeKind.SPRITE),
+    "music": "(a.acodec IS NOT NULL)",
 }
+
+#: Which kinds of unread file want each product, by its key; a key not named, every kind. Only the
+#: kind is known before the read, so an unread video wants a strip and a sound fingerprint.
+UNREAD_KINDS: Mapping[str, frozenset[str]] = {
+    VerdictProduct.PREVIEWS.value: frozenset({Kind.GIF.value, Kind.VIDEO.value}),
+    VerdictProduct.SPRITES.value: frozenset({Kind.GIF.value, Kind.VIDEO.value}),
+    "music": frozenset({Kind.VIDEO.value}),
+}
+
+
+def _of_kinds(kinds: frozenset[str]) -> str:
+    """An `UNREAD_KINDS` entry as a condition; only those constants go in."""
+    return "(" + " OR ".join(f"a.media_type = '{one}'" for one in sorted(kinds)) + ")"
+
 
 #: Not yet read and not given up on: it is coming. Binds the read's verdict product.
 _COMING = """(a.probed_at IS NULL
       AND NOT EXISTS (SELECT 1 FROM file_verdicts pv
                        WHERE pv.asset_id = a.id AND pv.product = ? AND pv.transient = 0))"""
 
-# Both ends of a product's bar range over the set `_COUNT_LACKING` reads: files with a present copy,
-# not given up on, that the work is made for, read or not. Binds the read's verdict, then this one's.
+# THE ONE RULE for what a product still has to do, both ends of every bar after the read: a file with
+# a present copy, not given up on, made for it, read or coming. Binds the read's verdict, then its.
 _COUNT_WANTING = """
 SELECT COUNT(*) AS total FROM assets a
  WHERE {{PRESENT}}
@@ -146,19 +156,23 @@ SELECT COUNT(*) AS total FROM assets a
 """
 
 
-def _bar_statement(template: str, kind: DerivativeKind | None) -> str:
-    """One end of a bar for this kind, or for work every file wants (None: the fingerprints)."""
-    made_for = _EVERY_READ_FILE if kind is None else _made_for_sql(kind)
-    unread = _EVERY_READ_FILE if kind is None else _MADE_FOR_UNREAD.get(kind, _EVERY_READ_FILE)
+def _bar_statement(template: str, product: str | None) -> str:
+    """One end of a bar for this product, or for work every file wants (None)."""
+    made_for = _MADE_FOR_READ.get(product or "", _EVERY_READ_FILE)
+    kinds = UNREAD_KINDS.get(product or "")
+    unread = _EVERY_READ_FILE if kinds is None else _of_kinds(kinds)
     fragments = {"PRESENT": HAS_A_PRESENT_COPY, "COMING": _COMING, "MADE_FOR_UNREAD": unread}
     if "{{MADE_FOR}}" in template:
         fragments["MADE_FOR"] = made_for
     return splice(template, **fragments)
 
 
-_COUNT_WANTING_OF = {kind: _bar_statement(_COUNT_WANTING, kind) for kind in (*DerivativeKind, None)}
+#: By the products a file's kind narrows, and None for the rest.
+_NARROWED = (*sorted(set(_MADE_FOR_READ) | set(UNREAD_KINDS)), None)
 
-_COUNT_COMING_OF = {kind: _bar_statement(_COUNT_COMING, kind) for kind in (*DerivativeKind, None)}
+_COUNT_WANTING_OF = {key: _bar_statement(_COUNT_WANTING, key) for key in _NARROWED}
+
+_COUNT_COMING_OF = {key: _bar_statement(_COUNT_COMING, key) for key in _NARROWED}
 
 #: The facts a naming template can use. The username is the one filed first (a download's own).
 _NAMING_FACTS = """
@@ -341,26 +355,15 @@ class Counts(StoreCore):
         feature that may not query the asset table itself."""
         return await self._count_within(_COUNT_PLACED if within is None else _COUNT_ASSETS, within)
 
-    async def with_audio_count(self, within: Within | None = None) -> int:
-        """How many files carry a sound track: the music fingerprint's denominator."""
-        return await self._count_within(_COUNT_WITH_AUDIO, within)
+    async def wanting_count(self, product: str, within: Within | None = None) -> int:
+        """How many files want this product, read or coming, done or not: its bar's whole."""
+        statement = _COUNT_WANTING_OF.get(product, _COUNT_WANTING_OF[None])
+        return await self._count_bound(statement, (VerdictProduct.PROBE.value, product), within)
 
-    async def wanting_count(
-        self, kind: DerivativeKind | None, verdict: str, within: Within | None = None
-    ) -> int:
-        """How many files this work is for, done or not: its bar's denominator (`_COUNT_WANTING`).
-        `kind` None is work every file wants."""
-        return await self._count_bound(
-            _COUNT_WANTING_OF[kind], (VerdictProduct.PROBE.value, verdict), within
-        )
-
-    async def coming_count(
-        self, kind: DerivativeKind | None, verdict: str, within: Within | None = None
-    ) -> int:
-        """How many unread files will want this work: lacking it, outside the lacking count."""
-        return await self._count_bound(
-            _COUNT_COMING_OF[kind], (VerdictProduct.PROBE.value, verdict), within
-        )
+    async def coming_count(self, product: str, within: Within | None = None) -> int:
+        """How many unread files want this product: what `count_lacking` cannot see."""
+        statement = _COUNT_COMING_OF.get(product, _COUNT_COMING_OF[None])
+        return await self._count_bound(statement, (VerdictProduct.PROBE.value, product), within)
 
     async def _count_bound(
         self, statement: str, params: tuple[Any, ...], within: Within | None

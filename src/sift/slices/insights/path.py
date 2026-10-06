@@ -37,7 +37,7 @@ from datetime import date, timedelta
 
 from sift.kernel.access import Viewer
 from sift.kernel.access.sentences import said
-from sift.kernel.content import ContentStore, LibraryStore, lacks_fingerprint
+from sift.kernel.content import ContentStore, LibraryStore, VerdictProduct, lacks_fingerprint
 from sift.kernel.db import Database
 from sift.kernel.ids import new_id
 from sift.kernel.jobs.families import Family
@@ -664,14 +664,14 @@ async def library_fingerprinted(
 ) -> Reached | None:
     """Every file in the library fingerprinted, on the day the last fingerprinting finished.
 
-    The same count the Build sheet shows (`lacks_fingerprint`), so this cannot disagree with it. A
+    The same count the Build sheet shows (`lacks_fingerprint`), and none still to be read. A
     whole-library count, which is why only the helper asks it, never a page.
     """
     files = await content.asset_count()
     if not files:
         return None
     lacking = await content.count_lacking([lacks_fingerprint()])
-    if lacking.files:
+    if lacking.files or await content.coming_count(VerdictProduct.FINGERPRINTS.value):
         return None
     run = await database.fetch_one(_LAST_FINGERPRINT_RUN, (Family.FINGERPRINT.value,))
     day = today if run is None or run["at"] is None else day_of(int(run["at"]))

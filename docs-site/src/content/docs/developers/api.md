@@ -651,6 +651,7 @@ This reference lists every route Sift answers, grouped by what it's about. The f
 - `PATCH /api/theater/arrangements/{arrangement_id}`: Update Arrangement
 - `DELETE /api/theater/arrangements/{arrangement_id}`: Delete Arrangement
 - `POST /api/theater/sessions/{session}`: Report Session
+- `POST /api/theater/watching`: Theater Open
 
 ## Tidy
 

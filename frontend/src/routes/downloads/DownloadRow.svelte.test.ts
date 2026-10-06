@@ -70,6 +70,7 @@ function item(status: string, known: Partial<DownloadItem> = {}): DownloadItem {
 		// How many an album offered and lost for good; null on a row that lost none.
 		files_offered: null,
 		files_left_out: null,
+		reads_refused: null,
 		finished_at: null,
 		id: 'one',
 		person_id: null,
@@ -253,6 +254,30 @@ describe('an album that landed without some of its files', () => {
 		expect(host.querySelector('.left-out')).toBeNull();
 		render(item('running', { files_offered: 219, files_left_out: 1 }));
 		expect(host.querySelector('.left-out')).toBeNull();
+	});
+});
+
+describe('a read after the file landed that its tunnel refused', () => {
+	// Each mount numbers its ids afresh; everything else is compared as drawn.
+	const drawn = () => host.innerHTML.replace(/bits-\w+/g, 'bits-n');
+	const said =
+		"Sift didn't read who posted it. The tunnel Sweden is turned off, so nothing was sent. Turn it on, or route this directly.";
+
+	it('is said in one quiet line under a row that stays done', () => {
+		render(item('done', { asset_id: 'a1', reads_refused: said }));
+		expect(words(host.querySelector('.refused'))).toBe(said);
+		expect(host.querySelector('.why')).toBeNull();
+	});
+
+	it('leaves a row whose reads all went through exactly as it was', () => {
+		const earlier = Object.entries(item('done', { asset_id: 'a1' }));
+		render(Object.fromEntries(earlier.filter(([key]) => key !== 'reads_refused')) as DownloadItem);
+		const before = drawn();
+		render(item('done', { asset_id: 'a1', reads_refused: null }));
+		expect(drawn()).toBe(before);
+		expect(host.querySelector('.refused')).toBeNull();
+		render(item('running', { reads_refused: said }));
+		expect(host.querySelector('.refused')).toBeNull();
 	});
 });
 

@@ -7,6 +7,7 @@ estimate's memory is a row from a previous run.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import time
 
@@ -128,144 +129,15 @@ async def test_a_run_left_open_by_a_process_that_stopped_is_closed_at_the_next_s
     assert row.finished_at is not None and row.stopped
 
 
-async def test_the_rate_is_read_off_the_run_once_it_has_settled(ledger: Ledger) -> None:
-    ledger.started("probe")
-    run = ledger.open_run(Family.SCAN)
-    assert run is not None
-    now = time.monotonic()
-    # Sixty completions spread over the last five minutes: twelve a minute. The run has to have
-    # been going that long as well: both windows divide by the elapsed run, not by when the
-    # oldest completion still held happened to land.
-    run.began = now - 300
-    run.completions.extend((now - 300 + index * 5, 1) for index in range(60))
-    rate = await ledger.rate_per_minute(Family.SCAN)
-    assert rate is not None and 10 <= rate <= 14
-
-
-async def test_a_burst_at_the_start_of_a_run_is_not_a_pace(ledger: Ledger) -> None:
-    """**The one that matters.**
-
-    A scan's walk registers hundreds of files in under a minute and the probes then drain at about
-    twenty a minute. A window that was the age of the oldest completion still held, rather than how
-    long the run had been going, with a floor of one second, would divide a burst by an instant and
-    read fifty times too high for ten minutes.
-    """
-    ledger.started("scan")
-    run = ledger.open_run(Family.SCAN)
-    assert run is not None
-    now = time.monotonic()
-
-    # A minute in: the walk has just handed over and twenty probes have finished.
-    run.began = now - 60
-    run.completions.extend((now - 60 + index * 3, 1) for index in range(20))
-    early = await ledger.rate_per_minute(Family.SCAN)
-    assert early is not None and early <= 25, "an early reading errs low, never fifty times over"
-
-    # Ten minutes in, at the same pace throughout.
-    run.began = now - 600
-    run.completions.clear()
-    run.completions.extend((now - 600 + index * 3, 1) for index in range(200))
-    settled = await ledger.rate_per_minute(Family.SCAN)
-    assert settled is not None and 18 <= settled <= 22
-
-
-async def test_a_batch_settling_at_once_is_not_a_pace_either(ledger: Ledger) -> None:
-    """The same fault later in a run.
-
-    A second folder starts inside a run that is already going, or a batch of small files settles
-    together: thirty completions land in two seconds, ten minutes into a run. Divided by the age of
-    the oldest of the thirty that is nine hundred a minute. Divided by the run, which is what both
-    windows divide by, it is nine, and nine is the truth, because those thirty are all this
-    run has finished in ten minutes.
-    """
-    ledger.started("scan")
-    run = ledger.open_run(Family.SCAN)
-    assert run is not None
-    now = time.monotonic()
-    run.began = now - 600
-    run.completions.extend((now - 2 + index * 0.06, 1) for index in range(30))
-
-    rate = await ledger.rate_per_minute(Family.SCAN)
-    assert rate is not None and rate <= 20
-
-
-async def test_a_walk_that_registers_six_hundred_files_reads_at_the_pace_they_are_read(
-    ledger: Ledger,
-) -> None:
-    """A scan's whole run, end to end, in the units the pool hands over.
-
-    A scan walks a folder, registers 633 files in 58 seconds, and the probes then drain at twenty a
-    minute. The walk handed every one of its files to a probe, so what it FINISHED is nothing (see
-    `JobContext.units_done`), and the pace is the probes': about twenty, not the walk's burst.
-    """
-    ledger.started("scan")
-    run = ledger.open_run(Family.SCAN)
-    assert run is not None
-    now = time.monotonic()
-    run.began = now - 658  # 58 seconds of walking, then ten minutes of probing
-
-    # The walk: 633 files taken in, every one handed on, so nought done.
-    ledger.finished("scan", duration_ms=58_000.0, ok=True, units=0)
-    run.completions.clear()
-    run.completions.append((now - 600, 0))
-    # And 200 probes over the ten minutes since: twenty a minute.
-    run.completions.extend((now - 600 + index * 3, 1) for index in range(200))
-
-    rate = await ledger.rate_per_minute(Family.SCAN)
-    assert rate is not None and 18 <= rate <= 22
-
-
-async def test_a_run_younger_than_a_minute_has_no_pace_of_its_own(ledger: Ledger) -> None:
-    """A figure per minute quoted from less than a minute of history is an extrapolation from
-    whatever happened to land, so there is none: the last finished run stands in, and where there
-    is no last run the screen shows no estimate rather than an invented one."""
-    ledger.started("scan")
-    run = ledger.open_run(Family.SCAN)
-    assert run is not None
-    now = time.monotonic()
-    run.began = now - 2
-    run.completions.append((now - 1, 633))
-
-    assert await ledger.rate_per_minute(Family.SCAN) is None
-
-
-async def test_a_young_run_borrows_the_pace_of_the_last_finished_run(ledger: Ledger) -> None:
-    """The estimate's memory: two minutes into a run its own window says almost nothing, and the
-    previous run of the same family on this machine is the better guess."""
-    # A finished run first: sixty jobs in a minute.
-    ledger.started("thumbnail")
-    earlier = ledger.open_run(Family.GENERATE)
-    assert earlier is not None
-    earlier.started_at = int(time.time()) - 60
-    for _ in range(60):
-        ledger.finished("thumbnail", duration_ms=10, ok=True)
-    await ledger.settle({}, settings={})
-
-    ledger.started("thumbnail")
-    ledger.finished("thumbnail", duration_ms=10, ok=True)  # one completion, a moment ago
-    rate = await ledger.rate_per_minute(Family.GENERATE)
-    assert rate is not None
-    # Blended with the remembered sixty a minute rather than read off one completion.
-    assert rate > 20
-
-
 async def test_a_job_about_many_files_counts_as_that_many(ledger: Ledger) -> None:
     """A scan holding thousands of files is one job and thousands of files; the run counts the
     files.
 
-    No rate is asserted here. 174 files landing in one instant is not a pace of ten thousand a
-    minute; it is 174 files landing in one instant, and the run has no pace yet. What the units are FOR is the run's file count and the shape of
-    the report, which is what is left here.
     """
     ledger.finished("scan", duration_ms=1000.0, ok=True, units=174)
     run = ledger._open[Family.SCAN]
     assert run.jobs_done == 1
     assert run.files_total == 174
-    assert await ledger.rate_per_minute(Family.SCAN) is None
-
-
-async def test_no_run_and_no_history_is_no_estimate(ledger: Ledger) -> None:
-    assert await ledger.rate_per_minute(Family.SEMANTIC) is None
 
 
 async def _benchmark_prices() -> dict[str, float]:
@@ -472,15 +344,6 @@ async def test_the_last_run_is_the_last_that_finished_on_this_machine(ledger: Le
     assert last is not None and last.id == run.id
 
 
-async def test_completions_older_than_the_long_window_are_let_go(ledger: Ledger) -> None:
-    ledger.started("probe")
-    run = ledger.open_run(Family.SCAN)
-    assert run is not None
-    run.completions.append((time.monotonic() - ledger_module.LONG_WINDOW_SECONDS - 5, 1))
-    ledger.finished("probe", duration_ms=10, ok=True)
-    assert len(run.completions) == 1
-
-
 async def test_a_busy_run_is_written_through_once_a_minute_and_not_on_every_tick(
     ledger: Ledger,
 ) -> None:
@@ -650,37 +513,11 @@ async def test_a_few_dear_items_among_many_cheap_ones_are_inside_the_range(
     assert estimate.quick_seconds <= total <= estimate.slow_seconds
 
 
-async def test_a_run_with_a_pace_of_its_own_is_priced_from_it_and_not_from_the_history(
-    ledger: Ledger, temp_db: Database
-) -> None:
-    """A face pass over photographs priced from the videos before it would be several times too
-    high. Once the run has gone a minute and finished twenty files, what is left is priced at the
-    run's own pace, a little either side."""
-    await _job_rows(temp_db, "face_scan", costs=[5] * 40)
-    ledger.started("face_scan")
-    run = ledger.open_run(Family.IDENTIFY)
-    assert run is not None
-    now = time.monotonic()
-    run.began = now - 120
-    run.completions.extend((now - 120 + index, 1) for index in range(120))
-    run.files["image"] = ledger_module.FileCount(n=120)
-
-    estimate = await ledger.estimate(Family.IDENTIFY, ["face_scan"], left=60, at_once=12)
-
-    assert estimate is not None
-    assert estimate.quick_seconds <= 60 <= estimate.slow_seconds, "a file a second, sixty left"
-    assert estimate.quick_seconds > 60 * 5 / 12, "the run's price, not the history's"
-
-
 async def test_a_young_run_is_priced_from_the_history(ledger: Ledger, temp_db: Database) -> None:
     await _job_rows(temp_db, "face_scan", costs=[6] * 40)
     ledger.started("face_scan")
     run = ledger.open_run(Family.IDENTIFY)
     assert run is not None
-    now = time.monotonic()
-    run.began = now - 30
-    run.completions.extend((now - 30 + index, 1) for index in range(30))
-
     estimate = await ledger.estimate(Family.IDENTIFY, ["face_scan"], left=24, at_once=12)
 
     assert estimate is not None
@@ -995,66 +832,7 @@ async def test_the_slow_end_divides_by_the_workers_the_runs_kept_busy(
     assert (found.quick_seconds, found.slow_seconds) == (30, 90)
 
 
-async def test_a_live_run_over_photos_prices_the_videos_ahead_at_theirs(
-    ledger: Ledger, temp_db: Database
-) -> None:
-    """A run that has read photographs for two minutes goes at a file a second. Sixty videos ahead
-    cost a hundred and twenty times a photograph each, so the run's own pace is scaled by that;
-    a kind neither the run nor the history has priced leaves it unsaid."""
-    await _run_row(temp_db, files={"video": (30, 180_000)}, seconds=20, started=1_000)
-    ledger.started("thumbnail")
-    run = ledger.open_run(Family.GENERATE)
-    assert run is not None
-    now = time.monotonic()
-    run.began = now - 120
-    run.completions.extend((now - 120 + index, 1) for index in range(120))
-    run.files["image"] = ledger_module.FileCount(n=120, ms=120 * 50)
-
-    plain = await ledger.estimate(Family.GENERATE, ["thumbnail"], left=60, at_once=12)
-    ahead = await ledger.estimate(
-        Family.GENERATE, ["thumbnail"], left=60, at_once=12, kinds={"video": 60}
-    )
-    assert plain is not None and ahead is not None
-    assert ahead.quick_seconds >= plain.quick_seconds * 100
-    assert (
-        await ledger.estimate(
-            Family.GENERATE, ["thumbnail"], left=60, at_once=12, kinds={"gif": 60}
-        )
-        is None
-    )
-
-
 # --- the smaller answers the estimate is built from ---------------------------------------------
-
-
-async def test_a_run_between_one_and_two_minutes_old_is_blended_with_the_last_run(
-    ledger: Ledger,
-) -> None:
-    """Old enough to have a pace of its own and too young to trust it alone: the two are averaged,
-    and the last run's pace is read from the table once rather than on every tick."""
-    ledger.started("thumbnail")
-    earlier = ledger.open_run(Family.GENERATE)
-    assert earlier is not None
-    earlier.started_at = int(time.time()) - 60
-    for _ in range(60):
-        ledger.finished("thumbnail", duration_ms=10, ok=True)
-    await ledger.settle({}, settings={})
-    remembered = await ledger._remembered_rate(Family.GENERATE)
-    assert remembered is not None
-
-    ledger.started("thumbnail")
-    run = ledger.open_run(Family.GENERATE)
-    assert run is not None
-    now = time.monotonic()
-    run.began = now - 90
-    run.completions.extend((now - 90 + index * 3, 1) for index in range(30))  # twenty a minute
-
-    first = await ledger.rate_per_minute(Family.GENERATE)
-    again = await ledger.rate_per_minute(Family.GENERATE)
-
-    assert first is not None and again is not None
-    assert abs(first - (20 + remembered) / 2) < 1
-    assert abs(again - first) < 1
 
 
 async def test_a_pace_asked_for_no_job_types_is_read_from_the_runs(ledger: Ledger) -> None:
@@ -1214,123 +992,8 @@ async def test_nothing_left_is_no_estimate(ledger: Ledger) -> None:
     assert await ledger.estimate(Family.GENERATE, ["thumbnail"], left=0, at_once=4) is None
 
 
-async def test_a_run_that_has_finished_no_file_of_a_kind_cannot_price_what_is_ahead_by_kind(
-    ledger: Ledger,
-) -> None:
-    """A pace of its own but no file of any kind done: nothing says how much dearer the files ahead
-    are than the ones behind, so there is no estimate rather than one priced as if alike."""
-    ledger.started("face_scan")
-    run = ledger.open_run(Family.IDENTIFY)
-    assert run is not None
-    now = time.monotonic()
-    run.began = now - 120
-    run.completions.extend((now - 120 + index, 1) for index in range(60))
-
-    assert (
-        await ledger.estimate(
-            Family.IDENTIFY, ["face_scan"], left=60, at_once=4, kinds={"video": 60}
-        )
-        is None
-    )
-
-
-async def test_a_run_that_has_done_enough_of_the_kind_ahead_prices_it_from_itself(
-    ledger: Ledger,
-) -> None:
-    """Twenty videos done and only videos ahead: the files ahead cost what the run's own cost, so
-    the estimate by kind is the run's own range, unscaled."""
-    ledger.started("face_scan")
-    run = ledger.open_run(Family.IDENTIFY)
-    assert run is not None
-    now = time.monotonic()
-    run.began = now - 120
-    run.completions.extend((now - 120 + index, 1) for index in range(60))
-    run.files["video"] = ledger_module.FileCount(n=20, ms=20_000.0)
-
-    plain = await ledger.estimate(Family.IDENTIFY, ["face_scan"], left=60, at_once=4)
-    by_kind = await ledger.estimate(
-        Family.IDENTIFY, ["face_scan"], left=60, at_once=4, kinds={"video": 60}
-    )
-
-    assert plain is not None and by_kind is not None
-    assert abs(by_kind.quick_seconds - plain.quick_seconds) <= 1
-    assert abs(by_kind.slow_seconds - plain.slow_seconds) <= 1
-
-
-def _slow_run(ledger: Ledger, done: int, *, seconds: float = 61) -> None:
-    """A Generate run that has gone for `seconds` and finished `done` files, one a minute or so."""
-    ledger.started("thumbnail")
-    run = ledger.open_run(Family.GENERATE)
-    assert run is not None
-    now = time.monotonic()
-    run.began = now - seconds
-    step = seconds / max(done, 1)
-    run.completions.extend((now - seconds + index * step, 1) for index in range(done))
-
-
-async def test_estimate_five_done_after_a_minute_is_a_window_and_four_is_not(
-    ledger: Ledger,
-) -> None:
-    """A task finishing a few files a minute never has twenty done inside ten minutes, so it must
-    not wait for twenty to say anything. A minute in, five finished files are a pace of its own;
-    four are not."""
-    _slow_run(ledger, 5)
-    found = await ledger.estimate(Family.GENERATE, ["thumbnail"], left=40, at_once=4)
-    assert found is not None
-    assert 0 < found.quick_seconds < found.slow_seconds
-    assert found.items == 5
-
-    ledger._open.clear()
-    _slow_run(ledger, 4)
-    assert await ledger.estimate(Family.GENERATE, ["thumbnail"], left=40, at_once=4) is None
-
-
-async def test_estimate_five_done_before_a_minute_is_still_nothing(ledger: Ledger) -> None:
-    _slow_run(ledger, 10, seconds=59)
-    assert await ledger.estimate(Family.GENERATE, ["thumbnail"], left=40, at_once=4) is None
-
-
-async def test_estimate_a_small_sample_is_a_wider_window_than_a_settled_one(
-    ledger: Ledger,
-) -> None:
-    """The same pace from five files and from twenty: the five are the wider window, and from
-    twenty on the margin is the settled one."""
-    _slow_run(ledger, 5, seconds=120)
-    few = await ledger.estimate(Family.GENERATE, ["thumbnail"], left=100, at_once=4)
-    ledger._open.clear()
-    _slow_run(ledger, 20, seconds=480)
-    many = await ledger.estimate(Family.GENERATE, ["thumbnail"], left=100, at_once=4)
-    assert few is not None and many is not None
-    assert few.slow_seconds / few.quick_seconds > many.slow_seconds / many.quick_seconds
-    assert ledger_module._live_margin(20) == ledger_module.LIVE_MARGIN
-    assert ledger_module._live_margin(5) == pytest.approx(2 * ledger_module.LIVE_MARGIN)
-
-
-async def test_estimate_by_kind_prices_a_kind_with_no_history_from_five_of_the_runs_own(
-    ledger: Ledger,
-) -> None:
-    """Five videos done, only videos ahead and no history of videos: the run's own five price
-    them, rather than the whole estimate going unsaid. Four do not."""
-    _slow_run(ledger, 5)
-    run = ledger.open_run(Family.GENERATE)
-    assert run is not None
-    run.files["video"] = ledger_module.FileCount(n=5, ms=5_000.0)
-    found = await ledger.estimate(
-        Family.GENERATE, ["thumbnail"], left=40, at_once=4, kinds={"video": 40}
-    )
-    assert found is not None
-
-    run.files["video"] = ledger_module.FileCount(n=4, ms=4_000.0)
-    assert (
-        await ledger.estimate(
-            Family.GENERATE, ["thumbnail"], left=40, at_once=4, kinds={"video": 40}
-        )
-        is None
-    )
-
-
 def test_estimate_the_history_floor_stays_twenty() -> None:
-    """The live floor moved; the history's did not: nineteen priced files are no pace."""
+    """Nineteen priced files are no pace."""
     assert ledger_module.FEWEST_ITEMS == 20
     assert priced([(1.0, 19)]) is None
     assert priced([(1.0, 20)]) is not None
@@ -1397,7 +1060,6 @@ async def test_a_run_mostly_stepped_back_is_kept_with_its_seconds_and_not_priced
     assert 79 <= int(kept.settings[ledger_module.STEPPED_BACK]) <= 81  # type: ignore[call-overload]
     assert await ledger.pace(Family.GENERATE, []) is None
     assert (await ledger.kind_prices(Family.GENERATE, at_once=1)).paces == {}
-    assert await ledger.rate_per_minute(Family.GENERATE) is None
 
     for _ in range(50):
         ledger.finished("thumbnail", duration_ms=300, ok=True, media_type="video")
@@ -1423,3 +1085,146 @@ async def test_jobs_inside_a_stepped_back_stretch_are_left_out_of_the_price(
     await _job_rows(temp_db, "face_scan", costs=[20] * 10, started=20_000)
     found = await ledger.pace(Family.IDENTIFY, ["face_scan"])
     assert found is not None and found.items == 20
+
+
+async def test_a_type_and_kind_is_priced_from_ten_items_and_a_settings_change_forgets_it(
+    ledger: Ledger,
+) -> None:
+    for _ in range(9):
+        ledger.finished("thumbnail", duration_ms=2000, ok=True, media_type="video")
+    ledger.finished("thumbnail", duration_ms=9000, ok=False, media_type="video")
+    ledger.finished("scan", duration_ms=9000, ok=True, units=0)
+    assert ledger.prices() == {}
+    ledger.finished("thumbnail", duration_ms=4000, ok=True, media_type="video", units=4)
+    assert ledger.prices() == {("thumbnail", "video"): 1.9, ("thumbnail", ""): 1.9}
+
+    await ledger.settle({"thumbnail": 1}, settings={"jobs at once": 8})
+    await ledger.settle({"thumbnail": 1}, settings={"jobs at once": 4})
+    assert ledger.prices() == {}
+
+
+def _gone(ledger: Ledger, family: Family, seconds: float) -> None:
+    run = ledger.open_run(family)
+    assert run is not None
+    run.began -= seconds
+
+
+async def test_a_runs_realized_pace_is_its_priced_work_over_its_unpaused_minutes(
+    ledger: Ledger,
+) -> None:
+    prices = {("probe", "image"): 2.0, ("probe", ""): 3.0}
+    assert ledger.realized(Family.SCAN, prices, 600) is None
+    ledger.started("probe")
+    assert ledger.realized(Family.SCAN, prices, 600) is None, "under a minute is no pace"
+    _gone(ledger, Family.SCAN, 120)
+    assert ledger.realized(Family.SCAN, prices, 600) is None, "nothing done is no pace"
+    for kind in ("image", "image", "video"):
+        ledger.finished("probe", duration_ms=1000, ok=True, media_type=kind)
+    assert ledger.realized(Family.SCAN, prices, 600) == pytest.approx(7 / 120, rel=0.01)
+    assert ledger.realized(Family.SCAN, prices, 70) == pytest.approx(7 / 60, rel=0.02)
+    assert ledger.realized(Family.SCAN, {}, 600) is None
+
+
+async def test_time_stepped_back_is_not_read_as_pace(ledger: Ledger) -> None:
+    ledger.started("probe")
+    _gone(ledger, Family.SCAN, 240)
+    ledger.finished("probe", duration_ms=1000, ok=True, media_type="image")
+    await ledger.settle({"probe": 1}, settings={}, stepped_back=True)
+    assert ledger._ticked is not None
+    ledger._ticked -= 120
+    await ledger.settle({"probe": 1}, settings={}, stepped_back=False)
+    pace = ledger.realized(Family.SCAN, {("probe", "image"): 1.0}, 600)
+    assert pace == pytest.approx(1 / 120, rel=0.02)
+
+
+async def test_a_run_has_stopped_for_as_long_as_since_its_last_job_or_its_start(
+    ledger: Ledger,
+) -> None:
+    assert ledger.stopped_for(Family.SCAN) is None
+    assert ledger.life(Family.SCAN) is None
+    ledger.started("probe")
+    _gone(ledger, Family.SCAN, 300)
+    stopped = ledger.stopped_for(Family.SCAN)
+    assert stopped is not None and stopped >= 300
+    assert (ledger.life(Family.SCAN) or 0) >= 300
+    ledger.finished("probe", duration_ms=1000, ok=False)
+    assert (ledger.stopped_for(Family.SCAN) or 0) < 1
+
+
+async def _said(temp_db: Database) -> list[tuple[object, ...]]:
+    rows = await temp_db.fetch_all("SELECT quick, slow, low, high, left, stalled FROM said_times")
+    return [tuple(row) for row in rows]
+
+
+async def test_a_live_run_keeps_what_it_said_once_a_minute(
+    ledger: Ledger, temp_db: Database
+) -> None:
+    await ledger.said(Family.SCAN, 60, 100, (0, 300), 40)
+    assert await _said(temp_db) == [], "no run open, nothing to keep"
+    ledger.started("probe")
+    await ledger.said(Family.SCAN, 60, 100, (0, 300), 40)
+    await ledger.said(Family.SCAN, 50, 90, (0, 300), 39)
+    assert await _said(temp_db) == [(60, 100, 0, 300, 40, 0)]
+    run = ledger.open_run(Family.SCAN)
+    assert run is not None and run.said_at is not None
+    run.said_at -= 60
+    await ledger.said(Family.SCAN, None, None, None, 30)
+    assert (None, None, None, None, 30, 1) in await _said(temp_db)
+
+
+async def test_a_run_is_scored_when_it_ends_and_its_report_says_how_right_it_was(
+    ledger: Ledger, temp_db: Database
+) -> None:
+    ledger.started("probe")
+    run = ledger.open_run(Family.SCAN)
+    assert run is not None
+    now = int(time.time())
+    for at, low, high, stalled in (
+        (now - 600, 300, 900, 0),
+        (now - 300, 0, 60, 0),
+        (now - 120, None, None, 1),
+    ):
+        await temp_db.execute(
+            "INSERT INTO said_times VALUES (?, ?, NULL, NULL, ?, ?, 1, ?)",
+            (run.id, at, low, high, stalled),
+        )
+    await ledger.settle({}, settings={})
+
+    (record,) = await ledger.recent()
+    assert record.time_left == {"minutes": 2, "right": 50, "thirds": [100, 0, None], "stalled": 1}
+    assert await _said(temp_db) == []
+    said = report_text(record)
+    assert "Its time left was right in 50% of minutes." in said
+    assert "It waited for other work for 1 minute." in said
+    longer = report_text(dataclasses.replace(record, time_left={"right": 91, "stalled": 3}))
+    assert "It waited for other work for 3 minutes." in longer
+    unscored = report_text(dataclasses.replace(record, time_left=None))
+    assert "time left" not in unscored and "other work" not in unscored
+
+
+async def test_the_next_start_forgets_what_interrupted_runs_said(temp_db: Database) -> None:
+    await temp_db.initialize_schema()
+    await temp_db.execute("INSERT INTO said_times VALUES ('R1', 1, 1, 2, 0, 60, 1, 0)")
+    await Ledger(temp_db).start()
+    assert await _said(temp_db) == []
+
+
+async def test_a_ledger_from_before_the_time_left_gets_its_column_and_table(
+    temp_db: Database,
+) -> None:
+    before = ledger_module._CREATE_TABLE.split("  ended_with   TEXT,")[0] + "  ended_with   TEXT\n)"
+    assert "time_left" not in before
+    async with temp_db.write() as connection:
+        await connection.execute("DROP TABLE IF EXISTS work_runs")
+        await connection.execute("DROP TABLE IF EXISTS said_times")
+        await connection.execute(before)  # nosemgrep: sift-no-string-built-sql
+        await connection.execute(
+            "INSERT INTO work_runs (id, family, started_at, updated_at, finished_at)"
+            " VALUES ('R1', 'scan', 1, 2, 2)"
+        )
+        await ledger_module.initialize(connection, on_disk=6)
+        await ledger_module.initialize(connection, on_disk=6)
+
+    record = await Ledger(temp_db).get("R1")
+    assert record is not None and record.time_left is None
+    assert await _said(temp_db) == []

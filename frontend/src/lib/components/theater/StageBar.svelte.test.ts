@@ -1,10 +1,11 @@
-import { afterEach, beforeEach, expect, it } from 'vitest';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { createRawSnippet, flushSync, mount, unmount } from 'svelte';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import StageBar from './StageBar.svelte';
 import stageBarSource from './StageBar.svelte?raw';
 import { applyStyles, removeStyles } from '$lib/design/testing-styles';
+import { reactiveProps } from '$lib/design/testing.svelte';
 
 /* The bar a filled screen rises from: shut draws nothing, and quiet is mounted but unreachable. */
 
@@ -150,4 +151,39 @@ it('gives the transport the same gap on both sides', () => {
 	expect(getComputedStyle(wide).columnGap).toBe('var(--space-8)');
 	expect(getComputedStyle(phone).gridTemplateColumns).not.toContain('max-content');
 	removeStyles();
+});
+
+/* The bar sizes to what it holds, so the most it can hold is read from where its widest edges fall. */
+it('tells its caller the widest its contents can grow, inside its own padding and edge', () => {
+	const real = window.getComputedStyle.bind(window);
+	const edges: Record<string, string> = {
+		paddingLeft: '12px',
+		paddingRight: '12px',
+		borderLeftWidth: '1px',
+		borderRightWidth: '1px'
+	};
+	vi.spyOn(Element.prototype, 'clientWidth', 'get').mockImplementation(function (this: Element) {
+		return this.classList.contains('widest') ? 500 : 0;
+	});
+	vi.spyOn(window, 'getComputedStyle').mockImplementation((element, pseudo) => {
+		const style = real(element, pseudo);
+		if (!element.classList.contains('stage-bar')) return style;
+		return new Proxy(style, {
+			get: (target, key) =>
+				typeof key === 'string' && key in edges ? edges[key] : target[key as never]
+		});
+	});
+	try {
+		const props = reactiveProps({
+			open: true,
+			label: 'Wall controls',
+			children: words('x'),
+			room: 0
+		});
+		mounted = mount(StageBar, { target: host, props }) as Record<string, unknown>;
+		flushSync();
+		expect(props.room).toBe(474);
+	} finally {
+		vi.restoreAllMocks();
+	}
 });

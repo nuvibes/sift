@@ -261,8 +261,9 @@ class FamilyOfWork(Wire):
     )
     pace: str | None = Field(
         default=None,
-        description="What sets the pace of the read, in one sentence, or null: the network share "
-        "whose readers waited most of the last minute, named by its library folders.",
+        description="What sets the pace, in one sentence, or null: on the read, the network share "
+        "whose readers waited most of the last minute; on a pass after it, the share whose files "
+        "are read first. Each named by its library folders.",
     )
     for_task: str | None = Field(
         default=None,
@@ -393,10 +394,11 @@ class JobsPage(Wire):
         description="The share of this device, in percent, background work keeps to while it "
         "steps back (Settings > Performance). What the leaf and the Activity line say.",
     )
-    step_back_for: Literal["input", "others"] | None = Field(
+    step_back_for: Literal["input", "playing", "others"] | None = Field(
         default=None,
         description="Why Sift is in eco mode while `stepping_back` or `full_amount` is true: "
-        "somebody at this device (input) or other programs busy (others).",
+        "somebody at this device (input), a video playing in Sift on any device or a Theater "
+        "wall open (playing), or other programs busy (others).",
     )
     step_back_over: list[Literal["processor", "graphics", "memory"]] = Field(
         default_factory=list,

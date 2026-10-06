@@ -9,7 +9,8 @@
  * has closed. See the server's `theater/sessions.py`.
  *
  * Nothing polls. A session that never closes (a browser killed from outside) is left without an
- * end, and its cells' sittings, which carry its name, say when it was last in use.
+ * end, and its cells' sittings, which carry its name, say when it was last in use. While it's open
+ * and on screen it beats, which keeps Sift in eco mode as a clip playing does.
  */
 
 import { api } from '$lib/api/client';
@@ -23,6 +24,9 @@ import { newSittingId } from '$lib/player/sitting.svelte';
  */
 const LONGEST_MS = 7 * 24 * 60 * 60 * 1000;
 const LONGEST_SOURCE = 1000;
+
+/** How often an open wall beats: a third of eco mode's minute, so one lost beat never ends it. */
+export const BEAT_EVERY_MS = 20_000;
 
 /**
  * What a wall is, as the session's closing report records it: the layout, how many cells, the saved
@@ -39,6 +43,7 @@ export class TheaterSession {
 	/** Every different file the wall has shown, so the close can say how many. */
 	#shown = new Set<string>();
 	#ended = false;
+	#beating: ReturnType<typeof setInterval> | undefined;
 
 	/** A file has come on screen in one of the wall's cells. */
 	shown(file: string): void {
@@ -53,6 +58,12 @@ export class TheaterSession {
 	/** Say the wall is open. Fire and forget: nothing waits on it, and a lost one costs nothing. */
 	open(): void {
 		void api.post(`/theater/sessions/${this.id}`, { body: {} }).catch(() => {});
+		this.#beat();
+		this.#beating = setInterval(() => this.#beat(), BEAT_EVERY_MS);
+	}
+
+	#beat(): void {
+		if (document.visibilityState === 'visible') void api.post('/theater/watching').catch(() => {});
 	}
 
 	/**
@@ -62,6 +73,7 @@ export class TheaterSession {
 	 * request is cancelled when the page goes.
 	 */
 	close(facts: WallFacts): void {
+		clearInterval(this.#beating);
 		if (this.#ended) return;
 		this.#ended = true;
 		void api

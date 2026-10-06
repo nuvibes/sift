@@ -128,8 +128,7 @@ from sift.slices.download.url_guard import SAFE_SCHEMES
 router = APIRouter(tags=["download"])
 
 # Which tools the downloader runs and what version each is: a module of its own, because it asks
-# the tools and a release feed rather than the queue. Included here so the slice still mounts one
-# router.
+# the tools and a release feed rather than the queue; included so the slice mounts one router.
 router.include_router(tools.router)
 
 log = get_logger(__name__)
@@ -303,6 +302,7 @@ def _item(
         job_id=view.job_id,
         files_offered=view.files_offered,
         files_left_out=view.files_left_out,
+        reads_refused=view.reads_refused,
         # Only ever a number for a row that is waiting: the ledger's read leaves it null for
         # every other row, so nothing here has to decide what a position means for a download that
         # has already started or already finished.

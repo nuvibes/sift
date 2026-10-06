@@ -112,18 +112,12 @@
 		onmute: () => void;
 		onvolume: (level: number) => void;
 
-		/**
-		 * Whether this is a bar in a small panel rather than across a full-size picture.
-		 *
-		 * Only the volume is decided here; everything else a narrow bar drops is dropped by the
-		 * caller simply not handing it over (no `onback`, no `tray`), which also keeps them out
-		 * of the tab order rather than merely off the screen.
-		 */
+		/** A bar in a small panel: it drops the volume, and the caller the rest by not handing it over. */
 		compact?: boolean;
 
 		/* --- what this caller has that the other does not -------------------------------------- */
-		/** Drawn at the start of the transport row, left of the transport (the wall's cell numbers). */
-		lead?: Snippet;
+		/** Drawn at the start of the transport row, told what the rest of it takes, so it folds first. */
+		lead?: Snippet<[number]>;
 		/** Drawn inside the drawer. Dressed by this file. See the note above. */
 		tray?: Snippet;
 		/** What the drawer is called. A player's holds things about the FILE; a cell's about the cell. */
@@ -373,24 +367,26 @@
 	/* A row wider than the whole bar cannot stand under the timeline: it keeps the bar's own edges
 	   and gives way inside them. Read from the parts' own widths, which the squeeze does not move. */
 	let tooWide = $state(false);
+	let beside = $state(0);
 
-	function fitsTheBar(bar: HTMLElement): boolean {
+	function measure(bar: HTMLElement): void {
 		const row = bar.querySelector(':scope > .row') as HTMLElement;
 		const parts = [...row.children] as HTMLElement[];
 		const gaps = (parseFloat(getComputedStyle(row).columnGap) || 0) * Math.max(0, parts.length - 1);
 		const wanted = parts.reduce((sum, part) => sum + part.scrollWidth, gaps);
+		beside = wanted - (row.querySelector<HTMLElement>(':scope > .start')?.scrollWidth ?? 0);
 		const style = getComputedStyle(bar);
 		const room =
 			bar.clientWidth -
 			(parseFloat(style.paddingLeft) || 0) -
 			(parseFloat(style.paddingRight) || 0);
-		return wanted <= room + 0.5;
+		tooWide = wanted > room + 0.5;
 	}
 
 	$effect(() => {
 		const bar = root;
 		if (bar === null) return;
-		const watch = new ResizeObserver(() => (tooWide = !fitsTheBar(bar)));
+		const watch = new ResizeObserver(() => measure(bar));
 		watch.observe(bar);
 		for (const part of bar.querySelectorAll(':scope > .row, :scope > .row > *'))
 			watch.observe(part);
@@ -449,7 +445,7 @@
 	<div class="row" class:phone={phoneWidth.yes} class:led={lead !== undefined}>
 		{#if lead}
 			<div class="side start">
-				{@render lead()}
+				{@render lead(beside)}
 			</div>
 		{/if}
 

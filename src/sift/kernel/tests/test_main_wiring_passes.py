@@ -226,12 +226,8 @@ async def test_generate_left_is_split_by_the_kind_of_every_file_it_is_waiting_on
 
 
 async def test_a_product_names_how_many_files_want_it() -> None:
-    """A product's bar is drawn over the files that WANT it, and a product may say how many.
-
-    The library is the denominator for a picture; it is the wrong one for a fingerprint of the
-    sound, which a silent file never wants: counted over every file, the Fingerprint bar would
-    read a total near twice the library's size, with no music fingerprint taken at all.
-    """
+    """A product's bar is drawn over the files that want it, by the library's rule for its key:
+    a silent file never wants a fingerprint of the sound."""
     from sift.kernel.jobs.families import Family
     from sift.slices.importing.products import Product, ProductRegistry
 
@@ -247,9 +243,6 @@ async def test_a_product_names_how_many_files_want_it() -> None:
     async def make(_context: object) -> None:
         return None
 
-    async def seven(_within: object = None) -> int:
-        return 7
-
     async def eleven() -> str:
         return "23:00"
 
@@ -264,7 +257,6 @@ async def test_a_product_names_how_many_files_want_it() -> None:
             lack=cast(Any, lack),
             lacking_among=lacking_among,
             build=make,
-            wants=seven,
         )
     )
     products.register(
@@ -281,8 +273,8 @@ async def test_a_product_names_how_many_files_want_it() -> None:
     )
 
     class Content:
-        async def asset_count(self, _within: object = None) -> int:
-            return 100
+        async def wanting_count(self, key: str, _within: object = None) -> int:
+            return {"sound": 7, "pictures": 100}[key]
 
     content = cast(Any, Content())
     assert await work_ahead._product_wanted(products, content, "sound") == 7
@@ -340,6 +332,9 @@ class _Lacking:
         assert len(lacks) == 1 and among == ["f1"]
         return {"video": SimpleNamespace(files=1)}
 
+    async def coming_count(self, key: str, _within: Any) -> int:
+        return {"thumbnails": 5}.get(key, 0)
+
 
 async def test_a_products_count_on_activity_takes_in_the_files_still_to_be_read() -> None:
     """A count of what is lacking that read only files already read would count a first import's
@@ -349,25 +344,21 @@ async def test_a_products_count_on_activity_takes_in_the_files_still_to_be_read(
     async def lack() -> Lack:
         return Lack("(1 = 1)")
 
-    async def five(_within: Any) -> int:
-        return 5
+    pictures = SimpleNamespace(key="thumbnails", lack=lack)
+    nothing_coming = SimpleNamespace(key="faces", lack=lack)
 
-    coming = SimpleNamespace(key="thumbnails", lack=lack, coming=five)
-    read_only = SimpleNamespace(key="thumbnails", lack=lack, coming=None)
-
-    left = partial(work_ahead._product_left, content=cast(Any, _Lacking()), key="thumbnails")
-    assert await left(_Registry(coming), live=["f1"]) == Split(8, 2, {"video": 1})  # type: ignore[arg-type]
-    assert await left(_Registry(read_only), live=[]) == Split(3, 3, {})  # type: ignore[arg-type]
+    left = partial(work_ahead._product_left, content=cast(Any, _Lacking()))
+    assert await left(_Registry(pictures), key="thumbnails", live=["f1"]) == Split(  # type: ignore[arg-type]
+        8, 2, {"video": 1}
+    )
+    assert await left(_Registry(nothing_coming), key="faces", live=[]) == Split(3, 3, {})  # type: ignore[arg-type]
 
 
 async def test_a_product_switched_off_or_unknown_waits_on_nothing() -> None:
     async def off() -> None:
         return None
 
-    async def five(_within: Any) -> int:
-        return 5
-
-    switched_off = SimpleNamespace(key="thumbnails", lack=off, coming=five)
+    switched_off = SimpleNamespace(key="thumbnails", lack=off)
     left = partial(work_ahead._product_left, content=cast(Any, _Lacking()), live=["f1"])
     assert await left(_Registry(switched_off), key="thumbnails") == Split(0)  # type: ignore[arg-type]
     assert await left(_Registry(switched_off), key="previews") == Split(0)  # type: ignore[arg-type]

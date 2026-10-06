@@ -26,18 +26,10 @@
 		 * that leaps up from the edge every few seconds.
 		 */
 		quiet?: boolean;
-		/**
-		 * How tall this bar has come out, in pixels, whenever that changes.
-		 *
-		 * The bar floats over the foot of the screen, so anything that must not be under it has to
-		 * be told how much room it takes. Measured and handed over rather than written as a number
-		 * elsewhere: the height depends on what a caller puts in the bar.
-		 *
-		 * The border box (`offsetHeight` below, not `clientHeight`): this bar has a hairline on
-		 * each edge, and a content height leaves both out, so anything meeting the bar's top edge
-		 * exactly would meet it two pixels late.
-		 */
+		/** How tall it has come out, hairlines included, so what must stay clear of it can. */
 		tall?: number;
+		/** The widest its contents can grow: the bar sizes to them, so it cannot be read off it. */
+		room?: number;
 		/**
 		 * The picker, at the leading edge: which of the several things the controls act on.
 		 *
@@ -62,15 +54,31 @@
 		overLead,
 		children,
 		quiet = false,
-		tall = $bindable(0)
+		tall = $bindable(0),
+		room = $bindable(0)
 	}: Props = $props();
+
+	let bar = $state<HTMLElement | null>(null);
+	let widest = $state(0);
+
+	$effect(() => {
+		if (bar === null) return;
+		const style = getComputedStyle(bar);
+		const edges = ['paddingLeft', 'paddingRight', 'borderLeftWidth', 'borderRightWidth'] as const;
+		room = Math.max(
+			0,
+			widest - edges.reduce((sum, edge) => sum + (parseFloat(style[edge]) || 0), 0)
+		);
+	});
 </script>
 
 {#if open}
+	<div class="widest" aria-hidden="true" bind:clientWidth={widest}></div>
 	<!-- A region rather than a dialog: nothing is trapped and nothing behind it is blocked. What is
 	     on the screen is still playing, and a bar that took the keyboard to announce itself would be
 	     in the way of exactly the thing somebody is watching. -->
 	<div
+		bind:this={bar}
 		class="stage-bar"
 		class:led={lead !== undefined}
 		bind:offsetHeight={tall}
@@ -133,6 +141,16 @@
 		transition:
 			translate var(--dur-slow) var(--ease),
 			opacity var(--dur-slow) var(--ease);
+	}
+
+	/* Where the bar's widest edges would fall, from the same token as its ceiling. */
+	.widest {
+		position: absolute;
+		inset-inline: calc(var(--space-8) / 2);
+		inset-block-end: 0;
+		block-size: 0;
+		visibility: hidden;
+		pointer-events: none;
 	}
 
 	/*

@@ -7,7 +7,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 import { api } from '$lib/api/client';
-import { TheaterSession } from './session';
+import { BEAT_EVERY_MS, TheaterSession } from './session';
 import { countView, showing } from './wall.svelte';
 import { Cell } from './cell.svelte';
 
@@ -28,10 +28,19 @@ async function settle() {
 }
 
 function sent(): Array<{ path: string; body: Record<string, unknown>; keepalive?: boolean }> {
-	return post.mock.calls.map((call) => {
+	return reports().map((call) => {
 		const options = call[1] as { body: Record<string, unknown>; keepalive?: boolean };
 		return { path: String(call[0]), body: options.body, keepalive: options.keepalive };
 	});
+}
+
+/** What was said, without the beats an open wall sends beside it. */
+function reports() {
+	return post.mock.calls.filter((call) => call[0] !== '/theater/watching');
+}
+
+function beats(): number {
+	return post.mock.calls.filter((call) => call[0] === '/theater/watching').length;
 }
 
 const FACTS = {
@@ -42,6 +51,27 @@ const FACTS = {
 };
 
 describe('a Theater session', () => {
+	it('beats while it is open and on screen, never once it has closed', async () => {
+		vi.useFakeTimers();
+		const seen = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+		try {
+			const session = new TheaterSession();
+			session.open();
+			expect(beats()).toBe(1);
+			vi.advanceTimersByTime(BEAT_EVERY_MS);
+			expect(beats()).toBe(2);
+			seen.mockReturnValue('hidden');
+			vi.advanceTimersByTime(BEAT_EVERY_MS);
+			expect(beats()).toBe(2);
+			seen.mockReturnValue('visible');
+			session.close(FACTS);
+			vi.advanceTimersByTime(3 * BEAT_EVERY_MS);
+			expect(beats()).toBe(2);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
 	it('says it has opened, with nothing on it but the name', async () => {
 		const session = new TheaterSession();
 

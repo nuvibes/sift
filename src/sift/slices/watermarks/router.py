@@ -66,6 +66,7 @@ async def read_status(
         # Counted no further than a page. A screen that said "100,000 files waiting" would be
         # reading the whole library to say something nobody acts on.
         waiting_files=await service.waiting(),
+        unread_files=await service.unread() if ready else 0,
         running_jobs=await queue.outstanding(WATERMARK_READ),
         problem=problem,
         installed=sorted(

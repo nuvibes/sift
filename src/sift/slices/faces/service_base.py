@@ -12,6 +12,7 @@ import asyncio
 import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
+from functools import partial
 from typing import Any, Protocol
 
 from sift.kernel import media
@@ -20,6 +21,7 @@ from sift.kernel.config import Settings
 from sift.kernel.content import ContentStore, VerdictProduct
 from sift.kernel.hardware import HardwareReport
 from sift.kernel.log import get_logger
+from sift.kernel.memo import PacedAnswer
 from sift.kernel.sampling import FACE_SAMPLING_VERSION
 from sift.kernel.seams import ReindexSeam
 from sift.kernel.workbench import Recorder
@@ -264,6 +266,7 @@ class FaceServiceBase:
     ) -> None:
         self._store = store
         self._content = content
+        self._unread = PacedAnswer(partial(content.coming_count, VerdictProduct.FACES.value))
         self._repository = repository
         self._preferences = preferences
         self._settings = settings

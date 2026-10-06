@@ -255,11 +255,13 @@ def _register_step_back() -> None:
         section="Performance",
         label="Use less system resources while you're working",
         disclosure=(
-            "Sift checks every few seconds. Once nobody has touched the keyboard or mouse for a "
-            "minute, it goes back to its usual number of tasks. This works only on Windows."
+            "Sift checks every few seconds. After a minute with no keyboard, mouse or video playing in "
+            "Sift, it goes back to its usual number of tasks. Reading the keyboard and mouse works "
+            "only on Windows."
         ),
         help=(
-            "While you're typing or moving the mouse, Sift is in eco mode. Background tasks then use "
+            "While you're typing or moving the mouse, or a video is playing in Sift, Sift is in eco mode. "
+            "Background tasks then use "
             "only a share of this device, so the computer stays quick."
         ),
     )
@@ -294,7 +296,7 @@ def _register_step_back() -> None:
         ),
         help=(
             "How much of this device background tasks use in eco mode. Sift is in eco mode while "
-            "you're working or other programs are busy, as the two settings above choose."
+            "you're working, a video is playing or other programs are busy, as the two settings above choose."
         ),
     )
 

@@ -2,7 +2,7 @@
  * hands over, dimmed with a reason, except where a finger's swipe steps instead. */
 
 import { afterEach, expect, it } from 'vitest';
-import { flushSync, mount, unmount } from 'svelte';
+import { createRawSnippet, flushSync, mount, unmount } from 'svelte';
 import PlayerBar from './PlayerBar.svelte';
 import { finger } from './finger.svelte';
 import { phoneWidth } from '$lib/components/common/phone-width.svelte';
@@ -126,6 +126,41 @@ it('leaves the timeline for a row wider than the whole bar, and comes back when 
 		expect(each(300)).toBe(true);
 		expect(each(301)).toBe(false);
 		expect(each(300)).toBe(true);
+	} finally {
+		globalThis.ResizeObserver = real;
+	}
+});
+
+/* Told what the rest of the row takes, so the lead can fold before the row gives way. */
+it('hands its lead the width the rest of the row takes beside it', () => {
+	const real = globalThis.ResizeObserver;
+	const read: Array<() => void> = [];
+	globalThis.ResizeObserver = class {
+		constructor(heard: ResizeObserverCallback) {
+			read.push(() => heard([], this as unknown as ResizeObserver));
+		}
+		observe() {}
+		unobserve() {}
+		disconnect() {}
+	} as unknown as typeof ResizeObserver;
+	let beside = () => -1;
+	const lead = createRawSnippet<[number]>((given) => ({
+		render: () => '<span></span>',
+		setup: () => {
+			beside = given;
+		}
+	}));
+	try {
+		draw({ lead });
+		const parts = [...host.querySelector('.player-bar > .row')!.children] as HTMLElement[];
+		expect(parts).toHaveLength(3);
+		for (const part of parts) {
+			const px = part.classList.contains('start') ? 50 : 100;
+			Object.defineProperty(part, 'scrollWidth', { value: px, configurable: true });
+		}
+		for (const again of read) again();
+		flushSync();
+		expect(beside()).toBe(200);
 	} finally {
 		globalThis.ResizeObserver = real;
 	}

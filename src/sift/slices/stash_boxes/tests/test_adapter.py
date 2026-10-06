@@ -1100,7 +1100,7 @@ def _routed(route: str | None, opened: list[str | None], *, up: bool = True) -> 
             yield None
             return
         if not up:
-            raise RuntimeError("The tunnel is not available, so this download was not started.")
+            raise RuntimeError("The tunnel is not available, so nothing was sent.")
         yield "http://127.0.0.1:61080"
 
     return through

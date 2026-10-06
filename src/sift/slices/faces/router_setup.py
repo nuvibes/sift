@@ -95,6 +95,7 @@ async def face_settings_state(
         references_without_pictures=await service.references_without_pictures(),
         never_scanned=never_scanned,
         scanned_under_older_rules=scanned_before,
+        unread_files=await service.unread(),
         installed=sorted(
             weight_id
             for weight_id, weight in CATALOG.items()

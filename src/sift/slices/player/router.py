@@ -37,6 +37,7 @@ from starlette.background import BackgroundTask
 
 from sift.kernel import places, wiring
 from sift.kernel.access import Repository, Viewer
+from sift.kernel.attention import PLAYED
 from sift.kernel.client import Client, client_of
 from sift.kernel.content import Asset, ContentStore, DerivativeKind, UserStateStore, VerdictProduct
 from sift.kernel.content.user_state import HEAT_BUCKETS, resume_minimum_ms, resume_point
@@ -263,9 +264,7 @@ async def plan_playback(
     served = policy.as_served(asset, repaired=repaired is not None)
 
     # THE REMUX TIER. A browser that can decode both streams but cannot read the box they are in
-    # gets a repackaged copy built for it: once, in the background, as a derivative. This
-    # viewing still converts, because the copy is a whole file and is not going to appear inside
-    # the moment somebody pressed play; every viewing after it is free and full quality.
+    # gets a repackaged copy built once, in the background; this viewing still converts.
     #
     # Asked of the STORED file rather than the served one: a file that already has a copy is not a
     # file that needs one, and `as_served` has already rewritten the container by this point.
@@ -707,7 +706,7 @@ async def stream(
     # A file whose audio sits too far from its video is served from its repaired copy instead: the
     # same streams in a container that keeps them together, so seeking does not make the browser
     # thrash. Absent until the repair job has run, and absent forever for the files that never
-    # needed one, which is almost all of them.
+    # needed one.
     repaired = await access.locate_derivative(viewer, asset.id, DerivativeKind.REMUX)
     path = repaired or await access.locate(viewer, asset.id)
     if path is None:
@@ -716,8 +715,7 @@ async def stream(
     try:
         stat = await on_serving_thread(path.stat)
     except OSError:
-        # The row says it is there and the disk disagrees: an unplugged drive, a deleted file. The
-        # same answer as any other miss.
+        # The row says it is there and the disk disagrees: an unplugged drive, a deleted file.
         raise _missing() from None
 
     size = stat.st_size
@@ -738,6 +736,8 @@ async def stream(
     # `Accept-Ranges` is what tells the player it may seek at all. Without it a browser downloads
     # from the start every time somebody drags the scrubber.
     headers = {"Accept-Ranges": "bytes", **_CACHE_PRIVATE}
+    # A picture opened isn't a clip playing.
+    played = PLAYED.now if asset.media_type == "video" else None
 
     if span is None:
         headers["Content-Length"] = str(size)
@@ -745,7 +745,7 @@ async def stream(
         if whole is None:
             return Response(status_code=status.HTTP_200_OK, headers=headers, media_type=media_type)
         return StreamingResponse(
-            read_range(path, whole, gone=request.is_disconnected),
+            read_range(path, whole, gone=request.is_disconnected, played=played),
             media_type=media_type,
             headers=headers,
         )
@@ -754,7 +754,7 @@ async def stream(
     headers["Content-Range"] = span.content_range
     headers["Content-Length"] = str(span.length)
     return StreamingResponse(
-        read_range(path, span, gone=request.is_disconnected),
+        read_range(path, span, gone=request.is_disconnected, played=played),
         status_code=status.HTTP_206_PARTIAL_CONTENT,
         media_type=media_type,
         headers=headers,
@@ -917,7 +917,7 @@ async def hls_segment(
 
     async def body() -> Any:
         try:
-            async for chunk in read_range(produced.path, span):
+            async for chunk in read_range(produced.path, span, played=PLAYED.now):
                 yield chunk
         finally:
             if produced.ephemeral:

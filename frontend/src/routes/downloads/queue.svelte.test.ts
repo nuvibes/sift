@@ -53,6 +53,7 @@ function item(over: Partial<DownloadItem> = {}): DownloadItem {
 		remembered_filename: null,
 		files_offered: null,
 		files_left_out: null,
+		reads_refused: null,
 		size_bytes: null,
 		finished_at: null,
 		site_id: null,

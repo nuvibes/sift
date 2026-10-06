@@ -27,6 +27,9 @@ from sift.kernel.config import Settings
 from sift.kernel.jobs import JobContext, JobQueue, JobState, WorkerPool, register_handler
 from sift.testing.logs import uncached_log
 
+#: The module's own reading, kept before the suite's fixture swaps it for a stand-in.
+_SHARED = attention.ATTENTION
+
 
 def _holding(reader: Attention) -> bool:
     """Asked through a call, so a type checker does not carry one answer past the next reading."""
@@ -138,6 +141,44 @@ def test_the_full_amount_overrules_the_other_programs_cause_too() -> None:
     assert (reader.full_amount, reader.holding, reader.cause) == (True, False, "others")
     reader.press(full=False)
     assert reader.workers(8, step_back=True, others_busy=True) == 2
+
+
+def test_a_clip_playing_steps_back_from_its_first_read_until_a_minute_after_its_last() -> None:
+    now = [100.0]
+    played = attention.Played(clock=lambda: now[0])
+    reader = Attention(_Input(None), since_played=played.seconds_since)
+    assert reader.workers(8, step_back=True) == 8
+    played.now()
+    assert reader.workers(8, step_back=True) == 2
+    assert reader.cause == "playing"
+    now[0] += ATTENTION_SECONDS - 1
+    assert reader.workers(8, step_back=True) == 2
+    now[0] += 2
+    assert reader.workers(8, step_back=True) == 8
+    assert reader.cause is None
+
+
+def test_input_comes_before_a_clip_and_a_clip_before_other_programs() -> None:
+    since = _Input(1.0)
+    reader = Attention(since, since_played=lambda: 1.0)
+    reader.workers(8, step_back=True, others_busy=True)
+    assert reader.cause == "input"
+    since.seconds = None
+    reader.workers(8, step_back=True, others_busy=True)
+    assert (reader.cause, reader.holding) == ("playing", True)
+
+
+def test_the_setting_off_or_a_benchmark_never_reads_the_clip() -> None:
+    def refuses() -> float | None:
+        raise AssertionError("the clip clock is not read with the setting off or while measuring")
+
+    reader = Attention(_Input(None), since_played=refuses)
+    assert reader.workers(8, step_back=False) == 8
+    assert reader.workers(8, step_back=True, measuring=True) == 8
+
+
+def test_the_shared_reading_hears_the_clock_every_player_and_wall_marks() -> None:
+    assert _SHARED._since_played == attention.PLAYED.seconds_since
 
 
 def test_a_benchmark_is_never_stepped_back_for_either_cause() -> None:

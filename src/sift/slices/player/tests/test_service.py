@@ -866,6 +866,27 @@ async def test_a_read_that_is_still_wanted_runs_to_the_end(tmp_path: Path) -> No
     await asyncio.sleep(0)
 
 
+async def test_every_chunk_read_says_a_clip_is_playing(tmp_path: Path) -> None:
+    from sift.kernel.attention import Played
+    from sift.slices.player.service import read_range
+
+    path = tmp_path / "clip.bin"
+    path.write_bytes(b"x" * (2 * tuning.STREAM_CHUNK_BYTES))
+    whole = 2 * tuning.STREAM_CHUNK_BYTES
+    span = byte_range(f"bytes=0-{whole - 1}", whole)
+    assert span is not None
+    now = [10.0]
+    played = Played(clock=lambda: now[0])
+    seen: list[float | None] = []
+
+    async for _chunk in read_range(path, span, played=played.now):
+        seen.append(played.seconds_since())
+        now[0] += 4.0
+
+    assert seen == [0.0, 0.0]
+    assert played.seconds_since() == 4.0
+
+
 def test_an_open_ended_range_is_shortened_to_the_limit() -> None:
     span = byte_range("bytes=100-", 10_000)
     assert span is not None

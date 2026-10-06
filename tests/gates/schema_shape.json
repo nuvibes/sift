@@ -121,6 +121,7 @@
   "ix_pus_favorite": "create index ix_pus_favorite on person_user_state ( user_id , favorite ) where favorite = 1",
   "ix_pus_hidden": "create index ix_pus_hidden on person_user_state ( user_id , hidden ) where hidden = 1",
   "ix_rus_hidden": "create index ix_rus_hidden on root_user_state ( user_id , hidden ) where hidden = 1",
+  "ix_said_times_run": "create index ix_said_times_run on said_times ( run_id , at )",
   "ix_save_user": "create index ix_save_user on save_log ( user_id , saved_at )",
   "ix_saved_searches_user": "create index ix_saved_searches_user on saved_searches ( user_id , created_at )",
   "ix_scan_rejections_root": "create index ix_scan_rejections_root on scan_rejections ( root_id , rel_path )",
@@ -672,6 +673,7 @@
     "person_id": "text references people ( id ) on delete set null",
     "post_id": "text",
     "posted": "text",
+    "reads_refused": "text",
     "remember": "integer check ( remember in ( 0 , 1 ) )",
     "requested_by": "text references users ( id ) on delete set null",
     "seen_at": "integer",
@@ -1660,6 +1662,20 @@
    ],
    "options": ""
   },
+  "said_times": {
+   "columns": {
+    "at": "integer not null",
+    "high": "integer",
+    "left": "integer not null",
+    "low": "integer",
+    "quick": "integer",
+    "run_id": "text not null",
+    "slow": "integer",
+    "stalled": "integer not null default 0"
+   },
+   "constraints": [],
+   "options": ""
+  },
   "save_log": {
    "columns": {
     "asset_id": "text references assets ( id ) on delete set null",
@@ -2619,6 +2635,7 @@
     "stages": "text not null default '{}'",
     "started_at": "integer not null",
     "stopped": "integer not null default 0",
+    "time_left": "text",
     "updated_at": "integer not null",
     "version": "text not null default ''",
     "worker_ms": "integer not null default 0"
@@ -2897,14 +2914,14 @@
   "catalog": 91,
   "content": 29,
   "dedup": 4,
-  "download": 37,
+  "download": 38,
   "faces": 41,
   "file_moves": 4,
   "identity": 4,
   "importing": 1,
   "insights": 6,
   "jobs": 15,
-  "ledger": 6,
+  "ledger": 7,
   "library": 7,
   "music": 5,
   "performance": 2,

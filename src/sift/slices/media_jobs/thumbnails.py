@@ -10,7 +10,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from sift.kernel import media
+from sift.kernel import lanes, media
 from sift.kernel import sampling as sampler
 from sift.kernel.config import Settings
 from sift.kernel.content import (
@@ -150,15 +150,16 @@ async def thumbnail(context: JobContext, *, settings: Settings, hardware: Hardwa
     destination = store.derivative_path(asset_id, DerivativeKind.THUMB, extension="jpg")
     span = sampler.picture_span(asset.duration_ms, asset.video_duration_ms)
     chosen_at = 0
-    with timing_hook("thumbnail.render", asset_id=asset_id):
-        if asset.media_type == _IMAGE or span <= 0:
-            await _render(
-                ffmpeg.thumbnail_args(source.path, destination, timestamp_ms=0, settings=settings),
-                destination,
-                reads=source.path,
-            )
-        else:
-            chosen_at = await _cut_by_content(source.path, destination, span, settings=settings)
+    # Read with the file's own read on a share, so a picture keeps pace with it.
+    async with lanes.the_read():
+        with timing_hook("thumbnail.render", asset_id=asset_id):
+            if asset.media_type == _IMAGE or span <= 0:
+                args = ffmpeg.thumbnail_args(
+                    source.path, destination, timestamp_ms=0, settings=settings
+                )
+                await _render(args, destination, reads=source.path)
+            else:
+                chosen_at = await _cut_by_content(source.path, destination, span, settings=settings)
 
     await store.add_derivative(
         asset_id,

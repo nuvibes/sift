@@ -16,9 +16,8 @@ was interrupted, and says so.
 from __future__ import annotations
 
 import json
-import math
 import time
-from collections import deque
+from collections import Counter, deque
 from collections.abc import Awaitable, Callable, Iterable, Mapping, Sequence
 from contextvars import ContextVar
 from dataclasses import dataclass, field
@@ -30,6 +29,7 @@ from sift.kernel.ids import new_id
 from sift.kernel.jobs.failure_words import KINDS, OTHERWISE, in_plain_words, kind_of
 from sift.kernel.jobs.families import FAMILY_LABELS, LONG_PASSES, Family
 from sift.kernel.jobs.schedules import get_schedule
+from sift.kernel.jobs.time_left import ANY_KIND, FEWEST_PRICED, PRICED_OVER, Key, Said, score
 from sift.kernel.ledger import Actor, record_event
 from sift.kernel.log import get_logger
 from sift.kernel.migrations import column_exists
@@ -39,7 +39,7 @@ from sift.kernel.when import stamp as machine_stamp
 log = get_logger(__name__)
 
 COMPONENT = "ledger"
-VERSION = 6
+VERSION = 7
 
 # `files` and `stages` are JSON rather than rows of their own: a run is read whole or not at all,
 # nothing ever asks for one stage across runs, and a row per stage per run would be a table an
@@ -82,9 +82,26 @@ CREATE TABLE IF NOT EXISTS work_runs (
   -- alone (`LAST_RUN_FOR_PRODUCTS`); an empty list is a run known to have been for no product.
   made_for     TEXT,
   -- Why its jobs failed, in plain words, with how many: {"words": n}. NULL when none did.
-  ended_with   TEXT
+  ended_with   TEXT,
+  -- How often its time left held the real finish (`time_left.score`), or NULL.
+  time_left    TEXT
 )
 """
+
+#: What a live run's row said each minute, until the run ends and is scored.
+_CREATE_SAID = """
+CREATE TABLE IF NOT EXISTS said_times (
+  run_id  TEXT NOT NULL,
+  at      INTEGER NOT NULL,
+  quick   INTEGER,
+  slow    INTEGER,
+  low     INTEGER,
+  high    INTEGER,
+  left    INTEGER NOT NULL,
+  stalled INTEGER NOT NULL DEFAULT 0
+)
+"""
+_SAID_INDEX = "CREATE INDEX IF NOT EXISTS ix_said_times_run ON said_times(run_id, at)"
 
 _INDEXES = (
     # The screen reads the newest runs of every family; the estimate reads the newest of one.
@@ -100,6 +117,10 @@ async def initialize(connection: Connection, on_disk: int) -> None:
             await connection.execute(index)
     if 0 < on_disk < 6 and not await column_exists(connection, "work_runs", "ended_with"):
         await connection.execute("ALTER TABLE work_runs ADD COLUMN ended_with TEXT")
+    if 0 < on_disk < 7 and not await column_exists(connection, "work_runs", "time_left"):
+        await connection.execute("ALTER TABLE work_runs ADD COLUMN time_left TEXT")
+    await connection.execute(_CREATE_SAID)
+    await connection.execute(_SAID_INDEX)
 
 
 register_schema_initializer(COMPONENT, VERSION, initialize, baseline=5)
@@ -203,14 +224,9 @@ SELECT * FROM work_runs
  ORDER BY finished_at DESC, id DESC
  LIMIT 1
 """
-_LAST_OF_FAMILY = """
-SELECT * FROM work_runs
- WHERE family = ? AND profile = ? AND finished_at IS NOT NULL AND stopped = 0 AND jobs_done > 0
-   AND COALESCE(json_extract(settings, '$."seconds stepped back"'), 0)
-       <= ? * (finished_at - started_at)
- ORDER BY started_at DESC
- LIMIT 1
-"""
+_SAY = "INSERT INTO said_times VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+_SAID = "SELECT at, low, high, left, stalled FROM said_times WHERE run_id = ? ORDER BY at"
+_SCORED = "UPDATE work_runs SET time_left = ? WHERE id = ?"
 #: RUNS ARE KEPT FOR EVER. What somebody wants to compare may be the first import, years later, and
 #: a row here is one family's whole stretch of work, not one job, so a library that is scanned every
 #: day writes a few hundred rows a year. A record that quietly forgets is worse than a missing
@@ -240,15 +256,8 @@ BUILD_STAGE_PREFIX = "build."
 #: How often an open run is written through, in seconds. What a crash costs.
 FLUSH_EVERY_SECONDS = 60.0
 
-#: The recent window the rate of a run is read over, and the long one. The estimate blends them
-#: (see `Ledger.rate_per_minute`), so a machine that has just sped up is followed without a single
-#: quiet minute reading as the whole pass having stalled.
-RECENT_WINDOW_SECONDS = 120.0
-LONG_WINDOW_SECONDS = 600.0
-
-#: How long a run has to have been going before its own rate is trusted over the last run's. Below
-#: this the window holds a handful of completions and the rate swings with each.
-SETTLED_AFTER_SECONDS = 120.0
+#: How many minutes of a run's finished work its pace may be read over: two days.
+MINUTES_KEPT = 2880
 
 #: How many finished items a family's pace is measured over, and the fewest it needs before the
 #: pace is worth quoting.
@@ -271,15 +280,6 @@ STEPPED_BACK = "seconds stepped back"
 STEPPED_SPANS_KEPT = 256
 FEWEST_ITEMS = 20
 
-#: The fewest finished items a run under way needs before its OWN pace is quoted, once it has gone
-#: for `RATE_AFTER_SECONDS`. Fewer than the history's `FEWEST_ITEMS` on purpose: a task that
-#: finishes a file a minute would otherwise run twenty minutes, often most of itself, saying "Not
-#: enough to say yet". The run measures its own files on this machine under today's settings, which
-#: no history does, so five of them are worth a window; the window is widened for the small sample
-#: (`_live_margin`) and narrows toward `LIVE_MARGIN` as the sample reaches `FEWEST_ITEMS`. The
-#: history keeps its twenty: it prices files this run has not read yet.
-FEWEST_LIVE_ITEMS = 5
-
 #: How many finished runs of a family stand in when the per-item clock cannot price it. Each one
 #: contributes its own mean, so several runs are a spread and one run is a single figure.
 PACE_OVER_RUNS = 5
@@ -295,15 +295,6 @@ KIND_OVER_RUNS = 50
 #: long videos. Quartiles of single items are the wrong spread for a sum: a pass whose items are
 #: mostly cheap and sometimes very dear costs more than its third quarter says, every time.
 STRETCH_ITEMS = 10
-
-#: Once a run has a pace of its own, how far either side of it the range is widened. The run's
-#: windows agree closely on a steady pass, and a figure quoted to within a few percent is a
-#: precision that the files still ahead do not support.
-LIVE_MARGIN = 0.15
-
-#: How long a run has to have been going before it has a rate of its own AT ALL: less than a minute
-#: is a handful of arrivals, not a pace, and the last run of the family stands in until then.
-RATE_AFTER_SECONDS = 60.0
 
 #: Stages that are not the work: every database statement is timed, and every request.
 _NOT_A_STAGE = ("db.", "http.", "job")
@@ -366,11 +357,15 @@ class Run:
     #: What names a run made for several tasks' products after the one that was pressed. Not kept
     #: on the row: it is read once, when the run's line is written. See `Ledger.run_name`.
     pressed_for: set[str] = field(default_factory=set)
-    #: When each job finished, for the rate. Bounded by the long window rather than by count.
-    completions: deque[tuple[float, int]] = field(default_factory=deque)
-    """When each job finished and how many files it was about, within the long window."""
+    #: Each minute's finished items by type and kind, and its seconds stepped back, for the pace.
+    minutes: deque[tuple[float, Counter[Key], list[float]]] = field(
+        default_factory=lambda: deque(maxlen=MINUTES_KEPT)
+    )
+    #: When its last job finished (`time.monotonic`), and when it last said its time left.
+    last_done: float | None = None
+    said_at: float | None = None
     last_flushed: float = 0.0
-    began: float = field(default_factory=time.monotonic)
+    began: float = field(default_factory=lambda: time.monotonic())
     """When this run started, on the clock that only goes forwards.
 
     `started_at` is the wall clock and is what the row records; this is what the rate divides by.
@@ -454,6 +449,8 @@ class RunRecord:
     which is not the claim that it was for none."""
     ended_with: dict[str, int] = field(default_factory=dict)
     """Why its jobs failed, in plain words, with how many of each."""
+    time_left: dict[str, object] | None = None
+    """How often its time left held the real finish (`time_left.score`)."""
 
     @property
     def seconds(self) -> int | None:
@@ -627,6 +624,7 @@ def _record(row: Row) -> RunRecord:
         requested_by=None if row["requested_by"] is None else str(row["requested_by"]),
         made_for=None if row["made_for"] is None else tuple(json.loads(str(row["made_for"]))),
         ended_with=json.loads(str(row["ended_with"] or "{}")),
+        time_left=json.loads(str(row["time_left"])) if row["time_left"] else None,
     )
 
 
@@ -667,7 +665,8 @@ class Ledger:
         self._families: dict[str, Family] = dict(families_of or {})
         self._open: dict[Family, Run] = {}
         self._settings: dict[str, object] = {}
-        self._history: dict[Family, RunRecord | None] = {}
+        # The newest seconds a worker spent on one item, by type and kind and by type over kinds.
+        self._priced: dict[Key, deque[float]] = {}
         # When the numbers that decide the pace last moved, so an older pace is not quoted. None
         # (nothing seen to change in this process) leaves the whole kept history eligible.
         self._settings_changed_at: int | None = None
@@ -790,10 +789,20 @@ class Ledger:
         counted.n += max(0, units)
         counted.bytes += size_bytes or 0
         counted.ms += duration_ms
-        now = time.monotonic()
-        run.completions.append((now, max(0, units)))
-        while run.completions and now - run.completions[0][0] > LONG_WINDOW_SECONDS:
-            run.completions.popleft()
+        run.last_done = time.monotonic()
+        if ok and units > 0:
+            self._minute(run)[1][(job_type, kind)] += units
+            for key in ((job_type, kind), (job_type, ANY_KIND)):
+                timed = self._priced.setdefault(key, deque(maxlen=PRICED_OVER))
+                timed.append(duration_ms / 1000 / units)
+
+    @staticmethod
+    def _minute(run: Run) -> tuple[float, Counter[Key], list[float]]:
+        """The run's bucket for this minute of its life."""
+        index = int((time.monotonic() - run.began) // 60)
+        if not run.minutes or run.minutes[-1][0] != index:
+            run.minutes.append((index, Counter(), [0.0]))
+        return run.minutes[-1]
 
     def stage(self, stage: str, milliseconds: float) -> None:
         """A stage of some job's work took this long. The timing hook's sink.
@@ -883,6 +892,7 @@ class Ledger:
         # this process learning what the settings are rather than somebody changing them.
         if self._settings and dict(settings) != self._settings:
             self._settings_changed_at = now
+            self._priced.clear()
             log.info("ledger.settings_changed", at=now)
         self._settings = dict(settings)
         busy = {self.family_of(job_type) for job_type, count in unfinished.items() if count > 0}
@@ -895,7 +905,6 @@ class Ledger:
             run.finished_at = now
             await self._finish(run, now)
             del self._open[family]
-            self._history.pop(family, None)
             log.info(
                 "ledger.run_finished",
                 family=family.value,
@@ -916,7 +925,9 @@ class Ledger:
         ticked, self._ticked = self._ticked, time.monotonic()
         if self._stepped and ticked is not None:
             for run in self._open.values():
-                run.stepped_seconds += self._ticked - max(ticked, run.began)
+                gone = self._ticked - max(ticked, run.began)
+                run.stepped_seconds += gone
+                self._minute(run)[2][0] += gone
         if stepped and not self._stepped:
             self._spans.append([now, None])
         elif self._stepped and not stepped and self._spans:
@@ -933,6 +944,10 @@ class Ledger:
         """
         async with telling(self._db, EVERY_ADMIN, About.JOBS) as connection:
             await connection.execute(_UPSERT, self._row(run, now))
+            said = [Said(*one) for one in await connection.execute_fetchall(_SAID, (run.id,))]
+            if said:
+                await connection.execute(_SCORED, (json.dumps(score(said, now)), run.id))
+                await connection.execute("DELETE FROM said_times WHERE run_id = ?", (run.id,))
             if run.family in LONG_PASSES:
                 actor = Actor.sift()
                 if run.requested_by is not None:
@@ -982,45 +997,70 @@ class Ledger:
         It forgets nothing: runs are kept for ever (see the note on keeping runs).
         """
         await self._db.execute(_CLOSE_INTERRUPTED)
+        await self._db.execute("DELETE FROM said_times")
 
     # --- the estimate ---------------------------------------------------------------------
 
     def open_run(self, family: Family) -> Run | None:
         return self._open.get(family)
 
-    async def rate_per_minute(self, family: Family) -> float | None:
-        """How many files of this family's work are finishing per minute, with memory.
+    def prices(self) -> dict[Key, float]:
+        """Seconds a worker spent on one item, by type and kind, where enough were timed."""
+        return {
+            key: sum(one) / len(one)
+            for key, one in self._priced.items()
+            if len(one) >= FEWEST_PRICED
+        }
 
-        The last two minutes and the last ten blended, each divided by how long the run has been
-        going (never by the age of its oldest completion, which reads a burst as a pace), so an
-        early reading errs low. Until the run has settled, the last finished run stands in.
-        """
+    def life(self, family: Family) -> float | None:
+        """Seconds the family's open run has gone, or None with none open."""
+        run = self._open.get(family)
+        return None if run is None else time.monotonic() - run.began
+
+    def stopped_for(self, family: Family) -> float | None:
+        """Seconds since the family's open run last finished a job, or None with none open."""
+        run = self._open.get(family)
+        if run is None:
+            return None
+        return time.monotonic() - (run.began if run.last_done is None else run.last_done)
+
+    def realized(self, family: Family, prices: Mapping[Key, float], within: float) -> float | None:
+        """Worker seconds of work the family's run finished per unpaused second, over whole
+        minutes back from now covering at most `within`."""
+        run = self._open.get(family)
+        if run is None:
+            return None
+        gone = time.monotonic() - run.began
+        first = max(0, int(-(-(gone - within) // 60)))
+        minutes = [one for one in run.minutes if one[0] >= first]
+        unpaused = gone - first * 60 - sum(one[2][0] for one in minutes)
+        if unpaused < 60:
+            return None
+        done = sum(
+            n * prices.get(key, prices.get((key[0], ANY_KIND), 0.0))
+            for one in minutes
+            for key, n in one[1].items()
+        )
+        return done / unpaused if done > 0 else None
+
+    async def said(
+        self,
+        family: Family,
+        quick: int | None,
+        slow: int | None,
+        window: tuple[int, int] | None,
+        left: int,
+    ) -> None:
+        """Keep what a live run's row said, at most once a minute; no window is a stopped row."""
         run = self._open.get(family)
         now = time.monotonic()
-        own: float | None = None
-        if run is not None and run.completions:
-            elapsed = now - run.began
-            if elapsed >= RATE_AFTER_SECONDS:
-                recent = sum(n for at, n in run.completions if now - at <= RECENT_WINDOW_SECONDS)
-                longer = sum(n for _at, n in run.completions)
-                recent_rate = recent * 60 / min(RECENT_WINDOW_SECONDS, elapsed)
-                long_rate = longer * 60 / min(LONG_WINDOW_SECONDS, elapsed)
-                own = (recent_rate + long_rate) / 2
-                if elapsed >= SETTLED_AFTER_SECONDS:
-                    return own
-        remembered = await self._remembered_rate(family)
-        if own is not None and remembered is not None:
-            return (own + remembered) / 2
-        return own if own is not None else remembered
-
-    async def _remembered_rate(self, family: Family) -> float | None:
-        if family not in self._history:
-            row = await self._db.fetch_one(
-                _LAST_OF_FAMILY, (family.value, self._profile, STEPPED_BACK_PRICED)
-            )
-            self._history[family] = None if row is None else _record(row)
-        last = self._history[family]
-        return None if last is None else last.files_per_minute
+        if run is None or (run.said_at is not None and now - run.said_at < 60):
+            return
+        run.said_at = now
+        low, high = window if window is not None else (None, None)
+        await self._db.execute(
+            _SAY, (run.id, int(time.time()), quick, slow, low, high, left, int(window is None))
+        )
 
     async def pace(self, family: Family, job_types: Sequence[str]) -> Pace | None:
         """What one item of this family's work costs on this machine, or None when nothing can say.
@@ -1147,25 +1187,13 @@ class Ledger:
     ) -> Estimate | None:
         """How long the family's remaining work will take, between two bounds, or None.
 
-        The run's own pace (widened by `LIVE_MARGIN`), else the history's, by kind where `kinds`
-        is given; with neither, a floor from the benchmark's `first_prices` for the videos left.
+        The history's pace, by kind where `kinds` is given; without one, a floor from the
+        benchmark's `first_prices` for the videos left. A run's own pace is `time_left`'s.
         """
         if left <= 0:
             return None
         workers = max(1, at_once)
         shares = _shares(kinds)
-        live = self._live_range(family, left)
-        if live is not None:
-            quick, slow, seen = live
-            if shares:
-                prices = await self.kind_prices(family, at_once=workers, kinds=shares)
-                dearer = _dearer_ahead(self._open[family], shares, prices.paces)
-                if dearer is None:
-                    return None
-                quick, slow = quick * dearer, slow * dearer
-            return Estimate(
-                quick_seconds=int(quick), slow_seconds=int(slow), items=seen, at_once=workers
-            )
         if shares:
             by_kind = await self._estimate_by_kind(family, left, shares, workers)
             return by_kind or await self._first_price(
@@ -1215,39 +1243,6 @@ class Ledger:
         least = int(files * (each or 0) / workers)
         return Estimate(least, least, 0, workers, floor=True) if least > 0 else None
 
-    def _live_range(self, family: Family, left: float) -> tuple[float, float, int] | None:
-        """What is left over the run's own fastest and slowest window, with the items they saw.
-
-        None until the run has gone for `RATE_AFTER_SECONDS` and finished `FEWEST_LIVE_ITEMS`. A
-        window with nothing finished in it is a stall or a pause rather than a pace, and is left
-        out. Under `FEWEST_ITEMS` the range is widened for the sample it stands on
-        (`_live_margin`), so an early window is honest about how little is behind it.
-        """
-        run = self._open.get(family)
-        # Housekeeping's run is every chore at once, so its pace belongs to none of them.
-        if run is None or family is Family.OTHER:
-            return None
-        now = time.monotonic()
-        elapsed = now - run.began
-        seen = sum(n for _at, n in run.completions)
-        if elapsed < RATE_AFTER_SECONDS or seen < FEWEST_LIVE_ITEMS:
-            return None
-        recent = sum(n for at, n in run.completions if now - at <= RECENT_WINDOW_SECONDS)
-        rates = [
-            recent / min(RECENT_WINDOW_SECONDS, elapsed),
-            seen / min(LONG_WINDOW_SECONDS, elapsed),
-            run.files_total / elapsed,
-        ]
-        # Never empty: `seen` is at least `FEWEST_LIVE_ITEMS` by the floor above, so the whole-run
-        # window always moves. A window with nothing finished in it is a stall, and is left out.
-        moving = [rate for rate in rates if rate > 0]
-        margin = _live_margin(seen)
-        return (
-            left / max(moving) * max(0.0, 1 - margin),
-            left / min(moving) * (1 + margin),
-            seen,
-        )
-
     # --- reading back -----------------------------------------------------------------------
 
     async def recent(self, *, limit: int = 30) -> list[RunRecord]:
@@ -1273,50 +1268,6 @@ class Ledger:
 
 #: The end given a stretch still open: later than any job.
 _OPEN_SPAN = 1 << 62
-
-
-def _live_margin(seen: int) -> float:
-    """How far either side of a run's own pace its range is widened, for the items behind it.
-
-    `LIVE_MARGIN` from `FEWEST_ITEMS` up. Below that the margin grows as one over the square root
-    of the sample, the way the error of a mean does: five items give twice the margin twenty do,
-    so the first window a slow task shows is wide and closes in as it goes.
-    """
-    if seen >= FEWEST_ITEMS:
-        return LIVE_MARGIN
-    return LIVE_MARGIN * math.sqrt(FEWEST_ITEMS / max(seen, 1))
-
-
-def _dearer_ahead(
-    run: Run, shares: Mapping[str, float], history: Mapping[str, Pace]
-) -> float | None:
-    """How much dearer a file of what is left is than a file of what this run has done.
-
-    The run's pace is files per second of the files it has done. The files ahead cost their kind's
-    price (the run's own where it has done `FEWEST_ITEMS` of that kind, else the history's, else
-    the run's own from `FEWEST_LIVE_ITEMS`), so the pace is scaled by their mean over the run's own
-    mean. None where a kind ahead has no price. The run's own small sample comes last: the history
-    has more files behind it, and a kind with no history at all would otherwise leave a run of one
-    kind, well under way, with nothing to say about the rest of that same kind.
-    """
-    done = [one for one in run.files.values() if one.n > 0]
-    done_n = sum(one.n for one in done)
-    done_ms = sum(one.ms for one in done)
-    if done_n <= 0 or done_ms <= 0:
-        return None
-    ahead = 0.0
-    for kind, share in shares.items():
-        own = run.files.get(kind)
-        if own is not None and own.n >= FEWEST_ITEMS:
-            cost = own.ms / own.n
-        elif kind in history:
-            cost = history[kind].middle * 1000
-        elif own is not None and own.n >= FEWEST_LIVE_ITEMS:
-            cost = own.ms / own.n
-        else:
-            return None
-        ahead += share * cost
-    return ahead / (done_ms / done_n)
 
 
 # --- the report a person copies ----------------------------------------------------------------
@@ -1353,6 +1304,18 @@ def _label(family: str) -> str:
         return family
 
 
+def _time_left_lines(scored: Mapping[str, object]) -> list[str]:
+    """How often a run's time left held its real finish, and how long it waited for other work."""
+    lines = []
+    if scored.get("right") is not None:
+        lines.append(f"Its time left was right in {scored['right']}% of minutes.")
+    if stalled := int(str(scored.get("stalled") or 0)):
+        lines.append(
+            f"It waited for other work for {stalled:,} minute{'s' if stalled > 1 else ''}."
+        )
+    return lines
+
+
 def report_text(run: RunRecord) -> str:
     """A run as plain text to paste: every line a fact the table holds, in ASCII."""
     when = machine_stamp(run.started_at, "%Y-%m-%d %H:%M")
@@ -1373,6 +1336,7 @@ def report_text(run: RunRecord) -> str:
     if kinds or not run.files:
         lines.append(f"Files: {kinds or 'none recorded'}")
     lines.append(f"Jobs: {run.jobs_done:,} done, {run.jobs_failed:,} failed")
+    lines += _time_left_lines(run.time_left or {})
     ended = sorted(run.ended_with.items(), key=lambda one: (-one[1], one[0]))
     lines += [
         f"Why {n:,} failed: {words}"

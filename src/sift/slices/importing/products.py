@@ -53,11 +53,6 @@ class Product:
     before_run: Callable[[], Awaitable[object]] | None = None
     """Housekeeping once per run, before the first task: dropping what belongs to files that
     have left the library, say. None for a product with none."""
-    #: How many files want this product AT ALL, done or not, within `Within`: its bar's whole on
-    #: Activity. None means every file, wrong where a photo or a silent file never wants it.
-    wants: Callable[[Within | None], Awaitable[int]] | None = None
-    #: How many files not yet READ will want it, which the count of what is lacking cannot see.
-    coming: Callable[[Within | None], Awaitable[int]] | None = None
     governed_by: str | None = None
     """This product's own job type: the one an arriving file's work for it is queued as. Two
     readers ask it. The import policy gates the product under it, so a folder that refuses that

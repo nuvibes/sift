@@ -3,9 +3,11 @@
 
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 
-from sift.kernel.memo import MarkedMemo
+from sift.kernel.memo import MarkedMemo, PacedAnswer
 
 pytestmark = pytest.mark.unit
 
@@ -76,3 +78,60 @@ async def test_forgetting_throws_every_answer_away() -> None:
     memo.forget()
 
     assert await memo.get("facets", "m1", compute) == 2
+
+
+class _Clock:
+    """A clock a test moves by hand."""
+
+    def __init__(self) -> None:
+        self.now = 100.0
+
+    def __call__(self) -> float:
+        return self.now
+
+
+async def test_a_paced_answer_is_kept_for_its_time_and_then_counted_again() -> None:
+    clock, compute = _Clock(), _Counting()
+    paced = PacedAnswer(compute, fresh_for=5.0, clock=clock)
+
+    assert await paced.get() == 1
+    clock.now += 4.9
+    assert await paced.get() == 1, "kept within its time"
+    clock.now += 0.2
+    assert await paced.get() == 2, "counted again after it"
+
+
+async def test_a_paced_answer_that_cost_more_is_kept_ten_times_as_long() -> None:
+    clock = _Clock()
+    asked = 0
+
+    async def slow() -> int:
+        nonlocal asked
+        asked += 1
+        clock.now += 2.0
+        return asked
+
+    paced = PacedAnswer(slow, fresh_for=5.0, clock=clock)
+    await paced.get()
+    clock.now += 19.0
+
+    assert await paced.get() == 1
+    clock.now += 2.0
+    assert await paced.get() == 2
+
+
+async def test_askers_at_the_same_moment_share_one_count() -> None:
+    asked = 0
+
+    async def compute() -> int:
+        nonlocal asked
+        asked += 1
+        await asyncio.sleep(0)
+        return asked
+
+    paced = PacedAnswer(compute)
+
+    answers = await asyncio.gather(paced.get(), paced.get(), paced.get())
+
+    assert list(answers) == [1, 1, 1]
+    assert asked == 1

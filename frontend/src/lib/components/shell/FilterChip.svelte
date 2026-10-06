@@ -9,7 +9,7 @@
 	 * The same fact is on screen in four places (the chips saying what filters this screen, one for
 	 * a clicked filter and one for a typed one; the tooltip on a kept filter saying what it holds;
 	 * and the list under "Editing" saying what Save would keep), so it is one component: a filter
-	 * the bar shows as `tags: runway or Edited` reads the same, as one chip, wherever it appears.
+	 * reads the same wherever it appears.
 	 *
 	 * The dimension is spelled with the query language's own token (`tags:`) rather than the
 	 * panel's heading ("Tags"), because this is what somebody would type, and two vocabularies for
@@ -58,6 +58,8 @@
 		 * control belongs to the filter, so each of its chips carries it while it has several.
 		 */
 		of?: number;
+		/** Draw how the values combine as a mark nobody can press, where a chip only describes. */
+		matchShown?: boolean;
 		/** Whether the filter refuses rather than includes. Colours the chip and bars the box. */
 		excluded?: boolean;
 		/** Whether the words themselves are struck through. Follows `excluded`; see the head. */
@@ -87,6 +89,7 @@
 		values,
 		all = false,
 		of,
+		matchShown = false,
 		excluded = false,
 		struck = excluded,
 		onselect,
@@ -120,7 +123,9 @@
 	 * where it would do nothing: "not any of these" and "not all of these" are the same set of files,
 	 * and a control that changes the address without changing the results is worse than no control.
 	 */
-	const switchable = $derived(Boolean(onswitch) && (of ?? values.length) > 1 && !excluded);
+	const combines = $derived((of ?? values.length) > 1 && !excluded);
+	const switchable = $derived(Boolean(onswitch) && combines);
+	const marked = $derived(matchShown && combines);
 
 	/*
 	 * The dimension's glyph is not drawn here. `facetIcon` names a glyph per dimension, which suits
@@ -137,6 +142,16 @@
 	renders nothing, and looks like a styling fault. Passing it conditionally is how the condition is
 	expressed.
 -->
+{#snippet matchGlyph()}
+	{#if all}<span class="amp">&amp;</span>{:else}<Icon name="arrow_split" size={16} />{/if}
+{/snippet}
+
+{#snippet matchMark()}
+	<span class="match" role="img" aria-label={all ? 'All of these' : 'Any of these'}>
+		{@render matchGlyph()}
+	</span>
+{/snippet}
+
 {#snippet anyOrAll()}
 	<Tooltip label={all ? 'All of these' : 'Any of these'}>
 		<!--
@@ -167,13 +182,13 @@
 			aria-label={all ? `All of these ${field ?? 'values'}` : `Any of these ${field ?? 'values'}`}
 			onclick={() => onswitch?.()}
 		>
-			{#if all}<span class="amp">&amp;</span>{:else}<Icon name="arrow_split" size={16} />{/if}
+			{@render matchGlyph()}
 		</Pressable>
 	</Tooltip>
 {/snippet}
 
 <Chip
-	aside={switchable ? anyOrAll : undefined}
+	aside={switchable ? anyOrAll : marked ? matchMark : undefined}
 	tone={problem ? 'state' : undefined}
 	icon={problem ? 'error' : undefined}
 	selected={!excluded}
@@ -235,7 +250,8 @@
 	 * takes it. The arrow's ink is 16px wide in its box and the ampersand's 11, so the air differs
 	 * between states while the two sides of each match, which is what an eye reads.
 	 */
-	:global(.pressable.in-chip) {
+	:global(.pressable.in-chip),
+	.match {
 		display: grid;
 		place-items: center;
 		inline-size: 20px;

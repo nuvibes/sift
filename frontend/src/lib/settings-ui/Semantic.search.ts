@@ -4,6 +4,7 @@
  * and the device are registered settings and find themselves; the page they sit on and deleting the
  * index are not. */
 import type { Searchable } from './search';
+import { counted } from '$lib/entity/entity-counts';
 import type { SemanticStatus } from '$lib/search/semantic.svelte';
 
 /** Deleting every description, so the next run describes every file again. */
@@ -22,8 +23,8 @@ export const COPY = {
 		offKept: 'Turned off. The descriptions Sift made are kept, so turning it back on is instant.',
 		notReady: "On, but the models aren't downloaded yet.",
 		ready: (device: string) => `Ready. Running on the ${device}.`,
-		counts: (described: number, waiting: number) =>
-			`${described.toLocaleString()} ${described === 1 ? 'file' : 'files'} described, ${waiting.toLocaleString()} not described yet.`
+		counts: (described: number, waiting: number, unread = 0) =>
+			`${described.toLocaleString()} ${described === 1 ? 'file' : 'files'} described, ${waiting.toLocaleString()} not described yet${unread > 0 ? `, and ${counted(unread)} more waiting to be scanned` : ''}.`
 	},
 	more: {
 		label: 'More settings',
@@ -58,9 +59,8 @@ export const COPY = {
 } as const;
 
 /**
- * Where Smart Search stands, in one line under its switch, every number the server's. Shared by the
- * Smart Search pane and the Recognition switches on Importing, so the two say the same thing.
- * `counts` is a run being followed right now, whose numbers are fresher than the status's.
+ * Where Smart Search stands, in one line under its switch, shared with the Recognition switches on
+ * Importing. `counts` is a run being followed now, fresher than the status.
  */
 export function semanticStatusLine(
 	status: SemanticStatus | null,
@@ -74,7 +74,8 @@ export function semanticStatusLine(
 	if (!status.ready) return status.problem ?? COPY.status.notReady;
 	return `${COPY.status.ready(device)} ${COPY.status.counts(
 		counts?.done ?? status.described_files,
-		counts?.left ?? status.waiting_files
+		counts?.left ?? status.waiting_files,
+		status.unread_files
 	)}`;
 }
 

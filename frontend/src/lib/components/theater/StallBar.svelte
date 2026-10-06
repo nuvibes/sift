@@ -8,9 +8,7 @@
 	 * come below what the transport, the sound, the drawer and the ways out need.
 	 *
 	 * The numbers at the start of the controls' row are wider on a wall of nine than a wall of two:
-	 * 112 is the two-column figure. A wider picker eats into the room either side of the transport
-	 * rather than running off the edge, so this is a floor for the commonest wall rather than a
-	 * promise about every shape.
+	 * 112 is the two-column figure. A wider picker folds into one press where the bar runs out.
 	 */
 
 	/** What the controls need for all of it: the transport, the sound, the drawer, the ways out. */
@@ -58,7 +56,10 @@
 	 * wall chooses what the chosen cell plays, and so does the cell's own menu (What it plays).
 	 */
 	import { Button } from '$lib/components/common';
+	import ContextMenuItem from '$lib/components/common/ContextMenuItem.svelte';
+	import MenuButton from '$lib/components/common/MenuButton.svelte';
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
+	import { stage } from '$lib/components/shell/stage.svelte';
 	import { ACTS, keyOf } from '$lib/player/acts';
 	import StageBar from './StageBar.svelte';
 	import CellControls from './CellControls.svelte';
@@ -103,11 +104,21 @@
 	const controlled = $derived(
 		screenOffer.wallControlled ? controlledWords(screenOffer.controlledBy) : ''
 	);
+
+	/* The numbers fold into one press when the row wants more than the bar can grow to; folded, they
+	   stay laid out out of sight, so the width they want is still known. */
+	let room = $state(0);
+	let numbersWide = $state(0);
+	let foldWide = $state(0);
+	const folds = (beside: number) =>
+		room > 0 && numbersWide + beside > room && (foldWide === 0 || foldWide < numbersWide);
+	const onCell = $derived(wall.everyCell ? 'All' : `${chosen + 1} of ${wall.cells.length}`);
+	const foldNames = $derived(wall.everyCell ? 'every cell' : `cell ${onCell}`);
 </script>
 
 <!-- Quiet when the rest of the chrome is. `stage.barHidden` is the one clock a filled screen runs;
      a second one here would be a bar that went away at its own moment. -->
-<StageBar open={up && cell !== undefined} {quiet} bind:tall label="The wall's controls">
+<StageBar open={up && cell !== undefined} {quiet} bind:tall bind:room label="The wall's controls">
 	{#if cell}
 		<!-- The cell's own bar, unchanged, at the width it was designed for, with the numbers at the
 		     start of its controls' row. -->
@@ -145,8 +156,10 @@
 	would push the timeline's start a third of the way across the bar. The transport keeps the
 	middle of the row, so the numbers take its start.
 -->
-{#snippet picker()}
-	<!--
+{#snippet picker(beside: number)}
+	{@const folded = folds(beside)}
+	<div class="picker">
+		<!--
 		EVERY CELL AS ONE ROW OF NUMBERS, on the controls' line.
 
 		Not in the WALL'S OWN SHAPE (a two-by-two block of numbers for a two-by-two wall, with the
@@ -157,9 +170,17 @@
 		One row, spread evenly, however many there are, so two look like two and nine look the same
 		way. The bar grows with them because this sits in the row rather than over it.
 	-->
-	<div class="numbers" role="group" aria-label="Which cell to control">
-		{#if controlled}{@render controlledMark()}{/if}
-		<!--
+		<div
+			class="numbers"
+			class:folded
+			role="group"
+			aria-label="Which cell to control"
+			aria-hidden={folded || undefined}
+			inert={folded || undefined}
+			bind:offsetWidth={numbersWide}
+		>
+			{#if controlled}{@render controlledMark()}{/if}
+			<!--
 				EVERY CELL AT ONCE, at the head of the numbers: it is one of them.
 
 				The wall's own verbs reach all of it (stop everything, silence everything), and without
@@ -172,44 +193,77 @@
 				A word rather than a digit, so it is wider than the numbers beside it, and fixed, so the
 		row does not move when it is pressed.
 		-->
-		<Tooltip label={ACTS.everyCell} placement="top" shortcut={keyOf('everyCell', 'theater')}>
-			<Button
-				size="small"
-				tone="ghost"
-				class="pick every {wall.everyCell ? 'on' : ''}"
-				pressed={wall.everyCell}
-				aria-label="Controls for every cell"
-				{...aims(wall, 'every')}
-				onclick={() => wall.focusEvery()}
-			>
-				All
-			</Button>
-		</Tooltip>
-		{#each wall.cells as one, at (one.key)}
-			<Button
-				size="small"
-				tone="ghost"
-				class="pick {at === chosen && !wall.everyCell ? 'on' : ''}"
-				pressed={at === chosen && !wall.everyCell}
-				aria-label="Controls for cell {at + 1}"
-				{...aims(wall, at)}
-				onclick={() => wall.chooseByNumber(at)}
-			>
-				{at + 1}
-			</Button>
-		{/each}
+			<Tooltip label={ACTS.everyCell} placement="top" shortcut={keyOf('everyCell', 'theater')}>
+				<Button
+					size="small"
+					tone="ghost"
+					class="pick every {wall.everyCell ? 'on' : ''}"
+					pressed={wall.everyCell}
+					aria-label="Controls for every cell"
+					{...aims(wall, 'every')}
+					onclick={() => wall.focusEvery()}
+				>
+					All
+				</Button>
+			</Tooltip>
+			{#each wall.cells as one, at (one.key)}
+				<Button
+					size="small"
+					tone="ghost"
+					class="pick {at === chosen && !wall.everyCell ? 'on' : ''}"
+					pressed={at === chosen && !wall.everyCell}
+					aria-label="Controls for cell {at + 1}"
+					{...aims(wall, at)}
+					onclick={() => wall.chooseByNumber(at)}
+				>
+					{at + 1}
+				</Button>
+			{/each}
+		</div>
+		{#if folded}
+			<div class="fold" bind:offsetWidth={foldWide}>
+				{#if controlled}{@render controlledMark()}{/if}
+				<MenuButton label="Which cell to control" side="top" portalTo={stage.whatFillsTheWindow}>
+					{#snippet trigger({ props })}
+						<Tooltip label="Which cell to control" placement="top">
+							<Button
+								{...props}
+								size="small"
+								tone="ghost"
+								class="pick on"
+								trailing="expand_more"
+								aria-label="Choose which cell to control, now {foldNames}"
+							>
+								{onCell}
+							</Button>
+						</Tooltip>
+					{/snippet}
+					<ContextMenuItem
+						label="All"
+						checked={wall.everyCell}
+						oneOf
+						onselect={() => wall.focusEvery()}
+					/>
+					{#each wall.cells as one, at (one.key)}
+						<ContextMenuItem
+							label={`${at + 1}`}
+							checked={at === chosen && !wall.everyCell}
+							oneOf
+							onselect={() => wall.chooseByNumber(at)}
+						/>
+					{/each}
+				</MenuButton>
+			</div>
+		{/if}
 	</div>
 {/snippet}
 
 <style>
 	/*
-	 * Square, and the same size whatever digit is in them, so the row of numbers is a fixed width
-	 * whichever cell is chosen. `:global` because the class is handed to the shared button and
-	 * lands on an element compiled in that component's file. A CSS comment does not nest, so an
-	 * unterminated one would swallow this rule; `gate:css-comments` refuses that, and a terminator
-	 * written inside a comment.
+	 * Square whatever the digit, so the row is one width whichever cell is chosen. `:global`: the
+	 * class lands on the shared button's element.
 	 */
-	.numbers :global(.pick) {
+	.picker :global(.pick) {
 		min-inline-size: 28px;
 		inline-size: 28px;
 		block-size: 28px;
@@ -217,13 +271,32 @@
 		font-variant-numeric: tabular-nums;
 	}
 
-	/* One row, evenly spaced, whatever the wall holds, and it does not give way: the bar grows to
-	   hold it instead. See `.controls` in `StageBar`, which is where that was decided. */
-	.numbers {
+	/* One row, evenly spaced, whatever the wall holds; the bar grows to hold it until it folds. */
+	.numbers,
+	.fold {
 		display: flex;
 		flex: none;
 		align-items: center;
 		gap: var(--space-1);
+	}
+
+	.picker {
+		position: relative;
+		display: flex;
+	}
+
+	/* Out of sight and spilling toward the start, which adds nothing to the row's measured width. */
+	.numbers.folded {
+		position: absolute;
+		inset-inline-end: 0;
+		inline-size: max-content;
+		visibility: hidden;
+	}
+
+	.fold :global(.pick) {
+		min-inline-size: auto;
+		inline-size: auto;
+		padding-inline: var(--space-2);
 	}
 
 	/* The accent, and the whole mark: it states a fact about the wall, so it is lit, not dimmed. */
@@ -251,7 +324,7 @@
 	 * `--sift-accent-bg` is the token layer's answer: an opaque surface, "the ground under an
 	 * active nav row, a selected chip", which reads the same over any frame.
 	 */
-	.numbers :global(.pick.on) {
+	.picker :global(.pick.on) {
 		border: 1px solid var(--sift-accent);
 		background: var(--sift-accent-bg);
 		color: var(--sift-accent-text);

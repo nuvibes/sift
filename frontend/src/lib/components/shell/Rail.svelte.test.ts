@@ -208,6 +208,18 @@ describe('the leaf and the bolt above the rule', () => {
 		expect(holder.compareDocumentPosition(rule) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 	});
 
+	it("draws the leaf in the app's client mode as in a browser: nothing reads the window", () => {
+		(window as { sift?: unknown }).sift = { isDesktop: true, localHardware: async () => ({}) };
+		try {
+			render();
+			imports.page = queuePage({ running: 4, stepping_back: true, full_amount: false });
+			flushSync();
+			expect(fullAmountButton()).not.toBeNull();
+		} finally {
+			delete (window as { sift?: unknown }).sift;
+		}
+	});
+
 	it('draws the bolt, pressed, while the full amount runs although the device is in use', () => {
 		render();
 		imports.page = queuePage({ running: 8, stepping_back: false, full_amount: true });

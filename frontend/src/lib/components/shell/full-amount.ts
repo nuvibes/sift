@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 /*
  * THE LEAF AND THE BOLT: eco mode, where background work keeps to a share of this device while
- * somebody is working or other programs are busy, and a press for the full amount until Sift stops
- * or the next press. Nothing is drawn while no task runs, outside eco mode, or for a guest. Read
- * from the queue's first page, which the shell already keeps current.
+ * somebody is working, a video is playing or other programs are busy, and a press for the full
+ * amount until Sift stops or the next press. Nothing is drawn while no task runs, outside eco mode,
+ * or for a guest. Read from the queue's first page, which the shell already keeps current.
  */
 
 import { api, ApiError } from '$lib/api/client';
@@ -11,8 +11,9 @@ import type { components } from '$lib/api/schema';
 import { imports } from '$lib/library/imports.svelte';
 import { toasts } from '$lib/shell/toasts.svelte';
 import { UNREACHABLE } from '$lib/shell/unreachable';
+import { siftElsewhere } from './sift-elsewhere.svelte';
 
-/** Why the work steps back: somebody at this device, or other programs keeping it busy. */
+/** Why the work steps back: somebody at this device, a video playing, or other programs busy. */
 type StepBackCause = NonNullable<components['schemas']['JobsPage']['step_back_for']>;
 
 /** What other programs keep busy: the CPU, the GPU, memory. */
@@ -56,12 +57,19 @@ const BUSY_WORDS: Record<BusyWith, string> = {
 	memory: 'most of the memory'
 };
 
+/** The device eco mode is a share of: in the app's client mode, not the one it's on. */
+function device(elsewhere: boolean): string {
+	return elsewhere ? 'the device running Sift' : 'this device';
+}
+
 /** Why Sift is in eco mode: "you're working", "other programs are using the CPU and the GPU". */
 export function ecoWhy(
 	cause: StepBackCause | null | undefined,
-	over: readonly BusyWith[] | null | undefined = []
+	over: readonly BusyWith[] | null | undefined = [],
+	elsewhere = false
 ): string {
-	if (cause !== 'others') return "you're working";
+	if (cause === 'playing') return 'a video is playing';
+	if (cause !== 'others') return elsewhere ? "someone's working there" : "you're working";
 	const named = (over ?? []).map((one) => BUSY_WORDS[one]).filter(Boolean);
 	if (named.length === 0) return 'other programs are busy';
 	const last = named.pop();
@@ -72,9 +80,10 @@ export function ecoWhy(
 export function usingShare(
 	percent: number | null | undefined,
 	cause: StepBackCause | null | undefined = 'input',
-	over: readonly BusyWith[] | null | undefined = []
+	over: readonly BusyWith[] | null | undefined = [],
+	elsewhere = false
 ): string {
-	return `In eco mode while ${ecoWhy(cause, over)}: using ${shareWords(percent ?? DEFAULT_SHARE)} of this device`;
+	return `In eco mode while ${ecoWhy(cause, over, elsewhere)}: using ${shareWords(percent ?? DEFAULT_SHARE)} of ${device(elsewhere)}`;
 }
 
 /** Which of the two is drawn, or neither. */
@@ -85,7 +94,8 @@ export const FULL_AMOUNT_COPY = {
 	/* The control's name, the same in both states; pressed or not is said by `aria-pressed`. */
 	name: 'Use the full amount of this device',
 	lessPress: 'Press to use the full amount.',
-	full: (why: string) => `Out of eco mode: using the full amount of this device although ${why}`,
+	full: (why: string, of = device(false)) =>
+		`Out of eco mode: using the full amount of ${of} although ${why}`,
 	fullPress: 'Press to go back to eco mode.',
 	/* The press on a phone's row, where there is room for a verb. */
 	useFull: 'Use the full amount',
@@ -134,11 +144,12 @@ export function fullAmountSays(
 	state: Exclude<FullAmountState, null>,
 	share: number,
 	cause: StepBackCause | null = currentCause(),
-	over: readonly BusyWith[] = currentOver()
+	over: readonly BusyWith[] = currentOver(),
+	elsewhere: boolean = siftElsewhere.yes
 ): string {
 	return state === 'less'
-		? usingShare(share, cause, over)
-		: FULL_AMOUNT_COPY.full(ecoWhy(cause, over));
+		? usingShare(share, cause, over, elsewhere)
+		: FULL_AMOUNT_COPY.full(ecoWhy(cause, over, elsewhere), device(elsewhere));
 }
 
 /** The tooltip's two sentences for a state: what is happening, then what a press does. */
@@ -146,10 +157,11 @@ export function fullAmountTip(
 	state: Exclude<FullAmountState, null>,
 	share: number = currentShare(),
 	cause: StepBackCause | null = currentCause(),
-	over: readonly BusyWith[] = currentOver()
+	over: readonly BusyWith[] = currentOver(),
+	elsewhere: boolean = siftElsewhere.yes
 ): string {
 	const press = state === 'less' ? FULL_AMOUNT_COPY.lessPress : FULL_AMOUNT_COPY.fullPress;
-	return `${fullAmountSays(state, share, cause, over)}. ${press}`;
+	return `${fullAmountSays(state, share, cause, over, elsewhere)}. ${press}`;
 }
 
 const PRESS = '/jobs/full-amount';

@@ -24,7 +24,7 @@ from sift.kernel.ml.child import ChildRunner
 from sift.kernel.subprocess import set_machine_memory
 from sift.kernel.wiring import provide
 from sift.kernel.workbench import Workbench
-from sift.slices import library_roots, performance, settings_hub
+from sift.slices import library_roots, performance, player, settings_hub
 from sift.slices.faces import settings as face_settings
 from sift.slices.faces import tuning as face_tuning
 from sift.slices.faces import weights as face_weights
@@ -169,16 +169,14 @@ def build_benchmark(
     hub: settings_hub.SettingsService,
     workbench: Workbench,
 ) -> None:
-    """The benchmark job, what Sift runs by itself when a library folder is added
-    (`wiring.ON_FOLDER_ADDED`) and once nothing waits, the folder's scan after it, and its Undo.
-    Built after the self-test's runner and before the workers start. See `performance.benchmark`."""
+    """The benchmark job (`wiring.ON_FOLDER_ADDED`, then once nothing waits), the folder's scan
+    after it, and its Undo. Built after the self-test's runner and before the workers start."""
     runner = wiring.part_of_app(app, performance.SELF_TEST_RUNNER)
     first = performance.FirstBenchmark()
     provide(app, performance.FIRST_BENCHMARK, first)
 
     async def notify(changed: set[str]) -> None:
-        # The reactions are assembled after the workers start, so they are looked up when a value
-        # is set rather than now.
+        # Looked up at set time: the reactions are assembled after the workers start.
         react = wiring.part_of_app_or_none(app, wiring.ON_SETTINGS_CHANGED)
         if react is not None:
             await react(changed)
@@ -196,7 +194,6 @@ def build_benchmark(
         )
 
     async def scan(root_id: str, requested_by: str | None) -> None:
-        # The scan the folder's own add asked for, named for the person who added it.
         with contextlib.suppress(JobSwitchedOff):
             await library_roots.queue_scan(queue, {"root_id": root_id}, requested_by=requested_by)
 
@@ -222,7 +219,11 @@ def build_benchmark(
         performance.BENCHMARK, performance.ThenScan(queue=queue, first=first, scan=scan)
     )
     quiet = performance.WhenQuiet(
-        runner=runner, queue=queue, first=first, kinds=registered_handlers
+        runner=runner,
+        queue=queue,
+        first=first,
+        kinds=registered_handlers,
+        since_played=player.PLAYED.seconds_since,
     )
     quiet.listen()
     queue.listen_for_settled(performance.BENCHMARK, quiet.ended)

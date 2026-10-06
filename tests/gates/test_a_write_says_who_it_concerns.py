@@ -572,6 +572,10 @@ SILENT: dict[str, str] = {
     "kernel.jobs.ledger.start": (
         "closes what the last process left open, at start-up before anything is served"
     ),
+    "kernel.jobs.ledger.said": (
+        "what a live run's row said this minute, kept to score the run at its end; no screen draws"
+        " the minutes, and the score lands through `_finish`"
+    ),
     "kernel.jobs.queue_settle.beat": "a running job's heartbeat, several a minute; no screen draws it",
     "kernel.secret_store.seal": (
         "a sealed secret, which no screen may ever draw; the row that names it announces"

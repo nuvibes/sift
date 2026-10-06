@@ -210,7 +210,7 @@ class DownloadItem(Wire):
     #: The address, exactly as it was pasted. What a link on the row points AT, always.
     url: str | None = None
     #: The address with a signed link's expiry and signature taken off: what the row SAYS, never
-    #: what a link points at (the host refuses the short form).
+    #: what a link points at.
     shown_url: str | None = None
     #: The produced file's name and size, read from the library, so a deleted file leaves a row
     #: that no longer claims to have anything.
@@ -235,7 +235,6 @@ class DownloadItem(Wire):
     #: the row out. Absent before it is queued and after the queue prunes it.
     job_id: str | None = None
     #: Place in line from 1, only while waiting: a position, never a time, which would need a rate.
-    #: It can rise, since a download moved to the front goes ahead.
     position: int | None = None
     #: The folder this goes into, named, never "the default folder": by the job's own rule (chosen,
     #: else the Site's, else everything's; `SiteOptionStore.resolve`). A running or landed row names
@@ -246,6 +245,8 @@ class DownloadItem(Wire):
     #: absent when none were lost.
     files_offered: int | None = None
     files_left_out: int | None = None
+    #: What its tunnel refused after the file landed; absent when nothing was.
+    reads_refused: str | None = None
 
 
 class DownloadProgress(Wire):

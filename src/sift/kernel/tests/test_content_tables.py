@@ -693,10 +693,10 @@ async def test_a_folder_that_refuses_a_piece_of_work_takes_its_files_out_of_ever
 
     assert (await store.asset_count(), await store.asset_count(within)) == (5, 3)
     thumbs = VerdictProduct.THUMBNAILS.value
-    assert await store.wanting_count(DerivativeKind.THUMB, thumbs) == 5
-    assert await store.wanting_count(DerivativeKind.THUMB, thumbs, within) == 3
-    assert await store.coming_count(DerivativeKind.THUMB, thumbs) == 2
-    assert await store.coming_count(DerivativeKind.THUMB, thumbs, within) == 1
+    assert await store.wanting_count(thumbs) == 5
+    assert await store.wanting_count(thumbs, within) == 3
+    assert await store.coming_count(thumbs) == 2
+    assert await store.coming_count(thumbs, within) == 1
 
     lacking = lacks_derivative([DerivativeKind.THUMB])
     assert lacking is not None

@@ -15,21 +15,16 @@ as long as the file is open. What the job count governs is the processor; what t
 wire. The two are different resources, and a NAS install needs them counted apart: one knob
 cannot be both.
 
-**A place let go goes to whoever has waited longest**, never back to the reader that let it go.
-A reader that reads a file a block at a time (a swap's whole-file digest) takes its place again for
-every block, and it comes back for the next one before anybody it woke has run. Were a freed place
-free for anyone to take, that reader would take it back every time: two such readers would hold
-both places of a two-place share for the whole of their files, a block at a time on paper and a
-file at a time in fact, and every other read on the share would wait for a whole file. So a release
-hands the place straight to the first waiter, and a reader coming back joins the end of the queue.
+**A place let go goes to whoever has waited longest**, never back to the reader that let it go. A
+reader taking its place again for every block (a swap's whole-file digest) would otherwise take it
+back each time before anybody it woke has run, and two of them would hold both places of a
+two-place share for the whole of their files.
 
-**And every fourth place goes to an ordinary reader while both kinds wait.** A reader that asked to
-go first (`first()`: a scan taking files in, a swap somebody is watching) is handed a place before
-the rest, and a swap asks for places without a break for as long as it runs. Strictly first, the
-ordinary reads on the share (a picture being made, a file somebody opened) would wait behind the
-whole of it. So of the places handed on while both kinds are waiting, every `ORDINARY_TURN`th goes
-to the ordinary reader that has waited longest: the readers that asked to go first still have
-most of the share, and nothing else on it stops.
+**Three kinds of reader, and every fourth place to the kinds below.** A reader that asked to go
+first (`first()`: a scan's walk, a swap somebody is watching) is handed a place before a file's
+read (`the_read()`: a probe), and that before everything else (a picture, a fingerprint). Strictly
+so, the rest would wait out a whole import; so of the places handed on while a lower kind also
+waits, every `ORDINARY_TURN`th goes to the lower kinds, by the same rule.
 """
 
 from __future__ import annotations
@@ -61,9 +56,15 @@ MAX_READS_AT_ONCE = 64
 #: A wait worth reporting, in seconds: the same quarter second the loop and the pools warn at.
 WAIT_WARN_SECONDS = 0.25
 
-#: Of the places handed on while readers that asked to go first and ordinary readers both wait,
-#: which one in how many goes to the oldest ordinary reader. See the module docstring.
+#: Of the places handed on while a lower kind of reader also waits, which one in how many goes to
+#: the lower kinds. See the module docstring.
 ORDINARY_TURN = 4
+
+#: Off, a file's read (`the_read()`) waits in line with the work made from files already read.
+READS_FIRST = False
+
+#: The kinds of reader, lowest first.
+ORDINARY, READ, FIRST = 0, 1, 2
 
 
 @functools.lru_cache(maxsize=4096)
@@ -88,74 +89,73 @@ class Lane:
     """How many may read at once; zero means no cap."""
     active: int = 0
     waiting: int = 0
-    #: How many of those waiting asked to go first. See `first()`. While any does, an ordinary
-    #: waiter waits for its turn (`hand_on`).
+    #: How many of those waiting are of a kind above the ordinary.
     urgent_waiting: int = 0
     waits: int = 0
     """How many reads had to wait at all."""
     worst_wait: float = 0.0
-    #: Seconds waited in all, by readers that asked to go first and by the rest.
+    #: Seconds waited in all, by readers of a kind above the ordinary and by the rest.
     urgent_wait: float = 0.0
     ordinary_wait: float = 0.0
-    #: Who is waiting, oldest first: those who asked to go first, and everyone else. Each is told
-    #: by its future once a place has been handed to it (see the module docstring).
-    _urgent: deque[asyncio.Future[None]] = field(default_factory=deque)
-    _ordinary: deque[asyncio.Future[None]] = field(default_factory=deque)
+    #: When a file's read last took a place here (`time.monotonic`), or None.
+    read_at: float | None = None
+    #: Who is waiting, oldest first, by kind (`ORDINARY`, `READ`, `FIRST`).
+    _waiters: tuple[deque[asyncio.Future[None]], ...] = field(
+        default_factory=lambda: (deque(), deque(), deque())
+    )
     #: The reads holding a place for a whole file start to end (`whole_file`), and who waits to.
     whole: int = 0
     _whole_waiters: deque[asyncio.Future[None]] = field(default_factory=deque)
-    #: How many places were handed on while both kinds were waiting. See `hand_on`.
-    _contested: int = 0
+    #: How many places were handed on while a lower kind also waited, by kind. See `_next`.
+    _contested: list[int] = field(default_factory=lambda: [0, 0, 0])
 
     @property
     def capped(self) -> bool:
         return self.limit > 0
 
-    def _free_for(self, urgent: bool) -> bool:
+    def _free_for(self, rank: int) -> bool:
         """Whether a reader arriving now may take a place without queueing: one is free and nobody
-        it must not pass is waiting for it."""
+        of its kind or above is waiting for it."""
         if not self.capped:
             return True
-        if self.active >= self.limit:
-            return False
-        return not self._urgent if urgent else not (self._urgent or self._ordinary)
+        return self.active < self.limit and not any(self._waiters[rank:])
 
     def hand_on(self) -> None:
-        """Give every free place to whoever has waited longest, a reader that asked to go first
-        before the rest, except that every `ORDINARY_TURN`th place handed on while both kinds wait
-        goes to the oldest ordinary reader. A waiter given up while it waited is passed over."""
+        """Give every free place to the next waiter (`_next`), passing over one given up."""
         while not self.capped or self.active < self.limit:
-            queue = self._urgent or self._ordinary
-            if not queue:
+            waiter = self._next()
+            if waiter is None:
                 return
-            waiter = queue.popleft() if queue is self._ordinary else self._next_while_both_wait()
             if waiter.done():
                 continue
             self.active += 1
             waiter.set_result(None)
 
-    def _next_while_both_wait(self) -> asyncio.Future[None]:
-        """The next waiter while a reader that asked to go first waits: that reader, or, on the
-        ordinary readers' turn and while one of them waits, the oldest of them."""
-        if not self._ordinary:
-            return self._urgent.popleft()
-        self._contested += 1
-        if self._contested % ORDINARY_TURN == 0:
-            return self._ordinary.popleft()
-        return self._urgent.popleft()
+    def _next(self) -> asyncio.Future[None] | None:
+        """The oldest waiter of the highest kind waiting, except every `ORDINARY_TURN`th place
+        handed on while a lower kind also waits, which goes to the lower kinds by the same rule."""
+        ranks = [rank for rank in (FIRST, READ, ORDINARY) if self._waiters[rank]]
+        for at, rank in enumerate(ranks):
+            if at + 1 < len(ranks):
+                self._contested[rank] += 1
+                if self._contested[rank] % ORDINARY_TURN == 0:
+                    continue
+            return self._waiters[rank].popleft()
+        return None
 
-    async def take(self, urgent: bool) -> float | None:
+    async def take(self, rank: int) -> float | None:
         """Take a place, queueing for one when none is free. How long it waited, or None when it
         did not wait at all."""
-        if self._free_for(urgent):
+        if self._free_for(rank):
             self.active += 1
             return None
         began = time.monotonic()
         waiter: asyncio.Future[None] = asyncio.get_running_loop().create_future()
-        queue = self._urgent if urgent else self._ordinary
+        queue = self._waiters[rank]
         queue.append(waiter)
         self.waiting += 1
         self.waits += 1
+        urgent = rank > ORDINARY
         self.urgent_waiting += urgent
         try:
             await waiter
@@ -262,6 +262,15 @@ class StorageLanes:
     def network_reads_at_once(self) -> int:
         return self._network
 
+    def reading_first(self, within: float) -> set[str]:
+        """The storages where a file's read took a place in the last `within` seconds."""
+        now = time.monotonic()
+        return {
+            key
+            for key, lane in self._lanes.items()
+            if lane.read_at is not None and now - lane.read_at < within
+        }
+
     def lane_for(self, path: Path) -> Lane:
         storage = storage_for(path)
         lane = self._lanes.get(storage.key)
@@ -287,9 +296,11 @@ class StorageLanes:
         if not lane.capped:
             yield
             return
-        # An ordinary read has every fourth place handed on while a first reader waits (`hand_on`).
-        urgent = _FIRST.get()
-        waited = await lane.take(urgent)
+        rank = _RANK.get()
+        waited = await lane.take(rank)
+        if rank == READ:
+            lane.read_at = time.monotonic()
+        urgent = rank > ORDINARY
         if waited is not None:
             if urgent:
                 lane.urgent_wait += waited
@@ -320,10 +331,9 @@ class StorageLanes:
 #: no cap at all.
 _LANES: StorageLanes | None = None
 
-#: Whether the reads under way in this task asked to go first. Set by `first()`, read by
-#: `reading()`; a context variable so it follows the scan through every helper it calls without a
-#: parameter on each.
-_FIRST: ContextVar[bool] = ContextVar("lanes_first", default=False)
+#: The kind of reader the reads under way in this task are. Set by `first()` and `the_read()`, read
+#: by `reading()`; a context variable so it follows a job through every helper it calls.
+_RANK: ContextVar[int] = ContextVar("lanes_rank", default=ORDINARY)
 
 #: How many files one reader keeps open on a local disk nobody has measured: enough to keep an
 #: NVMe busy without turning a spinning disk into a seek storm.
@@ -332,19 +342,27 @@ LOCAL_READS_AT_ONCE = 4
 
 @asynccontextmanager
 async def first() -> AsyncIterator[None]:
-    """Every read made under this goes to the front of its storage's lane.
-
-    For the scan taking files in: on one share the scan's reads and the probes of the files it
-    just took in compete for the same two slots, and in arrival order the files appear at the
-    pace the probes leave room for. The answer to which should come first is
-    files, and this is the whole of that answer: nothing is reserved, and a probe still reads
-    whenever no scan read is waiting.
-    """
-    token = _FIRST.set(True)
+    """Every read made under this goes to the front of its storage's lane: a scan's walk, so its
+    files are taken in ahead of their probes, and a swap somebody is watching."""
+    token = _RANK.set(FIRST)
     try:
         yield
     finally:
-        _FIRST.reset(token)
+        _RANK.reset(token)
+
+
+@asynccontextmanager
+async def the_read() -> AsyncIterator[None]:
+    """Every read made under this, a file's read, goes ahead of the work made from files already
+    read, behind `first()`: on a share an import's files are all read first, to the last."""
+    if not READS_FIRST or _RANK.get() >= READ:
+        yield
+        return
+    token = _RANK.set(READ)
+    try:
+        yield
+    finally:
+        _RANK.reset(token)
 
 
 def reads_at_once(path: Path) -> int:

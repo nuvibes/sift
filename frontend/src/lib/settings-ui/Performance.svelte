@@ -238,8 +238,7 @@
 		}
 	}
 
-	/* Applying goes through the ordinary settings save: the same validation, the same rollback if
-	   the server refuses. A suggestion gets no privileges a typed number does not have. */
+	/* Through the ordinary settings save: the same validation and rollback as a typed number. */
 	async function applyAll(recommendations: Recommendation[]) {
 		const changes = recommendations.filter((one) => one.changes_anything);
 		if (changes.length === 0) return;
@@ -532,14 +531,8 @@
 		</div>
 	{/if}
 
-	<!-- Straight after the table that says whether there is a card, because "you have a card
-	     and it is not being used" is a sentence with two halves and they belong next to each
-	     other: the table names the card, the two device settings may refuse it, and this says
-	     what to do about that. -->
+	<!-- Straight after the table that names the card: this says what to do when it isn't used. -->
 	<GraphicsCard card={gpu} />
-
-	<!-- "How long jobs take" is a record of what each pass cost, not a live reading, so it is
-	     in Activity > History with every other record. -->
 
 	<!-- The benchmark, under the device it measures; its advice goes through the settings save. -->
 	{#if selfTest}
@@ -619,16 +612,19 @@
 				{:else if selfTest.finished && selfTest.recommendations.length > 0}
 					{@const changes = selfTest.recommendations.filter((one) => one.changes_anything)}
 					{@const set = selfTest.recommendations.filter(wasSet)}
+					{@const rest = selfTest.recommendations.filter((one) => !wasSet(one))}
 					{#if set.length > 0}
 						<p class="verdict" data-testid="self-test-set-by-sift">
 							{COPY.measure.setBySift(set.length)}
 						</p>
 						{@render suggestions(set, 'self-test-set')}
+						{#if rest.length > 0}
+							<p class="verdict apart" data-testid="self-test-not-set">
+								{COPY.measure.notSet(rest.length)}
+							</p>
+						{/if}
 					{/if}
-					{@render suggestions(
-						selfTest.recommendations.filter((one) => !wasSet(one)),
-						'self-test-suggested'
-					)}
+					{@render suggestions(rest, 'self-test-suggested')}
 					<!-- Not on a pane held read only: applying is a change to how hard the computer works. -->
 					{#if changes.length > 0 && !held()}
 						<Button
@@ -1123,6 +1119,10 @@
 		margin: 0;
 		color: var(--sift-ink-2);
 		font: var(--text-body);
+	}
+
+	.verdict.apart {
+		margin-block-start: var(--space-4);
 	}
 
 	/* The answer, marked when something is waiting at this moment. Only the present is marked: a

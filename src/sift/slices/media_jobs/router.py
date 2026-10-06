@@ -19,6 +19,7 @@ from sift.kernel import attention, device_load, lanes, wiring
 from sift.kernel.access import Repository, Viewer
 from sift.kernel.attention import full_amount, stepping_back
 from sift.kernel.content import ContentStore
+from sift.kernel.content.identity_counts import UNREAD_KINDS
 from sift.kernel.content.library import LibraryStore, names_for_assets, names_for_roots
 from sift.kernel.db import Database
 from sift.kernel.jobs import (
@@ -80,7 +81,10 @@ from sift.slices.media_jobs.jobs import (
     REBUILD_THUMBNAILS,
     preview_recipe,
 )
+from sift.slices.media_jobs.pooled import WAITING_FOR_THE_SCAN as WAITING_FOR_THE_SCAN
+from sift.slices.media_jobs.pooled import priced_together
 from sift.slices.media_jobs.presses import Presses, read_presses
+from sift.slices.media_jobs.read_first import after_the_read_first
 
 log = get_logger(__name__)
 
@@ -169,8 +173,7 @@ def _view(
     )
 
 
-#: Which payload key names the thing a job is about, in the order they are looked for. A job that
-#: carries none of them is whole-library work and has no subject to show.
+#: The payload keys naming what a job is about, in order; with none it is whole-library work.
 _ASSET_KEY = "asset_id"
 _ROOT_KEY = "root_id"
 
@@ -245,8 +248,10 @@ async def _families_and_holds(
         unread=unread,
         scan_held=await queue.held_for_family_by_type(),
         pace=await _paced_by(library),
+        pool_bound=_pool_bound(),
         benchmark=await queue.held_by_exclusive(),
     )
+    families = await after_the_read_first(families, library, _AFTER_THE_READ, _joined)
     roots = None if library is None else {root.id for root in await library.roots()}
     for key, (failed, why) in (await _failed_runs(queue, roots)).items():
         families[key] = families[key].model_copy(update={"failed": failed, "last_error": why})
@@ -340,8 +345,7 @@ async def _work_of(
                 failed=one.failed,
             )
             continue
-        # DONE IS DERIVED FROM WHAT IS LEFT, not counted from the queue (see `run_of`): the queue's
-        # window of finished jobs moves forward as the oldest finish.
+        # Done is derived from what is left (`run_of`): the queue's window of finished jobs moves.
         run = work_ahead.run_of(
             kind,
             left=left,
@@ -406,8 +410,7 @@ async def _page(
     shown: _Shown,
     library: LibraryStore | None = None,
 ) -> JobsPage:
-    # THE BACKGROUND UPKEEP IS NOT LISTED (`unlisted_job_types`): neither rows nor tallies, though
-    # a caller naming one by type still reads it, and a family's steps are never upkeep.
+    # Background upkeep is not listed (`unlisted_job_types`), unless a caller names its type.
     upkeep = unlisted_job_types()
     # Nor the work that runs by itself as files arrive, where it heads its own row; its failures stay.
     unnamed = job_type is None and parent_id is None
@@ -417,8 +420,7 @@ async def _page(
     summary = await queue.work_summary()
     claimed = registered_job_names()
     gone = sorted(kind for kind in summary.states if kind not in claimed and kind not in upkeep)
-    # On a page of families a state is the state a family's row SHOWS (`folded`), never a row's
-    # own: the tab's list and its number then name the same families.
+    # On a page of families a state is the one a family's row shows (`folded`), never a row's own.
     page = await queue.list(
         state=None if fold else state,
         folded=state if fold else None,
@@ -432,8 +434,7 @@ async def _page(
         offset=offset,
     )
     subjects, assets, folded = await _about_the_rows(queue, database, page.jobs, shown, fold=fold)
-    # WHAT IS STILL TO COME, so a bar has its denominator before the work has been queued: a pass
-    # queues a page at a time, so the queue alone would make the total climb while somebody watches.
+    # What is still to come, so a bar's total does not climb as a pass queues a page at a time.
     work, counted = await _work_of(summary, work_ahead, upkeep)
     listed = {kind: by_state for kind, by_state in summary.states.items() if kind not in upkeep}
     counts = await _row_counts(queue, listed, quiet)
@@ -510,8 +511,7 @@ async def _folded(
     """Each top row's family folded (steps counted, one state, its file named once), in three
     statements for the page."""
     counts = await queue.step_counts([job.id for job in tops])
-    # Named from the steps only where the top has no subject of its own and its family is small
-    # enough to have been counted whole: a family past the cap is a pass over many files.
+    # Named from the steps only where the top has no subject and its family was counted whole.
     unnamed = [
         job.id
         for job in tops
@@ -547,13 +547,10 @@ _NO_STEPS = StepCounts(by_state={}, at_least=False)
 #: What a pass that is not running says, in one sentence each: only the server can tell them apart.
 NOTHING_WAITING = "Nothing waiting"
 WAITING_FOR_WINDOW = "Waiting for tonight's window."
-#: The same sentence with the hour the window opens, when the family declared where to read it
-#: (`Switchboard.declare_window`). Without the hour somebody cannot tell ten minutes from ten hours.
+#: With the hour the window opens, where the family declared it (`Switchboard.declare_window`).
 WAITING_FOR_WINDOW_AT = "Waiting for tonight's window, which opens at {opens}."
 #: A family whose every unfinished job waits for quiet hours; their hour is drawn at the top of Tasks.
 WAITING_FOR_QUIET_HOURS = "Waiting for quiet hours."
-#: A pass whose every unfinished job a big read keeps back until its reads end.
-WAITING_FOR_THE_SCAN = "Waiting for the scan to finish."
 PAUSED_FOR_THE_BENCHMARK = "Paused while Sift benchmarks this device."
 AFTER_THE_BENCHMARK = "Waits until the benchmark's done."
 _HOLD: dict[str, object] = {"time_unknown": AFTER_THE_BENCHMARK, "for_task": None, "pace": None}
@@ -615,8 +612,7 @@ def _counted(
         left += here
         counted_left += here
         outstanding += kind.outstanding
-        # From the library, so a finished library is full; a kind with no total adds nothing, as
-        # a queued run's units would swell the denominator past the library.
+        # From the library: a kind with no total adds nothing, so a queued run cannot swell it.
         if kind.total is not None:
             done += kind.done
             total += kind.total
@@ -675,6 +671,7 @@ async def _families(
     scan_held: Mapping[str, int] | None = None,
     pace: str | None = None,
     benchmark: bool = False,
+    pool_bound: bool = True,
 ) -> dict[str, FamilyOfWork]:
     """The long passes, each with its estimate, its reason and what it may do. `presses` alone
     describe a family whose live work is theirs; `unread` is what the walks have still to read."""
@@ -712,6 +709,10 @@ async def _families(
         if by_presses_alone:
             alone.add(family.value)
     answer = not_before_the_read(pictured_in_the_read(answer, alone), alone)
+    if ledger is not None and pool is not None and not (unread and unread.uncounted):
+        answer = await priced_together(
+            answer, work, kinds or {}, ledger, pool.concurrency, pool_bound, alone
+        )
     answer = not_known_yet(answer, uncounted=0 if unread is None else unread.uncounted, pace=pace)
     return {
         key: one.model_copy(update=_HOLD) if one.reason == PAUSED_FOR_THE_BENCHMARK else one
@@ -773,8 +774,7 @@ async def _family(family: Family, types: list[str], reads: _Reads) -> tuple[Fami
     on = await _switched_on(reads.board, types, reads.switches)
     state = reads.readiness.get(family)
     ready = True if state is None else state.ready
-    # A coordinator's cap is the press's own entitlement, not the family's window; the window
-    # holds the family's own types, so those are what "held" asks about.
+    # A coordinator's cap is its press's, not the family's window: "held" asks of its own types.
     own = [one for one in types if one not in reads.carriers]
     held_now = _held(reads.pool, own)
     running = sum((reads.states or {}).get(one, {}).get(JobState.RUNNING.value, 0) for one in types)
@@ -909,17 +909,8 @@ def pictured_in_the_read(
     return answer
 
 
-#: The passes made from the files the read takes in. Their work on a file not read yet cannot start
-#: before the read, so neither can their finish.
+#: The passes made from the files the read takes in: none can finish before the read does.
 _AFTER_THE_READ = (Family.GENERATE, Family.FINGERPRINT, Family.IDENTIFY, Family.SEMANTIC)
-
-#: The media kinds a file not read yet is counted as wanting a product for, as the library counts
-#: an unread file (`_MADE_FOR_UNREAD`); a product not named is for every kind.
-_UNREAD_KINDS: dict[str, frozenset[str]] = {
-    "previews": frozenset({"video", "gif"}),
-    "sprites": frozenset({"video", "gif"}),
-    "music": frozenset({"video"}),
-}
 
 
 def _with_unread(
@@ -927,8 +918,9 @@ def _with_unread(
     kinds: Mapping[str, Mapping[str, float]],
     unread: FilesToRead,
 ) -> tuple[dict[str, KindOfWork], dict[str, dict[str, float]]]:
-    """The read (key "") and each product after it with the walks' files still to read added to
-    what it has left, to its total and to its mix, narrowed to the kinds it is made for."""
+    """The read (key "") and each product after it with the walks' files not yet taken in added to
+    what it has left, to its total and to its mix, by the library's rule for an unread file
+    (`UNREAD_KINDS`). A file taken in leaves the walk's count as the library's starts counting it."""
     added = dict(work)
     mixed = {job_type: dict(mix) for job_type, mix in kinds.items()}
     for key, job_type in (("", PROBE), *PRODUCT_TYPES.items()):
@@ -936,7 +928,7 @@ def _with_unread(
         # A product switched off wants nothing and has no total; a new library's read has 0.
         if kind is None or kind.waiting is None or not (kind.total or job_type == PROBE):
             continue
-        wanted = _UNREAD_KINDS.get(key)
+        wanted = UNREAD_KINDS.get(key)
         coming = {one: n for one, n in unread.by_kind.items() if wanted is None or one in wanted}
         files = round(sum(coming.values()))
         if files <= 0 or (key and PRODUCT_FAMILIES[key] not in _AFTER_THE_READ):
@@ -1015,13 +1007,14 @@ PACE_WAITED_SHARE = 0.5
 class ShareWaits:
     """Each network share's seconds waited, as the page has seen them over the last minute."""
 
-    def __init__(self) -> None:
+    def __init__(self, waits: tuple[str, ...] = ("urgent_wait_seconds", "ordinary_wait_seconds")):
+        self._waits = waits
         self._seen: deque[tuple[float, dict[str, float]]] = deque()
 
     def busiest(self, readings: Mapping[str, Mapping[str, object]], now: float) -> str | None:
         """The share whose readers waited most of the last minute, by its key, or None."""
         totals = {
-            key: cast(float, one["urgent_wait_seconds"]) + cast(float, one["ordinary_wait_seconds"])
+            key: sum(cast(float, one[wait]) for wait in self._waits)
             for key, one in readings.items()
             if one.get("remote")
         }
@@ -1043,6 +1036,13 @@ class ShareWaits:
 
 
 _SHARE_WAITS = ShareWaits()
+#: The files' reads alone: waiting on a share's places, the read is that share's, not the pool's.
+_READ_WAITS = ShareWaits(("urgent_wait_seconds",))
+
+
+def _pool_bound() -> bool:
+    installed = lanes.installed()
+    return installed is None or _READ_WAITS.busiest(installed.readings(), time.monotonic()) is None
 
 
 def _joined(names: Sequence[str]) -> str:
@@ -1216,8 +1216,7 @@ def _reason(
         return WAITING_FOR_THE_SCAN
     if left <= 0 and outstanding == 0:
         return NOTHING_WAITING
-    # Work to do and nothing claimed is NOT a reason: it is a pass nobody has started, and the
-    # estimate beside it is exactly what somebody deciding whether to press Run now wants to read.
+    # Work nobody has started is not a reason: its estimate is what somebody pressing Run now reads.
     return None
 
 

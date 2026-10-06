@@ -71,7 +71,7 @@ WHOLE_LATER: Final = (
 #: The payload key of that full run, which Sift asks for when nothing waits.
 QUIET: Final = "quiet"
 
-#: Nobody's at a device untouched this long: past a screen's usual sleep, so not mid-clip.
+#: No input and no clip read this long: past a screen's usual sleep.
 AWAY_SECONDS: Final = 600.0
 
 #: How often Sift looks for that moment, and for a reason to stop the run it started.
@@ -80,6 +80,7 @@ LOOK_SECONDS: Final = 5.0
 FOLDER_ADDED: Final = "Sift stopped the full benchmark so your new folder's files can arrive."
 ASKED_FOR: Final = "Sift stopped the full benchmark so the task you asked for can run."
 IN_USE: Final = "Sift stopped the full benchmark because this device is in use."
+PLAYING: Final = "Sift stopped the full benchmark because a video is playing in Sift."
 AGAIN: Final = (
     "It runs again by itself once Sift has nothing else to do and nobody's using this device."
 )
@@ -309,12 +310,14 @@ class WhenQuiet:
         first: FirstBenchmark,
         kinds: Callable[[], Iterable[str]],
         since_input: Callable[[], float | None] = attention.seconds_since_input,
+        since_played: Callable[[], float | None] = lambda: None,
     ) -> None:
         self._runner = runner
         self._queue = queue
         self._first = first
         self._kinds = kinds
         self._since_input = since_input
+        self._since_played = since_played
         self._heard: set[str] = {BENCHMARK}
         self._gave_way: set[str] = set()
         self._asking = asyncio.Lock()
@@ -344,6 +347,10 @@ class WhenQuiet:
         since = self._since_input()
         return since is None or since >= seconds
 
+    def _watched(self, seconds: float = AWAY_SECONDS) -> bool:
+        since = self._since_played()
+        return since is not None and since < seconds
+
     async def _live(self) -> Job | None:
         return next(
             (
@@ -365,7 +372,7 @@ class WhenQuiet:
                 if why is not None:
                     await self._stop(live.id, why)
                 return
-            if not self._away(AWAY_SECONDS):
+            if not self._away(AWAY_SECONDS) or self._watched():
                 return
             if (await self._queue.list(state=JobState.RUNNING, limit=1)).total:
                 return
@@ -379,6 +386,8 @@ class WhenQuiet:
     async def _stopped_by(self, live: Job) -> str | None:
         if not self._away(attention.ATTENTION_SECONDS):
             return IN_USE
+        if self._watched(attention.ATTENTION_SECONDS):
+            return PLAYING
         queued = await self._queue.list(state=JobState.QUEUED, limit=50)
         now = time.time()
         if any(

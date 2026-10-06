@@ -4,7 +4,7 @@
  * them are registered settings and find themselves; the switch's section and deleting what was
  * collected are not. */
 import type { Searchable } from './search';
-import { counted } from '$lib/entity/entity-counts';
+import { counted, filesSaid } from '$lib/entity/entity-counts';
 import type { FaceSettings } from '$lib/people/faces.svelte';
 import { NOT_ENOUGH_TO_SAY, onRecord } from '$lib/shell/when';
 import { describeWait } from '$lib/jobs/waiting';
@@ -62,8 +62,10 @@ export const COPY = {
 		notReady: "On, but the models aren't downloaded yet.",
 		notRunning: (problem: string) => `Not running. ${problem}`,
 		ready: (device: string) => `Ready. Running on the ${device}.`,
-		never: (count: number) =>
-			`${count.toLocaleString()} ${count === 1 ? 'file' : 'files'} not scanned for faces yet.`,
+		never: (count: number, unread = 0) =>
+			`${count.toLocaleString()} ${count === 1 ? 'file' : 'files'} not scanned for faces yet${unread > 0 ? `, and ${counted(unread)} more waiting to be scanned` : ''}.`,
+		/* Files not read yet, in Importing's words for its Scan stage. */
+		unread: (count: number) => `${filesSaid(count)} waiting to be scanned.`,
 		older: (count: number) =>
 			`${count.toLocaleString()} ${count === 1 ? 'file was' : 'files were'} scanned with older settings.`,
 		last: (when: string) => `Last scan ended ${when}.`,
@@ -251,15 +253,11 @@ export const COPY = {
  * Where recognition stands, in one line under its switch, every number the server's. Shared by the
  * Faces pane and the Recognition switches on Importing, so the two say the same thing.
  *
- * The backlog is split by reason (a file never looked at, one looked at under older settings), or a
- * library four-fifths unscanned would read like a finished one. The last scan says when it ENDED,
- * and says so when it was canceled: a start time would read a canceled scan as the last look.
- *
- * INTERIM until the wire types are regenerated: the route sends `last_run_canceled` and the
- * generated type does not name it yet, so it is read through a widened type rather than cast away.
+ * The backlog is split by reason, with the files not read yet after it, or a library four-fifths
+ * unscanned would read like a finished one. The last scan says when it ENDED, or was canceled.
  */
 export function facesStatus(
-	feature: (FaceSettings & { last_run_canceled?: boolean }) | null,
+	feature: FaceSettings | null,
 	enabled: boolean,
 	device: string
 ): string | null {
@@ -268,7 +266,10 @@ export function facesStatus(
 	if (feature.device_problem) return COPY.status.notRunning(feature.device_problem);
 	if (!feature.ready) return COPY.status.notReady;
 	const parts: string[] = [COPY.status.ready(device)];
-	if ((feature.never_scanned ?? 0) > 0) parts.push(COPY.status.never(feature.never_scanned ?? 0));
+	const never = feature.never_scanned ?? 0;
+	const unread = feature.unread_files;
+	if (never > 0) parts.push(COPY.status.never(never, unread));
+	else if (unread > 0) parts.push(COPY.status.unread(unread));
 	if ((feature.scanned_under_older_rules ?? 0) > 0)
 		parts.push(COPY.status.older(feature.scanned_under_older_rules ?? 0));
 	if (feature.last_run_at) {

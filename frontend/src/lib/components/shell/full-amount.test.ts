@@ -31,6 +31,9 @@ vi.mock('$lib/library/imports.svelte', () => ({
 		})
 	}
 }));
+/* The app's client mode, as the shell answers it; a browser's answer unless a test says. */
+const where = vi.hoisted(() => ({ yes: false }));
+vi.mock('./sift-elsewhere.svelte', () => ({ siftElsewhere: where }));
 vi.mock('$lib/shell/toasts.svelte', () => ({
 	toasts: { show: vi.fn((message: string) => sent.toasts.push(message)) }
 }));
@@ -51,6 +54,7 @@ import { imports } from '$lib/library/imports.svelte';
 const held = imports as { page: unknown };
 
 afterEach(() => {
+	where.yes = false;
 	held.page = null;
 	sent.posts = [];
 	sent.refuse = false;
@@ -151,6 +155,36 @@ describe('what the tooltip says', () => {
 		expect(leafDimmed('less')).toBe(false);
 		expect(fullAmountTip('less')).toBe(
 			"In eco mode while you're working: using a quarter of this device. Press to use the full amount."
+		);
+	});
+});
+
+describe('a video playing', () => {
+	it('is its own cause, said in one wording on the leaf, the bolt, the phone and Activity', () => {
+		expect(ecoWhy('playing', ['graphics'])).toBe('a video is playing');
+		held.page = { counts: { running: 2 }, stepping_back: true, step_back_for: 'playing' };
+		expect(fullAmountTip('less')).toBe(
+			'In eco mode while a video is playing: using a quarter of this device. Press to use the full amount.'
+		);
+		expect(fullAmountSays('full', 25)).toBe(
+			'Out of eco mode: using the full amount of this device although a video is playing'
+		);
+		expect(leafDimmed('less')).toBe(false);
+	});
+});
+
+describe("in the app's client mode", () => {
+	it('says the state is the device running Sift, never this one', () => {
+		where.yes = true;
+		held.page = { counts: { running: 2 }, stepping_back: true, step_back_for: 'input' };
+		expect(fullAmountTip('less')).toBe(
+			"In eco mode while someone's working there: using a quarter of the device running Sift. Press to use the full amount."
+		);
+		expect(fullAmountTip('full', 50, 'playing', [])).toBe(
+			'Out of eco mode: using the full amount of the device running Sift although a video is playing. Press to go back to eco mode.'
+		);
+		expect(usingShare(25, 'others', ['processor'], true)).toBe(
+			'In eco mode while other programs are using the CPU: using a quarter of the device running Sift'
 		);
 	});
 });

@@ -13,7 +13,7 @@ from fastapi import FastAPI
 from sift.kernel import wiring
 from sift.kernel.access import Viewer
 from sift.kernel.config import Settings
-from sift.kernel.content import Lack, VerdictProduct, lacks_fingerprint
+from sift.kernel.content import Lack, lacks_fingerprint
 from sift.kernel.hardware import HardwareReport
 from sift.kernel.jobs import JobContext, JobQueue
 from sift.kernel.jobs.families import Family
@@ -106,10 +106,6 @@ def _register_pictures(
                     allowed=wanted,
                 ),
                 governed_by=picture.job_type,
-                # The two ends of its bar on Activity: the files this picture is for, read or
-                # coming, and the ones coming, which lack it too. See `ContentStore.wanting_count`.
-                wants=partial(store.content.wanting_count, picture.kind, picture.verdict.value),
-                coming=partial(store.content.coming_count, picture.kind, picture.verdict.value),
                 # A press on a file that has this picture makes it again: `build_picture` honours
                 # the key. See `Product.again`.
                 doing=f"Making {picture.label.lower()} for",
@@ -144,9 +140,6 @@ def _register_fingerprints(
             build=fingerprint_file,
             frames=media_jobs.fingerprint_frames,
             governed_by=media_jobs.FINGERPRINT_FILE,
-            # Every file wants them; the two ends of the bar as the pictures have them.
-            wants=partial(store.content.wanting_count, None, VerdictProduct.FINGERPRINTS.value),
-            coming=partial(store.content.coming_count, None, VerdictProduct.FINGERPRINTS.value),
             doing="Fingerprinting",
             # `fingerprint_one` measures the file every time it is asked.
             again=True,
@@ -359,8 +352,6 @@ def _register_music(
             switched_on=music_on_arrival,
             lack=music_service.lack,
             lacking_among=music_service.lacking_among,
-            # The files with a sound track, not the library: a silent file never wants this.
-            wants=store.content.with_audio_count,
             build=partial(music.fingerprint_one, service=music_service, settings=settings),
             # No frames: this reads the sound and never a picture, so there is no moment for the
             # kernel's one-decode reader to prepare.

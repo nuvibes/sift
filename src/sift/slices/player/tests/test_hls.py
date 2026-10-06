@@ -9,6 +9,7 @@ leaving the claim itself unexamined.
 
 from __future__ import annotations
 
+import importlib
 import json
 import subprocess
 import tempfile
@@ -20,6 +21,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from sift.kernel.attention import Played
 from sift.kernel.config import Settings
 from sift.kernel.ids import new_id
 from sift.kernel.jobs import DEFAULT_PRIORITY, WAITED_ON_PRIORITY
@@ -41,6 +43,8 @@ from sift.slices.player.tests.conftest import (
 )
 
 pytestmark = [pytest.mark.integration]
+
+_ROUTES = importlib.import_module("sift.slices.player.router")
 
 #: From measurement, and not from a guess. The worst *streamable* file measured (HEVC
 #: 10-bit 1080p at 60 fps on two cores) took 1.68 s, and 2.5 s adds about 50% headroom to cover
@@ -496,6 +500,19 @@ def test_the_initialisation_segment_is_served(client: TestClient, library: Libra
 
     assert response.status_code == 200
     assert b"ftyp" in response.content[:32], "an init segment leads with the file-type box"
+
+
+def test_a_segment_read_is_heard_as_playing(
+    client: TestClient, library: Library, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    played = Played(clock=lambda: 50.0)
+    monkeypatch.setattr(_ROUTES, "PLAYED", played)
+    sign_in(client)
+    assert played.seconds_since() is None
+
+    client.get(f"/api/assets/{library.id_of('hevc')}/hls/{tuning.INIT_SEGMENT_NAME}")
+
+    assert played.seconds_since() == 0.0
 
 
 def test_the_first_segment_arrives_inside_the_measured_budget(

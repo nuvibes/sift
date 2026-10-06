@@ -248,7 +248,7 @@ async def _reading_order() -> AsyncIterator[list[tuple[str, bool]]]:
 
     @asynccontextmanager
     async def recorded(path: Path) -> AsyncIterator[None]:
-        seen.append((path.name, lanes._FIRST.get()))
+        seen.append((path.name, lanes._RANK.get() == lanes.FIRST))
         async with real(path):
             yield
 

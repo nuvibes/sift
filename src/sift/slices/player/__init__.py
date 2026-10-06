@@ -13,6 +13,7 @@ from __future__ import annotations
 # The two resume preferences are keyed in the kernel, beside the rule they parameterise: the
 # grid and the query language read the same two now, and neither may import this slice to learn
 # how they are spelled. What they LOOK like is still declared here.
+from sift.kernel.attention import PLAYED
 from sift.kernel.content.user_state import RESUME_ENABLED_KEY, RESUME_MINIMUM_KEY
 from sift.kernel.settings_registry import ReadBy, register_setting
 from sift.slices.player import schema
@@ -271,6 +272,7 @@ __all__ = [
     "LOOP_ONE",
     "MAX_TRANSCODE_HEIGHT_KEY",
     "MUTED_KEY",
+    "PLAYED",
     "PLAY_ONCE",
     "RESUME_ENABLED_KEY",
     "RESUME_MINIMUM_KEY",

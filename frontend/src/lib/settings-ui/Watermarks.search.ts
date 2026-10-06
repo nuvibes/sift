@@ -4,6 +4,7 @@
  * are registered settings and find themselves; the feature as a whole, the page one level in and
  * deleting the results are not. */
 import type { Searchable } from './search';
+import { counted, filesSaid } from '$lib/entity/entity-counts';
 import type { WatermarkStatus } from '$lib/library/watermarks.svelte';
 
 /** The feature itself: the switch, where it stands, and when it runs. */
@@ -30,7 +31,9 @@ export const COPY = {
 		ready: (device: string) => `Ready. Running on the ${device}.`,
 		counts: (read: number, marks: number) =>
 			`${read.toLocaleString()} ${read === 1 ? 'file' : 'files'} scanned, ${marks.toLocaleString()} with a watermark.`,
-		waiting: (count: number) => `At least ${count.toLocaleString()} not scanned yet.`,
+		waiting: (count: number, unread = 0) =>
+			`At least ${count.toLocaleString()} not scanned yet${unread > 0 ? `, and ${counted(unread)} more waiting to be scanned` : ''}.`,
+		unread: (count: number) => `${filesSaid(count)} waiting to be scanned.`,
 		done: 'Every file is scanned.'
 	},
 	about: 'Sift scans a file again only if its contents change.',
@@ -59,9 +62,8 @@ export const COPY = {
 } as const;
 
 /**
- * Where reading stands, in one line under its switch, every number the server's. Shared by the
- * Watermarks pane and the Recognition switches on Importing, so the two say the same thing. The count
- * still to read stops at a page, so it says "at least".
+ * Where reading stands, in one line under its switch, shared with the Recognition switches on
+ * Importing. The count still to read stops at a page, so it says "at least".
  */
 export function watermarksStatusLine(
 	status: WatermarkStatus | null,
@@ -71,10 +73,15 @@ export function watermarksStatusLine(
 	if (status === null) return enabled ? null : COPY.status.off;
 	if (!enabled) return status.read_files > 0 ? COPY.status.offKept : COPY.status.off;
 	if (!status.ready) return status.problem ?? COPY.status.notReady;
+	const unread = status.unread_files;
 	return [
 		COPY.status.ready(device),
 		COPY.status.counts(status.read_files, status.marks_found),
-		status.waiting_files > 0 ? COPY.status.waiting(status.waiting_files) : COPY.status.done
+		status.waiting_files > 0
+			? COPY.status.waiting(status.waiting_files, unread)
+			: unread > 0
+				? COPY.status.unread(unread)
+				: COPY.status.done
 	].join(' ');
 }
 

@@ -24,7 +24,9 @@ from sift.kernel.jobs.worker_pool import registered_alone
 from sift.main import create_app
 from sift.slices.watermarks import settings as watermark_settings
 from sift.slices.watermarks.jobs import WATERMARK_FETCH_MODELS
+from sift.slices.watermarks.service import WatermarkService
 from sift.testing.auth import establish_session
+from sift.testing.library import seed_asset, seed_root
 from sift.testing.settings import set_app_setting
 
 pytestmark = pytest.mark.integration
@@ -121,3 +123,27 @@ def test_an_admin_is_answered_by_every_endpoint_in_the_order_a_fresh_install_mee
     assert joined.json()["job_id"] == fetching.json()["job_id"]
     assert sum(kind == WATERMARK_FETCH_MODELS for kind, _ in _queued(client)) == 1
     assert WATERMARK_FETCH_MODELS in registered_alone()
+
+
+def test_the_status_counts_the_files_not_read_yet_once_it_can_read(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    root, folder = "01HX00000000000000000000R1", "01HX00000000000000000000F1"
+    seed_root(_db(client), root, folder_id=folder, path=tmp_path / "library")
+    seed_asset(
+        _db(client),
+        "01HX00000000000000000000A1",
+        root_id=root,
+        folder_id=folder,
+        root_path=tmp_path / "library",
+        cache_dir=tmp_path / "cache",
+    )
+    _sign_in(client, "admin")
+    assert client.get("/api/watermarks/status").json()["unread_files"] == 0
+
+    async def can_read(self: WatermarkService) -> tuple[bool, str | None]:
+        return True, None
+
+    monkeypatch.setattr(WatermarkService, "ready", can_read)
+
+    assert client.get("/api/watermarks/status").json()["unread_files"] == 1

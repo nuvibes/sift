@@ -811,9 +811,9 @@ class FaceSettingsView(Wire):
     #: Reference faces another model described that arrived as numbers alone and so cannot be
     #: measured again. Out of matching for good; the person who imported them decides what to do.
     references_without_pictures: int = 0
-    #: Files never looked at for faces, and files looked at under an older rule or other settings
-    #: (or by a pass that did not finish): the two reasons a file wants a look. Both zero while
-    #: the feature is off. See `FaceService.backlog`.
+    #: The two reasons a read file wants a look. See `FaceService.backlog`.
     never_scanned: int = 0
     scanned_under_older_rules: int = 0
+    #: Files not read yet, which neither count above can see. See `FaceService.unread`.
+    unread_files: int = 0
     installed: list[str] = Field(default=[])

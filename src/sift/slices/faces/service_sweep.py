@@ -183,19 +183,12 @@ class SweepMixin(FaceServiceBase):
         )
 
     async def backlog(self) -> tuple[int, int]:
-        """How many files want looking at for faces, as the two reasons: never looked at, and
-        looked at under an older rule or other settings. Zero and zero while the feature is off.
+        """How many READ files want looking at for faces: never looked at, and looked at under an
+        older rule or other settings. Zero and zero while the feature is off.
 
-        What the Faces pane says beside the controls, so a backlog (which can be most of a
-        library) is a sentence somebody reads rather than something found by asking why a plain
-        face was not recognized.
-
-        One statement over the library, counted by the content store from this feature's own two
-        conditions (never scanned, and the whole rule `lack` states, of which the first is a
-        part), so the two numbers add up to what `lack` counts. That is the Faces row of the Build sheet on
-        Importing, where the press that does the work is, except that the sheet leaves out files
-        only in folders that refuse face scans and this does not: this says what has and has not
-        been looked at, which is true whatever a folder asks for next.
+        One statement from this feature's two conditions, so the two add up to what `lack` counts.
+        Unlike the Build sheet it keeps files in folders that refuse face scans: it says what has
+        been looked at, whatever a folder asks for next.
         """
         if not await self.enabled():
             return 0, 0
@@ -207,6 +200,11 @@ class SweepMixin(FaceServiceBase):
         counted = await self._content.count_lacking([self._store.never_scanned(), whole])
         never, wanting = counted.each
         return never, wanting - never
+
+    async def unread(self) -> int:
+        """How many files not read yet will want a look, which `backlog` cannot see. Zero while
+        the feature is off."""
+        return await self._unread.get() if await self.enabled() else 0
 
     async def lack(self) -> Lack | None:
         """What a pass would look at under the tuning that is set, as one term of the Build's

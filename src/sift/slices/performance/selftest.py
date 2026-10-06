@@ -183,8 +183,7 @@ class Level:
         }
 
 
-#: A storage level where one reader waits this long a seek is not recommended: anybody else
-#: reading that storage waits about as long, the quarter second a person notices.
+#: A level where one reader waits this long a seek is not advised: every other reader waits as long.
 SEEK_BOUND_SECONDS = TOO_BUSY_SECONDS
 
 
@@ -490,21 +489,30 @@ def _share_said(curve: StorageCurve, best: StorageLevel) -> str:
 def recommend_share_reads(
     storages: Sequence[StorageCurve], *, current: dict[str, int]
 ) -> Recommendation | None:
-    """The setting's "as measured", since each share reads at its own number; None if none was."""
+    """Automatic, or the number set where every share measured it; None where none was measured."""
     measured = [(one, one.best) for one in storages if one.remote and one.best is not None]
     if not measured:
         return None
     found = " ".join(_share_said(curve, best) for curve, best in measured if best is not None)
+    now = current.get(SHARE_READS_KEY, AS_MEASURED)
+    same = all(best is not None and best.at_once == now for _curve, best in measured)
     return Recommendation(
         key=SHARE_READS_KEY,
         label="How many files are read at the same time from a network share",
-        current=current.get(SHARE_READS_KEY, AS_MEASURED),
-        suggested=AS_MEASURED,
-        reason=(
-            f"{found} Automatic reads each share at its own measured number; a number here is "
-            f"used for every share instead."
-        ),
+        current=now,
+        suggested=now if same else AS_MEASURED,
+        reason=f"{found} {SAME_AS_MEASURED if same else ONE_FOR_EVERY_SHARE}",
     )
+
+
+ONE_FOR_EVERY_SHARE = (
+    "Automatic reads each share at its own measured number; a number here is used for every share "
+    "instead."
+)
+SAME_AS_MEASURED = (
+    "That's the number set here, so nothing changes. Automatic would follow each share's own "
+    "measured number."
+)
 
 
 # --- taking the measurement ---------------------------------------------------------------------

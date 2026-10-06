@@ -1,17 +1,18 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Whether somebody is using this computer, or other programs are keeping it busy, so background
-work can step back to a share of the device meanwhile.
+"""Whether somebody is using this computer, a video is playing in Sift, or other programs are
+keeping the device busy, so background work can step back to a share of it meanwhile.
 
 The pool asks `Attention.workers` on its reconfigure timer. Input is read with Windows'
-`GetLastInputInfo`; other programs' load is `kernel.device_load`'s. Neither can be read off Windows,
-where the pool runs its full count. A press for the full amount (`Attention.press`) overrules both
-causes until Sift stops or the next press; it is held in memory because it answers a moment, not a
-standing choice.
+`GetLastInputInfo`; other programs' load is `kernel.device_load`'s; playing is `PLAYED`, marked by
+the player's reads and an open Theater wall from any device. A press for the full amount
+(`Attention.press`) overrules every cause until Sift stops or the next press; it is held in memory
+because it answers a moment, not a standing choice.
 """
 
 from __future__ import annotations
 
 import sys
+import time
 from collections.abc import Callable
 from functools import cache
 from typing import Any, Literal
@@ -24,8 +25,8 @@ from sift.kernel.log import get_logger
 
 log = get_logger(__name__)
 
-#: Why the work steps back: somebody at the keyboard, or other programs keeping the device busy.
-Cause = Literal["input", "others"]
+#: Why the work steps back: somebody at the keyboard, a video playing, or other programs busy.
+Cause = Literal["input", "playing", "others"]
 
 #: How recent the last key press or mouse movement must be for the computer to count as in use:
 #: a minute, because a person reading a page touches nothing for tens of seconds, and handing
@@ -131,14 +132,37 @@ def seconds_since_input() -> float | None:
     return elapsed_seconds(int(kernel32.GetTickCount()), int(info.dwTime))
 
 
+class Played:
+    """When a clip's bytes were last read, or a Theater wall said it was open, from any device."""
+
+    def __init__(self, clock: Callable[[], float] = time.monotonic) -> None:
+        self._clock = clock
+        self._at: float | None = None
+
+    def now(self) -> None:
+        self._at = self._clock()
+
+    def seconds_since(self) -> float | None:
+        return None if self._at is None else self._clock() - self._at
+
+
+PLAYED = Played()
+
+
 class Attention:
     """Turns the full worker count into the one to run now, and remembers why.
 
-    `since_input` reads the seconds since the last input; None from it means it cannot be read.
+    `since_input` and `since_played` read the seconds since the last input and the last clip played;
+    None from either means it cannot be read, or nothing has played.
     """
 
-    def __init__(self, since_input: Callable[[], float | None] = seconds_since_input) -> None:
+    def __init__(
+        self,
+        since_input: Callable[[], float | None] = seconds_since_input,
+        since_played: Callable[[], float | None] = lambda: None,
+    ) -> None:
         self._since_input = since_input
+        self._since_played = since_played
         self._cause: Cause | None = None
         self._event = "attention.full_count"
         self._full_by_hand = False
@@ -151,7 +175,7 @@ class Attention:
 
     @property
     def cause(self) -> Cause | None:
-        """What put Sift in eco mode, or would but for the press: `input`, or `others` busy."""
+        """What put Sift in eco mode, or would but for the press: `input`, `playing` or `others`."""
         return self._cause
 
     @property
@@ -196,17 +220,21 @@ class Attention:
     ) -> int:
         """How many workers to run now, out of `full`.
 
-        `share` percent of `full`, rounded up and never below one, while input was inside
-        `ATTENTION_SECONDS` (with `step_back` on) or `others_busy`, unless the full amount was
+        `share` percent of `full`, rounded up and never below one, while input or a clip played was
+        inside `ATTENTION_SECONDS` (with `step_back` on) or `others_busy`, unless the full amount was
         pressed for. Never while `measuring`: a benchmark reads the whole device.
         """
         self._share = min(WHOLE_DEVICE, max(1, share))
-        since = self._since_input() if step_back and not measuring else None
+        reading = step_back and not measuring
+        since = self._since_input() if reading else None
+        played = self._since_played() if reading else None
         stepped = stepped_workers(full, self._share)
         cause: Cause | None = None
         if stepped < full and not measuring:
             if since is not None and since < ATTENTION_SECONDS:
                 cause = "input"
+            elif played is not None and played < ATTENTION_SECONDS:
+                cause = "playing"
             elif others_busy:
                 cause = "others"
         effective = stepped if cause is not None and not self._full_by_hand else full
@@ -226,7 +254,7 @@ class Attention:
 
 
 #: The one reading the pool and the Activity screen share.
-ATTENTION = Attention()
+ATTENTION = Attention(since_played=PLAYED.seconds_since)
 
 
 def stepping_back() -> bool:
@@ -242,8 +270,10 @@ def full_amount() -> bool:
 __all__ = [
     "ATTENTION",
     "ATTENTION_SECONDS",
+    "PLAYED",
     "Attention",
     "Cause",
+    "Played",
     "elapsed_seconds",
     "full_amount",
     "seconds_since_input",

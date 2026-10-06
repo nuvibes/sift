@@ -44,6 +44,7 @@ from sift.kernel.hardware import HardwareReport
 from sift.kernel.ids import new_id
 from sift.kernel.ledger import Object as LedgerObject
 from sift.kernel.log import get_logger
+from sift.kernel.memo import PacedAnswer
 from sift.kernel.ml.weights import Progress
 from sift.kernel.vocabulary import VIA_WATERMARK, Subject
 from sift.kernel.wiring import Part
@@ -97,6 +98,7 @@ class WatermarkService:
     ) -> None:
         self._store = store
         self._content = content
+        self._unread = PacedAnswer(lambda: self._content.coming_count(PRODUCT))
         self._repository = repository
         self._settings = settings
         self._hardware = hardware
@@ -181,9 +183,12 @@ class WatermarkService:
         return await self._store.found_count()
 
     async def waiting(self) -> int:
-        """How many files a pass would still open, counted no further than a page. See the
-        statement it runs. A screen says "a page or more", never a number nobody acts on."""
+        """How many read files a pass would still open, counted no further than a page."""
         return await self._store.unread_count(weights.REVISION)
+
+    async def unread(self) -> int:
+        """How many files not read yet will want a reading, which `waiting` cannot see."""
+        return await self._unread.get()
 
     # --- what the catch-up pass over the library asks ------------------------------------------
 

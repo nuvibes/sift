@@ -30,6 +30,10 @@ When your library has no folders, Browse shows **Add a folder** in the middle of
 
 After your first folder is added, Sift offers to create a **Download folder** for the files you download. Click **Create this folder**, **Choose another** or **Skip**. [Step 4: Your first download](/get-started/your-first-download/#where-a-download-goes) says how to change it later.
 
+## A big first import
+
+Sift counts every folder you add first, so Activity can say how many files are left. While a folder of 2,000 files or more on a network share is still being scanned, its files are read first. The tasks that wait say **Waiting for the scan to finish.** Once the scan ends, each file's thumbnail, fingerprint, face scan and Smart Search follow its read.
+
 ## A folder's menu
 
 Right-click a folder in the list to open its menu:

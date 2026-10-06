@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """The Theater endpoints: one user's saved walls, and the record of sitting in front of one.
 
-Four routes for the walls, and one for the record (`sessions.py`). A wall is a way of watching, so everything about watching it (the
+Four routes for the walls, one for the record (`sessions.py`), and one an open wall beats on. A wall is a way of watching, so everything about watching it (the
 files, the streams, what any user may see) runs through the search and player routes that
 already existed, under the resolver that already decides visibility. There is deliberately no route
 here that returns an asset, a stream or a count.
@@ -19,6 +19,7 @@ from fastapi import APIRouter, Depends, HTTPException, Path, Request, Response, 
 
 from sift.kernel import wiring
 from sift.kernel.access import Viewer
+from sift.kernel.attention import PLAYED
 from sift.kernel.db import Database
 from sift.kernel.wiring import part_of
 from sift.slices.auth import csrf_protect, current_viewer
@@ -234,4 +235,15 @@ async def report_session(
         sources=body.sources,
         files=body.files,
     )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post(
+    "/theater/watching",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(current_viewer), Depends(csrf_protect)],
+)
+async def theater_open() -> Response:
+    """A wall is open, playing or paused, on any device: eco mode holds as it does for a clip."""
+    PLAYED.now()
     return Response(status_code=status.HTTP_204_NO_CONTENT)

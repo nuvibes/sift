@@ -1274,11 +1274,11 @@ MATRIX: dict[tuple[str, str], Case] = {
         Policy.AUTHENTICATED, params={"arrangement_id": "01HX0000000000000000000092"}
     ),
     # Every field is optional, so an empty body is a whole report, keyed on the asker.
+    ("POST", "/api/theater/watching"): Case(Policy.AUTHENTICATED),
     ("POST", "/api/theater/sessions/{session}"): Case(
         Policy.AUTHENTICATED, params={"session": "an-evening-wall"}
     ),
-    # The phone as a remote: every screen is held under the user who offered it. Called without a
-    # body, so a signed-in caller gets 422 past the door.
+    # The phone as a remote: every screen is held under the user who offered it; no body, so 422.
     ("GET", "/api/remote/screens"): Case(Policy.AUTHENTICATED),
     ("POST", "/api/remote/screens/{screen}"): Case(
         Policy.AUTHENTICATED, params={"screen": "a-matrix-screen"}

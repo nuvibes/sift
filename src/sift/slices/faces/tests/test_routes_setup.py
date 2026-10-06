@@ -348,6 +348,37 @@ def test_the_settings_route_says_how_many_files_want_a_look_and_why(client: Test
 
     assert body["never_scanned"] == 1
     assert body["scanned_under_older_rules"] == 0
+    assert body["unread_files"] == 0
+
+
+def test_the_settings_route_counts_the_files_not_read_yet_apart(client: TestClient) -> None:
+    sign_in(client, "admin")
+    asset, root, folder = new_id(), new_id(), new_id()
+    write(
+        db_path(client),
+        [
+            (_INSERT_ASSET, (asset, f"identity-{asset}", 10, "unread.mp4", _EPOCH)),
+            (
+                "INSERT INTO library_roots (id, name, abs_path, created_at) VALUES (?, ?, ?, ?)",
+                (root, "unread", "C:\\unread", _EPOCH),
+            ),
+            (
+                "INSERT INTO folders (id, root_id, parent_id, rel_path, name) "
+                "VALUES (?, ?, NULL, ?, ?)",
+                (folder, root, "", "unread"),
+            ),
+            (
+                _INSERT_LOCATION,
+                (new_id(), asset, root, folder, "unread.mp4", "unread.mp4", _EPOCH, _EPOCH),
+            ),
+        ],
+    )
+    assert client.get("/api/faces/settings").json()["unread_files"] == 0, "nothing while off"
+    turn_on(client)
+
+    body = client.get("/api/faces/settings").json()
+
+    assert (body["never_scanned"], body["unread_files"]) == (0, 1)
 
 
 def test_an_empty_pack_is_still_refused_rather_than_crashing(client: TestClient) -> None:

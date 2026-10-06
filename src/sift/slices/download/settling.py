@@ -69,6 +69,7 @@ async def settle(
         named_from=landed.named_from,
         offered=fetched.offered,
         left_out=fetched.left_out,
+        reads_refused=reach.said(),
     )
     log.info("download.done", download_id=download_id, was_duplicate=landed.all_duplicate)
 

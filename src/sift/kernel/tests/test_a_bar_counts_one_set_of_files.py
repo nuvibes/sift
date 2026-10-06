@@ -120,10 +120,10 @@ async def test_done_is_the_files_that_have_it_while_a_first_import_is_still_bein
     term = lacks_derivative([kind])
     assert term is not None
     verdict = picture_verdict(kind).value
-    wanting = await content_store.wanting_count(kind, verdict)
+    wanting = await content_store.wanting_count(verdict)
     # Filed under its product, as the registry files every term it counts.
     lacking = (await content_store.count_lacking([replace(term, product=verdict)])).files
-    coming = await content_store.coming_count(kind, verdict)
+    coming = await content_store.coming_count(verdict)
 
     photos_count = kind is DerivativeKind.THUMB
     assert coming == (2 if photos_count else 1)
@@ -139,8 +139,8 @@ async def test_every_file_coming_wants_its_fingerprints(
     await _file(temp_db, library_root, "image", read=False)
 
     fingerprints = VerdictProduct.FINGERPRINTS.value
-    assert await content_store.wanting_count(None, fingerprints) == 3
-    assert await content_store.coming_count(None, fingerprints) == 2
+    assert await content_store.wanting_count(fingerprints) == 3
+    assert await content_store.coming_count(fingerprints) == 2
 
 
 async def test_the_library_s_files_are_the_ones_browse_shows(
@@ -155,7 +155,7 @@ async def test_the_library_s_files_are_the_ones_browse_shows(
 
     assert await content_store.asset_count() == 2
     assert await content_store.asset_count(refusing_none) == 2
-    assert await content_store.with_audio_count() == 1
+    assert await content_store.wanting_count("music") == 1
 
 
 async def test_a_count_among_some_files_seeks_only_those(
@@ -195,9 +195,10 @@ def _counts_a_bar_is_drawn_from() -> list[tuple[str, str, tuple[object, ...]]]:
         term = replace(term, product=verdict)
         params = tuple(identity._term_params([term]))
         label = "fingerprints" if kind is None else kind.value
+        narrowed = verdict if verdict in identity._COUNT_WANTING_OF else None
         statements += [
-            (f"wanting {label}", identity._COUNT_WANTING_OF[kind], (probe, verdict)),
-            (f"coming {label}", identity._COUNT_COMING_OF[kind], (probe, verdict)),
+            (f"wanting {label}", identity._COUNT_WANTING_OF[narrowed], (probe, verdict)),
+            (f"coming {label}", identity._COUNT_COMING_OF[narrowed], (probe, verdict)),
             (f"lacking {label}", identity._lacking_statement([term], [True]), params),
             (
                 f"lacking {label} by kind",
@@ -207,6 +208,10 @@ def _counts_a_bar_is_drawn_from() -> list[tuple[str, str, tuple[object, ...]]]:
                 params,
             ),
         ]
+    statements += [
+        ("wanting music", identity._COUNT_WANTING_OF["music"], (probe, "music")),
+        ("coming music", identity._COUNT_COMING_OF["music"], (probe, "music")),
+    ]
     return statements
 
 

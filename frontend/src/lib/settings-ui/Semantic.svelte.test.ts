@@ -227,6 +227,7 @@ function status(over: Partial<SemanticStatus> = {}): SemanticStatus {
 		indexed_frames: 0,
 		described_files: 0,
 		waiting_files: 0,
+		unread_files: 0,
 		running_jobs: 0,
 		described_by_another_model: 0,
 		problem: null,

@@ -22,6 +22,7 @@ from sift.slices.semantic import settings as semantic_settings
 from sift.slices.semantic.jobs import SEMANTIC_FETCH_MODELS
 from sift.slices.semantic.service import Readiness, SemanticService
 from sift.testing.auth import establish_session
+from sift.testing.library import seed_asset, seed_root
 from sift.testing.settings import set_app_setting
 
 pytestmark = pytest.mark.integration
@@ -105,6 +106,39 @@ def test_status_says_the_models_are_missing_once_it_is_switched_on(client: TestC
     assert body["enabled"] is True
     assert body["ready"] is False
     assert "have not been obtained" in body["problem"]
+
+
+def test_status_counts_the_files_not_read_yet_once_it_can_describe(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    seed_root(
+        db_path(client),
+        "01HX00000000000000000000R1",
+        folder_id="01HX00000000000000000000F1",
+        path=tmp_path / "library",
+    )
+    seed_asset(
+        db_path(client),
+        "01HX00000000000000000000A1",
+        root_id="01HX00000000000000000000R1",
+        folder_id="01HX00000000000000000000F1",
+        root_path=tmp_path / "library",
+        cache_dir=tmp_path / "cache",
+    )
+    sign_in(client, "admin")
+    assert client.get("/api/semantic/status").json()["unread_files"] == 0
+
+    async def can_run(self: SemanticService) -> Readiness:
+        return Readiness(supported=True, enabled=True, ready=True, family="stub", device="cpu")
+
+    async def none(self: SemanticService, *_: object) -> int:
+        return 0
+
+    monkeypatch.setattr(SemanticService, "readiness", can_run)
+    monkeypatch.setattr(SemanticService, "described_count", none)
+    monkeypatch.setattr(SemanticService, "waiting_count", none)
+
+    assert client.get("/api/semantic/status").json()["unread_files"] == 1
 
 
 def test_status_names_which_models_and_device_are_chosen(client: TestClient) -> None:

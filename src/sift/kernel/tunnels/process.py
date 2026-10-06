@@ -749,7 +749,7 @@ class TunnelProcess:
 
     def _not_available(self) -> TunnelError:
         return TunnelError(
-            f"The tunnel {self._spec.name} is not available, so this download was not started. "
+            f"The tunnel {self._spec.name} is not available, so nothing was sent. "
             "Turn the tunnel on, or route this site directly."
         )
 

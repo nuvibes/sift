@@ -15,7 +15,7 @@ import pytest
 # OTHER module collected in the same run happens to have imported it, and fails on its own;
 # the content suite carries the same line for the same reason.
 import sift.slices.workbench.schema  # noqa: F401
-from sift.kernel import media
+from sift.kernel import lanes, media
 from sift.kernel import subprocess as kernel_subprocess
 from sift.kernel.config import Settings
 from sift.kernel.content import (
@@ -157,6 +157,39 @@ async def test_a_thumbnail_lands_in_the_cache_and_the_library_gains_nothing(
     assert thumbnail.is_file()
     assert thumbnail.stat().st_size == derivatives[0].size_bytes
     assert settings.cache_dir in thumbnail.parents
+
+
+async def test_a_thumbnail_is_read_with_the_file_on_a_share(
+    ingested_video: Ingested,
+    context_for: Context,
+    settings: Settings,
+    hardware: HardwareReport,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The picture keeps pace with the read it follows, so a wall fills as files arrive."""
+    monkeypatch.setattr(lanes, "READS_FIRST", True)
+    ranks: list[int] = []
+
+    async def cut(source: Path, destination: Path, span: int, *, settings: Settings) -> int:
+        ranks.append(lanes._RANK.get())
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(b"jpg")
+        return 0
+
+    async def render(args: Sequence[str], destination: Path, *, reads: Path | None = None) -> None:
+        ranks.append(lanes._RANK.get())
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(b"jpg")
+
+    monkeypatch.setattr(thumbnails, "_cut_by_content", cut)
+    monkeypatch.setattr(thumbnails, "_render", render)
+    await jobs.thumbnail(
+        await context_for("thumbnail", {"asset_id": ingested_video.asset.id}),
+        settings=settings,
+        hardware=hardware,
+    )
+
+    assert ranks == [lanes.READ]
 
 
 async def test_a_marked_moment_gets_its_own_picture_cut_at_that_moment(

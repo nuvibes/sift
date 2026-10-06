@@ -35,7 +35,7 @@ from sift.slices.download.sources.registry import site_key
 log = get_logger(__name__)
 
 DOWNLOAD_COMPONENT = "download"
-DOWNLOAD_VERSION = 37
+DOWNLOAD_VERSION = 38
 
 
 # `state` is a small closed set, and 'blocked' is deliberately not in it: waiting for cookies is a
@@ -393,7 +393,7 @@ async def _fill_art(connection: Connection) -> None:
 # Version 36: a row whose file was deleted, when the same link was fetched again and the same file
 # landed, leads to that file. Kept on from here by `service.mark_done`; this is the once for the
 # rows from before. The same address AND the same name, so a link whose contents change never
-# hands an old row a file it never fetched; the newest such row's file where several landed.
+# hands an old row a file it never fetched.
 _RELINK = """
 UPDATE downloads SET asset_id = (
   SELECT e.asset_id FROM downloads e
@@ -423,8 +423,7 @@ async def _relink(connection: Connection) -> None:
 
 
 # Version 37: a downloaded gallery lands as files in its folder and nothing groups it, so the
-# paste's own answer to grouping one has nothing left to decide. The column goes; a table made
-# after this step never had it, and a step run twice finds it gone.
+# paste's own answer to grouping one has nothing left to decide. The column goes.
 _DROPS_PHOTO_SETS = "SELECT 1 FROM pragma_table_info('downloads') WHERE name = 'photo_sets'"
 _DROP_PHOTO_SETS = "ALTER TABLE downloads DROP COLUMN photo_sets"
 
@@ -432,6 +431,16 @@ _DROP_PHOTO_SETS = "ALTER TABLE downloads DROP COLUMN photo_sets"
 async def _drop_photo_sets(connection: Connection) -> None:
     if list(await connection.execute_fetchall(_DROPS_PHOTO_SETS)):
         await connection.execute(_DROP_PHOTO_SETS)
+
+
+# Version 38: the reads after a landed file that its tunnel refused (`attempt.Reach.said`).
+_HAS_READS_REFUSED = "SELECT 1 FROM pragma_table_info('downloads') WHERE name = 'reads_refused'"
+_READS_REFUSED = "ALTER TABLE downloads ADD COLUMN reads_refused TEXT"
+
+
+async def _add_reads_refused(connection: Connection) -> None:
+    if not list(await connection.execute_fetchall(_HAS_READS_REFUSED)):
+        await connection.execute(_READS_REFUSED)
 
 
 async def initialize_download(connection: Connection, on_disk: int) -> None:
@@ -445,15 +454,10 @@ async def initialize_download(connection: Connection, on_disk: int) -> None:
             *_INDEXES,
         ):
             await connection.execute(statement)
-    if on_disk < 31:
-        for statement in _NAMED_FROM:
-            await connection.execute(statement)
-    if on_disk < 32:
-        for statement in _LEFT_OUT:
-            await connection.execute(statement)
-    if on_disk < 33:
-        for statement in _REQUESTED_BY:
-            await connection.execute(statement)
+    for version, statements in ((31, _NAMED_FROM), (32, _LEFT_OUT), (33, _REQUESTED_BY)):
+        if on_disk < version:
+            for statement in statements:
+                await connection.execute(statement)
     if on_disk < 34:
         await _by_id(connection)
     if on_disk < 35:
@@ -462,6 +466,8 @@ async def initialize_download(connection: Connection, on_disk: int) -> None:
         await _relink(connection)
     if on_disk < 37:
         await _drop_photo_sets(connection)
+    if on_disk < 38:
+        await _add_reads_refused(connection)
 
 
 # `folders` and `assets` come from the kernel's library and content components, `sites` and

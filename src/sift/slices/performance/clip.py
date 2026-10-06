@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""The clip every encoding level works on, and the decoder's two rates measured on it."""
+"""The clip every encoding level works on, and the decoder's two rates taken from it."""
 
 from __future__ import annotations
 

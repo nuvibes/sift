@@ -33,8 +33,10 @@ from sift.kernel.jobs.quiet_hours import AT_QUIET
 from sift.kernel.jobs.recovery import recover
 from sift.kernel.jobs.worker_pool import WorkerPool
 from sift.kernel.vocabulary import VIA_BENCHMARK
+from sift.kernel.wiring import part_of_app
 from sift.kernel.workbench import DOER, Recorded
 from sift.main import create_app
+from sift.slices import player
 from sift.slices.performance import benchmark, measure_encoder, measure_together, selftest
 from sift.slices.performance.benchmark import (
     BENCHMARK,
@@ -1325,6 +1327,61 @@ async def test_the_full_run_waits_for_nobody_at_the_device_and_stops_when_somebo
     here.seconds = benchmark.AWAY_SECONDS
     await quiet.look()
     assert await _waiting(job_queue, BENCHMARK) == 1, "asked again at the next quiet moment"
+
+
+@pytest.mark.parametrize(
+    ("since_clip", "asks"),
+    [(0.0, False), (599.0, False), (benchmark.AWAY_SECONDS, True), (None, True)],
+    ids=["playing", "paused under ten minutes", "unread ten minutes", "never played"],
+)
+async def test_the_full_run_waits_while_a_clip_plays_from_this_sift(
+    tmp_path: Path, job_queue: JobQueue, since_clip: float | None, asks: bool
+) -> None:
+    register_handler(BENCHMARK, _nothing, name="Benchmarking this device")
+    quiet = WhenQuiet(
+        runner=await _quick(tmp_path),
+        queue=job_queue,
+        first=FirstBenchmark(),
+        kinds=list,
+        since_input=Input(benchmark.AWAY_SECONDS),
+        since_played=lambda: since_clip,
+    )
+    await quiet.look()
+    assert await _waiting(job_queue, BENCHMARK) == (1 if asks else 0)
+
+
+async def test_a_clip_played_during_the_full_run_stops_it_and_one_before_it_does_not(
+    tmp_path: Path, job_queue: JobQueue
+) -> None:
+    register_handler(BENCHMARK, _nothing, name="Benchmarking this device")
+    first = FirstBenchmark()
+    clip = Input(benchmark.AWAY_SECONDS)
+    quiet = WhenQuiet(
+        runner=await _quick(tmp_path),
+        queue=job_queue,
+        first=first,
+        kinds=list,
+        since_input=Input(benchmark.AWAY_SECONDS),
+        since_played=clip,
+    )
+    await quiet.look()
+    assert first.run is not None
+    asked = first.run.job_id
+    clip.seconds = benchmark.AWAY_SECONDS + benchmark.LOOK_SECONDS
+    await quiet.look()
+    assert await _state(job_queue, asked) is JobState.QUEUED, "read before it was asked"
+
+    clip.seconds = 2.0
+    await quiet.look()
+    assert await _state(job_queue, asked) is JobState.CANCELED
+    assert first.run.said == f"{benchmark.PLAYING} {benchmark.AGAIN}"
+
+
+def test_the_quiet_check_is_wired_to_the_players_clock(idle_app: TestClient) -> None:
+    quiet = part_of_app(idle_app.app, benchmark.WHEN_QUIET)  # type: ignore[arg-type]
+    player.PLAYED.now()
+    since = quiet._since_played()
+    assert since is not None and since < benchmark.AWAY_SECONDS
 
 
 @pytest.mark.parametrize(

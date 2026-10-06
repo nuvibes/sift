@@ -106,3 +106,26 @@ async def test_the_step_to_33_adds_who_asked_and_leaves_older_rows_unasked(
         }
     finally:
         await database.close()
+
+
+async def test_the_step_to_38_adds_the_refused_reads_and_leaves_older_rows_without(
+    tmp_path: Path,
+) -> None:
+    database = await _bare(tmp_path, "at37")
+    try:
+        async with database.write() as connection:
+            for owner in (
+                "CREATE TABLE folders (id TEXT PRIMARY KEY)",
+                "CREATE TABLE assets (id TEXT PRIMARY KEY)",
+                "CREATE TABLE jobs (id TEXT PRIMARY KEY)",
+            ):
+                await connection.execute(owner)
+            await connection.execute(_CREATE_DOWNLOADS)
+            await connection.execute(
+                "INSERT INTO downloads (id, url, url_hash, created_at) VALUES ('d1', 'u', 'h', 0)"
+            )
+            await initialize_download(connection, 37)
+        row = await database.fetch_one("SELECT reads_refused FROM downloads WHERE id = 'd1'")
+        assert row is not None and row["reads_refused"] is None
+    finally:
+        await database.close()

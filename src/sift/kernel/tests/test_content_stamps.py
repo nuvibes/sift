@@ -394,5 +394,5 @@ async def test_the_files_with_sound_are_counted_apart_from_the_library(
         )
     for asset_id in ("01HX00000000000000000000A1", "01HX00000000000000000000A2"):
         await store.add_location(asset_id=asset_id, root_id=library_root.id, rel_path=asset_id)
-    assert await store.with_audio_count() == 1
+    assert await store.wanting_count("music") == 1
     assert await store.asset_count() == 2

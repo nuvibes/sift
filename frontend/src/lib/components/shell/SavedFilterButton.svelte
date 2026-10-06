@@ -10,8 +10,7 @@
 	 * or deletes.
 	 *
 	 * What stays here is what is about filters: the four verbs, and a filter's bubble drawing the
-	 * bar's own chips, so a filter reads the same in the bubble as on the row above the panel
-	 * (`tags: runway or Edited` as one chip, not one per value).
+	 * bar's own chips, one per value as the bar does, so none is cut short.
 	 */
 	import KeptPill from '$lib/components/common/KeptPill.svelte';
 	import FilterChip from './FilterChip.svelte';
@@ -108,6 +107,15 @@
 		<FilterChip field="username" values={['one username']} />
 	{/if}
 	{#each parts as part, at (at)}
-		<FilterChip field={part.field} values={part.values} all={part.all} excluded={part.excluded} />
+		{#each part.values as one, nth (nth)}
+			<FilterChip
+				field={part.field}
+				values={[one]}
+				of={part.values.length}
+				all={part.all}
+				excluded={part.excluded}
+				matchShown
+			/>
+		{/each}
 	{/each}
 {/snippet}

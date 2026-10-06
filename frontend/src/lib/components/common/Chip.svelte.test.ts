@@ -57,6 +57,27 @@ function render(props: Record<string, unknown>) {
 	return host.querySelector('.chip') as HTMLElement;
 }
 
+describe('in a place narrower than its words', () => {
+	it('stays on one line, and only the label gives way', async () => {
+		const { applyStyles, removeStyles } = await import('$lib/design/testing-styles');
+		const { default: source } = await import('./Chip.svelte?raw');
+		const lead = createRawSnippet(() => ({ render: () => '<span class="field">filetype:</span>' }));
+		const chip = render({ lead });
+		applyStyles(source, chip);
+		try {
+			const body = chip.querySelector<HTMLElement>('.body')!;
+			expect(getComputedStyle(body).whiteSpace).toBe('nowrap');
+			expect(getComputedStyle(body.querySelector('.field')!).flexShrink).toBe('0');
+			const words = getComputedStyle(body.querySelector('.label')!);
+			expect(words.flexShrink).toBe('1');
+			expect(words.minInlineSize).toBe('0px');
+			expect(words.textOverflow).toBe('ellipsis');
+		} finally {
+			removeStyles();
+		}
+	});
+});
+
 describe('a chip with a picture', () => {
 	it('draws it inside the chip body, so the chip is what decides how tall it is', () => {
 		const chip = render({ picture: { src: '/api/people/p-1/cover', name: WHO } });

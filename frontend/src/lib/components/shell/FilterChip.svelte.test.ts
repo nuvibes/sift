@@ -8,10 +8,7 @@ import { rememberFacetNames } from './facet-labels';
  *
  * ## What is worth pinning here
  *
- * That it draws ONE chip for a filter however many values are in it. A tooltip on a kept filter
- * drawing one chip per value would show a filter the bar draws as `tags: runway or Edited` as two
- * in the bubble, and one filter would read as two different filters depending on where somebody
- * looked at it.
+ * That it draws ONE chip for what it is handed, however many values that is.
  *
  * That the two ways values combine are told apart by a MARK (`&` against the splitting arrow)
  * and that the mark is not offered where pressing it would change nothing.
@@ -136,6 +133,45 @@ it('refuses without striking, when the words are the refusal', () => {
 	expect(host.querySelector('.chip')?.className).toContain('refused');
 	expect(host.querySelector('.value')?.className).not.toContain('struck');
 	expect(host.querySelector('.said')).toBeNull();
+});
+
+it('draws how the values combine as a mark nobody can press, where it only describes', () => {
+	draw({ values: ['a'], of: 2, all: true, matchShown: true });
+
+	const mark = host.querySelector('.aside .match');
+	expect(mark?.getAttribute('role')).toBe('img');
+	expect(mark?.getAttribute('aria-label')).toBe('All of these');
+	expect(mark?.querySelector('.amp')?.textContent).toBe('&');
+	expect(host.querySelector('button')).toBeNull();
+});
+
+it('draws the splitting arrow in that mark for any of them', () => {
+	draw({ values: ['a'], of: 2, matchShown: true });
+
+	const mark = host.querySelector('.aside .match');
+	expect(mark?.getAttribute('aria-label')).toBe('Any of these');
+	expect(mark?.querySelector('.icon')).not.toBeNull();
+	expect(mark?.querySelector('.amp')).toBeNull();
+});
+
+it('draws no such mark on one value, on a refusal, or unasked', () => {
+	draw({ values: ['a'], of: 1, matchShown: true });
+	expect(host.querySelector('.aside')).toBeNull();
+	unmount(mounted!);
+
+	draw({ values: ['a'], of: 2, excluded: true, matchShown: true });
+	expect(host.querySelector('.aside')).toBeNull();
+	unmount(mounted!);
+
+	draw({ values: ['a'], of: 2 });
+	expect(host.querySelector('.aside')).toBeNull();
+});
+
+it('keeps the press, never the mark, where the joiner can be changed', () => {
+	draw({ values: ['a'], of: 2, matchShown: true, onswitch: () => {} });
+
+	expect(host.querySelector('.match')).toBeNull();
+	expect(host.querySelector('.aside .pressable')).not.toBeNull();
 });
 
 it('is inert when it is handed nothing to do', () => {

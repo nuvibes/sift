@@ -188,6 +188,10 @@ def test_the_page_says_why_the_work_steps_back(
     assert client.get("/api/jobs").json()["step_back_for"] is None
     reader.workers(8, step_back=True)
     assert client.get("/api/jobs").json()["step_back_for"] == "input"
+    playing = attention.Attention(lambda: None, since_played=lambda: 1.0)
+    monkeypatch.setattr(attention, "ATTENTION", playing)
+    playing.workers(8, step_back=True)
+    assert client.get("/api/jobs").json()["step_back_for"] == "playing"
 
 
 def test_the_page_says_what_other_programs_keep_busy(

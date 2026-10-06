@@ -104,6 +104,45 @@ it('names the menu after the filter it belongs to', () => {
 	);
 });
 
+/** The chips the bubble draws, each as its words; the bubble opens on a pointer move. */
+async function bubbleChips(): Promise<HTMLElement[]> {
+	host.querySelector('.name')?.dispatchEvent(new PointerEvent('pointermove', { bubbles: true }));
+	await vi.waitFor(() => {
+		flushSync();
+		if (!document.querySelector('[role="tooltip"] .chip')) throw new Error('no bubble yet');
+	});
+	return [...document.querySelectorAll<HTMLElement>('[role="tooltip"] .chip')];
+}
+
+it('draws one chip for each value in the bubble, so none is cut short', async () => {
+	draw({
+		kept: { ...KEPT, query: 'filetype=-webm|mp4|gif&tags=runway|beach&people=Somebody,Other' }
+	});
+
+	const chips = await bubbleChips();
+
+	expect(chips.map((chip) => chip.querySelector('.value')?.textContent?.trim())).toEqual([
+		'webm',
+		'mp4',
+		'gif',
+		'runway',
+		'beach',
+		'Somebody',
+		'Other'
+	]);
+	// How the values of one filter combine, on each of its chips; a refusal has nothing to say.
+	expect(chips.map((chip) => chip.querySelector('.match')?.getAttribute('aria-label'))).toEqual([
+		undefined,
+		undefined,
+		undefined,
+		'Any of these',
+		'Any of these',
+		'All of these',
+		'All of these'
+	]);
+	expect(document.querySelector('[role="tooltip"] button'), 'a press nobody can reach').toBeNull();
+});
+
 it('says what the filter holds, before anybody presses it', () => {
 	/* The whole reason a name was not enough. The tooltip is portalled and only exists while it is
 	   shown, so what is asserted here is that the parts were read at all: the bubble's own contents

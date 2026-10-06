@@ -8,6 +8,7 @@ import contextlib
 import shutil
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
+from dataclasses import dataclass, field
 from functools import partial
 from pathlib import Path
 from typing import NoReturn
@@ -61,8 +62,24 @@ log = get_logger(__name__)
 
 _DISK_CHECK_INTERVAL_SECONDS = 2.0
 
-#: The held route opened again for one more request: the tunnel's proxy as it is now, or a refusal.
-Reach = Callable[[], AbstractAsyncContextManager[str | None]]
+#: Each read after the tool, as the row names it.
+_READS = {"creator": "who posted it", "art": "the Site's pictures", "music": "the music"}
+
+
+@dataclass
+class Reach:
+    """The held route, opened again for each read after the tool, and what its tunnel refused."""
+
+    open: Callable[[], AbstractAsyncContextManager[str | None]]
+    refused: dict[str, str] = field(default_factory=dict)
+
+    def said(self) -> str | None:
+        if not self.refused:
+            return None
+        *rest, last = [_READS[what] for what in self.refused]
+        listed = f"{', '.join(rest)} or {last}" if rest else last
+        return f"Sift didn't read {listed}. {next(iter(self.refused.values()))}"
+
 
 #: The word the queue uses for a stop that keeps what has arrived. Read from `JobContext.stopping`,
 #: which answers this, `cancel`, or nothing at all.
@@ -74,11 +91,7 @@ class _DiskLow(Exception):
 
 
 class _PauseWanted(Exception):
-    """Somebody paused this download while the fetch was in flight; the handler makes it `JobPaused`.
-
-    Told apart from `_DiskLow` because the two end a download in opposite ways: a full disk fails
-    with a sentence, a pause keeps everything and says nothing.
-    """
+    """Somebody paused this download while the fetch was in flight; the handler makes it `JobPaused`."""
 
 
 def _free_bytes(path: Path) -> int:
@@ -150,10 +163,11 @@ async def on_route[T](
 ) -> T | None:
     """One read made after the tool, on the route the download holds; None if its tunnel went down."""
     try:
-        async with reach() as proxy:
+        async with reach.open() as proxy:
             return await read(proxy)
     except TunnelError as exc:
         log.warning("download.read_refused", read=what, detail=str(exc))
+        reach.refused[what] = str(exc)
         return None
 
 
@@ -225,7 +239,7 @@ async def attempt(
             await held.aclose()
             await _fetch_failed(context, service, download_id, exc, direct=proxy is None)
         # The tunnel asked again by id, never the Site's setting: a stopped one refuses.
-        yield fetched, partial(way_out.through, taken.tunnel_id)
+        yield fetched, Reach(partial(way_out.through, taken.tunnel_id))
 
 
 async def _fetch_failed(

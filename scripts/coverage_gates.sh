@@ -201,6 +201,7 @@ _cov_jobs() {
     src/sift/kernel/tests/test_jobs_workers.py src/sift/kernel/tests/test_jobs_reads.py \
     src/sift/kernel/tests/test_jobs_controls.py src/sift/kernel/tests/test_jobs_pool.py \
     src/sift/kernel/tests/test_ledger.py \
+    src/sift/kernel/tests/test_time_left.py \
     src/sift/kernel/tests/test_job_schedules.py src/sift/kernel/tests/test_switchboard.py \
     src/sift/kernel/tests/test_paging.py \
     src/sift/kernel/tests/test_task_timing.py src/sift/kernel/tests/test_work_ahead.py \

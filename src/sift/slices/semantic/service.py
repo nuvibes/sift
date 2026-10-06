@@ -24,6 +24,7 @@ import asyncio
 import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
+from functools import partial
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -36,6 +37,7 @@ from sift.kernel.content import ContentStore, Lack, VerdictProduct
 from sift.kernel.hardware import HardwareReport
 from sift.kernel.ledger import Actor
 from sift.kernel.log import get_logger
+from sift.kernel.memo import PacedAnswer
 from sift.kernel.ml.child import devices_here
 from sift.kernel.ml.runtime import DeviceUnavailable, resolve_provider
 from sift.kernel.ml.weights import Progress, WeightError
@@ -144,6 +146,7 @@ class SemanticService:
         self._store = store
         self._records = records
         self._content = content
+        self._unread = PacedAnswer(partial(content.coming_count, VerdictProduct.MEANING.value))
         self._repository = repository
         self._preferences = preferences
         self._settings = settings
@@ -503,19 +506,8 @@ class SemanticService:
         return await self._repository.load_viewer(user_id, show_hidden=True)
 
     async def waiting_count(self, viewer: Viewer) -> int:
-        """How many files this user can see that the configured model has NOT described.
-
-        The number a person reads as "still to do", and it has to be that number rather than
-        something near it. The size of the page walk is how many files there are ALTOGETHER, shown
-        as "still to do", a library that had just been fully described would read "508 described,
-        505 still to do" and look stuck at the exact moment it had finished.
-
-        One query, and the set of described ids is handed to it as a filter to be excluded. That
-        set is already read whole into memory for the sweep, for the reason written over
-        `settled_ids`, so this is the same decision applied once more rather than a new one. Asking
-        the access layer rather than counting rows means the answer is scoped to what this user
-        may see, which is what the sweep will queue and therefore what is genuinely left.
-        """
+        """How many READ files this user can see that the configured model has NOT described:
+        what the sweep will queue for them, so what is genuinely left."""
         embedder = await self.embedder()
         # One count in the kernel, over what this user can see: the same term the Build's sheet
         # counts the library by, over the files Sift has read, with the feature's verdicts
@@ -525,6 +517,10 @@ class SemanticService:
         lack = replace(self._records.lack(embedder.revision), product=VerdictProduct.MEANING)
         counted = await self._content.count_lacking_visible(viewer.id, [lack])
         return counted.files
+
+    async def unread_count(self) -> int:
+        """How many files not read yet will want describing, which `waiting_count` cannot see."""
+        return await self._unread.get()
 
     async def coverage(self, viewer: Viewer) -> Coverage:
         """How far the describing has got, for whoever is asking, in one query.

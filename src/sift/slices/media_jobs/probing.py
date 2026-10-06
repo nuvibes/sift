@@ -72,10 +72,31 @@ async def probe(
 ) -> None:
     """Work out what a file actually is, then start the jobs that draw it.
 
-    The only stage that decides whether a file is real. The ingress gate proved the container is
-    what it claims; a truncated download has a perfect header and is caught here, by the same
-    ffprobe that reads the file, before a thumbnail, a preview and a sprite each meet it.
+    The only stage that decides whether a file is real: a truncated download has a perfect header
+    and is caught here, by the ffprobe that reads it, before a thumbnail and a preview meet it.
     """
+    async with lanes.the_read():
+        await _probe(
+            context,
+            settings=settings,
+            hardware=hardware,
+            should_generate=should_generate,
+            follow_on=follow_on,
+            follow_on_payloads=follow_on_payloads,
+            settles_into=settles_into,
+        )
+
+
+async def _probe(
+    context: JobContext,
+    *,
+    settings: Settings,
+    hardware: HardwareReport,
+    should_generate: ShouldGenerate | None,
+    follow_on: FollowOnJobs,
+    follow_on_payloads: FollowOnPayloads | None,
+    settles_into: SettlingJobs,
+) -> None:
     asset_id = _asset_id(context)
     store = context.content
     source = await resolve_decodable(store, asset_id, settings=settings)

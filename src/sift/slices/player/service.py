@@ -171,6 +171,7 @@ async def read_range(
     span: ByteRange,
     *,
     gone: Callable[[], Awaitable[bool]] | None = None,
+    played: Callable[[], None] | None = None,
 ) -> AsyncIterator[bytes]:
     """Stream exactly the requested bytes, in bounded chunks, without blocking the event loop.
 
@@ -181,9 +182,8 @@ async def read_range(
 
     **Every read is handed to a thread, or playback stutters.** Sift is one process with one event
     loop: the API, the live job feed and every stream share it. A `read()` on that loop stops all
-    of them for as long as it takes, and on a bind mount into the host filesystem, which is the
-    ordinary way a self-hoster points Sift at a library, it takes milliseconds rather than
-    microseconds. Yielding between chunks does not help: the yield happens AFTER the read, so what
+    of them for as long as it takes, and on a bind mount into the host filesystem it takes
+    milliseconds rather than microseconds. Yielding between chunks does not help: the yield happens AFTER the read, so what
     it hands back is a loop that has already been stopped. Reading in a thread means the loop is
     free during the read instead of after it, and the await below is the yield, so nothing needs a
     `sleep(0)`.
@@ -193,10 +193,8 @@ async def read_range(
     thread the API and every other stream share.
     """
     remaining = span.length
-    # Opening goes to a thread with the seek, for the reason the reads do: on a bind mount into
-    # the host filesystem (the ordinary way a self-hoster points Sift at a library) an open is
-    # the same milliseconds a read is. Closing stays here: a read handle has nothing to flush, and
-    # keeping the `with` is what guarantees it closes down every path out of this generator.
+    # Opening goes to a thread with the seek, for the reason the reads do. Closing stays here: the
+    # `with` closes the handle down every path out of this generator.
     with await on_serving_thread(_opened_at, path, span.start) as handle:
         while remaining > 0:
             if gone is not None and await gone():
@@ -206,6 +204,8 @@ async def read_range(
             if not chunk:
                 return
             remaining -= len(chunk)
+            if played is not None:
+                played()
             yield chunk
 
 
