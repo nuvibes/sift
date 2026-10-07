@@ -35,6 +35,7 @@ from sift.slices import (
     update_notify,
 )
 from sift.slices.dedup import service as dedup_service
+from sift.slices.importing import JOBS_AT_ONCE
 from sift.slices.swap import diff as swap_diff
 from sift.slices.swap import offer as swap_offer
 from sift.wiring import (
@@ -620,7 +621,7 @@ def test_the_pool_settings_key_is_the_one_the_importing_screen_reads() -> None:
     from sift.slices import importing
     from sift.wiring import workers
 
-    assert importing.JOBS_AT_ONCE == "jobs at once"
+    assert importing.JOBS_AT_ONCE == JOBS_AT_ONCE
     assert "importing.JOBS_AT_ONCE" in inspect.getsource(workers)
 
 

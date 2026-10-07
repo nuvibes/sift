@@ -356,8 +356,8 @@ def test_a_usernames_picture_on_one_site_is_that_sites_alone(
     here = client.get("/api/creator-art/someone", params={"site": "YouTube"})
     elsewhere = client.get("/api/creator-art/someone", params={"site": "Instagram"})
 
-    assert here.status_code == 200
-    assert elsewhere.status_code == 404
+    assert here.status_code == 200, here.text
+    assert elsewhere.status_code == 404, elsewhere.text
 
 
 def test_a_downloader_sift_does_not_have_is_refused_rather_than_stored(client: TestClient) -> None:

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import pytest
 
+from sift.kernel.content import backlog
 from sift.kernel.db import Connection, Database
 from sift.slices.watermarks import schema as watermark_schema
 from sift.slices.watermarks import signatures, weights
@@ -27,7 +28,10 @@ _THEN = "pp-ocrv3-mobile-en"
 
 async def _parents(connection: Connection) -> None:
     """The tables the watermark tables point at. Foreign keys are on, so they exist first: a reading
-    names its Site by id, and a write to it is refused while the table it points at is missing."""
+    names its Site by id, and a write to it is refused while the table it points at is missing.
+    And the tables a write's marks go into."""
+    for statement in backlog.TABLES:
+        await connection.execute(statement)
     await connection.execute(
         "CREATE TABLE assets (id TEXT PRIMARY KEY, identity TEXT NOT NULL UNIQUE, "
         "media_type TEXT NOT NULL, added_at INTEGER NOT NULL)"

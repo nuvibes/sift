@@ -55,7 +55,7 @@ def test_a_hidden_song_is_gone_from_every_read_and_takes_its_files_with_it(
     assert _ids(client) == []
     for address in ("", "/cover", "/history", "/made-by"):
         assert client.get(f"/api/songs/{song}{address}").status_code == 404, address
-    assert client.get(f"/api/related/song/{song}").json()["history"] is None
+    assert "history" not in client.get(f"/api/related/song/{song}").json()
     # And the files that carry it are concealed with it, as a hidden Photo Set's pictures are.
     assert _files(client, song) == []
     # Sealed while the vault is shut: a 204 where a 404 belongs would say the song is there.

@@ -69,7 +69,7 @@ def test_logged_tool_output_keeps_the_url_and_removes_what_is_sensitive() -> Non
     )
     out = str(redact(blob))
     assert "https://instagram.com/user/p/abc123" in out  # the URL is kept
-    assert "kate" not in out  # the account name in the path is gone
+    assert "kate" not in out, out  # the account name in the path is gone
     assert long_token not in out  # a token or cookie the tool echoed is gone
 
 

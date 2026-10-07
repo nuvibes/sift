@@ -727,8 +727,10 @@ async def _an_admin(service: SemanticService, tmp_path: Path) -> str:
 class Fingerprints:
     """The cheap tier, standing in for the content layer's fingerprint read."""
 
-    def __init__(self, *rows: tuple[str, str]) -> None:
+    def __init__(self, *rows: tuple[str, str], scoped_to: tuple[str, ...] = ()) -> None:
         self._rows = rows
+        # What a read within a viewer's files answers: the statement scopes in the real layer.
+        self._scoped_to = scoped_to
 
     async def fingerprints(self, *, within: object = None) -> list[Any]:
         from dataclasses import make_dataclass
@@ -736,7 +738,8 @@ class Fingerprints:
         Row = make_dataclass(
             "Row", ["asset_id", "identity", "media_type", "phash", "videohash"], frozen=True
         )
-        return [Row(asset_id, "digest", "video", phash, None) for asset_id, phash in self._rows]
+        rows = self._rows if within is None else [r for r in self._rows if r[0] in self._scoped_to]
+        return [Row(asset_id, "digest", "video", phash, None) for asset_id, phash in rows]
 
 
 async def test_a_described_file_gets_the_better_tier(wired: Any, temp_db: Database) -> None:
@@ -800,7 +803,10 @@ async def test_the_cheap_tier_ranks_only_what_the_asker_may_see(
     from sift.testing.fixtures import create_user
 
     await temp_db.initialize_schema()
-    rows: Any = Fingerprints(("mine", "0000000000000000"), ("other", "0000000000000001"))
+    # The guest's own files hold only "mine": the scoped read answers nothing else.
+    rows: Any = Fingerprints(
+        ("mine", "0000000000000000"), ("other", "0000000000000001"), scoped_to=("mine",)
+    )
     service = SemanticService(
         store=VectorStore(temp_db),
         records=Records(temp_db),

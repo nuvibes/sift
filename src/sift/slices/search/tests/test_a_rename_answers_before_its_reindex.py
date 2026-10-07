@@ -34,12 +34,20 @@ def hearing() -> Iterator[list[StatementRun]]:
         statement_budget().heard = None
 
 
+def _context(run: StatementRun) -> bool:
+    """A read of who is asking and what they set, kept by caches that lapse on a slow machine, so a
+    request runs it or not by the clock: not part of what a rename costs."""
+    return run.name.startswith(("auth.", "settings.")) or "cache_stamp FROM users" in run.sql
+
+
 def _rename(
     client: TestClient, heard: list[StatementRun], person: str, name: str
 ) -> list[StatementRun]:
+    # Warmed just before, so both measured renames find the request's caches in the same state.
+    assert client.put(f"/api/people/{person}", json={"name": f"{name} first"}).status_code == 200
     heard.clear()
     assert client.put(f"/api/people/{person}", json={"name": name}).status_code == 200
-    return list(heard)
+    return [run for run in heard if not _context(run)]
 
 
 def test_a_rename_costs_the_same_on_three_files_as_on_one_and_never_writes_the_index(

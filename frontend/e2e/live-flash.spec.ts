@@ -145,6 +145,9 @@ for (const [list, path] of [
 	}) => {
 		const { writer, watcher } = await twoWindows(browser);
 		const screen = path.replace('/api', '');
+		// A row below for the newcomer to slide past: an empty wall becoming a list is the screen
+		// changing state, not a row arriving, and it moves by design.
+		const below = await write(writer, 'post', path, { name: `Zzz below ${list} ${Date.now()}` });
 		await watcher.addInitScript(
 			(key) => localStorage.setItem(key, 'name_az'),
 			`sift${screen.replace('/', '.')}.sort`
@@ -152,6 +155,7 @@ for (const [list, path] of [
 		await watcher.goto(screen);
 		// The placeholders giving way to the first cards is a shift of the page's own, not the row's.
 		await expect(watcher.getByRole('status', { name: 'Loading' })).toHaveCount(0);
+		await expect(watcher.getByText(`Zzz below ${list}`, { exact: false })).toBeVisible();
 		await watcher.evaluate(() => document.fonts.ready);
 		const name = `Aaa flash ${list} ${Date.now()}`;
 		await arm(watcher, `return document.body.innerText.includes(${JSON.stringify(name)})`);
@@ -161,6 +165,7 @@ for (const [list, path] of [
 
 		expect(seen.shift, 'the rows below jumped rather than slid').toBeLessThanOrEqual(STILL);
 		await write(writer, 'delete', `${path}/${String(made.id)}`);
+		await write(writer, 'delete', `${path}/${String(below.id)}`);
 	});
 }
 

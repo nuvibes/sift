@@ -425,12 +425,13 @@ class LeftoverDerivatives:
         return [
             path
             for path in files
-            # `as_posix`, because that is how the rows spell it: `derivative_relpath` builds the
-            # path with slashes on every site. `str()` of the same path renders backslashes
-            # on Windows, so nothing on disk would match a row, and every derivative in use
-            # would be an orphan this DELETED.
+            # `as_posix`: the rows spell the path with slashes on every site (`derivative_relpath`),
+            # where `str()` renders backslashes on Windows, so nothing on disk would match a row
+            # and every derivative in use would be an orphan this DELETED.
+            # A file in the cache's root is Sift's own (the kept probe), never a picture.
             if (
                 not path.is_relative_to(transcode)
+                and len(path.relative_to(cache).parts) > 1
                 and path.relative_to(cache).as_posix() not in known
             )
         ]
