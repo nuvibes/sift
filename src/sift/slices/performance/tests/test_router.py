@@ -253,12 +253,16 @@ def test_a_run_in_flight_shows_its_rungs_apart_from_the_result_it_will_replace(
 ) -> None:
     """The rungs finished so far are `progress`; `measurement` stays the last result until the run
     ends, so a screen opened mid-run shows both, and a run not yet measuring shows no rungs."""
+    # The first rung waits for the press to have answered: the run starts as a task, which a
+    # loaded runner can get to before the answer is built.
+    pressed_answered = asyncio.Event()
     release = asyncio.Event()
 
     async def one_rung_then_a_pause(**kwargs: object) -> Measurement:
         report, budget = kwargs["report"], kwargs["budget"]
         assert callable(report) and isinstance(budget, Budget)
         budget.stage(ENCODING)
+        await pressed_answered.wait()
         report(Measurement(cores=8, levels=(a_level(1),)))
         await release.wait()
         return Measurement(cores=8, levels=(a_level(1), a_level(2)))
@@ -267,10 +271,13 @@ def test_a_run_in_flight_shows_its_rungs_apart_from_the_result_it_will_replace(
     runner.state = a_finished_run()
     monkeypatch.setattr(selftest, "measure", one_rung_then_a_pause)
     signed_in = _as_admin(client)
+    portal = client.portal
+    assert portal is not None
 
     pressed = signed_in.post("/api/performance/self-test").json()
     assert pressed["running"] is True and pressed["progress"] is None
     assert [level["at_once"] for level in pressed["measurement"]["levels"]] == [1, 2]
+    portal.call(pressed_answered.set)
 
     part_way: dict[str, Any] | None = None
     deadline = time.monotonic() + 5
@@ -278,8 +285,6 @@ def test_a_run_in_flight_shows_its_rungs_apart_from_the_result_it_will_replace(
         body = dict(signed_in.get("/api/performance/self-test").json())
         if body["progress"] is not None:
             part_way = body
-    portal = client.portal
-    assert portal is not None
     portal.call(release.set)
 
     assert part_way is not None, "a rung that has been measured is visible before the end"
