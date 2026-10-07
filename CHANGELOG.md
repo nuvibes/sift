@@ -72,7 +72,7 @@ version's section, dated, when that version is published.
   version" while the copy in front of you was older. The line now reads "Sift 0.2.1 is available for
   this copy," and Download and install updates this computer.
 
-## 0.2.1 - 2026-10-05
+## 0.2.1 - 2026-10-06
 
 ### What changed for you
 
