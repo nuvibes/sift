@@ -1,4 +1,5 @@
-import { expect, test, type Page } from '@playwright/test';
+import { type Page } from '@playwright/test';
+import { expect, test } from './test';
 import { signInAsAdmin } from './admin';
 
 /* A wheel notch moves the wall by what it was pushed, and no further.

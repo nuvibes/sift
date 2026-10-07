@@ -9,7 +9,8 @@
  * READS before they turn something on, and the words are the feature: a switch that says "on/off"
  * and nothing about what it consents to would pass every unit test in the tree.
  */
-import { expect, test, type Page } from '@playwright/test';
+import { type Page } from '@playwright/test';
+import { expect, test } from './test';
 /* Phrases are matched with `\s+` between words: Playwright does not normalise whitespace for a
  * regular expression, and the formatter reflows the prose they are read from. */
 import { signInAsAdmin } from './admin';

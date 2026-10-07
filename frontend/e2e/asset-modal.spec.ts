@@ -3,7 +3,8 @@
  * Both are geometry and a real compositing property, so neither is answerable without a layout
  * engine: the unit environment renders the markup happily whatever the stylesheet does with it.
  */
-import { expect, test, type Locator, type Page } from '@playwright/test';
+import { type Locator, type Page } from '@playwright/test';
+import { expect, test } from './test';
 import { signInAsAdmin } from './admin';
 import { settled } from './settled';
 

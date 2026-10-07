@@ -1,7 +1,8 @@
 import { readdir } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 
-import { expect, test, type Page } from '@playwright/test';
+import { type Page } from '@playwright/test';
+import { expect, test } from './test';
 import { signInAsAdmin } from './admin';
 import { SETTINGS_SECTIONS } from '../src/lib/settings-ui/sections';
 

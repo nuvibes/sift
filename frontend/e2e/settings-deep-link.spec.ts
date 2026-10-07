@@ -2,7 +2,8 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { expect, test, type Locator, type Page } from '@playwright/test';
+import { type Locator, type Page } from '@playwright/test';
+import { expect, test } from './test';
 import { REGISTRY_HOME, resolveAddress, settingsPath } from '../src/lib/settings-ui/sections';
 import { signInAsAdmin } from './admin';
 

@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './test';
 import { signInAsAdmin } from './admin';
 
 /* Adding things, from the browser's side.

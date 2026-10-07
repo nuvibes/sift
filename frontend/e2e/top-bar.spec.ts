@@ -3,9 +3,11 @@
  * of a control. Where a control lands is a question only a layout engine answers, so this is a
  * browser test, and every screen is visited because any one of them can publish a different bar.
  */
-import { expect, test, type Page } from '@playwright/test';
+import { type Page } from '@playwright/test';
+import { expect, test } from './test';
 import { SIZE_STEPS } from '../src/lib/grid/justify';
 import { signInAsAdmin } from './admin';
+import { settled } from './settled';
 
 /*
  * Every screen with a wall on it, plus one with no wall at all.
@@ -626,6 +628,10 @@ test('every row of the search list lies inside the bar, its words whole', async 
 			.click();
 	}
 	await expect(network.first(), 'Show more never reached the Network row').toBeVisible();
+	// The bar and the list measured once nothing on them is still moving: on four slow cores the
+	// list was read against a bar part way through its entrance, every row "past" it.
+	await settled(page.locator('header.topbar'));
+	await settled(page.locator('#search-suggestions'));
 
 	const outside = await page.evaluate(() => {
 		const bar = document.querySelector('header.topbar')!;

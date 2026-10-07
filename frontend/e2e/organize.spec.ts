@@ -10,7 +10,8 @@
  * is the client: the cards, their sizes as the browser lays them out, and where a press goes. The
  * shapes below are the server's own `QueueView`, with the `purpose` it sends.
  */
-import { expect, test, type Page } from '@playwright/test';
+import { type Page } from '@playwright/test';
+import { expect, test } from './test';
 import { signInAsAdmin } from './admin';
 
 /** One pile, as the server sends it. */

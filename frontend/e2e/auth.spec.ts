@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './test';
 import { ADMIN, PASSWORD, signInAsAdmin } from './admin';
 
 /* Getting in, in a real browser.

@@ -1,4 +1,5 @@
-import { expect, test, type Browser, type BrowserContext, type Page } from '@playwright/test';
+import { type Browser, type BrowserContext, type Page } from '@playwright/test';
+import { expect, test } from './test';
 import { signInAsAdmin } from './admin';
 
 /* No screen needs a reload to show a change.

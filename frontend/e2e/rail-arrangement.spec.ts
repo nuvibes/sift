@@ -4,7 +4,8 @@
  * before the first frame is drawn, which is the whole reason it is stored there rather than on the
  * account, and "before the first frame" is a claim only a real page load can settle.
  */
-import { expect, test, type Page } from '@playwright/test';
+import { type Page } from '@playwright/test';
+import { expect, test } from './test';
 import { signInAsAdmin } from './admin';
 import { settled } from './settled';
 

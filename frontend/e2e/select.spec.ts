@@ -9,7 +9,8 @@
  * where its list is rendered, that a pointer and a keyboard both reach it, that the trigger
  * reports what was chosen, and that leaving without choosing changes nothing.
  */
-import { expect, test, type Page } from '@playwright/test';
+import { type Page } from '@playwright/test';
+import { expect, test } from './test';
 import { signInAsAdmin } from './admin';
 
 const ASSETS = [

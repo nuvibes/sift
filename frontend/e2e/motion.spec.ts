@@ -10,7 +10,8 @@
  * behaviour, and a test pinned to the number would fail on every adjustment and teach whoever hit
  * it to stop reading this file.
  */
-import { expect, test, type Browser, type Page } from '@playwright/test';
+import { type Browser, type Page } from '@playwright/test';
+import { expect, test } from './test';
 import { signInAsAdmin } from './admin';
 
 /** What the document is animating right now, by the element each one is on. */

@@ -3,7 +3,8 @@
  * All geometry, so none of it is answerable without a layout engine: the unit environment renders
  * this markup happily whatever the stylesheet does with it.
  */
-import { expect, test, type Page } from '@playwright/test';
+import { type Page } from '@playwright/test';
+import { expect, test } from './test';
 import { signInAsAdmin } from './admin';
 
 const toggle = (page: Page) => page.getByRole('button', { name: /the sidebar/ });

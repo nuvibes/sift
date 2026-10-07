@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './test';
 import { signInAsAdmin } from './admin';
 import { startFakeStashBoxes, type FakeStashBoxes } from './fake-stash-box';
 import { csrfOf, removePeople } from './seed';

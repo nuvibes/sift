@@ -18,7 +18,8 @@
  * is the same size at every notch of the slider, and that the crossed-out eye is drawn solid only
  * where the concealment is on that file rather than inherited from something above it.
  */
-import { expect, test, type Page } from '@playwright/test';
+import { type Page } from '@playwright/test';
+import { expect, test } from './test';
 import { signInAsAdmin } from './admin';
 import { rewrite } from './routes';
 

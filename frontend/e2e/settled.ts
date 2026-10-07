@@ -1,4 +1,4 @@
-import type { Locator } from '@playwright/test';
+import { expect, type Locator } from '@playwright/test';
 
 /**
  * Wait for a sheet to finish arriving before measuring or pressing anything on it.
@@ -30,4 +30,19 @@ export async function settled(sheet: Locator): Promise<void> {
 			await Promise.all(running.map((one) => one.finished.catch(() => undefined)));
 		}
 	});
+}
+
+/**
+ * Wait until an element's box has stopped moving: two reads a pause apart agree. For what is not
+ * an animation at all, a sheet that grows as its data arrives and slides what is below it from
+ * under the pointer, which `settled` cannot see.
+ */
+export async function stillFor(target: Locator, pause = 200): Promise<void> {
+	await expect
+		.poll(async () => {
+			const before = JSON.stringify(await target.boundingBox());
+			await target.page().waitForTimeout(pause);
+			return before === JSON.stringify(await target.boundingBox());
+		})
+		.toBe(true);
 }

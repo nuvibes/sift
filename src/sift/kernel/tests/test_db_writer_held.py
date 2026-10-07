@@ -43,7 +43,7 @@ async def test_a_block_holding_the_writer_is_said_while_held_and_when_it_lets_go
         async with database.write() as connection:
             await connection.execute("CREATE TABLE held (n INTEGER)")
             await connection.execute("INSERT INTO held VALUES (1)")
-            await asyncio.sleep(0.18)
+            await asyncio.sleep(0.5)
     finally:
         await database.close()
 

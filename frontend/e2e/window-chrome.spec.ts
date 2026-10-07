@@ -16,7 +16,8 @@
  * Both shells are measured in every test here: the desktop window gains a strip and gets its
  * inset back WITHOUT the browser moving at all, and a test of one alone cannot say that.
  */
-import { expect, test, type Page } from '@playwright/test';
+import { type Page } from '@playwright/test';
+import { expect, test } from './test';
 import { signInAsAdmin } from './admin';
 
 /** What the desktop shell puts on the window, reduced to the one method the layout asks about. */

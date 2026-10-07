@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './test';
 import { SIZE_STEPS } from '../src/lib/grid/justify';
 import { signInAsAdmin } from './admin';
 

@@ -1,4 +1,5 @@
-import { expect, test, type Page } from '@playwright/test';
+import { type Page } from '@playwright/test';
+import { expect, test } from './test';
 import { ADMIN, PASSWORD, signInAsAdmin } from './admin';
 
 /* The Jobs dashboard, in a browser, against the real server.

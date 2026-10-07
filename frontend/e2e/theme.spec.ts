@@ -6,7 +6,8 @@
  * does the accent actually change, does the whole screen change with it, does the choice come
  * back after a reload, and does it come back WITHOUT the wrong theme being painted first.
  */
-import { expect, test, type Page } from '@playwright/test';
+import { type Page } from '@playwright/test';
+import { expect, test } from './test';
 import { signInAsAdmin } from './admin';
 
 /*

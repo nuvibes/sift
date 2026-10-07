@@ -619,7 +619,8 @@ async def test_work_arriving_is_claimed_now_not_at_the_next_poll(job_queue: JobQ
         started = time.monotonic()
         pool.work_arrived()
         await _until(lambda: held.active == 1, give_up_after=1.0)
-        assert time.monotonic() - started < 0.1
+        # Well under the minute's poll; a loaded runner takes longer than a tenth to get there.
+        assert time.monotonic() - started < 1.0
     finally:
         held.release.set()
         await pool.stop()

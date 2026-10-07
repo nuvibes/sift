@@ -5,7 +5,8 @@
  * checking is that the two screens really are one shape, that the opinions really persist, and
  * that a collection keeps ITS order rather than the grid's.
  */
-import { expect, test, type Page } from '@playwright/test';
+import { type Page } from '@playwright/test';
+import { expect, test } from './test';
 import { signInAsAdmin } from './admin';
 
 /** The token a state-changing request has to carry. Read per call rather than cached: the session

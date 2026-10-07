@@ -1,5 +1,7 @@
-import { expect, test, type Page } from '@playwright/test';
+import { type Locator, type Page } from '@playwright/test';
+import { expect, test } from './test';
 import { signInAsAdmin } from './admin';
+import { stillFor } from './settled';
 
 /*
  * Saving a set of filters under a name, and getting it back.
@@ -358,13 +360,7 @@ test('editing a kept filter leaves the screen exactly where it was', async ({ pa
 	/* Changing the draft writes the draft. Nothing about the screen may move.
 	   An emptied edit draws a quiet "Everything" chip rather than nothing, so what says the drop
 	   landed is the WORD: a count would still be one, and would be one either way. */
-	/* THE CHIP FIRST, THEN ITS CROSS. The cross is `opacity: 0`, sunk below its own line and
-	   taking no pointer until the pointer is on the CHIP, so that a row of chips is not a row of
-	   crosses. Aimed at from rest, the point Playwright computes is the sunk box and the hover
-	   never reaches the chip, so the two wait on each other until the test's own deadline. */
-	const draftChip = editing.locator('.chip').first();
-	await draftChip.hover();
-	await draftChip.locator('.remove').click();
+	await pressCross(editing.locator('.chip').first());
 	await expect(editing.locator('.chip')).toHaveText('Everything');
 	await expect(editing.locator('.chip .remove')).toHaveCount(0);
 	expect(narrowing(page), 'changing the draft changed the screen').toBe(narrowedBy);
@@ -381,6 +377,26 @@ test('editing a kept filter leaves the screen exactly where it was', async ({ pa
 	await expect(page, 'Cancel wrote the draft anyway').toHaveURL(/[?&]tags=beach/);
 });
 
+/** Press a chip's cross. The cross is `opacity: 0`, sunk below its own line and taking no pointer
+    until the pointer is on the CHIP, so the chip is hovered first; and the sheet is waited still,
+    then aimed at again if it moved, because a panel whose columns are still arriving slides the
+    editor from under the pointer, the cross sinks, and a press on it waits for ever. */
+async function pressCross(chip: Locator): Promise<void> {
+	for (let attempt = 0; attempt < 2; attempt += 1) {
+		await stillFor(chip);
+		await chip.hover();
+		try {
+			await chip.locator('.remove').click({ timeout: 5_000 });
+			return;
+		} catch {
+			// Moved under the pointer: once more from a still sheet.
+		}
+	}
+	await stillFor(chip);
+	await chip.hover();
+	await chip.locator('.remove').click();
+}
+
 test('Save keeps the draft under the name, and still does not move the screen', async ({
 	page
 }) => {
@@ -396,13 +412,7 @@ test('Save keeps the draft under the name, and still does not move the screen', 
 	await expect(editing.locator('.chip')).toHaveCount(2);
 
 	// Drop one of the two, then keep what is left under the same name.
-	/* THE CHIP FIRST, THEN ITS CROSS. The cross is `opacity: 0`, sunk below its own line and
-	   taking no pointer until the pointer is on the CHIP, so that a row of chips is not a row of
-	   crosses. Aimed at from rest, the point Playwright computes is the sunk box and the hover
-	   never reaches the chip, so the two wait on each other until the test's own deadline. */
-	const draftChip = editing.locator('.chip').first();
-	await draftChip.hover();
-	await draftChip.locator('.remove').click();
+	await pressCross(editing.locator('.chip').first());
 	await expect(editing.locator('.chip')).toHaveCount(1);
 	const kept = page.waitForResponse(
 		(answer) => answer.url().endsWith('/api/search/saved') && answer.request().method() === 'GET'
