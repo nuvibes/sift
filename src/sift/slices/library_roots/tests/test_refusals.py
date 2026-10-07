@@ -14,7 +14,7 @@ import pytest
 
 from sift.kernel.config import Settings
 from sift.kernel.content import Root
-from sift.kernel.db import Database
+from sift.kernel.db import Database, Row
 from sift.kernel.ingress import verify_ingress
 from sift.kernel.jobs import (
     JobQueue,
@@ -38,6 +38,13 @@ from sift.slices.library_roots.tests.test_jobs import (
 )
 
 # --- the refusal memory ----------------------------------------------------------------------
+
+
+async def _remembered(service: LibraryService, root_id: str) -> list[Row]:
+    """What the root is refusing, read as the Skipped screen's store reads it."""
+    return await service._db.fetch_all(
+        "SELECT * FROM scan_rejections WHERE root_id = ? ORDER BY rel_path LIMIT 10", (root_id,)
+    )
 
 
 async def test_a_refused_file_is_never_opened_a_second_time(
@@ -76,7 +83,7 @@ async def test_a_refused_file_is_never_opened_a_second_time(
     await jobs.scan(first, settings=settings, service=service, reindexer=reindexer)
 
     assert opened == 1
-    remembered = await service.rejections_in_root(root.id, limit=10)
+    remembered = await _remembered(service, root.id)
     assert len(remembered) == 1
     assert remembered[0]["reason"]
 
@@ -84,7 +91,7 @@ async def test_a_refused_file_is_never_opened_a_second_time(
     await jobs.scan(second, settings=settings, service=service, reindexer=reindexer)
 
     assert opened == 1, "the second pass must not read a file it has already refused"
-    assert len(await service.rejections_in_root(root.id, limit=10)) == 1
+    assert len(await _remembered(service, root.id)) == 1
     # And the same fact as one number across every folder, which is what the Skipped Files card on
     # the Organize board draws. Its own statement rather than a listing per folder counted: asking
     # each root for its rows to count them is a read per library folder for a number a COUNT gives.
@@ -117,7 +124,7 @@ async def test_a_refused_file_that_changes_is_looked_at_again(
     await jobs.scan(second, settings=settings, service=service, reindexer=reindexer)
 
     assert await assets_in(temp_db) == 1, "a real file at a refused path is still a real file"
-    assert await service.rejections_in_root(root.id, limit=10) == [], "and the refusal is stale"
+    assert await _remembered(service, root.id) == [], "and the refusal is stale"
 
 
 async def test_the_catch_up_does_not_offer_a_refused_file_again(
@@ -138,7 +145,7 @@ async def test_the_catch_up_does_not_offer_a_refused_file_again(
     first = await context_for(jobs.SCAN, {"root_id": root.id})
     await jobs.scan(first, settings=settings, service=service, reindexer=reindexer)
     await finished(first)
-    assert len(await service.rejections_in_root(root.id, limit=10)) == 1
+    assert len(await _remembered(service, root.id)) == 1
 
     shutil.copy(root_path / "clips" / "one.mp4", root_path / "clips" / "arrived.mp4")
     catching_up = await context_for(jobs.RECONCILE, {"root_id": root.id})

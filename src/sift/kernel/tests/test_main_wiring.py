@@ -1153,6 +1153,24 @@ class _Database:
     async def fetch_all(self, _sql: str, _params: object = ()) -> list[object]:
         return []
 
+    def write(self) -> _Writing:
+        # The ledger keeps the long passes' prices on the first tick; nothing reads them here.
+        return _Writing()
+
+
+class _Writing:
+    async def __aenter__(self) -> _Writing:
+        return self
+
+    async def __aexit__(self, *_: object) -> None:
+        return None
+
+    async def execute(self, _sql: str, _params: object = ()) -> None:
+        return None
+
+    async def executemany(self, _sql: str, _rows: object = ()) -> None:
+        return None
+
 
 class _PoolQueue:
     async def unfinished_by_type(self) -> dict[str, int]:

@@ -33,8 +33,8 @@ pytestmark = [pytest.mark.integration]
 def _queued(client: TestClient) -> list[dict[str, object]]:
     rows = read(
         db_path(client),
-        "SELECT id, payload FROM jobs WHERE type = ? AND state = ?",
-        ("fts_reindex", "queued"),
+        "SELECT id, payload FROM jobs WHERE type IN (?, ?) AND state = ?",
+        ("fts_reindex", "fts_reindex_files", "queued"),
     )
     return [{"id": row["id"], **json.loads(str(row["payload"]))} for row in rows]
 

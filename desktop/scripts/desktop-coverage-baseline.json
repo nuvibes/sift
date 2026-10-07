@@ -1,6 +1,6 @@
 {
 	"_note": "What the desktop shell's tests reach. `untouched` is how many files no test reaches at all and may only go DOWN; `lines` is the share of lines they execute and `uncovered_lines` the count they do not, and a regression is the share falling AND that count rising together. check_desktop_coverage.mjs explains why these three and not a single percentage, and why this is a ratchet rather than the 100% gate the Python packages carry. Record any move with SIFT_RECORD_COVERAGE=1 npm run gate:coverage.",
 	"untouched": 0,
-	"lines": 98.96,
-	"uncovered_lines": 20
+	"lines": 99.04,
+	"uncovered_lines": 22
 }

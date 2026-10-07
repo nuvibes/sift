@@ -61,6 +61,14 @@ describe('the look', () => {
 		expect(keepLook({ theme: '{"base":"paper"}', canvas: '#f4f1ea' })).toBe(false);
 	});
 
+	it('says when the look cannot be kept, and goes on', () => {
+		// A file where the folder should be: the write fails, the start is not held up by it.
+		const blocker = path.join(folder, 'blocker');
+		fs.writeFileSync(blocker, '');
+		paths.userData = blocker;
+		expect(keepLook({ theme: '{"base":"slate"}', canvas: '#10141c' })).toBe(false);
+	});
+
 	it('rides in the address fragment, which no request carries', () => {
 		expect(openingAddress('sift-shell://app', { theme: '{"a":1}', canvas: '#000000' })).toBe(
 			'sift-shell://app/opening#%7B%22a%22%3A1%7D'

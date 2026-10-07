@@ -278,6 +278,9 @@ const SCREENS = [
 ];
 
 const NOT_CHECKED_HERE: Record<string, string> = {
+	opening:
+		"the desktop window's own frame before sign-in, drawn by the shell and gone at the page's" +
+		' first paint: no rail, no session, nothing of the app to check',
 	accounts:
 		"a username's old page address, kept for links written before the page went: a 308 redirect to" +
 		' the Files wall narrowed to that username, with no page of its own',

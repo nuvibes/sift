@@ -198,9 +198,10 @@ export function judgeRow(row, thingBells, bells = bellsOf, reach = reachedFrom) 
 
 /** Every screen that must have a row: each route, and each Settings section. */
 async function screens() {
-	const routes = (await everyFile(join(SOURCE, 'routes'), ['+page.svelte'])).map((full) =>
-		relative(SOURCE, full).split('\\').join('/')
-	);
+	// The design gallery is not in the public tree: its pages draw fixed examples and follow no bell.
+	const routes = (await everyFile(join(SOURCE, 'routes'), ['+page.svelte']))
+		.map((full) => relative(SOURCE, full).split('\\').join('/'))
+		.filter((screen) => !screen.startsWith('routes/design/'));
 	const sections = [...readFileSync(SECTIONS, 'utf8').matchAll(/\{ id: '([^']+)', label:/g)].map(
 		(match) => `settings/${match[1]}`
 	);

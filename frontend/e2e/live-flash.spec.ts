@@ -17,6 +17,9 @@ const STILL = 0.001;
 /** A re-read that swaps more than this many elements out and back is a remount. */
 const REMOUNT = 20;
 
+// One case at a time: a row another case makes would land inside this one's watch.
+test.describe.configure({ mode: 'serial' });
+
 const opened: BrowserContext[] = [];
 test.afterEach(async () => {
 	for (const context of opened.splice(0)) await context.close();
@@ -147,6 +150,9 @@ for (const [list, path] of [
 			`sift${screen.replace('/', '.')}.sort`
 		);
 		await watcher.goto(screen);
+		// The placeholders giving way to the first cards is a shift of the page's own, not the row's.
+		await expect(watcher.getByRole('status', { name: 'Loading' })).toHaveCount(0);
+		await watcher.evaluate(() => document.fonts.ready);
 		const name = `Aaa flash ${list} ${Date.now()}`;
 		await arm(watcher, `return document.body.innerText.includes(${JSON.stringify(name)})`);
 
@@ -163,6 +169,7 @@ test('a file hearted elsewhere joins Favorites without a reload', async ({ brows
 	const seeded = await seedPhotos(writer, 'live-flash-favorites', 1);
 	const file = seeded.assetIds[0];
 	await watcher.goto('/favorites');
+	await expect(watcher.getByRole('status', { name: 'Loading' })).toHaveCount(0);
 	await arm(
 		watcher,
 		`return [...document.querySelectorAll('[data-tile-id]')].some((tile) => tile.getAttribute('data-tile-id') === ${JSON.stringify(file)})`

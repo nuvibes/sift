@@ -65,6 +65,25 @@ afterEach(() => {
 });
 
 describe('downloading the log with no backend', () => {
+	it('says why when the facts file cannot be written, before anything starts', async () => {
+		// The system's temp folder is read from the environment at each call; point it at nothing.
+		const was = { TEMP: process.env.TEMP, TMP: process.env.TMP, TMPDIR: process.env.TMPDIR };
+		const nowhere = path.join(folder, 'missing', 'deeper');
+		process.env.TEMP = process.env.TMP = process.env.TMPDIR = nowhere;
+		let outcome: Bundled;
+		try {
+			outcome = await bundleLogs(ask());
+		} finally {
+			for (const [name, value] of Object.entries(was)) {
+				if (value === undefined) delete process.env[name];
+				else process.env[name] = value;
+			}
+		}
+		expect(outcome.ok).toBe(false);
+		expect('reason' in outcome ? outcome.reason : '').toMatch(/ENOENT|no such file/);
+		expect(calls).toEqual([]);
+	});
+
 	it('starts the scrubber exactly as its interface says, and hands back the archive', async () => {
 		const out = path.join(folder, archiveName(NOW));
 		const made = bundleLogs(ask());

@@ -18,7 +18,7 @@ import sift.slices.workbench.schema  # noqa: F401
 from sift.kernel.access import Repository, Role, Viewer
 from sift.kernel.config import Settings
 from sift.kernel.content import ContentStore, LibraryStore, Root
-from sift.kernel.db import Database
+from sift.kernel.db import Database, Row
 from sift.kernel.jobs import JobContext
 from sift.slices.delete.service import Deleter, InsideAnArchive
 from sift.slices.library_roots import jobs
@@ -66,6 +66,13 @@ async def _pictures(database: Database) -> dict[str, str]:
     return {str(row["rel_path"]): str(row["asset_id"]) for row in rows}
 
 
+async def _remembered(service: LibraryService, root_id: str) -> list[Row]:
+    """What the root is refusing, read as the Skipped screen's store reads it."""
+    return await service._db.fetch_all(
+        "SELECT * FROM scan_rejections WHERE root_id = ? ORDER BY rel_path LIMIT 10", (root_id,)
+    )
+
+
 async def test_a_picture_removed_from_sift_stays_gone_after_every_rescan(
     context_for: Context,
     root: Root,
@@ -94,7 +101,7 @@ async def test_a_picture_removed_from_sift_stays_gone_after_every_rescan(
     after = await _pictures(temp_db)
     assert sorted(after) == ["shoot.zip/01.png", "shoot.zip/03.png"]
     assert after["shoot.zip/01.png"] == before["shoot.zip/01.png"]
-    skipped = await service.rejections_in_root(root.id, limit=10)
+    skipped = await _remembered(service, root.id)
     assert [(str(row["rel_path"]), str(row["reason"])) for row in skipped] == [
         ("shoot.zip/02.png", REMOVED_FROM_SIFT)
     ]
@@ -147,4 +154,4 @@ async def test_a_disk_delete_of_a_picture_in_a_zip_is_refused_and_a_rescan_finds
 
     assert await _pictures(temp_db) == before
     assert (root_path / "shoot.zip").read_bytes() == archive
-    assert await service.rejections_in_root(root.id, limit=10) == []
+    assert await _remembered(service, root.id) == []

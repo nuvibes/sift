@@ -1255,7 +1255,10 @@ async def test_a_file_that_has_stayed_empty_is_remembered_and_one_just_made_is_n
     context = await context_for(jobs.SCAN, {"root_id": root.id})
     await jobs.scan(context, settings=settings, service=service, reindexer=reindexer)
 
-    remembered = await service.rejections_in_root(root.id, limit=10)
+    remembered = await service._db.fetch_all(
+        "SELECT rel_path, reason FROM scan_rejections WHERE root_id = ? ORDER BY rel_path",
+        (root.id,),
+    )
     assert [(row["rel_path"], row["reason"]) for row in remembered] == [("old.mp4", "empty")]
 
 

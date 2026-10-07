@@ -114,36 +114,6 @@ export const LIVE_MATRIX: MatrixRow[] = [
 		why: 'a sign-in step, before any library'
 	},
 	{
-		screen: 'routes/design/+page.svelte',
-		file: 'routes/design/+page.svelte',
-		shows: [],
-		why: 'the DESIGN GALLERY draws fixed examples'
-	},
-	{
-		screen: 'routes/design/bar/+page.svelte',
-		file: 'routes/design/bar/+page.svelte',
-		shows: [],
-		why: 'the DESIGN GALLERY draws fixed examples'
-	},
-	{
-		screen: 'routes/design/charts/+page.svelte',
-		file: 'routes/design/charts/+page.svelte',
-		shows: [],
-		why: 'the DESIGN GALLERY draws fixed examples'
-	},
-	{
-		screen: 'routes/design/insights/+page.svelte',
-		file: 'routes/design/insights/+page.svelte',
-		shows: [],
-		why: 'the DESIGN GALLERY draws fixed examples'
-	},
-	{
-		screen: 'routes/design/saved-filters/+page.svelte',
-		file: 'routes/design/saved-filters/+page.svelte',
-		shows: [],
-		why: 'the DESIGN GALLERY draws fixed examples'
-	},
-	{
 		screen: 'routes/downloads/+page.svelte',
 		file: 'routes/downloads/+page.svelte',
 		shows: ['downloads', 'settings']

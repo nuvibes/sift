@@ -502,11 +502,6 @@ async def rescan_root(
     return {"job_id": job_id}
 
 
-# There is no per-root rejections route: the quarantine screen below shows BOTH piles (what was
-# moved aside and what was left alone, every root at once) through `rejections_in_root`, and a
-# route nothing calls is one `test_every_route_is_reachable` refuses.
-
-
 # --- what Sift would not take ------------------------------------------------------------------
 
 

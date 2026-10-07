@@ -534,12 +534,12 @@
 		</StageNotice>
 	{/snippet}
 
-	<!-- `asset` arms the drag out of the window; neither it nor the notice for a file this account
-	     may not see, which must not be dragged past the vault. The stroke steps through the run on a
-	     phone. -->
+	<!-- `asset` arms the drag out of the window, never past the vault; a phone's stroke steps the run.
+	     A picture that cannot be drawn lets the panel read at once: no frame is coming. -->
 	<div
 		class="swipe"
 		class:fills={phoneWidth.yes}
+		onerrorcapture={() => band.pictured()}
 		{@attach swipeBetween(() => ({
 			live: phoneWidth.yes,
 			next: onnext,

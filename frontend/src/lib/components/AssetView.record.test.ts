@@ -335,6 +335,29 @@ describe('the three panes', () => {
 		expect(strip()).toEqual(['About2', 'Media1', 'History']);
 	});
 
+	it('reads the panel at once when the picture cannot be drawn, not after the wait', async () => {
+		await show();
+		const panelReads = () =>
+			vi.mocked(api.get).mock.calls.filter(([path]) => String(path).endsWith('/people')).length;
+		expect(panelReads(), 'the panel read before the picture').toBe(0);
+
+		const picture = host.querySelector('.swipe img, .swipe canvas, .swipe video');
+		expect(picture, 'no picture drawn').not.toBeNull();
+		// The still asks the server why it failed; the answer is not what this is about.
+		vi.stubGlobal(
+			'fetch',
+			vi.fn(async () => new Response(null, { status: 404 }))
+		);
+		try {
+			picture!.dispatchEvent(new Event('error'));
+			flushSync();
+			expect(panelReads(), 'a picture that failed held the panel for the whole wait').toBe(1);
+			await Promise.resolve();
+		} finally {
+			vi.unstubAllGlobals();
+		}
+	});
+
 	it('wears no history number until the thread answers, then its total', async () => {
 		/*
 		 * The thread is read once the picture is up (here, the panel's ceiling on waiting for it),

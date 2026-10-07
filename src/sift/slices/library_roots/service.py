@@ -27,7 +27,7 @@ from sift.kernel.audience import EVERY_ADMIN
 from sift.kernel.changes import About, announce_now, telling
 from sift.kernel.content import ROOT_REL_PATH, FolderRow, LibraryStore, Root, RootKind
 from sift.kernel.content.mounts import is_remote
-from sift.kernel.db import Database, IntegrityError, Params, Row
+from sift.kernel.db import Database, IntegrityError, Params
 from sift.kernel.filenames import InvalidFilename, check_folder_name
 from sift.kernel.ids import new_id
 from sift.kernel.ingress import IngressRejected
@@ -504,20 +504,6 @@ class LibraryService:
                 "new": new_rel_path,
             },
         )
-
-    async def rejections_in_root(self, root_id: str, *, limit: int) -> list[Row]:
-        """What a root is currently refusing, for the screen that says so. The first `limit` by
-        path; `rejection_count_in_root` says how many there are in all."""
-        return await self._db.fetch_all(
-            "SELECT * FROM scan_rejections WHERE root_id = ? ORDER BY rel_path LIMIT ?",
-            (root_id, limit),
-        )
-
-    async def rejection_count_in_root(self, root_id: str) -> int:
-        row = await self._db.fetch_one(
-            "SELECT COUNT(*) AS n FROM scan_rejections WHERE root_id = ?", (root_id,)
-        )
-        return 0 if row is None else int(row["n"])
 
     async def rejection_count(self) -> int:
         """How many files the scanner is walking past, across every folder at once.

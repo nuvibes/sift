@@ -8,8 +8,8 @@
 	},
 	"client-coverage": {
 		"untouched": 7,
-		"lines": 84.92,
-		"uncovered_lines": 6107
+		"lines": 85.04,
+		"uncovered_lines": 6127
 	},
 	"state-matrix": {
 		"undrawn": 0
@@ -241,7 +241,7 @@
 			"frontend/e2e/library.spec.ts": 44.9,
 			"frontend/e2e/live.spec.ts": 46.9,
 			"frontend/e2e/motion.spec.ts": 35.4,
-			"frontend/e2e/native-chrome.spec.ts": 33.9,
+			"frontend/e2e/native-chrome.spec.ts": 33.7,
 			"frontend/e2e/navigation.spec.ts": 37.5,
 			"frontend/e2e/page-alignment.spec.ts": 38.2,
 			"frontend/e2e/pager-and-marks.spec.ts": 44.9,

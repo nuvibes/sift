@@ -103,11 +103,11 @@ test("a person's page carries the picture, the opinions and the way to their fil
 	await expect(page.locator('.hero .opinions')).toBeVisible();
 
 	/* Their files, inline, which is what somebody came to the page for. The same `AssetGrid` Browse
-	 * draws (asked for by name through the one query language) rather than a second arrangement
+	 * draws (asked for by the person's id through the one query language) rather than a second arrangement
 	 * of it. Under an `h2`, because the page already has an `h1` and two of those leave a screen
 	 * reader with two answers to "what is this page". */
 	await expect(page.getByRole('heading', { name: 'Files', level: 2 })).toBeVisible();
-	expect(new URL((await asking).url()).searchParams.get('people')).toBe(name);
+	expect(new URL((await asking).url()).searchParams.get('people')).toBe(id);
 });
 
 test('the embedded grid gets the height it needs, and the page does not scroll as a whole', async ({
@@ -147,7 +147,7 @@ test('a site shows what came from it, inline', async ({ page }) => {
 	await page.goto(`/sites/${id}`);
 
 	await expect(page.getByRole('heading', { name: 'Files', level: 2 })).toBeVisible();
-	expect(new URL((await asking).url()).searchParams.get('sites')).toBe(name);
+	expect(new URL((await asking).url()).searchParams.get('sites')).toBe(id);
 });
 
 test("a site's address is only stored when a browser could safely follow it", async ({ page }) => {
