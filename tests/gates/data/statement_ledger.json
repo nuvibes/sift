@@ -260,14 +260,6 @@
    },
    "count": 1
   },
-  "delete:assets_fts#1b5b099c": {
-   "stage": "db.write",
-   "steps": {
-    "20000": 112,
-    "80000": 112
-   },
-   "count": 10
-  },
   "delete:assets_fts#4e33d47b": {
    "stage": "db.write",
    "steps": {
@@ -276,6 +268,24 @@
    },
    "count": 2
   },
+  "delete:assets_fts#e8242a0c": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 880,
+    "80000": 880
+   },
+   "count": 2,
+   "why": "one statement a page for the index rows a write replaces and the map rows it adds, in place of three statements per file"
+  },
+  "delete:assets_fts_rows#0c4b91ef": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 592,
+    "80000": 592
+   },
+   "count": 2,
+   "why": "one statement a page for the index rows a write replaces and the map rows it adds, in place of three statements per file"
+  },
   "delete:assets_fts_rows#3c4e59bf": {
    "stage": "db.write",
    "steps": {
@@ -283,14 +293,6 @@
     "80000": 240
    },
    "count": 2
-  },
-  "delete:assets_fts_rows#b897dae1": {
-   "stage": "db.write",
-   "steps": {
-    "20000": 128,
-    "80000": 128
-   },
-   "count": 20
   },
   "delete:backlog_moved#25985015": {
    "stage": "db.write",
@@ -519,13 +521,14 @@
    },
    "count": 20
   },
-  "insert:assets_fts_rows#78156dd3": {
+  "insert:assets_fts_rows#57b4c2d1": {
    "stage": "db.write",
    "steps": {
-    "20000": 128,
-    "80000": 128
+    "20000": 672,
+    "80000": 672
    },
-   "count": 20
+   "count": 2,
+   "why": "one statement a page for the index rows a write replaces and the map rows it adds, in place of three statements per file"
   },
   "insert:backlog_counts#b82517d2": {
    "stage": "db.write",
@@ -1169,14 +1172,6 @@
    ],
    "per": "library",
    "why": "costs this before the ledger: a debt on the record, not a decision"
-  },
-  "select:assets_fts_rows#d45813cf": {
-   "stage": "db.write",
-   "steps": {
-    "20000": 16,
-    "80000": 16
-   },
-   "count": 20
   },
   "select:audio_fingerprints#1139ec80": {
    "stage": "db.read",

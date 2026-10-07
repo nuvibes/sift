@@ -159,13 +159,22 @@ SELECT a.id AS asset_id,
 # Not the FTS row's implicit rowid alone, and not `assets.rowid`: VACUUM is free to renumber the
 # latter, and a backup being taken is not an acceptable way for search results to start pointing at
 # the wrong files.
-_FIND_ROW = "SELECT fts_rowid FROM assets_fts_rows WHERE asset_id = ?"
-_DELETE_ROW = "DELETE FROM assets_fts WHERE rowid = ?"
-_FORGET_ROW = "DELETE FROM assets_fts_rows WHERE asset_id = ?"
+#
+# One statement each for a whole page rather than three per row.
+_DELETE_ROWS = """
+DELETE FROM assets_fts
+ WHERE rowid IN (SELECT fts_rowid FROM assets_fts_rows
+                  WHERE asset_id IN (SELECT value FROM json_each(?)))
+"""
+_FORGET_ROWS = "DELETE FROM assets_fts_rows WHERE asset_id IN (SELECT value FROM json_each(?))"
 # A plain INSERT, never OR REPLACE: the row is always removed first (or the map emptied, on a
 # rebuild), and `search_unindexed`'s triggers count on seeing every removal as a DELETE. A replace
 # would delete silently and leave the kept count one out; a duplicate now fails loudly instead.
-_REMEMBER_ROW = "INSERT INTO assets_fts_rows (asset_id, fts_rowid) VALUES (?, ?)"
+# The index rows above it keep one insert each: an FTS5 insert hands back no rowid by RETURNING.
+_REMEMBER_ROWS = """
+INSERT INTO assets_fts_rows (asset_id, fts_rowid)
+SELECT json_extract(value, '$[0]'), json_extract(value, '$[1]') FROM json_each(?)
+"""
 
 _INSERT_ROW = """
 INSERT INTO assets_fts
@@ -223,6 +232,7 @@ async def index_assets(
     asset_id: str | None = None,
     asset_ids: Sequence[str] | None = None,
     rebuild: bool = False,
+    sweep: bool = True,
 ) -> int:
     """Write the index for one asset, a named set of them, or all of them.
 
@@ -250,13 +260,17 @@ async def index_assets(
 
     `rebuild` empties the index first. Without it the pass still replaces every row it writes, so
     an incremental run does not disturb the rest.
+
+    `sweep=False` leaves the orphan sweep to the caller, which writes many sets in turn and sweeps
+    once after the last (`sweep_orphans`): the two anti-joins cost more than a set of a hundred.
     """
     if asset_ids is not None and not asset_ids:
         return 0
     if not rebuild:
         async with database.write() as connection:
             written = await _write_pages(connection, asset_id=asset_id, asset_ids=asset_ids)
-            await _sweep_orphans(connection)
+            if sweep:
+                await _sweep_orphans(connection)
         return written
 
     # A rebuild is ONE TRANSACTION PER PAGE. The one write lock is then held for about a tenth of
@@ -342,6 +356,12 @@ async def _not_written_since(connection: Connection, rows: Sequence[Any]) -> lis
     return [row for row in rows if str(row["asset_id"]) not in done]
 
 
+async def sweep_orphans(database: Database) -> None:
+    """The orphan sweep on its own, for a caller that wrote its sets with `sweep=False`."""
+    async with database.write() as connection:
+        await _sweep_orphans(connection)
+
+
 async def _sweep_orphans(connection: Connection) -> None:
     # An asset named in the index but not in `assets` is a file that has been removed. Swept on
     # every pass rather than only on a rebuild: the single-asset path is also how a caller
@@ -362,12 +382,10 @@ async def _write_page(connection: Connection, rows: Sequence[Any], *, replace: b
     per row instead of one per page. The rowids come back from the index inserts in order, so the
     map rows are written afterwards from that list.
     """
-    if replace:
-        for row in rows:
-            found = await connection.execute_fetchall(_FIND_ROW, (row["asset_id"],))
-            for existing in found:
-                await connection.execute(_DELETE_ROW, (existing["fts_rowid"],))
-            await connection.execute(_FORGET_ROW, (row["asset_id"],))
+    if replace and rows:
+        named = json.dumps([str(row["asset_id"]) for row in rows])
+        await connection.execute(_DELETE_ROWS, (named,))
+        await connection.execute(_FORGET_ROWS, (named,))
     rowids: list[tuple[str, int]] = []
     for row in rows:
         cursor = await connection.execute(
@@ -386,8 +404,8 @@ async def _write_page(connection: Connection, rows: Sequence[Any], *, replace: b
             ),
         )
         rowids.append((str(row["asset_id"]), int(cursor.lastrowid or 0)))
-    for asset_id, rowid in rowids:
-        await connection.execute(_REMEMBER_ROW, (asset_id, rowid))
+    if rowids:
+        await connection.execute(_REMEMBER_ROWS, (json.dumps(rowids),))
 
 
 _UNINDEXED_COUNT = """

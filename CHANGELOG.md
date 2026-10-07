@@ -45,10 +45,11 @@ version's section, dated, when that version is published.
   downloaded again, instead of failing three times with "the detector model has not been
   installed yet."
 - **Every player is held to one bar.** The popout shows a frame 32% sooner after a press
-  (154 ms to 104 ms, median) and the gap between clips is 22% shorter in order and 69% under
-  Shuffle; nothing under the picture is asked for before its first frame (19 requests in a gap to
-  2); the Theater wall opens with nothing moving; a file deleted elsewhere leaves the Mini player
-  and a Theater cell at once; hls.js runs on a worker and remuxed files play like direct ones.
+  (154 ms to 104 ms, median) and the gap between clips is 40% shorter in order (94 ms to 57) and
+  69% under Shuffle; nothing under the picture is asked for before its first frame (the panel's
+  15 reads moved after it); the Theater wall opens with nothing moving; a file deleted elsewhere
+  leaves the Mini player and a Theater cell at once; hls.js runs on a worker and remuxed files
+  play like direct ones.
 - **A page of a wall is read once.** Browse, Next, a Filter tick and a person's page made 11
   reads and now make 4 (64% fewer); the pager shows only a page that has landed whole.
 - **Sharing and hiding settle faster.** A share's permission check costs 83% less per file,

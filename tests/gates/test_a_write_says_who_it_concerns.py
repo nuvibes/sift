@@ -101,6 +101,8 @@ SILENT: dict[str, str] = {
     # A long pass's kept price, written as its run closes: the run's own close announces, and the
     # jobs page re-reads the price with it.
     "kernel.jobs.ledger._keep_prices": "written as a run closes, whose close announces",
+    # The index rows of files already removed, whose removal announced; no screen draws them.
+    "kernel.access.search_index.sweep_orphans": "drops index rows of files whose removal announced",
     # Sessions and credentials. These decide whether a request is answered at all; a screen drawing
     # them would be a screen showing somebody's session tokens.
     "auth.admin_cli.reset_password": (

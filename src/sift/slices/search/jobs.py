@@ -48,12 +48,14 @@ Sift was not running.
 from __future__ import annotations
 
 import time
+from asyncio import sleep
 from typing import Any
 
 from sift.kernel.access import (
     anything_unindexed,
     index_assets,
     index_new_assets,
+    sweep_orphans,
     unindexed_count,
 )
 from sift.kernel.changes import About, announce, who_may_see_a_file
@@ -134,6 +136,9 @@ FTS_REINDEX_FILES = "fts_reindex_files"
 ASSET_IDS = "asset_ids"
 IDS_PER_JOB = 2000
 IDS_PER_WRITE = 100
+#: The pause after each chunk's commit, so a write that arrived meanwhile (a heart, a rating) takes
+#: the lock before the next chunk does.
+PAUSE_BETWEEN_WRITES = 0.005
 
 
 async def reindex_files(context: JobContext, *, database: Database) -> None:
@@ -145,8 +150,11 @@ async def reindex_files(context: JobContext, *, database: Database) -> None:
     written = 0
     for at in range(0, len(asset_ids), IDS_PER_WRITE):
         await context.raise_if_canceled()
-        written += await index_assets(database, asset_ids=asset_ids[at : at + IDS_PER_WRITE])
+        chunk = asset_ids[at : at + IDS_PER_WRITE]
+        written += await index_assets(database, asset_ids=chunk, sweep=False)
         await context.set_progress(min(1.0, (at + IDS_PER_WRITE) / len(asset_ids)))
+        await sleep(PAUSE_BETWEEN_WRITES)
+    await sweep_orphans(database)
     # A search on screen reads again now its words have moved; word only, each re-reads its own.
     async with database.write() as connection:
         announce(await who_may_see_a_file(connection), About.LIBRARY)

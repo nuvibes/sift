@@ -71,6 +71,7 @@ vi.mock('$lib/api/client', () => ({
 }));
 
 import {
+	afterTheFrame,
 	attach,
 	changeQuality,
 	directFailure,
@@ -281,6 +282,29 @@ describe('hls.js', () => {
 
 		expect(startLoad).not.toHaveBeenCalled();
 		expect(destroy).not.toHaveBeenCalled();
+	});
+});
+
+describe('after the frame is on screen', () => {
+	it('waits for the element to present its frame, where the browser can say', () => {
+		let present: (() => void) | null = null;
+		const element = Object.assign(video(), {
+			requestVideoFrameCallback: (callback: () => void) => {
+				present = callback;
+				return 1;
+			}
+		});
+		const go = vi.fn();
+		afterTheFrame(element, go);
+		expect(go).not.toHaveBeenCalled();
+		present!();
+		expect(go).toHaveBeenCalledOnce();
+	});
+
+	it('goes at once where it cannot', () => {
+		const go = vi.fn();
+		afterTheFrame(null, go);
+		expect(go).toHaveBeenCalledOnce();
 	});
 });
 

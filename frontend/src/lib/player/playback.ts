@@ -205,6 +205,13 @@ export function attach(
 	};
 }
 
+/** Call `go` once the element's current frame is on screen; at once where the browser cannot say. */
+export function afterTheFrame(video: HTMLVideoElement | null, go: () => void): void {
+	if (video && typeof video.requestVideoFrameCallback === 'function')
+		video.requestVideoFrameCallback(() => go());
+	else go();
+}
+
 /** Whether hls.js can run here at all. False on iPhone, where Safari's native HLS is used. */
 export function hlsIsSupported(): boolean {
 	return Hls.isSupported();

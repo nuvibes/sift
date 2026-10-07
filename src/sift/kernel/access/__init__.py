@@ -164,6 +164,7 @@ from sift.kernel.access.search_index import (
     anything_unindexed,
     index_assets,
     index_new_assets,
+    sweep_orphans,
     unindexed_count,
 )
 from sift.kernel.access.stamps import bump_stamps_for_object, users_that_may_gain
@@ -320,6 +321,7 @@ __all__ = [
     "set_filing_post_on",
     "set_username_number",
     "set_username_numbers",
+    "sweep_orphans",
     "title_filter",
     "unindexed_count",
     "unlink_username_from_person_on",

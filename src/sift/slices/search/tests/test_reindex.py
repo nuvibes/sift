@@ -310,3 +310,64 @@ async def test_queue_many_logs_a_queue_that_refuses_and_raises_nothing() -> None
             raise RuntimeError("the queue is unavailable")
 
     await Reindexer(database=None, queue=Broken()).queue_many(["a"])  # type: ignore[arg-type]
+
+
+def _writes_to_the_index(client: TestClient, ids: list[str]) -> list[str]:
+    """The statements a set-of-files job ran against the index's two tables, a chunk at a time."""
+    from sift.kernel.db import StatementRun, statement_budget
+
+    heard: list[StatementRun] = []
+    statement_budget().heard = heard
+    try:
+        asyncio.run(_run_job(db_path(client), {"asset_ids": ids}, files=True))
+    finally:
+        statement_budget().heard = None
+    return [run.name for run in heard if "assets_fts" in run.sql and run.stage != "db.read"]
+
+
+def test_a_chunk_of_files_is_replaced_by_one_statement_per_table_and_swept_once(
+    client: TestClient, world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Only the index rows are written one by one; the deletes and the map rows are one statement a
+    chunk whatever its size, and the orphan sweep runs once a job, never once a chunk."""
+    from sift.slices.search import jobs
+
+    monkeypatch.setattr(jobs, "PAUSE_BETWEEN_WRITES", 0)
+    one = _writes_to_the_index(client, [world.beach])
+    two = _writes_to_the_index(client, [world.beach, world.walk])
+    inserts = [name for name in two if name.startswith("insert:assets_fts#")]
+    assert len(two) - len(one) == 1 and len(inserts) == 2, f"{one} against {two}"
+
+    monkeypatch.setattr(jobs, "IDS_PER_WRITE", 1)
+    chunked = _writes_to_the_index(client, [world.beach, world.walk])
+    sweeps = [name for name in chunked if name.startswith("delete:") and name not in two[:2]]
+    # A second chunk adds its own delete, forget and map insert; the index inserts only move.
+    assert len(chunked) == len(two) + 3, f"a second chunk cost more than its own writes: {chunked}"
+    assert len(sweeps) == 2, f"the orphans were swept per chunk: {chunked}"
+
+
+def test_the_job_pauses_after_each_chunk_so_a_waiting_write_goes_first(
+    client: TestClient, world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from sift.kernel.access import index_assets as real_index
+    from sift.slices.search import jobs
+
+    order: list[str] = []
+    real_sleep = asyncio.sleep
+
+    async def chunk(database: Database, **kwargs: object) -> int:
+        order.append("chunk")
+        return await real_index(database, **kwargs)  # type: ignore[arg-type]
+
+    async def pause(seconds: float) -> None:
+        order.append(f"pause {seconds}")
+        await real_sleep(0)
+
+    monkeypatch.setattr(jobs, "IDS_PER_WRITE", 1)
+    monkeypatch.setattr(jobs, "index_assets", chunk)
+    monkeypatch.setattr(jobs, "sleep", pause)
+    asyncio.run(_run_job(db_path(client), {"asset_ids": [world.beach, world.walk]}, files=True))
+
+    wait = f"pause {jobs.PAUSE_BETWEEN_WRITES}"
+    assert order == ["chunk", wait, "chunk", wait], order
+    assert jobs.PAUSE_BETWEEN_WRITES > 0

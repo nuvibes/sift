@@ -24,6 +24,7 @@
 	import { dropWaitingSeek, seekTo as seekVideoTo } from '$lib/player/seek';
 	import { dwell, LOOP_MODE_KEY } from '$lib/player/dwell.svelte';
 	import {
+		afterTheFrame,
 		attach,
 		changeQuality,
 		planFor,
@@ -149,8 +150,7 @@
 	let unasked = $state(false);
 	/** Whether the plan has already been asked for again without the codec that failed. */
 	let replanned = $state(false);
-	/* What happens at the end, read from the one place every player reads it (`dwell.mode`), so a
-	   picture's bar and the corner panel change the same answer this follows. */
+	/* What happens at the end, from the one place every player reads it (`dwell.mode`). */
 	const loop = $derived(dwell.mode);
 	let playing = $state(false);
 	let muted = $state(false);
@@ -161,8 +161,7 @@
 
 	let attachment: Attachment | null = null;
 
-	/* Which size is being watched, once chosen; null is the server's own. Not read by the attach
-	   effect: a size change mid-clip must not start the clip again. */
+	/* The size watched, once chosen (null: the server's); not read by the attach effect. */
 	let chosen = $state<Quality | null>(null);
 	let qualityOpen = $state(false);
 	/** The Clip menu (the last few seconds), opened from the drawer. Bound so it shuts with the bar. */
@@ -281,8 +280,7 @@
 		});
 	});
 
-	/* And again whenever a playback preference moves, wherever it was changed: the corner panel
-	 * outlives every screen. The player's own writes come back as what it wrote. */
+	/* And again whenever a playback preference moves, wherever it was changed. */
 	whenChanged(settingChanges, () => void readPreferences());
 
 	/* A file Sift has not read is asked about again when files move: the read is what makes it
@@ -385,8 +383,7 @@
 		if (element) element.volume = level / 100;
 	});
 
-	/* Out of an iPhone's own full screen player still playing: its swipe down hands the video back
-	   paused, and nobody asked for that. See `keepPlayingAcrossExit`. */
+	/* Out of an iPhone's own full screen player still playing (`keepPlayingAcrossExit`). */
 	$effect(() => {
 		const element = video;
 		if (!element) return;
@@ -447,9 +444,14 @@
 	function onPlaying() {
 		if (started) return;
 		started = true;
-		watch.release();
-		void loadReplays(watching);
-		onstarted?.();
+		const clip = watching;
+		// Once the frame is on screen: `playing` comes first, and nothing may queue before that frame.
+		afterTheFrame(video, () => {
+			if (clip !== watching) return;
+			watch.release();
+			void loadReplays(clip);
+			onstarted?.();
+		});
 	}
 
 	function onPause() {
@@ -558,8 +560,7 @@
 		if (video) seekVideoTo(video, Math.min(Math.max(seconds, 0), duration));
 	}
 
-	/* The shape of the picture in its own pixels, or null until the header is read: a guess is a
-	   panel resized to the wrong shape. */
+	/* The picture's shape in its own pixels, or null until the header is read: never a guess. */
 	export function pictureSize(): { width: number; height: number } | null {
 		if (!video || !video.videoWidth || !video.videoHeight) return null;
 		return { width: video.videoWidth, height: video.videoHeight };
@@ -609,8 +610,7 @@
 		}
 	});
 
-	/* What this player hands the viewer it is drawn in, which offers it to the phone: the same table
-	   the keys answer from, and where it stands. */
+	/* What this player offers the phone: the table the keys answer from, and where it stands. */
 	export function remote(): Offerable {
 		return {
 			actions: keys.actions,
