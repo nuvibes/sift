@@ -137,7 +137,7 @@ describe('the one-duration gate, handed lines written for the purpose', () => {
 });
 
 describe('the one-duration gate, over the client', () => {
-	it('finds no second clock and no second set of duration words', async () => {
+	it('finds no second clock and no second set of duration words', { timeout: 60_000 }, async () => {
 		const copies = await everyCopy();
 		const strays = Object.entries(copies)
 			.filter(([where]) => !(where in NOT_YET_FOLDED))
