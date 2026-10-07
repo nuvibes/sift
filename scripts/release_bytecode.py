@@ -18,8 +18,12 @@ def compile_command(runtime: Path) -> list[str]:
         "-m",
         "compileall",
         "-q",
+        # Forced: the interpreter ships its own timestamp bytecode, which compileall would keep.
+        # One process: workers importing a module while another rewrites its bytecode lose the
+        # rename on Windows.
+        "-f",
         "-j",
-        "0",
+        "1",
         "--invalidation-mode",
         "checked-hash",
         str(runtime / "Lib"),
