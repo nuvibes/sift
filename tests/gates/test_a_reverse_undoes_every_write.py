@@ -710,7 +710,7 @@ def test_every_reversible_reverser_is_read() -> None:
         "\nThese are read here and are not reversible reversers any more:\n  "
         + "\n  ".join(sorted(named - declared))
     )
-    assert not set(DECISIONS) & set(NO_RECEIPT), "a reverser is read and excused at once"
+    assert not set(DECISIONS) & set(NO_RECEIPT), "a reverser is read and excused at the same time"
 
 
 def test_nothing_is_left_on_purpose_that_the_reverse_puts_back() -> None:

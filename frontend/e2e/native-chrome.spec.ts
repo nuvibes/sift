@@ -629,7 +629,7 @@ for (const screen of SCREENS) {
 		/* There has to be something to find, and waiting for it is the SAME check. See `scan`:
 		   an empty screen passes any absence check and this file is nothing but absence checks.
 		   Counting once, right after the rail appears, would race panels that have not come back
-		   yet under load. Polled, it is a readiness wait and a positive control at once, and the
+		   yet under load. Polled, it is a readiness wait and a positive control at the same time, and the
 		   absence scan below cannot run against a screen that has not arrived. */
 		const controls = page.locator(
 			'main button:visible, main input:visible, main select:visible, main textarea:visible'
@@ -790,7 +790,7 @@ test('nor the list the search box drops down while somebody is typing', async ({
 	 *
 	 * The suggestions do not exist until a key is pressed, so every scan in this file would walk
 	 * past them. Rename a class on the list and every rule keyed on the old name as an ancestor
-	 * stops matching at once, while the markup and the stylesheet each still read correctly.
+	 * stops matching immediately, while the markup and the stylesheet each still read correctly.
 	 */
 	await page.goto('/browse');
 	const box = page.getByRole('combobox', { name: 'Search' });

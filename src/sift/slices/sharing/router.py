@@ -264,7 +264,7 @@ async def reach_through_files(
 
     ITS OWN ROUTE AND ITS OWN CEILING, which is why it is not folded into the report. This reads a
     page of an entity's files per user, where the report above is one statement for every
-    user at once; asked for everybody on arrival it would turn a panel somebody opens to check
+    user together; asked for everybody on arrival it would turn a panel somebody opens to check
     one thing into a read per user whether or not any of them needed it. The client asks it for
     the users whose yes has nothing behind it, which is the only case it answers differently.
 

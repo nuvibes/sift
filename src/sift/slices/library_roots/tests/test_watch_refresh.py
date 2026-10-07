@@ -163,7 +163,7 @@ async def test_a_folder_that_could_not_be_watched_is_tried_again_and_caught_up(
     assert caught_up == [root.id, root.id]
 
 
-async def test_two_refreshes_at_once_give_each_folder_one_watch(
+async def test_two_refreshes_at_the_same_time_give_each_folder_one_watch(
     watcher: LibraryWatcher, root: Root
 ) -> None:
     try:

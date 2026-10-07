@@ -1,4 +1,4 @@
-/* The window on screen at once: Sift's own frame in the saved theme, drawn by the shell's copy of the
+/* The window on screen immediately: Sift's own frame in the saved theme, drawn by the shell's copy of the
  * client in a view laid over the real page while that one loads, and taken away once the real page
  * says it has painted. Both draw the same frame in the same theme, so nothing flashes between them.
  *
@@ -203,7 +203,7 @@ export class StartFrame {
 		return this.opening !== null;
 	}
 
-	/** A page has loaded under the frame. The shell's own screens are drawn at once; another
+	/** A page has loaded under the frame. The shell's own screens are drawn immediately; another
 	 *  Sift's page says when it has painted. */
 	loaded(address: string, shellOrigin: string): void {
 		if (address.startsWith(shellOrigin)) this.opening?.remove('shell page');

@@ -357,9 +357,9 @@
 	/*
 	 * A landing on empty space is decided while dragging and applied when the row is let go.
 	 *
-	 * Applied at once, a zone landing moves the row into the other half, which shifts the zone under
-	 * a still pointer and throws the row to the end. So a zone only lights up, and the rail shifts on
-	 * release. Rows still reflow live, since a row landing does not change halves.
+	 * Applied immediately, a zone landing moves the row into the other half, which shifts the zone
+	 * under a still pointer and throws the row to the end. So a zone only lights up, and the rail
+	 * shifts on release. Rows still reflow live, since a row landing does not change halves.
 	 */
 	let pendingRegion: RailRegion | null = null;
 

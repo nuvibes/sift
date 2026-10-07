@@ -1,7 +1,7 @@
 /**
  * What the tiles of a wall of files draw and play: the still each one wears, and which of them play
  * their clip. One shared observer watches every tile, and a capped pool decides how many videos
- * decode at once, so the tiles beyond the cap keep their stills. The wall never asks for a transcode.
+ * decode at the same time, so the tiles beyond the cap keep their stills. The wall never asks for a transcode.
  */
 
 import { untrack } from 'svelte';

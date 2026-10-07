@@ -202,9 +202,9 @@ export function requestsInFlight(): boolean {
 
 /*
  * Reads on their way, by address. A page's first draw asks for the same few addresses from several
- * places at once (who is signed in, the settings, the folders); a second ask of an address already
- * on its way joins it instead of going again. Only a plain read joins: one with its own abort
- * signal, or kept alive past the page, or taken as bytes, goes on its own.
+ * places at the same time (who is signed in, the settings, the folders); a second ask of an address
+ * already on its way joins it instead of going again. Only a plain read joins: one with its own
+ * abort signal, or kept alive past the page, or taken as bytes, goes on its own.
  */
 const reading = new Map<string, { read: Promise<unknown>; started: number; by: typeof fetch }>();
 

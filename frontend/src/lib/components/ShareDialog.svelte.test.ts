@@ -212,7 +212,7 @@ describe('the three words', () => {
 		expect(panel()?.querySelector('.rows-box ~ .note')).not.toBeNull();
 	});
 
-	/* Both answers on screen at once, as a pair of buttons, and no menu to open. */
+	/* Both answers on screen at the same time, as a pair of buttons, and no menu to open. */
 	it('offers the answers as a pair of buttons, Share and Restrict, never a menu', async () => {
 		await open([ADMIN, GUEST], [[]]);
 

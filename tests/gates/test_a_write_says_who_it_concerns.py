@@ -89,6 +89,8 @@ _SAYS = (*_ANNOUNCES, *_WRAPPERS)
 #: screen draws it, which is the question that has no other way of being asked. A screen left stale
 #: is never an entry: the write announces, or its caller does, and the reason names which.
 SILENT: dict[str, str] = {
+    "kernel.content.identity_derivatives._write_pictures": "the bytes behind rows `add_derivative` announced",
+    "kernel.content.identity_probes.probe_still_current": "marks a probe current; nothing a screen draws changes",
     # The two halves of clearing the Smart Search index: `clear` announces once every batch has
     # landed, which is the one moment the size on the settings screen is right.
     "semantic.store._delete_in_batches": "a batch of `clear`, which announces when all have landed",

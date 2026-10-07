@@ -21,7 +21,7 @@ vi.mock('$lib/search/suggestions.svelte', () => ({
 }));
 
 import { addToVerb, favoriteVerb, type Verb, type VerbPick } from '$lib/components/common/verbs';
-import { MOST_AT_ONCE } from '$lib/grid/grid.svelte';
+import { MOST_SELECTED } from '$lib/grid/grid.svelte';
 import { filesUnder, namingFolder, overFolder } from './folder-add-to';
 import { wordsOf } from '$lib/components/common/toast-pieces';
 
@@ -64,9 +64,9 @@ describe('the files under a folder', () => {
 	});
 
 	it('refuses a folder over the ceiling rather than answering with part of it', async () => {
-		get.mockResolvedValue({ items: [{ id: 'a' }], total: MOST_AT_ONCE + 1 });
+		get.mockResolvedValue({ items: [{ id: 'a' }], total: MOST_SELECTED + 1 });
 
-		await expect(filesUnder('f1')).rejects.toMatchObject({ total: MOST_AT_ONCE + 1 });
+		await expect(filesUnder('f1')).rejects.toMatchObject({ total: MOST_SELECTED + 1 });
 	});
 });
 

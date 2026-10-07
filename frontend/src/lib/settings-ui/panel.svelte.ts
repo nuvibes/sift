@@ -105,7 +105,7 @@ export class SettingsPanel {
 		return this.#values[key];
 	}
 
-	/** Write one setting. Shows the new value at once, and puts the old one back if it is refused. */
+	/** Write one setting. Shows the new value immediately, and puts the old one back if it is refused. */
 	async save(key: string, next: unknown): Promise<void> {
 		const previous = this.#values[key];
 		this.#written.set(key, Number.POSITIVE_INFINITY);

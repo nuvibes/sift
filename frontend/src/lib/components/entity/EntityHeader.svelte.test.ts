@@ -731,7 +731,7 @@ it('puts the remove control in the BOTTOM-LEFT corner of the cover, the pencil b
 	expect(pencil['inset-inline-end']).toBe('var(--space-2)');
 });
 
-it('takes a file off at once and offers Undo, which writes the same file and moment back', async () => {
+it('takes a file off immediately and offers Undo, which writes the same file and moment back', async () => {
 	toasts.clear();
 	const oncover = vi.fn(async () => {});
 	draw({ coverHref: '/people/p1', coverAssetId: 'a1', coverAtMs: 1500, mayEdit: true, oncover });

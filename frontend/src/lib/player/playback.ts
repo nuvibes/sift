@@ -205,7 +205,7 @@ export function attach(
 	};
 }
 
-/** Call `go` once the element's current frame is on screen; at once where the browser cannot say. */
+/** Call `go` once the element's current frame is on screen; immediately where the browser cannot say. */
 export function afterTheFrame(video: HTMLVideoElement | null, go: () => void): void {
 	if (video && typeof video.requestVideoFrameCallback === 'function')
 		video.requestVideoFrameCallback(() => go());

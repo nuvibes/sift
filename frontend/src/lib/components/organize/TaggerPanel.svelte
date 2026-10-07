@@ -8,7 +8,7 @@
 	 * written, which cannot be read off a thumbnail. So each row shows the file, what a stash-box
 	 * says it is, and every field the answer would change beside what is already there.
 	 *
-	 * The whole page settles at once: somebody with thousands of recognised files will not press a
+	 * The whole page settles together: somebody with thousands of recognised files will not press a
 	 * button per file, which is why the confirm shows its consequences. One press over a page is a
 	 * decision when you can see what it does.
 	 *

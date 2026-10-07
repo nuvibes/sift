@@ -90,8 +90,8 @@ def _pair_up(
     **Nothing in it and nothing under it.** A folder somebody made and shared before putting
     anything in it has nothing to compare either way. Allowed only for a leaf, in the same place,
     and only when the uniqueness rule leaves exactly one candidate. Otherwise two empty folders
-    renamed at once would be a coin toss, and one of the two outcomes hands somebody a folder they
-    were never shared."""
+    renamed at the same time would be a coin toss, and one of the two outcomes hands somebody a
+    folder they were never shared."""
     fits = [
         (was, now)
         for was, recorded in vanished.items()

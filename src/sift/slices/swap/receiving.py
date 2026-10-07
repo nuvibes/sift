@@ -15,7 +15,7 @@ an older Sift never says it, and is sent and answered the shape it knows.
 Every read the host makes for a swap (the look, a digest, a strip, a chunk) goes to the front of its
 storage's lane (`lanes.first`): a swap somebody started and is watching is not background work, and
 on a network share it is not queued behind the library's own passes. The lane's limit still holds:
-two reads at once on a share, each let go before its chunk is sent, and a place let go goes to the
+two reads together on a share, each let go before its chunk is sent, and a place let go goes to the
 read that has waited longest (`sift.kernel.lanes`), so a digest read a block at a time leaves room
 for the streams between its blocks.
 """

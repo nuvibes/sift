@@ -298,7 +298,7 @@ async def test_a_position_reverses_when_the_order_does(
     access: Repository, actors: Actors, world: World
 ) -> None:
     """Oldest-first puts a file as far from the end as newest-first from the start; every file here
-    arrived at once, so the tiebreaker decides both."""
+    arrived at the same time, so the tiebreaker decides both."""
     total = (await access.visible_assets(actors.admin)).total
 
     for asset_id in (world.solo, world.twin, world.loose):

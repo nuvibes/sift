@@ -87,7 +87,7 @@ ARGON2_RAM_FRACTION_DENOMINATOR = 64
 4 GB box that is 64 MiB (the floor); on 16 GB it is 256 MiB (the ceiling)."""
 
 MAX_CONCURRENT_HASHES = 4
-"""How many Argon2 hashes may run at once. Each hash is deliberately slow and memory-hungry and
+"""How many Argon2 hashes may run together. Each hash is deliberately slow and memory-hungry and
 runs on a worker thread, off the event loop, so without a cap, a flood of login attempts would
 start one per request and exhaust either the cores or the memory (a hash claims up to the ceiling
 above). This bounds both: extra attempts wait their turn, which throttles online guessing for free
@@ -113,14 +113,14 @@ LOGIN_TARPIT_MAX_SECONDS = 30.0
 about two attempts a minute (useless against the password policy), without ever refusing the real
 one. The delay is counted and served per attempt as it arrives (`Tarpit.reserve`), so a burst that
 arrives together escalates instead of sliding through at one short wait; how many verifies then run
-at once is bounded separately by MAX_CONCURRENT_HASHES."""
+together is bounded separately by MAX_CONCURRENT_HASHES."""
 
 LOGIN_TARPIT_FORGET_SECONDS = 900
 """Fifteen minutes of quiet and the run of failures is forgotten, so an earlier fumble does not go
 on slowing a later, honest login."""
 
 LOGIN_TARPIT_MAX_KEYS = 4096
-"""A hard cap on how many distinct submitted names the tarpit holds at once. The map is keyed by the
+"""A hard cap on how many distinct submitted names the tarpit holds at a time. The map is keyed by the
 name tried, so a flood of made-up names would otherwise grow it without bound: a slow memory
 exhaustion. Far above the handful a real household produces; once reached, forgotten runs are dropped
 first (they impose no delay anyway) and then the least recently seen, so memory is bounded whatever

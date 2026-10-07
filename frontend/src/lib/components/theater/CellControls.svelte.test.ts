@@ -168,9 +168,9 @@ describe('pointing at a verb on the wall bar', () => {
  * A-B marks, Save as Loop, Quality and Hear only this.
  *
  * The line between them is the difference between a RELATIVE move and an ABSOLUTE position. "Five
- * seconds back" is true of nine clips at once; "four minutes and eleven seconds in" is true of
- * exactly the one whose timeline is drawn. A selection that reached the wrong half of the bar is
- * worse than no selection at all, so which half is which is checked here.
+ * seconds back" is true of nine clips at the same time; "four minutes and eleven seconds in" is
+ * true of exactly the one whose timeline is drawn. A selection that reached the wrong half of the
+ * bar is worse than no selection at all, so which half is which is checked here.
  */
 describe('what a verb lands on while every cell is selected', () => {
 	/* Every CELL stopped over a wall that is not.
@@ -194,7 +194,7 @@ describe('what a verb lands on while every cell is selected', () => {
 
 		expect(
 			wall.cells.map((one) => one.paused),
-			'a relative verb is true of the whole wall at once'
+			'a relative verb is true of the whole wall at the same time'
 		).toEqual(wall.cells.map(() => false));
 	});
 

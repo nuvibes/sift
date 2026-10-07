@@ -277,16 +277,14 @@ describe("a running or done row's note", () => {
 describe('eco mode, under the strip', () => {
 	const WORDS = "In eco mode while you're working: using a quarter of this device.";
 
-	it("is said from the rail's read while something is running, and so is a press out of it", async () => {
+	it("is said from the rail's read while something is running, and so is turbo mode", async () => {
 		await open();
 		imports.page = { ...EVERYTHING, stepping_back: true, step_back_for: 'input' };
 		flushSync();
 		expect(host.textContent).toContain(WORDS);
 		imports.page = { ...EVERYTHING, turbo_mode: true, step_back_for: 'input' };
 		flushSync();
-		expect(host.textContent).toContain(
-			"Out of eco mode: turbo mode on this device although you're working."
-		);
+		expect(host.textContent).toContain("Turbo mode on this device although you're working.");
 	});
 
 	it('is not said outside eco mode', async () => {

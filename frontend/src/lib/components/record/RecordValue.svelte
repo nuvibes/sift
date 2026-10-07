@@ -397,7 +397,7 @@
 		gap: var(--space-1);
 	}
 
-	/* The colour and the hover are `app.css`'s, for every link in the app at once, so the download
+	/* The colour and the hover are `app.css`'s, for every link in the app together, so the download
 	   link a person came to read and the list two rows up wear the same ink. Left here is the one
 	   thing that is about THIS list: an address has no spaces in it and has to be allowed to break. */
 	.links a {

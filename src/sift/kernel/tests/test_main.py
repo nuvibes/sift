@@ -350,7 +350,7 @@ def test_a_recommendation_is_compared_against_the_setting_as_it_is_now(
         recommendations=[
             Recommendation(
                 key="performance.generation_limit",
-                label="How many previews are built at once",
+                label="How many previews are built at the same time",
                 current=0,
                 suggested=4,
                 reason="measured",

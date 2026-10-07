@@ -69,8 +69,8 @@ Clock = Callable[[], float]
 class Turns:
     """How many rows the next write takes, sized from what the last ones cost.
 
-    It shrinks at once to what fits the turn and grows by doubling at most, so one cheap sample (a
-    stretch of small rows, a moment the machine was idle) cannot buy a write many times too long.
+    It shrinks immediately to what fits the turn and grows by doubling at most, so one cheap sample
+    (a stretch of small rows, a moment the machine was idle) cannot buy a write many times too long.
     """
 
     def __init__(

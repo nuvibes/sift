@@ -510,7 +510,9 @@ class SemanticService:
         # the whole settled set to the access layer as one JSON array (tens of megabytes at a couple
         # of million files) to be excluded row by row.
         lack = replace(self._records.lack(embedder.revision), product=VerdictProduct.MEANING)
-        counted = await self._content.count_lacking_visible(viewer.id, [lack])
+        counted = await self._content.count_lacking_visible(
+            viewer.id, [lack], admin=viewer.is_admin
+        )
         return counted.files
 
     async def unread_count(self) -> int:

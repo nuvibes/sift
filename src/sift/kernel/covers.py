@@ -63,7 +63,7 @@ class ChosenCover:
     The three are not independent. An UPLOAD wins over a FILE, a MOMENT is meaningless without a
     file, and the one statement per entity that writes any of them writes all of them, so there is
     no row on which a moment outlives the file it was a moment of, and none on which both kinds of
-    cover are set at once.
+    cover are set at the same time.
     """
 
     asset_id: str | None = None
@@ -173,11 +173,11 @@ _COVERS_DIR = "covers"
 #: ONLY copy of its picture, and a framed one is always a copy that can be cut again.
 _FRAMED_DIR = "framed"
 
-#: How many framed pictures are cut at once. A frame is cut the first time its cover is asked for,
+#: How many framed pictures are cut together. A frame is cut the first time its cover is asked for,
 #: inside that request, and a wall of framed covers opened for the first time asks for all of them
 #: together; unbounded, that is one ffmpeg per card at the same instant. Two is enough to keep a
 #: page moving (each cut is one small still, a fraction of a second) and bounds the worst case.
-_CUTTING_AT_ONCE = 2
+_CUTTING_AT_A_TIME = 2
 
 
 class CoverPictureRefused(Exception):
@@ -340,7 +340,7 @@ class CoverPictures:
         question. Nothing has to be invalidated, which is the property that makes a cache safe to
         keep.
 
-        Cut in the request that first asks, under `_CUTTING_AT_ONCE`. Queued as a job instead, the
+        Cut in the request that first asks, under `_CUTTING_AT_A_TIME`. Queued as a job instead, the
         cover would answer with the WHOLE picture until the job landed (the change somebody just
         made, visibly not made) and a cut of one still is a fraction of a second.
 
@@ -401,7 +401,7 @@ _CUTTING: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Semaphore
 
 
 def _cutting() -> asyncio.Semaphore:
-    """The bound on framed cuts in flight, for the loop that is running. See `_CUTTING_AT_ONCE`.
+    """The bound on framed cuts in flight, for the loop that is running. See `_CUTTING_AT_A_TIME`.
 
     One per LOOP rather than one per process: a semaphore that has once made somebody wait belongs
     to that loop, and a second loop (a test suite runs many) would be refused by it. The
@@ -410,7 +410,7 @@ def _cutting() -> asyncio.Semaphore:
     loop = asyncio.get_running_loop()
     bound = _CUTTING.get(loop)
     if bound is None:
-        bound = _CUTTING[loop] = asyncio.Semaphore(_CUTTING_AT_ONCE)
+        bound = _CUTTING[loop] = asyncio.Semaphore(_CUTTING_AT_A_TIME)
     return bound
 
 

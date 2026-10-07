@@ -30,8 +30,8 @@
 	 * line "Some of September is hidden. Unlock to include it." And the heading counts the cards
 	 * actually sent. When the vault opens or shuts the recap is asked for again.
 	 *
-	 * Opening it ends its announcement, on Insights and on Browse's header at once: the server writes
-	 * that when it draws the recap, and the shared list is told (`readRecap`).
+	 * Opening it ends its announcement, on Insights and on Browse's header at the same time: the
+	 * server writes that when it draws the recap, and the shared list is told (`readRecap`).
 	 *
 	 * A recap is made to be shown a card at a time, and a card to be kept as a picture; what must
 	 * not leave is kept back by `shareable` (see `RecapCard`).

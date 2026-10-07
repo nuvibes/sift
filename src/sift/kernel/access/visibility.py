@@ -41,6 +41,9 @@ from dataclasses import dataclass, replace
 from sift.kernel.access import visibility_panel, visibility_settled, visibility_walls
 from sift.kernel.access.sites import FILES_SITES_REACH, SITE_REACH
 from sift.kernel.access.viewer import Viewer, reveals_existence
+from sift.kernel.access.visibility_settled import RECOMPUTE
+from sift.kernel.access.visibility_settled import RUN as _RUN
+from sift.kernel.access.visibility_settled import RUN_USER as _RUN_USER
 from sift.kernel.db import (
     Connection,
     add_schema_dependency,
@@ -69,7 +72,7 @@ def _filled(template: str, **names: str) -> str:
 
 
 COMPONENT = "visibility"
-VERSION = 17
+VERSION = 18
 
 # --- the tables ----------------------------------------------------------------------------
 
@@ -148,9 +151,9 @@ CREATE TABLE IF NOT EXISTS visibility_places (
 
 # How many files of each thing a user may see, and how many the vault holds back: one row per
 # (user, kind, object) with at least one permitted file, so a wall reads one row per card instead
-# of counting every membership under the page. Kept by every recompute, as sets: taken away before
-# the staged rows go and given back from the rows that return, and a membership change is made to
-# look the same way, so there is exactly one path by which a count moves.
+# of counting every membership under the page. Moved once per write by the fold
+# (`visibility_settled`): what each touched file held taken away and what it holds now given, so
+# there is exactly one path by which a count moves.
 #
 # The byte and `_ms` columns are the size and running time of the same files, moved by the same
 # statements. Summed only for a kind that counts files (`Counted.sized`); every other kind keeps
@@ -837,7 +840,7 @@ OR EXISTS (SELECT 1 FROM song_files vs
 #: THE LADDER, as one expression over three bit columns of one alias: whether a user may see a file.
 #:
 #: Named once and read by every statement that answers it: the stored verdict below and the
-#: sharing badge (`repository/grants.py`), which asks the same question of every user at once, so a
+#: sharing badge (`repository/grants.py`), which asks the same question of every user together, so a
 #: rule change cannot be made in one of them and not the other. `<<S>>` is the alias carrying `lo`,
 #: `it` and `ph` (see the bits above).
 #:
@@ -1188,32 +1191,13 @@ def _each_kind(
     ]
 
 
-#: Where a trigger hands a recompute over: a view no row ever sits in, with one INSTEAD OF trigger
-#: per step. A trigger body cannot call a procedure, but it can write to a view, and the view's
-#: trigger runs in the same transaction with the same conflict handling, so writing one row here
-#: runs the step's statements exactly as if they were written in place.
-#:
-#: That keeps the schema small: every half reads only the staged pairs, so in place they were the
-#: same text in every trigger, and every connection parses the whole schema; one copy of each step
-#: is the same rules parsed once.
-RECOMPUTE = "visibility_recompute"
-
-_CREATE_RECOMPUTE = (
-    "CREATE VIEW IF NOT EXISTS visibility_recompute (step, user_id) AS SELECT NULL, NULL WHERE 0"
-)
-
-#: A call of one step. `take` and `give` work on the staged pairs; `user` re-decides one user.
-_RUN = "INSERT INTO visibility_recompute (step) VALUES ('<<STEP>>')"
-_RUN_USER = "INSERT INTO visibility_recompute (step, user_id) VALUES ('user', <<USER>>)"
-
-
 @dataclass(frozen=True)
 class _Recompute:
     """The two halves of a recompute around the rows themselves, for one list of counted kinds:
-    everything up to the rows going, and everything from the rows coming back. Around a
-    membership change they run either side of the row landing, so the counts see the file leave
-    with its old memberships and return with its new ones. Only these three ways of running the
-    halves exist.
+    before a change lands, its pairs and what their files hold are recorded; after it, the rows
+    are decided again. The counts move once, when the write ends, by what the files hold now
+    against what was recorded (`visibility_settled`), so a membership change is seen leaving
+    with its old memberships and returning with its new ones.
 
     A trigger CALLS a half rather than carrying it (see `RECOMPUTE`): the halves read nothing
     but the staged pairs, so one copy of each serves every trigger. `version_13` builds the
@@ -1224,22 +1208,28 @@ class _Recompute:
     given: tuple[str, ...]
     fill_entity_counts: str
     fill_pair_counts: str
+    #: The steps that move the counts once per write (`visibility_settled`): (step, statements).
+    moving: tuple[tuple[str, tuple[str, ...]], ...] = ()
     version_13: bool = False
 
     def take(self) -> list[str]:
-        """Take the staged pairs' counts away and drop their rows."""
-        return list(self.taken) if self.version_13 else [_filled(_RUN, STEP="take")]
+        """Record the staged pairs and what their files hold, before a change lands."""
+        return list(self.taken) if self.version_13 else [visibility_settled.TOUCH_CALL]
 
     def give(self) -> list[str]:
-        """Re-decide the staged pairs and give their counts back."""
-        return list(self.given) if self.version_13 else [_filled(_RUN, STEP="give")]
+        """Re-decide the staged pairs' rows; their counts move when the write ends."""
+        return list(self.given) if self.version_13 else [visibility_settled.ROWS_CALL]
 
-    def split(self, pairs: str) -> tuple[list[str], list[str]]:
+    def split(self, pairs: str, *, table: str = "") -> tuple[list[str], list[str]]:
         """`pairs` is a SELECT of (user_id, asset_id). It is one of the constants in this module
         and nothing else: the text reaches SQLite as DDL inside a trigger, or as a statement the
         backfill runs, and in both cases every value in it is a column reference or a trigger's
-        row."""
-        return [_CLEAR_PENDING, _filled(_STAGE_PAIRS, PAIRS=pairs), *self.take()], self.give()
+        row. A change to a `table` the verdict does not read moves counts and never a row."""
+        stage = [_CLEAR_PENDING, _filled(_STAGE_PAIRS, PAIRS=pairs)]
+        if self.version_13 or table in visibility_settled.decided_by() or not table:
+            return [*stage, *self.take()], self.give()
+        touch = _filled(_RUN, STEP=visibility_settled.TOUCH + "_" + table)
+        return [*stage, touch, _CLEAR_PENDING], [_CLEAR_PENDING]
 
     def whole(self, pairs: str) -> list[str]:
         """The statements that bring the rows for these pairs up to date around a change that
@@ -1248,8 +1238,14 @@ class _Recompute:
         before, after = self.split(pairs)
         if self.version_13:
             return before + after
-        steps = (visibility_settled.SETTLE, "take", visibility_settled.SETTLED)
+        steps = (visibility_settled.SETTLE, visibility_settled.ANSWERS, visibility_settled.SETTLED)
         return [*before[:2], *(_filled(_RUN, STEP=step) for step in steps)]
+
+    def owing(self, pairs: str) -> list[str]:
+        return visibility_settled.owing(self, pairs)
+
+    def going(self, pairs: str) -> list[str]:
+        return visibility_settled.going(self, pairs)
 
     def user(self, user: str) -> list[str]:
         """Every file for one user re-decided from nothing (see `rebuilt`), by a call."""
@@ -1300,6 +1296,7 @@ def _recompute_for(
         ),
         fill_entity_counts=fill_entity_counts,
         fill_pair_counts=fill_pair_counts,
+        moving=visibility_settled.moving(kinds, pairs),
     )
 
 
@@ -1717,7 +1714,7 @@ def _triggers(halves: _Recompute, watched: Sequence[Counted]) -> list[tuple[str,
             "vis_assets_delete_before",
             "DELETE",
             "assets",
-            halves.split(_EVERY_USER_ONE_FILE.format(asset="OLD.id"))[0],
+            halves.going(_EVERY_USER_ONE_FILE.format(asset="OLD.id")),
             timing="BEFORE",
         ),
     )
@@ -1746,11 +1743,16 @@ def _triggers(halves: _Recompute, watched: Sequence[Counted]) -> list[tuple[str,
             "vis_" + table + "_insert",
             "INSERT",
             table,
-            *halves.split(pairs),
+            *halves.split(pairs, table=table),
             when=_not_already_held(table, one.keys, updating=False),
         )
         pairs = _EVERY_USER_ONE_FILE.format(asset="OLD.asset_id")
-        add_pair("vis_" + table + "_delete", "DELETE", table, *halves.split(pairs))
+        add_pair(
+            "vis_" + table + "_delete",
+            "DELETE",
+            table,
+            *halves.split(pairs, table=table),
+        )
         both = (
             _EVERY_USER_ONE_FILE.format(asset="OLD.asset_id")
             + " UNION ALL "
@@ -1760,7 +1762,7 @@ def _triggers(halves: _Recompute, watched: Sequence[Counted]) -> list[tuple[str,
             "vis_" + table + "_update",
             one.update,
             table,
-            *halves.split(both),
+            *halves.split(both, table=table),
             when=_not_already_held(table, one.keys, updating=True),
         )
     # A username changing site moves every file it holds to another site's grants and, since
@@ -1865,12 +1867,12 @@ def _triggers(halves: _Recompute, watched: Sequence[Counted]) -> list[tuple[str,
         obj = row + ".object_id"
         kinds: dict[str, Sequence[str]] = {
             "global": halves.user(user),
-            "root": halves.whole(_ONE_USER_IN_ROOT.format(user=user, root=obj)),
-            "folder": halves.whole(_ONE_USER_UNDER_FOLDER.format(user=user, folder=obj)),
-            "item": halves.whole(_ONE_USER_ONE_FILE.format(user=user, asset=obj)),
+            "root": halves.owing(_ONE_USER_IN_ROOT.format(user=user, root=obj)),
+            "folder": halves.owing(_ONE_USER_UNDER_FOLDER.format(user=user, folder=obj)),
+            "item": halves.owing(_ONE_USER_ONE_FILE.format(user=user, asset=obj)),
         }
         for kind, members in _MEMBERS_OF.items():
-            kinds[kind] = halves.whole(members.format(user=user, object=obj))
+            kinds[kind] = halves.owing(members.format(user=user, object=obj))
         for kind, body in kinds.items():
             # THE KIND, in the name AND the guard: the STORED spelling of `object_type`, since a
             # trigger watching for a value no row carries never fires and a share silently stops
@@ -1935,23 +1937,12 @@ def _triggers(halves: _Recompute, watched: Sequence[Counted]) -> list[tuple[str,
     if not halves.version_13:
         made += panel.emptied + visibility_walls.triggers()
         for step, body in (
-            ("take", halves.taken),
-            ("give", panel.given),
-            ("user", halves.rebuilt("NEW.user_id")),
-            *visibility_settled.steps(panel.given),
+            ("user", visibility_settled.user_step(halves)),
+            *visibility_settled.steps(),
+            *halves.moving,
         ):
             name = "vis_recompute_" + step
-            add(
-                name,
-                _trigger(
-                    name,
-                    "INSERT",
-                    RECOMPUTE,
-                    body,
-                    when="NEW.step = '" + step + "'",
-                    timing="INSTEAD OF",
-                ),
-            )
+            add(name, _trigger(name, "INSERT", RECOMPUTE + step, body, timing="INSTEAD OF"))
 
     return made
 
@@ -2050,6 +2041,9 @@ def triggered_tables() -> frozenset[str]:
 #: and this module never builds a statement from a name it read at run time, so one it does not
 #: know is reported at boot (`keep_true`) and not dropped.
 RETIRED_TRIGGERS = (
+    # The two halves of the recompute that moved the counts per row (visibility version 18).
+    "vis_recompute_take",
+    "vis_recompute_give",
     "vis_stats_insert",
     "vis_stats_delete",
     "vis_stats_update",
@@ -2158,7 +2152,7 @@ async def _drop_triggers(connection: Connection) -> None:
 
 
 async def _create_triggers(connection: Connection) -> None:
-    await connection.execute(_CREATE_RECOMPUTE)
+    await visibility_settled.create_step_views(connection, _built().triggers)
     for _name, _table, ddl in _built().triggers:
         await connection.execute(ddl)
 
@@ -2170,8 +2164,8 @@ async def refresh_everything(connection: Connection) -> None:
     two million times when one GROUP BY says the same thing afterwards.
     """
     await _drop_triggers(connection)
-    for table in (visibility_walls.CREATE, visibility_settled.CREATE):
-        await connection.execute(table)
+    await connection.execute(visibility_walls.CREATE)
+    await visibility_settled.start_empty(connection)
     await connection.execute(_CLEAR_ANCESTRY)
     await connection.execute(_FILL_ANCESTRY)
     await connection.execute(_CLEAR_PENDING)
@@ -2363,9 +2357,9 @@ async def initialize(connection: Connection, on_disk: int) -> None:
     # Version 16: the Filter panel's kinds counted (every step above counted them already).
     if on_disk == 15:
         await visibility_panel.count_the_panel(connection)
-    # Version 17: the walls' totals, from the stored counts.
-    if 0 < on_disk < 17:
-        await visibility_walls.total_the_walls(connection)
+    # Versions 17 and 18: the walls' totals, and the counts moved once per write.
+    if 0 < on_disk < 18:
+        await visibility_settled.later_steps(connection, on_disk)
 
 
 async def _add_columns(connection: Connection, table: str, columns: Sequence[str]) -> None:
@@ -2462,6 +2456,9 @@ async def keep_true(connection: Connection) -> None:
     if out_of_step:
         log.warning("visibility.ancestry_repaired")
         await refresh_everything(connection)
+        return
+    # A share's counts a stop left owed are folded before anything reads them.
+    await visibility_settled.fold_what_is_owed(connection)
 
 
 register_schema_initializer(

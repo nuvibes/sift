@@ -172,7 +172,7 @@ describe('a loop of its own', () => {
 	/* The reason the class is exported and not only the one instance.
 	 *
 	 * The shared object tells CLIPS apart, which is enough while the only two things reading it are
-	 * two ways of showing the same clip. It is not enough once several frames are on screen at once
+	 * two ways of showing the same clip. It is not enough once several frames are on screen together
 	 * and two of them are allowed to hold the same file: `owns` says yes to both, so marks made in
 	 * one frame are enforced in the other: a video jumping backwards with nothing to explain it.
 	 */

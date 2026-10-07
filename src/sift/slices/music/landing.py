@@ -109,7 +109,7 @@ class MusicLanding:
         """Why these bytes certainly carry no sound, from what Sift already knows, or None.
 
         Asked BEFORE ffmpeg is started, because the start is the whole cost of a file with no
-        sound: the read fails at once, and without this it would fail for every still that
+        sound: the read fails immediately, and without this it would fail for every still that
         arrived, each one an ffmpeg launch and a `chromaprint.no_audio` line saying a picture had
         no audio track.
 

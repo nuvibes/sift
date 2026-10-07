@@ -2,7 +2,7 @@
 """A real application, a real database, and three files with real bytes on disk.
 
 These run over HTTP rather than against the service object. A collection is a permission surface
-and a promise about the filesystem at once, and those live in the router, the
+and a promise about the filesystem at the same time, and those live in the router, the
 dependencies and the access layer together: a test of the service alone would exercise the half
 that was never in question.
 

@@ -440,7 +440,7 @@
 		color: var(--sift-ink-3);
 	}
 
-	/* The ink steps over --dur-instant rather than snapping. The underline arrives at once,
+	/* The ink steps over --dur-instant rather than snapping. The underline arrives immediately,
 	   which is right: a mark either identifies the word under the pointer or it does not. */
 	.address {
 		color: var(--sift-ink-3);

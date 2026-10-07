@@ -5,7 +5,7 @@
 	 * What the files on screen are made of, in columns, with a count on every value.
 	 *
 	 * It drops down and pushes the grid rather than covering it, so each adjustment is seen; never a
-	 * dialog or a sheet. A click filters at once, with no Apply. Every count is the server's, from
+	 * dialog or a sheet. A click filters immediately, with no Apply. Every count is the server's, from
 	 * the statement that decides what the grid shows, so on a person's page the numbers are theirs.
 	 */
 	import { goto } from '$app/navigation';

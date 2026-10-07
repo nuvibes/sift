@@ -132,6 +132,10 @@ def _as_filter(piece: str) -> Node | None:
     found = _as_field(_unquote(name))
     if found is None:
         return None
+    if value.startswith("-") and len(value) > 1:
+        # A minus before the value refuses as one before the field does, which is what the named
+        # parameter's minus means. In quotes it is part of the value: `in:"-raw"`.
+        negated, value = True, value[1:]
 
     if (
         len(_alternatives(value)) > 1
@@ -281,7 +285,9 @@ def _connectives(pieces: list[tuple[int, str]]) -> list[Node | None]:
 
 def quoted(value: str) -> str:
     """A value written so the parser reads it back as the same value."""
-    if any(character.isspace() or character in ',"' for character in value):
+    if value.startswith("-") or any(
+        character.isspace() or character in ',"|' for character in value
+    ):
         return '"' + value.replace('"', "") + '"'
     return value
 

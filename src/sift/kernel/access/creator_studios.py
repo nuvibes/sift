@@ -24,7 +24,7 @@ of its scenes, or her name in at least `ASK_FROM` of them with no store but a pa
 somewhere) is filed as before and ASKED about, so nothing is decided silently either way.
 
 One scene is a reading too, and the lookup reads each scene so: both signs on that scene make
-the username at once (`stash_boxes.adapter`), and anything less is a Site as before, which the
+the username immediately (`stash_boxes.adapter`), and anything less is a Site as before, which the
 question then asks about once its scenes are counted.
 
 ## What it does to a library that has such Sites

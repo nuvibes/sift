@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Theater: several videos at once, each cell drawing from a query of its own.
+"""Theater: several videos at the same time, each cell drawing from a query of its own.
 
 A wall of one to four cells, with or without previews, in one of the named shapes. Each cell holds a
 query, fills a run from it, plays through that run and moves on, on its own clock, with its own
@@ -11,7 +11,7 @@ which existed. What this slice owns is the one thing none of them could: a wall,
 so that setting four cells up is done once rather than every time.
 
 Desktop only, and that is a product decision rather than a limit of the code: several audible videos
-at once is the point of the surface, and one of the two engines refuses it outright on a phone.
+together is the point of the surface, and one of the two engines refuses it outright on a phone.
 """
 
 from __future__ import annotations
@@ -71,7 +71,7 @@ register_setting(
     # and has no use for any of them.
     read_by=ReadBy.CLIENT,
     scope="user",
-    # Three across: the wall Theater is for, several videos at once, from the first open.
+    # Three across: the wall Theater is for, several videos at the same time, from the first open.
     default="side_by_side_by_side",
     section="Theater",
     label="Default layout when Theater opens",

@@ -937,7 +937,7 @@
 	}
 
 	/* Holding the screen's menus, the row is their place at this width, not something arriving: an
-	   auto row of its own, whole at once, so the title under it never slides. */
+	   auto row of its own, whole immediately, so the title under it never slides. */
 	.bar-clip:has(> .bar > :global(.menus)) {
 		grid-row: 2;
 	}

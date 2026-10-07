@@ -128,9 +128,9 @@ export interface Landing {
 	/**
 	 * The file it produced, and what it is called, for a landing that is ONE download.
 	 *
-	 * Null for several at once, deliberately: twenty files finishing in the same second have no
-	 * single thing to open, and an Open that quietly picked one of them would be a door to a file
-	 * nobody chose.
+	 * Null for several at the same time, deliberately: twenty files finishing in the same second
+	 * have no single thing to open, and an Open that quietly picked one of them would be a door to
+	 * a file nobody chose.
 	 */
 	assetId: string | null;
 	filename: string | null;
@@ -172,7 +172,7 @@ export class Changes {
 			this.#seen.set(item.id, item.status);
 			// A row seen for the first time is not a transition either, whatever its state: the
 			// list arrives after the screen's first empty look, and opening the page must not
-			// announce every finished download at once.
+			// announce every finished download at the same time.
 			if (!this.#started || before === undefined || before === item.status) continue;
 			const kind = kinds[item.status];
 			if (!kind) continue;

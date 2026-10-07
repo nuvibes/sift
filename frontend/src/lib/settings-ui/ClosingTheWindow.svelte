@@ -33,7 +33,7 @@
 	});
 
 	async function setIt(on: boolean) {
-		/* Shown at once and then corrected by what the shell answers. The write is a local one that
+		/* Shown immediately and then corrected by what the shell answers. The write is a local one that
 		   cannot fail in any interesting way, and a switch that waits for a round trip before moving
 		   reads as a switch that did not take. */
 		keeping = on;

@@ -175,7 +175,7 @@ class StorageRate:
     """What one storage measured at the widest level still worth having."""
 
     at_once: int
-    """How many files it serves at once before delivering less."""
+    """How many files it serves at the same time before delivering less."""
     megabytes_per_second: float
     """What it delivered at that width, to all the readers together."""
     seek_seconds: float
@@ -221,7 +221,7 @@ class MachineRates:
         )
 
     def reads_at_once(self) -> dict[str, int]:
-        """How many files each measured storage serves at once, for the lanes."""
+        """How many files each measured storage serves at the same time, for the lanes."""
         return {key: one.at_once for key, one in self.storages.items()}
 
     @classmethod

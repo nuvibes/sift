@@ -188,12 +188,17 @@
     "ix_viewer_assets_concealed": "create index ix_viewer_assets_concealed on viewer_assets ( user_id , asset_id ) where concealed = 1",
     "ix_viewer_pair_counts_b": "create index ix_viewer_pair_counts_b on viewer_pair_counts ( user_id , kind_b , id_b , kind_a , id_a , permitted , concealed )",
     "ix_viewer_pair_counts_empty": "create index ix_viewer_pair_counts_empty on viewer_pair_counts ( user_id ) where permitted <= 0",
+    "ix_visibility_owed_now": "create index ix_visibility_owed_now on visibility_owed ( asset_id ) where owed = 0",
     "ix_watermark_revision": "create index ix_watermark_revision on watermark_scans ( revision )",
     "ix_work_runs_family": "create index ix_work_runs_family on work_runs ( family , started_at desc )",
     "ix_work_runs_recent": "create index ix_work_runs_recent on work_runs ( started_at desc )",
     "ix_workbench_actor": "create index ix_workbench_actor on workbench_decisions ( actor_id , decided_at desc )",
+    "ix_workbench_closing_keys": "create index ix_workbench_closing_keys on workbench_decisions ( fold_key , decided_at , id ) where closes = 1",
+    "ix_workbench_closings": "create index ix_workbench_closings on workbench_decisions ( decided_at desc , id desc ) where closes = 1",
     "ix_workbench_decided": "create index ix_workbench_decided on workbench_decisions ( decided_at desc , id desc )",
+    "ix_workbench_fold": "create index ix_workbench_fold on workbench_decisions ( fold_key , decided_at , id )",
     "ix_workbench_object": "create index ix_workbench_object on workbench_decisions ( object_kind , object_id , decided_at desc )",
+    "ix_workbench_openings": "create index ix_workbench_openings on workbench_decisions ( fold_key , decided_at , id ) where opens = 1",
     "ix_workbench_subject": "create index ix_workbench_subject on workbench_decision_subjects ( kind , subject_id )",
     "ux_acl_global": "create unique index ux_acl_global on acl_grants ( object_type , subject_user_id , effect ) where object_id is null",
     "ux_artists_name": "create unique index ux_artists_name on artists ( name collate nocase )",
@@ -1641,6 +1646,13 @@
       "constraints": [],
       "options": ""
     },
+    "placeless_assets": {
+      "columns": {
+        "asset_id": "text primary key references assets ( id ) on delete cascade"
+      },
+      "constraints": [],
+      "options": "without rowid"
+    },
     "play_names": {
       "columns": {
         "kind": "text not null check ( kind in ( 'person' , 'tag' , 'site' , 'song' ) )",
@@ -1861,6 +1873,15 @@
       "constraints": [],
       "options": ""
     },
+    "semantic_counts": {
+      "columns": {
+        "files": "integer not null default 0",
+        "frames": "integer not null default 0",
+        "revision": "text primary key"
+      },
+      "constraints": [],
+      "options": "without rowid"
+    },
     "semantic_file_keys": {
       "columns": {
         "asset_id": "text not null unique",
@@ -1899,6 +1920,13 @@
         "primary key ( asset_id , revision )"
       ],
       "options": ""
+    },
+    "semantic_unrecorded": {
+      "columns": {
+        "asset_id": "text primary key"
+      },
+      "constraints": [],
+      "options": "without rowid"
     },
     "sessions": {
       "columns": {
@@ -2673,6 +2701,46 @@
       ],
       "options": "without rowid"
     },
+    "visibility_members": {
+      "columns": {
+        "asset_id": "text not null references assets ( id ) on delete cascade",
+        "bytes": "integer not null",
+        "kind": "text not null",
+        "ms": "integer not null",
+        "n": "integer not null",
+        "object_id": "text not null",
+        "side": "integer not null"
+      },
+      "constraints": [
+        "primary key ( asset_id , side , kind , object_id )"
+      ],
+      "options": "without rowid"
+    },
+    "visibility_moved": {
+      "columns": {
+        "asset_id": "text not null references assets ( id ) on delete cascade",
+        "dc": "integer not null",
+        "dn": "integer not null",
+        "read": "integer not null",
+        "user_id": "text not null references users ( id ) on delete cascade"
+      },
+      "constraints": [
+        "primary key ( asset_id , user_id )"
+      ],
+      "options": "without rowid"
+    },
+    "visibility_owed": {
+      "columns": {
+        "asset_id": "text not null references assets ( id ) on delete cascade",
+        "concealed": "integer",
+        "owed": "integer not null default 0",
+        "user_id": "text not null references users ( id ) on delete cascade"
+      },
+      "constraints": [
+        "primary key ( asset_id , user_id )"
+      ],
+      "options": "without rowid"
+    },
     "visibility_pending": {
       "columns": {
         "asset_id": "text not null",
@@ -2794,13 +2862,17 @@
         "actor_id": "text",
         "actor_kind": "text",
         "client_kind": "text",
+        "closes": "integer not null default 1",
         "decided_at": "integer not null",
         "detail": "text not null",
         "device_id": "text",
+        "fold_gap": "integer generated always as ( case when ( case when verb = 'edited' and object_kind is null and json_valid ( payload ) then json_extract ( payload , '$.key' ) end ) is not null then 600 else 60 end ) virtual",
+        "fold_key": "text generated always as ( case when verb in ( 'ran' , 'merged' , 'renamed' , 'forgot' , 'swap_started' , 'swap_ended' ) then id when verb in ( 'sharing_turned_on' , 'sharing_turned_off' , 'start_with_windows_on' , 'start_with_windows_off' , 'firewall_opened' , 'storage_moved' , 'update_started' , 'library_opened' , 'restarted' ) then id when ( case when verb = 'added' and json_valid ( payload ) then json_extract ( payload , '$.backfilled' ) end ) then 'added|backfilled|' || coalesce ( object_kind , '' ) else verb || '|' || queue || '|' || coalesce ( actor_kind , '' ) || '|' || coalesce ( actor_id , '' ) || '|' || coalesce ( object_kind , '' ) || '|' || case when verb = 'edited' then coalesce ( ( case when verb = 'edited' and object_kind is null and json_valid ( payload ) then json_extract ( payload , '$.key' ) end ) , id ) when verb = 'decided' then title when verb = 'song_named' then coalesce ( object_id , '' ) || '|' || coalesce ( ( case when verb = 'song_named' and json_valid ( payload ) then json_extract ( payload , '$.song' ) end ) , '' ) when ( case when verb = 'added' and actor_kind = 'sift' and actor_id = 'swap' and json_valid ( payload ) then json_extract ( payload , '$.session' ) end ) is not null then ( case when verb = 'added' and actor_kind = 'sift' and actor_id = 'swap' and json_valid ( payload ) then json_extract ( payload , '$.session' ) end ) when ( case when verb = 'pressed' and json_valid ( payload ) then json_extract ( payload , '$.passes' ) end ) is not null then ( case when verb = 'pressed' and json_valid ( payload ) then json_extract ( payload , '$.passes' ) end ) when actor_kind is null or actor_kind = 'user' then coalesce ( object_id , '' ) else '' end || '|' || coalesce ( ( case when verb = 'deleted' and json_valid ( payload ) then json_extract ( payload , '$.from' ) end ) , '' ) end ) virtual",
         "id": "text primary key",
         "object_id": "text",
         "object_kind": "text",
         "object_name": "text",
+        "opens": "integer not null default 1",
         "payload": "text not null",
         "queue": "text not null",
         "reversed_at": "integer",
@@ -2921,10 +2993,22 @@
     "music_waiting_file_arrived": "assets",
     "music_waiting_file_changed": "assets",
     "music_waiting_undone": "audio_fingerprints",
+    "placeless_file_added": "assets",
+    "placeless_file_removed": "assets",
+    "placeless_place_added": "asset_locations",
+    "placeless_place_moved": "asset_locations",
+    "placeless_place_removed": "asset_locations",
     "search_unindexed_asset_in": "assets",
     "search_unindexed_asset_out": "assets",
     "search_unindexed_row_in": "assets_fts_rows",
     "search_unindexed_row_out": "assets_fts_rows",
+    "semantic_counts_file_added": "semantic_indexed",
+    "semantic_counts_file_moved": "semantic_indexed",
+    "semantic_counts_file_removed": "semantic_indexed",
+    "semantic_counts_frame_added": "semantic_frame_keys",
+    "semantic_counts_frame_removed": "semantic_frame_keys",
+    "semantic_unrecorded_keyed": "semantic_file_keys",
+    "semantic_unrecorded_unkeyed": "semantic_file_keys",
     "song_music_filed": "song_files",
     "song_music_moved": "song_files",
     "song_music_renamed": "songs",
@@ -3050,11 +3134,19 @@
     "vis_photo_set_user_state_delete": "photo_set_user_state",
     "vis_photo_set_user_state_insert": "photo_set_user_state",
     "vis_photo_set_user_state_update": "photo_set_user_state",
-    "vis_recompute_give": "visibility_recompute",
-    "vis_recompute_settle": "visibility_recompute",
-    "vis_recompute_settled": "visibility_recompute",
-    "vis_recompute_take": "visibility_recompute",
-    "vis_recompute_user": "visibility_recompute",
+    "vis_recompute_answers": "visibility_step_answers",
+    "vis_recompute_fold": "visibility_step_fold",
+    "vis_recompute_fold_page": "visibility_step_fold_page",
+    "vis_recompute_going": "visibility_step_going",
+    "vis_recompute_owe": "visibility_step_owe",
+    "vis_recompute_rows": "visibility_step_rows",
+    "vis_recompute_settle": "visibility_step_settle",
+    "vis_recompute_settled": "visibility_step_settled",
+    "vis_recompute_touch": "visibility_step_touch",
+    "vis_recompute_touch_face_tracks": "visibility_step_touch_face_tracks",
+    "vis_recompute_touch_loops": "visibility_step_touch_loops",
+    "vis_recompute_touch_music_waiting": "visibility_step_touch_music_waiting",
+    "vis_recompute_user": "visibility_step_user",
     "vis_root_user_state_delete": "root_user_state",
     "vis_root_user_state_insert": "root_user_state",
     "vis_root_user_state_update": "root_user_state",
@@ -3085,7 +3177,10 @@
     "vis_viewer_pair_counts_emptied": "viewer_pair_counts",
     "vis_wall_totals_delete": "viewer_entity_counts",
     "vis_wall_totals_insert": "viewer_entity_counts",
-    "vis_wall_totals_update": "viewer_entity_counts"
+    "vis_wall_totals_update": "viewer_entity_counts",
+    "workbench_press_arrives": "workbench_decisions",
+    "workbench_press_goes": "workbench_decisions",
+    "workbench_press_moves": "workbench_decisions"
   },
   "versions": {
     "access": 5,
@@ -3104,12 +3199,13 @@
     "library": 7,
     "music": 6,
     "performance": 2,
+    "placeless": 1,
     "player": 7,
     "produced_files": 1,
     "save_log": 1,
     "scan_memory": 2,
-    "search_history": 10,
-    "semantic": 4,
+    "search_history": 11,
+    "semantic": 5,
     "sessions": 3,
     "settings": 18,
     "shoots": 1,
@@ -3121,12 +3217,24 @@
     "tidy": 1,
     "tunnels": 1,
     "user_state": 6,
-    "visibility": 17,
+    "visibility": 18,
     "watermarks": 8,
-    "workbench": 16
+    "workbench": 17
   },
   "views": {
-    "visibility_recompute": "create view visibility_recompute ( step , user_id ) as select null , null where 0"
+    "visibility_step_answers": "create view visibility_step_answers ( user_id ) as select null where 0",
+    "visibility_step_fold": "create view visibility_step_fold ( user_id ) as select null where 0",
+    "visibility_step_fold_page": "create view visibility_step_fold_page ( user_id ) as select null where 0",
+    "visibility_step_going": "create view visibility_step_going ( user_id ) as select null where 0",
+    "visibility_step_owe": "create view visibility_step_owe ( user_id ) as select null where 0",
+    "visibility_step_rows": "create view visibility_step_rows ( user_id ) as select null where 0",
+    "visibility_step_settle": "create view visibility_step_settle ( user_id ) as select null where 0",
+    "visibility_step_settled": "create view visibility_step_settled ( user_id ) as select null where 0",
+    "visibility_step_touch": "create view visibility_step_touch ( user_id ) as select null where 0",
+    "visibility_step_touch_face_tracks": "create view visibility_step_touch_face_tracks ( user_id ) as select null where 0",
+    "visibility_step_touch_loops": "create view visibility_step_touch_loops ( user_id ) as select null where 0",
+    "visibility_step_touch_music_waiting": "create view visibility_step_touch_music_waiting ( user_id ) as select null where 0",
+    "visibility_step_user": "create view visibility_step_user ( user_id ) as select null where 0"
   },
   "virtual": {
     "assets_fts": "create virtual table assets_fts using fts5 ( asset_id unindexed , title , filename , path , tags , people , usernames , collections , sites , music , tokenize = 'trigram' )"

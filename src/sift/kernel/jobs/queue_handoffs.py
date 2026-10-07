@@ -21,7 +21,7 @@ class HandOffs(QueueCore):
     """The queue's hand-offs to the rest of the process: stop and settle listeners, run records."""
 
     def listen_for_stops(self, listener: Callable[[Sequence[str]], None]) -> Callable[[], None]:
-        """Be told the ids of jobs just asked to stop, so a handler hears it at once rather than at
+        """Be told the ids of jobs just asked to stop, so a handler hears it immediately rather than at
         its next heartbeat; the row stays the truth. Returns the way to stop hearing. Called after
         the commit; a listener must not block, and one that raises is logged."""
         self._stop_listeners.append(listener)
@@ -33,7 +33,7 @@ class HandOffs(QueueCore):
         return unlisten
 
     def listen_for_work(self, listener: Callable[[], None]) -> Callable[[], None]:
-        """Be told that a job was just queued, so an idle worker claims it at once rather than at
+        """Be told that a job was just queued, so an idle worker claims it immediately rather than at
         its next poll. Called after the commit; a listener must not block, and one that raises is
         logged. Returns the way to stop hearing."""
         self._work_listeners.append(listener)

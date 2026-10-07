@@ -602,7 +602,7 @@ async def test_turbovid_signs_a_single_file() -> None:
 
 
 async def test_turbovid_signs_on_the_host_the_address_was_pasted_from_first() -> None:
-    """One domain can answer 521 to everything while another signs the same file at once, so
+    """One domain can answer 521 to everything while another signs the same file together, so
     signing only on the primary would fail every download pasted from the working one."""
     session = _Router(
         {"https://turbo.cr/api/sign?v=abc": _Response(text='{"url": "https://c/s.mp4"}')}

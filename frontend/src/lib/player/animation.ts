@@ -99,7 +99,7 @@ export interface Animation {
  * `onfail`, because a cell has one answer for every way a file can fail to play.
  *
  * `held` says whether it should start stopped, which matters on a wall: it opens paused, and a
- * GIF that ran for one frame before being told would be a flicker on every cell at once.
+ * GIF that ran for one frame before being told would be a flicker on every cell at the same time.
  */
 export async function driveAnimation(
 	url: string,

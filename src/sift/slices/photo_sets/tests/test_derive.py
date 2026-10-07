@@ -222,7 +222,7 @@ def test_sweeping_one_folder_twice_fills_the_set_rather_than_making_a_second(
 def test_a_grouping_that_loses_the_race_to_make_a_folders_set_takes_the_winners(
     client: TestClient, shoot: Shoot
 ) -> None:
-    """Two groupings can meet one folder at once (a scan beside a Stash import). The look finds
+    """Two groupings can meet one folder together (a scan beside a Stash import). The look finds
     nothing, both go to create, the unique index refuses the second: the loser answers with the
     winner's set rather than failing, so one folder is one set however the two are timed."""
     write(db_path(client), [("DELETE FROM asset_locations WHERE asset_id = ?", (shoot.clip,))])

@@ -90,8 +90,8 @@ class UsernameQueue:
         # A STILL OF A FILE UNDER EACH USERNAME, not a cover: a username has none since v58
         # (`_DROP_ACCOUNT_COVER`), so there is none to read. The newest file filed
         # under it that THIS viewer may see, read through the wall's own statement for the whole
-        # strip at once (see `Repository.newest_under_usernames`). A username with nothing they may
-        # see draws nothing, which is also why the strip can be shorter than the count.
+        # strip in one go (see `Repository.newest_under_usernames`). A username with nothing they
+        # may see draws nothing, which is also why the strip can be shorter than the count.
         newest = await self._access.newest_under_usernames(viewer, [one.id for one in page.items])
         return Summary(
             name=NAME,

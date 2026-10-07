@@ -106,7 +106,7 @@ async def test_the_re_identifying_pass_brings_old_rows_forward(
     assert await content_store.legacy_identity_count() == 0
 
 
-async def test_a_full_page_asks_for_the_next_one_at_once(
+async def test_a_full_page_asks_for_the_next_one_immediately(
     ingested_video: Ingested,
     context_for: Context,
     content_store: ContentStore,

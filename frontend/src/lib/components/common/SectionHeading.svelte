@@ -260,9 +260,9 @@
 	}
 
 	/*
-	 * Never between a heading and its own first subheading. A heading followed at once by another
-	 * (beside it, or first inside the block after it) is a parent over its first group, not a group
-	 * that ended: a line there reads as an empty group under the parent's name.
+	 * Never between a heading and its own first subheading. A heading followed immediately by
+	 * another (beside it, or first inside the block after it) is a parent over its first group, not
+	 * a group that ended: a line there reads as an empty group under the parent's name.
 	 */
 	:global(.section-stack .section-heading:not(.band))
 		+ .section-heading

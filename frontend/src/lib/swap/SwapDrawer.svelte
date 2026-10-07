@@ -217,7 +217,7 @@
 					>
 						{#snippet pane(which)}
 							<!-- Only the pane on show is drawn. `Tabs` draws every pane in its travelling
-							     row, so each one's form would be mounted at once: one pick weighed by the
+							     row, so each one's form would be mounted at the same time: one pick weighed by the
 							     Send and the Exchange panes both, and the tunnels read once per pane. -->
 							{#if which !== direction}
 								<!-- Not on show: nothing asked for. -->

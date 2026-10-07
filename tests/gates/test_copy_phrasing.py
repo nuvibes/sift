@@ -18,7 +18,7 @@ pytestmark = [pytest.mark.gate, pytest.mark.unit]
 #: (the sentence as it shipped, the same sentence rewritten)
 PAIRS = (
     (
-        "Made inside the folder you are in, on your disk and in your library at once.",
+        "Made inside the folder you are in, on your disk and in your library together.",
         "Sift creates it inside the folder you're in, both on your disk and in your library.",
     ),
     ("Press one again to take it out.", "Press one again to remove it."),

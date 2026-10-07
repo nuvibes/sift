@@ -3,7 +3,7 @@
 
 The small closures `sift.wiring` defines because they alone may know that two slices exist: the
 folder and archive groupers, which derivatives a scan builds (read per file), and what happens the
-moment a setting changes, where a feature switched off gives its memory and disk back at once.
+moment a setting changes, where a feature switched off gives its memory and disk back immediately.
 """
 
 from __future__ import annotations
@@ -102,7 +102,7 @@ class _Queue:
         self.settled: list[tuple[str, int | None]] = []
 
     async def enqueue_when_settled(self, job_type: str, *, delay: int | None = None) -> str:
-        """Whole-library work, asked for once the queue is quiet, or at once, with `delay=0`."""
+        """Whole-library work, asked for once the queue is quiet, or immediately, with `delay=0`."""
         self.settled.append((job_type, delay))
         return "job-2"
 
@@ -538,7 +538,7 @@ async def test_an_old_switch_saved_reaches_the_when_it_became(
 async def test_turning_face_recognition_off_gives_the_memory_back(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Switching faces off drops the models held for the life of the process, at once."""
+    """Switching faces off drops the models held for the life of the process, immediately."""
     react, parts = _capture_settings_reaction(monkeypatch, _Hub(**{faces.ENABLED_KEY: False}))
 
     await react({faces.ENABLED_KEY})
@@ -549,7 +549,7 @@ async def test_turning_face_recognition_off_gives_the_memory_back(
 async def test_changing_the_face_model_family_measures_every_face_again(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A new face family measures every face again from the kept pictures, at once, but only once
+    """A new face family measures every face again from the kept pictures, immediately, but only once
     its weights are present: the fetch asks for it itself."""
     react, parts = _capture_settings_reaction(
         monkeypatch, _Hub(**{faces.ENABLED_KEY: True}), faces_ready=True
@@ -560,10 +560,10 @@ async def test_changing_the_face_model_family_measures_every_face_again(
     assert parts["queue"].settled == [(faces.FACE_REMEASURE, 0)]
 
 
-async def test_turning_people_from_files_on_makes_the_held_names_people_at_once(
+async def test_turning_people_from_files_on_makes_the_held_names_people_immediately(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Turning on making people from facial fingerprints, or recognition, runs the pass at once; off
+    """Turning on making people from facial fingerprints, or recognition, runs the pass immediately; off
     asks for nothing, since a person made stays."""
     react, parts = _capture_settings_reaction(
         monkeypatch, _Hub(**{faces.PEOPLE_FROM_FILES_KEY: True})
@@ -1366,7 +1366,7 @@ async def test_the_share_read_cap_reaches_the_installed_lanes(
     assert installed.asked == [performance.resolve_share_reads(3)]
 
 
-async def test_a_cap_on_downloads_at_once_reaches_the_pool(
+async def test_a_cap_on_downloads_at_the_same_time_reaches_the_pool(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Downloads are outside the processor budget: they wait on somebody else's server."""
@@ -1391,7 +1391,7 @@ async def test_downloads_left_automatic_add_no_cap_at_all(
 async def test_the_segment_cap_follows_the_card_being_given_up_on(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Three segments at once on a card, one on a processor, asked of the accelerator on the pool's
+    """Three segments together on a card, one on a processor, asked of the accelerator on the pool's
     timer, so a card given up mid-session lowers the cap within a tick."""
     caught, _database = await _pool_config(monkeypatch, _Hub(), encoders=("h264_nvenc",))
     accelerator = caught["accelerator"]

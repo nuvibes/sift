@@ -246,9 +246,9 @@ register_setting(
 # useful answer is one: below that a single segment of a long film would not fit and the cache
 # would evict everything it built, every time.
 #
-# Lowering it takes effect at once rather than at the next thing played (see `SegmentCache.resize`),
-# because the moment somebody asks Sift to use less disk is the moment they are looking at the
-# folder.
+# Lowering it takes effect immediately rather than at the next thing played (see
+# `SegmentCache.resize`), because the moment somebody asks Sift to use less disk is the moment they
+# are looking at the folder.
 register_setting(
     key=CACHE_MAX_GB_KEY,
     scope="app",

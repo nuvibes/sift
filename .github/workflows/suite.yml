@@ -103,7 +103,7 @@ jobs:
   # shard and a new one needs no edit here (tests/gates/test_coverage_gates_are_sharded.py holds
   # the list, the times and this matrix to that).
   # Ten, with seven test shards: the gates are nearly three hours of one runner's work and a
-  # shard's gates take about their sum however many run at once, so the longest shard sets the
+  # shard's gates take about their sum however many run together, so the longest shard sets the
   # run's length; an account runs twenty jobs at a time, and seven, ten and the three single jobs
   # are twenty. The count is the length of this list, and the `/10` below says the same number.
   # SIFT_CI_JOBS hands them the whole runner: the script's default holds cores back for other
@@ -148,8 +148,8 @@ jobs:
     permissions:
       contents: read
     env:
-      # Two browsers at once: the runner's four cores are shared with the server under test, and
-      # more than it can serve at once ends in timeouts that read as failures.
+      # Two browsers at the same time: the runner's four cores are shared with the server under test, and
+      # more than it can serve together ends in timeouts that read as failures.
       E2E_WORKERS: "2"
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4

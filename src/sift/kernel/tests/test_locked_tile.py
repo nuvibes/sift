@@ -6,7 +6,7 @@ into, on the one library shape that makes it bite: `solo` is the only file of it
 its collection, its photo set and its Site, so hiding `solo` leaves each of the five with every
 file the viewer may see in the vault.
 
-Three things must hold at once, and a rule that keeps two of them is the fault this file guards:
+Three things must hold together, and a rule that keeps two of them is the fault this file guards:
 the row stays on the wall with its count (every other card counts it), it carries no name and
 answers no typed word, and a read by id (the row's own page) still has the name.
 """

@@ -228,8 +228,8 @@ async def _missing(
 ) -> AsyncIterator[Location]:
     """Every row a sweep would mark missing, a page of rows at a time. Writes nothing.
 
-    A page at a time, never the whole library held at once. `moves` is for a plan: each row is
-    judged at the path the moves would give it, which is where the walk saw its file."""
+    A page at a time, never the whole library held at the same time. `moves` is for a plan: each row
+    is judged at the path the moves would give it, which is where the walk saw its file."""
     # A pass of named files concludes nothing about a row it was not handed.
     examined = None if only is None else set(only)
     skipped = tuple(unjudged)

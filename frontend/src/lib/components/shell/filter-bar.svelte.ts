@@ -10,6 +10,7 @@ import type { CheckState } from '$lib/components/common/Checkbox.svelte';
 import { SAME_MUSIC_FIELD } from '$lib/player/music';
 import { LIKE_FIELD, fileNameOf } from '$lib/search/like';
 import { taken, written, type Named } from '$lib/search/query-parts';
+import { parameterValue } from '$lib/search/quoting';
 import { goneLabel } from '$lib/search/saved-searches.svelte';
 import type { ParsedClause } from '$lib/search/search.svelte';
 import {
@@ -163,7 +164,8 @@ function spelled(subject: Subject, included: Named, excluded: Named): string[] {
 	if (picksAreRepeated(subject)) {
 		/* One parameter per value, the grammar the entity routes read: a repeat is "either of
 		   these", and a refused value is its own parameter with the minus in front. */
-		return [...included.values, ...excluded.values.map((one) => `-${one}`)];
+		const refused = excluded.values.map((one) => `-${parameterValue(one)}`);
+		return [...included.values.map(parameterValue), ...refused];
 	}
 	return [included, excluded].filter((one) => one.values.length > 0).map(written);
 }

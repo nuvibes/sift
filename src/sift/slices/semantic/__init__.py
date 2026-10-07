@@ -49,7 +49,7 @@ from sift.slices.semantic.records import Records
 from sift.slices.semantic.router import router
 from sift.slices.semantic.search import SemanticSearch
 from sift.slices.semantic.service import SERVICE, Readiness, SemanticService
-from sift.slices.semantic.settings import describes_at_once
+from sift.slices.semantic.settings import describes_together
 from sift.slices.semantic.similar import SimilarFinder, Tier
 from sift.slices.semantic.store import DIMENSION, EXTENSION, STORE, Neighbour, VectorStore
 from sift.slices.semantic.whole_picture import WHOLE_PICTURE, WholePicture
@@ -95,7 +95,7 @@ __all__ = [
     "VectorStore",
     "WholePicture",
     "describe_file",
-    "describes_at_once",
+    "describes_together",
     "frame_requests",
     "register_handlers",
     "router",

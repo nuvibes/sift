@@ -1,5 +1,5 @@
 <script lang="ts">
-	/* LIVE: nothing moves it (one random file asked for on a press and opened at once; nothing is kept) */
+	/* LIVE: nothing moves it (one random file asked for on a press and opened immediately; nothing is kept) */
 	/*
 	 * A photograph or a GIF in the stage, with the one control it needs.
 	 *
@@ -357,8 +357,8 @@
 	 *
 	 * A press waits to find out whether it was a press. A click is known to be single only once the
 	 * double-click window has passed (the browser says so afterwards, with `dblclick`), and acting
-	 * at once then taking it back is not enough: the step is animated over a third of a second, so
-	 * part of it would be on screen before the second click, exactly what somebody leaving the
+	 * immediately then taking it back is not enough: the step is animated over a third of a second,
+	 * so part of it would be on screen before the second click, exactly what somebody leaving the
 	 * filled screen sees.
 	 *
 	 * So the step is held for `A_SECOND_CLICK_MAY_STILL_COME` and cancelled if a second click
@@ -374,7 +374,7 @@
 	 * A judgement rather than a guard (raising it makes the zoom laggier and catches slower
 	 * double-clicks, and the undo covers what it misses), and it is pinned:
 	 * `StillView.svelte.test.ts` advances the clock by less than the wait, which separates zero
-	 * (the step is due at once) from 260 (nothing is due yet), alongside the test that a
+	 * (the step is due immediately) from 260 (nothing is due yet), alongside the test that a
 	 * double-press cancels the held one.
 	 */
 	const A_SECOND_CLICK_MAY_STILL_COME = 260;

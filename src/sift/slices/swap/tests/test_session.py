@@ -959,7 +959,7 @@ async def test_ending_a_swap_nothing_is_holding_writes_the_end_on_its_row(tmp_pa
 
 
 @pytest.mark.integration
-async def test_a_task_for_a_session_that_is_over_or_was_lost_to_a_restart_ends_at_once(
+async def test_a_task_for_a_session_that_is_over_or_was_lost_to_a_restart_ends_immediately(
     tmp_path: Path,
 ) -> None:
     database = await _database(tmp_path / "s.sqlite3")

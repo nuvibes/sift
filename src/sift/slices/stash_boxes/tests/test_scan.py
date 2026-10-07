@@ -271,7 +271,7 @@ async def test_a_box_that_could_not_be_reached_is_not_written_down_as_asked(
 async def test_asking_the_same_question_twice_neither_asks_again_nor_piles_up(
     temp_db: Database,
 ) -> None:
-    """Two things at once, and both matter.
+    """Two things together, and both matter.
 
     The cached answer is why the box hears from this installation once, which is the whole reason
     the cache is in front of every question rather than beside some of them. And the match is an

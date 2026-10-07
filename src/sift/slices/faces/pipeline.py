@@ -200,8 +200,8 @@ class Pipeline:
         pausing and the interface stuttering, with nothing in the logs but ordinary queries taking a
         hundred milliseconds.
 
-        ONNX Runtime sessions are safe to call from several threads, and how many run at once is
-        already capped by the machine-budget setting, so the hop costs nothing but the hop.
+        ONNX Runtime sessions are safe to call from several threads, and how many run at the same
+        time is already capped by the machine-budget setting, so the hop costs nothing but the hop.
         """
         planned = face_frames(duration_ms or 0, density=self._density)
         timestamps = planned if after_ms is None else tuple(t for t in planned if t > after_ms)

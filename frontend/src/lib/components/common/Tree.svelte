@@ -48,7 +48,7 @@
 		 */
 		onsharing?: (id: string, label: string) => void;
 		/**
-		 * Picking several folders at once.
+		 * Picking several folders together.
 		 *
 		 * Every wall of tiles and every wall of entities can select, and the folders are the one
 		 * place where "share all of these" is the obvious thing to want.

@@ -269,7 +269,7 @@ async def test_two_roots_beside_each_other_are_fine(
     assert [root.name for root in await library_store.roots()] == ["Videos", "Photos"]
 
 
-async def test_two_roots_added_at_once_cannot_both_win(
+async def test_two_roots_added_at_the_same_time_cannot_both_win(
     library_store: LibraryStore, library: Path
 ) -> None:
     """The overlap rule is checked inside the write transaction, and this is why.
@@ -655,7 +655,7 @@ async def test_a_folder_sift_cannot_read_is_refused_with_something_to_do_about_i
 ) -> None:
     """The commonest real failure: a container that cannot see the folder it was pointed at.
 
-    Refused at once and named, rather than accepted and turned into a scan that finds nothing.
+    Refused immediately and named, rather than accepted and turned into a scan that finds nothing.
     """
     os.chmod(library, 0o000)
     try:

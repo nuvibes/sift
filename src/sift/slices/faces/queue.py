@@ -200,7 +200,7 @@ class SuggestionsQueue(_FaceQueue):
     """The people Sift is proposing, and the tab the Faces page opens on.
 
     **One press settles every face standing for somebody**, which is why this leads the row: agreeing
-    names them all at once and every one of them becomes a picture Sift learns from, so the next
+    names them all together and every one of them becomes a picture Sift learns from, so the next
     pass is better for this answer having been given. Nothing else in the group compounds that way.
 
     Ranked by how sure Sift is of each person's best match, the surest first: the order the list
@@ -239,7 +239,7 @@ class SuggestionsQueue(_FaceQueue):
             name=SUGGESTIONS,
             title=self.title,
             # What the board's Faces card counts, and it counts the group: every pending tab added
-            # up (`BoardCard`), so people, files and groups at once, not a number of people Sift
+            # up (`BoardCard`), so people, files and groups together, not a number of people Sift
             # is proposing, which is only the Faces to confirm tab.
             verb="questions about faces",
             verb_one="question about faces",

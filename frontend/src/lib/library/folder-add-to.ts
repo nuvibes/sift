@@ -24,7 +24,7 @@
  * ## The ceiling is the selection's
  *
  * A pick from here is a selection of the folder's files made at the moment of the press, so it
- * keeps the ceiling "select all" keeps (`MOST_AT_ONCE`), for the same reason: a press nobody can
+ * keeps the ceiling "select all" keeps (`MOST_SELECTED`), for the same reason: a press nobody can
  * size by eye must not become tens of thousands of writes. Over it, the row writes nothing and
  * says why and what to do instead, rather than adding the first thousand and calling that the
  * folder.
@@ -32,7 +32,7 @@
 import { api } from '$lib/api/client';
 import type { components } from '$lib/api/schema';
 import { counted, filesSaid } from '$lib/entity/entity-counts';
-import { MOST_AT_ONCE, SERVER_PAGE_CAP } from '$lib/grid/grid.svelte';
+import { MOST_SELECTED, SERVER_PAGE_CAP } from '$lib/grid/grid.svelte';
 import { toasts } from '$lib/shell/toasts.svelte';
 import { thing, type ToastPiece } from '$lib/components/common/toast-pieces';
 import { sayWhoAFolderIs } from '$lib/search/suggestions.svelte';
@@ -63,7 +63,7 @@ export async function filesUnder(folderId: string): Promise<string[]> {
 			query: { in: folderId, offset: ids.length, limit: SERVER_PAGE_CAP }
 		});
 		total = page.total;
-		if (total > MOST_AT_ONCE) throw new TooManyFiles(total);
+		if (total > MOST_SELECTED) throw new TooManyFiles(total);
 		for (const one of page.items) ids.push(one.id);
 		if (page.items.length === 0) break;
 	}
@@ -79,7 +79,7 @@ function refused(name: string | ToastPiece, why: unknown): void {
 		toasts.show(
 			[
 				name,
-				` holds ${counted(why.total)} files. Add to takes ${counted(MOST_AT_ONCE)} at a time, so open the folder and select the files there.`
+				` holds ${counted(why.total)} files. Add to takes ${counted(MOST_SELECTED)} at a time, so open the folder and select the files there.`
 			],
 			{ tone: 'error' }
 		);

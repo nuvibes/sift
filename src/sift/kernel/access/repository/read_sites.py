@@ -288,8 +288,8 @@ class SiteReads(RepositoryCore):
 
         `parent` filters to the sites directly under one site, which is what a network's Sites tab
         is a page of. It is a filter of ROWS rather than of files, so it sits beside the filter
-        instead of inside it: "the labels of this network that this person is on" is both at once,
-        and neither has to know about the other.
+        instead of inside it: "the labels of this network that this person is on" is both at the
+        same time, and neither has to know about the other.
 
         `count_narrowed` says which of the two tallies the number on a row is. Off, it is every
         item under that row this viewer may see, which is what the plain wall and the row's own

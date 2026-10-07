@@ -134,7 +134,7 @@ class _PoolConfig:
             unfinished,
             settings={
                 importing.JOBS_AT_ONCE: full,
-                "previews at once": generation,
+                "previews together": generation,
                 "network share reads": share_reads,
             },
             stepped_back=attention.ATTENTION.holding,
@@ -157,7 +157,7 @@ class _PoolConfig:
         if size_shared_pool(full):
             log.info("threads.shared.resized", workers=full)
         # And the share of the machine one background ffmpeg may take, on the same timer and for
-        # the same reason as the two below: it divides the cores by how many jobs run at once, so
+        # the same reason as the two below: it divides the cores by how many jobs run at the same time, so
         # it must read the number set here, not the one chosen at boot. See `media.jobs_at_once`.
         if media.set_jobs_at_once(full):
             log.info("media.thread_share.resized", workers=full)
@@ -165,7 +165,7 @@ class _PoolConfig:
         database = self._store.database
         if await database.resize_readers(readers_for(full)):
             log.info("db.readers.resized", readers=database.readers, workers=full)
-        # And how many files may be read at once from each network share, on the same timer. The
+        # And how many files may be read at the same time from each network share, on the same timer. The
         # cap is the storage's, not the job count's (see `kernel.lanes`), and it is the setting
         # a NAS library needs where a local one needs none. Read through the installed lanes rather
         # than a handle of this function's own, because the reads go through the installed ones.
@@ -196,7 +196,7 @@ class _PoolConfig:
         )
         limits[media_jobs.PREVIEW] = generation
         limits[media_jobs.SPRITE] = generation
-        # How many downloads at once. Outside the shared budget below: a download waits on somebody
+        # How many downloads at the same time. Outside the shared budget below: a download waits on somebody
         # else's server rather than on this machine, so a share-of-processor cap would slow the one
         # thing here that is not processor-bound and free nothing worth having. Left at 0 there is
         # no entry at all and downloads share the worker count.

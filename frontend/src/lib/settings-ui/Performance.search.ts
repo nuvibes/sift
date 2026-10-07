@@ -22,8 +22,27 @@ export const KEEPING_UP_ANCHOR = 'performance.keeping_up';
 /* The benchmark's own row (its Run press), where a toast about the run Sift started by itself
    lands: the row is rung on arrival, and the results are drawn under it. */
 export const MEASURE_ROW = 'performance.benchmark';
-/* The Concurrency row, whose Edit opens the page of numbers for how much Sift does at once. */
+/* The Concurrency row, whose Edit opens the page of numbers for how much Sift does at the same time. */
 export const CONCURRENCY_ANCHOR = 'performance.concurrency';
+
+/* A length as the run says it: tens of seconds under a minute, whole minutes over; `up` rounds up. */
+function span(seconds: number, up: boolean): string {
+	const round = up ? Math.ceil : Math.round;
+	const tens = Math.max(10, round(seconds / 10) * 10);
+	if (tens < 60) return `${tens} seconds`;
+	const minutes = Math.max(1, round(seconds / 60));
+	return minutes === 1 ? 'a minute' : `${minutes} minutes`;
+}
+
+/* What a run is doing past its encoding rounds, by the server's name for each step. */
+const NOW: Record<string, string> = {
+	encoding: 'one more round, between the two quickest',
+	decoder: 'timing how quickly this device decodes video and seeks into a file',
+	storage: 'reading a few large files from each drive and share',
+	previews: 'building previews on your GPU',
+	models: 'timing each installed model',
+	together: 'running everything together'
+};
 
 export const COPY = {
 	lede: 'What this device is, how much Sift does on it at the same time, and how Sift is doing on it.',
@@ -56,12 +75,25 @@ export const COPY = {
 		name: 'Benchmarking this device',
 		row: 'Benchmark this device',
 		help: 'Find out what this device can do, and get suggested numbers for how many things Sift does at the same time.',
-		lede: 'Sift estimates how much to do at the same time from your CPU. The benchmark measures it instead. It encodes the same short clip one at a time, then several at the same time. It times how fast this device decodes video and seeks into a file. It builds previews on your GPU the way Sift does, and times each installed model. Then it reads a few large files from each drive and network share your library is on. Each step is timed once, and a step stops early rather than run past its share of the time. It takes up to 5 minutes and keeps this device busy while it runs.',
+		lede: 'Sift estimates how much to do at the same time from your CPU. The benchmark measures it instead. It encodes the same short clip one at a time, then several at the same time. It times how fast this device decodes video and seeks into a file. It builds previews on your GPU the way Sift does, and times each installed model. Then it reads a few large files from each drive and network share your library is on. Each step is timed once, and a step stops early rather than run past its share of the time.',
+		/* How long, from the server's figure: this device's last run where it has one, else the limit. */
+		about: (seconds = 0, timed = false): string =>
+			seconds ? `${COPY.measure.lede} ${COPY.measure.takes(seconds, timed)}` : COPY.measure.lede,
+		takes: (seconds: number, timed: boolean) =>
+			timed
+				? `On this device it takes about ${span(seconds, false)}, and keeps it busy while it runs.`
+				: `It takes up to ${span(seconds, true)} and keeps this device busy while it runs.`,
+		left: (seconds?: number | null, timed = false) =>
+			seconds == null
+				? ''
+				: seconds < 5
+					? 'Almost done.'
+					: `${timed ? 'About' : 'Up to'} ${span(seconds, !timed)} left.`,
 		busy: 'Benchmarking\u2026 this device is busy until it finishes.',
 		round: (at: number, of: number) =>
-			`Round ${at} of up to ${of}. Each one encodes more clips at the same time than the last, and it stops early if this device stops keeping up.`,
-		roundsDone: (done: number, of: number) =>
-			`Encoding rounds done: ${done} of up to ${of}. Now timing how quickly this device reads a file.`,
+			`Round ${at} of up to ${of}. Each one encodes more clips at the same time than the last, then one steps back between the two quickest. It stops early if this device stops keeping up.`,
+		roundsDone: (done: number, of: number, step: string | null) =>
+			`Encoding rounds done: ${done} of up to ${of}.${step && step in NOW ? ` Now ${NOW[step]}.` : ''}`,
 		run: 'Run the benchmark',
 		again: 'Run it again',
 		unmeasured:
@@ -151,7 +183,7 @@ export const COPY = {
 			queue: (pause: string) =>
 				`Not right now. Sift is ${pause} behind with its work, so screens are slow to load.`
 		},
-		/* What doing less at once would change, said once, under the verdict. */
+		/* What doing less at the same time would change, said once, under the verdict. */
 		busyHelp:
 			'Something heavy is running, such as a scan or face recognition. To free this device, lower the numbers under Concurrency.',
 		details: 'The readings behind this answer',
@@ -173,7 +205,7 @@ export const COPY = {
 		connections: (n: number) =>
 			`Screens share ${n} database ${n === 1 ? 'connection' : 'connections'}, set by Tasks at the same time under Concurrency.`
 	},
-	/* How much Sift does at once: one row on the pane, and a page of its own behind its Edit. */
+	/* How much Sift does at the same time: one row on the pane, and a page of its own behind its Edit. */
 	much: {
 		name: 'Concurrency',
 		help: 'How many things Sift works on at the same time, and how much of this device face recognition may use.',

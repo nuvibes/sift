@@ -333,6 +333,20 @@ FROM (SELECT <<TERMS>> FROM assets a
     PRESENT=HAS_A_PRESENT_COPY,
 )
 
+#: The same over the files the vault or a hide holds back from one user: a range of the partial
+#: index on concealed rows, as long as what is concealed.
+_COUNT_LACKING_CONCEALED = splice(
+    """
+SELECT <<EACH>>, COALESCE(SUM(<<ANY>>), 0) AS files
+FROM (SELECT <<TERMS>> FROM viewer_assets va
+      JOIN assets a ON a.id = va.asset_id
+      WHERE va.user_id = ? AND va.concealed = 1
+        AND a.probed_at IS NOT NULL
+        AND {{PRESENT}}<<IN_ROOTS>>)
+""",
+    PRESENT=HAS_A_PRESENT_COPY,
+)
+
 #: A file the feature said it cannot make this for is not lacking it; a transient verdict (a share
 #: away) does not count, as the next scan clears it.
 _NOT_VERDICTED = (
@@ -605,13 +619,27 @@ class Counts(StoreCore):
         rows = await self._db.fetch_all(_KINDS_OF, (json.dumps(sorted(set(asset_ids))),))
         return {str(row["id"]): str(row["media_type"]) for row in rows}
 
-    async def count_lacking_visible(self, user_id: str, lacks: Sequence[Lack]) -> Lacking:
-        """`count_lacking` over the files one user can see, the stored visibility joined in."""
+    async def count_lacking_visible(
+        self, user_id: str, lacks: Sequence[Lack], *, admin: bool = False
+    ) -> Lacking:
+        """`count_lacking` over the files one user can see, the stored visibility joined in.
+
+        An admin may see every file with a place (`visibility._VERDICT_ROWS`), so theirs is the
+        library's kept count less what is concealed from them, never a walk of the library."""
         if not lacks:
             return Lacking(each=(), files=0)
         params = _term_params(lacks)
         params.append(user_id)
-        statement = _lacking_statement(lacks, [True] * len(lacks), statement=_COUNT_LACKING_VISIBLE)
+        flags = [True] * len(lacks)
+        if admin:
+            every = await self.count_lacking(lacks)
+            statement = _lacking_statement(lacks, flags, statement=_COUNT_LACKING_CONCEALED)
+            (held,) = await self._db.fetch_all(statement, params)
+            return Lacking(
+                each=tuple(n - int(held[f"n{i}"]) for i, n in enumerate(every.each)),
+                files=every.files - int(held["files"]),
+            )
+        statement = _lacking_statement(lacks, flags, statement=_COUNT_LACKING_VISIBLE)
         (row,) = await self._db.fetch_all(statement, params)
         return Lacking(
             each=tuple(int(row[f"n{n}"]) for n in range(len(lacks))),

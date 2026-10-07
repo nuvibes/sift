@@ -2,7 +2,7 @@
 """Catching the one failure that leaves no evidence: the event loop stopping.
 
 Sift is a single process with a single event loop, shared by the API, the live job feed and every
-video anybody is watching. Anything that holds that loop freezes all of it at once, and the
+video anybody is watching. Anything that holds that loop freezes all of it together, and the
 symptom is silence. Nothing is logged, because logging happens on the loop; nothing is slow,
 because nothing is running; the process sits at almost no processor use and every request waits.
 

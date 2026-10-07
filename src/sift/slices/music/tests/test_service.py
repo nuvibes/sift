@@ -287,7 +287,7 @@ async def test_a_fingerprint_read_by_an_older_algorithm_is_owed_a_new_read(tmp_p
     The count's term says such a file still lacks its fingerprint; the page asked of a Run now has
     to bind both of the term's values to say the same (bound one short, every Run now of the
     music task would fail); and the task must not take the old row as an answer, or the file would
-    be handed out on every run and returned at once without being read again.
+    be handed out on every run and returned immediately without being read again.
     """
     database = await _library(tmp_path)
     store = MusicStore(database)

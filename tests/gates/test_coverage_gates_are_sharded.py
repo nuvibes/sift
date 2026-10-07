@@ -141,7 +141,7 @@ def _cov_with_a_stub_uv(before: str) -> list[str]:
 
 
 def test_a_gate_sourced_alone_measures_into_a_file_of_its_own_and_clears_it_up() -> None:
-    """Two gates run by hand at once would otherwise share the working directory's one data file
+    """Two gates run by hand together would otherwise share the working directory's one data file
     and overwrite each other's numbers into a green figure that measured nothing."""
     handed, after = _cov_with_a_stub_uv("")
     assert "sift-cov." in handed, handed

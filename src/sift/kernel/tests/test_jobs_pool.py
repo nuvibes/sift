@@ -60,7 +60,7 @@ pytestmark = pytest.mark.usefixtures("clean_handlers")
 
 
 class Concurrency:
-    """A handler that blocks until released, and remembers the most it ever ran at once.
+    """A handler that blocks until released, and remembers the most it ever ran together.
 
     Blocking is the whole trick: a worker that claims one of these is stuck on it until the test
     lets go, so `active` is exactly how many workers are busy right now and `peak` is the widest the
@@ -203,7 +203,7 @@ async def test_after_a_shrink_only_the_kept_workers_run(job_queue: JobQueue) -> 
 
 
 @pytest.mark.integration
-async def test_a_lifted_cap_lets_more_of_a_type_run_at_once(job_queue: JobQueue) -> None:
+async def test_a_lifted_cap_lets_more_of_a_type_run_at_the_same_time(job_queue: JobQueue) -> None:
     """Limits are live too. A type capped at one runs one; lift the cap and the next batch runs wide."""
     work = Concurrency()
     register_handler("transcode", work.handler, name="Test job")
@@ -226,7 +226,7 @@ async def test_a_lifted_cap_lets_more_of_a_type_run_at_once(job_queue: JobQueue)
         assert pool.limits == {}
         for index in range(3):
             await job_queue.enqueue("transcode", {"asset_id": f"free-{index}"})
-        await wait_until(lambda: lifted.active == 3)  # all three at once now
+        await wait_until(lambda: lifted.active == 3)  # all three together now
         lifted.release.set()
         await drain(job_queue)
     finally:

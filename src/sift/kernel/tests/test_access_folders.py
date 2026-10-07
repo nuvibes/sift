@@ -163,7 +163,7 @@ async def test_the_top_level_folders_are_scoped_like_everything_else(
 async def test_the_whole_tree_is_one_query_and_a_bad_root_id_selects_nothing(
     access: Repository, actors: Actors, world: World
 ) -> None:
-    """The whole visible tree comes back at once, and a malformed root id is nothing, not a
+    """The whole visible tree comes back in one go, and a malformed root id is nothing, not a
     wildcard: it selects no folders rather than every folder that never had a root to belong to."""
     everything = await access.visible_folders(actors.admin)
     assert {folder.id for folder in everything} == {world.top, world.mid, world.leaf, world.other}
@@ -359,8 +359,8 @@ async def test_a_loop_denies_even_when_something_else_shares_the_file(
 ) -> None:
     """An unresolvable chain has to DENY, not merely fail to share.
 
-    Three things have to be true at once before the difference is even visible, which is why this
-    is written out rather than left to the case above:
+    Three things have to be true at the same time before the difference is even visible, which is
+    why this is written out rather than left to the case above:
 
     - a share has to arrive from somewhere the folder chain has no say over, or the file is denied
       by the default anyway and a chain that abstained would look exactly like one that refused.
@@ -702,7 +702,7 @@ async def test_the_explanation_says_how_much_of_the_entity_it_looked_at(
     """A count under a ceiling is only readable beside the number it is out of.
 
     The ceiling is what makes this its own read rather than something the reach report works out
-    for every user at once, so the answer carries what it saw. A reason found in a page is a
+    for every user together, so the answer carries what it saw. A reason found in a page is a
     true reason; a page reported as a total would be a number that means one thing on a person with
     three files and another on a person with three thousand.
     """
@@ -752,8 +752,8 @@ async def test_what_is_hiding_something_is_nothing_when_there_is_nothing_to_ask_
 ) -> None:
     """The same three refusals the grant read makes, for the same reason.
 
-    A grant can be made on everything at once; nothing can be CONCEALED on everything at once, so
-    the global case has no row to look for and no query worth running.
+    A grant can be made on everything in one go; nothing can be CONCEALED on everything in one go,
+    so the global case has no row to look for and no query worth running.
     """
     assert await access.vault_sources(actors.admin, ObjectType.ITEM, "not-an-id") == []
     assert await access.vault_sources(actors.admin, ObjectType.FOLDER, "not-an-id") == []

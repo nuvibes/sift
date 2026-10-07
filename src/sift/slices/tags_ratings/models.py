@@ -23,11 +23,11 @@ MAX_TAG_NAME = 64
 MAX_TAG_DESCRIPTION = 2000
 MAX_TAG_ALIASES = 50
 
-#: Assets one call may tag at once: a few hundred is an ordinary selection, and an unbounded list
+#: Assets one call may tag in one go: a few hundred is an ordinary selection, and an unbounded list
 #: would make one request hold the whole library.
 MAX_BULK_ASSETS = 500
 
-#: Tags one call may apply at once: the work is the product of the two lists under one write lock,
+#: Tags one call may apply in one go: the work is the product of the two lists under one write lock,
 #: and the gesture this serves, dragging onto a tag, names one.
 MAX_BULK_TAGS = 50
 

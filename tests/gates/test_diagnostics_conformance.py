@@ -199,7 +199,7 @@ def leaks_in(record: dict[str, object]) -> list[str]:
 
 def _planted_job(job_type: str) -> Job:
     """A job row to hand a handler, with no payload and no capabilities behind it: the handler fails
-    at once, and the timing block records on the way out either way."""
+    immediately, and the timing block records on the way out either way."""
     return Job(
         id=new_id(),
         parent_id=None,

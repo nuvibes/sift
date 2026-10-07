@@ -23,7 +23,7 @@ class LevelView(Wire):
 
 
 class StorageLevelView(Wire):
-    """One run against one storage: this many files read at once, and what came back."""
+    """One run against one storage: this many files read at the same time, and what came back."""
 
     at_once: int
     seconds: float
@@ -39,7 +39,7 @@ class DecodeView(Wire):
 
 
 class StorageCurveView(Wire):
-    """One storage as more files were read at once; `best_at_once` None where nothing was."""
+    """One storage as more files were read at the same time; `best_at_once` None where nothing was."""
 
     storage: str
     label: str
@@ -180,7 +180,17 @@ class SelfTestView(Wire):
     recommendations: list[RecommendationView] = Field(default=[])
     finished: bool
     rounds: int = 0
-    """How many rounds this device's ladder can reach, at most: the screen's "up to"."""
+    """How many rounds this device's ladder can reach, at most, the step back included: the "up to"."""
+    step: str | None = None
+    """The stage the run going is in: encoding, decoder, storage, previews, models or together."""
+    seconds_left: int | None = None
+    """The run going's time left, from each stage still to run at its length here; revised as it goes."""
+    left_timed: bool = False
+    """Whether that comes from this device's last run of its kind; false, it's the run's limit."""
+    whole_seconds: int = 0
+    """How long a whole run takes on this device, worked out the same way before it starts."""
+    whole_timed: bool = False
+    """Whether that comes from this device's last whole run; false, it's the limit, an "up to"."""
     measured: bool = False
     """Whether this machine has rates on file at all, from this run or from any earlier one.
 
@@ -189,7 +199,7 @@ class SelfTestView(Wire):
     has been measured every file is read by seeking.
     """
     share_reads_now: int = 0
-    """How many files Sift reads at once from each network share, RIGHT NOW.
+    """How many files Sift reads at the same time from each network share, RIGHT NOW.
 
     The effective number, not the stored one: zero means each share reads as measured, and the rule
     that resolves it lives on this side (`resolve_share_reads`) so the screen cannot disagree with
@@ -275,7 +285,7 @@ class AcceleratorView(Wire):
     start on somebody's connection and mention afterwards."""
     peak_bytes: int = 0
     """How much room the install needs at its widest: the wheels and what comes out of them, both
-    on the disk at once. The download is refused without it, and the screen says this figure."""
+    on the disk together. The download is refused without it, and the screen says this figure."""
     version: str
     """Which set is pinned, so a screen can say what it would install."""
     job_id: str | None

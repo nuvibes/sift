@@ -704,8 +704,8 @@ class BackupService:
         # The application's own store where it is handed one; otherwise one over the same database,
         # which is the same answer: the store keeps nothing but the handle and the settings.
         self._library = library if library is not None else LibraryStore(database, settings)
-        # One piece of whole-library work at a time: any two at once copy a half-swapped library.
-        # One event loop, so checking and taking it cannot interleave.
+        # One piece of whole-library work at a time: any two at the same time copy a half-swapped
+        # library. One event loop, so checking and taking it cannot interleave.
         self._exclusive = asyncio.Lock()
         self._working: str | None = None
         # Read once: the data folder cannot change under a running process.

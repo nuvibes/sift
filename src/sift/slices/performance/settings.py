@@ -58,7 +58,7 @@ GENERATE_SPRITES_KEY = "performance.generate_sprites"
 GENERATE_FINGERPRINTS_KEY = "performance.generate_fingerprints"
 SCAN_FACES_ON_IMPORT_KEY = "performance.scan_faces_on_import"
 
-#: How many files may be read at once from every network share, instead of each share's measured
+#: How many files may be read at the same time from every network share, instead of each share's measured
 #: number; 0 = as measured for each storage. See kernel.lanes.
 SHARE_READS_KEY = "performance.share_reads_at_once"
 
@@ -340,7 +340,7 @@ def resolve_generation_limit(raw: object, concurrency: int) -> int:
 
 
 def resolve_share_reads(raw: object) -> int:
-    """The number read at once from every network share, or 0 where each share reads as
+    """The number read at the same time from every network share, or 0 where each share reads as
     measured (`kernel.lanes`)."""
     if isinstance(raw, bool) or not isinstance(raw, int) or raw < 1:
         return AUTOMATIC
@@ -407,7 +407,7 @@ THUMBNAIL_SHARE = 2
 
 
 def scan_limit_is_fixed(raw: object) -> bool:
-    """Whether "Folder scans at once" holds a typed number, and so is a limit.
+    """Whether "Folder scans at the same time" holds a typed number, and so is a limit.
 
     The label and its help say "never more than this", so a typed number must not be topped up
     with an idle share. The division takes a fixed claimant's number as it stands

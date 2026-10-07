@@ -357,7 +357,7 @@ SELECT f.id AS folder_id, f.root_id AS root_id, f.rel_path AS path, f.name AS na
 """,
 )
 
-#: The same rule for a page of files at once: every folder answered as the person
+#: The same rule for a page of files in one go: every folder answered as the person
 #: (`folder_people`) that holds each file, the library's own top included; the caller keeps the
 #: nearest, the longest path, as `_NAMING_FOLDER` does with its ORDER BY. The locations lead
 #: (`CROSS JOIN` fixes the order), so each file is a seek on `ix_loc_asset` and the person's few

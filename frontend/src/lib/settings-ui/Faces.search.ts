@@ -22,7 +22,7 @@ export const DELETE_FACE_DATA = {
 	help: "Delete every face Sift found and everything it learned. Your files aren't touched."
 };
 
-/** Who Sift can recognize, and the two ways to teach it many people at once. */
+/** Who Sift can recognize, and the two ways to teach it many people in one go. */
 const PEOPLE_KNOWN = {
 	name: 'People Sift can recognize',
 	help: "Everyone with confirmed faces or starter pictures, so you can check before adding someone. A person with neither isn't listed yet."

@@ -65,7 +65,7 @@ class ToCheckView:
     the row says which, for whoever decides which way to answer."""
     groups: tuple[GroupMayBe, ...] = ()
     """The groups a MAY_BE card asks about, closest first. See `GroupMayBe`. Empty on every other
-    kind, whose question is about faces or a file rather than about several groups at once."""
+    kind, whose question is about faces or a file rather than about several groups together."""
 
 
 #: Why a group may be somebody: the group as a whole comes close to their pictures.
@@ -129,7 +129,7 @@ def _closeness(
 ) -> tuple[tuple[str, ...], list[list[float]]]:
     """How close each group's middle comes to each person: `(people, grid)`, one row per middle
     and one column per person, the best of that person's gallery rows: the product
-    `matching.likeness` takes for one face, taken for every group at once.
+    `matching.likeness` takes for one face, taken for every group in one go.
 
     Plain lists out, so the caller holds no array type; the arithmetic is one matrix product, run
     off the loop by the caller because it grows with groups times people.

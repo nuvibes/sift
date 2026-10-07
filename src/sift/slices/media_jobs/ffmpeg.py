@@ -672,9 +672,9 @@ def all_tiles_args(
 ) -> list[str]:
     """Every frame of a file, each a JPEG at `width`, written to the numbered `pattern`, in one
     decode. The GIF twin of `still_args`: a GIF re-decodes from the start on every seek, so reading
-    its sprite tiles as one seek per tile is a decode per tile; this reads them all at once and the
-    caller keeps the ones it wants. Same width and quality a tile would get from `still_args`, so a
-    frame it writes is the tile a seek to that frame would have written.
+    its sprite tiles as one seek per tile is a decode per tile; this reads them all in one go and
+    the caller keeps the ones it wants. Same width and quality a tile would get from `still_args`,
+    so a frame it writes is the tile a seek to that frame would have written.
     """
     return [
         settings.ffmpeg_path,
@@ -908,7 +908,7 @@ async def run_json(argv: list[str], *, reads: Path | None = None) -> dict[str, A
     """The inspection pass, at the same limit and the same low priority as everything else here.
 
     It is short and it is still background: nothing is on screen waiting for a file's dimensions,
-    and the pass runs over every file in a library at once when one is first pointed at Sift.
+    and the pass runs over every file in a library in one go when one is first pointed at Sift.
     """
     return await _run_json(
         argv,

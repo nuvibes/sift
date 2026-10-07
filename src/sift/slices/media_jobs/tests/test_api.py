@@ -559,7 +559,7 @@ def test_an_admin_can_cancel_a_job_that_has_not_finished(client: TestClient) -> 
     assert row_for(client, "01HX0000000000000000000001")["state"] == "canceled"
 
 
-def test_an_admin_can_retry_everything_that_failed_at_once(client: TestClient) -> None:
+def test_an_admin_can_retry_everything_that_failed_in_one_go(client: TestClient) -> None:
     """A row at a time is not a workflow when a whole import failed the same way."""
     seed(client, "01HX0000000000000000000001", state="failed")
     seed(client, "01HX0000000000000000000002", state="failed")
@@ -1852,7 +1852,7 @@ async def test_a_swap_on_activity_waits_for_them_then_says_its_own_time_never_th
 async def test_a_carrier_making_two_families_counts_under_both_and_prices_neither(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A task making faces and meaning at once is both families' work, and its cost is not one
+    """A task making faces and meaning together is both families' work, and its cost is not one
     family's, so it lends its finished items to no family's price. One making a single family's
     products does. Counted by the queue, grouped by the products the rows name: no payload of a
     run's thousands is read here."""

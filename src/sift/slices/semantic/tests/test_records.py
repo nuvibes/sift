@@ -123,18 +123,18 @@ async def test_how_many_files_another_model_described(temp_db: Database, records
     assert await records.described_by_others(NEW) == 0
 
 
-async def test_asking_about_another_models_files_seeks_rather_than_reads_them(
+async def test_asking_about_another_models_files_reads_the_kept_counts(
     temp_db: Database, records: Records
 ) -> None:
-    """Asked by every readiness check: `!=` walks every file ever described."""
+    """Asked by every readiness check: a row per model ever used, never the files."""
     from sift.slices.semantic import records as module
 
-    for statement in (module._COUNT_BY_OTHERS, module._ANY_BY_OTHERS):
+    for statement in (module._COUNT_DESCRIBED, module._COUNT_BY_OTHERS, module._ANY_BY_OTHERS):
         plan = await temp_db.fetch_all(
             "EXPLAIN QUERY PLAN " + statement,  # nosemgrep: sift-no-string-built-sql
-            (NEW, NEW),
+            (NEW,),
         )
-        assert not [row["detail"] for row in plan if str(row["detail"]).startswith("SCAN sem")]
+        assert not [row["detail"] for row in plan if "semantic_indexed" in str(row["detail"])]
 
 
 async def test_describing_a_file_twice_replaces_the_record(

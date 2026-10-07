@@ -714,7 +714,7 @@ async def test_deleting_everything_twice_is_not_an_error(store: Store) -> None:
 async def test_the_faces_feature_being_wiped_is_written_down(
     store: Store, temp_db: Database, actors: Actors
 ) -> None:
-    """Eleven tables emptied at once leave a record behind; without one the library looks exactly
+    """Eleven tables emptied together leave a record behind; without one the library looks exactly
     like one that never had the feature switched on. The subject is the feature's own SETTING,
     which is the honest one: this is not an act on any person or file, because every one of them
     has gone."""
@@ -1704,7 +1704,7 @@ async def test_how_many_appearances_somebody_agreed_to(
 
 
 async def test_everybodys_reference_count_in_one_answer(store: Store, temp_db: Database) -> None:
-    """For a picker drawing several people at once. Asking per row turns choosing a name into one
+    """For a picker drawing several people together. Asking per row turns choosing a name into one
     request per keystroke per candidate."""
     ada = await make_person(temp_db, "Ada Lovelace")
     grace = await make_person(temp_db, "Grace Hopper")

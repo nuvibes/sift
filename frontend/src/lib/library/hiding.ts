@@ -41,7 +41,7 @@ interface HideOptions {
 	/** The same write for the whole selection in one request, for the kinds whose endpoint takes a
 	 *  list. Left out by a kind that has no such endpoint, which is every kind but files. */
 	setMany?: SetVaultMany;
-	/** Take a row off the screen at once, before the list is re-read. */
+	/** Take a row off the screen immediately, before the list is re-read. */
 	forget?: (id: string) => void;
 	/**
 	 * Whether what was hidden is still on screen afterwards.

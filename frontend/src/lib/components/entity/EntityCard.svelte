@@ -138,8 +138,8 @@
 		 */
 		menu?: Snippet;
 		/**
-		 * Picking several of these at once, the same way the media tiles are picked, so the two walls
-		 * are one program. All of these arrive together or none do.
+		 * Picking several of these together, the same way the media tiles are picked, so the two
+		 * walls are one program. All of these arrive together or none do.
 		 */
 		selected?: boolean;
 		/**
@@ -834,7 +834,7 @@
 		transform: none;
 	}
 
-	/* The corners appear at once rather than fading in. */
+	/* The corners appear immediately rather than fading in. */
 	:global(:root[data-motion='reduce']) .judge {
 		transition: none;
 	}

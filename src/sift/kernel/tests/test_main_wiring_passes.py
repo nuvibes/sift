@@ -572,7 +572,7 @@ async def test_a_products_mix_by_kind_is_the_lacking_count_for_that_product_alon
 async def test_a_typed_scan_limit_is_a_limit_and_never_topped_up_by_an_idle_share(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A typed "Folder scans at once" is never more than itself. Alone on the machine, automatic
+    """A typed "Folder scans together" is never more than itself. Alone on the machine, automatic
     takes every worker; a typed number takes exactly what it says."""
     busy = _Importing({library_roots.SCAN: 50})
     automatic, _ = await _pool_config(monkeypatch, _Hub(), queue=busy)

@@ -71,10 +71,10 @@ async def test_it_is_asked_again_only_after_the_answer_goes_stale() -> None:
 async def test_a_run_that_ends_sends_the_next_read_to_count_again() -> None:
     """The one moment the cached answer is wrong however young it is.
 
-    A run ends and the queue empties at once, while the answer still holds the files that run has
-    just finished, so Activity would draw a finished Generate as "Not started, under a minute". A
-    kind whose finished tally moved since the count and which has nothing outstanding now is counted
-    again; a kind still busy is not, or the cache would be gone during exactly the import it
+    A run ends and the queue empties immediately, while the answer still holds the files that run
+    has just finished, so Activity would draw a finished Generate as "Not started, under a minute".
+    A kind whose finished tally moved since the count and which has nothing outstanding now is
+    counted again; a kind still busy is not, or the cache would be gone during exactly the import it
     exists for.
     """
     asked = _counting()
@@ -113,7 +113,7 @@ async def test_a_run_shorter_than_the_gap_between_two_reads_still_counts_again()
 
 async def test_a_carrier_that_ends_counts_as_a_run_ending() -> None:
     """A per-file Generate job makes a preview, a strip and a fingerprint without being any of the
-    three kinds, and its ending changes all three counts at once."""
+    three kinds, and its ending changes all three counts together."""
     asked = _counting()
     ahead = WorkAhead(fresh_for=3600.0)
     ahead.register("preview", asked.count)
@@ -129,7 +129,7 @@ async def test_a_carrier_that_ends_counts_as_a_run_ending() -> None:
 # --- a read never waits behind a count it does not need -----------------------------------------
 
 
-async def test_an_old_answer_is_handed_out_at_once_while_one_count_runs_behind_it(
+async def test_an_old_answer_is_handed_out_immediately_while_one_count_runs_behind_it(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A whole count on a large library is over a second, so an answer that has only grown old is
@@ -156,7 +156,7 @@ async def test_an_old_answer_is_handed_out_at_once_while_one_count_runs_behind_i
 
 
 async def test_reads_that_arrive_while_a_count_runs_wait_for_that_one_count() -> None:
-    """Each read that finds no answer starting a count of its own would run a dozen at once over
+    """Each read that finds no answer starting a count of its own would run a dozen together over
     the same readers, each slowing the others, and the screen would wait most of a minute."""
     counter = _gated(answer=9)
     ahead = WorkAhead()

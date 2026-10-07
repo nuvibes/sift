@@ -93,7 +93,7 @@ describe('Drawer', () => {
 	});
 });
 
-/* A finger drawn down (or up) the head: down and up again at once, as a quick stroke is. */
+/* A finger drawn down (or up) the head: down and up again immediately, as a quick stroke is. */
 function stroke(target: Element, dy: number, pointerType = 'touch', dx = 0) {
 	const at = (type: string, x: number, y: number) =>
 		target.dispatchEvent(

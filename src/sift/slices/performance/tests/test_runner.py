@@ -16,6 +16,13 @@ from sift.kernel.hardware import HardwareReport
 from sift.kernel.media import FFmpegError
 from sift.slices.performance import measure_encoder, measure_models, measure_together, selftest
 from sift.slices.performance import runner as running
+from sift.slices.performance.budget import (
+    DECODER,
+    ENCODING,
+    GRACE_SECONDS,
+    WHOLE_SECONDS,
+    Budget,
+)
 from sift.slices.performance.measure_encoder import CardCurve, CardLevel
 from sift.slices.performance.measure_models import ModelCurve, ModelLevel, ModelPass
 from sift.slices.performance.rates import (
@@ -38,6 +45,37 @@ from sift.slices.performance.selftest import (
 )
 
 pytestmark = pytest.mark.integration
+
+
+async def test_a_run_says_its_stage_and_time_left_and_keeps_each_stage_length_for_the_next(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seen: list[tuple[str | None, tuple[float, bool] | None]] = []
+
+    async def staged(*, budget: Budget, **_kwargs: object) -> Measurement:
+        budget.stage(ENCODING)
+        seen.append((runner.step(), runner.left()))
+        budget.stage(DECODER)
+        return a_measurement()
+
+    monkeypatch.setattr(selftest, "measure", staged)
+    runner = a_runner(tmp_path, await a_store(tmp_path))
+    untimed, timed = await runner.whole_length()
+    assert untimed == pytest.approx(WHOLE_SECONDS - GRACE_SECONDS, abs=1) and not timed
+    assert runner.step() is None and runner.left() is None
+
+    await runner.run()
+    (step, left), *_ = seen
+    assert step == ENCODING and left is not None and left[1] is False, "untimed: the run's limit"
+    assert runner.step() is None and runner.left() is None
+    kept = await runner.rates()
+    assert kept is not None and {"whole.encoding", "whole.decoder"} <= set(kept.lengths)
+    length, timed = await runner.whole_length()
+    assert timed and length < 5, "the next run is said from this one's stages"
+
+    seen.clear()
+    await runner.run()
+    assert seen[0][1] is not None and seen[0][1][1] is True
 
 
 def a_machine(cores: int = 8) -> HardwareReport:
@@ -671,7 +709,7 @@ async def test_a_run_measures_the_gpus_previews_and_each_model_and_keeps_them(
     previews = advice[selftest.GENERATION_LIMIT_KEY]
     assert previews.suggested == 2 and "on the GPU" in previews.reason
     share = advice[measure_models.RECOGNITION_SHARE_KEY]
-    assert share.suggested == 50, "two files at once of the four tasks"
+    assert share.suggested == 50, "two files at the same time of the four tasks"
     assert await runner.prices() == {"identify": 4.0}
     kept = await runner.rates()
     assert kept is not None and kept.card == a_card() and kept.models == (a_model(),)

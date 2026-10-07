@@ -138,7 +138,7 @@ export async function seedPhotos(page: Page, folder: string, count: number): Pro
 }
 
 /**
- * Stop the benchmark a first library folder starts, so the folder is read at once.
+ * Stop the benchmark a first library folder starts, so the folder is read immediately.
  *
  * The e2e server is a device nobody has measured, so the first folder added to its library queues
  * the benchmark and holds the folder's scan behind it for minutes. A journey about files is not

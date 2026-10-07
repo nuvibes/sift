@@ -1135,7 +1135,7 @@ async def test_an_asset_with_no_location_is_reported_as_stranded(
     )
     await content_store.remove_location(stranded.location.id)
 
-    # Stranded some way other than a removed folder: no moment was kept, so it is offered at once.
+    # Stranded some way other than a removed folder: no moment was kept, so it is offered immediately.
     ids = await content_store.stranded_asset_ids(int(time.time()))
 
     assert ids == [stranded.asset.id]
@@ -1179,7 +1179,7 @@ async def test_the_paths_of_every_derivative_come_back_together(
     content_store: ContentStore, library_root: LibraryRoot, settings: Any
 ) -> None:
     """The set a cache sweep checks each file against. One missing name is a file deleted while in
-    use, so this answers for every asset at once rather than per asset."""
+    use, so this answers for every asset in one go rather than per asset."""
     first = await content_store.ingest(
         checked(place("accepted.mp4", library_root, "one.mp4"), settings),
         root_id=library_root.id,

@@ -270,7 +270,7 @@ def _drive_of(stats: Row | None) -> str:
 
 
 class FileReads(RepositoryCore):
-    """The scoped reads of many files at once."""
+    """The scoped reads of many files in one go."""
 
     async def visible_counts(self, viewer: Viewer) -> tuple[int, int]:
         """How many files this viewer may see and how many the vault holds back, in one probe."""

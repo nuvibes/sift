@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """A whole group compared with a person ("these groups may be her"): asked, never attached.
 
-The review list's one question about several GROUPS at once (`ToCheckKind.MAY_BE`): each unnamed
+The review list's one question about several GROUPS together (`ToCheckKind.MAY_BE`): each unnamed
 group whose middle comes within `tuning.GROUP_ASK` of somebody's pictures, or that her folder
 proposes, on one card per person, closest first. Yes confirms the faces the card showed and offers
 the rest of each group; No refuses every face of the groups as her, which outlasts a regrouping.

@@ -291,7 +291,7 @@ describe('the row that opens out into the list', () => {
 		expect(ASKED).toHaveBeenCalledWith('');
 	});
 
-	it('asks at once on opening, without waiting out the debounce', async () => {
+	it('asks immediately on opening, without waiting out the debounce', async () => {
 		// A pause is for a RUN of keystrokes. Opening is one event, and a flyout that sits empty for
 		// a tenth of a second before its first row reads as a slow application.
 		ASKED.mockClear();
@@ -1096,8 +1096,8 @@ describe('what this selection is already on', () => {
 	});
 
 	it('refuses the browser its own menu over a row', async () => {
-		// Without this the app's menu and the browser's are on screen at once, and the one somebody
-		// right-clicked with is behind the one they did not ask for.
+		// Without this the app's menu and the browser's are on screen at the same time, and the one
+		// somebody right-clicked with is behind the one they did not ask for.
 		await openTheList(verbs({ already: {} }));
 
 		expect(rightPress('Amber').defaultPrevented).toBe(true);

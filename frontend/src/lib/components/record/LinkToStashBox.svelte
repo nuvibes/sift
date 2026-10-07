@@ -6,7 +6,7 @@
 	 * One screen for every kind of subject. A person, a site and a tag are linked the same way, and
 	 * what the confirm step draws comes from the field registry, the declaration that feeds the
 	 * record, the readout and the edit form, so a field added on the server appears in all four
-	 * surfaces at once.
+	 * surfaces at the same time.
 	 *
 	 * Nothing is ever silently overwritten. Every field is a tick, and a field Sift already has a
 	 * value for starts unticked with both values side by side. That is the whole conflict handling

@@ -91,7 +91,7 @@ export async function enrichFolder(folderId: string, name: string): Promise<void
 }
 
 /** The most files one press of the lookup names. The server refuses more, with the same figure. */
-const LOOKED_UP_AT_ONCE = 500;
+const LOOKED_UP_PER_ASK = 500;
 
 /**
  * Ask AcoustID which song each of these files is: the lookup task, pressed for THESE files.
@@ -113,12 +113,12 @@ export async function lookUpSongs(ids: string[], again = false): Promise<void> {
 	try {
 		/* Five hundred a press, the route's own ceiling and every bulk write's: a bigger selection
 		   is several presses, each its own walk on Activity, and each says what it queued. */
-		for (let start = 0; start < ids.length; start += LOOKED_UP_AT_ONCE) {
+		for (let start = 0; start < ids.length; start += LOOKED_UP_PER_ASK) {
 			const pressed = await api.post<components['schemas']['LookupPressed']>(
 				'/music/lookup/files',
 				{
 					body: {
-						asset_ids: ids.slice(start, start + LOOKED_UP_AT_ONCE),
+						asset_ids: ids.slice(start, start + LOOKED_UP_PER_ASK),
 						...(again ? { again: true } : {})
 					}
 				}
@@ -131,7 +131,7 @@ export async function lookUpSongs(ids: string[], again = false): Promise<void> {
 }
 
 /** The most files one ask names: the route's own ceiling, the most one Select all picks. */
-const NAMED_AT_ONCE = 1000;
+const NAMED_PER_ASK = 1000;
 
 type Asked = Omit<components['schemas']['ScanStarted'], 'job_id' | 'started'>;
 
@@ -151,8 +151,8 @@ async function askInChunks(ids: string[], options: object): Promise<Asked> {
 		kept_local: false
 	};
 	let refused: unknown = null;
-	for (let at = 0; at < ids.length; at += NAMED_AT_ONCE) {
-		const part = ids.slice(at, at + NAMED_AT_ONCE);
+	for (let at = 0; at < ids.length; at += NAMED_PER_ASK) {
+		const part = ids.slice(at, at + NAMED_PER_ASK);
 		try {
 			const one = await api.post<components['schemas']['ScanStarted']>('/stash-boxes/scan', {
 				body: { assets: part, ...options }

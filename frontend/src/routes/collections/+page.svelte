@@ -45,7 +45,7 @@
 	import { toasts } from '$lib/shell/toasts.svelte';
 	import { thing } from '$lib/components/common/toast-pieces';
 
-	/* Picking several at once, the same gesture and the same bar the People and Sites walls
+	/* Picking several together, the same gesture and the same bar the People and Sites walls
 	   have, so sharing, hiding or deleting eight rows does not mean pressing the same menu eight
 	   times. */
 	const selection = new Selection();

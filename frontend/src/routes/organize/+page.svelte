@@ -19,7 +19,7 @@
 	import { reloadOnLibraryChange } from '$lib/library/changes.svelte';
 	import { session } from '$lib/shell/session.svelte';
 
-	/* Held in a store rather than here, so coming back to this screen draws the last board at once
+	/* Held in a store rather than here, so coming back to this screen draws the last board immediately
 	   instead of a blank page and a request. See `heldBoard`. */
 	const found = $derived<Board | null>(heldBoard.found);
 	let failed = $state(false);

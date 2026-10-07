@@ -290,7 +290,7 @@ SELECT id, asset_a, asset_b, method, distance, duration_gap_ms, status, created_
 
 _SETTLE = "UPDATE dedup_candidates SET status = ? WHERE id = ?"
 
-#: Every pair of one group, answered at once. `status = 'pending'` in the WHERE so a second press
+#: Every pair of one group, answered in one go. `status = 'pending'` in the WHERE so a second press
 #: on a group already settled changes nothing rather than re-settling rows somebody has since taken
 #: back another way.
 _DISMISS_GROUP = """
@@ -535,7 +535,7 @@ class DedupService:
         return int(row["shown"] or 0), int(row["held"] or 0)
 
     async def places_of(self, asset_ids: Sequence[str]) -> dict[str, Place]:
-        """Where each of these files currently sits, for a screen naming several at once.
+        """Where each of these files currently sits, for a screen naming several together.
 
         A pass-through, and it exists because this slice reaches the content tables through one
         declared set of reads and nothing else: a query written outside that set is a query with

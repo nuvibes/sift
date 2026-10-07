@@ -6,7 +6,7 @@ her first, and a Yes or a No over a page of them, a pick or all of hers.
 (a folder, a filename, a stash-box) on a file whose one face is named as somebody else: recognized
 by Sift or confirmed by a person. A face that matches nobody is no evidence against the filing,
 since a covered or poorly lit face matches nobody whoever it is, so it is not one. A pass
-files a whole folder at once, so its mistakes arrive by the hundred under one name, and a thousand
+files a whole folder in one go, so its mistakes arrive by the hundred under one name, and a thousand
 rows are about a handful of people. One card per file would ask the same question about the same
 person a thousand times; one row per person asks it once, with her faces as a wall to be answered a
 page at a time.

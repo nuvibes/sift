@@ -103,7 +103,7 @@ def band_of(confirmed: int) -> str:
 
 @dataclass(frozen=True, slots=True)
 class Strengths:
-    """Everybody's `Strength` at once, with the bands every one of them is read against.
+    """Everybody's `Strength` in one go, with the bands every one of them is read against.
 
     The wall's reading and the person's page read the same object, so a card on the wall and the
     page it opens cannot say two different words about one number.
@@ -138,10 +138,10 @@ class ReferencesMixin(WeightsMixin, GroupingMixin):
         ]
 
     async def reference_strengths(self) -> Strengths:
-        """Everybody's reference count at once, with the target and the floor they are read against.
+        """Everybody's reference count in one go, with the target and the floor they are read against.
 
         `recognition_of` answers for one person and is right for a person's own page. A picker is
-        the other shape: it draws several people at once, and asking per row turns choosing a name
+        the other shape: it draws several people together, and asking per row turns choosing a name
         into one request per keystroke per candidate. This is the same numbers in one answer.
 
         The target and floor travel with the counts for the reason the meter's do: a screen
@@ -178,7 +178,7 @@ class ReferencesMixin(WeightsMixin, GroupingMixin):
 
         The number that was invisible. Matching against a person compares a new face with every
         reference they have, so somebody with three references under-matches, correctly, quietly,
-        and with nothing on any screen to say so. Import six hundred people at once and the ones
+        and with nothing on any screen to say so. Import six hundred people in one go and the ones
         with two usable photos look exactly like the ones with fifty, until somebody notices they
         are never recognized.
 

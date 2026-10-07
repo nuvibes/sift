@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import functools
 import importlib
+import os
 from pathlib import Path
 
 import pytest
@@ -356,7 +357,15 @@ def test_a_usernames_picture_on_one_site_is_that_sites_alone(
     here = client.get("/api/creator-art/someone", params={"site": "YouTube"})
     elsewhere = client.get("/api/creator-art/someone", params={"site": "Instagram"})
 
-    assert here.status_code == 200, here.text
+    # Red on the hosted runner only: the answer says which of the three it was.
+    from sift.slices.download.art import creator_scope_for
+
+    seeded = tmp_path / "cache" / "covers" / "youtube_someone.jpg"
+    saw = (
+        f"scope={creator_scope_for(site='YouTube', username='someone', address=None)!r}"
+        f" seeded={seeded.exists()} cache={os.environ.get('SIFT_CACHE_DIR')}"
+    )
+    assert here.status_code == 200, f"{here.text} {saw}"
     assert elsewhere.status_code == 404, elsewhere.text
 
 

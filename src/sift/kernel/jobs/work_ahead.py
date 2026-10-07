@@ -253,7 +253,7 @@ class WorkAhead:
         **A RUN THAT HAS ENDED SINCE THE COUNT MAKES THE COUNT WRONG, however young it is.** The
         answer is kept for `FRESH_FOR_SECONDS` because a backlog moves slowly: true while work is
         running and false at the one moment somebody is watching most closely, the end of a run:
-        the queue empties at once and the count still holds the files the run has just finished.
+        the queue empties immediately and the count still holds the files the run has just finished.
         Activity would then draw a finished Generate as "Not started, under a minute" for up to
         five seconds, work outstanding nought and files still waiting, after every Run now.
 
@@ -272,7 +272,7 @@ class WorkAhead:
         the run whether or not anybody was looking while it ran.
 
         Every kind the queue names counts, a carrier included: a per-file Generate job makes a
-        preview, a strip and a fingerprint, and its ending changes three counts at once.
+        preview, a strip and a fingerprint, and its ending changes three counts together.
         """
         now_busy = frozenset(busy)
 

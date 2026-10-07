@@ -178,7 +178,7 @@ def _is_shipped(path: str, name: str) -> bool:
 
 
 async def _measure() -> DownloadTools:
-    """Ask every tool what it is. Four launches at once; see the module note for why this is rare."""
+    """Ask every tool what it is. Four launches together; see the module note for why this is rare."""
     settings = get_settings()
     banner, ytdlp, gallerydl, engine = await asyncio.gather(
         # The SAME answer the fingerprinting pass records against every track it reads, rather than
@@ -224,7 +224,7 @@ async def _measure() -> DownloadTools:
 
 
 class _Measured:
-    """The one answer, per process. A lock so two screens opening at once launch the tools once."""
+    """The one answer, per process. A lock so two screens opening together launch the tools once."""
 
     def __init__(self) -> None:
         self._answer: DownloadTools | None = None

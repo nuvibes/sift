@@ -111,7 +111,7 @@ async def _reclassify_one(context: JobContext, asset_id: str, *, settings: Setti
         container=media.name,
     )
     # A new kind is a file read again, through the switches every arriving file passes.
-    # `dedupe`, because a scan can reach the same file at once.
+    # `dedupe`, because a scan can reach the same file at the same time.
     await context.queue.enqueue(PROBE, {"asset_id": asset_id}, dedupe=True)
     return True
 
@@ -144,7 +144,7 @@ async def reidentify(context: JobContext, *, settings: Settings, hardware: Hardw
             adopted += outcome
     await context.set_progress(1.0)
     log.info("identity.reidentify_done", read=len(ids), adopted=adopted, given_up=given_up)
-    # The next page at once, not after the settling delay, which is for whole-library work asked
+    # The next page immediately, not after the settling delay, which is for whole-library work asked
     # for per arriving file. A page that only recorded verdicts has moved the pass on too.
     if len(ids) == tuning.REIDENTIFY_BATCH and (adopted > 0 or given_up > 0):
         await context.queue.enqueue(REIDENTIFY, {}, dedupe=True)

@@ -5,7 +5,7 @@
  * somebody was looking at is durable. One module for the seven walls because the rule has quiet
  * edges: the anchor is honoured on ARRIVAL only (a new question must not start at the old one's
  * row); it is written only while the screen is still the one on show and nobody is navigating
- * away; and it is written with `replaceState`, at once and with the page state carried, so Back
+ * away; and it is written with `replaceState`, immediately and with the page state carried, so Back
  * leaves the screen and a panel just opened is not thrown away. `replaceState` does not move
  * `page.url`, so the writer also tells the recorder itself (`write`).
  */

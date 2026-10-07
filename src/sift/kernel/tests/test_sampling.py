@@ -222,7 +222,7 @@ def test_the_check_for_a_second_ladder_can_fail(tmp_path: Path) -> None:
 
 
 def test_the_ladder_matches_the_golden_file() -> None:
-    """Every case at once, against a checked-in file."""
+    """Every case in one go, against a checked-in file."""
     golden = json.loads(GOLDEN.read_text())
 
     for case in golden["videos"]:

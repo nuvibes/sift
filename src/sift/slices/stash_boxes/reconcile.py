@@ -377,7 +377,7 @@ class Reconciler:
         a file, whose record the box names by the title under dispute. See `for_subject`.
 
         `mine` is what the library holds, where the caller has read it already (the survey reads
-        every linked subject of a kind at once); absent, it is read here.
+        every linked subject of a kind in one go); absent, it is read here.
 
 
         `answered` is asked by box and field rather than handed in as a mapping, because the two

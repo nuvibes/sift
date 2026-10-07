@@ -46,7 +46,7 @@ const SRC = join(root, 'src');
 
 const GENERATED = join(SRC, 'lib/generated');
 
-// The one stylesheet that dresses the browser's own furniture, for the whole app at once.
+// The one stylesheet that dresses the browser's own furniture, for the whole app together.
 const GLOBAL_CSS = join(SRC, 'app.css');
 
 // Both syntaxes, because they are for different browsers rather than alternatives: the first two

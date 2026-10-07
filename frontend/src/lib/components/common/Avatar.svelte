@@ -133,7 +133,7 @@
 	/*
 	 * While a picture is on its way the box stays its own blank ground: the letter says nobody
 	 * chose a picture, untrue of a cover still loading. With no address, or every one failed, the
-	 * letter is drawn at once. The answer is kept with its address, so a new one starts waiting.
+	 * letter is drawn immediately. The answer is kept with its address, so a new one starts waiting.
 	 */
 	let heard = $state<{ at: string | null | undefined; status: string } | null>(null);
 	const waiting = $derived(

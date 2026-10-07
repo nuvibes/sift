@@ -46,8 +46,8 @@ BLACK_BELOW = 12.0
 FLAT_BELOW = 4.0
 
 
-#: A frame dim AND low in contrast at once is a fade on its way in or out: brighter than black,
-#: and still showing nothing somebody would pick a tile by.
+#: A frame dim AND low in contrast at the same time is a fade on its way in or out: brighter than
+#: black, and still showing nothing somebody would pick a tile by.
 FADE_DIM_BELOW = 40.0
 
 

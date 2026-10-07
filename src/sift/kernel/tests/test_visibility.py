@@ -335,7 +335,8 @@ def test_the_verdict_is_one_statement_and_every_trigger_is_it() -> None:
         for ddl in writers:
             assert verdict_shape in " ".join(ddl.split()), "a trigger carries a different verdict"
     named = {name for name, _t, ddl in built.triggers if "INSERT INTO viewer_assets" in ddl}
-    assert named == {"vis_recompute_give", "vis_recompute_user", settled}
+    rows = "vis_recompute_" + visibility_settled.ROWS
+    assert named == {rows, "vis_recompute_user", settled}
 
 
 def test_the_schema_carries_each_step_once() -> None:
@@ -640,7 +641,7 @@ def test_no_write_replaces_a_row_of_a_watched_table() -> None:
 def test_a_counted_kind_is_registered_once_and_has_to_declare_its_keys() -> None:
     """A second registration under a kind already counted would count every file under it twice,
     a second kind over a table whose keys it disagrees about would guard that table's BEFORE halves
-    two ways at once, and one with no keys would have unguarded BEFORE halves: the fault that
+    two ways together, and one with no keys would have unguarded BEFORE halves: the fault that
     empties a wall. All three are refused before anything is recorded, so the list is as it was."""
     before = visibility.counted()
     known = before[0]

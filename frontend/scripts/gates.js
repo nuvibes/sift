@@ -15,13 +15,13 @@
 //
 // ## In parallel, then the fallen ratchets again with --record
 //
-// Each gate is its own node process and they are independent, so they run at once: a few seconds of
-// wall clock rather than twenty. The one thing that cannot run in parallel is RECORDING: several
-// ratchets write the same baseline file, and two writers racing on one JSON file lose one of the
-// writes. So the first pass never records. A gate that failed only because its number FELL (it says
-// so: `RATCHET FELL`) is run again afterwards, one at a time, with `--record`. The baseline
-// changes on disk, pre-commit reports that a hook modified a file, and the commit is refused once
-// so the new number can be staged: the same shape the formatter hook already has.
+// Each gate is its own node process and they are independent, so they run at the same time: a few
+// seconds of wall clock rather than twenty. The one thing that cannot run in parallel is RECORDING:
+// several ratchets write the same baseline file, and two writers racing on one JSON file lose one
+// of the writes. So the first pass never records. A gate that failed only because its number FELL
+// (it says so: `RATCHET FELL`) is run again afterwards, one at a time, with `--record`. The
+// baseline changes on disk, pre-commit reports that a hook modified a file, and the commit is
+// refused once so the new number can be staged: the same shape the formatter hook already has.
 //
 // ## Why not one process with one tree walk
 //

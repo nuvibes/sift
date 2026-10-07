@@ -46,7 +46,7 @@ from sift.kernel.sql_splice import splice
 #:   Site's usernames. Anybody else only one carrying a file they may see (the stored per-username
 #:   count, with the vault shut unless `:reveal`), AND only a person they are shown at all: a
 #:   person with no file they may see is not on their People wall, and a card leading to a page that
-#:   answers "not found" is a disclosure and a dead end at once.
+#:   answers "not found" is a disclosure and a dead end at the same time.
 #: - The PERSON's own concealment is not here because both readers already apply it to every row:
 #:   the wall's `st.hidden` test and the card's `counted` CTE.
 _A_USERNAME_SHOWS_ITS_PERSON = splice(

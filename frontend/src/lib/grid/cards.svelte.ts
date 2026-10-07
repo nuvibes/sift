@@ -25,7 +25,7 @@ import type { PagerProps } from '$lib/components/common/Pager.svelte';
 import type { Anchor, PageAsk } from './anchor';
 import { PAGE_SCREENS } from './justify';
 
-/** The most rows any of these endpoints will hand back at once. The kernel's ceiling. */
+/** The most rows any of these endpoints will hand back at a time. The kernel's ceiling. */
 const SERVER_PAGE_CAP = 200;
 
 /** Everything a page size is worked out from, as a real wall last reported it. */

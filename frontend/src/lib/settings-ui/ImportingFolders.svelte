@@ -89,7 +89,7 @@
 		const next: Record<string, boolean | null> = {
 			[key]: choice === FOLLOW ? null : choice === 'on'
 		};
-		// Shown at once and put back on a refusal, the same way the pane's own switches are: a
+		// Shown immediately and put back on a refusal, the same way the pane's own switches are: a
 		// control that waits for the server before moving reads as broken on a slow disk.
 		if (choice === FOLLOW) delete folder.answers[key];
 		else folder.answers[key] = choice === 'on';

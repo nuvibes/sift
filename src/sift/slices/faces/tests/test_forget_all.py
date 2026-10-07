@@ -94,7 +94,7 @@ async def test_the_files_a_folder_import_left_out_are_deleted_too(
 
 
 def test_a_batch_is_sized_by_what_its_rows_cost() -> None:
-    """Shrinks at once to what fits a turn, and grows by doubling at most."""
+    """Shrinks immediately to what fits a turn, and grows by doubling at most."""
     turns = Turns(first=50, turn=0.25, most=5000)
     turns.took(50, 0.5)
     assert turns.size == 25

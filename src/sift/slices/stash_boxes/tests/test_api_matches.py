@@ -471,7 +471,7 @@ def test_a_scan_is_refused_while_matching_is_switched_off(client: TestClient) ->
     assert (answer.status_code, answer.json()["detail"]) == (409, ENRICHING_OFF)
 
 
-def test_a_scan_queues_a_sweep_and_comes_back_at_once(client: TestClient) -> None:
+def test_a_scan_queues_a_sweep_and_comes_back_immediately(client: TestClient) -> None:
     """The sweep asks nothing itself (it works out which files have not been asked about and
     queues one question each), so this returns immediately and the work shows up in the job list."""
     from sift.slices.stash_boxes.settings import SCAN_KEY

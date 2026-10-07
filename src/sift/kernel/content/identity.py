@@ -58,6 +58,7 @@ from sift.kernel.content.identity_fields import (
 )
 from sift.kernel.content.identity_models import (
     PROBE_VERSION,
+    PROBE_VERSION_NOT_A_JPEG,
     RECIPE_VERSIONS,
     Asset,
     Derivative,
@@ -87,6 +88,7 @@ __all__ = [
     "MUSIC_SHARED",
     "MUSIC_TYPED",
     "PROBE_VERSION",
+    "PROBE_VERSION_NOT_A_JPEG",
     "RECIPE_VERSIONS",
     "_COUNT_COMING_OF",
     "_COUNT_LACKING_BY_KIND",

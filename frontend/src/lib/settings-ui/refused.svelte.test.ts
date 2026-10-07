@@ -120,7 +120,7 @@ describe('reading what was refused', () => {
 	it('says what went wrong and stays unloaded, rather than drawing an empty screen', async () => {
 		/* A failed read that left `loaded` true would draw "nothing was refused", which is the
 		   reassuring reading of silence, and the wrong one for a screen about files Sift rejected. */
-		/* Both reads are asked for at once, so both are answered: queueing one leaves the other
+		/* Both reads are asked for together, so both are answered: queueing one leaves the other
 		   with no answer at all, which is a different failure from the one under test. */
 		answers(
 			{ ok: false, status: 500, body: { detail: 'the database is locked' } },

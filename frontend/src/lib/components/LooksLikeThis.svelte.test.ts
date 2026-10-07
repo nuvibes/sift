@@ -125,7 +125,7 @@ it('and still draws the matches it has, rather than hiding them behind the sente
 	/*
 	 * A verdict is written the moment the decoder refuses, and the numbers the file was given while
 	 * it still decoded are kept rather than blanked, so a file can carry the sentence and real
-	 * matches at once. The sentence must not replace the strip.
+	 * matches at the same time. The sentence must not replace the strip.
 	 */
 	await shown({ tier: 'matches', items: [like('abc')] }, 'asset-1', 'the frames would not decode');
 

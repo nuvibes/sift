@@ -20,7 +20,13 @@ from sift.kernel.hardware import HardwareReport
 from sift.kernel.log import get_logger
 from sift.kernel.media import FFmpegError, ReadRates
 from sift.kernel.wiring import Part
-from sift.slices.performance import measure_encoder, measure_models, measure_together, selftest
+from sift.slices.performance import (
+    measure_encoder,
+    measure_models,
+    measure_together,
+    selftest,
+    selftest_time,
+)
 from sift.slices.performance.budget import (
     DECODER,
     ENCODING,
@@ -225,6 +231,10 @@ class SelfTestRunner:
         """The settings the last run measured only in part, which Sift never sets by itself."""
         self._task: asyncio.Task[None] | None = None
         self._recalled = False
+        self.budget: Budget | None = None
+        """The run going's clock and stages; None when none goes."""
+        self.first_part = False
+        self._typical: dict[str, float] = {}
 
     def start(self, *, first_part: bool = False, since: float | None = None) -> bool:
         """Begin a run unless one is going; `since` starts its clock, the drain included."""
@@ -349,6 +359,9 @@ class SelfTestRunner:
             started=since,
         )
         await self.recall()
+        kept = await self._rates.load(self._hardware.profile)
+        self._typical = dict(kept.lengths) if kept is not None else {}
+        self.budget, self.first_part = budget, first_part
         state = self.state
         current = await self._current()
         storages = await self._storages()
@@ -396,8 +409,32 @@ class SelfTestRunner:
         finally:
             state.running = False
             self.progress = None
+            self.budget = None
             self._count_caused(before)
             await asyncio.to_thread(_discard, workspace)
+
+    def step(self) -> str | None:
+        """The stage the run going is in, by its budget name; None before the first or between runs."""
+        return self.budget.stages[-1].name if self.budget and self.budget.stages else None
+
+    def left(self) -> tuple[float, bool] | None:
+        """The run going's seconds left, and whether this device's last run of its kind timed it."""
+        if self.budget is None:
+            return None
+        kind = _kind(self.first_part)
+        left = selftest_time.seconds_left(self.budget, self._typical, kind=kind)
+        timed = any(name.startswith(f"{kind}.") for name in self._typical)
+        return None if left is None else (left, timed)
+
+    async def whole_length(self) -> tuple[float, bool]:
+        """How long a whole run takes here, worked out as `left` is; the run's limit where untimed."""
+        kept = await self._rates.load(self._hardware.profile)
+        typical = kept.lengths if kept is not None else {}
+        left = selftest_time.seconds_left(
+            Budget(WHOLE_SECONDS, WHOLE_SHARES), typical, kind=_kind(False)
+        )
+        timed = any(name.startswith(f"{_kind(False)}.") for name in typical)
+        return (WHOLE_SECONDS if left is None else left), timed
 
     def _count_caused(self, before: tuple[int, int]) -> None:
         loop, threads = self._stalls()
@@ -416,6 +453,10 @@ class SelfTestRunner:
         self, measurement: Measurement, found: Found, *, first_part: bool = False
     ) -> None:
         kept = await self._rates.load(self._hardware.profile)
+        # Each stage's length, so the next run of this kind can say how long it has left.
+        stages = (
+            selftest_time.stage_lengths(self.budget, kind=_kind(first_part)) if self.budget else {}
+        )
         rates = MachineRates.from_measurement(
             self._hardware.profile,
             measurement,
@@ -423,7 +464,7 @@ class SelfTestRunner:
             card=found.card,
             models=found.models,
             together=found.together,
-            lengths=kept.lengths if kept is not None else None,
+            lengths={**(kept.lengths if kept is not None else {}), **stages},
             first_part=first_part,
         )
         if kept is not None:
@@ -589,6 +630,11 @@ class SelfTestRunner:
         finally:
             state.running = False
             self._count_caused(before)
+
+
+def _kind(first_part: bool) -> str:
+    """A run's kind as its stage lengths are kept under: the benchmark job's own names for them."""
+    return "first_part" if first_part else "whole"
 
 
 def _discard(workspace: Path) -> None:

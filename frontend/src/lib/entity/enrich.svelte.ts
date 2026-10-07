@@ -65,7 +65,7 @@ export function madeBySaid(made: Maker): string {
 	/*
 	 * The pass's own row out of the one table that names passes: `facet-labels.ts`, which the
 	 * Enriched by column and the glyph beside these words both read. A second list of nine phrases
-	 * here would be a list free to disagree with that one, on a page drawing both at once.
+	 * here would be a list free to disagree with that one, on a page drawing both at the same time.
 	 *
 	 * The colon becomes a comma and nothing else moves. "Sift: from a folder name" is a ROW in a
 	 * column headed Enriched by, where the colon carries "who: how"; after a preposition it is a

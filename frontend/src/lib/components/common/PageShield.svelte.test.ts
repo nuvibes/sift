@@ -39,7 +39,7 @@ const openMenus = () =>
 /*
  * Whether the open menu has started listening for a press outside it.
  *
- * The library opens the menu at once and starts listening a timer's turn later, so a press in
+ * The library opens the menu immediately and starts listening a timer's turn later, so a press in
  * between is not heard by anybody. Under load the runner can reach its press inside that turn,
  * which would make these tests fail at random. What is waited for is the library's own register of
  * listening layers, never a length of time.
@@ -219,7 +219,7 @@ describe('the gesture a shield outlives its surface for', () => {
 		expect(standing()).toBeNull();
 	});
 
-	it('goes at once when the browser takes the press over for a scroll', async () => {
+	it('goes immediately when the browser takes the press over for a scroll', async () => {
 		shieldPressed();
 
 		window.dispatchEvent(new MouseEvent('pointercancel', { bubbles: true }));
@@ -228,7 +228,7 @@ describe('the gesture a shield outlives its surface for', () => {
 		expect(standing()).toBeNull();
 	});
 
-	it('goes at once when the press became a hold', async () => {
+	it('goes immediately when the press became a hold', async () => {
 		const { shield } = shieldPressed();
 
 		shield.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }));

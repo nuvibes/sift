@@ -345,7 +345,12 @@ class Lack:
 #:
 #: 2: a still's reading holds its first frame, which is where its turn is read from, so a picture
 #: read under 1 may have its width and height the wrong way round (see `keep_probe`).
-PROBE_VERSION = 2
+#: 3: a JPEG is read as a browser turns it, by its first Exif block (`kernel.jpeg_turn`); only a
+#: JPEG photograph read under 2 is looked at again, and only one read the other way is read again.
+PROBE_VERSION = 3
+
+#: The reading every file but a JPEG photograph is current at.
+PROBE_VERSION_NOT_A_JPEG = 2
 
 
 @dataclass(frozen=True, slots=True)

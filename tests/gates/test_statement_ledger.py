@@ -33,13 +33,17 @@ def record() -> dict[str, Any]:
 
 
 #: Each size walked once per run, and only when a case asks for it.
-_WALKED: dict[int, dict[str, ledger.Seen]] = {}
+_WALKED: dict[int, ledger.Walk] = {}
+
+
+def _walk(size: int, factory: pytest.TempPathFactory) -> ledger.Walk:
+    if size not in _WALKED:
+        _WALKED[size] = ledger.walk(size, directory=factory.mktemp(f"ledger{size}"))
+    return _WALKED[size]
 
 
 def _walked(size: int, factory: pytest.TempPathFactory) -> dict[str, ledger.Seen]:
-    if size not in _WALKED:
-        _WALKED[size] = ledger.walk(size, directory=factory.mktemp(f"ledger{size}")).seen
-    return _WALKED[size]
+    return _walk(size, factory).seen
 
 
 @pytest.fixture(scope="module")
@@ -52,6 +56,20 @@ def booted(tmp_path_factory: pytest.TempPathFactory) -> dict[int, dict[str, ledg
     """The smaller walk alone: the boot's window is judged on it."""
     size = ledger.SIZES[0]
     return {size: _walked(size, tmp_path_factory)}
+
+
+def test_a_guest_reads_by_id_a_file_they_are_shown(
+    tmp_path_factory: pytest.TempPathFactory,
+) -> None:
+    """Priced on the answer, not the refusal: a 404 reads nothing worth a record."""
+    statuses = _walk(ledger.SIZES[0], tmp_path_factory).statuses
+    by_id = [
+        label
+        for label in statuses
+        if label.startswith("guest") and ("/api/assets/{id}" in label or "?asset=" in label)
+    ]
+    assert by_id
+    assert {label: statuses[label] for label in by_id if statuses[label] != 200} == {}
 
 
 def test_the_boot_walks_no_library_sized_table(

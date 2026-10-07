@@ -82,7 +82,7 @@
 	const destinations = new Destinations();
 	destinations.follow();
 
-	/* Held on the folder until its save answers, so the paste box stops asking at once. */
+	/* Held on the folder until its save answers, so the paste box stops asking immediately. */
 	async function chooseFolder(folderId: string) {
 		if (!folderId) return;
 		dest = folderId;

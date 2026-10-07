@@ -324,7 +324,7 @@ def test_a_press_runs_the_full_count_while_somebody_is_here_and_a_second_press_s
     reader = Attention(since)
     assert reader.workers(8, step_back=True) == 2
     assert (_holding(reader), _turbo_mode(reader)) == (True, False)
-    # The leaf pressed: every worker although the input is recent, said at once.
+    # The leaf pressed: every worker although the input is recent, said immediately.
     reader.press(full=True)
     assert (_holding(reader), _turbo_mode(reader)) == (False, True)
     assert reader.workers(8, step_back=True) == 8
@@ -568,7 +568,7 @@ def test_a_press_tells_its_listeners_once_and_a_failing_one_is_logged(
 
 
 @pytest.mark.integration
-async def test_a_press_takes_effect_at_once_not_at_the_next_reconfigure(
+async def test_a_press_takes_effect_immediately_not_at_the_next_reconfigure(
     job_queue: JobQueue,
 ) -> None:
     """The supervisor's interval is a minute here: only the press's wake can move the pool."""
@@ -608,7 +608,7 @@ async def test_a_press_takes_effect_at_once_not_at_the_next_reconfigure(
 
 
 @pytest.mark.integration
-async def test_work_arriving_is_claimed_at_once_not_at_the_next_poll(job_queue: JobQueue) -> None:
+async def test_work_arriving_is_claimed_now_not_at_the_next_poll(job_queue: JobQueue) -> None:
     held = _Held()
     register_handler("probe", held.handler, name="Test job")
     pool = WorkerPool(job_queue, concurrency=2, poll_interval=60.0, watchdog=False)

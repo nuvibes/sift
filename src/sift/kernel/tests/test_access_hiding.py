@@ -76,7 +76,7 @@ async def test_disabling_a_user_kills_their_live_session(
     assert await access.load_viewer(actors.guest.id) is None
 
 
-async def test_a_role_change_applies_at_once(
+async def test_a_role_change_applies_immediately(
     access: Repository, actors: Actors, world: World, temp_db: Database
 ) -> None:
     await temp_db.execute("UPDATE users SET role = 'guest' WHERE id = ?", (actors.admin.id,))

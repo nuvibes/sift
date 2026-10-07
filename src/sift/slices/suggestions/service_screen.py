@@ -65,10 +65,9 @@ class ScreenMixin(SuggestionBase):
         # The picture for each folder on the page: sorting a folder's files is asked for these
         # and never for the whole list.
         covers = await self._access.folder_covers(viewer, [folder.id for _c, folder, _f in shown])
-        faces: dict[str, FolderFaces] = {}
-        for claim, _folder, _files in shown:
-            if claim.folder_id not in faces:
-                faces[claim.folder_id] = await self._faces.faces_in(claim.folder_id)
+        faces = await self._faces.faces_in_many(
+            list(dict.fromkeys(claim.folder_id for claim, _folder, _files in shown))
+        )
         # Everything else a row asks, asked once for the page.
         dissenting = await self._access.visible_of(
             viewer, sorted({one for found in faces.values() for one in found.dissenting})

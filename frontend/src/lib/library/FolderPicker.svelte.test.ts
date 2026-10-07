@@ -147,7 +147,7 @@ describe('inside a granted folder', () => {
 	});
 });
 
-describe('gathering several folders at once', () => {
+describe('gathering several folders together', () => {
 	it('offers a tick per row only where a set is being gathered', () => {
 		expect(render(picker(TOP), false).querySelectorAll('.tick')).toHaveLength(0);
 		if (mounted) void unmount(mounted);

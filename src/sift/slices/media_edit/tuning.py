@@ -109,7 +109,7 @@ SAMPLE_AT_FRACTION = 0.25
 # --- guards ---------------------------------------------------------------------------------
 
 #: Room that must stay free beside the expected output before an encode starts: filling a media disk
-#: fails everything writing to it at once.
+#: fails everything writing to it at the same time.
 FREE_SPACE_HEADROOM_BYTES = 2 * 1024 * 1024 * 1024
 
 #: How long one encode may run before it is killed: a whole file at real quality on a slow disk, far

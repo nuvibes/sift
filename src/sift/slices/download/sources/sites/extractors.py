@@ -898,8 +898,8 @@ def turbovid_sign_origins(url: str) -> list[str]:
     the primary.
 
     The primary is only one of the site's several domains, and one domain can answer **521** (the
-    origin behind the CDN down) to every request while another signs the same file at once. The
-    pasted host is the one known to be up, because the person just read the page there.
+    origin behind the CDN down) to every request while another signs the same file at the same time.
+    The pasted host is the one known to be up, because the person just read the page there.
     """
     own = source_origin(url).rstrip("/")
     return list(dict.fromkeys([own, _TURBOVID_PRIMARY]))

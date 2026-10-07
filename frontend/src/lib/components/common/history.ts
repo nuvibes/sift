@@ -121,7 +121,7 @@ const MARKS: Record<string, IconName> = {
 /**
  * The glyph for the VERB that made a copy, where the row says which verb it was: the editor's own
  * marks, the same at both ends of the row. In FRONT of `copied_from`/`copied_into`, so an unknown
- * operation (or several edits at once) falls through to the copy glyph.
+ * operation (or several edits together) falls through to the copy glyph.
  */
 const COPY_MARKS: Record<string, IconName> = {
 	trim: 'content_cut',

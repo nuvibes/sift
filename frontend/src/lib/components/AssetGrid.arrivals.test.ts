@@ -231,7 +231,7 @@ describe('files arriving while the wall is being watched', () => {
 		expect(tileFor('new0'), 'one arrival moved the whole wall').toBeNull();
 	});
 
-	it('offers one file in its line at once when nothing else is arriving, moving nothing', async () => {
+	it('offers one file in its line immediately when nothing else is arriving, moving nothing', async () => {
 		vi.useFakeTimers();
 		await wall();
 		topOfWallOnScreen(true);

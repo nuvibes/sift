@@ -110,7 +110,7 @@ async def test_many_folders_read_together_answer_as_each_read_alone(
     tree: TreeReads, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Every folder asked is a key, a repeated one once, one not there with nothing; in batches too."""
-    monkeypatch.setattr(tree_module, "_FOLDERS_AT_ONCE", 2)
+    monkeypatch.setattr(tree_module, "_FOLDERS_PER_ASK", 2)
     asked = ["f-shoot", "f-cuts", "f-shoot", "f-nowhere"]
     under = await tree.assets_under_many(asked)
     assert {key: sorted(found) for key, found in under.items()} == {

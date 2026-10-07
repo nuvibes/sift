@@ -2,7 +2,7 @@
 """The transcode job: one segment, one at a time.
 
 There is one handler here and it does one thing, which is the point. The cap that matters
-(never more than one ffmpeg encoding at once on the processor) is enforced by the queue rather than
+(never more than one ffmpeg encoding together on the processor) is enforced by the queue rather than
 by anything in this file (`job_limits` below, handed to the worker pool by
 `sift/wiring/workers.py`). The measurement behind it: two concurrent transcodes do not split the
 machine between them, they run *worse than sequential*, because ffmpeg already saturates the cores
@@ -79,7 +79,7 @@ def register_handlers(*, service: PlayerService) -> None:
 
 
 def job_limits(encoder: Encoder = Encoder.CPU) -> dict[str, int]:
-    """How many segments may be built at once. A measurement, and it depends on what is encoding.
+    """How many segments may be built together. A measurement, and it depends on what is encoding.
 
     **On the processor: one.** Not a tuning knob. Raising it does not make the machine do more
     work, it makes it do less, because ffmpeg already saturates the cores it is given and two of
@@ -92,7 +92,7 @@ def job_limits(encoder: Encoder = Encoder.CPU) -> dict[str, int]:
 
     Three rather than four. Flat to four is not a licence to saturate: the card also draws Sift's
     thumbnails and previews, some of them for other people, and a quality change mid-video only ever
-    needs two segments in flight at once.
+    needs two segments in flight at the same time.
     """
     if encoder is Encoder.CPU:
         return {TRANSCODE: 1}

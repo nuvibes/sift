@@ -38,7 +38,7 @@ export class RemovalWatch extends DownloadWatch {
 		super.follow(jobId, state);
 	}
 
-	/** The press itself was refused: said at once, since no job will end to say it. */
+	/** The press itself was refused: said immediately, since no job will end to say it. */
 	override couldNotStart(why = this.#failed): void {
 		this.succeeded = false;
 		super.couldNotStart(why);

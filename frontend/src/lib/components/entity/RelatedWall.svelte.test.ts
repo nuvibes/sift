@@ -24,7 +24,7 @@ vi.mock('$lib/entity/related.svelte', async (importOriginal) => ({
 	loadRelated: vi.fn()
 }));
 vi.mock('$lib/player/asset-view', () => ({ openAsset: vi.fn() }));
-/* Every request this file makes is answered here, at once. The Loops tab draws the media grid, which
+/* Every request this file makes is answered here, immediately. The Loops tab draws the media grid, which
    asks the server for its page; a real request would answer during whichever test is running when
    it comes back, or after the last, and the grid would reach different code on each run. */
 const ONE_MARK = vi.hoisted(() => ({
@@ -423,7 +423,7 @@ describe('a slower answer for a tab somebody has left', () => {
 		const props = await draw('tags');
 		expect(release).not.toBeNull();
 
-		// Moved to another tab; its own answer lands at once.
+		// Moved to another tab; its own answer lands immediately.
 		load.mockResolvedValue(answered([row({ id: 'p9', name: 'somebody' })]));
 		props.showing = 'people';
 		props.title = 'Seen with';

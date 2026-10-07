@@ -103,7 +103,7 @@ class TestWhatABatchCameTo:
         assert "not found" in said
         assert "more than one" not in said
 
-    def test_every_outcome_at_once_reads_as_one_sentence(self) -> None:
+    def test_every_outcome_together_reads_as_one_sentence(self) -> None:
         said = _enriched(
             Counter({Outcome.WROTE: 1, Outcome.LINKED: 2, Outcome.AMBIGUOUS: 3, Outcome.UNKNOWN: 4})
         )

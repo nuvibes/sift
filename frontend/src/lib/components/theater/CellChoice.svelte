@@ -12,8 +12,8 @@
 	 * own text field, its own list of kept filters and its own Done and Cancel.
 	 *
 	 * One thing is added for a wall, and this is it. Every other screen filters itself, so there is
-	 * nothing to point at; a wall has up to nine sources at once, and a panel that did not say
-	 * which one it was working on would be a panel you cannot trust.
+	 * nothing to point at; a wall has up to nine sources at the same time, and a panel that did not
+	 * say which one it was working on would be a panel you cannot trust.
 	 *
 	 * The numbers are the cells' own, the same numbers the keyboard talks to and the same ones on
 	 * the bar of each cell, so "press 2, then filter" is one idea rather than two.
@@ -43,7 +43,7 @@
 	     it was short of pressing it. -->
 	<div class="which" role="group" aria-label="Which cell this filter is for">
 		<span class="says">Filtering</span>
-		<!-- Every cell at once, the same selection the bar and the backtick make. Filtering a wall
+		<!-- Every cell together, the same selection the bar and the backtick make. Filtering a wall
 		     to one thing is a real errand (one performer across four feeds), and without this it
 		     would be the same filter typed out four times. What is written goes to all of them;
 		     what the panel reads is still one cell's, because the columns count against a query and

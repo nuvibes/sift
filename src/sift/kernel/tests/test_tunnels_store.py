@@ -584,7 +584,7 @@ class _Starts:
         monkeypatch.setattr(TunnelProcess, "start", start)
 
 
-def _renewing_at_once(monkeypatch: pytest.MonkeyPatch) -> None:
+def _renewing_without_the_wait(monkeypatch: pytest.MonkeyPatch) -> None:
     """The renewal's 45 seconds made a moment, so a test sees what a renewal does."""
 
     async def no_wait(_seconds: float) -> None:
@@ -742,7 +742,7 @@ async def test_a_failed_renewal_ends_the_hosting_and_tells_the_session(
     """A mapping nobody renews lapses within the minute; the session hears it from the store rather
     than from a guest that has gone quiet, and the tunnel goes back to carrying downloads."""
     starts = _Starts(monkeypatch)
-    _renewing_at_once(monkeypatch)
+    _renewing_without_the_wait(monkeypatch)
     monkeypatch.setattr(
         store_module,
         "NatPmp",
@@ -768,7 +768,7 @@ async def test_a_session_told_its_port_lapsed_may_ask_to_stop_hosting_without_ha
     """The twin of the switch-off case: a real session's end asks the store to stop hosting, and
     that ask must find the lock free while the store is telling it."""
     starts = _Starts(monkeypatch)
-    _renewing_at_once(monkeypatch)
+    _renewing_without_the_wait(monkeypatch)
     monkeypatch.setattr(
         store_module,
         "NatPmp",
@@ -792,7 +792,7 @@ async def test_a_port_moved_at_a_renewal_is_passed_to_the_session(
     store: TunnelStore, running: str, master_key: bytes, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _Starts(monkeypatch)
-    _renewing_at_once(monkeypatch)
+    _renewing_without_the_wait(monkeypatch)
     provider = _Provider(Mapped(_PUBLIC, 61000, 60), Mapped(_PUBLIC, 62000, 60))
     monkeypatch.setattr(store_module, "NatPmp", provider)
     moved: list[Hosting] = []
@@ -816,7 +816,7 @@ async def test_a_session_whose_handler_fails_does_not_stop_the_tunnel_being_put_
     store: TunnelStore, running: str, master_key: bytes, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     starts = _Starts(monkeypatch)
-    _renewing_at_once(monkeypatch)
+    _renewing_without_the_wait(monkeypatch)
     monkeypatch.setattr(
         store_module,
         "NatPmp",
@@ -946,7 +946,7 @@ async def test_a_session_that_asked_to_hear_nothing_is_told_nothing(
     """Both handlers are optional: a moved port is still taken, and a renewal the provider refuses
     still ends the hosting, with nobody to tell."""
     _Starts(monkeypatch)
-    _renewing_at_once(monkeypatch)
+    _renewing_without_the_wait(monkeypatch)
     monkeypatch.setattr(
         store_module,
         "NatPmp",

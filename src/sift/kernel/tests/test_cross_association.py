@@ -251,8 +251,8 @@ def test_naming_nothing_is_the_same_no_filter_the_walls_check_for() -> None:
     assert related_filter(person=None, tag=None) is NO_FILTER
 
 
-def test_two_things_at_once_both_narrow() -> None:
-    """Two related names at once both narrow."""
+def test_two_things_together_both_narrow() -> None:
+    """Two related names together both narrow."""
     both = related_filter(person="p1", site="l1")
     assert both is not NO_FILTER
     where, bound = both.predicate()

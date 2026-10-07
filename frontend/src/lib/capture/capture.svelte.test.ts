@@ -86,7 +86,7 @@ describe('a file from the picker', () => {
 		const call = fetched.call();
 		expect(url(call)).toBe('http://localhost:5171/api/capture/import/file');
 		expect(form(call).get('file')).toBeInstanceOf(File);
-		// A placeholder appears at once, keyed by the job that will settle it.
+		// A placeholder appears immediately, keyed by the job that will settle it.
 		expect(capture.imports).toEqual([{ id: 'j1', name: 'clip.png', toast: expect.any(Number) }]);
 	});
 });

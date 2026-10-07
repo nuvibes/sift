@@ -1,8 +1,8 @@
 <script lang="ts">
 	/* Performance: this device, and how Sift is doing on it.
 	 *
-	 * What the device is, the benchmark that suggests how much Sift should do at once, whether Sift
-	 * is keeping up, and the figures for a bug report. The numbers themselves (how much at once,
+	 * What the device is, the benchmark that suggests how much Sift should do at the same time, whether Sift
+	 * is keeping up, and the figures for a bug report. The numbers themselves (how much at the same time,
 	 * how much of the device face recognition may use) are Concurrency's page, at the foot beside
 	 * the step back; the benchmark's Apply writes them through the ordinary settings save.
 	 */
@@ -180,7 +180,7 @@
 	}
 	onMount(readFirstRun);
 	whenChanged(settingChanges, () => void readFirstRun());
-	/* How many files Sift reads at once from a share, as the server resolves it (0 is automatic).
+	/* How many files Sift reads at the same time from a share, as the server resolves it (0 is automatic).
 	   Said only where a share was measured: a local drive is never limited by it. */
 	const shareReads = $derived(
 		selfTest?.measurement?.storages?.some((one) => one.remote) ? (selfTest.share_reads_now ?? 0) : 0
@@ -192,9 +192,10 @@
 	/* The run going's rungs (`progress`, never the result), and whether another can start. */
 	const laddered = $derived(selfTest?.progress?.levels.length ?? 0);
 	const rounds = $derived(selfTest?.rounds ?? 0);
+	const timeLeft = $derived(COPY.measure.left(selfTest?.seconds_left, selfTest?.left_timed));
 	const climbing = $derived.by(() => {
 		const levels = selfTest?.progress?.levels ?? [];
-		if (laddered >= rounds) return false;
+		if (laddered >= rounds || (selfTest?.step ?? 'encoding') !== 'encoding') return false;
 		if (selfTest?.progress?.decode) return false;
 		return levels.every((one) => one.responsive);
 	});
@@ -568,7 +569,7 @@
 					id="performance.benchmark"
 					label={COPY.measure.row}
 					help={COPY.measure.help}
-					disclosure={COPY.measure.lede}
+					disclosure={COPY.measure.about(selfTest.whole_seconds, selfTest.whole_timed)}
 					foot={selfTest.running || testing || selfTest.measured ? undefined : unmeasured}
 				>
 					<Button
@@ -593,11 +594,10 @@
 						<div class="rounds">
 							<ProgressBar value={laddered} max={rounds} label={COPY.measure.name} />
 							<p class="verdict" data-testid="self-test-rounds">
-								{#if climbing}
-									{COPY.measure.round(laddered + 1, rounds)}
-								{:else}
-									{COPY.measure.roundsDone(laddered, rounds)}
-								{/if}
+								{climbing
+									? COPY.measure.round(laddered + 1, rounds)
+									: COPY.measure.roundsDone(laddered, rounds, selfTest.step ?? null)}
+								<span data-testid="self-test-left">{timeLeft}</span>
 							</p>
 						</div>
 					{/if}
@@ -893,7 +893,7 @@
 		</div>
 	{/if}
 
-	<!-- How much Sift does at once, and how much less while somebody works. -->
+	<!-- How much Sift does at the same time, and how much less while somebody works. -->
 	<Concurrency />
 
 	<!-- LAST, whatever else the pane holds: the one act here that takes something away sits where

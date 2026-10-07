@@ -39,7 +39,7 @@ async def test_a_rename_moves_the_file_and_the_index_follows_it(
     add_file: Any,
     admin: Viewer,
 ) -> None:
-    """The claim this whole feature makes, asserted on both sides at once."""
+    """The claim this whole feature makes, asserted on both sides together."""
     added = await add_file(managed, "clip.mp4")
 
     done = await organizer.rename(added.asset.id, new_name="holiday.mp4", actor=admin)

@@ -14,6 +14,7 @@ from sift.kernel.changes import announce_arrival
 from sift.kernel.content.identity_models import Carrier, Location, location_from_row
 from sift.kernel.content.identity_paths import _confine_to_root, check_rel_path
 from sift.kernel.content.identity_store import StoreCore
+from sift.kernel.content.placeless import STRANDED
 from sift.kernel.db import in_clause
 from sift.kernel.forgetting import forget_everywhere
 from sift.kernel.log import get_logger
@@ -91,14 +92,6 @@ _LOCATION_AT = "SELECT * FROM asset_locations WHERE root_id = ? AND rel_path = ?
 _LOCATION_BY_ID = "SELECT * FROM asset_locations WHERE id = ?"
 
 _ROOT_PATH = "SELECT abs_path FROM library_roots WHERE id = ?"
-
-#: Assets nothing places, stranded before the bound moment (a removed folder promises to bring
-#: everything back for a while) or at an unknown moment (NULL).
-_STRANDED_ASSETS = """
-SELECT id FROM assets a
-WHERE NOT EXISTS (SELECT 1 FROM asset_locations l WHERE l.asset_id = a.id)
-  AND (a.stranded_at IS NULL OR a.stranded_at <= ?)
-"""
 
 
 class Places(StoreCore):
@@ -257,7 +250,7 @@ class Places(StoreCore):
     async def stranded_asset_ids(self, stranded_before: int) -> list[str]:
         """Assets with no location left, stranded at or before `stranded_before` (or at an unknown
         moment): a fresh strand is left alone while adding its folder back can still restore it."""
-        rows = await self._db.sweep_all(_STRANDED_ASSETS, (stranded_before,), what="stranded files")
+        rows = await self._db.fetch_all(STRANDED, (stranded_before,))
         return [str(row["id"]) for row in rows]
 
     async def locations(self, asset_id: str) -> list[Location]:

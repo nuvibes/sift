@@ -172,7 +172,7 @@ class TaskList {
 	}
 
 	/**
-	 * Change when a task runs. Shown at once and written through the ordinary settings write; a
+	 * Change when a task runs. Shown immediately and written through the ordinary settings write; a
 	 * refusal puts the old answer back and is handed to the caller to say.
 	 */
 	async setWhen(id: string, when: string): Promise<void> {

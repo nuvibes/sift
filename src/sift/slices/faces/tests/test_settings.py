@@ -228,7 +228,7 @@ def test_declaring_the_switches_twice_is_refused(clean_settings_registry: None) 
     [(50, 8, 4), (100, 8, 8), (25, 8, 2), (10, 8, 1), (1, 8, 1), (50, 1, 1)],
     ids=["half", "all", "a-quarter", "a-tenth", "almost-none", "one-worker-machine"],
 )
-def test_the_share_decides_how_many_files_are_examined_at_once(
+def test_the_share_decides_how_many_files_are_examined_at_a_time(
     share: int, workers: int, expected: int
 ) -> None:
     assert (

@@ -5,7 +5,7 @@ Drop a video into a watched folder and it should appear, without anybody pressin
 is the whole of what this does, and almost all of it is the waiting.
 
 **Why this is not a job.** A watcher runs for as long as Sift does. The queue's workers are a
-small fixed number (as many as the machine can usefully run at once), and a job that never
+small fixed number (as many as the machine can usefully run at the same time), and a job that never
 returns keeps one of them forever. Watch four folders on a four-worker box and nothing else ever
 runs again: no `probe`, no thumbnails, no scans. So the watcher lives beside the queue and puts
 work into it, rather than being work in it.
@@ -143,8 +143,8 @@ MAX_POLL_REST_SECONDS = 300.0
 #: crash while somebody is using the application is not a trade against latency.
 #:
 #: **So `native_watch.py` does the read inside Sift.** The read is issued OVERLAPPED, so it
-#: returns at once and completes into an event the emitter waits on with a timeout, which is what
-#: gives the thread a moment to notice it has been asked to stop. Stopping cancels and closes
+#: returns immediately and completes into an event the emitter waits on with a timeout, which is
+#: what gives the thread a moment to notice it has been asked to stop. Stopping cancels and closes
 #: nothing; the handle is closed by the emitter's own thread, after its loop has ended and after the
 #: cancelled read has been collected with `GetOverlappedResult(bWait)`. There is never an
 #: outstanding operation at close time, so the undefined behaviour is removed rather than raced.
@@ -153,11 +153,11 @@ _NATIVE_WATCH_IS_SAFE = True
 #: How long after a watch ends before the first attempt to attach it again, and the most it waits
 #: between attempts after doubling. See `LibraryWatcher._reattach`.
 #:
-#: Not at once: the ordinary way a watch ends is a share that has just dropped, and asking a share
-#: that is not there a question every second is a stream of timeouts over a network that is already
-#: in trouble. Doubling from five seconds reaches the ceiling in six attempts, about five minutes:
-#: the same ceiling the poller's rest has, and for its reason: past it, a share that came back looks
-#: like a watcher that has stopped, and somebody goes and presses Rescan.
+#: Not immediately: the ordinary way a watch ends is a share that has just dropped, and asking a
+#: share that is not there a question every second is a stream of timeouts over a network that is
+#: already in trouble. Doubling from five seconds reaches the ceiling in six attempts, about five
+#: minutes: the same ceiling the poller's rest has, and for its reason: past it, a share that came
+#: back looks like a watcher that has stopped, and somebody goes and presses Rescan.
 REATTACH_FIRST_SECONDS = 5.0
 REATTACH_MOST_SECONDS = MAX_POLL_REST_SECONDS
 
@@ -235,7 +235,7 @@ class _Pending:
 
     * something MOVED ACROSS DIRECTORIES, which may be a folder being renamed underneath, and only
       a listing can tell that from a file going away;
-    * more than `MOST_NAMED_PATHS` files arrived at once, where a walk of the folder is cheaper
+    * more than `MOST_NAMED_PATHS` files arrived together, where a walk of the folder is cheaper
       than a payload of ten thousand strings and a `stat` each; and
     * the folder these files were in has itself gone, which is the one that cannot be decided from
       the notification and is decided on the disk instead (see `_folder_went`).
@@ -268,9 +268,9 @@ class _Pending:
 #: drive seen through WSL, where routine activity reads as constant change), the folder goes quiet
 #: for the settle-wait over and over, and each time is another scan. Those are also the filesystems
 #: a scan is slowest on, so the scans overlap: a folder that takes a minute to walk, handed to a
-#: scan every few seconds, ends up being walked by every worker at once and nothing else in the
-#: queue ever runs. Deduping the queue alone does not fix it, because each new scan is allowed the
-#: moment the last one is claimed.
+#: scan every few seconds, ends up being walked by every worker at the same time and nothing else in
+#: the queue ever runs. Deduping the queue alone does not fix it, because each new scan is allowed
+#: the moment the last one is claimed.
 #:
 #: A change made during the cooldown is not lost. The folder is re-armed for the moment the cooldown
 #: ends, so it is scanned once more, late, rather than repeatedly or never.
@@ -534,7 +534,7 @@ class LibraryWatcher:
         self._attaching: asyncio.Task[None] | None = None
         #: Which observer and handler watch each root, so ONE watch that ended can be let go of and
         #: replaced without touching the others. The two lists above are the same watches, kept for
-        #: the letting-go of all of them at once.
+        #: the letting-go of all of them together.
         self._watches: dict[str, tuple[BaseObserver, _Events]] = {}
         #: A root whose watch ended and is being attached again, by the task doing it.
         self._reattaching: dict[str, asyncio.Task[None]] = {}
@@ -692,7 +692,7 @@ class LibraryWatcher:
     async def _catch_up(self, root_id: str) -> None:
         """Ask for a pass over one library's folders, to find what moved while Sift was off.
 
-        Deduped like the scans are: a boot, a watch coming back and lost events can ask at once.
+        Deduped like the scans are: a boot, a watch coming back and lost events can ask together.
         """
         # Switched off is not a failure here. This runs for the machine rather than for somebody,
         # so a refusal is the answer rather than something to report: the queue says so in its own
@@ -975,7 +975,7 @@ class LibraryWatcher:
         parent = (root_id, "" if above == "." else above)
         waiting = self._pending.get(parent)
         if waiting is None:
-            # Due at once: the settle-wait has already been served, down here, by the burst that
+            # Due immediately: the settle-wait has already been served, down here, by the burst that
             # found this out.
             self._pending[parent] = _Pending(due=now)
         else:
@@ -1017,7 +1017,7 @@ class LibraryWatcher:
         # through `scan_shape` rather than spelling the payload out: a press names no folder at all,
         # and the dedupe matches the payload exactly, so naming the top folder's id here would
         # give the same walk two spellings that never collide, and one root would be walked twice
-        # at once, for one answer.
+        # at the same time, for one answer.
         payload: dict[str, object] = scan_shape(root_id, folder)
         if paths:
             payload["paths"] = sorted(paths)
@@ -1080,7 +1080,7 @@ def _let_go(watching: list[BaseObserver], handlers: list[_Events]) -> None:
     """Let go of these observers, and never wait on one for ever. Blocking; call it on a thread.
 
     See `LibraryWatcher._stop_observers` for why the asking is done on a thread of its own and
-    abandoned if it will not answer. The one place that knows, for all of them at once and for the
+    abandoned if it will not answer. The one place that knows, for all of them together and for the
     one watch a re-attach replaces.
     """
     if not watching:

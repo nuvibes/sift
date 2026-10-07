@@ -115,7 +115,7 @@ _CHOSEN_COVER = (
 #: One statement writes EVERY cover pointer, which is what makes "an entity has one cover" a
 #: property of the schema's use rather than a rule each writer remembers. A file cover, an uploaded
 #: cover, and the moment of a file are three columns and one decision, so choosing any of them
-#: clears the other two, and there is no arrangement in which a row claims both kinds at once.
+#: clears the other two, and there is no arrangement in which a row claims both kinds together.
 _SET_COVER = (
     "UPDATE photo_sets SET cover_asset_id = ?, cover_at_ms = ?, cover_upload_id = ?, cover_frame = ?,"
     # The clear mark, and the rule's default let go (`kernel/access/default_covers.py`).
@@ -454,7 +454,7 @@ class PhotoSetService:
         async with self._db.write() as connection:
             row = await (await connection.execute(_NEXT_POSITION, (photo_set_id,))).fetchone()
             position = int(row["next"]) if row else 0
-            # One moment for the whole add. A folder pass puts hundreds of pictures in at once and
+            # One moment for the whole add. A folder pass puts hundreds of pictures in in one go and
             # they went in together; reading the clock per picture would spread one act over
             # seconds and say they were each decided on separately.
             now = self._now()
@@ -690,8 +690,8 @@ class PhotoSetService:
     ) -> PhotoSet:
         """Create the set, or take the one another grouping made between the look and the write.
 
-        Two groupings can meet one folder or archive at once (a scan and a Stash import); the
-        unique index refuses the second set, and the loser answers with the winner's.
+        Two groupings can meet one folder or archive at the same time (a scan and a Stash import);
+        the unique index refuses the second set, and the loser answers with the winner's.
         """
         try:
             return await create()

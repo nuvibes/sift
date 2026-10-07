@@ -14,7 +14,7 @@ cheap: a handful of rows.
 Every value is guarded on the way through, the way the free-space floor is. A stored row can outlive
 the code that wrote it (a restored backup, a setting whose bounds narrowed in an update), and the
 answer to something unreadable is the default. Whether ZERO is unreadable depends on the setting, and
-each one says which: a timeout of zero expires at once and a cap of nothing is no cap, so those two
+each one says which: a timeout of zero expires immediately and a cap of nothing is no cap, so those two
 fall back; a wait of zero between requests and zero retries are things somebody chose on purpose
 (the registry offers 0 for both), so those two are honored rather than silently replaced with the
 default.

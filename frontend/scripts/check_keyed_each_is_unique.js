@@ -13,8 +13,8 @@
 //     {#each sources as source (source.source_type + (source.source_id ?? ''))}
 //
 // A fallback is a CONSTANT. Every entry that needs it gets the same one, so the moment two entries
-// are missing that field at once there are two rows under one key. The author knew the field was
-// nullable (that is what the `??` says) and then keyed on it anyway.
+// are missing that field at the same time there are two rows under one key. The author knew the
+// field was nullable (that is what the `??` says) and then keyed on it anyway.
 //
 // ## The rule
 //

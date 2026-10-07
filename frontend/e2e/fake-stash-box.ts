@@ -91,7 +91,7 @@ function answer(response: ServerResponse, body: unknown): void {
 /**
  * Start the stand-in, holding `boxes`: each host name's entries, by id.
  *
- * On a port the system chooses, so specs running at once each have their own.
+ * On a port the system chooses, so specs running at the same time each have their own.
  */
 export async function startFakeStashBoxes(
 	boxes: Record<string, FakePerformer[]>

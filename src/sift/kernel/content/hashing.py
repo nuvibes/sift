@@ -53,7 +53,7 @@ from sift.kernel.paths import O_NONBLOCK
 log = get_logger(__name__)
 
 # Big enough that the per-call overhead disappears, small enough that a 4K video does not arrive
-# in memory all at once. A worker per core, each holding one of these, is the memory ceiling.
+# in memory all together. A worker per core, each holding one of these, is the memory ceiling.
 CHUNK_BYTES = 4 * 1024 * 1024
 
 # Read in chunks rather than mapped into memory, and hashed on one thread rather than several.
@@ -241,7 +241,7 @@ async def identity_file(checked: IngressResult) -> str:
 
     Off the event loop and in the storage's lane like the whole-file digest, though it reads about
     3.5 MiB at most: fourteen seeks on a share are fourteen round trips, and the lane is what keeps
-    a scan of a thousand new files from asking for them all at once.
+    a scan of a thousand new files from asking for them all in one go.
     """
     with timing_hook("content.identity", file_size=checked.size, file_type=checked.media.name):
         async with lanes.reading(checked.path):
@@ -259,7 +259,7 @@ async def hash_file(checked: IngressResult) -> str:
     """
     with timing_hook("content.hash", file_size=checked.size, file_type=checked.media.name):
         # In the storage's lane: this is the heaviest read Sift makes of a file, the whole of it
-        # end to end, and a share asked to serve a dozen of them at once collapses.
+        # end to end, and a share asked to serve a dozen of them at the same time collapses.
         async with lanes.reading(checked.path):
             return await asyncio.to_thread(_digest_settled, checked.path, checked.size)
 

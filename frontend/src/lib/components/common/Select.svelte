@@ -254,8 +254,8 @@
 
 <!--
 	The chosen value is read back on every render (`bind:` with a getter and a setter), so a set this
-	file declines (a press) is undone at once. A caller whose value lands after a round trip shows
-	the old answer until then, the truthful direction.
+	file declines (a press) is undone immediately. A caller whose value lands after a round trip
+	shows the old answer until then, the truthful direction.
 -->
 <Select.Root
 	type="single"

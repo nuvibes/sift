@@ -107,8 +107,8 @@ _LOOKS_LIKE_A_WALL = frozenset({403, 451, 530, 999})
 #: `wall-age` is here. An age gate on a site cookies help on is lifted by a jar from a signed-in
 #: browser, the same one-press fix the three above wait for, and a YouTube link failing on one
 #: refusal while waiting on another would read as arbitrary from the row. The waiting row carries
-#: the age wall's own sentence as its reason, so the state and the reason are both true at once.
-#: With a jar already saved and the gate still up it fails, exactly as a 403 does: there is
+#: the age wall's own sentence as its reason, so the state and the reason are both true at the same
+#: time. With a jar already saved and the gate still up it fails, exactly as a 403 does: there is
 #: nothing left to add.
 COOKIES_ANSWER: frozenset[str] = frozenset({"wall-login", "wall-age", "http-401", "http-403"})
 

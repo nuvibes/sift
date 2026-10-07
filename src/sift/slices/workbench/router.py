@@ -112,7 +112,7 @@ class _Tokens:
     withheld: frozenset[str] = frozenset()
     #: The files among them whose picture has not been made yet: a card leaves them out rather than
     #: drawing a box that waits for an address with nothing behind it. Read from the same answer as
-    #: the rest, so it costs no read of its own, and it is every queue's at once for the reason the
+    #: the rest, so it costs no read of its own, and it is every queue's together for the reason the
     #: token is: a queue written next year cannot forget it.
     unmade: frozenset[str] = frozenset()
 
@@ -285,8 +285,8 @@ _ADDRESS = {
     # A FOLDER is the Files wall filtered to it, and named by its ID: the address the folder
     # browser writes when somebody opens one (`FolderExplorer.svelte`, `nameFor`), so a line here
     # and a click land on one list. Never the PATH, which names nothing for a library folder's own
-    # folder (its path is empty: `/browse?in=`) and two folders at once where two library folders
-    # share a "2024". See `history_events._STILL_THERE`.
+    # folder (its path is empty: `/browse?in=`) and two folders at the same time where two library
+    # folders share a "2024". See `history_events._STILL_THERE`.
     "folder": "/browse?in={0}",
     # A DOWNLOAD IS A ROW ON A QUEUE, so its address is the queue with that row picked out. The
     # same shape a folder has and for the same reason: it has no page of its own, it has a place on

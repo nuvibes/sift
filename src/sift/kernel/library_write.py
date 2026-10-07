@@ -189,7 +189,7 @@ async def move_directory(source: Path, destination: Path) -> None:
 
     **Sift renaming a folder is not the same as Sift giving a folder a second name.** A name kept
     beside the disk's own drifts the moment somebody renames the
-    directory in their file manager; this changes both at once, because it changes the directory.
+    directory in their file manager; this changes both together, because it changes the directory.
 
     Both ends are checked. A move has a source folder and a destination folder and either can be
     somewhere the filesystem refuses, so it is asked about each.

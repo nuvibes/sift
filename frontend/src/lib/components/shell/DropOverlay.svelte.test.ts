@@ -273,9 +273,9 @@ describe('a box on the page that takes its own drops', () => {
 	/*
 	 * A drag carrying both, which is what a browser actually hands over: dragging an image or a
 	 * link out of a browser fills the payload with `text/uri-list` and
-	 * `Files` at once. The card asks `carriesALink` and lights up; this overlay must stand down for
-	 * it, or one gesture would draw two offers and a drop would start two downloads, one filed
-	 * under the card and one filed nowhere.
+	 * `Files` at the same time. The card asks `carriesALink` and lights up; this overlay must stand
+	 * down for it, or one gesture would draw two offers and a drop would start two downloads, one
+	 * filed under the card and one filed nowhere.
 	 *
 	 * Both halves are asserted: the offer must not arm, and the drop must not be taken.
 	 */

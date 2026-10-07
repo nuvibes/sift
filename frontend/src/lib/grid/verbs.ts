@@ -162,7 +162,7 @@ export interface FileVerbHandlers {
 	pin?: (ids: string[], pinned: boolean) => void;
 	rate: (ids: string[], rating: number | null) => void;
 	move: (ids: string[]) => void;
-	/** Rename the files at once, every new name shown before anything moves. */
+	/** Rename the files in one go, every new name shown before anything moves. */
 	rename: (ids: string[]) => void;
 	compress: (ids: string[]) => void;
 	edit: (ids: string[]) => void;

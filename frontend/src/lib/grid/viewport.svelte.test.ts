@@ -153,8 +153,8 @@ describe('the video pool is capped', () => {
 		const pool = new VideoPool();
 		const granted: string[] = [];
 
-		// Twenty tiles on screen at once, which "play everything visible" makes ordinary on a large
-		// display. Twenty decoders is not ordinary: it is how a tab runs out of memory.
+		// Twenty tiles on screen at the same time, which "play everything visible" makes ordinary
+		// on a large display. Twenty decoders is not ordinary: it is how a tab runs out of memory.
 		for (let index = 0; index < 20; index += 1) {
 			if (pool.claim(`asset-${index}`, index)) granted.push(`asset-${index}`);
 		}

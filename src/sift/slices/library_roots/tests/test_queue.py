@@ -151,7 +151,7 @@ async def test_deleting_a_quarantined_file_cannot_be_taken_back(settings: Settin
 # --- the skipped card ---------------------------------------------------------------------------
 
 
-async def test_the_skipped_card_counts_across_every_folder_at_once() -> None:
+async def test_the_skipped_card_counts_across_every_folder_together() -> None:
     """The skipped card counts with one `COUNT` across every folder."""
     rejections = Rejections(total=16)
 

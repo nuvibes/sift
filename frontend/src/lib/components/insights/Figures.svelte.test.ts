@@ -1,6 +1,6 @@
 /* Insights' figures count up from zero when a period's answer arrives, and at no other time: the
  * one count in the app that moves. The cell is as wide as the final figure throughout, and reduced
- * motion draws the figure at once. */
+ * motion draws the figure immediately. */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushSync, mount, unmount } from 'svelte';
@@ -106,7 +106,7 @@ describe('a period arriving', () => {
 		expect(counted()).toBe('310');
 	});
 
-	it('draws a figure changed by a re-read at once, and an unchanged one stays still', () => {
+	it('draws a figure changed by a re-read immediately, and an unchanged one stays still', () => {
 		const props = draw([sessions(1240), figure('Hours', 12, 'count')]);
 		frameAt(1000);
 		frameAt(1600);
@@ -118,7 +118,7 @@ describe('a period arriving', () => {
 		expect(frames, 'a re-read started a count').toHaveLength(0);
 	});
 
-	it('draws a time of day at once, because it is not a quantity', () => {
+	it('draws a time of day immediately, because it is not a quantity', () => {
 		draw([figure('Usual start', 430, 'minute_of_day')]);
 
 		expect(counted()).toBe(clockTime('07:10'));
@@ -127,7 +127,7 @@ describe('a period arriving', () => {
 });
 
 describe('when motion is off', () => {
-	it('draws the figure at once', () => {
+	it('draws the figure immediately', () => {
 		motion.preference = 'reduce';
 		draw([sessions(1240)]);
 

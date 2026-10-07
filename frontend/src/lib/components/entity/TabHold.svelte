@@ -12,7 +12,7 @@
 	 * cards), so a press never shows an empty screen between two full ones. The wall being left
 	 * stays over the new one, quieter and out of reach, until the new one has its answer and has
 	 * finished arriving; it leaves the top bar to the new one (`TabLayer`). The new wall is drawn at
-	 * once underneath, so it asks the server at once.
+	 * once underneath, so it asks the server immediately.
 	 *
 	 * NOT ON THE GALLERY: it draws whatever walls a page hands it, and those walls fetch.
 	 */

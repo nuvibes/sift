@@ -59,7 +59,7 @@ async function addToCollection(page: Page, name: string): Promise<void> {
 	await expect(page.getByRole('dialog')).toBeVisible();
 }
 
-test('the History pane reads oldest first and gains a line at once after Add to', async ({
+test('the History pane reads oldest first and gains a line immediately after Add to', async ({
 	page
 }) => {
 	await signInAsAdmin(page);

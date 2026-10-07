@@ -892,7 +892,7 @@ async def test_the_naming_facts_say_what_a_template_can_name_and_skip_unknown_fi
     assert (facts[loose]["creator"], facts[loose]["site"]) == (None, None)
 
 
-async def test_every_file_a_product_gave_up_on_can_be_listed_at_once(
+async def test_every_file_a_product_gave_up_on_can_be_listed_in_one_go(
     content_store: ContentStore,
 ) -> None:
     """The whole set rather than a page of it, for a sweep that already holds its settled set in
@@ -991,6 +991,34 @@ async def test_what_is_lacking_can_be_counted_over_what_one_user_sees(
     assert await store.count_lacking_visible(viewer, [pictures]) == Lacking(each=(2,), files=2)
     assert await store.count_lacking_visible(other, [filed]) == Lacking(each=(0,), files=0)
     assert await store.count_lacking_visible(viewer, []) == Lacking(each=(), files=0)
+
+
+async def test_an_admins_count_is_the_librarys_less_what_is_concealed_from_them(
+    content_store: ContentStore, temp_db: Any, library_root: LibraryRoot
+) -> None:
+    """An admin may see every file with a copy, so the library's kept count less their concealed
+    files answers what the walk of their stored visibility answers, without the walk."""
+    from sift.kernel.access import Role
+    from sift.testing.fixtures import create_user
+
+    store = content_store
+    files = [await _read_video(store, name) for name in ("seen", "hidden", "given-up", "unseen")]
+    for one in files:
+        await store.add_location(asset_id=one, root_id=library_root.id, rel_path=f"{one}.mp4")
+    await store.record_verdict(files[2], VerdictProduct.THUMBNAILS, code="no_frame", reason="x")
+    admin = (await create_user(temp_db, Role.ADMIN)).id
+    await temp_db.execute(
+        "UPDATE viewer_assets SET concealed = 1 WHERE user_id = ? AND asset_id = ?",
+        (admin, files[1]),
+    )
+    pictures = lacks_derivative([DerivativeKind.THUMB])
+    assert pictures is not None
+    filed = Lack(pictures.condition, pictures.params, product=VerdictProduct.THUMBNAILS.value)
+
+    assert await store.count_lacking_visible(admin, [filed], admin=True) == Lacking((2,), 2)
+    for lacks in ([filed], [pictures], [filed, pictures]):
+        walked = await store.count_lacking_visible(admin, lacks)
+        assert await store.count_lacking_visible(admin, lacks, admin=True) == walked
 
 
 async def test_a_row_the_pass_gave_up_on_stops_costing_every_import_a_whole_read(

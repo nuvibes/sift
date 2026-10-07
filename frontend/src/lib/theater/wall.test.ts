@@ -738,7 +738,7 @@ describe('the sound', () => {
 		expect(wall.isAudible(0), 'a cell was audible through the master mute').toBe(false);
 	});
 
-	it('lets several cells be heard at once, which is the point of the wall', () => {
+	it('lets several cells be heard together, which is the point of the wall', () => {
 		const wall = new Wall();
 		wall.setLayout('grid');
 		wall.toggleMute(0);
@@ -1632,7 +1632,7 @@ describe('silencing everything, and letting it back', () => {
 	});
 });
 
-describe('talking to every cell at once', () => {
+describe('talking to every cell in one go', () => {
 	/* The backtick beside the numbers. A SELECTION rather than a second set of shortcuts, so every
 	   verb the bar and the keyboard already have reaches the whole wall without learning a key. */
 

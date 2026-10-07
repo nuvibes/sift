@@ -37,7 +37,7 @@ class RunAnswered:
 
     `decision_id` is the receipt the press wrote: empty where nothing changed, so nothing was
     written, or where no recorder is wired. It is handed back so the surface that pressed can offer
-    Undo at once: it reads it off the reply, and a bulk yes or no over two thousand
+    Undo immediately: it reads it off the reply, and a bulk yes or no over two thousand
     faces is exactly the press somebody wants to take back within seconds rather than find in
     History later.
     """
@@ -316,7 +316,7 @@ class DecisionsMixin(PicturesMixin):
     ) -> int:
         """Agree that several appearances are the same person. Returns how many were written.
 
-        One call rather than one per face, because the screen this serves is a whole pile at once
+        One call rather than one per face, because the screen this serves is a whole pile in one go
         and forty separate requests is forty round trips writing to the same person's gallery, each
         waiting on the last for the write lock. Each is still confirmed individually underneath, so
         there is one path by which a face becomes a reference and not two.
@@ -638,9 +638,9 @@ class DecisionsMixin(PicturesMixin):
         """Take the name off any of these faces that has one, before moving or setting it aside.
 
         Setting aside and moving are decisions about faces nobody has placed. Done to a face that
-        carries a name they leave it in two states at once: still listed under that person, and also
-        sitting in a group of strangers. So the name comes off first, which also withdraws the
-        reference photos it gave, and records the refusal so the next scan does not put it back.
+        carries a name they leave it in two states at the same time: still listed under that person,
+        and also sitting in a group of strangers. So the name comes off first, which also withdraws
+        the reference photos it gave, and records the refusal so the next scan does not put it back.
 
         Removing does not go through here. It takes the face away entirely, and a face that is gone
         is not in Identified either.

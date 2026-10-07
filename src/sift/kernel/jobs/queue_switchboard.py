@@ -72,7 +72,7 @@ class SwitchboardReads(QueueCore):
         return answer
 
     def forget_quiet_hours(self) -> None:
-        """Ask quiet hours again at the next claim: a saved When or range reaches the queue at once."""
+        """Ask quiet hours again at the next claim: a saved When or range reaches the queue immediately."""
         self._quiet_seen = None
 
     async def demand_by_type(self) -> dict[str, int]:

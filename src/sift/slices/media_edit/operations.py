@@ -426,7 +426,7 @@ _TURN_SUFFIX = {
     Turn.FLIP: "-flipped",
 }
 
-#: What a copy made by more than one operation at once is called.
+#: What a copy made by more than one operation at the same time is called.
 #:
 #: One operation keeps the name that says which it was. Several cannot: the names are built to be
 #: recognizable at a glance in a file manager, and four of them end to end is neither recognizable

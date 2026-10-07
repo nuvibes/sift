@@ -166,7 +166,7 @@
 	let importing = $state(false);
 	let imported = $state<PackImported | null>(null);
 
-	/* Said after an import that held new faces: the pass over them is queued at once. */
+	/* Said after an import that held new faces: the pass over them is queued immediately. */
 	const RECOGNIZING_STARTED = ' Sift has started recognizing who they are in your library.';
 
 	/* How many faces a file brought and how many people it holds, then that recognizing has
@@ -424,7 +424,7 @@
 		}
 	}
 
-	/* Stop the sweep and everything it queued. The watcher is told at once rather than left to
+	/* Stop the sweep and everything it queued. The watcher is told immediately rather than left to
 	 * notice on its next tick: cancelling is instant, and two seconds of a screen still counting
 	 * down reads as a button that did nothing. */
 	async function stopScanningEverything() {
@@ -535,7 +535,7 @@
 	{/if}
 {/snippet}
 
-<!-- The lists this section owns: who Sift can recognize, and the two ways to teach it many at once.
+<!-- The lists this section owns: who Sift can recognize, and the two ways to teach it many in one go.
      Drawn with recognition off too, because switching it off for a week is no reason to lose the
      list. -->
 <!-- A count in the people list: the figure, or a quiet dash read out as none. -->

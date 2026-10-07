@@ -559,7 +559,7 @@
 		visibility: hidden;
 	}
 
-	/* It opens as every small surface does, with the stylesheet's `rise`. It leaves at once: it is
+	/* It opens as every small surface does, with the stylesheet's `rise`. It leaves immediately: it is
 	   usually taken away by a press on the control under it, and whatever that press opens must not
 	   have a fading label over it. */
 	.bubble.placed {

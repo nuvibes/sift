@@ -549,7 +549,7 @@ describe('cancelling asks only where something is lost', () => {
 		expect(HANDLERS.oncancel).not.toHaveBeenCalled();
 	});
 
-	it('cancels a waiting row at once, with no question', () => {
+	it('cancels a waiting row immediately, with no question', () => {
 		HANDLERS.oncancel.mockClear();
 		render(item('queued'));
 		pressCancel();

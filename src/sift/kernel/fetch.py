@@ -24,7 +24,7 @@ from sift.kernel.log import get_logger
 
 log = get_logger(__name__)
 
-#: How much of a download to read at once.
+#: How much of a download to read at a time.
 CHUNK = 1 << 20
 
 #: How long to wait for the first byte, and for each subsequent read. Split, because a slow but

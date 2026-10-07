@@ -143,7 +143,7 @@ export const RAIL_NAV: RailItem[] = [
 	/* The marked stretches: a piece of one file, the smallest unit the library has. */
 	{ id: 'loops', href: '/loops', label: 'Loops', icon: 'all_inclusive', phone: 'library' },
 	{ id: 'favorites', href: '/favorites', label: 'Favorites', icon: 'favorite', phone: 'library' },
-	/* Several videos at once: a way of LOOKING, so the last row above the rule. No `admin`, as for
+	/* Several videos together: a way of LOOKING, so the last row above the rule. No `admin`, as for
 	 * Browse. Cut from a phone, which has the Remote (`THEATER_ON_A_PHONE`). */
 	{
 		id: 'theater',

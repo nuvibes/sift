@@ -192,9 +192,9 @@ class Describing {
  * Whether the search box should offer to search by meaning.
  *
  * Held here rather than asked for by the box, so that turning the switch off makes the control go
- * at once instead of at the next full page load. Asking once when the box is drawn is correct for a
- * fact about the machine and wrong for one somebody can change from another screen, and this is
- * both.
+ * immediately instead of at the next full page load. Asking once when the box is drawn is correct
+ * for a fact about the machine and wrong for one somebody can change from another screen, and this
+ * is both.
  */
 class Availability {
 	available = $state(false);

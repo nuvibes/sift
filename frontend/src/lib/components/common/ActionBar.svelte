@@ -22,14 +22,14 @@
 	 * It floats over the grid rather than pushing it down, because a bar that reflowed the layout
 	 * would move the tile under the pointer at the moment somebody is clicking tiles.
 	 *
-	 * The count is not decoration. Every action offered here runs over several things at once, and
+	 * The count is not decoration. Every action offered here runs over several things together, and
 	 * the number is the only thing on screen that says how many, so it is stated here, and stated
 	 * again in the confirm dialog, and the two come from the same place.
 	 */
 	import type { Snippet } from 'svelte';
 	import Icon from '$lib/components/Icon.svelte';
 	import { arrive } from '$lib/shell/motion.svelte';
-	import { MOST_AT_ONCE } from '$lib/grid/grid.svelte';
+	import { MOST_SELECTED } from '$lib/grid/grid.svelte';
 	import { phoneWidth } from './phone-width.svelte';
 
 	interface Props {
@@ -103,13 +103,13 @@
 
 	/* WHAT THE PRESS WILL ACTUALLY DO, which on a large library is not "all" of it.
 	 *
-	 * Selecting a whole query is capped (see `MOST_AT_ONCE`) and a button reading "Select all
+	 * Selecting a whole query is capped (see `MOST_SELECTED`) and a button reading "Select all
 	 * 84,000" that hands back a thousand is the exact fault the cap's own comment warns about: a
 	 * short answer nobody was told about. So the offer states the ceiling wherever the query is
 	 * bigger than it, and says "all" only where all is what it means. */
 	const allLabel = $derived(
-		(total ?? 0) > MOST_AT_ONCE
-			? `Select ${MOST_AT_ONCE.toLocaleString()} of ${(total ?? 0).toLocaleString()}`
+		(total ?? 0) > MOST_SELECTED
+			? `Select ${MOST_SELECTED.toLocaleString()} of ${(total ?? 0).toLocaleString()}`
 			: `Select all ${(total ?? 0).toLocaleString()}`
 	);
 

@@ -45,7 +45,7 @@ watcher hears about it, and what it does is ask for the catch-up pass that alrea
 ## A watch that ends is reported too, and is not restarted here
 
 A share that drops, a folder that goes, a handle the system no longer honours: the read fails, or
-the next one will not go out. Re-issuing it on the same handle answers the same no at once, so the
+the next one will not go out. Re-issuing it on the same handle answers the same no immediately, so the
 loop that asks again would spin a core and notice nothing for as long as Sift ran. So the emitter
 stops its own loop, lets go of its handle the ordinary way, and calls `on_ended`: once, and never
 for a stop somebody asked for. Coming back is the watcher's: a new handle when the folder answers
@@ -338,7 +338,7 @@ class SafeWindowsApiEmitter(WindowsApiEmitter):
         if moved.value == 0:
             # The buffer overflowed: the operating system had more changes than it could hold and
             # threw them away. Reported rather than read as quiet, because "nothing happened" and
-            # "everything happened at once" are the same zero.
+            # "everything happened at the same time" are the same zero.
             log.info("library.native_watch_overflowed", path=str(self.watch.path))
             if self._on_overflow is not None:
                 self._on_overflow()

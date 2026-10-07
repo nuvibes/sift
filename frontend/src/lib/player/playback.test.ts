@@ -301,7 +301,7 @@ describe('after the frame is on screen', () => {
 		expect(go).toHaveBeenCalledOnce();
 	});
 
-	it('goes at once where it cannot', () => {
+	it('goes immediately where it cannot', () => {
 		const go = vi.fn();
 		afterTheFrame(null, go);
 		expect(go).toHaveBeenCalledOnce();

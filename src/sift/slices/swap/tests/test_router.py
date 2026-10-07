@@ -145,7 +145,7 @@ async def test_with_the_keys_locked_the_device_is_not_made_and_cannot_be_reset(
     assert made["device_id"] and not made["locked"]
 
 
-async def test_two_saved_filters_at_once_are_refused_with_the_words(world: Any) -> None:
+async def test_two_saved_filters_together_are_refused_with_the_words(world: Any) -> None:
     client, sessions, _hoster, _route = world
     body = {
         "chosen": [{"kind": "filter", "id": "a"}, {"kind": "filter", "id": "b"}],

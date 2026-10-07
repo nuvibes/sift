@@ -143,7 +143,7 @@ def _filed(recorded: Recorded, held: dict[str, Any]) -> Worded | None:
 
 
 def _declined(recorded: Recorded, held: dict[str, Any]) -> Worded | None:
-    """A person's No on a whole username: every file its names filed there taken back at once."""
+    """A person's No on a whole username: every file its names filed there taken back in one go."""
     username_id = non_empty_str(held.get("username_id"))
     files = held.get("files")
     if username_id is None or not isinstance(files, list) or not files:

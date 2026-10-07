@@ -209,8 +209,8 @@
 	}
 
 	/*
-	 * A settings path pasted into the box goes there at once: the paste IS the choice. Typed by hand,
-	 * it is the one result, and Enter opens it.
+	 * A settings path pasted into the box goes there immediately: the paste IS the choice. Typed by
+	 * hand, it is the one result, and Enter opens it.
 	 */
 	function onSearchPaste(event: ClipboardEvent) {
 		const text = event.clipboardData?.getData('text/plain') ?? '';

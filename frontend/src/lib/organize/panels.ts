@@ -124,7 +124,7 @@ const PANELS: Record<string, Component> = {
 
 /**
  * THE CONTACT SHEETS: the queues whose work is looking at a whole group side by side (the copies of
- * one file, the look-alike faces of one person) and deciding about all of it at once.
+ * one file, the look-alike faces of one person) and deciding about all of it in one go.
  *
  * Not drawn at a phone's width, for the first version the phone has: a group is compared by laying
  * its pictures next to each other, and a phone holds two across, so a group of forty is a scroll

@@ -79,7 +79,7 @@ it('is reachable again the moment it is not quiet', () => {
 	expect(bar?.getAttribute('aria-hidden')).toBe('false');
 });
 
-it('is visible at once on the way up, so the Tab that raises it can enter it', () => {
+it('is visible immediately on the way up, so the Tab that raises it can enter it', () => {
 	const source = stageBarSource.replace(/\t/g, '');
 	expect(source, 'the bar stayed hidden while it faded in').toContain(
 		'transition:\ntranslate var(--dur-slow) var(--ease),\nopacity var(--dur-slow) var(--ease);\n}'

@@ -154,7 +154,7 @@ WHEELS: tuple[Wheel, ...] = (
 TOTAL_BYTES = sum(wheel.size_bytes for wheel in WHEELS)
 
 #: What the set takes on disk once unpacked: 1.8 GB of libraries beside the 1.34 GB of wheels they
-#: came out of. Both exist at once while the last wheel is being unpacked, which is what
+#: came out of. Both exist at the same time while the last wheel is being unpacked, which is what
 #: `PEAK_BYTES` is: the room the install needs, and the figure the screen says and the download is
 #: refused without.
 UNPACKED_BYTES = 1_800_000_000
@@ -527,9 +527,9 @@ def _readable(raw: bytes) -> list[str]:
     the other, half the output is unreadable, and the unreadable half can be the half that says
     what is actually wrong.
 
-    Dropping the zero bytes makes both halves readable at once, because everything either of them
-    says is ASCII. It is the smallest thing that is true of both rather than a guess about which one
-    a given run produced.
+    Dropping the zero bytes makes both halves readable at the same time, because everything either
+    of them says is ASCII. It is the smallest thing that is true of both rather than a guess about
+    which one a given run produced.
     """
     return raw.replace(b"\x00", b"").decode("utf-8", "replace").strip().splitlines()
 

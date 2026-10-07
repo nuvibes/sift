@@ -18,7 +18,7 @@ it('fades with the chrome in full screen, and in a window whose top bar has the 
 	expect(rowQuiet(true, true, false)).toBe(false);
 });
 
-it('holds the menus whole at once, so the title under it never slides', () => {
+it('holds the menus whole immediately, so the title under it never slides', () => {
 	const source = readFileSync(
 		join(dirname(fileURLToPath(import.meta.url)), '../components/shell/FilterBar.svelte'),
 		'utf8'

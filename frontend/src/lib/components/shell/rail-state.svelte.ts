@@ -135,7 +135,7 @@ function arrange(stored: string[]): string[] {
 	}
 
 	// Whatever this version has and the stored list did not. Walked in default order so several new
-	// destinations at once land in the order they ship in rather than in map order.
+	// destinations at the same time land in the order they ship in rather than in map order.
 	for (const id of DEFAULT_RAIL_ORDER) {
 		if (seen.has(id)) continue;
 
@@ -223,7 +223,7 @@ class RailState {
 	 * Called once the shell knows who is looking, which is before the rail is drawn at all. Two
 	 * things happen, in this order, and the order is the point:
 	 *
-	 *   1. A cache belonging to somebody else is dropped at once, before any request is made.
+	 *   1. A cache belonging to somebody else is dropped immediately, before any request is made.
 	 *      Waiting for the server would leave one person's rail on screen while another person's
 	 *      account was being fetched.
 	 *   2. The account's own copy replaces what is on screen when it arrives.
@@ -276,7 +276,7 @@ class RailState {
 		this.#arrangedEarly = false;
 	}
 
-	/* Write the arrangement down: this browser's copy at once, the account's a moment later.
+	/* Write the arrangement down: this browser's copy immediately, the account's a moment later.
 	 *
 	 * The local write is what makes the next page load on THIS machine draw the right thing
 	 * immediately. The remote one is what makes the next machine draw it. A failed remote write is

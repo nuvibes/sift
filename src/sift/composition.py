@@ -119,8 +119,8 @@ class LibraryNaming:
         """The tag this word means, made when it means none and that is allowed.
 
         The race between looking and making is handled by catching the refusal rather than by
-        locking: two imports asking for the same new tag at once is an ordinary thing, the name is
-        unique, and the second one wants the row the first just made.
+        locking: two imports asking for the same new tag at the same time is an ordinary thing, the
+        name is unique, and the second one wants the row the first just made.
         """
         cleaned = name.strip()
         if not cleaned:

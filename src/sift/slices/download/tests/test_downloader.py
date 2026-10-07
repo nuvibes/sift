@@ -253,7 +253,7 @@ async def test_a_site_that_requires_cookies_waits_for_them_before_anything_is_as
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Instagram pointed at a tool, with nothing saved: every post is refused to a guest there
-    (measured), so the download is held for cookies at once (on the same door a refusal opens),
+    (measured), so the download is held for cookies immediately (on the same door a refusal opens),
     and no tool is started to fetch a login wall."""
     seen: list[list[str]] = []
     monkeypatch.setattr(subproc, "run", _returns(SubprocessResult(0, "", ""), seen))

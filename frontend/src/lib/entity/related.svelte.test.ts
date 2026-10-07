@@ -490,7 +490,7 @@ describe('the strip after the library moves', () => {
 		counts.sawBoxes([]);
 		expect(counts.boxes).toEqual([]);
 
-		// The panel under History reports both at once, and its answer is the fresher one.
+		// The panel under History reports both together, and its answer is the fresher one.
 		counts.sawDisagreements(1, ['FansDB']);
 		expect(counts.current.disagreements).toBe(1);
 		expect(counts.boxes).toEqual(['FansDB']);

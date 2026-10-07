@@ -60,7 +60,7 @@ Choice = Annotated[str, Field(min_length=1, max_length=80)]
 Repeat = Literal["once", "loop_all", "loop_one"]
 
 NO_SCREEN = "Sift couldn't find that screen."
-"""What a phone is told about a screen it cannot reach, for every reason at once.
+"""What a phone is told about a screen it cannot reach, for every reason in one go.
 
 One sentence for a screen that went quiet, one that was never offered and one belonging to somebody
 else, because telling those apart is telling a stranger which ids are real."""
@@ -103,7 +103,7 @@ class ScreenReport(Wire):
     count: int | None = Field(default=None, ge=0)
     #: How long a wall's cell holds a file before it moves on, in seconds; null for no limit.
     timer: int | None = Field(default=None, ge=0, le=tuning.LONGEST_TIMER_SECONDS)
-    #: Whether a wall is talking to every cell at once, and whether the cell the bar is drawing
+    #: Whether a wall is talking to every cell together, and whether the cell the bar is drawing
     #: is held or muted on its own (the wall's own hold and silence are `playing` and `muted`).
     every_cell: bool = False
     cell_held: bool | None = None

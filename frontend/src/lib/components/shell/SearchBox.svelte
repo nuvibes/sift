@@ -67,7 +67,7 @@
 	let chips = $state<Chip[]>([]);
 	let typed = $state('');
 
-	/* A field chosen with no value yet, drawn as a chip at once so one Backspace takes it off. Not
+	/* A field chosen with no value yet, drawn as a chip immediately so one Backspace takes it off. Not
 	   a `Chip`: a chip is a field and a value. */
 	let pending = $state<string | null>(null);
 

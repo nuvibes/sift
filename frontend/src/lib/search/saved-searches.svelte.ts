@@ -201,7 +201,7 @@ class SavedSearches {
 	}
 
 	async remove(id: string): Promise<void> {
-		// Optimistic: it is gone from the list at once, and the server is told. A failed delete is
+		// Optimistic: it is gone from the list immediately, and the server is told. A failed delete is
 		// reconciled by the next load rather than left mid-animation.
 		this.items = this.items.filter((item) => item.id !== id);
 		await api.del(`/search/saved/${id}`);

@@ -24,7 +24,7 @@ from sift.slices.faces.tuning import QUALITY_VERSION
 
 #: STARTERS ARE RETIRED: every starter picture (`Origin.SEED`) of one person still in use is marked
 #: retired, in the transaction of the write that makes it true, so both kinds never describe her
-#: at once. Retired rather than deleted: the row stops the same picture being filed again.
+#: at the same time. Retired rather than deleted: the row stops the same picture being filed again.
 _RETIRE_STARTERS = (
     "UPDATE face_references SET retired_at = ? "
     "WHERE person_id = ? AND origin = 'seed' AND retired_at IS NULL"

@@ -532,7 +532,7 @@ test('a video that has never had a strip built still edits, and asks for none', 
 	page
 }) => {
 	/* The frames come from the video itself, not from a strip built after import, so a video
-	 * added a moment ago is editable at once.
+	 * added a moment ago is editable immediately.
 	 */
 	let stripAsked = 0;
 	await page.route('**/api/assets/*/sprite*', (route) => {

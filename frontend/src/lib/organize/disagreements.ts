@@ -3,10 +3,10 @@
  * the Yes or No over a run of hers.
  *
  * A disagreement is a name a pass filed (a folder, a filename, a stash-box) on a file whose one face
- * Sift recognized as somebody else. A pass files a whole folder at once, so its mistakes come by the
- * hundred under one name, and the tab reads them a person at a time. The server gathers, orders and
- * narrows (`FaceService.disagreeing_people`, `disagreements_of`, `answer_disagreements`); this is the
- * three doors to it and nothing else.
+ * Sift recognized as somebody else. A pass files a whole folder in one go, so its mistakes come by
+ * the hundred under one name, and the tab reads them a person at a time. The server gathers, orders
+ * and narrows (`FaceService.disagreeing_people`, `disagreements_of`, `answer_disagreements`); this
+ * is the three doors to it and nothing else.
  */
 import { ApiError, api } from '$lib/api/client';
 import type { components } from '$lib/api/schema';

@@ -11,11 +11,11 @@
  * elements is one. The API was built for this and it is easy to use it the other way by accident.
  *
  * **A capped pool.** A <video> element is not markup, it is a decoder. Autoplay set to "everything
- * visible" on a large screen can put a hundred tiles on screen at once, and a hundred decoders will
- * exhaust memory and stall the compositor: on a modest laptop, which is the machine this has to
- * work on, it takes considerably fewer. So there is a fixed number of them, they are handed to
- * whichever tiles are most central, and every other visible tile shows its still. The cap is the
- * safety property: without it, the setting is a way for a user to hang their own browser.
+ * visible" on a large screen can put a hundred tiles on screen at the same time, and a hundred
+ * decoders will exhaust memory and stall the compositor: on a modest laptop, which is the machine
+ * this has to work on, it takes considerably fewer. So there is a fixed number of them, they are
+ * handed to whichever tiles are most central, and every other visible tile shows its still. The cap
+ * is the safety property: without it, the setting is a way for a user to hang their own browser.
  */
 
 import { browser } from '$app/environment';
@@ -24,7 +24,7 @@ import { browser } from '$app/environment';
 import { SvelteMap } from 'svelte/reactivity';
 
 /*
- * How many videos may decode at once.
+ * How many videos may decode at the same time.
  *
  * Four, and it is a floor rather than a measurement: the number a weak machine can sustain, not
  * the number a strong one could. The visible failure of too few is that a tile shows a still
@@ -33,7 +33,7 @@ import { SvelteMap } from 'svelte/reactivity';
 export const VIDEO_POOL_CAP = 4;
 
 /*
- * How many may decode at once when somebody has asked for everything visible.
+ * How many may decode at the same time when somebody has asked for everything visible.
  *
  * "Preview everything visible" is supposed to mean everything visible, and with the cap above it
  * would mean four: on a screen of forty tiles, thirty-six sitting still and the setting looking
@@ -60,7 +60,7 @@ const ROOT_MARGIN = '300px 0px';
 const ON_SCREEN_THRESHOLDS = [0, 0.25, 0.6, 1];
 
 /*
- * How many fetched clips are kept in memory at once, OFF the screen.
+ * How many fetched clips are kept in memory at the same time, OFF the screen.
  *
  * Roughly a screen's worth. A browser holds a blob until its URL is revoked, so an unbounded
  * cache is a slow memory leak that only shows up after somebody has scrolled a long way, which
@@ -187,7 +187,7 @@ export class VideoPool {
 		return this.#cap;
 	}
 
-	/** Change how many may play at once, dropping the weakest claims if the cap came down.
+	/** Change how many may play at the same time, dropping the weakest claims if the cap came down.
 	 *
 	 * For the autoplay setting, which is a different answer to "how many is safe": four while the
 	 * pool fills itself from scrolling, many more when somebody has explicitly asked for everything

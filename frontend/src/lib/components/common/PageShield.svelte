@@ -34,8 +34,8 @@
 	 * finger is up, a turn or more later, so a shield that went at the release would be gone when
 	 * the tap's click was aimed, and the tap that shut a sheet would press what lay under it. A press
 	 * the browser takes over (a scroll: `pointercancel`) or turns into a hold (`contextmenu`) raises
-	 * no click, and ends it at once. `CLICK_LATEST` covers a click that never comes for any other
-	 * reason, so the shield can never be left standing over a page with nothing open.
+	 * no click, and ends it immediately. `CLICK_LATEST` covers a click that never comes for any
+	 * other reason, so the shield can never be left standing over a page with nothing open.
 	 */
 	interface Props {
 		/** Whether the surface above it is open, or still on its way out. */

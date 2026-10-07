@@ -488,7 +488,7 @@ def test_sharing_something_restricted_replaces_the_restrict(
 ) -> None:
     """The two are mutually exclusive on one object for one user, and the newer one wins.
 
-    Both at once resolves to Restricted (a restrict beats every share), so a share stored
+    Both together resolve to Restricted (a restrict beats every share), so a share stored
     underneath one does nothing for as long as it sits there, and then quietly takes effect the day
     the restrict is lifted. That is a decision nobody made, arriving much later. Saying "share this
     with them" now means exactly that, whatever was said before.
@@ -764,7 +764,7 @@ def test_where_it_came_from_answers_about_a_person(client: TestClient, library: 
     assert [(row["effect"], row["decides"]) for row in shared] == [("share", True)]
 
     # ...and a restrict beats a share made over everything, which is the only way a person can hold
-    # two grants at once: a second grant on the SAME object replaces the first, so the losing share
+    # two grants at the same time: a second grant on the SAME object replaces the first, so the losing share
     # has to come from somewhere broader.
     _share(
         client,
@@ -1085,7 +1085,7 @@ def test_the_report_can_name_the_files_behind_an_entity_s_yes(
 def test_a_guest_cannot_read_which_files_let_another_account_in(
     client: TestClient, library: Library
 ) -> None:
-    """Admin-only for both of this slice's reasons at once: it is what somebody else can see, and
+    """Admin-only for both of this slice's reasons together: it is what somebody else can see, and
     it names the folders that let them."""
     guest = sign_in(client, "guest", username="reach-through-nosy")
     refused = client.get(

@@ -247,7 +247,7 @@ describe('what a wall asks the server for', () => {
 		expect(asked({ limit: 60, from: 'p7', near: null })).toEqual({ limit: '60', from: 'p7' });
 	});
 
-	it('is never both at once', () => {
+	it('is never both together', () => {
 		/* A request carrying an anchor and an offset asks two questions, and which of them the
 		   server honours would then be a detail of the server rather than a decision. */
 		expect(asked({ limit: 60, from: 'p7' })).not.toHaveProperty('offset');

@@ -111,7 +111,7 @@ describe('which bulk actions belong on screen', () => {
 	it('offers a pile its own actions', () => {
 		expect(offeredWhileViewing('canceled', 'canceled')).toBe(true);
 		expect(offeredWhileViewing('failed', 'failed')).toBe(true);
-		// A stop acts on three states at once, and looking at any of them is looking at it.
+		// A stop acts on three states together, and looking at any of them is looking at it.
 		expect(offeredWhileViewing('running', 'queued', 'running', 'blocked')).toBe(true);
 	});
 

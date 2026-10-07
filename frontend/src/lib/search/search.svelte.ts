@@ -16,6 +16,9 @@
 
 import { api } from '$lib/api/client';
 import type { components } from '$lib/api/schema';
+import { quoted, valuesIn } from '$lib/search/quoting';
+
+export { quoted };
 
 /* LIVE: nothing moves it (suggestions for what is being typed, asked again on every keystroke) */
 
@@ -111,7 +114,7 @@ export type Row =
 	 * instead of running something. */
 	| { kind: 'more'; group: Group; reveals: number };
 
-/** A band of the dropdown that can be longer than it is worth drawing all at once. */
+/** A band of the dropdown that can be longer than it is worth drawing in one go. */
 export type Group = 'match' | 'filter' | 'recent';
 
 /*
@@ -171,7 +174,7 @@ export class SearchBox {
 	 * There is one of this state and there can be more than one box: the top bar draws one, and
 	 * the Ctrl-F overlay draws the SAME component over the top of it. Without an owner both
 	 * render the list from the same state, so opening the overlay would light up its list and the
-	 * one behind it at once: two identical panels, one sharp and one blurred through the veil.
+	 * one behind it at the same time: two identical panels, one sharp and one blurred through the veil.
 	 *
 	 * Null rather than "the top bar" so that nothing changes on a page with one box: exclusivity
 	 * only exists while something claims it, and the claim is released when that box goes away.
@@ -578,19 +581,6 @@ export function dropToken(typed: string, replaceFrom: number): string {
 	return typed.slice(0, replaceFrom);
 }
 
-/* A value written so the parser reads it back as the same value.
- *
- * Quoted when it contains whitespace or a comma, because both would otherwise end the value. The
- * quotes inside it are DROPPED rather than escaped, and that is a real limitation rather than a
- * choice: the query language has no escape for a quote, so a tag genuinely named `say "hi"` cannot
- * be written as a token at all. Dropping them produces a query for a name that does not exist,
- * which finds nothing: the narrow direction, and the only safe way to be wrong here. Escaping in
- * the language is what would actually fix it.
- */
-export function quoted(value: string): string {
-	return /[\s,"]/.test(value) ? `"${value.replaceAll('"', '')}"` : value;
-}
-
 /**
  * Every field the query language names, in the order the server reads them.
  *
@@ -760,7 +750,12 @@ export function savedQuery(stored: string): string {
 	const parts = typed ? [typed] : [];
 	for (const name of FIELDS) {
 		for (const value of params.getAll(name)) {
-			if (value.trim()) parts.push(`${name}:${quoted(value.trim())}`);
+			// The minus goes on the token: inside the quotes it would be part of the value.
+			const refused = value.startsWith('-') && value.length > 1;
+			const { values, any } = valuesIn(refused ? value.slice(1) : value);
+			if (values.length === 0) continue;
+			const joined = values.map(quoted).join(any ? '|' : ',');
+			parts.push(`${refused ? '-' : ''}${name}:${joined}`);
 		}
 	}
 	return parts.join(' ');

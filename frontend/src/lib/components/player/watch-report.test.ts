@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { LEAVING_WAIT_MS, WatchReport, type WatchPiece, type Watched } from './watch-report';
 
-/* A player whose post answers at once, or, once `hold()` is called, only when `land()` says, so
+/* A player whose post answers immediately, or, once `hold()` is called, only when `land()` says, so
    a reply can land after the next file began. */
 function player() {
 	const pieces: WatchPiece[] = [];
@@ -94,7 +94,7 @@ describe('the last piece of a file left for the next one', () => {
 		return { watched, sent };
 	}
 
-	it('is counted at once and held until the next first frame', async () => {
+	it('is counted immediately and held until the next first frame', async () => {
 		const { watched, sent } = held();
 		const report = new WatchReport(watched, 10);
 		watch(report, 3000);

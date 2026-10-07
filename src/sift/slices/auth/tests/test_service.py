@@ -270,7 +270,7 @@ async def test_changing_the_password_revokes_other_sessions_but_keeps_this_one(
 
 async def test_hashing_runs_off_the_event_loop_and_is_bounded(service: AuthService) -> None:
     # Against a login flood: Argon2 runs on worker threads (never on the event loop) and
-    # no more than the cap run at once (so a flood cannot exhaust memory either).
+    # no more than the cap run at the same time (so a flood cannot exhaust memory either).
     import asyncio
     import threading
     import time as _time
@@ -461,7 +461,7 @@ async def test_the_tarpit_is_keyed_by_the_submitted_name_not_a_real_account(
 async def test_a_flood_on_one_name_from_one_address_is_judged_one_attempt_at_a_time(
     make_service: Callable[..., AuthService],
 ) -> None:
-    """Twenty wrong guesses sent at once would each serve their own delay side by side. Only one is
+    """Twenty wrong guesses sent together would each serve their own delay side by side. Only one is
     judged; the rest are turned away with a time to come back, and the person whose name it is,
     signing in from somewhere else at the same moment, is not held up by any of it."""
     import asyncio

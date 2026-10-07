@@ -152,7 +152,7 @@ def skipped_for_size(size: int, bound: int, *, larger: bool) -> Skipped:
 class _Throttle:
     """The speed limit, as a token bucket over the read loop.
 
-    A second's worth of bytes may go at once, and after that the loop waits for the bytes it has
+    A second's worth of bytes may go immediately, and after that the loop waits for the bytes it has
     read to be earned back. Throttling the READER is what throttles the connection: aiohttp stops
     reading the socket once its own small buffer is full, so a reader that waits is a sender that
     is told to wait.
@@ -175,7 +175,7 @@ class _Throttle:
 
 
 def _asks_again(exc: BaseException) -> bool:
-    """Whether a failed request is worth asking again at once, the way the tools' `--retries` would.
+    """Whether a failed request is worth asking again immediately, the way the tools' `--retries` would.
 
     A refused or dropped connection costs nothing to ask again, so it is asked again up to the
     retry count. A timeout is not here: each ask of one costs a whole Stopped responding for, so

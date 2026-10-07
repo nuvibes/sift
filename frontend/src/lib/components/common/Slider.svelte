@@ -181,7 +181,7 @@
 		--track: var(--slider-track);
 		--thumb: var(--slider-thumb);
 		/* What the groove is painted with. A name rather than the token written into the four track
-		   rules below, so a caller handing in a ground of its own reaches all four at once. See
+		   rules below, so a caller handing in a ground of its own reaches all four together. See
 		   `ground`. */
 		--ground: var(--sift-surface-4);
 		inline-size: 100%;

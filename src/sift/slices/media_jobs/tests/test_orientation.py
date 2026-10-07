@@ -133,3 +133,70 @@ async def test_the_catch_up_turns_a_size_read_before_the_turn_was(
     asset = await content_store.get(ingested.asset.id)
     assert asset is not None
     assert (asset.width, asset.height) == (32, 64)
+
+
+async def test_a_photograph_two_notes_turn_differently_is_drawn_as_a_browser_draws_it(
+    content_store: ContentStore,
+    library_root: LibraryRoot,
+    context_for: Context,
+    settings: Settings,
+    hardware: HardwareReport,
+) -> None:
+    """A browser obeys the first Exif block, ffmpeg the last that has a turn: the file is read
+    through a copy carrying the first alone, so its size and its tile are the browser's."""
+    photo = _noted(_noted(draw(library_root.path / "photo.jpg", _HALVES), 1), 6)
+    ingested = await take_in(content_store, library_root, photo, settings)
+    asset_id = ingested.asset.id
+
+    await jobs.probe(
+        await context_for("probe", {"asset_id": asset_id}), settings=settings, hardware=hardware
+    )
+    asset = await content_store.get(asset_id)
+    assert asset is not None
+    assert (asset.width, asset.height) == (32, 64)
+
+    await jobs.thumbnail(
+        await context_for("thumbnail", {"asset_id": asset_id}), settings=settings, hardware=hardware
+    )
+    (tile,) = [one for one in await content_store.derivatives(asset_id) if one.kind == "thumb"]
+    assert _white_side(_grey(settings.cache_dir / tile.rel_cache_path, 32, 64)) == "right"
+
+
+async def test_the_catch_up_reads_again_only_a_photograph_drawn_the_other_way(
+    content_store: ContentStore,
+    library_root: LibraryRoot,
+    context_for: Context,
+    settings: Settings,
+    hardware: HardwareReport,
+) -> None:
+    """Kept under the reading before the browser's turn was asked: the one drawn apart is read
+    again and its tile drawn again; the one read the same way is only marked current."""
+    apart = _noted(_noted(draw(library_root.path / "apart.jpg", _HALVES), 1), 6)
+    same = _noted(draw(library_root.path / "same.jpg", _HALVES), 6)
+    ids = []
+    for photo in (apart, same):
+        ingested = await take_in(content_store, library_root, photo, settings)
+        await jobs.probe(
+            await context_for("probe", {"asset_id": ingested.asset.id}),
+            settings=settings,
+            hardware=hardware,
+        )
+        ids.append(ingested.asset.id)
+    # As a library read before: at the sensor's size, under the older reading.
+    for asset_id in ids:
+        await content_store.record_probe(asset_id, width=64, height=32)
+    await content_store._db.execute("UPDATE asset_probes SET probe_version = 2")
+    # And with its tiles drawn: nothing asked for.
+    await content_store._db.execute("DELETE FROM jobs WHERE type = ?", (jobs.THUMBNAIL,))
+
+    context = await context_for("keep_probes", {})
+    await jobs.keep_probes(context, settings=settings, hardware=hardware)
+
+    turned = await content_store.get(ids[0])
+    untouched = await content_store.get(ids[1])
+    assert turned is not None and untouched is not None
+    assert (turned.width, turned.height) == (32, 64)
+    assert (untouched.width, untouched.height) == (64, 32)
+    assert await context.queue.is_live(jobs.THUMBNAIL, {"asset_id": ids[0]})
+    assert not await context.queue.is_live(jobs.THUMBNAIL, {"asset_id": ids[1]})
+    assert not await content_store.assets_lacking_probe_rows(10)

@@ -308,9 +308,9 @@ export class Sitting {
 /**
  * One record per screen, never a shared one.
  *
- * Two of these views can be mounted at once (the panel in the corner and a full-size view behind
- * it), and a single shared record would have the second one end the first one's sitting on the
- * way in.
+ * Two of these views can be mounted at the same time (the panel in the corner and a full-size view
+ * behind it), and a single shared record would have the second one end the first one's sitting on
+ * the way in.
  */
 export function newSitting(): Sitting {
 	return new Sitting();

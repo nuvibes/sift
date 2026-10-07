@@ -302,7 +302,7 @@ class TracksStore(PicturesStore):
         return found
 
     async def best_face_per_track(self) -> list[tuple[str, Vector]]:
-        """One description per appearance, its best, for matching the whole library at once,
+        """One description per appearance, its best, for matching the whole library in one go,
         ordered so a re-match is reproducible."""
         rows = await self._db.fetch_all(
             "SELECT track_id, embedding FROM face_detections "

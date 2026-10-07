@@ -241,8 +241,8 @@ describe('the mark', () => {
 	});
 
 	it('falls back to the copy glyph for a verb this build has no mark for', () => {
-		// `edit` is several verbs at once and `resize` has no glyph that is not a crop. Both are still
-		// copies, which is what the fallback says.
+		// `edit` is several verbs together and `resize` has no glyph that is not a crop. Both are
+		// still copies, which is what the fallback says.
 		expect(markOf('copied_into', null, 'edit')).toBe('file_copy');
 		expect(markOf('copied_from', null, 'resize')).toBe('file_copy');
 		expect(markOf('copied_into', null, null)).toBe('file_copy');

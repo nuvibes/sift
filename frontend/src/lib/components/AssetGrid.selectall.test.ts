@@ -12,7 +12,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushSync, mount, unmount } from 'svelte';
 import AssetGrid from './AssetGrid.svelte';
-import { LOOP_SOURCE, MOST_AT_ONCE } from '$lib/grid/grid.svelte';
+import { LOOP_SOURCE, MOST_SELECTED } from '$lib/grid/grid.svelte';
 
 /*
  * A library of this many files, answered a page at a time as the server does.
@@ -191,7 +191,7 @@ async function pickTheWholeQuery(): Promise<void> {
 		flushSync();
 		// It says "Selecting..." while the pages are coming in. Asserting before that is over
 		// reads the count of the pick somebody started from, which is one.
-		if (!barWords().includes(`${MOST_AT_ONCE.toLocaleString()} files selected`)) {
+		if (!barWords().includes(`${MOST_SELECTED.toLocaleString()} files selected`)) {
 			throw new Error(`still reading: the bar says ${barWords()}`);
 		}
 	});
@@ -207,24 +207,24 @@ describe('picking the whole question and then acting on it', () => {
 		const onPage = pickOne();
 		expect(barWords()).toContain('1 file selected');
 		// The offer states the ceiling, because the query is bigger than it.
-		expect(barButton('Select').textContent).toContain(MOST_AT_ONCE.toLocaleString());
+		expect(barButton('Select').textContent).toContain(MOST_SELECTED.toLocaleString());
 
 		await pickTheWholeQuery();
 
 		barButton('Add to favorites').click();
 		await vi.waitFor(() => {
 			flushSync();
-			if (asked.favorited.flat().length < MOST_AT_ONCE) throw new Error('not all sent yet');
+			if (asked.favorited.flat().length < MOST_SELECTED) throw new Error('not all sent yet');
 		});
 
 		const sent = asked.favorited.flat();
 		// EXACTLY what the bar said, which is the whole of it: a count on screen and a list on the
 		// wire that came from two different questions is what this test exists for.
-		expect(sent).toHaveLength(MOST_AT_ONCE);
+		expect(sent).toHaveLength(MOST_SELECTED);
 		expect(sent[0]).toBe('a0');
-		expect(sent[MOST_AT_ONCE - 1]).toBe(`a${MOST_AT_ONCE - 1}`);
+		expect(sent[MOST_SELECTED - 1]).toBe(`a${MOST_SELECTED - 1}`);
 		// And it genuinely reached past the wall, or this would pass on the fault it was written for.
-		expect(onPage.length).toBeLessThan(MOST_AT_ONCE);
+		expect(onPage.length).toBeLessThan(MOST_SELECTED);
 	});
 
 	it('splits the write at the server cap rather than sending one enormous request', async () => {
@@ -237,7 +237,7 @@ describe('picking the whole question and then acting on it', () => {
 		barButton('Add to favorites').click();
 		await vi.waitFor(() => {
 			flushSync();
-			if (asked.favorited.flat().length < MOST_AT_ONCE) throw new Error('not all sent yet');
+			if (asked.favorited.flat().length < MOST_SELECTED) throw new Error('not all sent yet');
 		});
 
 		expect(asked.favorited.length).toBeGreaterThan(1);
@@ -257,12 +257,12 @@ describe('picking the whole question and then acting on it', () => {
 		barButton('Add to favorites').click();
 		await vi.waitFor(() => {
 			flushSync();
-			if (asked.favorited.flat().length < MOST_AT_ONCE) throw new Error('not all sent yet');
+			if (asked.favorited.flat().length < MOST_SELECTED) throw new Error('not all sent yet');
 		});
 
 		const sent = asked.favorited.flat();
 		expect(sent[0]).toBe('a0');
-		expect(sent[MOST_AT_ONCE - 1]).toBe(`a${MOST_AT_ONCE - 1}`);
+		expect(sent[MOST_SELECTED - 1]).toBe(`a${MOST_SELECTED - 1}`);
 		// The rows were genuinely marks, or this passes on a wall where the two are the same string.
 		expect(sent.some((id) => id.startsWith('m'))).toBe(false);
 	});

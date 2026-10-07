@@ -2,7 +2,7 @@
 """A real application, a real database, and files with real bytes on disk.
 
 Over HTTP rather than against the service object, for the reason the collections slice gives: a
-photo set is a permission surface, a promise about the filesystem and a grouping all at once, and
+photo set is a permission surface, a promise about the filesystem and a grouping all together, and
 those live in the router, the dependencies and the access layer together. A test of the service
 alone would exercise the half that was never in doubt.
 

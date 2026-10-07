@@ -4,7 +4,7 @@
  *
  * ## Why this is a module and not three functions inside the bar
  *
- * One string carries three things at once: whether the filter is EXCLUDED (a leading minus), how
+ * One string carries three things together: whether the filter is EXCLUDED (a leading minus), how
  * its values combine (a pipe for any, a comma for all), and the values themselves. Every reader
  * that takes it apart for itself gets a different part wrong: the minus stuck to the first value,
  * so `-Alice` is a different value from `Alice` and can be added twice, or a comma-joined list read
@@ -22,6 +22,7 @@
  * strength of one function. The module is the query language's, not the bar's.
  */
 
+import { parameterValue, valuesIn } from '$lib/search/quoting';
 import { FIELDS, parseQuery, type ParsedClause } from '$lib/search/search.svelte';
 
 /** One named filter: which values, how they combine, and whether they are being refused. */
@@ -38,20 +39,18 @@ export interface Part extends Named {
 
 /** Take a parameter's value apart. See the head of this file for the three things it carries. */
 export function taken(value: string): Named {
-	const excluded = value.startsWith('-');
-	const body = excluded ? value.slice(1) : value;
+	// Only a minus outside the quotes refuses: `"-a"` is a value that begins with one.
+	const excluded = value.startsWith('-') && value.length > 1;
 	// Split on both separators. Which one was used is remembered separately; a value list is a
 	// value list either way, and reading only pipes would make an all-of column unclickable.
-	const values = body
-		.split(/[|,]/)
-		.map((one) => one.trim())
-		.filter(Boolean);
-	return { excluded, all: !body.includes('|') && values.length > 1, values };
+	const { values, any } = valuesIn(excluded ? value.slice(1) : value);
+	return { excluded, all: !any && values.length > 1, values };
 }
 
 /** Write one back. The inverse of `taken`, and the only place that spells the separators. */
 export function written(held: Named): string {
-	return `${held.excluded ? '-' : ''}${held.values.join(held.all ? ',' : '|')}`;
+	const values = held.values.map(parameterValue);
+	return `${held.excluded ? '-' : ''}${values.join(held.all ? ',' : '|')}`;
 }
 
 /**
@@ -197,13 +196,11 @@ export async function asNamedFilters(query: string): Promise<string> {
  * screen over, draws the same kind of thing as chips.
  *
  * This is the inverse of `savedQuery`, which is the function that WRITES the spelling: a token per
- * filter, `field:value`, the value quoted when it holds a space, a comma or a quote. Anything else
- * in the string (free words, a token naming a field this version does not know) is left out
+ * filter (`field:value`, or `-field:value` refused), the value quoted where `quoted` says. Anything
+ * else in the string (free words, a token naming a field this version does not know) is left out
  * rather than guessed at, and the caller shows its own words when nothing comes back.
  *
- * Kept beside the reader it mirrors rather than in the search module, because the two answer one
- * question in two spellings and a reader that drifts from its writer is the fault this file exists
- * to prevent.
+ * Kept beside the reader it mirrors: a reader that drifts from its writer is this file's fault.
  */
 export function typedParts(typed: string, fields: readonly string[]): Part[] {
 	const out: Part[] = [];
@@ -215,10 +212,11 @@ export function typedParts(typed: string, fields: readonly string[]): Part[] {
 		const excluded = token.startsWith('-');
 		const field = token.slice(excluded ? 1 : 0, at);
 		if (!fields.includes(field)) continue;
-		const value = token.slice(at + 1).replace(/^"|"$/g, '');
-		if (!value.trim()) continue;
-		const held = taken(excluded ? `-${value}` : value);
-		if (held.values.length === 0) continue;
+		const value = token.slice(at + 1);
+		const signed = value.startsWith('-') && value.length > 1;
+		const { values, any } = valuesIn(signed ? value.slice(1) : value);
+		if (values.length === 0) continue;
+		const held: Named = { excluded: excluded || signed, all: !any && values.length > 1, values };
 		// One chip per field, the way a named query gives one parameter per field.
 		const already = out.find((one) => one.field === field && one.excluded === held.excluded);
 		if (already) already.values.push(...held.values);

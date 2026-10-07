@@ -594,7 +594,7 @@ describe('Shuffle', () => {
 			return { more, asked };
 		}
 
-		it('keeps Next and Back at once, and then walks from where the file really sits', async () => {
+		it('keeps Next and Back immediately, and then walks from where the file really sits', async () => {
 			const { more, asked } = reader(50);
 			openAsset('a', [CLIP('a'), CLIP('b')], undefined, undefined, more);
 			expect(await stepForward('a')).toBe('x');

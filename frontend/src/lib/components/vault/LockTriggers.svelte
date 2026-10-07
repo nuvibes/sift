@@ -90,7 +90,7 @@
 
 	async function lockSiftNow() {
 		// Locking Sift is the server's: the mark goes on the session row, so every tab and every
-		// client is shut at once. Nothing is drawn over anything here.
+		// client is shut immediately. Nothing is drawn over anything here.
 		try {
 			await api.post('/auth/lock');
 		} catch {

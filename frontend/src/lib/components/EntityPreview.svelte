@@ -160,7 +160,7 @@
 	/* A different thing under the pointer is a different question, so whatever was answered for the
 	   last one goes. Without this a wrapper reused for a second chip, which is what a keyed list
 	   does when a row is removed, would show the first one's numbers under the second one's name.
-	   An open card asks for the new one at once: it would otherwise sit on bones until it was
+	   An open card asks for the new one immediately: it would otherwise sit on bones until it was
 	   closed and opened again. */
 	$effect(() => {
 		void about;

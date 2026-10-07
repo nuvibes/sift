@@ -294,7 +294,7 @@ class TunnelStore:
 
         A tunnel program an antivirus removed or altered is every row's problem, whatever each
         row's last start said: it is the one fault no row can be fixed without, and it is asked of
-        the file on every read, so a program restored from quarantine clears every row at once.
+        the file on every read, so a program restored from quarantine clears every row in one go.
         """
         lost = await client_fault()
         views: list[TunnelView] = []
@@ -349,7 +349,7 @@ class TunnelStore:
 
     async def start(self, tunnel_id: str, master_key: bytes) -> None:
         """Open the tunnel's configuration and run it. Marks it as meant to be running."""
-        # Never beside a restart: two starts of one client at once is two clients.
+        # Never beside a restart: two starts of one client at the same time is two clients.
         await self._after_any_restart(tunnel_id)
         spec, config = await self._open(tunnel_id, master_key)
         process = self._processes.setdefault(spec.id, TunnelProcess(spec, owner=self._owner))

@@ -813,7 +813,7 @@ test('the vault mark does not depend on the sharing-marks switch', async ({ page
 	}, before);
 });
 
-test('a rating set on the asset screen lands on its tile at once', async ({ page }) => {
+test('a rating set on the asset screen lands on its tile immediately', async ({ page }) => {
 	/* Star something and the tile must say so without a reload.
 	 *
 	 * Stars are set on the asset's own screen, which opens OVER the grid, so the grid keeps the

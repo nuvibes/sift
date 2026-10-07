@@ -251,7 +251,7 @@ async def update_username(
             # takes `as_alias` and it defaults to TRUE, so joining a person here writes the username
             # onto them as an also-known-as. An alias is indexed on every file that person is on,
             # which is a different set from the files under the username. The username's own files are
-            # gathered below, for both branches at once; this is the half only a join adds.
+            # gathered below, for both branches together; this is the half only a join adds.
             touched = await service.assets_of_person(landed)
     if sent & {"person_id", "display_name"}:
         # The words indexed on the files under this username changed: the display name is indexed

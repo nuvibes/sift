@@ -211,7 +211,7 @@ describe('what else is on it', () => {
  * whichever edge their row is on, which is below except while a screen fills the window.
  *
  * Read from the source because the label only exists while it is showing, and where it goes is
- * the one prop that says so for every control at once, including the ones added later.
+ * the one prop that says so for every control together, including the ones added later.
  */
 describe('the tile size giving way to the field', () => {
 	it('is off the bar while the bar says so, and back when it does not', () => {

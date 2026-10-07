@@ -186,7 +186,7 @@ it('lets Escape over an EMPTY box through to the panel, which closes', () => {
 	expect(escape.defaultPrevented).toBe(false);
 });
 
-/* A pasted path opens its row and empties the box at once, which alone reads as the paste having
+/* A pasted path opens its row and empties the box immediately, which alone reads as the paste having
    been dropped: the box says where it went while the shell holds `landed`, and to a screen reader. */
 it('says where a pasted path went, and goes back to its own words after', () => {
 	props.landed = 'How often';

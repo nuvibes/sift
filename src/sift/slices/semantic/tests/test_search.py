@@ -376,7 +376,7 @@ async def test_a_machine_that_cannot_hold_the_index_cannot_answer() -> None:
     assert service.asked_anything == 0
 
 
-# --- many files at once --------------------------------------------------------------------
+# --- many files together -------------------------------------------------------------------
 
 
 async def test_many_files_are_described_in_one_ask() -> None:

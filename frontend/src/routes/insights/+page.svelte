@@ -42,7 +42,7 @@
 	 *
 	 * ## Nothing waits on anything else
 	 *
-	 * The heading and the tabs draw at once. The figures arrive into the page; the recap
+	 * The heading and the tabs draw immediately. The figures arrive into the page; the recap
 	 * announcement and the recaps read their own answers and draw when those arrive. None of them
 	 * waits for another, and a period changing keeps the last figures on screen, dimmed, until the
 	 * next ones are in, so the page does not jump to a skeleton and back.
@@ -340,7 +340,7 @@
 
 	/* Each group rises into place after the one above it: the story arriving in its order. The
 	   step is the quickest duration, so the last of seven is in by about half a second; reduced
-	   motion draws every one at once (`app.css` holds every animation to one instant pass). */
+	   motion draws every one immediately (`app.css` holds every animation to one instant pass). */
 	.group {
 		min-inline-size: 0;
 		animation: rise var(--dur-slow) var(--ease) both;

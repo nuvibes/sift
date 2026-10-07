@@ -382,7 +382,7 @@ class Deleter:
     async def remove_many(self, asset_ids: Sequence[str], *, mode: Mode, actor: Viewer) -> Removal:
         """Remove a selection, as one operation: what went, what did not, and the first reason.
 
-        The same checks as `remove`, asked of the whole list at once, and the same order of work
+        The same checks as `remove`, asked of the whole list in one go, and the same order of work
         for each file: the disk first for a real delete, the index after. What is different is
         the bookkeeping: the index rows of every file that went are dropped in ONE write, the
         files that ended are ended in that write, their grants go in one more, and the change is

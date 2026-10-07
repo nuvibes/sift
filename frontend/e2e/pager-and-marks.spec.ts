@@ -160,7 +160,7 @@ test('the footer band is the pager and nothing else', async ({ page }) => {
 	 * The pager carries its own height (`--page-footer-height`, 48px) and carries it for
 	 * exactly this purpose: the space inside that box IS the space under the last row, on every
 	 * screen that pages. Padding the footer track as well would count the same gap twice and take
-	 * it off the wall on every screen at once.
+	 * it off the wall on every screen at the same time.
 	 *
 	 * So the track is the pager exactly. If the band should ever be taller that is one number in
 	 * `app.css`, and this test goes on holding: it compares the two to each other rather than to a

@@ -128,7 +128,7 @@ export class Destinations {
 	 *
 	 * "Default download folder" would name a setting rather than a place: the one thing somebody wants
 	 * to know before accepting it is WHERE it lands, and the answer would be two screens away.
-	 * The name plus "(default)" says both at once: which folder, and that it is the one that
+	 * The name plus "(default)" says both together: which folder, and that it is the one that
 	 * applies by itself.
 	 *
 	 * The disambiguating phrase is taken from the row `disambiguate` already made for that folder

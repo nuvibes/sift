@@ -325,8 +325,8 @@ it('says the WAIT, and what the wait assumes about the machine', async () => {
 
 it('and claims nothing about the machine when the run never recorded it', async () => {
 	/* A run from before the number was kept. The estimate is still the honest one; the clause that
-	   says what it assumes is simply not there, because "with null jobs at once" is worse than a
-	   sentence that stops. */
+	   says what it assumes is simply not there, because "with null tasks at the same time" is worse
+	   than a sentence that stops. */
 	mocks.fetchBuildSheet.mockResolvedValue(
 		sheet({
 			rows: [row('faces', 'Faces', { files: 100, quick_seconds: 600, slow_seconds: 600 })]
@@ -441,7 +441,7 @@ it("says Identify's When as Mixed while its three tasks disagree", async () => {
 	);
 });
 
-it('leaves quiet hours to Tasks and how much at once to Performance', async () => {
+it('leaves quiet hours to Tasks and how much at the same time to Performance', async () => {
 	await draw();
 	await vi.waitFor(() =>
 		expect(host.querySelector('[id="importing.scan-settings"] [data-fact="when"]')).not.toBeNull()

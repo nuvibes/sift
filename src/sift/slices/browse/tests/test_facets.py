@@ -179,7 +179,7 @@ def test_a_concealed_name_is_absent_even_where_its_files_are_still_counted(
     the case that separates them: a concealed file STAYS in the result set as a locked tile, so its
     tag reaches the grouping and would be named. It must not be.
 
-    A name listed beside a count says two things at once: that the tag exists, and that there is
+    A name listed beside a count says two things together: that the tag exists, and that there is
     something under it worth hiding. Absent is the only answer that says neither.
     """
     _tag(client, library.private, "private-notes")

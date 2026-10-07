@@ -667,7 +667,7 @@ def test_no_height_is_written_when_the_picture_is_kept() -> None:
 # --- one transcode at a time -----------------------------------------------------------------------
 
 
-def test_no_more_transcodes_run_at_once_than_this_machine_allows(
+def test_no_more_transcodes_run_at_the_same_time_than_this_machine_allows(
     client: TestClient, app: FastAPI, library: Library
 ) -> None:
     """The queue enforces this machine's transcode cap (one on a processor, three on a card), asked
@@ -698,7 +698,7 @@ def test_no_more_transcodes_run_at_once_than_this_machine_allows(
     watcher = threading.Thread(target=watch, daemon=True)
     watcher.start()
 
-    # Every segment asked for at once, which is what a player reading ahead actually does.
+    # Every segment asked for in one go, which is what a player reading ahead actually does.
     try:
         with ThreadPoolExecutor(max_workers=5) as pool:
             responses = list(
@@ -717,9 +717,9 @@ def test_no_more_transcodes_run_at_once_than_this_machine_allows(
 
     assert all(response.status_code == 200 for response in responses)
     assert seen_running, "the watcher never observed a transcode, so it proved nothing"
-    # Five were asked for at once, so a cap that binds at all has to show up as fewer than five.
+    # Five were asked for together, so a cap that binds at all has to show up as fewer than five.
     assert cap < 5, "the cap no longer binds against this test's demand; raise the demand"
-    assert peak <= cap, f"{peak} transcodes ran at once; the per-type cap of {cap} is not holding"
+    assert peak <= cap, f"{peak} transcodes ran together; the per-type cap of {cap} is not holding"
 
 
 # --- when it goes wrong ------------------------------------------------------------------------------
@@ -1130,7 +1130,7 @@ def test_the_weight_of_a_real_file_is_its_own_size_over_its_own_length() -> None
     assert source_bitrate(row) == round(row.size_bytes * 8 * 1000 / 10_000)
 
 
-# --- how many segments may be built at once -----------------------------------------------------
+# --- how many segments may be built together -----------------------------------------------------
 
 
 def test_the_processor_builds_one_segment_at_a_time() -> None:
@@ -1138,8 +1138,8 @@ def test_the_processor_builds_one_segment_at_a_time() -> None:
     assert job_limits(Encoder.CPU) == {TRANSCODE: 1}
 
 
-def test_a_card_builds_several_at_once_because_the_cores_are_not_the_limit() -> None:
-    """A card builds several at once, held below four since it also draws previews."""
+def test_a_card_builds_several_at_the_same_time_because_the_cores_are_not_the_limit() -> None:
+    """A card builds several at the same time, held below four since it also draws previews."""
     limit = job_limits(Encoder.NVENC)[TRANSCODE]
 
     assert limit == tuning.HARDWARE_SEGMENT_JOBS

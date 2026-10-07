@@ -61,8 +61,8 @@ UPDATE jobs
 RETURNING state, id, parent_id, type, started_at, note, requested_by, error
 """
 
-# No retry can fix this, so it fails at once. A pause asked meanwhile does not save it: its Resume
-# would fail again for the same reason.
+# No retry can fix this, so it fails immediately. A pause asked meanwhile does not save it: its
+# Resume would fail again for the same reason.
 _FAIL_PERMANENTLY = """
 UPDATE jobs
    SET state = 'failed',
@@ -105,7 +105,7 @@ UPDATE jobs
 RETURNING id
 """
 
-# Pausing a job nobody has started: at once, as there is no handler to ask.
+# Pausing a job nobody has started: immediately, as there is no handler to ask.
 _PAUSE_QUEUED = (
     "UPDATE jobs SET state = 'paused', stop_wanted = ?, updated_at = ? "
     "WHERE id = ? AND state = 'queued' RETURNING id"

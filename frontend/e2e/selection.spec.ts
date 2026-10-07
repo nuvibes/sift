@@ -456,7 +456,7 @@ test('Add to Collection puts every picked file in the one chosen', async ({ page
 	await pickFirst(page, 3);
 	/* The bar's "Add to" is ONE button opening onto the places a file can go: five buttons side
 	   by side would be most of a strip that scrolls sideways. Each row opens a flyout over the
-	   whole set, and a press on one of its rows writes to every picked file at once; see
+	   whole set, and a press on one of its rows writes to every picked file together; see
 	   `FileVerbs`. */
 	await bar(page).getByRole('button', { name: 'Add to' }).click();
 	await page.getByRole('menuitem', { name: 'Collection' }).click();

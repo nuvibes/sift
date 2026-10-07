@@ -932,8 +932,8 @@ async def lock_app(
 ) -> LockResponse:
     """Shut this session, and say which way it was shut.
 
-    The mark goes on the session row, so every path to the server is shut at once: another tab, a
-    reload, the credential replayed at the API by hand. A lock drawn over the screen leaves all
+    The mark goes on the session row, so every path to the server is shut immediately: another tab,
+    a reload, the credential replayed at the API by hand. A lock drawn over the screen leaves all
     three working, and that is the difference this route exists to make.
 
     **Which way it shuts is decided here, not by the caller.** Whether a PIN may reopen a session

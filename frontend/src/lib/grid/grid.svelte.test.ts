@@ -136,7 +136,7 @@ describe('a row the screen is no longer about', () => {
 		return grid;
 	}
 
-	it('leaves at once, and takes the total with it', async () => {
+	it('leaves immediately, and takes the total with it', async () => {
 		// Unfavouriting on the Favorites screen must take the tile away, not leave it until a
 		// reload.
 		const grid = await gridOf(row('a', true), row('b', true));

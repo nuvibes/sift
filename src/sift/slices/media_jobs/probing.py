@@ -430,6 +430,9 @@ async def keep_probes(
     children), at background priority. A file on a drive that is not plugged in is left for when
     the drive is back; a file the tool refuses gets an empty answer, or it would head every run.
     """
+    # Here rather than at the top: nothing at start needs it.
+    from sift.kernel import jpeg_turn
+
     store = context.content
     ids = await store.assets_lacking_probe_rows(tuning.STAMP_BATCH)
     if not ids:
@@ -443,6 +446,14 @@ async def keep_probes(
         try:
             source = await resolve_decodable(store, asset_id, settings=settings)
         except (MissingAsset, NoReadableCopy):
+            continue
+
+        # A JPEG photograph read before the browser's turn was asked: read again only where the
+        # browser and ffmpeg turn it differently, which is when it is read through a copy.
+        photograph = jpeg_turn.needs_a_look(source.asset)
+        turned = photograph and source.path != source.original
+        if photograph and not turned and await store.probe_still_current(asset_id):
+            kept += 1
             continue
 
         tool = await ffmpeg.probe_tool(settings=settings)
@@ -467,6 +478,10 @@ async def keep_probes(
             height=probed.height,
         )
         kept += 1
+        if turned:
+            # Its tile was drawn the other way up: drawn again, through the copy.
+            await context.queue.enqueue(THUMBNAIL, {"asset_id": asset_id}, dedupe=True)
+            log.info("probe.turned_as_the_browser_draws", asset_id=asset_id)
 
     await context.set_progress(1.0)
     log.info("probe.keep_done", looked_at=len(ids), kept=kept)

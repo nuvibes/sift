@@ -207,7 +207,7 @@ SELECT pl.id, CASE WHEN {{LOCKED}} THEN '' ELSE pl.name END AS name,
    --
    -- One step and not the whole subtree, deliberately. This answers "what is part of this", which
    -- is what the child's own record says of itself, and a tab that listed grandchildren beside
-   -- children would say a label belongs to two networks at once. The counts on those cards already
+   -- children would say a label belongs to two networks together. The counts on those cards already
    -- roll the whole subtree up, so nothing is hidden by listing one level: a network two deep shows
    -- as a card whose number includes what is under IT.
    --

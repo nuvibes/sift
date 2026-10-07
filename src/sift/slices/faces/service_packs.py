@@ -287,9 +287,9 @@ class PacksMixin(WeightsMixin):
 
         The swap has already put the file on a person here, by name: one it made in this library
         moments ago (`suggest_only` false) has nothing of her own yet, so the faces are her
-        references at once. One this library already had gets them held, never as references, until somebody
-        gives them to her from her own page (`claim_for`): they are another install's say-so
-        about somebody we know. Neither is ever placed by the pass over facial fingerprints
+        references immediately. One this library already had gets them held, never as references,
+        until somebody gives them to her from her own page (`claim_for`): they are another install's
+        say-so about somebody we know. Neither is ever placed by the pass over facial fingerprints
         (`Store.SWAPPED_PACKS`).
         """
         pack, pack_id = await self._take_in(raw, other_model=other_model, while_off=False)

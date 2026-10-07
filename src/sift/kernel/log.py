@@ -164,7 +164,7 @@ def apply_log_preferences(
             # `maxBytes` is read on every emit, so this takes effect on the next line written.
             lowered = per_file_bytes < handler.maxBytes
             handler.maxBytes = per_file_bytes
-            # A lowered size trims the OLDER files at once: the handler only ever looks at the one
+            # A lowered size trims the OLDER files immediately: the handler only ever looks at the one
             # it writes, so a 27 MB rotated file would have kept the total over the setting until
             # five more rotations pushed it out.
             if lowered:

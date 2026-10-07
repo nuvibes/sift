@@ -355,7 +355,7 @@
 	 * somebody looks for on a card with nothing waiting, saying what is left rather than that the
 	 * card is fine.
 	 *
-	 * Picking several people at once, by the gesture every other wall of tiles uses.
+	 * Picking several people together, by the gesture every other wall of tiles uses.
 	 *
 	 * The action is the same one the card carries, and deliberately the only one: agreeing. Taking
 	 * a name back is done face by face on the person's own page, where the face is visible; a "no"

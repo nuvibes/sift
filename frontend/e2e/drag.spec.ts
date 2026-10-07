@@ -89,7 +89,7 @@ test('dragging a link in the rail does not offer to import it', async ({ page })
 });
 
 test('dragging the brand does not offer to import it', async ({ page }) => {
-	// The logo is an image inside a link, which is both ways of arming the overlay at once.
+	// The logo is an image inside a link, which is both ways of arming the overlay at the same time.
 	await page.goto('/browse');
 
 	const drop = await dragFrom(page, 'a.brand');

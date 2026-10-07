@@ -165,7 +165,7 @@
 		editingId = true;
 	}
 
-	/* Filling a blank is saved at once; REPLACING an ID is asked first, because the ID is what keeps
+	/* Filling a blank is saved immediately; REPLACING an ID is asked first, because the ID is what keeps
 	   new downloads with the right person. See the confirmation's own words. Typing the ID it
 	   already has is no change and asks nothing. */
 	function askToSaveId() {

@@ -19,8 +19,8 @@
 // `{@render children()}` and a different element on every screen, so `PageFrame` says which one
 // while it is mounted, and this module is the one place that knows.
 //
-// Two can be mounted at once (`/organize/[queue]` draws a frame and the panel inside it draws
-// another), so the innermost answers: that is the box a person actually scrolled.
+// Two can be mounted at the same time (`/organize/[queue]` draws a frame and the panel inside it
+// draws another), so the innermost answers: that is the box a person actually scrolled.
 
 /**
  * How long to keep putting the position back once nothing more is arriving.

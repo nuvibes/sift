@@ -335,7 +335,7 @@ describe('the three panes', () => {
 		expect(strip()).toEqual(['About2', 'Media1', 'History']);
 	});
 
-	it('reads the panel at once when the picture cannot be drawn, not after the wait', async () => {
+	it('reads the panel immediately when the picture cannot be drawn, not after the wait', async () => {
 		await show();
 		const panelReads = () =>
 			vi.mocked(api.get).mock.calls.filter(([path]) => String(path).endsWith('/people')).length;

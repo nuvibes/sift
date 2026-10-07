@@ -204,7 +204,7 @@ def test_renaming_a_tag_that_is_not_there_reads_like_any_other_miss(client: Test
 def test_a_tag_deleted_by_somebody_else_mid_delete_reads_like_any_other_miss(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Two people deleting one tag at once: the second passes the visibility check, and by its own
+    """Two people deleting one tag together: the second passes the visibility check, and by its own
     delete the row is gone. It answers the miss an unknown id does, not a success for a delete
     that removed nothing."""
     sign_in(client)

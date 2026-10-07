@@ -145,7 +145,7 @@ export function primedOr<T>(kind: string, id: string, ask: () => Promise<T>): Pr
  *
  * The same rule `EntitySubject` holds, for the things beside the row rather than the row itself: a
  * placeholder belongs on a screen with nothing on it, so asking again about the same subject leaves
- * the last answer up and asking about a different one clears it at once.
+ * the last answer up and asking about a different one clears it immediately.
  *
  * A component that clears its state at the top of its effect, and is drawn behind an `{#if}` on
  * that state, is torn out of the page and rebuilt on every library write: a person's page

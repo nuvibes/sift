@@ -6,8 +6,8 @@
  * only after the last of them, the search box would hold the new question and the pager underneath
  * it the old question's count: "1-96 of 100,000" against a phrase matching a few dozen files.
  *
- * The number a fill has already been told is published at once, and every later answer of the same
- * fill may refine it. A fill a newer question has overtaken publishes nothing at all.
+ * The number a fill has already been told is published immediately, and every later answer of the
+ * same fill may refine it. A fill a newer question has overtaken publishes nothing at all.
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';

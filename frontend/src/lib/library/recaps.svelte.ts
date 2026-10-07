@@ -80,8 +80,8 @@ class RecapShelf {
 	}
 
 	/**
-	 * The cross: this recap stops being announced, everywhere at once. It stays in the list, to be
-	 * opened whenever.
+	 * The cross: this recap stops being announced, everywhere immediately. It stays in the list, to
+	 * be opened whenever.
 	 *
 	 * Taken off the screen before the server answers, because a line that stays after its cross is
 	 * pressed reads as a cross that does not work. If the server refuses, the list is read again and

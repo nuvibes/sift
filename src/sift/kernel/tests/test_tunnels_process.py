@@ -572,7 +572,7 @@ async def test_two_owners_never_end_each_others_client(
     monkeypatch: pytest.MonkeyPatch, spec: TunnelSpec, holders: _Holders
 ) -> None:
     """THE FAULT: two Sifts on one device, and the second is handed a port the first one's client
-    is on. The second's client cannot bind it and leaves at once; the port's holder is the same
+    is on. The second's client cannot bind it and leaves immediately; the port's holder is the same
     program, but it carries the OTHER store's token, so it is left exactly where it is, named in
     the log by its process id, and the second tunnel comes up on a fresh pair instead."""
     first = TunnelProcess(spec, owner="01OWNERA")
@@ -723,7 +723,7 @@ async def test_health_of_something_that_is_not_running(spec: TunnelSpec) -> None
 async def status_server() -> AsyncIterator[Callable[[str], Awaitable[int]]]:
     """A server standing in for a tunnel's status port, answering with whatever body a test wants.
     The port is one the system hands out, and is what `serve` answers: a number written here would
-    be bound twice when two of these run at once."""
+    be bound twice when two of these run at the same time."""
     servers: list[asyncio.Server] = []
 
     async def serve(body: str) -> int:

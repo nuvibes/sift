@@ -775,7 +775,7 @@ async def test_a_product_says_which_passes_read_what_it_made_and_the_task_asks_f
 
     waiting = await job_queue.list(job_type="dedup_scan_test", state=JobState.QUEUED)
     assert waiting.total == 1
-    assert waiting.jobs[0].run_after is not None, "asked once the batch settles, not at once"
+    assert waiting.jobs[0].run_after is not None, "asked once the batch settles, not immediately"
 
 
 async def test_a_product_that_fails_outright_fails_the_task_and_nothing_after_it_is_made(

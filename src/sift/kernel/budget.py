@@ -42,7 +42,7 @@ def tool_threads(cores: int, *, running: int, percent: int) -> int:
     """How many threads one background tool may use when `running` tools share `percent` of the
     device's `cores`.
 
-    The share of the logical processors divided by how many tools run at once, so the tools
+    The share of the logical processors divided by how many tools run together, so the tools
     together never ask for more than the share; never below one, because a tool cannot run on
     none. With the whole device in force this is the cores divided by the workers.
     """
@@ -54,7 +54,7 @@ def tool_threads(cores: int, *, running: int, percent: int) -> int:
 def processor_rate(threads: int, cores: int) -> int:
     """`threads` of `cores` as the operating system's processor rate: hundredths of a percent of
     the whole machine, 1 to 10,000. What holds a tool to its threads when its own thread flags do
-    not (a tool reading several inputs at once runs a decoder for each)."""
+    not (a tool reading several inputs together runs a decoder for each)."""
     return max(1, min(10_000, threads * 10_000 // max(1, cores)))
 
 
@@ -66,7 +66,7 @@ def divide(
     fixed: Collection[str] = frozenset(),
     waited_on: Collection[str] = frozenset(),
 ) -> dict[str, int]:
-    """How many of each kind may run at once, given who actually has work.
+    """How many of each kind may run together, given who actually has work.
 
     `entitlements` is what each kind gets when everything competes (what the settings resolve to);
     `busy` is each kind's unfinished work. A `fixed` kind gets its own typed number whoever else has

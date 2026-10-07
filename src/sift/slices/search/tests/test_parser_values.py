@@ -361,3 +361,34 @@ def test_every_offered_value_is_one_the_parser_takes() -> None:
             assert not query.text, (one, value)
             assert [leaf.field for leaf in query.leaves()] == [one], (one, value)
             assert problems_in(query, now=NOW) == [], (one, value)
+
+
+@pytest.mark.parametrize("field", [Field.IN, Field.TAGS, Field.SITES, Field.PEOPLE])
+def test_a_quoted_minus_is_part_of_the_value_and_a_bare_one_refuses(field: Field) -> None:
+    """A name that begins with a minus is a name: only a minus outside the quotes refuses."""
+    from starlette.datastructures import QueryParams
+
+    from sift.slices.search.filter_help import token_prefix
+    from sift.slices.search.filter_parse import quoted, write
+
+    name = field.value
+    kept = Term(field, "-raw cuts")
+    assert parse_tokens(f'{name}:"-raw cuts"').where == kept
+    assert parse_tokens(f'-{name}:"-raw cuts"').where == Negated(kept)
+    assert parse(QueryParams({name: '"-raw cuts"'})).where == kept
+    assert parse(QueryParams({name: '-"-raw cuts"'})).where == Negated(kept)
+    # A bare minus refuses wherever it stands, which is what `?in=-raw` has always meant.
+    refused = Negated(Term(field, "raw"))
+    assert parse_tokens(f"{name}:-raw").where == refused
+    assert parse_tokens(f"-{name}:raw").where == refused
+    assert parse(QueryParams({name: "-raw"})).where == refused
+    # Written back, each reads as itself.
+    assert quoted("-raw") == '"-raw"'
+    assert quoted("a|b") == '"a|b"'
+    for node in (kept, Negated(kept), Term(field, "-raw"), Term(field, "a|b")):
+        assert parse_tokens(write(node)).where == node
+    # The caret's prefix keeps the quoted minus, so the dropdown looks for the name as written.
+    plain, minus = token_prefix(f'{name}:"-ra'), token_prefix(f'-{name}:"-ra')
+    assert plain is not None and minus is not None
+    assert (plain.field, plain.prefix, plain.at) == (field, "-ra", 0)
+    assert (minus.field, minus.prefix, minus.at) == (field, "-ra", 1)

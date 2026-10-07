@@ -19,7 +19,7 @@ conflating them:
 perceptual hashes. Comparing them is the feature's business; this only hands them over.
 
 `redundancies` answers *what is already known to be the same*: an asset sitting in more than one
-place at once. There is no comparison involved and no judgement to make: identical bytes are one
+place together. There is no comparison involved and no judgement to make: identical bytes are one
 asset with several locations by construction, so this is a fact the content model already holds
 rather than something to go looking for.
 
@@ -130,7 +130,7 @@ class Place:
 
 @dataclass(frozen=True, slots=True)
 class Redundancy:
-    """An asset whose bytes sit in more than one place at once.
+    """An asset whose bytes sit in more than one place at the same time.
 
     `copies` is always two or more, and every one of them is `present`: a location Sift has
     recorded as missing is not a copy anybody can reclaim, and counting it would offer to free
@@ -400,7 +400,7 @@ class DuplicateReads:
         cannot bound it without seeing the whole set.
         """
         # Deliberately whole-library, and it stays that way: the block index the matcher
-        # is built on is built from every fingerprint at once, so there is no narrower
+        # is built on is built from every fingerprint together, so there is no narrower
         # question to ask. What it needs is the lane, not a narrower read.
         if within is None:
             rows = await self._db.sweep_all(_FINGERPRINTS, what="duplicate fingerprints")

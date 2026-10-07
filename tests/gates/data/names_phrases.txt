@@ -514,3 +514,5 @@ The Has
 Esme Wrenfield Backup
 Local Storage
 Open Activity
+Raw Cuts
+One Exif

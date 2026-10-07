@@ -300,7 +300,7 @@ it('keeps the letter back while a picture is on its way', async () => {
 	expect(root.querySelector('.monogram')?.classList.contains('waiting')).toBe(true);
 });
 
-it('draws the letter at once where there is no picture to wait for', () => {
+it('draws the letter immediately where there is no picture to wait for', () => {
 	const root = draw({ name: 'Lantern Hum' });
 	expect(root.querySelector('.monogram')?.classList.contains('waiting')).toBe(false);
 });

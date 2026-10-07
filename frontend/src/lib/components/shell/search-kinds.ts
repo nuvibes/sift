@@ -2,9 +2,9 @@
  * WHAT EACH ROW OF THE SEARCH LIST IS: its glyph and the word for it, in one table.
  *
  * The list under the top search box draws a glyph at the head of every row, so a bare word
- * offering a person, a tag and the Tags filter at once shows which each would become when picked.
- * A glyph on its own is a shape, though, and the ones for an audio codec, a view status or a
- * remembered search are shapes nobody is born knowing. So each glyph carries its kind's name, on
+ * offering a person, a tag and the Tags filter at the same time shows which each would become when
+ * picked. A glyph on its own is a shape, though, and the ones for an audio codec, a view status or
+ * a remembered search are shapes nobody is born knowing. So each glyph carries its kind's name, on
  * hover through the shared tooltip and to a screen reader as the glyph's own name.
  *
  * ONE TABLE, keyed by what the row IS, never a word written per row. The glyph and the word are

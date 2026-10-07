@@ -206,8 +206,8 @@
 			but a file whose frames the decoder refused will never gain a lookalike, and silence
 			would read as "Sift looked and found nothing like it". A verdict is written the moment
 			the decoder refuses, while the numbers the file was given while it still decoded are
-			kept, so a file can carry this sentence and real matches at once. The sentence sits
-			above the strip; the strip draws whenever there is anything in it.
+			kept, so a file can carry this sentence and real matches at the same time. The sentence
+			sits above the strip; the strip draws whenever there is anything in it.
 		-->
 			{#if cannotCompare}
 				<Note tone="caution">

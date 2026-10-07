@@ -172,8 +172,8 @@ async def suggest(
         )
 
     # Not inside a token, so a bare word could be the start of a filter's name, the name of
-    # something in the library, or neither. All three are answered at once and the client draws them
-    # as three groups, which is what makes an empty box useful: clicking into one now lists the
+    # something in the library, or neither. All three are answered together and the client draws
+    # them as three groups, which is what makes an empty box useful: clicking into one now lists the
     # filters that exist, and nothing else in the interface ever said the language was there.
     word = word_prefix(q)
     prefix = word.prefix if word else ""

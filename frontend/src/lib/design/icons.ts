@@ -153,7 +153,7 @@ export const ICON_NAMES = [
 	'check_box',
 	'check_box_outline_blank',
 	/* The Downloads row's "Mark downloads as seen": two ticks, because it acknowledges every
-	   outcome the dot is showing at once rather than confirming one thing, which is what the
+	   outcome the dot is showing in one go rather than confirming one thing, which is what the
 	   single `check` means everywhere else. */
 	'done_all',
 	'chevron_left',
@@ -422,8 +422,8 @@ export const ICON_NAMES = [
 	   with two pictures is two ideas to a reader. */
 	'hub',
 	/* Preview everything visible, on the shared bar. The play triangle inside a repeat, not the
-	   plain triangle, which means START THIS. A control that plays a whole screen at once is
-	   not the same instruction. */
+	   plain triangle, which means START THIS. A control that plays a whole screen at the same time
+	   is not the same instruction. */
 	'autoplay',
 	/* A floppy disk, stacked bookmarks, a stop, and two window shapes. The disk is for the one
 	   thing a disk has always meant, a copy saved to somebody's own device: the History row

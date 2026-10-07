@@ -881,7 +881,7 @@ def test_what_a_folder_refused_is_listed_by_name(idle_client: TestClient, librar
         ],
     )
 
-    # The quarantine screen draws both piles for every root at once.
+    # The quarantine screen draws both piles for every root in one go.
     (mine,) = [one for one in client.get(QUARANTINE).json()["left_alone"] if one["root_id"] == root]
     listed = mine["rejections"]
 
@@ -1467,7 +1467,7 @@ def top_folder_of(client: TestClient, root_id: str) -> str:
 
 
 def test_an_admin_makes_a_folder_and_it_is_on_the_disk(client: TestClient, library: Path) -> None:
-    """A folder made is on the disk and in the tree at once."""
+    """A folder made is on the disk and in the tree at the same time."""
     sign_in(client, "admin")
     root = add_managed_root(client, library)
 

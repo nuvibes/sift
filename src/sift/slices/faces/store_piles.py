@@ -373,7 +373,7 @@ class PilesStore(PicturesStore):
         ]
 
     async def tracks_in_piles(self, pile_ids: Sequence[str]) -> dict[str, list[StoredTrack]]:
-        """The unclaimed faces of several piles at once, keyed by pile, in each pile's own order.
+        """The unclaimed faces of several piles in one go, keyed by pile, in each pile's own order.
 
         The batched `pile_tracks`, by the same rule about attributed faces, so a card never counts
         faces the pile screen does not show. Every asked-for pile is present, empty when it has

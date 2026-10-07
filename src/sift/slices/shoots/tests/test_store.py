@@ -296,7 +296,7 @@ async def test_a_schema_already_at_its_version_is_left_as_it_is() -> None:
 
 @pytest.mark.asyncio
 async def test_a_proposal_reads_its_creators_name_as_it_is_now(tmp_path: Path) -> None:
-    """The pass wrote the creator's name at the time; a rename since reads at once, on the list
+    """The pass wrote the creator's name at the time; a rename since reads immediately, on the list
     and on the one proposal a press makes a Photo Set from, without waiting for another pass."""
     database = await _library(tmp_path)
     try:

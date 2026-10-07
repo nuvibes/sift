@@ -936,7 +936,7 @@ class TunnelProcess:
         self._ports = None
         if process is None or process.returncode is not None:
             if process is not None:
-                # Already gone: reaped at once, and its job let go.
+                # Already gone: reaped immediately, and its job let go.
                 await process.wait()
             await asyncio.to_thread(self._close_client_log)
             return

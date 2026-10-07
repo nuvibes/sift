@@ -94,7 +94,7 @@ export const TURBO_MODE_COPY = {
 	/* The control's name, the same in both states; pressed or not is said by `aria-pressed`. */
 	name: 'Turbo mode',
 	lessPress: 'Press for turbo mode.',
-	full: (why: string, of = device(false)) => `Out of eco mode: turbo mode on ${of} although ${why}`,
+	full: (why: string, of = device(false)) => `Turbo mode on ${of} although ${why}`,
 	fullPress: 'Press to go back to eco mode.',
 	/* The press on a phone's row, where there is room for a verb. */
 	useTurbo: 'Use turbo mode',

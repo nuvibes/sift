@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { asNamedFilters, partsOf, sameFilters, taken, typedParts, written } from './query-parts';
-import type { ParsedClause, ParsedQuery } from '$lib/search/search.svelte';
+import { savedQuery, type ParsedClause, type ParsedQuery } from '$lib/search/search.svelte';
 
 /* The parser is the SERVER's and stays the server's: see the head of `query-parts.ts`. What is
    mocked here is the round trip to it, so the tests are about what this module does with an answer
@@ -24,7 +24,7 @@ function clause(over: Partial<ParsedClause> & { query: string }): ParsedClause {
 /*
  * A named filter in an address, taken apart and put back together.
  *
- * One string carries three things at once, and every fault this pins is half of it being dropped:
+ * One string carries three things together, and every fault this pins is half of it being dropped:
  * the minus stuck to the first value, so `-Alice` is a different value from `Alice` and can be
  * added twice; a comma-joined list read as one long value that matches nothing anybody could click.
  * It is one pair because a SAVED filter is the same string in the same shape, and a second reader
@@ -316,5 +316,46 @@ describe('a query somebody typed', () => {
 		expect(typedParts('sunset cliff:high people:jane', fields)).toEqual([
 			{ field: 'people', values: ['jane'], all: false, excluded: false }
 		]);
+	});
+});
+
+describe('a name that begins with a minus', () => {
+	/* Only a minus outside the quotes refuses. A folder, a tag, a Site or a person whose name
+	   begins with one is a name, and reading it as a refusal empties every wall it is set on. */
+	const kinds = ['in', 'tags', 'sites', 'people'];
+
+	it.each(kinds)('%s: a quoted name stays included, through every spelling', (field) => {
+		const named = { excluded: false, all: false, values: ['-Raw Cuts'] };
+
+		expect(written(named)).toBe('"-Raw Cuts"');
+		expect(taken(written(named))).toEqual(named);
+		expect(typedParts(`${field}:"-Raw Cuts"`, kinds)).toEqual([{ field, ...named }]);
+		const typed = savedQuery(`${field}=${encodeURIComponent(written(named))}`);
+		expect(typed).toBe(`${field}:"-Raw Cuts"`);
+		expect(typedParts(typed, kinds)).toEqual([{ field, ...named }]);
+	});
+
+	it.each(kinds)('%s: a refused name keeps its own minus', (field) => {
+		const refused = { excluded: true, all: false, values: ['-Raw Cuts', 'b'] };
+
+		expect(written(refused)).toBe('-"-Raw Cuts"|b');
+		expect(taken(written(refused))).toEqual(refused);
+		const typed = savedQuery(`${field}=${encodeURIComponent(written(refused))}`);
+		expect(typed).toBe(`-${field}:"-Raw Cuts"|b`);
+		expect(typedParts(typed, kinds)).toEqual([{ field, ...refused }]);
+	});
+
+	it('reads a bare minus as a refusal on either side of the colon', () => {
+		const refused = { field: 'in', excluded: true, all: false, values: ['Raw'] };
+
+		expect(typedParts('in:-Raw', kinds)).toEqual([refused]);
+		expect(typedParts('-in:Raw', kinds)).toEqual([refused]);
+		// A refused folder holding a space goes back on the token, never inside the quotes.
+		expect(savedQuery('in=-Raw+Cuts')).toBe('-in:"Raw Cuts"');
+	});
+
+	it('keeps a quoted separator inside its value', () => {
+		expect(taken('"a,b"|c')).toEqual({ excluded: false, all: false, values: ['a,b', 'c'] });
+		expect(written({ excluded: false, all: true, values: ['a|b', 'c'] })).toBe('"a|b",c');
 	});
 });

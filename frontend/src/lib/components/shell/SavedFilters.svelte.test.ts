@@ -14,7 +14,7 @@ import { savedSearches, type SavedSearch } from '$lib/search/saved-searches.svel
  * whatever filters the screen.
  *
  * The store is a module singleton, so it is filled directly and `loaded` is set: `ensure` returns
- * at once and nothing here reaches the network.
+ * immediately and nothing here reaches the network.
  */
 
 const KEPT: SavedSearch[] = [

@@ -432,7 +432,7 @@ export class Cell {
 	 * THE FILTER SOMEBODY CHOSE WHILE THIS CELL WAS PLAYING, waiting for the file to end.
 	 *
 	 * Facets are ticked one at a time, and each throwing the run away would cut off the file being
-	 * watched. The panel is told at once (`narrowing`), so the tick holds; only the run waits.
+	 * watched. The panel is told immediately (`narrowing`), so the tick holds; only the run waits.
 	 */
 	#pending = $state<string | null>(null);
 
@@ -871,7 +871,7 @@ export class Cell {
 	started(): void {
 		this.#failures = 0;
 		/* What comes after this one, found on the element starting, not the handover, so the
-		   opening draw (`Wall.open`) has no nine cells asking at once. Repeats return at once. */
+		   opening draw (`Wall.open`) has no nine cells asking together. Repeats return immediately. */
 		void this.#lookAhead();
 	}
 

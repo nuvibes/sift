@@ -329,7 +329,7 @@ def test_the_beginning_is_asked_for_by_not_seeking_to_it(settings: Settings) -> 
     A photograph is read through the image2 demuxer as a video of a single frame lasting 0.04 s. An
     input seek to 0 lands on that frame's own timestamp rather than before it, so it is treated as
     already gone: ffmpeg writes no output and exits successfully, and every still in the library
-    would have no thumbnail and no perceptual hash at once.
+    would have no thumbnail and no perceptual hash at the same time.
     """
     for argv in (
         ffmpeg.frame_args(SOURCE, 0, size=32, settings=settings),

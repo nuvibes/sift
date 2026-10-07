@@ -39,7 +39,7 @@ from sift.kernel.wiring import (
 )
 from sift.slices import performance
 from sift.slices.auth import csrf_protect, require_admin
-from sift.slices.performance import selftest
+from sift.slices.performance import selftest, selftest_time
 from sift.slices.performance.benchmark import BENCHMARK, FIRST_BENCHMARK, HELD
 from sift.slices.performance.jobs import ACCEL_INSTALL
 from sift.slices.performance.measure_encoder import CardCurve
@@ -104,12 +104,23 @@ def _view(
     progress: selftest.Measurement | None = None,
     folders: dict[str, str] | None = None,
     whole: tuple[bool, bool] = (False, False),
+    timing: tuple[str | None, tuple[float, bool] | None, tuple[float, bool]] = (
+        None,
+        None,
+        (0.0, False),
+    ),
 ) -> SelfTestView:
     """The run, built field by field so a field reaches the wire only when added here. `current`
     is read now, so an applied recommendation stops being offered; `waiting` is a queued run."""
     measurement = state.measurement
+    step, left, (whole_seconds, whole_timed) = timing
     return SelfTestView(
         running=state.running or waiting,
+        step=step,
+        seconds_left=None if left is None else round(left[0]),
+        left_timed=left is not None and left[1],
+        whole_seconds=round(whole_seconds),
+        whole_timed=whole_timed,
         progress=None if progress is None else _measurement_view(progress, folders or {}),
         held_while_measuring=caused[0],
         full_while_measuring=caused[1],
@@ -170,19 +181,22 @@ async def _current_settings(request: Request) -> dict[str, int]:
     return await current_settings(part_of(request, SETTINGS_HUB))
 
 
-def _rounds(request: Request) -> int:
-    """How many rounds a run on THIS machine can reach. See `planned_levels`."""
-    return len(selftest.planned_levels(part_of(request, HARDWARE).cpu_count))
+def _rounds(request: Request, *, first_part: bool) -> int:
+    """How many rounds a run on THIS machine can reach. See `planned_rounds`."""
+    cores = part_of(request, HARDWARE).cpu_count
+    return selftest_time.planned_rounds(cores, with_midpoint=not first_part)
 
 
 async def _read(request: Request) -> SelfTestView:
     """The run as the screen reads it, a queued run counted as going."""
     runner = part_of(request, SELF_TEST_RUNNER)
     newest = await part_of(request, QUEUE).newest_of(BENCHMARK, limit=3)
+    left, whole = runner.left(), await runner.whole_length()
     return _view(
         runner.state,
         current=await _current_settings(request),
-        rounds=_rounds(request),
+        rounds=_rounds(request, first_part=runner.first_part),
+        timing=(runner.step(), left, whole),
         measured=await runner.measured(),
         waiting=any(job.state in (JobState.QUEUED, JobState.RUNNING) for job in newest),
         notes=runner.notes,
@@ -205,7 +219,7 @@ async def start(
 ) -> SelfTestView:
     """Queue a run that suggests. Answers straight away; the result is read back below.
 
-    A second request while one is coming is not an error and queues nothing: two runs at once
+    A second request while one is coming is not an error and queues nothing: two runs together
     would measure each other.
     """
     await part_of(request, SELF_TEST_RUNNER).ask(admin.id)

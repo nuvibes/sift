@@ -46,7 +46,7 @@
 
 	const name = $derived(page.params.queue ?? '');
 
-	/* The board as last held, so this screen draws at once with what Organize already knew and
+	/* The board as last held, so this screen draws immediately with what Organize already knew and
 	   replaces it when the fresh answer lands: the same shape as the board's own screen. */
 	let found = $state<Board | null>(heldBoard.found);
 	let failed = $state(false);
@@ -154,7 +154,7 @@
 		></OrganizeHeader>
 	{/snippet}
 	<!-- The PANEL does not wait for the board. It fetches its own list, so its thumbnails are
-	     not held behind a survey of every queue. A name the registry knows is drawn at once;
+	     not held behind a survey of every queue. A name the registry knows is drawn immediately;
 	     the board fills in the header and the counts when it lands, and only its ANSWER can say
 	     the queue is not here. -->
 	{#if Panel === undefined}

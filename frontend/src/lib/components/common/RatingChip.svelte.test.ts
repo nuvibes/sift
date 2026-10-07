@@ -88,7 +88,7 @@ it('says so plainly when there is no rating yet', () => {
 it("takes the heart's own sizes, so the pair cannot drift apart", () => {
 	/* The star stands beside a heart on every surface that draws both. An 18px heart beside a 20px
 	   star reads as two unrelated controls, so the size is one list shared with
-	   `Heart` and set at the call site for both at once. */
+	   `Heart` and set at the call site for both together. */
 	render({ rating: 8, size: 20, label: 'This file' });
 
 	expect(host?.querySelector('.star .icon')?.classList.contains('size-20')).toBe(true);
@@ -96,7 +96,7 @@ it("takes the heart's own sizes, so the pair cannot drift apart", () => {
 
 it('opens the chooser when the mark is pressed', async () => {
 	/* The half that is easy to lose while changing how a trigger is drawn: the menu still opens
-	   when the mark is pressed. Waited for rather than read at once: the surface is portalled
+	   when the mark is pressed. Waited for rather than read immediately: the surface is portalled
 	   and positioned, so it arrives a frame after the press. */
 	render({ rating: 8, label: 'This file' });
 

@@ -831,8 +831,8 @@ async def strip(source: Path, workdir: Path, *, settings: Settings) -> Path:
     kind, destination, size = await asyncio.to_thread(_begin, source, workdir)
     try:
         # Either strip holds its storage's place for the whole file, so on a share it leaves the
-        # streams a place of their own (`lanes.whole_file`): two strips at once on a two-place
-        # share would have every stream wait out both copies.
+        # streams a place of their own (`lanes.whole_file`): two strips at the same time on a
+        # two-place share would have every stream wait out both copies.
         if kind.name in _PICTURE_STRIPS:
             async with lanes.whole_file(source), lanes.reading(source):
                 await asyncio.to_thread(_strip_picture, source, destination, kind.name)

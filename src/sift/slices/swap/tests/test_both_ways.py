@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """A swap that sends and receives, on loopback: a real host and a real guest, each offering, each
-answering the other's offer, each landing what it took, at once.
+answering the other's offer, each landing what it took, at the same time.
 
 Every rule of a swap one way, held in the direction from the guest to the host as well: a file
 with a place arrives stripped, Do not swap keeps a file out of the guest's offer, a side asks only
@@ -407,7 +407,7 @@ async def test_both_ways_do_not_swap_and_hidden_hold_on_the_guests_offer(
 
 
 class _CuttingProxy(_Proxy):
-    """The guest's tunnel, on loopback, able to drop every connection it carries at once: a cut,
+    """The guest's tunnel, on loopback, able to drop every connection it carries in one go: a cut,
     the way a tunnel makes one."""
 
     def __init__(self, hoster: _Hoster) -> None:

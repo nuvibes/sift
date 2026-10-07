@@ -204,7 +204,7 @@ class TaskStarted(Wire):
         default=False,
         description=(
             "For Run during quiet hours, whether the work waits for the range to open; false when "
-            "the range is open and it starts at once. Said here because only this device's clock "
+            "the range is open and it starts immediately. Said here because only this device's clock "
             "can say it: a browser comparing `starts_at` with its own clock is wrong by however "
             "far the two clocks are apart."
         ),

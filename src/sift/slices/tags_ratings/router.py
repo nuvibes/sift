@@ -495,7 +495,7 @@ async def update_tag(
     # destroy what somebody wrote.
     sent = body.model_fields_set
     if {"description", "category", "aliases", "parent"} & sent:
-        # Read-modify-write, because the statement behind this replaces all three columns at once
+        # Read-modify-write, because the statement behind this replaces all three columns in one go
         # and a caller may have sent only one of them. What was not sent is put back exactly as it
         # was: a full-row writer blanks whatever it is not told about, and that is a real way to
         # lose a paragraph somebody typed.

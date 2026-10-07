@@ -24,7 +24,7 @@
 	interface Props {
 		/** A settings pane's labelled row, or the box and its press on one line. */
 		layout?: 'row' | 'inline';
-		/** Put the typing in the box at once: the field was opened by a press that asked for it. */
+		/** Put the typing in the box immediately: the field was opened by a press that asked for it. */
 		focus?: boolean;
 		/** Told once the keys are unlocked, for a screen whose list moves when they are. */
 		onunlocked?: () => void;

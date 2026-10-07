@@ -21,7 +21,7 @@
 	 *
 	 * What each stage makes (the Edit pages) and what is missing: the per-product counts, priced
 	 * in wall time, and the files a product gave up on with Try again. Those are about the stage,
-	 * not about when it runs. How much Sift does at once is Concurrency, on Performance.
+	 * not about when it runs. How much Sift does at the same time is Concurrency, on Performance.
 	 */
 	import { onMount } from 'svelte';
 	import { counted } from '$lib/entity/entity-counts';
@@ -173,8 +173,8 @@
 	 * The server sends wall seconds at the cheapest and the dearest of its recent runs, shared out
 	 * between the products of each run, so the sum across a stage is still a stage's wall time
 	 * rather than several copies of it. What it assumes is that the next run gets the machine the
-	 * last one had, which is why the number of jobs at once is said out loud rather than buried:
-	 * halve it and the wait doubles.
+	 * last one had, which is why the number of jobs at the same time is said out loud rather than
+	 * buried: halve it and the wait doubles.
 	 */
 	function countNote(products: readonly string[]): string | undefined {
 		if (sheet === null) return undefined;
@@ -198,7 +198,7 @@
 		if (about === NOT_ENOUGH_TO_SAY) return COPY.untimed(parts.join(', '), about);
 		/* The rows of one stage are priced from one run, so they agree about this; the first that
 		   has it is the run's own number. Left off where the run predates it being recorded:
-		   "with undefined jobs at once" is worse than a sentence that stops early. */
+		   "with undefined tasks at the same time" is worse than a sentence that stops early. */
 		const at = missing.find((row) => (row.jobs_at_once ?? 0) > 0)?.jobs_at_once;
 		const assuming = at ? COPY.withTasks(at) : '';
 		return COPY.about(parts.join(', '), about, assuming);

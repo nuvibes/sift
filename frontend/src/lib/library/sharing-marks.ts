@@ -8,7 +8,7 @@
  *
  * Two facts in one mark, and the whole design follows from keeping them apart:
  *
- *   WHAT the answer is       shared, restricted, or both at once: the glyph and the colour
+ *   WHAT the answer is       shared, restricted, or both together: the glyph and the colour
  *   WHERE THE SWITCH IS      on this thing, or on something above it: solid or hollow
  *
  * SOLID MEANS THIS IS THE THING DOING THE CONTROLLING. HOLLOW MEANS SOMETHING ABOVE IT IS. That is
@@ -17,7 +17,7 @@
  * every file inside it is hollow: same decision, and the two marks are saying different true
  * things about where to go for it.
  *
- * Both at once is not a contradiction and it is not an error. The two flags are about DIFFERENT
+ * Both together is not a contradiction and it is not an error. The two flags are about DIFFERENT
  * ACCOUNTS: one guest can reach a file while another is kept from it. Drawn red it would read as
  * "nobody" and drawn in the plain ink as "everybody", so it has a colour of its own.
  */
@@ -119,7 +119,7 @@ export function markFor(facts: MarkFacts, { file = false } = {}): Mark | null {
 	// file shared on its own inside a restricted folder is Restricted, and its own share is the
 	// decision that LOST. Asking "is anything set here" would call that mark solid and say "set
 	// here", sending somebody to a switch that changes nothing while the folder that decides it
-	// went unnamed. Both at once is two answers, so either switch counts.
+	// went unnamed. Both together is two answers, so either switch counts.
 	const sharedHere = facts.shared_here === true;
 	const restrictedHere = facts.restricted_here === true;
 	const decidedHere =

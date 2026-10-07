@@ -508,7 +508,7 @@ class ScanningMixin(WeightsMixin, MatchingMixin, BoxQuestionsMixin):
         name or a pile: a face is in one place. Refusals add up: one face can be "not her" and
         "not him" both, and two remembered faces of the same person in a file (once before a
         rescan, once after) can each have been refused as somebody different. Asked across every
-        refusal at once, the first match would win and the others would be lost. Asked per person,
+        refusal together, the first match would win and the others would be lost. Asked per person,
         the rule is unchanged and every refusal of that person finds its face.
         """
         remembered = await self._store.rejections_for(asset_id)

@@ -105,7 +105,7 @@ describe('waiting for the backend to be ready', () => {
 
 	/* A backend that died while starting is the case where waiting for the deadline would be ninety
 	   seconds of a window with nothing in it, for an answer that is already known. */
-	it('stops waiting at once when the backend has gone, and says its last words', async () => {
+	it('stops waiting immediately when the backend has gone, and says its last words', async () => {
 		logText.value = 'sift.main: the port was taken\n';
 		const { backend, wait } = waiting();
 		(backend as unknown as { child: unknown }).child = null;

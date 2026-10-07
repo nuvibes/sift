@@ -39,7 +39,7 @@
 		/** What was chosen. Never called with nothing. */
 		/** One file chosen. For a picker that takes several, see `onchooseAll`. */
 		onchoose?: (file: File) => void;
-		/** Every file chosen, when `multiple` or `directory`. The add panel takes a handful at once. */
+		/** Every file chosen, when `multiple` or `directory`. The add panel takes a handful in one go. */
 		onchooseAll?: (files: File[]) => void;
 		multiple?: boolean;
 		/**

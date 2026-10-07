@@ -61,7 +61,7 @@
 
 	let { subject, values, onsave, oncancel, label, formId }: Props = $props();
 
-	/** Unique to this form, so two records open at once cannot both claim the same label id. */
+	/** Unique to this form, so two records open together cannot both claim the same label id. */
 	const uid = $props.id();
 
 	const shown = $derived(fields.drawn(subject));

@@ -22,7 +22,7 @@ the picture.
 when the feature is enabled, from the publisher, under whatever terms that publisher sets. An
 install that never switches this on pays nothing: no download, no pass, no memory.
 
-**What is certain decides; what is not is written down.** An exact address files the file at once,
+**What is certain decides; what is not is written down.** An exact address files the file immediately,
 with an Undo on the file. Anything less certain is recorded against the file and shown on its
 screen, and decides nothing. There is no review queue and no card: a hint somebody has to come back
 and confirm is more work than it saves.

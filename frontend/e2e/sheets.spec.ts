@@ -262,7 +262,7 @@ test('and the same button turns it off again without going anywhere', async ({ p
 	 * the address and puts a fresh one back when its page lands: two writes, a request apart.
 	 * Read between them the address is the bare `/browse`, which is neither where it started nor
 	 * where it ends up. The write is a `replaceState` (see `lib/grid/anchor.ts`) and takes effect
-	 * at once.
+	 * immediately.
 	 *
 	 * Polling is right here and would be wrong one line up: this is a value that ARRIVES and stays,
 	 * not one moving through a range. It still fails if the row never comes back.
@@ -302,7 +302,7 @@ test('Tag opens the pick flyout and tags every picked file', async ({ page }) =>
 	await pickFirst(page, 3);
 	/* The bar's "Add to" is ONE button opening onto the places a file can go: five buttons side
 	   by side would be most of a strip that scrolls sideways. Each row opens a flyout over the
-	   whole set, and a press on one of its rows writes to every picked file at once; see
+	   whole set, and a press on one of its rows writes to every picked file together; see
 	   `FileVerbs`. */
 	await bar(page).getByRole('button', { name: 'Add to' }).click();
 	await page.getByRole('menuitem', { name: 'Tag' }).click();
@@ -348,7 +348,7 @@ test('and closing the pick flyout writes nothing at all', async ({ page }) => {
 	await pickFirst(page, 3);
 	/* The bar's "Add to" is ONE button opening onto the places a file can go: five buttons side
 	   by side would be most of a strip that scrolls sideways. Each row opens a flyout over the
-	   whole set, and a press on one of its rows writes to every picked file at once; see
+	   whole set, and a press on one of its rows writes to every picked file together; see
 	   `FileVerbs`. */
 	await bar(page).getByRole('button', { name: 'Add to' }).click();
 	await page.getByRole('menuitem', { name: 'Tag' }).click();
@@ -414,7 +414,7 @@ test('a person nobody has heard of can be made from the flyout and filed under',
 	await pickFirst(page, 2);
 	/* The bar's "Add to" is ONE button opening onto the places a file can go: five buttons side
 	   by side would be most of a strip that scrolls sideways. Each row opens a flyout over the
-	   whole set, and a press on one of its rows writes to every picked file at once; see
+	   whole set, and a press on one of its rows writes to every picked file together; see
 	   `FileVerbs`. */
 	await bar(page).getByRole('button', { name: 'Add to' }).click();
 	await page.getByRole('menuitem', { name: 'Person' }).click();
@@ -462,7 +462,7 @@ test('Add to Person goes through the same flyout to the people endpoint', async 
 	await pickFirst(page, 2);
 	/* The bar's "Add to" is ONE button opening onto the places a file can go: five buttons side
 	   by side would be most of a strip that scrolls sideways. Each row opens a flyout over the
-	   whole set, and a press on one of its rows writes to every picked file at once; see
+	   whole set, and a press on one of its rows writes to every picked file together; see
 	   `FileVerbs`. */
 	await bar(page).getByRole('button', { name: 'Add to' }).click();
 	await page.getByRole('menuitem', { name: 'Person' }).click();
@@ -509,7 +509,7 @@ test('Add to Site says where a selection came from', async ({ page }) => {
 	await pickFirst(page, 2);
 	/* The bar's "Add to" is ONE button opening onto the places a file can go: five buttons side
 	   by side would be most of a strip that scrolls sideways. Each row opens a flyout over the
-	   whole set, and a press on one of its rows writes to every picked file at once; see
+	   whole set, and a press on one of its rows writes to every picked file together; see
 	   `FileVerbs`. */
 	await bar(page).getByRole('button', { name: 'Add to' }).click();
 	await page.getByRole('menuitem', { name: 'Site' }).click();
@@ -552,7 +552,7 @@ test('Add to Photo Set puts every picked file into the one chosen', async ({ pag
 	await pickFirst(page, 2);
 	/* The bar's "Add to" is ONE button opening onto the places a file can go: five buttons side
 	   by side would be most of a strip that scrolls sideways. Each row opens a flyout over the
-	   whole set, and a press on one of its rows writes to every picked file at once; see
+	   whole set, and a press on one of its rows writes to every picked file together; see
 	   `FileVerbs`. */
 	await bar(page).getByRole('button', { name: 'Add to' }).click();
 	await page.getByRole('menuitem', { name: 'Photo Set' }).click();

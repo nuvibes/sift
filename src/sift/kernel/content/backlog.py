@@ -30,8 +30,8 @@ TERMS_KEPT = 62
 CHECK_EVERY_SECONDS = 6 * 3600
 
 #: Files evaluated per statement when folding, and per write when building.
-_FOLD_AT_ONCE = 500
-_BUILD_AT_ONCE = 500
+_FOLD_PER_STATEMENT = 500
+_BUILD_PER_WRITE = 500
 
 _CREATE_CLOCK = """
 CREATE TABLE IF NOT EXISTS backlog_clock (
@@ -357,12 +357,12 @@ class StoredCounts:
                 async with self._db.write() as connection:
                     rows = list(
                         await connection.execute_fetchall(
-                            statement, (*params, after, _BUILD_AT_ONCE)
+                            statement, (*params, after, _BUILD_PER_WRITE)
                         )
                     )
                     ids = [str(row["id"]) for row in rows]
                     await _apply(connection, ids, rows, order)
-                if len(ids) < _BUILD_AT_ONCE:
+                if len(ids) < _BUILD_PER_WRITE:
                     break
                 after = ids[-1]
             async with self._db.write() as connection:
@@ -396,8 +396,8 @@ class StoredCounts:
             ]
             statement, params = _evaluating(_EVALUATE, group)
             order = [int(by_term[one.signature]["bit"]) for one in group]
-            for start in range(0, len(ids), _FOLD_AT_ONCE):
-                page = ids[start : start + _FOLD_AT_ONCE]
+            for start in range(0, len(ids), _FOLD_PER_STATEMENT):
+                page = ids[start : start + _FOLD_PER_STATEMENT]
                 evaluated = await connection.execute_fetchall(
                     statement, (*params, json.dumps(page))
                 )

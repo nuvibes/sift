@@ -107,6 +107,10 @@ class FixtureLibrary:
     #: The first file built, and a video.
     asset: str
     video: str
+    #: The first file the first guest may see, and a video they may: their reads by id are priced
+    #: on a file they are shown, not on the refusal.
+    guest_asset: str
+    guest_video: str
     #: Ten files every press is tried on, and a person to merge into `small_person`.
     press_files: tuple[str, ...]
     merged_person: str
@@ -706,11 +710,28 @@ async def fixture_library(files: int, seed: int, into: Path) -> FixtureLibrary:
                 await connection.executemany(sql, batch)
             await visibility.refresh_everything(connection)
         await database.refresh_statistics(reason="fixture", every_table=True, force=True)
+        guest = ids["guests"][0]
+        shown = await database.fetch_one(_SHOWN_TO, (guest, "%"))
+        video = await database.fetch_one(_SHOWN_TO, (guest, "video"))
+        seen = str(_there(shown, "file a guest may see")["asset_id"])
     finally:
         await database.close()
     return FixtureLibrary(
-        path=into, files=files, build_seconds=round(time.perf_counter() - started, 1), **ids
+        path=into,
+        files=files,
+        build_seconds=round(time.perf_counter() - started, 1),
+        guest_asset=seen,
+        guest_video=seen if video is None else str(video["asset_id"]),
+        **ids,
     )
+
+
+#: The first file of a kind one user is shown.
+_SHOWN_TO = (
+    "SELECT va.asset_id FROM viewer_assets va JOIN assets a ON a.id = va.asset_id"
+    " WHERE va.user_id = ? AND va.concealed = 0 AND a.media_type LIKE ?"
+    " ORDER BY va.asset_id LIMIT 1"
+)
 
 
 # --- the questions that must not grow with the library ------------------------------------------

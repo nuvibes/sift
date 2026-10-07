@@ -806,7 +806,7 @@ async def test_a_files_map_a_stopped_stream_left_in_this_session_is_taken_up_by_
         assert rig.landed == {"a": whole}
 
 
-#: A second file offered, so a swap whose first file fails is not over at once.
+#: A second file offered, so a swap whose first file fails is not over immediately.
 _ANOTHER = b"another file"
 
 
@@ -928,7 +928,7 @@ async def test_a_file_failed_on_another_stream_while_this_share_was_recorded_is_
 
 @pytest.mark.integration
 @_needs_psk
-async def test_a_chunk_two_streams_wrote_at_once_is_counted_once(
+async def test_a_chunk_two_streams_wrote_at_the_same_time_is_counted_once(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A sender that sends whole files can send one chunk on two streams; both are written, and the

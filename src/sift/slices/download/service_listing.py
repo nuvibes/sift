@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from typing import Any, Literal, get_args
 
 from sift.kernel.access import (
-    is_refusal,
+    read_pick,
 )
 from sift.kernel.access.sites import site_names_for_keys_on
 from sift.kernel.audience import EVERY_ADMIN
@@ -631,8 +631,9 @@ class DownloadListing(DownloadBase):
         hosts: str | None = None
         refused: str | None = None
         picked = [one.strip() for one in wanted.sites if one.strip()]
-        chosen = {one.casefold() for one in picked if not is_refusal(one)}
-        unwanted = {one[1:].casefold() for one in picked if is_refusal(one)}
+        read = [read_pick(one) for one in picked]
+        chosen = {name.casefold() for refused, name in read if not refused}
+        unwanted = {name.casefold() for refused, name in read if refused}
         if chosen or unwanted:
             # The Sites' hosts across EVERY state, not only inside the lit tab: the tabs count
             # the chosen Sites under each state.

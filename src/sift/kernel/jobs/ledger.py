@@ -175,7 +175,7 @@ async def initialize(connection: Connection, on_disk: int) -> None:
     await connection.execute(_SAID_INDEX)
     await connection.execute(_CREATE_PRICES)
     if 0 < on_disk < 8:
-        # A library from before kept prices prices at once, from the runs it already has.
+        # A library from before prices were kept is priced immediately, from the runs it already has.
         passes = {family.value for family in LONG_PASSES}
         for row in await connection.execute_fetchall(_PRICED_PAIRS):
             if str(row[0]) in passes:

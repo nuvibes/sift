@@ -120,7 +120,7 @@
 		untrack(() => void usernamesHere.read({ personId: who }));
 	});
 
-	/* The numbers beside the tab words: all asked at once, and a wall's own answer wins (`TabCounts`). */
+	/* The numbers beside the tab words: all asked together, and a wall's own answer wins (`TabCounts`). */
 	const counts = new TabCounts();
 	$effect(() => counts.follow('person', personId));
 	/* The strip's numbers follow the library as its walls do: History has no wall to report one. */

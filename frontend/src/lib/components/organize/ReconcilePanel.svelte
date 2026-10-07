@@ -113,7 +113,7 @@
 	 * One press: the row leaves the moment it is pressed, and the server is told behind it.
 	 *
 	 * The answer is not in doubt at the press, since the row was on screen because the server said
-	 * it was waiting, so the row goes at once and comes back only if the server refuses, in the
+	 * it was waiting, so the row goes immediately and comes back only if the server refuses, in the
 	 * place it stood, with the refusal said above the table.
 	 *
 	 * `decided` is the workbench's one way of saying a decision was made: the toast with its Undo

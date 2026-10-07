@@ -2,7 +2,7 @@
 """The storage lanes: a network share admits as many readers as the setting says, a local disk any.
 
 The property that matters is the cap holding under real concurrency, so the tests here run real
-coroutines through a real lane and count how many were inside at once.
+coroutines through a real lane and count how many were inside together.
 """
 
 from __future__ import annotations
@@ -117,7 +117,7 @@ async def test_an_ordinary_reader_has_every_fourth_place_while_readers_that_go_f
 
     await asyncio.gather(swap("s1"), swap("s2"), picture("p1"), picture("p2"))
 
-    # The first place is taken at once; of the ones handed on while pictures wait, every fourth
+    # The first place is taken immediately; of the ones handed on while pictures wait, every fourth
     # is a picture's, the older picture first, and each picture is in long before the swaps end.
     assert order.index("p1") == 4 and order.index("p2") == 8
     assert order.count("swap") == 8
@@ -129,9 +129,9 @@ async def test_a_reader_back_for_its_next_block_goes_behind_whoever_was_waiting(
     """A place let go goes to the reader that has waited longest, not to the one that let it go.
 
     A whole-file digest read a block at a time takes its place again for each block. Were the
-    place a reader let go free for it to take back at once, two digests would hold both places of a
-    two-place share for their whole files, and every read queued behind them would wait for a whole
-    file (a swap's first pieces, many seconds at a time)."""
+    place a reader let go free for it to take back immediately, two digests would hold both places
+    of a two-place share for their whole files, and every read queued behind them would wait for a
+    whole file (a swap's first pieces, many seconds at a time)."""
     lanes = StorageLanes(network_reads_at_once=1)
     order: list[str] = []
 
@@ -212,7 +212,7 @@ async def test_a_reader_given_up_before_a_place_is_handed_on_is_passed_over() ->
         await whole_given_up
 
 
-async def test_a_place_on_a_storage_nothing_caps_is_taken_at_once() -> None:
+async def test_a_place_on_a_storage_nothing_caps_is_taken_immediately() -> None:
     lanes = StorageLanes(network_reads_at_once=2)
     assert await lanes.lane_for(Path("/disk/a")).take(False) is None
 
@@ -314,12 +314,12 @@ async def test_a_whole_file_read_waiting_is_let_in_by_a_wider_setting_or_gives_u
     assert lane.whole == 2
 
 
-def test_how_many_to_read_at_once_follows_the_storage() -> None:
+def test_how_many_to_read_at_a_time_follows_the_storage() -> None:
     lanes = StorageLanes(network_reads_at_once=2)
     lanes_module.install(lanes)
     try:
         assert lanes_module.reads_at_once(Path("/nas/a/x")) == 2
-        assert lanes_module.reads_at_once(Path("/disk/x")) == lanes_module.LOCAL_READS_AT_ONCE
+        assert lanes_module.reads_at_once(Path("/disk/x")) == lanes_module.LOCAL_READS_AT_A_TIME
     finally:
         lanes_module.install(None)
     assert lanes_module.reads_at_once(Path("/disk/x")) == 1
@@ -379,7 +379,7 @@ async def test_the_setting_is_held_inside_its_bounds() -> None:
     assert lanes.network_reads_at_once == lanes_module.MAX_READS_AT_ONCE
     await lanes.configure(network_reads_at_once=-4)
     assert lanes.network_reads_at_once == 0
-    assert lanes.lane_for(Path("/nas/x")).limit == lanes_module.NETWORK_READS_AT_ONCE
+    assert lanes.lane_for(Path("/nas/x")).limit == lanes_module.NETWORK_READS_AT_A_TIME
 
 
 async def test_a_reader_that_raises_gives_its_place_back() -> None:
@@ -536,7 +536,7 @@ async def test_each_share_reads_its_own_measured_number_unless_one_is_set_for_al
     assert (nas.limit, unmeasured.limit) == (2, 2), "two until a share is measured"
 
     assert await lanes.configure(network_reads_at_once=0, measured={NAS.key: 6, DISK.key: 16})
-    assert (nas.limit, unmeasured.limit) == (6, lanes_module.NETWORK_READS_AT_ONCE)
+    assert (nas.limit, unmeasured.limit) == (6, lanes_module.NETWORK_READS_AT_A_TIME)
     assert not lanes.lane_for(Path("/disk/a")).capped, "a measured disk is still not capped"
     assert (
         await lanes.configure(network_reads_at_once=0, measured={NAS.key: 6, DISK.key: 16}) is False
@@ -552,7 +552,7 @@ def test_a_reader_keeps_its_storages_measured_number_of_files_open() -> None:
     lanes = StorageLanes()
     lanes_module.install(lanes)
     try:
-        assert lanes_module.reads_at_once(Path("/disk/x")) == lanes_module.LOCAL_READS_AT_ONCE
+        assert lanes_module.reads_at_once(Path("/disk/x")) == lanes_module.LOCAL_READS_AT_A_TIME
         asyncio.run(lanes.configure(network_reads_at_once=0, measured={DISK.key: 16, NAS.key: 5}))
         assert lanes_module.reads_at_once(Path("/disk/x")) == 16
         assert lanes_module.reads_at_once(Path("/nas/x")) == 5

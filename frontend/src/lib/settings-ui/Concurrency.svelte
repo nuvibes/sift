@@ -12,7 +12,7 @@
 	import { explainAbsentRows, hiddenBy } from '$lib/settings-ui/settings-anchor.svelte';
 	import { COPY, CONCURRENCY_ANCHOR } from './Performance.search';
 
-	/* How much Sift does at once, the four numbers on Concurrency's page. */
+	/* How much Sift does at the same time, the four numbers on Concurrency's page. */
 	const AT_ONCE_KEYS = [
 		'performance.worker_count',
 		'performance.generation_limit',

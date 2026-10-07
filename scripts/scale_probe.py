@@ -39,9 +39,9 @@ from sift.testing.fixture_library import FixtureLibrary, files_under, fixture_li
 PER_MEMBER_MS = 0.012
 
 #: What one copy under a folder costs the share that reaches it (see the budget below): its
-#: verdict and its row, and the stored counts of every kind the Filter panel and the walls read
-#: at once, about 1,240 steps a copy. The line was 0.06 before those counts were stored.
-PER_SHARED_FILE_MS = 0.12
+#: verdict, its row and what its counts hold. A large share's counts follow its press, folded
+#: after it, so they are not in this price.
+PER_SHARED_FILE_MS = 0.06
 
 BUDGETS = {
     "admin page, newest": 25.0,

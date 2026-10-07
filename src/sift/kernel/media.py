@@ -110,11 +110,11 @@ BASE_FLAGS: tuple[str, ...] = (
 #: How many jobs the worker pool is actually running, as the Performance screen currently says.
 #: `None` until the pool has been configured, which is the case at boot and in any test that calls
 #: the builders below directly; the hardware default stands in until then.
-#: `background_threads` divides the machine by "how many of these run at once", and
+#: `background_threads` divides the machine by "how many of these run together", and
 #: `hardware.worker_concurrency` is only the number chosen from the cores at start-up. Raising
-#: "Jobs at once" on the Performance screen (which the tuning self-test recommends) moves the
-#: real number and not that one: with 8 jobs running on a 16-thread machine and a start-up figure
-#: of 4, each ffmpeg would get 4 threads, 32 on 16: the oversubscription this cap exists to
+#: "Tasks at the same time" on the Performance screen (which the tuning self-test recommends) moves
+#: the real number and not that one: with 8 jobs running on a 16-thread machine and a start-up
+#: figure of 4, each ffmpeg would get 4 threads, 32 on 16: the oversubscription this cap exists to
 #: prevent.
 #: Set from `read_pool_config`, on the timer that already reconfigures the pool, the shared thread
 #: pool and the database's readers: one answer, read by everything sized from it, rather than
@@ -123,7 +123,7 @@ _jobs_at_once: int | None = None
 
 
 def set_jobs_at_once(workers: int) -> bool:
-    """Record how many jobs really run at once. True when the number actually changed."""
+    """Record how many jobs really run together. True when the number actually changed."""
     global _jobs_at_once
     if workers < 1 or workers == _jobs_at_once:
         return False
@@ -132,7 +132,7 @@ def set_jobs_at_once(workers: int) -> bool:
 
 
 def jobs_at_once(settings: Settings) -> int:
-    """How many jobs run at once: what the pool was told, or the hardware answer before it was."""
+    """How many jobs run together: what the pool was told, or the hardware answer before it was."""
     if _jobs_at_once is not None:
         return _jobs_at_once
     return max(1, hardware.worker_concurrency(settings))
@@ -169,7 +169,7 @@ def background_threads(settings: Settings) -> int:
     """How many threads one background ffmpeg may use.
 
     **ffmpeg helps itself to the whole machine unless told not to.** Left alone it sizes its thread
-    pool from the core count, per process, and the worker pool runs several at once. The pool is
+    pool from the core count, per process, and the worker pool runs several together. The pool is
     sized on the assumption that a job costs about a core, which is where "one core is left for
     everything that is not a job" comes from; that assumption is what breaks. Eight workers can
     produce over a hundred runnable threads, and everything the app itself wants to do (answer a
@@ -256,7 +256,7 @@ def decode_flags(report: HardwareReport) -> tuple[str, ...]:
     Processor time is the figure that matters rather than wall clock, and the two disagree. Setting
     up a context on the card costs roughly six hundredths of a second per process, so a short job on
     a fast local file can finish slightly LATER while using a quarter of the processor. Sift runs
-    eight of these at once, so cores are the contended resource and latency of one job is not.
+    eight of these together, so cores are the contended resource and latency of one job is not.
 
     **`cuda`, named, rather than `auto`.** `-hwaccel auto` engages for H.264 and HEVC and silently
     does nothing at all for AV1: the one codec where the saving is largest. A flag that quietly
@@ -288,8 +288,8 @@ def decode_flags(report: HardwareReport) -> tuple[str, ...]:
 #: session over a hiccup. Not twenty either: the whole point is to stop paying for a dead attempt on
 #: every file in a library, and twenty files is already a lot of paying.
 #: In a ROW, and any success puts it back to zero, which is what makes the number safe to be this
-#: small. Several jobs run at once, so one genuinely awkward file among healthy ones has its failure
-#: separated from the next by the successes either side of it and never reaches the count.
+#: small. Several jobs run together, so one genuinely awkward file among healthy ones has its
+#: failure separated from the next by the successes either side of it and never reaches the count.
 GIVE_UP_AFTER = 3
 
 #: A frame with a side shorter than this goes to the processor without asking the card. Graphics
@@ -490,9 +490,9 @@ def cover_picture_args(
     so the pattern is one that runs here rather than one being tried for the first time.
 
     **What comes out is Sift's own picture, never the uploader's file.** Re-encoding is what
-    disposes of camera metadata, of a polyglot file that is a picture and an archive at once, and of
-    every decoder bug in every browser that will ever open what is served, because what is served
-    was written by this ffmpeg, not by whoever sent it.
+    disposes of camera metadata, of a polyglot file that is a picture and an archive at the same
+    time, and of every decoder bug in every browser that will ever open what is served, because what
+    is served was written by this ffmpeg, not by whoever sent it.
 
     `-frames:v 1` because an animated GIF, a WebP with frames in it, or a whole video are all things
     somebody will drop on this, and every one of them has a first frame. Without it ffmpeg is asked
@@ -1960,19 +1960,17 @@ async def resolve_decodable(store: ContentStore, asset_id: str, *, settings: Set
     """`resolve`, and then whatever it takes for a decoder to be able to read it.
 
     Every stage that hands a file to ffmpeg goes through this instead: the probe, the thumbnail,
-    the preview, the sprite strip and the face pass. What it does for all but two formats is
-    nothing at all, which is the point: the alternative is each of those five learning which
-    formats need converting first, and the sixth one forgetting. The two are the animated WebP,
-    which ffmpeg cannot read, and the HEIF photograph, of which ffmpeg reads one tile.
+    the preview, the sprite strip and the face pass. What it does for all but three kinds of file
+    is nothing at all: the animated WebP, which ffmpeg cannot read, the HEIF photograph, of which
+    ffmpeg reads one tile, and the JPEG a browser and ffmpeg turn apart (`jpeg_turn`).
 
-    Playback deliberately does not use it. A browser plays an animated WebP natively, so serving
-    the original bytes is both correct and free, and converting one to stream it would be work
-    done to make something worse.
+    Playback does not use it: a browser plays an animated WebP natively, so serving the original
+    bytes is both correct and free.
     """
     source = await resolve(store, asset_id)
     # Imported here rather than at the top: the WebP module builds its copies through ffmpeg, so
     # it imports this one.
-    from sift.kernel import webp
+    from sift.kernel import jpeg_turn, webp
 
     # A HEIF photograph is read whole by libheif, never by ffmpeg, which reads one tile of a
     # phone's photograph (see `heif`). Its copy is the whole picture, upright.
@@ -1980,6 +1978,8 @@ async def resolve_decodable(store: ContentStore, asset_id: str, *, settings: Set
         readable = await heif.readable_copy(store, source.asset, source.path, settings=settings)
     elif webp.needs_a_readable_copy(source.asset):
         readable = await webp.readable_copy(store, source.asset, source.path, settings=settings)
+    elif turned := await jpeg_turn.as_the_browser_draws(store, source, settings=settings):
+        readable = turned
     else:
         return source
     return Source(

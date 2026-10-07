@@ -32,7 +32,7 @@
  * unmistakable for something to click, and it is enforced in the sidebar's own stylesheet.
  *
  * A group heading is a NOUN, in the reader's words. Not a question, not a clause, and never a
- * description of what the machine is doing: "What Sift works out" fails on all three at once.
+ * description of what the machine is doing: "What Sift works out" fails on all three together.
  * Appearance, Privacy and Performance are the shape: each names a thing a person looks for.
  *
  * ## The order inside a group
@@ -267,7 +267,7 @@ const KEY_MOVED_TO: Readonly<Record<string, SettingsAddress & { key: string }>> 
 	'tasks.update-check.when': { section: 'updates', key: 'updates.check_for_new_versions' },
 	/* Rows that moved onto Importing's sub-pages, and the quarantine rows onto Maintenance. */
 	'shoots.auto_file': { section: 'importing', key: 'shoots.auto_file' },
-	/* How much Sift does at once is Concurrency's page on Performance. */
+	/* How much Sift does at the same time is Concurrency's page on Performance. */
 	'performance.generation_limit': { section: 'performance', key: 'performance.generation_limit' },
 	'performance.scan_limit': { section: 'performance', key: 'performance.scan_limit' },
 	'performance.share_reads_at_once': {

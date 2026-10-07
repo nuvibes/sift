@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """A start checks for an update once: the scheduled run moved to now, never a second row beside it.
 
-On a new library the schedule's own run of the check already falls due at once, so a start that
+On a new library the schedule's own run of the check already falls due immediately, so a start that
 queued a check of its own would leave two rows due at the same moment, and both would run. Read
 through the real scheduler and the real queue, because the fault is in what the two leave waiting
 together.

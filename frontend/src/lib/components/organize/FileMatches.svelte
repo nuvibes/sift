@@ -10,7 +10,7 @@
 	 * single clip is asking about that clip, not starting a batch.
 	 *
 	 * So this is the file's version of the same sheet. The pile under Organize is still what a
-	 * library-wide sweep fills and is still where a hundred of them are worked through at once;
+	 * library-wide sweep fills and is still where a hundred of them are worked through together;
 	 * this is the one-file door into exactly the same rows, the same consequences and the same two
 	 * answers.
 	 *
@@ -140,8 +140,8 @@
 			// The boxes first. What comes back decides whether an empty answer is about this file or
 			// about the install, and the sheet must not guess.
 			await boxes.load();
-			// Anything already waiting for this file shows at once: a sweep may have found it days
-			// ago, and asking again to learn what is already known is a request nobody needed.
+			// Anything already waiting for this file shows immediately: a sweep may have found it
+			// days ago, and asking again to learn what is already known is a request nobody needed.
 			const held = await waitingFor(assetId);
 			if (held.matches.length > 0) {
 				items = held.matches;

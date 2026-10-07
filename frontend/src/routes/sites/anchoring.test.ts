@@ -194,7 +194,7 @@ describe('the Sites wall asks for its first page once', () => {
 	it('asks at the measured size on the next visit, and only once', async () => {
 		server.whole = SHORT;
 		await measuredWall('/sites');
-		// The rows go with the wall (`leave`), or the next visit measures a held card at once.
+		// The rows go with the wall (`leave`), or the next visit measures a held card immediately.
 		leave();
 		await wall('/sites');
 		expect(server.asks.map((ask) => Number(ask.limit))).toEqual([MEASURED]);

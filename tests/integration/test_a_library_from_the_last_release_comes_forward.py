@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""A library in the shape the last release left it comes forward in one boot, every component at once.
+"""A library in the shape the last release left it comes forward in one boot, every component together.
 
 Each component's own migration tests build ITS old shape alone, so a step that writes into another
 component's table is only ever run against that table at today's shape. A step that records a

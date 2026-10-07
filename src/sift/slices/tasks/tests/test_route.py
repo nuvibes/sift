@@ -173,7 +173,7 @@ def test_the_quarantine_sweep_is_armed_by_its_retention_rule(client: TestClient)
 
 
 def test_run_now_queues_the_work_and_leaves_the_schedule_alone(client: TestClient) -> None:
-    """Two things at once.
+    """Two things at the same time.
 
     The run has to really be queued (deduping it would collapse the press onto the delayed row
     that IS the schedule, so the button would do nothing and say it had worked) and the waiting
@@ -195,8 +195,8 @@ def test_run_now_queues_the_work_and_leaves_the_schedule_alone(client: TestClien
 
 def test_a_quiet_hours_press_says_whether_it_waits_for_the_range(client: TestClient) -> None:
     """Said by the reply, from this device's clock. A browser working it out by comparing the start
-    with its own clock is wrong by however far the two clocks are apart: a run starting at once read
-    as one that "starts at" the present second."""
+    with its own clock is wrong by however far the two clocks are apart: a run starting immediately
+    read as one that "starts at" the present second."""
     sign_in(client, "admin")
     hour = time.localtime().tm_hour
 

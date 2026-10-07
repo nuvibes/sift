@@ -5,7 +5,7 @@ The Build sheet, Activity's estimate and the Build's own walk read two statement
 describe one set, and both ask whether any copy is there, or a library with most of its files on a
 disconnected drive would be told tens of thousands of hover previews are still to make, and a Build
 over it would hand each missing file a task no product can do (see `_ASSET_IDS_PAGE`). A copy that
-comes back (`mark_present`) is work again at once.
+comes back (`mark_present`) is work again immediately.
 """
 
 from __future__ import annotations
@@ -52,7 +52,7 @@ async def test_a_file_with_no_copy_here_is_neither_counted_nor_walked(
     assert walked == [here]
     assert counted.files == 1 and counted.each == (1,)
 
-    # The known positive: the copy comes back, and the file is work again in both at once.
+    # The known positive: the copy comes back, and the file is work again in both at the same time.
     await temp_db.execute(
         "UPDATE asset_locations SET status = 'present' WHERE asset_id = ?", (gone,)
     )

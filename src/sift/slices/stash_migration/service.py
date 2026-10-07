@@ -946,7 +946,7 @@ class StashMigration:
     ) -> None:
         """One scene's or image's record onto its file, and the person's own opinion of it, where
         they have not given one here: the run and the pass that lands what waited both write
-        through this, so a file that arrives late is given exactly what a file found at once is."""
+        through this, so a file that arrives late is given exactly what a file found immediately is."""
         await self._merge(Subject.ASSET, asset_id, one, actor)
         if user_id is None or (
             one.rating is None

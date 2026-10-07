@@ -549,8 +549,8 @@
 
 	/* The two doors per tab, with the scope in the body: the four in `$lib/people/faces.svelte` take it.
 	   Each answers with the receipt its press wrote where the reply carries one, so the toast can
-	   offer Undo at once (agreeing with Sift's matches does not hand its receipt back yet: History
-	   takes that one back). */
+	   offer Undo immediately (agreeing with Sift's matches does not hand its receipt back yet:
+	   History takes that one back). */
 	async function run(
 		yes: boolean,
 		body: RunWrite
@@ -604,7 +604,7 @@
 		}
 	}
 
-	/** A Yes goes at once; a No asks first, because it takes a name off every face it is about. */
+	/** A Yes goes immediately; a No asks first, because it takes a name off every face it is about. */
 	function press(yes: boolean, scope: RunScope) {
 		const { ids, count } = scoped(scope);
 		if (yes) void answer(true, scope, ids);

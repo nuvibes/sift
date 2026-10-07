@@ -51,26 +51,21 @@ _FORGET_SOME = (
 )
 _FORGET_BATCH = 500
 
-_COUNT_DESCRIBED = "SELECT COUNT(*) AS total FROM semantic_indexed WHERE revision = ?"
+#: Kept by the records' own triggers (`schema._TRIGGERS`): a row, whatever the library's size.
+_COUNT_DESCRIBED = "SELECT files AS total FROM semantic_counts WHERE revision = ?"
 
-#: Whether this model has described anything at all. A row, not a number.
-#:
-#: The count above answers the same question and reads the whole table to do it: eventually every
-#: row of the library. This is asked before a pass that would otherwise walk thousands of files one
-#: at a time, so it stops at the first row it finds: flat where the count is linear.
+#: Whether this model has described anything at all: a seek that stops at the first row.
 _ANY_DESCRIBED = "SELECT 1 AS found FROM semantic_indexed WHERE revision = ? LIMIT 1"
 
 #: Files whose description is another model's. Out of every search until described again, and
-#: the number the settings screen says so with. Two index ranges, as `!=` reads every row.
+#: the number the settings screen says so with. One row per model ever used.
 _COUNT_BY_OTHERS = (
-    "SELECT (SELECT COUNT(*) FROM semantic_indexed WHERE revision < ?)"
-    " + (SELECT COUNT(*) FROM semantic_indexed WHERE revision > ?) AS total"
+    "SELECT COALESCE(SUM(files), 0) AS total FROM semantic_counts WHERE revision <> ?"
 )
 
-#: Whether any such file is left: a seek, whatever their number.
+#: Whether any such file is left.
 _ANY_BY_OTHERS = (
-    "SELECT EXISTS (SELECT 1 FROM semantic_indexed WHERE revision < ?)"
-    " OR EXISTS (SELECT 1 FROM semantic_indexed WHERE revision > ?) AS found"
+    "SELECT EXISTS (SELECT 1 FROM semantic_counts WHERE revision <> ? AND files > 0) AS found"
 )
 
 #: The records of every file a model other than this one described. Taken with the frames they
@@ -176,12 +171,12 @@ class Records:
     async def described_by_others(self, revision: str) -> int:
         """How many files a model other than this one described. Their numbers are in the index
         and out of every search, until the Build describes them again."""
-        row = await self._database.fetch_one(_COUNT_BY_OTHERS, (revision, revision))
+        row = await self._database.fetch_one(_COUNT_BY_OTHERS, (revision,))
         return int(row["total"]) if row is not None else 0
 
     async def any_described_by_others(self, revision: str) -> bool:
         """Whether `described_by_others` is above nought, without counting them."""
-        row = await self._database.fetch_one(_ANY_BY_OTHERS, (revision, revision))
+        row = await self._database.fetch_one(_ANY_BY_OTHERS, (revision,))
         return row is not None and bool(row["found"])
 
     async def forget_others(self, revision: str) -> int:

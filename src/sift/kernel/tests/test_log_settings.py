@@ -115,10 +115,10 @@ class TestTheTotalIsDividedAmongTheFiles:
             assert each * (backups + 1) <= total
 
 
-class TestLoweringTheSizeTrimsTheOlderFilesAtOnce:
+class TestLoweringTheSizeTrimsTheOlderFilesImmediately:
     """The setting is the TOTAL, and the rotating handler only ever looks at one file, so lowering
     it would leave every older file as large as the old setting let it grow (well past the new
-    setting). `fit_within` is what makes the number on the screen true at once."""
+    setting). `fit_within` is what makes the number on the screen true immediately."""
 
     @staticmethod
     def _log(tmp_path: Path, sizes: list[int]) -> Path:
@@ -208,7 +208,7 @@ class TestLoweringTheSizeTrimsTheOlderFilesAtOnce:
         assert (tmp_path / "sift.log.1").exists()
 
 
-def test_lowering_the_log_size_trims_the_older_files_at_once(tmp_path: Path) -> None:
+def test_lowering_the_log_size_trims_the_older_files_immediately(tmp_path: Path) -> None:
     """The rotating handler looks at the one file it writes, so a setting lowered while a 27 MB
     rotated file exists would be exceeded until five more rotations pushed it out. Applying a lower
     size trims the oldest copies until the set fits the setting."""

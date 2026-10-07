@@ -457,7 +457,7 @@ async def test_a_tunnel_stopped_after_the_tool_sends_nothing_more_and_says_so(
         router = _router(ground, monkeypatch)
 
         def stop() -> None:
-            # What stopping a tunnel at once does: no process, and no port it owns.
+            # What stopping a tunnel immediately does: no process, and no port it owns.
             monkeypatch.setattr(_the_tunnel(router), "running", lambda: False)
 
         status = await landed(ground.url, router, _Writes(then=stop), keep_art=keep_art)

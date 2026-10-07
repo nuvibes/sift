@@ -144,6 +144,27 @@ async def test_a_site_narrows_by_every_host_it_owns(
     assert (nowhere.downloads, nowhere.matched) == ([], 0)
 
 
+async def test_a_pick_is_read_through_the_one_quote_rule(
+    download_service: DownloadService, temp_db: Database
+) -> None:
+    """The walls spell a refusal as a minus outside the quotes and a name as written inside them,
+    so a Site whose name begins with a minus is a name, and `-youtube` is everything else."""
+    await _a_mixed_queue(temp_db)
+
+    refused = await download_service.list_downloads(
+        limit=10, narrowing=DownloadNarrowing(sites=("-youtube",))
+    )
+    assert refused.matched == 4, "everything that is not YouTube"
+    quoted = await download_service.list_downloads(
+        limit=10, narrowing=DownloadNarrowing(sites=('"youtube"',))
+    )
+    assert quoted.matched == 4, "quotes hold the name as written"
+    named_with_a_minus = await download_service.list_downloads(
+        limit=10, narrowing=DownloadNarrowing(sites=('"-youtube"',))
+    )
+    assert named_with_a_minus.matched == 0, "a name that begins with a minus, which no Site has"
+
+
 async def test_several_sites_are_either_of_them(
     download_service: DownloadService, temp_db: Database
 ) -> None:

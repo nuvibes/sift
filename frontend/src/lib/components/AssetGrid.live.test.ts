@@ -133,7 +133,7 @@ async function settle() {
 }
 
 describe('a change that arrives while this window is behind another one', () => {
-	it('re-reads at once when the window is in front', async () => {
+	it('re-reads immediately when the window is in front', async () => {
 		// The known positive. Without it every assertion below passes on a grid that never re-reads
 		// for any reason at all, which is a suite that cannot tell the behaviour from its absence.
 		await grid();

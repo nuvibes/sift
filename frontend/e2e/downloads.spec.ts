@@ -357,7 +357,7 @@ test.describe('who is turned away', () => {
  * A loop over the single route would look identical on screen and would lose the other lines the
  * moment one of them was refused.
  */
-test('several links pasted at once go as one request, not one each', async ({ page }) => {
+test('several links pasted together go as one request, not one each', async ({ page }) => {
 	await signInAsAdmin(page);
 	await aDownloadFolder(page);
 

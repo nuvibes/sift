@@ -51,7 +51,7 @@ ON_A_SCHEDULE = "On a schedule"
 DEFAULT_FROM = "23:00"
 DEFAULT_UNTIL = "07:00"
 
-#: How a row asked for AT A TIME is marked, on the job itself. `now` is a press that runs at once
+#: How a row asked for AT A TIME is marked, on the job itself. `now` is a press that runs immediately
 #: whatever the range says; `quiet` is work held to the range, a press of "Run during quiet hours" or the
 #: children of one. No mark is the ordinary case: work nobody pressed, whose timing is its task's.
 AT_NOW = "now"
@@ -158,7 +158,7 @@ def due_at(
     because the range's opening is the time. A moment already past is `now`: a device that was off
     catches up, which is what a claimable-after column already does.
 
-    A task that has never run falls due at once: now, at the range's next opening during quiet
+    A task that has never run falls due immediately: now, at the range's next opening during quiet
     hours, or at the next time of day it names (somebody who chose three in the morning this afternoon
     means tonight, not this minute).
 

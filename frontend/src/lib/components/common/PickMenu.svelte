@@ -34,11 +34,11 @@
 	/*
 	 * Putting a file on something, without leaving the menu.
 	 *
-	 * The row opens out into the list and one pick writes at once, by the host's `pick` and its toast;
-	 * the action bar's sheet stays the tool for forty files. What this account picked lately goes in
-	 * front (`$lib/search/frequent`), the rest alphabetically from a server page filtered by what is
-	 * typed (`PickAsk`), with `more` said as the last line in words, never a silent ceiling. The
-	 * arrows are `Scroller`'s.
+	 * The row opens out into the list and one pick writes immediately, by the host's `pick` and its
+	 * toast; the action bar's sheet stays the tool for forty files. What this account picked lately
+	 * goes in front (`$lib/search/frequent`), the rest alphabetically from a server page filtered
+	 * by what is typed (`PickAsk`), with `more` said as the last line in words, never a silent
+	 * ceiling. The arrows are `Scroller`'s.
 	 */
 	import { untrack, type Snippet } from 'svelte';
 	import { ContextMenu } from 'bits-ui';
@@ -339,8 +339,8 @@
 
 	/**
 	 * Picking a row, which means toggling it: a full tick comes off, anything else (a half tick too) goes
-	 * on. The mark moves at once and the write's answer settles it (`settle`). The pick is recorded for
-	 * the ordering only once it landed or partly landed (`verbs.landedOf`).
+	 * on. The mark moves immediately and the write's answer settles it (`settle`). The pick is
+	 * recorded for the ordering only once it landed or partly landed (`verbs.landedOf`).
 	 */
 	function choose(choice: PickChoice): void {
 		const before = onAlready[choice.id] ?? 'none';

@@ -5,7 +5,7 @@ Unlike `http.py`, this needs the web framework: it reads request headers and may
 body. Two halves of one problem. `no-cache` means "ask before reusing", so the ask must be answered
 with a 304 or the whole file is sent again. And a picture whose address names its contents is not
 asked about at all (`keeps`, `art_version`), sparing a grid a round trip per tile. Concealed
-pictures and anything without a recorded digest keep asking, so re-locking takes effect at once.
+pictures and anything without a recorded digest keep asking, so re-locking takes effect immediately.
 """
 
 from __future__ import annotations
@@ -84,10 +84,10 @@ def keeps(request: Request, *, version: str | None, concealed: bool) -> Mapping[
     """How long the browser may keep this picture without asking.
 
     Careful without a version (nothing to promise), when concealed (every use must reach the server
-    so shutting the vault takes effect at once), and when the ADDRESS carries no token: the promise
-    is about the address, and a bare address stands still while the picture is rebuilt and the
-    user's stamp moves, so `immutable` there would outlive concealment. The token is not compared
-    with `version` (a cover composes its own); only whether one was named decides.
+    so shutting the vault takes effect immediately), and when the ADDRESS carries no token: the
+    promise is about the address, and a bare address stands still while the picture is rebuilt and
+    the user's stamp moves, so `immutable` there would outlive concealment. The token is not
+    compared with `version` (a cover composes its own); only whether one was named decides.
     """
     asked = request.query_params.get(ART_KEY)
     return KEEPABLE if asked and version is not None and not concealed else CAREFUL

@@ -16,7 +16,7 @@
 	 * Yes is one press and does everything: it attributes every file under the folder, names the
 	 * face group behind the claim, teaches Sift the folder's spelling so the same person filed
 	 * differently answers itself next time, and links the username a username folder names to the
-	 * person. A folder is worth reading because it answers many files at once.
+	 * person. A folder is worth reading because it answers many files in one go.
 	 *
 	 * Three answers and no fourth: yes, no, or somebody else. A no is remembered for good, so a
 	 * folder named after a place or a theme is refused once.

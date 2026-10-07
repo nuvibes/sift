@@ -163,8 +163,10 @@ class Ask:
     body: dict[str, Any] | None = None
 
 
-def _everyones_reads(lib: FixtureLibrary) -> dict[str, str]:
-    """What a screen reads on open, asked as the admin and as a guest alike."""
+def _everyones_reads(lib: FixtureLibrary, who: str) -> dict[str, str]:
+    """What a screen reads on open, asked as the admin and as a guest alike: a file by id is one
+    the asker is shown."""
+    asset, video = (lib.guest_asset, lib.guest_video) if who == "guest" else (lib.asset, lib.video)
     reads = {
         "GET /api/auth/me": "/api/auth/me",
         "GET /api/settings": "/api/settings",
@@ -220,17 +222,17 @@ def _everyones_reads(lib: FixtureLibrary) -> dict[str, str]:
         "GET /api/related/song/{id}": f"/api/related/song/{lib.song}",
         "GET /api/insights": "/api/insights?period=day",
         "GET /api/downloads": "/api/downloads?limit=50&offset=0&show=all&sort=newest",
-        "GET /api/assets/{id}": f"/api/assets/{lib.asset}",
-        "GET /api/assets/{id}/people": f"/api/assets/{lib.asset}/people",
-        "GET /api/assets/{id}/filings": f"/api/assets/{lib.asset}/filings",
-        "GET /api/assets/{id}/tags": f"/api/assets/{lib.asset}/tags",
-        "GET /api/assets/{id}/organize": f"/api/assets/{lib.asset}/organize",
-        "GET /api/assets/{id}/faces": f"/api/assets/{lib.asset}/faces",
-        "GET /api/assets/{id}/same-music": f"/api/assets/{lib.video}/same-music",
-        "GET /api/assets/{id}/replays": f"/api/assets/{lib.video}/replays",
-        "GET /api/collections?asset=": f"/api/collections?asset={lib.asset}",
-        "GET /api/photo-sets?asset=": f"/api/photo-sets?asset={lib.asset}",
-        "GET /api/songs?asset=": f"/api/songs?asset={lib.video}",
+        "GET /api/assets/{id}": f"/api/assets/{asset}",
+        "GET /api/assets/{id}/people": f"/api/assets/{asset}/people",
+        "GET /api/assets/{id}/filings": f"/api/assets/{asset}/filings",
+        "GET /api/assets/{id}/tags": f"/api/assets/{asset}/tags",
+        "GET /api/assets/{id}/organize": f"/api/assets/{asset}/organize",
+        "GET /api/assets/{id}/faces": f"/api/assets/{asset}/faces",
+        "GET /api/assets/{id}/same-music": f"/api/assets/{video}/same-music",
+        "GET /api/assets/{id}/replays": f"/api/assets/{video}/replays",
+        "GET /api/collections?asset=": f"/api/collections?asset={asset}",
+        "GET /api/photo-sets?asset=": f"/api/photo-sets?asset={asset}",
+        "GET /api/songs?asset=": f"/api/songs?asset={video}",
     }
     for facet in ("media", "rating", "tags", "people", "sites", "collections", "photo_sets"):
         reads[f"GET /api/assets/facets {facet}"] = f"/api/assets/facets?facet={facet}"
@@ -254,15 +256,17 @@ def _admins_reads() -> dict[str, str]:
         "GET /api/insights/path": "/api/insights/path",
         "GET /api/music/lookup": "/api/music/lookup",
         "GET /api/tidy": "/api/tidy",
+        "GET /api/semantic/status": "/api/semantic/status",
         "GET /api/stash-boxes": "/api/stash-boxes",
     }
 
 
 def screens(lib: FixtureLibrary) -> list[Ask]:
     """What every screen reads on open, as the admin and as a guest, then every press."""
-    reads = _everyones_reads(lib)
     asks = [
-        Ask(who, label, "GET", path) for who in ("admin", "guest") for label, path in reads.items()
+        Ask(who, label, "GET", path)
+        for who in ("admin", "guest")
+        for label, path in _everyones_reads(lib, who).items()
     ]
     asks += [Ask("admin", label, "GET", path) for label, path in _admins_reads().items()]
     asks += presses(lib)

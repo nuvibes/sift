@@ -167,7 +167,7 @@ async def test_three_folders_are_counted_while_another_folders_read_holds_the_sc
 async def test_one_folder_is_counted_at_a_time(
     job_queue: JobQueue, library_store: LibraryStore, tmp_path: Path
 ) -> None:
-    """A walk holds a place on its share while it lists, so two counts never list at once."""
+    """A walk holds a place on its share while it lists, so two counts never list together."""
     for name in ("one", "two"):
         one = await _root(library_store, tmp_path, name)
         await jobs.queue_scan(job_queue, jobs.scan_shape(one.id), requested_by=None)

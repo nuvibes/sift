@@ -186,7 +186,7 @@ describe('going back', () => {
  *
  * Taking a folder starts Sift there, and the first start creates the database, so the answer can
  * be many seconds away. A page that only greys its buttons for that long looks stuck, and somebody
- * cancels setup, so the press is answered at once: the pressed button turns and a sentence says
+ * cancels setup, so the press is answered immediately: the pressed button turns and a sentence says
  * what is being waited on.
  */
 describe('while a press is being answered', () => {

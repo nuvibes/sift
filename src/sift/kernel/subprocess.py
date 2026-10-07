@@ -88,7 +88,7 @@ class Priority(StrEnum):
     how heavy it is.
 
     About the CHILD, not Sift's own threads: a thread cannot be put below its process, and the
-    heavy work all happens in children. The per-type job caps decide how much runs at once.
+    heavy work all happens in children. The per-type job caps decide how much runs together.
 
     On Windows a background child is created below normal, not idle: a busy foreground starves
     the idle class outright, and a library would never finish its pictures while a game ran.
@@ -292,7 +292,7 @@ def launch_prefix(priority: Priority) -> list[str]:
 # A tool that works for nobody who is waiting gets a share of the machine's memory, and on Windows
 # its job object holds it to that share. Refusing it more memory is not enough on its own: a decoder
 # refused an allocation reports the error and tries again, and can sit at the limit for as long as
-# it is left there. So the job also reports the breach, and the tool is ended at once and
+# it is left there. So the job also reports the breach, and the tool is ended immediately and
 # fails the way a tool that ran out of time does: a failed job rather than a starved machine.
 
 #: One background tool may commit this fraction of the machine's memory: a quarter.
@@ -687,12 +687,12 @@ def _close_job(api: Any, job: int, key: int | None) -> None:
 
 # --- the share of the processor a background tool may use -----------------------------------------
 #
-# A tool's thread flags reach one decoder each. A tool reading several inputs at once runs a decoder
-# per input, so two threads asked for can be six used, and a pool held to a share of its workers can
-# still keep every core busy. While the step back is in force (`kernel.attention`) each background
-# tool's job is therefore given a hard processor rate, its threads' share of the machine, which the
-# operating system holds whatever the tool does inside. Lifted when the whole device is in force, so
-# a machine nobody is using runs its tools exactly as before.
+# A tool's thread flags reach one decoder each. A tool reading several inputs together runs a
+# decoder per input, so two threads asked for can be six used, and a pool held to a share of its
+# workers can still keep every core busy. While the step back is in force (`kernel.attention`) each
+# background tool's job is therefore given a hard processor rate, its threads' share of the machine,
+# which the operating system holds whatever the tool does inside. Lifted when the whole device is in
+# force, so a machine nobody is using runs its tools exactly as before.
 
 #: The information class for a job's processor rate.
 _CPU_RATE_INFORMATION = 15
@@ -729,7 +729,7 @@ def _set_rate(api: Any, job: int, rate: int | None) -> bool:
 def hold_background(rate: int | None) -> None:
     """Hold every background tool to `rate` hundredths of a percent of the machine, or let each use
     what it can (None). The tools already running are moved too, so a person arriving in the middle
-    of a long tool is given the processor back at once rather than when it ends.
+    of a long tool is given the processor back immediately rather than when it ends.
 
     Tolerant like `_contain`: a job that refuses a rate keeps running as it was.
     """

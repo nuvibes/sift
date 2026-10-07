@@ -10,7 +10,7 @@ from __future__ import annotations
 MAX_PAGE_SIZE = 200
 """The most rows any listing will build or accept, whatever a caller asks for.
 
-Two things at once, and they have to be one number. It is the CLAMP on the read: a route forwards
+Two things together, and they have to be one number. It is the CLAMP on the read: a route forwards
 a page size from an untrusted request, and an unbounded one is a way to make the server materialise
 millions of rows per request. It is also the CEILING every paged route declares, because the client
 sizes a page by measuring the screen and stops here.

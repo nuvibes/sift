@@ -163,19 +163,13 @@ _REVISIONS_HELD = "SELECT revision, COUNT(*) AS total FROM semantic_frames GROUP
 _FORGET_REVISION = "DELETE FROM semantic_frames WHERE revision = ?"
 _FORGET_POOLED_REVISION = "DELETE FROM semantic_pooled WHERE revision = ?"
 
-#: Every file this index holds vectors for.
-#:
-#: Read so they can be checked against the library, because nothing tells this table when a file is
-#: deleted: the record of WHICH files have been described is an ordinary table with a foreign key
-#: and cleans itself up, and the vectors cannot: they live in a virtual table, and SQLite takes no
-#: foreign key on one. So a deleted file leaves its frames behind, invisible, never returned by any
-#: search, and growing.
-#:
-#: Deliberately NOT joined against the assets table here. That table carries permissions, and a
-#: query against it written inside a feature is a second opinion about what a file is: there is a
-#: gate that refuses one. The ids go to the kernel, which answers which of them still exist.
-_HELD_IDS = "SELECT DISTINCT asset_id FROM semantic_frames"
-_COUNT = "SELECT COUNT(*) AS total FROM semantic_frames"
+#: The files this index holds vectors for with no record (kept by triggers): a deleted file's
+#: record goes with it, and its vectors cannot, as a virtual table takes no foreign key.
+#: Never joined against the assets table here, which a gate refuses inside a feature: the ids go
+#: to the kernel, which answers which of them still exist.
+_UNRECORDED_IDS = "SELECT asset_id FROM semantic_unrecorded"
+#: Kept beside the frames' keys by triggers (`schema._TRIGGERS`), so the size is a row read.
+_COUNT = "SELECT COALESCE(SUM(frames), 0) AS total FROM semantic_counts"
 _FRAMES_OF = "SELECT embedding FROM semantic_frames WHERE asset_id = ? AND revision = ?"
 # The files' table, made after the frames' in the same write: holding it means holding both.
 _EXISTS = "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'semantic_files'"
@@ -519,7 +513,7 @@ class VectorStore:
     async def describes_many(
         self, asset_ids: Sequence[str], *, revision: str
     ) -> dict[str, list[float]]:
-        """Many files' descriptions at once, keyed by file; a file with none is absent.
+        """Many files' descriptions in one read, keyed by file; a file with none is absent.
 
         Two reads by key rather than one per file: the pooled rows the record vouches for, then
         which files the record says are described and had no pooled row: those were described
@@ -545,23 +539,24 @@ class VectorStore:
 
     async def count(self) -> int:
         """How many frames are described. Zero when the store cannot be used at all."""
-        if not self.available or not await self.built():
+        if not self.available:
             return 0
         row = await self._database.fetch_one(_COUNT)
         return int(row["total"]) if row is not None else 0
 
     async def held_ids(self) -> list[str]:
-        """Every file this index holds vectors for. For the prune. See `_HELD_IDS`."""
-        if not self.available or not await self.built():
+        """The files held with no record, among them every file that has left. See
+        `_UNRECORDED_IDS`."""
+        if not self.available:
             return []
-        rows = await self._database.sweep_all(_HELD_IDS, what="described files")
+        rows = await self._database.fetch_all(_UNRECORDED_IDS)
         return [str(row["asset_id"]) for row in rows]
 
     async def prune(self, gone: Sequence[str]) -> int:
         """Drop the vectors of these files. Returns how many were dropped.
 
         Which files have gone is decided by the caller, from the kernel's answer, because working it
-        out here would mean querying the assets table from a feature. See `_HELD_IDS`.
+        out here would mean querying the assets table from a feature. See `_UNRECORDED_IDS`.
 
         Counted by FILE, which is the number worth logging: one video is dozens of rows, and
         "removed 5,000 frames" says nothing about how much was thrown away.
@@ -683,7 +678,7 @@ _KEYS_AFTER = (
 _ONE_FRAME = "SELECT embedding FROM semantic_frames WHERE rowid = ?"
 
 # The add-on's own storage, read only here: a vector read through the table walks its chunk from
-# the start, half a millisecond a row, and a chunk read whole is a thousand rows at once. Trusted
+# the start, half a millisecond a row, and a chunk read whole is a thousand rows in one read. Trusted
 # only where the layout is the one expected and a vector read both ways agrees.
 _LAYOUT = (
     "SELECT"

@@ -125,7 +125,7 @@ function drawnAt(to: DOMRect) {
 describe('a file deleted elsewhere', () => {
 	afterEach(() => unmount(running));
 
-	it('leaves the cell showing it at once, and a cell whose file is there stays', async () => {
+	it('leaves the cell showing it immediately, and a cell whose file is there stays', async () => {
 		const wall = draw();
 		const [gone, kept] = wall.cells;
 		gone.playing = { id: 'file-gone' } as Playable;
@@ -306,7 +306,7 @@ describe('the keyboard and the wall\u2019s chrome', () => {
 		return host.querySelector('.stage-bar') as HTMLElement;
 	}
 
-	it('raises the bars on Tab, reachable at once', () => {
+	it('raises the bars on Tab, reachable immediately', () => {
 		draw();
 		expect(bar().inert).toBe(true);
 		press('Tab');

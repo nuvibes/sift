@@ -21,7 +21,7 @@ library would otherwise offer it. The ciphers are the library's own TLS 1.3 set;
 them. A handshake not complete within ten seconds is a failed connection.
 
 **Proof of connection is the completed handshake, never a proxy's "200".** A tunnel provider's
-CONNECT can answer "200" at once for a port nobody is listening on.
+CONNECT can answer "200" immediately for a port nobody is listening on.
 `dial` reads the proxy's answer only to know whether to go on; whether anybody is THERE is decided
 by the handshake that follows.
 """

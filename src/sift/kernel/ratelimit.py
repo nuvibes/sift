@@ -137,7 +137,7 @@ class HostRateLimiter:
     async def acquire(self, host: str) -> None:
         """Wait until a token is free for `host` (and any backoff has cleared), then spend it. The
         host's lock is held across the wait so concurrent callers pace out instead of all firing at
-        once; from a full bucket the first `burst` calls return at once, the rest pace out."""
+        once; from a full bucket the first `burst` calls return immediately, the rest pace out."""
         async with self._lock(host):
             now = self._clock()
             self._refill(host, now)

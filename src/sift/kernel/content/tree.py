@@ -64,7 +64,7 @@ SELECT DISTINCT l.asset_id AS id
  WHERE an.ancestor_id = :folder_id
 """
 
-# The same for several folders at once, each file named with the folder it was asked under.
+# The same for several folders together, each file named with the folder it was asked under.
 _ASSETS_UNDER_MANY = """
 SELECT DISTINCT an.ancestor_id AS folder, l.asset_id AS id
   FROM folder_ancestry an
@@ -72,7 +72,7 @@ SELECT DISTINCT an.ancestor_id AS folder, l.asset_id AS id
  WHERE an.ancestor_id IN (?*)
 """
 
-_FOLDERS_AT_ONCE = 500
+_FOLDERS_PER_ASK = 500
 
 # The names of the files sitting DIRECTLY in one folder, which is a different question from the one
 # above: a naming convention shared by a parent and a child is two facts, not one.
@@ -84,7 +84,7 @@ SELECT a.original_filename AS name
    AND a.original_filename IS NOT NULL
 """
 
-# The same question asked about several folders at once, grouped by the folder each name sits in.
+# The same question asked about several folders together, grouped by the folder each name sits in.
 #
 # The per-folder version above, asked once per folder inside a pass over every folder that has
 # moved, is one round trip per folder on a full rebuild and the whole library's filenames read a
@@ -231,8 +231,8 @@ class TreeReads:
         """`assets_under` for each of these folders, every one of them a key."""
         wanted = list(dict.fromkeys(folder_ids))
         under: dict[str, list[str]] = {one: [] for one in wanted}
-        for start in range(0, len(wanted), _FOLDERS_AT_ONCE):
-            sql, params = in_clause(_ASSETS_UNDER_MANY, wanted[start : start + _FOLDERS_AT_ONCE])
+        for start in range(0, len(wanted), _FOLDERS_PER_ASK):
+            sql, params = in_clause(_ASSETS_UNDER_MANY, wanted[start : start + _FOLDERS_PER_ASK])
             for row in await self._db.fetch_all(sql, params):
                 under[str(row["folder"])].append(str(row["id"]))
         return under

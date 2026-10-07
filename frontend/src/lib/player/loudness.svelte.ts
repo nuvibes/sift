@@ -1,4 +1,4 @@
-/* HOW LOUD SIFT IS. One number, for every picture in the window at once.
+/* HOW LOUD SIFT IS. One number, for every picture in the window together.
  *
  * A number per picture, none of them able to see the others (the player's own, a second copy in
  * the corner panel, one per Theater cell), each reading the account's `playback.volume` once
@@ -65,7 +65,7 @@ class Loudness {
 		this.#saved = this.level;
 	}
 
-	/** Somebody moved it. Applies at once, everywhere, and is written down once they stop. */
+	/** Somebody moved it. Applies immediately, everywhere, and is written down once they stop. */
 	set(level: number): void {
 		this.level = clamped(level);
 		this.#remember();

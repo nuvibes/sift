@@ -30,6 +30,11 @@ SOURCE = REPO / "src" / "sift"
 #: Tables that hold an asset id on purpose and are not cleared when the asset ends: each entry says
 #: why a row about a file is still TRUE after the file has gone. It stays short.
 KEEPS_ITS_IDS: dict[str, str] = {
+    "semantic_unrecorded": (
+        "A file whose numbers are still held after its record went: the orphans Maintenance counts "
+        "and the sweep's prune clears. A key would take the row with the file, which is the one "
+        "moment it exists for."
+    ),
     "backlog_moved": (
         "A file marked as moved for the kept counts. A file that has ended is marked so the next "
         "read folds it out, so no key on purpose."

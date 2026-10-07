@@ -71,7 +71,7 @@ describe('the address a pin is written to', () => {
 });
 
 describe('a whole selection', () => {
-	it('moves at once and settles onto what the server ended up holding', async () => {
+	it('moves immediately and settles onto what the server ended up holding', async () => {
 		/* Optimistic, like every other opinion in Sift: a control that waits for a round trip before
 		   it changes reads as broken, and the round trip is nearly always a success. */
 		const settled: [string, boolean][] = [];

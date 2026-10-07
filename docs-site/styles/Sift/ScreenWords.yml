@@ -89,6 +89,7 @@ swap:
   '\bon its own\b': 'automatically, or say who does it: Sift does this for you'
   '\bonce more\b': 'again'
   '\bours?\b': 'Sift''s, or yours'
+  '\bout\ of\ eco\ mode\b': 'turbo mode'
   '\bown\ number\b': 'ID, as in "Instagram ID" in the username sheet'
   '\bpass(?:es)?\b': 'task'
   '\bperformer\b': 'person'

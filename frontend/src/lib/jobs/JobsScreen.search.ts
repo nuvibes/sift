@@ -33,7 +33,7 @@ export const COPY = {
 		noneOfType: 'No tasks of this type.',
 		noneOfTypeInState: 'No tasks of this type in this state.'
 	},
-	/* Beside the running count in eco mode, or out of it by a press: the sidebar leaf's words. */
+	/* Beside the running count in eco mode or turbo mode: the sidebar leaf's words. */
 	steppingBack: (state: 'less' | 'full') => `${turboModeSays(state, currentShare())}.`,
 	/* More of a family's steps than the first page held. */
 	moreSteps: 'Show more steps',

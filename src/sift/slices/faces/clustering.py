@@ -60,8 +60,8 @@ log = get_logger(__name__)
 #: How many likeness values one block of the pair search holds, which is what bounds its memory.
 #:
 #: The search never builds the whole square. It takes a band of faces at a time and compares that
-#: band against everything, so the largest array alive at once is this many floats (about 16 MB),
-#: whatever the size of the library. Comparing 50,000 faces in one array would want 10 GB.
+#: band against everything, so the largest array alive at the same time is this many floats (about
+#: 16 MB), whatever the size of the library. Comparing 50,000 faces in one array would want 10 GB.
 _BLOCK_VALUES = 4_000_000
 
 #: An island of linked faces past which the grouping is worth a line in the log.
@@ -270,7 +270,7 @@ def nearest_pile(
 def nearest_piles(
     vectors: Sequence[Vector], centroids: Sequence[Vector], *, join_above: float = tuning.PILE_JOIN
 ) -> list[int | None]:
-    """`nearest_pile` for a batch of new faces at once: one multiply rather than one per face.
+    """`nearest_pile` for a batch of new faces in one go: one multiply rather than one per face.
 
     What an incremental grouping does with everything a batch of scans found. A library's worth
     of piles against a batch of faces is a small block, and the answer per face is the same one

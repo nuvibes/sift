@@ -182,8 +182,8 @@
 			     DRESSED BY: .menu-sheet (ContextMenu styles the sheet every menu is at a phone width)
 			     DRESSED BY: .menu-sheet-head (ContextMenu styles the sheet's head beside the sheet)
 			     It rises by the sheet's own rule, and sinks back through `fromEdge`: this element is
-			     this file's and leaves the page at once, where the library's sheets are held for a
-			     closing animation. -->
+			     this file's and leaves the page immediately, where the library's sheets are held
+			     for a closing animation. -->
 			<Popover.ContentStatic forceMount>
 				{#snippet child({ props, open: showing })}
 					{#if showing}

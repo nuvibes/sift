@@ -286,7 +286,7 @@ def _register_piles(
     # have to be is a setting, and the card must count at the same setting the screen behind
     # it reads at.
     board.register(dedup.DedupQueue(wiring.part_of_app(app, dedup.SERVICE), store.access, hub))
-    # And the same file in two places at once. Not a judgement (identical bytes are identical),
+    # And the same file in two places at the same time. Not a judgement (identical bytes are identical),
     # but still nobody else's decision: a second copy on a second disk may be exactly what somebody
     # wanted.
     board.register(dedup.ReclaimQueue(wiring.part_of_app(app, dedup.SERVICE), store.access))

@@ -282,7 +282,7 @@ test('the controls survive filling the screen, and stay above it', async ({ page
 	expect(after!.y, 'the bar left the top of the window').toBeLessThan(height / 2);
 
 	/* And it is IN FLOW rather than over the wall: absolute along the bottom it would cover the
-	   bottom of every feed at once, worse on a wall than shortening them, because a wall is
+	   bottom of every feed together, worse on a wall than shortening them, because a wall is
 	   several pictures. The wall starting below the bar is the whole difference. */
 	const wall = await cells(page).first().boundingBox();
 	expect(wall!.y, 'the bar is drawn over the wall rather than above it').toBeGreaterThanOrEqual(
@@ -419,7 +419,7 @@ test('a panel goes OVER the wall rather than pushing it down', async ({ page }) 
 	expect(position, 'the panel is in the flow, so it pushes whatever is under it').toBe('absolute');
 });
 
-test('a layout is chosen from the menu and applies at once', async ({ page }) => {
+test('a layout is chosen from the menu and applies immediately', async ({ page }) => {
 	await page.goto('/theater');
 	await expect(cells(page)).toHaveCount(2);
 
@@ -1101,4 +1101,42 @@ test('a filled 1x1 Portrait cell rises as the bars leave and never dips first', 
 	expect(end, 'the cell did not move when the bars left').toBeLessThan(tops[0]);
 	const away = Math.max(...tops) - tops[0];
 	expect(away, `the cell went ${away.toFixed(1)}px down before rising`).toBeLessThanOrEqual(0.5);
+});
+
+test('a refused folder is asked for on the token, and a name beginning with a minus is a name', async ({
+	page
+}) => {
+	const asked: string[] = [];
+	page.on('request', (request) => {
+		const url = new URL(request.url());
+		if (url.pathname === '/api/assets') asked.push(url.searchParams.get('q') ?? '');
+	});
+	await page.route('**/api/assets/facets*', (route) => {
+		const facet = new URL(route.request().url()).searchParams.get('facet') ?? '';
+		const value = { in: 'Raw Cuts', tags: '-cut' }[facet];
+		return route.fulfill({
+			status: 200,
+			contentType: 'application/json',
+			body: JSON.stringify({ facet, values: value ? [{ value, count: 1 }] : [] })
+		});
+	});
+	await page.goto('/theater');
+	await expect(cells(page)).toHaveCount(2);
+	await page.getByRole('button', { name: 'Filter', exact: true }).click();
+
+	// A tag named with a leading minus, picked: asked for in quotes, and its chip is not refused.
+	await page.locator('.column .value', { hasText: '-cut' }).first().click();
+	await expect.poll(() => asked.some((q) => q.includes('tags:"-cut"'))).toBe(true);
+	await expect(page.locator('.value', { hasText: /^-cut$/ }).first()).toBeVisible();
+	await expect(page.locator('.value.struck', { hasText: '-cut' })).toHaveCount(0);
+
+	// A folder whose name holds a space, picked and then refused from its chip.
+	await page.locator('.column .value', { hasText: 'Raw Cuts' }).first().click();
+	await page
+		.getByRole('button', { name: /^in:\s*Raw Cuts$/ })
+		.first()
+		.click();
+	await expect.poll(() => asked.some((q) => q.includes('-in:"Raw Cuts"'))).toBe(true);
+	expect(asked.some((q) => q.includes('in:"-Raw Cuts"'))).toBe(false);
+	await expect(page.locator('.value.struck', { hasText: 'Raw Cuts' })).toHaveCount(1);
 });

@@ -288,7 +288,7 @@ class Reader:
     ) -> AsyncGenerator[Frame]:
         """The pictures for one file, one at a time, at the moments asked for.
 
-        One at a time rather than all at once because a caller that can stop reading is what lets
+        One at a time rather than all together because a caller that can stop reading is what lets
         the time limit stop a pass part of the way through a long file, leaving the rest for a
         later pass to carry on from.
         """
@@ -361,7 +361,7 @@ class Reader:
 
         Only the moments that hold a face about to be described are read (at most two per
         appearance), and in runs no heavier in bytes than one ordinary run of reduced frames, so
-        the most this holds at once is what `stream` already does. A GIF is not read again:
+        the most this holds at a time is what `stream` already does. A GIF is not read again:
         it cannot be seeked, and a second read of every frame for two of them is not worth it, so
         it answers None throughout and its faces are cut from the frames the pass already has.
         """
@@ -477,10 +477,10 @@ async def decode_image(
 ) -> np.ndarray | None:
     """One picture from an image file, for reference import.
 
-    Larger than a video frame is reduced to, because a reference image is looked at once and its
-    landmarks are what everything about that person is aligned by. The decoder is still a separate
-    process: these files arrive from a folder somebody was handed, which is exactly the case where
-    a malformed one should not be parsed inside the server.
+    Larger than a video frame is reduced to, because a reference image is looked at only once and
+    its landmarks are what everything about that person is aligned by. The decoder is still a
+    separate process: these files arrive from a folder somebody was handed, which is exactly the
+    case where a malformed one should not be parsed inside the server.
 
     Asked for a PPM, whose header carries the size the decoder actually produced, so nothing here
     predicts the scaled size and nothing can cut the bytes into rows of the wrong length.

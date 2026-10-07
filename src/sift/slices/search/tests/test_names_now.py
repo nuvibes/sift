@@ -2,7 +2,7 @@
 """`/search/names-now`: what things kept by id are called today, and nothing a viewer may not see.
 
 The picker's memory and the swap drawer keep ids, and draw them under the names this answers,
-so a rename reads at once instead of when the thing is next picked.
+so a rename reads immediately instead of when the thing is next picked.
 """
 
 from __future__ import annotations

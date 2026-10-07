@@ -273,7 +273,7 @@ async def _walk_for_scan(
         # thread and handed over as a list rather than as a generator: a generator would step the
         # blocking walk from inside the event loop, one directory per `next`.
         # In the root's storage lane: a walk is a directory listing per folder, which over a share
-        # is a round trip per folder, and a dozen roots walked at once are a dozen readers.
+        # is a round trip per folder, and a dozen roots walked at the same time are a dozen readers.
         async with lanes.reading(root_abs / "walk"):
             return (
                 await asyncio.to_thread(look_at, root_abs, named)

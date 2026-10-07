@@ -97,7 +97,7 @@ async def test_it_keeps_going_up_rather_than_flipping(database: Database) -> Non
     assert await _stamp(database, "admin") == 3
 
 
-async def test_everybody_at_once_for_a_change_nobody_owns(database: Database) -> None:
+async def test_everybody_together_for_a_change_nobody_owns(database: Database) -> None:
     """A file leaving the library bumps everybody: there is no asking who was shown it."""
     async with database.write() as connection:
         await bump_every_cache_stamp(connection)

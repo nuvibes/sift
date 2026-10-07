@@ -43,7 +43,7 @@ def test_a_tags_record_is_written_and_read_back(client: TestClient) -> None:
 
 
 def test_a_rename_that_says_nothing_about_the_record_keeps_it(client: TestClient) -> None:
-    """The statement behind this replaces all three columns at once.
+    """The statement behind this replaces all three columns in one go.
 
     So a caller that sent only a name has to have the other two put back exactly as they were:
     otherwise renaming a tag destroys the paragraph somebody wrote about it, quietly.

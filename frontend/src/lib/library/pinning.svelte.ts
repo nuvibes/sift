@@ -48,9 +48,9 @@ type SettlePin = (id: string, pinned: boolean) => void;
 /**
  * Pin or unpin one thing. Answers what the server ended up holding.
  *
- * Optimistic, like every other opinion in Sift: the mark moves at once and the server's own answer
- * replaces the guess when it lands. A control that waits for a round trip before it changes reads
- * as broken, and the round trip is nearly always a success.
+ * Optimistic, like every other opinion in Sift: the mark moves immediately and the server's own
+ * answer replaces the guess when it lands. A control that waits for a round trip before it changes
+ * reads as broken, and the round trip is nearly always a success.
  */
 async function setPinned(kind: Pinnable, id: string, pinned: boolean): Promise<boolean> {
 	const held = await api.put<components['schemas']['PinView']>(`/${kind}/${id}/pin` as ApiPath, {

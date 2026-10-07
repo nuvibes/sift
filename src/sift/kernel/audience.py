@@ -38,7 +38,7 @@ class Audience:
     def __or__(self, other: Audience) -> Audience:
         """Both audiences together.
 
-        For a write that changes several things at once: one announcement to everybody moved,
+        For a write that changes several things together: one announcement to everybody moved,
         not the same message per row.
         """
         return Audience(

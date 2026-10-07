@@ -121,7 +121,7 @@ class Dwell {
 	}
 
 	/**
-	 * Somebody pressed the control, on whichever player. Shown at once and then saved, so every
+	 * Somebody pressed the control, on whichever player. Shown immediately and then saved, so every
 	 * other player follows (`follow`), and kept for this sitting even if it could not be saved:
 	 * snapping the control back to an answer the person did not choose is worse.
 	 */

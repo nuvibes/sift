@@ -410,7 +410,7 @@ export class DownloadQueue {
 	}
 
 	/* Which read is the newest one asked. The list is read on every move of the queue AND on every
-	   filter, so two can be in flight at once, and an answer for the tab somebody has just
+	   filter, so two can be in flight at the same time, and an answer for the tab somebody has just
 	   left, landing after the one for the tab they pressed, would draw the wrong rows under the
 	   right tab. Only the newest answer is kept. */
 	#asked = 0;
@@ -482,7 +482,7 @@ export class DownloadQueue {
 		}
 	}
 
-	/** Queue several pasted addresses at once, one download each.
+	/** Queue several pasted addresses in one go, one download each.
 	 *
 	 *  Separate from `submit` rather than a loop over it, and the difference is what it can say. A
 	 *  paste of forty has to report what it refused as well as what it took, and one bad line must

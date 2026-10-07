@@ -322,7 +322,7 @@ async function main(): Promise<void> {
 	 * that call `advanceFirstRun`, the shape `/connect` has.
 	 */
 	mainWindow = createWindow();
-	/* On screen at once in Sift's own frame, unless Windows started Sift at sign-in (`reveal`). */
+	/* On screen immediately in Sift's own frame, unless Windows started Sift at sign-in (`reveal`). */
 	const window = mainWindow;
 	if (!signInStart) {
 		frame.open(window, SHELL_ORIGIN, () => {
@@ -1109,7 +1109,7 @@ async function startBackend(): Promise<void> {
  * The master key unsealing saved logins, stash-box keys and tunnel settings is held in memory and
  * filled from the password at sign-in, so every launch starts sealed while the browser still says
  * signed in. Discarding the stale sign-in sends the person to the ordinary sign-in, where the
- * password authenticates and unseals at once. Client mode's backend outlives this window and is
+ * password authenticates and unseals in one go. Client mode's backend outlives this window and is
  * left alone.
  */
 async function requireSignIn(origin: string): Promise<void> {

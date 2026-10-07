@@ -7,7 +7,7 @@ The pool asks `Attention.workers` on its reconfigure timer. Input is read with W
 the player's reads and an open Theater wall from any device. A press for turbo mode
 (`Attention.press`) overrules every cause until Sift stops or the next press; it is held in memory
 because it answers a moment, not a standing choice. A press wakes whoever listens (the pool), so it
-takes effect at once rather than at the next reconfigure.
+takes effect immediately rather than at the next reconfigure.
 """
 
 from __future__ import annotations

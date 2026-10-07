@@ -432,8 +432,8 @@ async def test_a_press_running_is_the_run_and_nothing_is_placed_beside_it_until_
     temp_db: Database, task_registry: None, fake_clock: FakeClock
 ) -> None:
     """A backup set to run on a schedule while a pressed one is running queues no second one
-    behind it, due at once: a press under way counts, not only a press WAITING. A run under way is
-    the run; the next is placed when it settles, from when it ended."""
+    behind it, due immediately: a press under way counts, not only a press WAITING. A run under way
+    is the run; the next is placed when it settles, from when it ended."""
     _noop("tidy_up")
     register_schedule(_tidy())
     queue, clock = await _scheduler(temp_db, fake_clock)
@@ -650,7 +650,7 @@ async def test_a_press_settling_with_nothing_waiting_places_the_schedules_own_ne
 async def test_a_press_after_the_run_fell_due_is_the_catch_up(
     temp_db: Database, task_registry: None, fake_clock: FakeClock
 ) -> None:
-    """A schedule that is behind runs at once; a press made since it fell due was that run, so the
+    """A schedule that is behind runs immediately; a press made since it fell due was that run, so the
     schedule goes on from the press rather than running a second one straight after it."""
     queue, clock = await _the_schedule_ran_at_three_on_day_one(temp_db, fake_clock)
     await queue.withdraw_waiting("tidy_up")
@@ -664,7 +664,7 @@ async def test_a_press_before_the_run_fell_due_is_not_the_catch_up(
     temp_db: Database, task_registry: None, fake_clock: FakeClock
 ) -> None:
     """A press made before the schedule's run fell due was not that run: the schedule, behind,
-    runs at once."""
+    runs immediately."""
     queue, clock = await _the_schedule_ran_at_three_on_day_one(temp_db, fake_clock)
     await queue.withdraw_waiting("tidy_up")
     fake_clock.advance(_DAY_ONE + 20 * _HOUR - fake_clock.now())

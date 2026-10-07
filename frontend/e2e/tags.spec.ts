@@ -9,7 +9,7 @@ import { signInAsAdmin } from './admin';
  * importing of media, and a fixed set of items makes the tile a test can point at findable.
  *
  * These share one server with every other spec file, so anything written here is named distinctly
- * and the run is serial: two files creating a tag called "beach" at once is not the thing being
+ * and the run is serial: two files creating a tag called "beach" at the same time is not the thing being
  * tested.
  */
 

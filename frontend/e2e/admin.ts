@@ -42,9 +42,9 @@ const SIGN_IN_DEADLINE_MS = 30_000;
  *
  * WHY PER WORKER, AND LENT RATHER THAN SHARED. Module state is one Playwright worker's, and a
  * worker runs one test at a time, so a session handed to a browser is out of the pool until that
- * browser closes. Two browsers open at once (a test watching one window from another) therefore
- * never hold the same session: the second signs in afresh, as two people on two machines would.
- * One session shared across workers would let a test that signs out end every other test's
+ * browser closes. Two browsers open at the same time (a test watching one window from another)
+ * therefore never hold the same session: the second signs in afresh, as two people on two machines
+ * would. One session shared across workers would let a test that signs out end every other test's
  * session in the middle of whatever it was doing.
  *
  * WHY EACH ONE IS CHECKED BEFORE IT IS LENT. A test may sign out, lock the screen, or open Hidden,
@@ -54,7 +54,7 @@ const SIGN_IN_DEADLINE_MS = 30_000;
  */
 const pool: Cookie[][] = [];
 
-/** More spare sessions than one test ever opens browsers at once is only more to check. */
+/** More spare sessions than one test ever opens browsers at the same time is only more to check. */
 const POOL_LIMIT = 4;
 
 /**
@@ -126,7 +126,7 @@ async function resumed(page: Page, session: Cookie[]): Promise<boolean> {
  * status named so a genuine refusal is never mistaken for a queue.
  *
  * Rare, because the pool above means a worker signs in about once; it is still needed, because
- * the workers all start at once and their first sign-ins meet.
+ * the workers all start at the same time and their first sign-ins meet.
  */
 async function logIn(page: Page): Promise<void> {
 	const login = await signIn(page.request, ADMIN, PASSWORD);

@@ -513,7 +513,7 @@ describe('a figure counting up', () => {
 		expect(frames, 'Nothing is left running once the figure is reached.').toHaveLength(0);
 	});
 
-	it('draws the figure at once when motion is off', () => {
+	it('draws the figure immediately when motion is off', () => {
 		motion.preference = 'reduce';
 		const drawn: number[] = [];
 		countUp(1240, (value) => drawn.push(value));
@@ -544,8 +544,8 @@ describe('a figure counting up', () => {
 
 describe('the one number in the app that moves', () => {
 	/* A count changing in place on any other screen (a Browse total, a queue's length, a badge) is a
-	 * fact changing, and it is drawn at once. So the count-up has exactly one reader, and a second
-	 * one is refused here. */
+	 * fact changing, and it is drawn immediately. So the count-up has exactly one reader, and a
+	 * second one is refused here. */
 	const SOURCE = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 	function everyFile(dir: string): string[] {

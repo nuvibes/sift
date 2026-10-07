@@ -151,7 +151,7 @@ def failed_sentence(why: str) -> str:
 
 
 def value_said(value: int) -> str:
-    """A number of things at once as the Performance screen says it: 0 is automatic."""
+    """A number of things at the same time as the Performance screen says it: 0 is automatic."""
     return "automatic" if value == 0 else str(value)
 
 

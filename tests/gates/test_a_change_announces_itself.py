@@ -209,7 +209,9 @@ _WRITES_A_PICTURE = re.compile(
 )
 
 #: What counts as telling somebody. `telling` is the wrapper that announces on the commit.
-ANNOUNCERS = frozenset({"announce", "announce_arrival", "announce_now", "telling"})
+ANNOUNCERS = frozenset(
+    {"announce", "announce_arrival", "announce_now", "announce_picture", "telling"}
+)
 
 #: Writes of pictures that CANNOT announce, each with the reason, as `path:function`.
 PICTURE_WRITERS_EXCUSED: dict[str, str] = {

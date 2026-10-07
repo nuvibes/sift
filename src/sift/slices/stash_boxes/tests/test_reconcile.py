@@ -191,7 +191,7 @@ async def test_the_disagreements_are_kept_until_the_library_moves(
 
 
 class _ManyWriter(_Writer):
-    """A person writer that reads many people at once, and counts how it was asked."""
+    """A person writer that reads many people in one go, and counts how it was asked."""
 
     def __init__(self, held: Mapping[str, object] | None = None) -> None:
         super().__init__(held)

@@ -60,7 +60,7 @@
 	import { toasts } from '$lib/shell/toasts.svelte';
 	import { saveToDevice } from '$lib/capture/copy-out';
 	import type { components } from '$lib/api/schema';
-	import { matches } from '$lib/shell/shortcuts';
+	import { matches, stepAsked } from '$lib/shell/shortcuts';
 	import { reveal } from '$lib/shell/motion.svelte';
 	import {
 		popoutExpanded,
@@ -134,16 +134,7 @@
 		});
 	});
 
-	/* The arrows step through the run, not while typing or with a modifier; Shift is the step. */
-	function stepping(event: KeyboardEvent): boolean {
-		if (event.ctrlKey || event.metaKey || event.altKey) return false;
-		const element = event.target as HTMLElement | null;
-		if (!element?.tagName) return true;
-		if (element.isContentEditable) return false;
-		return !['INPUT', 'TEXTAREA', 'SELECT'].includes(element.tagName);
-	}
-
-	/* Shift and an arrow steps; a bare arrow too, but only where there is nothing to seek. */
+	/* The arrows step through the run on every kind (`stepAsked`); a clip's player seeks its own. */
 	function onKeydown(event: KeyboardEvent) {
 		/* Ctrl-S saves what is on screen, of any kind: this view covers all three kinds and already
 		   holds the file, where the corner panel stands down while it is up. */
@@ -154,12 +145,10 @@
 			void saveToDevice(asset);
 			return;
 		}
-		const forward = matches(event, 'view.next');
-		if (!forward && !matches(event, 'view.previous')) return;
-		if (!stepping(event)) return;
-		// About what is on SCREEN: a bare arrow belongs to the player where there is one.
-		if (!event.shiftKey && asset?.media_type === 'video') return;
-		const go = forward ? onnext : onprevious;
+		const clip = asset?.media_type === 'video' && !asset.concealed;
+		const asked = stepAsked(event, { clip, clipSteps: stepButtons });
+		if (asked === null) return;
+		const go = asked === 'next' ? onnext : onprevious;
 		if (!go) return;
 		event.preventDefault();
 		go();
@@ -470,7 +459,7 @@
 	async function load() {
 		const wanted = id;
 		failed = false;
-		// The history goes with the file: read at once where its pane is open, else after the picture.
+		// The history goes with the file: read immediately where its pane is open, else after the picture.
 		thread.reset();
 		if (recordTab === 'history') void thread.load(id, () => id);
 		const held = takeRecord(wanted);
@@ -535,7 +524,7 @@
 	{/snippet}
 
 	<!-- `asset` arms the drag out of the window, never past the vault; a phone's stroke steps the run.
-	     A picture that cannot be drawn lets the panel read at once: no frame is coming. -->
+	     A picture that cannot be drawn lets the panel read immediately: no frame is coming. -->
 	<div
 		class="swipe"
 		class:fills={phoneWidth.yes}

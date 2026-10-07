@@ -115,7 +115,7 @@
 	const unitsEntry = $derived(declarations.entry(UNITS_KEY));
 
 	/* Which clock every time in the app is written on. Saved through the ordinary settings write,
-	   which `clock` follows, so every time on the screen behind this sheet redraws at once. The
+	   which `clock` follows, so every time on the screen behind this sheet redraws immediately. The
 	   row shows `clock.hours` rather than the pane's copy, because that is what the times read. */
 	const clockEntry = $derived(declarations.entry(CLOCK_KEY));
 

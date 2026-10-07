@@ -116,7 +116,7 @@ export function frameName(playheadSeconds: number): string {
 function download(blob: Blob, filename: string): void {
 	const address = URL.createObjectURL(blob);
 	triggerDownload(address, filename);
-	// After the click has been taken: revoking at once can cancel the download in some browsers.
+	// After the click has been taken: revoking immediately can cancel the download in some browsers.
 	setTimeout(() => URL.revokeObjectURL(address), 1000);
 }
 
@@ -188,7 +188,7 @@ const SAVED = 'Screenshot saved to your library';
 
 /** How a screenshot's import is asked whether its file exists yet: soon, then less often, for as
  * long as a small picture could take. A quarter second first, so the link is up inside a second
- * on a library that files it at once. */
+ * on a library that files it immediately. */
 const LANDED_WAITS_MS = [250, 250, 500, 1000] as const;
 const LANDED_FOR_MS = 30_000;
 

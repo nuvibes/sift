@@ -82,7 +82,7 @@ export interface ShellActs {
 }
 
 /**
- * An act that stops the backend asking for it. `answer` is sent at once; `after`, when there is
+ * An act that stops the backend asking for it. `answer` is sent immediately; `after`, when there is
  * one, runs only once that answer has left, because the request waiting on it belongs to the
  * process `after` stops. No `after` is an act refused, or one with nothing to do.
  */

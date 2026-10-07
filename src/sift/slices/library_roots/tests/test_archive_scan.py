@@ -299,8 +299,8 @@ async def test_two_scans_meeting_one_archive_take_it_in_once(
     reindexer: RecordingReindexer,
 ) -> None:
     """The watcher's scan and a pressed Scan can meet the same ZIP at the same moment. Each picture
-    comes out of it once, and the grouping is never asked twice at once: two at once would each
-    find no set and each make one."""
+    comes out of it once, and the grouping is never asked twice at the same time: two at the same
+    time would each find no set and each make one."""
     where = gallery(root_path / "shoot.zip", ["01.png", "02.png", "03.png"], tmp_path)
     stale = time.time() - 3600
     os.utime(where, (stale, stale))
@@ -318,7 +318,7 @@ async def test_two_scans_meeting_one_archive_take_it_in_once(
     async def remember(root_id: str, rel_path: str, name: str, asset_ids: list[str]) -> None:
         nonlocal grouping
         grouping += 1
-        assert grouping == 1, "two scans asked for the same set at once"
+        assert grouping == 1, "two scans asked for the same set at the same time"
         await asyncio.sleep(0.05)
         groupings.append(asset_ids)
         grouping -= 1

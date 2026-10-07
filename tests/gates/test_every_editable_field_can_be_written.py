@@ -71,7 +71,7 @@ _SUBJECTS: dict[Subject, tuple[set[str], dict[str, str]]] = {
         _accepted(SongWrite, SongNotesWrite),
         {
             "details": "the `notes` field of the song's NotesWrite, under its older name",
-            "artists": "PUT /songs/{id}/artists, the whole ordered list of names at once",
+            "artists": "PUT /songs/{id}/artists, the whole ordered list of names in one go",
         },
     ),
     Subject.USERNAME: (

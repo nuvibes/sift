@@ -21,7 +21,8 @@ import pytest
 from sift.kernel.config import Settings
 from sift.kernel.lanes import MAX_READS_AT_ONCE
 from sift.kernel.media import FFmpegError
-from sift.slices.performance import rates, selftest, uncached
+from sift.slices.performance import rates, selftest, selftest_time, uncached
+from sift.slices.performance.budget import Budget
 from sift.slices.performance.selftest import Level, Measurement, recommend
 
 
@@ -50,7 +51,7 @@ def test_a_machine_that_keeps_scaling_is_recommended_the_widest_level() -> None:
 
 
 def test_scaling_stops_where_more_at_once_stops_finishing_more() -> None:
-    """Four at once did no more work than two, so two is the answer."""
+    """Four at the same time did no more work than two, so two is the answer."""
     measurement = Measurement(
         cores=16,
         levels=(a_level(1, 1.0), a_level(2, 2.0), a_level(4, 2.05), a_level(8, 2.1)),
@@ -125,7 +126,7 @@ def test_the_preview_cap_is_never_above_the_job_count_it_is_recommended_beside()
     above the worker count can never bind. A machine that keeps improving to the top of the ladder
     measures a level equal to its thread count while the job count keeps one thread back.
     """
-    # Sixteen threads, still improving at sixteen at once: the shape of a run on an eight-core
+    # Sixteen threads, still improving at sixteen at the same time: the shape of a run on an eight-core
     # machine with two threads a core.
     measurement = Measurement(
         cores=16,
@@ -155,7 +156,7 @@ def test_a_run_that_reached_the_top_of_the_ladder_says_so_rather_than_claiming_a
         cores=8,
         levels=(a_level(1, 1.0), a_level(2, 2.0), a_level(4, 4.0), a_level(8, 8.0)),
     )
-    # Four at once did no more work than two, so the curve turned BEFORE the last rung run, which
+    # Four at the same time did no more work than two, so the curve turned BEFORE the last rung run, which
     # is a peak that was measured rather than a ladder that ran out.
     turned = Measurement(
         cores=16,
@@ -263,7 +264,7 @@ def test_the_numbers_are_called_threads_because_that_is_what_they_are() -> None:
 
 
 def test_the_advice_says_device_and_task_as_the_screen_around_it_does() -> None:
-    """The Performance screen says "this device" and "Tasks at once", and these sentences are drawn
+    """The Performance screen says "this device" and "Tasks at the same time", and these sentences are drawn
     under it, so they use the same words. Both shapes of the curve, and both the margin and the
     preview cap."""
     turned = Measurement(cores=16, levels=(a_level(1, 1.0), a_level(2, 2.0), a_level(4, 2.1)))
@@ -290,6 +291,102 @@ def test_the_planned_rounds_are_the_rungs_this_machine_can_reach() -> None:
     # And never nothing: `measure` only breaks out once something has been done, so the first rung
     # is always run however small the machine.
     assert selftest.planned_levels(1) == (1,)
+
+
+#: Throughput by width, peaking at the top, in the middle, at the first and falling behind at 16.
+SHAPES: dict[str, Callable[[int], tuple[float, bool]]] = {
+    "keeps scaling": lambda at: (float(at), True),
+    "peaks at 4": lambda at: (4.0 - abs(at - 4) / 8, True),
+    "flat": lambda _at: (1.0, True),
+    "falls behind at 16": lambda at: (float(at), at < 16),
+}
+
+
+@pytest.mark.parametrize("shape", SHAPES)
+@pytest.mark.parametrize("cores", [1, 2, 3, 4, 6, 8, 12, 16, 24, 32])
+async def test_a_run_never_publishes_more_rounds_than_the_screen_says_up_to(
+    tmp_path: Path, settings: Settings, monkeypatch: pytest.MonkeyPatch, cores: int, shape: str
+) -> None:
+    """The step back between the two quickest is a round too, so "6 of up to 5" cannot be said."""
+    published: list[int] = []
+
+    async def build(into: Path, _settings: Settings) -> Path:
+        return into / "source.mp4"
+
+    async def level(at_once: int, **_kwargs: object) -> Level:
+        rate, responsive = SHAPES[shape](at_once)
+        return a_level(at_once, rate, responsive=responsive)
+
+    monkeypatch.setattr(selftest, "build_clip", build)
+    monkeypatch.setattr(selftest, "_encode_level", level)
+    for with_midpoint in (True, False):
+        measured = await selftest.measure(
+            workspace=tmp_path,
+            settings=settings,
+            cores=cores,
+            worst_lag=lambda: 0.0,
+            worst_wait=lambda: 0.0,
+            measure_decoder=skip_decode,
+            with_midpoint=with_midpoint,
+            report=lambda one: published.append(len(one.levels)),
+        )
+        bound = selftest_time.planned_rounds(cores, with_midpoint=with_midpoint)
+        assert max(published) <= bound and len(measured.levels) <= bound
+        published.clear()
+
+
+def test_the_round_bound_counts_the_step_back_where_there_can_be_one() -> None:
+    assert selftest_time.planned_rounds(24) == 6, "1, 2, 4, 8, 16 and a step back such as 12"
+    assert selftest_time.planned_rounds(24, with_midpoint=False) == 5
+    assert selftest_time.planned_rounds(4) == 4, "1, 2, 4 and 3"
+    assert selftest_time.planned_rounds(2) == 2, "1 and 2 never halve to a whole width between them"
+    assert selftest_time.planned_rounds(1) == 1
+
+
+class Clock:
+    def __init__(self) -> None:
+        self.now = 1000.0
+
+    def __call__(self) -> float:
+        return self.now
+
+
+def test_the_time_left_is_each_stage_to_come_at_its_length_here_revised_as_each_ends() -> None:
+    clock = Clock()
+    budget = Budget(300.0, {"a": 60, "b": 40, "c": 200}, clock=clock)
+    assert selftest_time.seconds_left(budget, {}, kind="whole") == 299.0, "untimed: the run's limit"
+    assert selftest_time.seconds_left(Budget(), {}, kind="whole") is None
+
+    typical = {
+        "whole.a": 40.0,
+        "whole.b": 10.0,
+        "whole.c": 100.0,
+        "first_part.a": 9.0,
+        "whole": 1.0,
+    }
+    assert selftest_time.seconds_left(budget, typical, kind="whole") == 150.0
+    budget.stage("a")
+    clock.now += 30
+    assert selftest_time.seconds_left(budget, typical, kind="whole") == 120.0
+    clock.now += 30  # ten past its length here: nothing more is expected of it
+    assert selftest_time.seconds_left(budget, typical, kind="whole") == 110.0
+    budget.stage("b")
+    clock.now += 5
+    assert selftest_time.seconds_left(budget, typical, kind="whole") == 105.0
+    assert selftest_time.stage_lengths(budget, kind="whole") == {"whole.a": 60.0, "whole.b": 5.0}
+
+    budget.stage("c")
+    clock.now = 1000.0 + 290
+    assert selftest_time.seconds_left(budget, typical, kind="whole") == 0.0
+    assert selftest_time.seconds_left(budget, {"whole.z": 5.0}, kind="whole") == 9.0, (
+        "the end, untimed"
+    )
+    late = Budget(300.0, {"a": 60}, clock=clock)
+    assert selftest_time.seconds_left(late, {"whole.a": 500.0}, kind="whole") == 299.0, (
+        "never past it"
+    )
+    gone = Budget(300.0, {"a": 60, "b": 40}, clock=clock)
+    assert selftest_time.seconds_left(gone, {"whole.b": 30.0}, kind="whole") == 30.0, "a never kept"
 
 
 def test_every_recommendation_names_a_setting_that_exists() -> None:
@@ -427,7 +524,7 @@ async def test_each_rung_is_published_as_it_finishes(
 async def test_a_level_wider_than_the_machine_is_not_run(
     tmp_path: Path, settings: Settings, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Encoding more at once than there are cores has never been the right answer, and running the
+    """Encoding more at the same time than there are cores has never been the right answer, and running the
     wide levels anyway makes the test longest on the machines least able to afford it."""
 
     async def build(into: Path, _settings: Settings) -> Path:
@@ -548,10 +645,10 @@ def test_the_measurement_is_long_enough_to_be_one() -> None:
 def test_widening_a_level_uses_more_of_the_machine() -> None:
     """The property the whole measurement rests on.
 
-    Uncapped, one encode already fills a large machine and the curve flattens at once, into a
+    Uncapped, one encode already fills a large machine and the curve flattens immediately, into a
     recommendation far below what the machine can do. Capped at cores-over-level, every level
     uses the whole machine, so throughput is near flat by construction and it would recommend 1.
-    Only a fixed share per encode makes "how many at once" the thing that varies.
+    Only a fixed share per encode makes "how many at the same time" the thing that varies.
     """
     assert selftest.cores_in_use(1) < selftest.cores_in_use(4) < selftest.cores_in_use(16)
 
@@ -660,7 +757,7 @@ def test_the_share_recommendation_says_when_nothing_wider_was_tried() -> None:
     share = a_share(a_storage_level(1, 45), a_storage_level(2, 80))
     found = selftest.recommend_share_reads([share], current={})
     assert found is not None and found.suggested == selftest.AS_MEASURED
-    assert "\\\\nas\\photos: 2 files at once" in found.reason
+    assert "\\\\nas\\photos: 2 files at the same time" in found.reason
     assert "nothing wider was tried" in found.reason
 
 
@@ -695,10 +792,11 @@ def test_a_share_that_climbs_within_the_margin_is_not_told_it_delivered_less() -
     assert "delivered under 5% more" in found.reason
     assert "delivered less" not in found.reason
     assert (
-        "1 at once 20 MB/s, 2 at once 23 MB/s, 4 at once 24 MB/s, 8 at once 24 MB/s" in found.reason
+        "1 at the same time 20 MB/s, 2 at the same time 23 MB/s, 4 at the same time 24 MB/s, 8 at the same time 24 MB/s"
+        in found.reason
     )
     alone = selftest.recommend_share_reads([a_share(a_storage_level(1, 20))], current={})
-    assert alone is not None and "1 file at once" in alone.reason
+    assert alone is not None and "1 file at the same time" in alone.reason
 
 
 def test_a_share_with_no_readings_did_not_collapse() -> None:
@@ -715,7 +813,7 @@ def test_a_share_that_really_fell_over_still_says_it_delivered_less() -> None:
     found = selftest.recommend_share_reads([share], current={})
     assert found is not None
     assert "delivered less, not more" in found.reason
-    assert "\\\\nas\\photos: 2 files at once" in found.reason
+    assert "\\\\nas\\photos: 2 files at the same time" in found.reason
 
 
 def test_a_share_that_could_not_be_measured_has_no_best_level() -> None:
@@ -737,8 +835,8 @@ def test_each_share_keeps_its_own_number_and_a_set_number_is_advised_back_to_aut
     assert found.key == selftest.SHARE_READS_KEY
     assert (found.current, found.suggested) == (4, selftest.AS_MEASURED)
     assert found.changes_anything
-    assert "nas\\photos: 4 files at once" in found.reason
-    assert "\\\\old\\share: 2 files at once" in found.reason
+    assert "nas\\photos: 4 files at the same time" in found.reason
+    assert "\\\\old\\share: 2 files at the same time" in found.reason
 
 
 def test_a_local_disk_recommends_nothing_about_shares() -> None:
@@ -861,7 +959,7 @@ async def test_a_level_reads_every_file_at_spread_places_and_steps_over_one_that
     across it, and the bytes that came back are the level's. A file gone since the sample was
     taken is logged and left out rather than failing the level.
 
-    Two readers at once, deliberately: a total added to across an await would keep one file's
+    Two readers together, deliberately: a total added to across an await would keep one file's
     bytes and lose the other's when two readers finish together, and one reader cannot show that."""
     files = [tmp_path / f"{index}.bin" for index in range(3)]
     for one in files:
@@ -1281,7 +1379,7 @@ async def test_the_storage_ladder_says_what_it_did_not_try_and_why() -> None:
 def test_a_run_says_where_encoding_stopped_keeping_up() -> None:
     measurement = Measurement(cores=16, levels=(a_level(1, 1.0), a_level(2, 3.0, responsive=False)))
     assert measurement.not_measured() == [
-        "Encoding more than 2 at once was not tried: at 2 Sift stopped keeping up."
+        "Encoding more than 2 at the same time was not tried: at 2 Sift stopped keeping up."
     ]
     assert Measurement(cores=16, levels=(a_level(1, 1.0),)).not_measured() == []
 

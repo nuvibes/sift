@@ -334,8 +334,8 @@ async def test_the_sheet_prices_a_row_from_the_last_build_on_this_machine(
     number divided by nothing.
 
     `files x seconds_per_file` would be worker-seconds presented as a wait, out by however many jobs
-    run at once. This run did 25 files in 100 seconds of clock and 460 seconds of worker time: 18.4
-    a file of work, 4 a file of waiting. The worker arithmetic would say 18 here.
+    run at the same time. This run did 25 files in 100 seconds of clock and 460 seconds of worker
+    time: 18.4 a file of work, 4 a file of waiting. The worker arithmetic would say 18 here.
     """
     a = await a_probed_file(library_root, content_store, settings, "a.mp4")
     registry = registry_of(Made("pictures", {a}))

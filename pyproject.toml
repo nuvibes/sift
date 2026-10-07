@@ -61,8 +61,8 @@ dependencies = [
     # majority of installs will never turn faces on.
     "onnxruntime~=1.28",
     # The arithmetic the face pass is made of: resampling a face into the square a model expects,
-    # and comparing one face against every person at once. It arrives with the runtime above in any
-    # case; declared because Sift imports it directly, and a dependency that is only ever
+    # and comparing one face against every person in one go. It arrives with the runtime above in
+    # any case; declared because Sift imports it directly, and a dependency that is only ever
     # transitive is one upgrade away from being absent.
     "numpy~=2.5",
     # The nearest-neighbour index behind search-by-meaning. A SQLite add-on rather than a second

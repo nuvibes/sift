@@ -190,7 +190,7 @@ describe('the graphics card panel', () => {
 	});
 
 	it('lets installed support be tested, with no restart before it, and says Passed', async () => {
-		/* The models run in a child process started fresh, so a download takes effect at once. */
+		/* The models run in a child process started fresh, so a download takes effect immediately. */
 		get.mockResolvedValue(machine({ installed: true }));
 		post.mockResolvedValue({ works: true, problem: null });
 

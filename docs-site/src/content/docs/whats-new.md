@@ -73,6 +73,29 @@ What's new lists what each release of Sift changes for you, newest first. To see
   behind.** It compared the library's computer with the newest release and said "This is the newest
   version" while the copy in front of you was older. The line now reads "Sift 0.2.1 is available for
   this copy," and Download and install updates this computer.
+- **Sift no longer stalls for minutes while faces are grouped, matched or imported.** The counts
+  behind the walls and the Filter panel were moved once for every face a pass touched, so one
+  regroup held every other write in the app for 18 minutes on a library of 81,000 faces; they now
+  move once per write (a regroup of 300 groups 1,415 ms to 134, a match of 735 faces 1,392 ms to
+  124 on a copy of a real library), and the database says in the log whenever a write holds the
+  others for over a quarter of a second, so a stall can never again pass unseen.
+- **Sharing a folder of thousands of files answers on the press**; the counts follow within
+  seconds. A share of 30,831 copies went from 3.5 s to 1.7 s on a library of one million files.
+- **A JPEG carrying two orientation records is read the way a browser reads it**, stored and drawn
+  upright; the ones already stored are read again at the next start.
+- **A Theater cell given a filter that excludes a folder with a space in its name played nothing**
+  ("Nothing here matches what this cell is set to"); it plays the rest now, and a folder, tag, Site
+  or person whose name begins with a minus can be filtered on.
+- **Ctrl + an arrow moves to the next or previous file on a picture and a GIF**, as it did on a
+  video, in the full-size view and the corner panel.
+- **The benchmark says which step it is on and about how long is left**, timed from how long each
+  step took the last time it ran on this device ("About 2 minutes left"), and its round count
+  includes the step back between the two quickest, so it never says "6 of up to 5".
+- **App History and the Organize board stay quick while Generate runs.** A page of History reads
+  the marks each act keeps rather than the whole record (89% fewer database steps on a record of
+  40,000 acts), and the board no longer re-surveys every queue for each picture made.
+- **[Settings > Maintenance](/settings/maintenance) and [Settings > Smart Search](/settings/semantic) open from kept counts**: 99.98% and 99.96%
+  fewer database steps on a library of 101,616 files (0.4 s to 9 ms and 0.36 s to 10 ms).
 
 ## 0.2.1 - 2026-10-06
 

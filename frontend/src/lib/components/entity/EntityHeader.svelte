@@ -639,7 +639,7 @@
 	}
 
 	/* Out of reach while shut: a clipped row's contents can still be focused and read out.
-	   `visibility` waits for the close to finish; opening is reachable at once. */
+	   `visibility` waits for the close to finish; opening is reachable immediately. */
 	.band[aria-hidden='true'] .held {
 		visibility: hidden;
 		transition: visibility var(--dur-base) linear;

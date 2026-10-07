@@ -370,7 +370,7 @@ async def test_the_hidden_page_is_exactly_what_the_ordinary_page_left_out(
 
     assert hidden == everything - ordinary, "the hidden page is not the complement of the grid"
     assert hidden, "this case conceals nothing, so it proves nothing about hiding"
-    assert not (hidden & ordinary), "a file appeared on both pages at once"
+    assert not (hidden & ordinary), "a file appeared on both pages at the same time"
 
 
 @pytest.mark.parametrize("case", VAULT_CASES, ids=[case.name for case in VAULT_CASES])
@@ -609,7 +609,7 @@ async def test_a_file_the_text_did_not_match_sorts_behind_the_ones_it_did(
 
 # --- what a badge says
 #
-# `_asset_marks` runs the resolver's ladder for every user at once, so it is held to the resolver:
+# `_asset_marks` runs the resolver's ladder for every user together, so it is held to the resolver:
 # if a file resolves visible for anybody, the badge says shared.
 
 

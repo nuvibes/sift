@@ -64,7 +64,7 @@ def test_two_marks_of_one_video_ask_for_two_different_pictures(
 
 
 def test_saving_a_mark_asks_for_its_still(client: TestClient, videos: Videos) -> None:
-    """Saving a Loop queues its still at once."""
+    """Saving a Loop queues its still immediately."""
     sign_in(client)
     saved = mark(client, videos.shared, 6_000, 9_000)
     assert saved.status_code == 201, saved.text

@@ -509,7 +509,7 @@ class TestThePass:
 
 
 class TestTheOneAction:
-    async def test_confirming_does_everything_at_once(
+    async def test_confirming_does_everything_in_one_go(
         self,
         service: SuggestionService,
         temp_db: Database,

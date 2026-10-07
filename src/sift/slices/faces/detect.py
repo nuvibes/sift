@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """Finding faces in a frame, and where their eyes, nose and mouth are.
 
-A detector answers two questions at once and the second one matters more than it looks. The box
+A detector answers two questions together and the second one matters more than it looks. The box
 says a face is here; the five points say *how it is arranged*, and everything downstream is
 aligned by those five points, so a detector with slightly worse points produces measurably worse
 recognition even when it finds exactly the same faces. That is not a theory: swapping only the

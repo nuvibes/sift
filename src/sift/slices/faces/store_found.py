@@ -366,7 +366,7 @@ class FoundStore(PicturesStore):
         )
 
     async def tracks_in_files(self, asset_ids: Sequence[str]) -> dict[str, list[StoredTrack]]:
-        """Every face in several files at once, keyed by file, the batched `tracks_of`. Every
+        """Every face in several files in one go, keyed by file, the batched `tracks_of`. Every
         asked-for file is present, empty when nothing was found in it."""
         found: dict[str, list[StoredTrack]] = {one: [] for one in dict.fromkeys(asset_ids)}
         if not found:

@@ -4,7 +4,7 @@
 Generated pictures are served at an address naming their contents, so a browser keeps its copy for
 a week without asking; a copy served from its own store reaches no permission check. So concealed
 things are never given a keepable address, and everything else carries this per-user number in its
-address: raising it makes every address that user holds unreachable at once. Blunt on purpose (one
+address: raising it makes every address that user holds unreachable immediately. Blunt on purpose (one
 hide re-fetches the whole grid once) because a stamp per file would walk a whole tree on every hide.
 The change for everyone a tag, person, collection or site decides for reads the grants table, so it
 lives in `sift.kernel.access.stamps`.

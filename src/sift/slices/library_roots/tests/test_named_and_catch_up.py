@@ -346,7 +346,7 @@ async def test_a_catch_up_leaves_a_library_to_a_walk_of_it_already_coming(
     job_queue: JobQueue,
     reindexer: RecordingReindexer,
 ) -> None:
-    """Adding a folder asks for its walk and for this pass at once. Both would take every file in,
+    """Adding a folder asks for its walk and for this pass together. Both would take every file in,
     each file twice and some read twice. A walk of the whole library already waiting takes in
     everything this pass would name, so it names nothing."""
     draw(root_path / "clips" / "old.mp4", "testsrc2=size=64x48:rate=5", VIDEO_SECONDS)

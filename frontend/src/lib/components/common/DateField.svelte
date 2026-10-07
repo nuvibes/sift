@@ -87,7 +87,7 @@
 					Keyed by POSITION and never by the segment's name. A date has more than one `literal`
 					in it (the separators are segments too) so keying by name is a duplicate key, and a
 					keyed-each failure unmounts everything above it, every screen that draws a date
-					going blank at once.
+					going blank immediately.
 				-->
 				{#each segments as { part, value: text }, at (at)}
 					<DateField.Segment

@@ -12,12 +12,12 @@ import asyncio
 import sqlite3
 import threading
 import time
-from collections.abc import AsyncIterator, Callable, Sequence
+from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from contextlib import asynccontextmanager, suppress
 from contextvars import ContextVar
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import aiosqlite
 
@@ -116,6 +116,16 @@ from sift.kernel.db_schema import (
     registered_invariants,
     too_old_to_bring_forward,
 )
+from sift.kernel.db_writer import (
+    CHECKPOINT_INTERVAL_SECONDS,
+    RECLAIM_WORTH_SAYING_BYTES,
+    WRITE_HELD_BUDGET_MS,
+    WRITE_HELD_SAY_SECONDS,
+    WRITER_HELD_SECONDS,
+    _log_bytes,
+    _writer_still_held,
+    keep_the_log_folded,
+)
 from sift.kernel.log import get_logger, timing_hook
 
 log = get_logger(__name__)
@@ -199,6 +209,7 @@ __all__ = [
     "add_schema_dependency",
     "adopt_database",
     "after_commit",
+    "before_commit",
     "check_sqlite_capabilities",
     "copy_database_aside",
     "copy_library_aside",
@@ -239,14 +250,6 @@ def readers_for(workers: int) -> int:
     return max(DEFAULT_READERS, workers + READER_HEADROOM)
 
 
-#: How often the write-ahead log is offered a fold: rarely, since a landed one is a burst of copying.
-CHECKPOINT_INTERVAL_SECONDS = 300.0
-
-
-#: Below this much reclaimed, folding the log is not worth a line in anybody's log.
-RECLAIM_WORTH_SAYING_BYTES = 8 * 1024 * 1024
-
-
 #: How often a long-lived process refreshes the planner's statistics: daily, SQLite's own advice.
 STATISTICS_INTERVAL_SECONDS = 24 * 60 * 60.0
 
@@ -258,47 +261,6 @@ STATISTICS_MIN_INTERVAL_SECONDS = 60.0
 #: run once, at boot. Full `ANALYZE` is not used.
 _ANALYZE_WHAT_MOVED = "PRAGMA optimize"
 _ANALYZE_EVERY_TABLE = "PRAGMA optimize(0x10002)"
-
-
-def _log_bytes(database_path: Path) -> int:
-    """How big the write-ahead log is right now. Zero when there is not one."""
-    try:
-        return (database_path.parent / (database_path.name + "-wal")).stat().st_size
-    except OSError:
-        return 0
-
-
-async def keep_the_log_folded(
-    database: Database,
-    stop: asyncio.Event,
-    *,
-    interval: float = CHECKPOINT_INTERVAL_SECONDS,
-) -> None:
-    """Offer the write-ahead log a chance to fold back, on a timer, until told to stop. Offered,
-    never forced: a busy install skips one and takes the next, and without this the moment the log
-    needs never arrives under continuous background work."""
-    while not stop.is_set():
-        with suppress(TimeoutError):
-            await asyncio.wait_for(stop.wait(), timeout=interval)
-        if stop.is_set():
-            return
-        try:
-            # Sized either side, because the pragma cannot say how much it reclaimed.
-            before = await asyncio.to_thread(_log_bytes, database.path)
-            folded, remaining = await database.fold_the_log_back()
-            after = await asyncio.to_thread(_log_bytes, database.path)
-            if folded and before - after >= RECLAIM_WORTH_SAYING_BYTES:
-                log.info(
-                    "db.log_folded",
-                    reclaimed_mb=round((before - after) / 1_000_000, 1),
-                    log_mb=round(after / 1_000_000, 1),
-                )
-            elif not folded:
-                # Not a failure; a quiet line so a log that never shrinks has an explanation.
-                log.debug("db.log_busy", log_mb=round(after / 1_000_000, 1), pages=remaining)
-        except Exception:
-            # Housekeeping does not get to take the application down with it.
-            log.exception("db.log_fold_failed")
 
 
 async def keep_the_statistics_current(
@@ -443,6 +405,16 @@ _AFTER_COMMIT: ContextVar[list[Callable[[], None]] | None] = ContextVar(
 )
 
 
+#: What every write does last, inside its transaction: a component whose stored answers move once
+#: per write instead of once per row (`visibility`) registers it here.
+_BEFORE_COMMIT: list[Callable[[aiosqlite.Connection], Awaitable[None]]] = []
+
+
+def before_commit(work: Callable[[aiosqlite.Connection], Awaitable[None]]) -> None:
+    """Run this at the end of every write, before it commits and in the same transaction."""
+    _BEFORE_COMMIT.append(work)
+
+
 def after_commit(work: Callable[[], None]) -> None:
     """Do this once the write in progress has committed, and not at all if it does not: refused
     outside a write, run with the writer lock released, a failure logged since the change is stored."""
@@ -466,6 +438,8 @@ class Database:
         self.path = path
         self._readers = readers
         self._writer: aiosqlite.Connection | None = None
+        self._held_said = 0.0
+        self._held_quietly = 0
         self._write_lock = asyncio.Lock()
         self._read_pool: asyncio.Queue[aiosqlite.Connection] = asyncio.Queue()
         # Read connections open; up to `_readers`, those past the first few opened on first need.
@@ -624,6 +598,12 @@ class Database:
         connection.row_factory = aiosqlite.Row
         for pragma in PRAGMAS:
             await connection.execute(pragma)
+        if writer:
+            # The writer's temporary tables are a statement's own and small; on disk each one is a
+            # file opened per statement, and a trigger's hundred statements a row paid for it
+            # (one row's update 5.35 ms against 1.27 in memory on a library of 100,000 files). A
+            # reader's sort over a whole library stays on disk: see `PRAGMAS`.
+            await connection.execute("PRAGMA temp_store=MEMORY")
         await connection.commit()
         await self._load_extensions(connection)
         self._open_connections.append(connection)
@@ -753,8 +733,19 @@ class Database:
         async with self._write_lock:
             held = _IN_WRITE.set(True)
             carried = _AFTER_COMMIT.set(pending)
+            counting = cast(_JudgedWriter, connection)
+            counting.began_block()
+            began = time.monotonic()
+            # Every write in the application queues behind this block: one that runs long is said
+            # while it runs, since a stalled application writes nothing else to the log.
+            loop = asyncio.get_running_loop()
+            still_held = loop.call_later(
+                WRITER_HELD_SECONDS, _writer_still_held, counting, began, WRITER_HELD_SECONDS
+            )
             try:
                 yield connection
+                for last in _BEFORE_COMMIT:
+                    await last(connection)
                 await connection.commit()
             except BaseException:
                 await connection.rollback()
@@ -762,8 +753,12 @@ class Database:
                 pending.clear()
                 raise
             finally:
+                still_held.cancel()
                 _IN_WRITE.reset(held)
                 _AFTER_COMMIT.reset(carried)
+                held_ms = (time.monotonic() - began) * 1000
+                if held_ms >= WRITE_HELD_BUDGET_MS:
+                    self._say_held(held_ms, counting)
         # Outside the lock, deliberately: the next writer is already free to start. Nothing here is
         # allowed to take the write back, so a failure is reported and the rest still run.
         for work in pending:
@@ -772,13 +767,28 @@ class Database:
             except Exception:
                 log.exception("db.after_commit_failed")
 
+    def _say_held(self, held_ms: float, counting: _JudgedWriter) -> None:
+        """One line per `WRITE_HELD_SAY_SECONDS` under load, the blocks it stood for counted."""
+        now = time.monotonic()
+        self._held_quietly += 1
+        if now - self._held_said < WRITE_HELD_SAY_SECONDS:
+            return
+        log.warning(
+            "db.write_held",
+            held_ms=round(held_ms),
+            statements=counting.statements,
+            statement=counting.last_statement,
+            blocks=self._held_quietly,
+        )
+        self._held_said, self._held_quietly = now, 0
+
     @asynccontextmanager
     async def read(self) -> AsyncIterator[aiosqlite.Connection]:
         """Borrow a read connection. Not serialized: WAL readers run concurrently."""
         if self._writer is None:
             raise DatabaseError("the database is not open: call connect() first")
         if self._read_pool.empty() and self._opened < self._readers:
-            # Counted before the await, so two borrowers at once cannot both pass the ceiling.
+            # Counted before the await, so two borrowers together cannot both pass the ceiling.
             self._opened += 1
             try:
                 connection = await self._open()
@@ -797,11 +807,11 @@ class Database:
         """The lane for whole-library reads. One at a time, on a connection of its own.
 
         The cost of a scan is rows crossing into Python, and it multiplies with every reader doing
-        it at once, so the passes that read a whole table take turns: more background throughput
-        AND far better interactive latency than no lane. Its own connection, so the browser's pool
-        is never held. Nothing slow may happen inside the block. `what` names the pass for the
-        health screen. The block always ends its transaction: in WAL a transaction left open would
-        hand the next pass an older picture of the library.
+        it at the same time, so the passes that read a whole table take turns: more background
+        throughput AND far better interactive latency than no lane. Its own connection, so the
+        browser's pool is never held. Nothing slow may happen inside the block. `what` names the
+        pass for the health screen. The block always ends its transaction: in WAL a transaction left
+        open would hand the next pass an older picture of the library.
         """
         if self._sweeper is None:
             raise DatabaseError("the database is not open: call connect() first")

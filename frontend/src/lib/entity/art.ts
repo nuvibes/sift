@@ -39,7 +39,7 @@ function addressed(path: string, art: string | null | undefined): string {
 
 /* The mark drawn where a picture is being withheld: a face crop, or a concealed file's still.
  *
- * A picture rather than a component, and that is the whole reason it works everywhere at once.
+ * A picture rather than a component, and that is the whole reason it works everywhere.
  * Nine screens draw a face, each with its own size, radius and object-fit written against `img`.
  * A component would need every one of those rules rewritten, and scoped styles do not reach
  * into a child anyway. A data address is still an `<img>`, so it inherits all of it and no screen

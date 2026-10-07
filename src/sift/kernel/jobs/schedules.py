@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""What Sift does on a clock, declared where a person can be shown all of it at once.
+"""What Sift does on a clock, declared where a person can be shown all of it together.
 
 A backup runs every few days at a time of day, a sweep clears the quarantine folder every
 twenty-four hours, recognition may be held back to an overnight window: three answers to one question ("what runs

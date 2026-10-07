@@ -4,7 +4,7 @@
 Four tables, and the shape of them follows from one fact: **a proposal is expensive to work out and
 cheap to read.** Finding a shoot means asking the meaning index for the neighbours of every
 unfiled picture one creator has, which is one lookup per picture. A card on the board cannot pay
-that (the board surveys a dozen queues at once), so the pass writes what it found and the card
+that (the board surveys a dozen queues together), so the pass writes what it found and the card
 reads rows.
 
 **A proposal is a guess with a shelf life, so it is replaced rather than accumulated.** The pass

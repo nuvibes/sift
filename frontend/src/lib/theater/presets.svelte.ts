@@ -92,7 +92,7 @@ class Presets {
 	}
 
 	async remove(id: string): Promise<void> {
-		// Gone at once; a failed delete is put right by the next load.
+		// Gone immediately; a failed delete is put right by the next load.
 		this.items = this.items.filter((item) => item.id !== id);
 		await api.del(`${ROOT}/${id}`);
 	}

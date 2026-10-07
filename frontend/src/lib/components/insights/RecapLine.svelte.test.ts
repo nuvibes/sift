@@ -2,7 +2,7 @@
  * Insights, read from one list.
  *
  * What is held: the line says "Your September is ready" and opens the recap; the cross takes it
- * off the screen AT ONCE and it stays off: a line that outlives its cross reads as a cross that
+ * off the screen IMMEDIATELY and it stays off: a line that outlives its cross reads as a cross that
  * does not work. And the card on Insights goes with it, because the two are one announcement.
  * The recap itself is not dismissed from anything but the announcement: the server keeps it.
  */

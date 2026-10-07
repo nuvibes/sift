@@ -81,7 +81,7 @@ async function settle() {
 }
 
 describe('on the desktop', () => {
-	it('hands the chosen folder over and adds it, read at once by default', async () => {
+	it('hands the chosen folder over and adds it, read immediately by default', async () => {
 		choose.mockResolvedValue('D:\\media');
 		const { library, grants } = render(true);
 

@@ -240,7 +240,7 @@ const WHITE: Rgb = [1, 1, 1];
 /**
  * The fill. The chosen colour, moved in lightness only as far as it has to be.
  *
- * TWO FLOORS AT ONCE, and they pull in opposite directions: white sits on this, so it may not be
+ * TWO FLOORS TOGETHER, and they pull in opposite directions: white sits on this, so it may not be
  * too light; it is also a marker on the canvas, so it may not be too dark. Measured across every
  * base and the whole hue circle, the band where both hold is about 0.47 to 0.60, which is
  * why a derived accent lands beside the shipped six at 0.546 without ever being told to.

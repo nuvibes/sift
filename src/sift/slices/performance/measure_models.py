@@ -40,7 +40,7 @@ from sift.slices.performance.selftest import (
 
 log = get_logger(__name__)
 
-#: How many files at once each pass is timed at.
+#: How many files at the same time each pass is timed at.
 MODEL_LEVELS = (1, 2, 4)
 
 #: Recognition's "Share of this device to use", the one model setting the benchmark advises.
@@ -92,7 +92,7 @@ class ModelPass:
 
 @dataclass(frozen=True)
 class ModelLevel:
-    """One width: how many files at once, and what came of them."""
+    """One width: how many files at the same time, and what came of them."""
 
     at_once: int
     seconds: float
@@ -112,7 +112,7 @@ class ModelLevel:
 
 @dataclass(frozen=True)
 class ModelCurve:
-    """How one pass's models did as more files went through them at once."""
+    """How one pass's models did as more files went through them together."""
 
     name: str
     family: str
@@ -465,7 +465,7 @@ async def measure_pass(
 def recommend_share(
     curves: Sequence[ModelCurve], *, tasks: int, current: dict[str, int]
 ) -> Recommendation | None:
-    """The share of `tasks` giving the files at once recognition did best at; None where unadvised."""
+    """The share of `tasks` giving the files at the same time recognition did best at; None where unadvised."""
     found = next(
         (one for one in curves if one.share_key and one.best and not one.still_gaining), None
     )

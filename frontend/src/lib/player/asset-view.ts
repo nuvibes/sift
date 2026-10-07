@@ -660,8 +660,8 @@ export function canStepBack(id: string): boolean {
  *
  * Turned OFF on a file the shuffled walk read from beyond the page, the list's own order has to
  * be found again around it, or the panel would hold no neighbours for it and Next and Back would
- * go blank. At once it is placed after the file the walk began on, the rule `showStranger` keeps
- * for a file from elsewhere; then the list is asked where the file really sits, and the block
+ * go blank. Immediately it is placed after the file the walk began on, the rule `showStranger`
+ * keeps for a file from elsewhere; then the list is asked where the file really sits, and the block
  * around that position replaces what is held.
  */
 export function toggleShuffle(onScreen: string | null): void {

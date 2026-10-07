@@ -919,7 +919,7 @@ def test_a_merge_tells_every_screen_once_it_has_landed(client: TestClient) -> No
             )
 
     class Listening(changes.ChangeBus):
-        def publish(self, audience, about):  # type: ignore[no-untyped-def]
+        def publish(self, audience, about, *, picture=False):  # type: ignore[no-untyped-def]
             heard.append((str(about), still_there()))
             super().publish(audience, about)
 

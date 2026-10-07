@@ -261,7 +261,7 @@ describe('the PIN is six digits', () => {
 		shellVault.unlocked = false;
 	});
 
-	it('answers no at once for somebody with no PIN, who is asked to make one', async () => {
+	it('answers no immediately for somebody with no PIN, who is asked to make one', async () => {
 		shellVault.loaded = true;
 		shellVault.pinSet = false;
 

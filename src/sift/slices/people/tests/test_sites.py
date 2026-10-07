@@ -69,10 +69,10 @@ def test_a_person_with_two_usernames_on_one_site_is_counted_once(
     """The count is DISTINCT over people, and a file reaching it twice must not say two.
 
     The test above says what the number means; this one says what it does when one file arrives at a
-    site down two paths at once, which is what a repost or a renamed username looks like in the
-    tables. The number is in the wall's own count CTEs, and a GROUP BY fans a file out exactly where
-    a per-row subquery would, so this is the property that would go quietly wrong if the DISTINCT
-    were ever dropped from either.
+    site down two paths at the same time, which is what a repost or a renamed username looks like in
+    the tables. The number is in the wall's own count CTEs, and a GROUP BY fans a file out exactly
+    where a per-row subquery would, so this is the property that would go quietly wrong if the
+    DISTINCT were ever dropped from either.
     """
     sign_in(client)
     _make_site(client, "Instagram")
@@ -228,7 +228,7 @@ def test_renaming_a_site_works(client: TestClient) -> None:
 def test_a_site_deleted_by_somebody_else_mid_delete_reads_like_any_other_miss(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Two people deleting one site at once: the second passes the visibility check, and by its
+    """Two people deleting one site together: the second passes the visibility check, and by its
     own delete the row is gone. It answers the miss an unknown id does, not a success for a delete
     that removed nothing."""
     from sift.slices.people.service import PeopleService
@@ -610,7 +610,7 @@ def test_a_sites_other_name_finds_the_site_and_not_only_its_files(client: TestCl
     spelling finds no site is a library that is wrong in the way people notice.
 
     Checked through the suggester every surface reads, which is what makes this the search box, the
-    filter bar and the site wall at once.
+    filter bar and the site wall at the same time.
     """
     sign_in(client)
     # The other name deliberately shares NOTHING with the name on the row. A fixture whose two

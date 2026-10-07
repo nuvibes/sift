@@ -73,7 +73,7 @@ class Narrowed:
 def _with_neighbours(
     described: AssetFilter, neighbours: tuple[tuple[str, float], ...]
 ) -> AssetFilter:
-    """A query whose WORDS are answered two ways at once: the index, or the model, or both."""
+    """A query whose WORDS are answered two ways together: the index, or the model, or both."""
     named = Where("assets", tuple(asset_id for asset_id, _ in neighbours))
     words = AnyOf((named, AllOf(_text(described.text))))
     return replace(described, where=AllOf((described.where, words)), neighbours=neighbours)

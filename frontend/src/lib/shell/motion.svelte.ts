@@ -176,7 +176,7 @@ export function easingToken(name: string, fallback: number[]): number[] {
  *
  * `ambient` is the stylesheet's fifth and it is the one to reach for LAST. It is for something that
  * breathes (a placeholder's shimmer, the tint bleeding off a picture) and for the single gesture
- * that changes the whole window at once, which is a screen filling it and leaving again. Anything
+ * that changes the whole window in one go, which is a screen filling it and leaving again. Anything
  * else somebody is waiting on wants `slow` at the very most: at 600ms a control reads as lag rather
  * than as motion.
  */
@@ -769,7 +769,7 @@ export function reflow(
  *
  * The whole number rises, rather than each digit turning over on its own, because a number whose
  * digits spin independently cannot be read until every one of them stops. Reduced motion, or
- * nothing to count, draws `to` at once. Returns a stop, for a caller whose figure is replaced
+ * nothing to count, draws `to` immediately. Returns a stop, for a caller whose figure is replaced
  * before the count has finished.
  */
 export function countUp(to: number, draw: (value: number) => void): () => void {

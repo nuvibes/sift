@@ -635,7 +635,7 @@ def test_a_model_cannot_be_loaded_before_it_has_been_obtained(store: WeightStore
 async def test_inference_is_kept_to_one_thread_per_model(
     tmp_path: Path, store: WeightStore, stub_runtime: None
 ) -> None:
-    """The work arrives as a queue already running several files at once, so a model that spawned a
+    """The work arrives as a queue already running several files together, so a model that spawned a
     thread per core would have every worker fighting every other worker for the same processor."""
     payload = b"a model" * 100
     source = tmp_path / "model.onnx"

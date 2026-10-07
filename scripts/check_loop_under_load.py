@@ -241,11 +241,11 @@ async def _drive_load(
     without exercising anything is worse than no check, because it is the one nobody re-reads.
 
     `compress` adds the heaviest thing the application can be asked to do: a full re-encode of
-    every file it has just taken in, several at once, for as long as they take. A scan and its
-    derivatives are seconds of ffmpeg per file; this is minutes, on the same worker pool, holding
-    one of the shared threads apiece for the whole run of each tool. It is a separate switch rather
-    than always on because it makes the check far slower, and because a run without it is still the
-    right measurement of a scan.
+    every file it has just taken in, several at the same time, for as long as they take. A scan and
+    its derivatives are seconds of ffmpeg per file; this is minutes, on the same worker pool,
+    holding one of the shared threads apiece for the whole run of each tool. It is a separate switch
+    rather than always on because it makes the check far slower, and because a run without it is
+    still the right measurement of a scan.
     """
     await _sign_in_and_scan(session, media)
     if compress:

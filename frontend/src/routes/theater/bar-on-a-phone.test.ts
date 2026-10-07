@@ -1,9 +1,9 @@
 /*
  * Theater on a phone says it needs a wider window and puts nothing of the wall's on the bar.
  *
- * A wall is several pictures playing at once on one screen, and a phone's own full screen holds
- * one video, so a phone drives the desk's walls from the Remote instead. The refusal is the one
- * every screen too wide for a phone draws (`WIDER_WINDOW_TITLE`), with its own reason under it.
+ * A wall is several pictures playing at the same time on one screen, and a phone's own full screen
+ * holds one video, so a phone drives the desk's walls from the Remote instead. The refusal is the
+ * one every screen too wide for a phone draws (`WIDER_WINDOW_TITLE`), with its own reason under it.
  *
  * Read from the source: the page needs the whole wall to mount, and what is under test is which
  * branch a phone's width takes and what the bar is handed there.

@@ -879,7 +879,7 @@ describe('a picture this browser cannot draw', () => {
 			});
 		}
 
-		it('is drawn from the copy at once where the browser says it cannot draw it', async () => {
+		it('is drawn from the copy immediately where the browser says it cannot draw it', async () => {
 			const asked = serverSays(200);
 			browserSays(false);
 			render('asset-7', { mayNotDraw: true });

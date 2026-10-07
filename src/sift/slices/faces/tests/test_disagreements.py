@@ -554,7 +554,7 @@ async def test_the_folder_named_here_is_the_one_a_file_s_own_history_names(
     library: Database, service: FaceService
 ) -> None:
     """One rule read two ways: this wall reads the nearest folder answered as her for a page of
-    files at once, and a file's history reads it for one file. Both must answer the same folder
+    files in one go, and a file's history reads it for one file. Both must answer the same folder
     for every file: at the library's top, in her folder, in a folder answered inside it, in one
     not answered inside it, and beside a folder whose name only starts the same."""
     await library.execute(

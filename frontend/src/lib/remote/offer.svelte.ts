@@ -365,7 +365,7 @@ export class ScreenOffer {
 			this.#actedOn = command.id;
 			acted = true;
 		}
-		// Said at once rather than on the next look: the phone is waiting for exactly this.
+		// Said immediately rather than on the next look: the phone is waiting for exactly this.
 		if (acted) void this.look(true);
 	}
 

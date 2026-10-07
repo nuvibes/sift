@@ -35,7 +35,7 @@
 #   scripts/ci-local.sh 2>&1 | tee /tmp/ci.log
 #
 # The worker count is sized for one checkout. When several checkouts of this repository run their
-# gates at once on one computer, say how many, and each run takes its share of the spare cores:
+# gates together on one computer, say how many, and each run takes its share of the spare cores:
 #
 #   SIFT_CI_CHECKOUTS=3 scripts/ci-local.sh
 #

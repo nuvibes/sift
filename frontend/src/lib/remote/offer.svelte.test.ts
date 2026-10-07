@@ -132,7 +132,7 @@ describe('what is said, and when', () => {
 		expect(mocked.post).toHaveBeenCalledTimes(2);
 	});
 
-	it('speaks at once for a pause and for a seek', async () => {
+	it('speaks immediately for a pause and for a seek', async () => {
 		const offer = anOffer();
 		offer.offer(aPlayer());
 		state = { ...state, playing: false };

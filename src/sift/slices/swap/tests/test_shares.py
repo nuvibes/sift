@@ -254,7 +254,7 @@ async def test_a_cut_off_and_rejoin_resumes_the_shares_from_what_the_guest_has(
 
 @pytest.mark.integration
 @_needs_psk
-async def test_a_file_turned_down_on_two_streams_at_once_is_failed_once(tmp_path: Path) -> None:
+async def test_a_file_turned_down_on_two_streams_together_is_failed_once(tmp_path: Path) -> None:
     data = os.urandom(CHUNK_SIZE + 10)
     async with _host_rig(tmp_path, {"a": data}) as rig:
         await _striped_hello(rig, _device())

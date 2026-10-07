@@ -255,9 +255,9 @@ class VaultPrompt {
 	 *
 	 * For an act that needs Hidden open and was refused because it was shut: the Undo of a hide is
 	 * the one today. The person proves the PIN in the one shared prompt and the act is tried again,
-	 * rather than being told to go and unlock and then do it again by hand. Answers false at once
-	 * for somebody with no PIN (they are asked to make one, which opens nothing), and false when the
-	 * prompt is cancelled.
+	 * rather than being told to go and unlock and then do it again by hand. Answers false
+	 * immediately for somebody with no PIN (they are asked to make one, which opens nothing), and
+	 * false when the prompt is cancelled.
 	 *
 	 * `reason` is the act's own words, which the prompt says instead of "Show hidden items": asked
 	 * so an Undo can put a file back, the prompt reads "Put it back", which is what pressing it does.

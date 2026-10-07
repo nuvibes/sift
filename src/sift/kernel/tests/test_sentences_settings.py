@@ -63,8 +63,8 @@ def test_a_setting_says_its_values_in_its_own_controls_words(
     assert changed("t.device", "Run recognition on", '"cpu"', '"nvidia"') == (
         "You changed Run recognition on from CPU to GPU"
     )
-    assert changed("t.workers", "Tasks at once", "4", "0") == (
-        "You changed Tasks at once from 4 to Automatic"
+    assert changed("t.workers", "Tasks at the same time", "4", "0") == (
+        "You changed Tasks at the same time from 4 to Automatic"
     )
     # A key nothing declares says the stored value, as before.
     assert changed("t.unknown", "Other", "4", "5") == "You changed Other from 4 to 5"

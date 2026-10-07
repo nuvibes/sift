@@ -192,7 +192,7 @@ class Switchboard:
         the person who had just pressed Scan.
 
         A switch that cannot be read is treated as ON. The alternative is a broken settings read
-        silencing every background pass in the application at once, which is the one wrong answer
+        silencing every background pass in the application together, which is the one wrong answer
         that looks like nothing being wrong.
         """
         switch = self._switches.get(job_type)
@@ -219,7 +219,7 @@ class Switchboard:
         reason `WorkAhead` leaves a failed counter out: "not known" is the honest answer to a read
         that did not come back, and a screen that said "waiting for the runtime" over an
         unreachable endpoint would be inventing a fault. Callers arriving while one ask is out
-        share its answer: every worker claims at once, and each would ask every feature again.
+        share its answer: every worker claims together, and each would ask every feature again.
         """
         if self._asking is None or self._asking.get_loop() is not asyncio.get_running_loop():
             self._asking = asyncio.ensure_future(self._ask_every_family())

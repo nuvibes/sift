@@ -483,7 +483,7 @@ class Writer(Protocol):
 
 @runtime_checkable
 class ReadsMany(Protocol):
-    """A writer that can read what it holds for many subjects at once.
+    """A writer that can read what it holds for many subjects in one go.
 
     For a survey that plans against every linked subject of a kind, where one read per subject
     per list is the whole cost. Optional: a writer without it is read one subject at a time.
@@ -542,8 +542,8 @@ class Enricher:
     ) -> Mapping[str, Mapping[str, object]]:
         """What Sift holds now for each of these subjects, by id. Empty where nothing writes the kind.
 
-        One read per table where the writer reads many at once (`ReadsMany`), else one subject at a
-        time. An id the batch had no row for is read alone, so every id asked is answered.
+        One read per table where the writer reads many in one go (`ReadsMany`), else one subject at
+        a time. An id the batch had no row for is read alone, so every id asked is answered.
         """
         writer = self.writers.get(subject)
         if writer is None or not local_ids:

@@ -53,7 +53,7 @@
 		 * What the report is about. Null is what "not open on anything" is.
 		 *
 		 * ONE thing, unlike the sharing panel, and it is not an omission. A decision can sensibly be
-		 * made about forty files at once (it is the same decision made forty times) but forty
+		 * made about forty files in one go (it is the same decision made forty times) but forty
 		 * files have forty different answers to "who can see this and how", and a panel that showed
 		 * one of them, or the intersection of them, would be answering a question nobody asked. The
 		 * verb is `singleOnly` for the same reason.

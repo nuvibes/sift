@@ -1,24 +1,30 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Who pressed the passes over a file, and the line each press says where no pass line claims it."""
+"""Who pressed the passes over a file, the line each press says where no pass line claims it, and
+the press marks the record keeps for the feed's fold."""
 
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from functools import cache
+from typing import Final
 
 from sift.kernel import presses
 from sift.kernel.access import sentences as say
 from sift.kernel.access.history_actors import _names_of, _Who
 from sift.kernel.access.history_events import (
+    _FOLD_KEY,
+    _SETTING_KEY,
     FEED_FOLD_GAP,
+    FEED_SITTING_GAP,
     LedgerEvent,
     presses_of_asset,
 )
 from sift.kernel.access.history_line import Actor, Event, by_of
 from sift.kernel.access.sentences import SIFT
 from sift.kernel.access.viewer import Viewer
-from sift.kernel.db import Database, point_read
+from sift.kernel.db import Connection, Database, point_read
+from sift.kernel.sql_splice import splice
 
 #: How far outside a press's stretch a pass's own row may be dated and still be that press's work,
 #: in seconds: the clock on a machine can step backwards by a few seconds, and a pass may date
@@ -224,3 +230,196 @@ def verdict_said_by(product: str) -> str | None:
     a pass that gave up would have drawn had it done its work. None for a product no pass declares
     (`identity`, the read that tells a file apart), whose verdict is said as Sift's."""
     return next((one for one in SAID_ON_A_FILE.get(product, ()) if one != _LEFT_OUT.name), None)
+
+
+# --- the press marks: what the feed's fold reads (`history_events`, the fold's key and gaps) ---
+
+#: The longest gap one press of this act's key may hold: a sitting for a setting, else a minute.
+_FOLD_GAP = f"CASE WHEN {_SETTING_KEY} IS NOT NULL THEN {FEED_SITTING_GAP} ELSE {FEED_FOLD_GAP} END"
+
+#: The press marks, as columns added to the record: the key and the gap generated from the act's own
+#: row, and whether a press opens or closes on it, kept by `PRESS_TRIGGERS`.
+PRESS_COLUMNS: Final = (
+    (
+        "fold_key",
+        "ALTER TABLE workbench_decisions ADD COLUMN fold_key TEXT"
+        f" GENERATED ALWAYS AS ({_FOLD_KEY}) VIRTUAL",
+    ),
+    (
+        "fold_gap",
+        f"ALTER TABLE workbench_decisions ADD COLUMN fold_gap INTEGER"
+        f" GENERATED ALWAYS AS ({_FOLD_GAP}) VIRTUAL",
+    ),
+    ("opens", "ALTER TABLE workbench_decisions ADD COLUMN opens INTEGER NOT NULL DEFAULT 1"),
+    ("closes", "ALTER TABLE workbench_decisions ADD COLUMN closes INTEGER NOT NULL DEFAULT 1"),
+)
+
+#: The seeks the marks and the feed make: an act's neighbours of its key, a press's opening, the
+#: closings newest first, and the closing of a press one of its acts is in.
+PRESS_INDEXES: Final = (
+    "CREATE INDEX IF NOT EXISTS ix_workbench_fold ON workbench_decisions(fold_key, decided_at, id)",
+    "CREATE INDEX IF NOT EXISTS ix_workbench_openings"
+    " ON workbench_decisions(fold_key, decided_at, id) WHERE opens = 1",
+    "CREATE INDEX IF NOT EXISTS ix_workbench_closings"
+    " ON workbench_decisions(decided_at DESC, id DESC) WHERE closes = 1",
+    "CREATE INDEX IF NOT EXISTS ix_workbench_closing_keys"
+    " ON workbench_decisions(fold_key, decided_at, id) WHERE closes = 1",
+)
+
+#: An act's two marks read again from its neighbours of the same key: a press opens on it when no
+#: act of the key lies within the gap before it, and closes on it when none lies within the gap
+#: after. The neighbour within the gap, if any, is the adjacent one, so this is the window's test.
+_MARKED = """
+UPDATE workbench_decisions
+   SET opens = NOT EXISTS (
+         SELECT 1 FROM workbench_decisions p
+          WHERE p.fold_key IS workbench_decisions.fold_key
+            AND p.decided_at >= workbench_decisions.decided_at - workbench_decisions.fold_gap
+            AND (p.decided_at, p.id) < (workbench_decisions.decided_at, workbench_decisions.id)),
+       closes = NOT EXISTS (
+         SELECT 1 FROM workbench_decisions n
+          WHERE n.fold_key IS workbench_decisions.fold_key
+            AND n.decided_at <= workbench_decisions.decided_at + workbench_decisions.fold_gap
+            AND (n.decided_at, n.id) > (workbench_decisions.decided_at, workbench_decisions.id))"""
+
+#: The act of the key just before and just after a place in the record, leaving one act out.
+_BEFORE = """(SELECT p.id FROM workbench_decisions p
+          WHERE p.fold_key IS {{ROW}}.fold_key AND p.id <> {{SELF}}.id
+            AND (p.decided_at, p.id) < ({{ROW}}.decided_at, {{ROW}}.id)
+          ORDER BY p.decided_at DESC, p.id DESC LIMIT 1)"""
+_AFTER = """(SELECT n.id FROM workbench_decisions n
+          WHERE n.fold_key IS {{ROW}}.fold_key AND n.id <> {{SELF}}.id
+            AND (n.decided_at, n.id) > ({{ROW}}.decided_at, {{ROW}}.id)
+          ORDER BY n.decided_at, n.id LIMIT 1)"""
+
+#: The columns an act's key, gap and place in the record are read from.
+_PLACED_BY = (
+    "id, queue, title, payload, decided_at, verb, actor_kind, actor_id, object_kind, object_id"
+)
+
+#: The marks kept wherever an act arrives, moves (its key or its moment changes) or goes: the act
+#: and the neighbours it had and has.
+PRESS_TRIGGERS: Final = (
+    (
+        "workbench_press_arrives",
+        splice(
+            "CREATE TRIGGER IF NOT EXISTS workbench_press_arrives AFTER INSERT ON workbench_decisions"
+            " BEGIN {{MARKED}} WHERE id = NEW.id OR id = {{BEFORE}} OR id = {{AFTER}}; END",
+            MARKED=_MARKED,
+            BEFORE=splice(_BEFORE, ROW="NEW", SELF="NEW"),
+            AFTER=splice(_AFTER, ROW="NEW", SELF="NEW"),
+        ),
+    ),
+    (
+        "workbench_press_moves",
+        splice(
+            f"CREATE TRIGGER IF NOT EXISTS workbench_press_moves AFTER UPDATE OF {_PLACED_BY}"
+            " ON workbench_decisions"
+            " WHEN OLD.fold_key IS NOT NEW.fold_key OR OLD.decided_at IS NOT NEW.decided_at"
+            " OR OLD.id IS NOT NEW.id"
+            " BEGIN {{MARKED}} WHERE id = NEW.id OR id = {{BEFORE}} OR id = {{AFTER}}"
+            " OR id = {{WAS_BEFORE}} OR id = {{WAS_AFTER}}; END",
+            MARKED=_MARKED,
+            BEFORE=splice(_BEFORE, ROW="NEW", SELF="NEW"),
+            AFTER=splice(_AFTER, ROW="NEW", SELF="NEW"),
+            WAS_BEFORE=splice(_BEFORE, ROW="OLD", SELF="NEW"),
+            WAS_AFTER=splice(_AFTER, ROW="OLD", SELF="NEW"),
+        ),
+    ),
+    (
+        "workbench_press_goes",
+        splice(
+            "CREATE TRIGGER IF NOT EXISTS workbench_press_goes AFTER DELETE ON workbench_decisions"
+            " BEGIN {{MARKED}} WHERE id = {{BEFORE}} OR id = {{AFTER}}; END",
+            MARKED=_MARKED,
+            BEFORE=splice(_BEFORE, ROW="OLD", SELF="OLD"),
+            AFTER=splice(_AFTER, ROW="OLD", SELF="OLD"),
+        ),
+    ),
+)
+
+#: Every act's marks in one walk, for a record that had none or lost its triggers.
+_MARK_ALL = """
+UPDATE workbench_decisions SET opens = e.opens, closes = e.closes
+  FROM (SELECT id,
+               CASE WHEN decided_at - LAG(decided_at) OVER w <= fold_gap THEN 0 ELSE 1 END AS opens,
+               CASE WHEN LEAD(decided_at - fold_gap) OVER w <= decided_at THEN 0 ELSE 1 END AS closes
+          FROM workbench_decisions
+        WINDOW w AS (PARTITION BY fold_key ORDER BY decided_at, id)) AS e
+ WHERE workbench_decisions.id = e.id
+   AND (workbench_decisions.opens <> e.opens OR workbench_decisions.closes <> e.closes)
+"""
+
+#: Each press trigger dropped by name, for one whose text this build no longer writes.
+_UNTRIGGERED: Final = {name: f"DROP TRIGGER IF EXISTS {name}" for name, _ddl in PRESS_TRIGGERS}
+
+#: What a key generated from an older rule takes with it: the triggers and indexes that read it.
+_UNKEYED: Final = (
+    "DROP TRIGGER IF EXISTS workbench_press_arrives",
+    "DROP TRIGGER IF EXISTS workbench_press_moves",
+    "DROP TRIGGER IF EXISTS workbench_press_goes",
+    "DROP INDEX IF EXISTS ix_workbench_fold",
+    "DROP INDEX IF EXISTS ix_workbench_openings",
+    "DROP INDEX IF EXISTS ix_workbench_closing_keys",
+    "ALTER TABLE workbench_decisions DROP COLUMN fold_key",
+    "ALTER TABLE workbench_decisions DROP COLUMN fold_gap",
+)
+
+#: The columns the key is generated from: a table without them (a test's own) is left alone.
+_KEYED_FROM: Final = (
+    "verb",
+    "queue",
+    "actor_kind",
+    "actor_id",
+    "object_kind",
+    "object_id",
+    "title",
+)
+
+
+async def keep_presses(connection: Connection) -> None:
+    """The press marks where they are missing or out of date, and every act marked again then.
+
+    A step and every boot: a rebuild of the table takes its triggers, and a key whose rule changed
+    is generated again (its stored definition no longer holds `_FOLD_KEY`), so the rule is the
+    code's and never the database's.
+    """
+    columns = {
+        str(row["name"])
+        for row in await connection.execute_fetchall(
+            "SELECT name FROM pragma_table_xinfo('workbench_decisions')", ()
+        )
+    }
+    if not set(_KEYED_FROM) <= columns:
+        return
+    table = await connection.execute_fetchall(
+        "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'workbench_decisions'", ()
+    )
+    defined = " ".join(str(row["sql"]) for row in table)
+    if "fold_key" in columns and not (_FOLD_KEY in defined and _FOLD_GAP in defined):
+        for statement in _UNKEYED:
+            await connection.execute(statement)
+        columns -= {"fold_key", "fold_gap"}
+    added = False
+    for column, ddl in PRESS_COLUMNS:
+        if column not in columns:
+            await connection.execute(ddl)
+            added = True
+    for index in PRESS_INDEXES:
+        await connection.execute(index)
+    present = {
+        str(row["name"]): str(row["sql"])
+        for row in await connection.execute_fetchall(
+            "SELECT name, sql FROM sqlite_master"
+            " WHERE type = 'trigger' AND tbl_name = 'workbench_decisions'",
+            (),
+        )
+    }
+    for name, ddl in PRESS_TRIGGERS:
+        # SQLite keeps the text without its IF NOT EXISTS: one that differs was built by older code.
+        if present.get(name) != ddl.replace(" IF NOT EXISTS", "", 1):
+            await connection.execute(_UNTRIGGERED[name])
+            await connection.execute(ddl)
+            added = True
+    if added:
+        await connection.execute(_MARK_ALL)

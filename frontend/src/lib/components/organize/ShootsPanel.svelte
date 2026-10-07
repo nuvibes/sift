@@ -454,7 +454,7 @@
 	}
 
 	/* The pictures of the shoot, wrapping rather than scrolling: the question is about all of them
-	   at once, and a strip that hides half of it behind a scroll asks it of half.
+	   together, and a strip that hides half of it behind a scroll asks it of half.
 
 	   AT LEAST SIX TO A ROW, so the twelve a card shows (`SHEET`) are never more than two rows and
 	   the cards of one wall stay close in height. A cell is 4rem

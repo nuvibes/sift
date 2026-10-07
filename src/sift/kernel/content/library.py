@@ -56,7 +56,7 @@ MAX_NAME_LENGTH = 100
 class RootKind(StrEnum):
     """Where a root's files actually live.
 
-    It decides how the library list asks whether the folder is there (every share at once, each
+    It decides how the library list asks whether the folder is there (every share together, each
     held to its own timeout, where a local folder is one `stat`), and whether the list names the
     device a folder is on. It does NOT decide how the folder is watched: a share on Windows
     reports its own changes through the file server, so every root gets a native
@@ -171,8 +171,8 @@ def overlaps(one: Path, other: Path) -> bool:
 
     Both directions, and the second one is the easy half to forget: adding a root inside an
     existing one is the obvious mistake, and adding a root that is the *parent* of an existing one
-    is the same mistake written backwards. Either way a file would sit in two roots at once, and
-    the question of which root's permissions apply to it would have two answers.
+    is the same mistake written backwards. Either way a file would sit in two roots at the same
+    time, and the question of which root's permissions apply to it would have two answers.
     """
     return one == other or one in other.parents or other in one.parents
 
@@ -804,8 +804,8 @@ class LibraryStore:
         """The folder at this path, creating it and every folder above it if need be.
 
         A scan calls this for every directory it walks, so it has to be idempotent and it has to
-        be safe to run twice at once: the conflict clause makes a folder that already exists come
-        back rather than fail.
+        be safe to run twice at the same time: the conflict clause makes a folder that already
+        exists come back rather than fail.
         """
         chain = _folder_chain(rel_path)
         async with self._db.write() as connection:
@@ -946,7 +946,7 @@ class LibraryStore:
             await connection.execute(_MOVE_PHOTO_SETS, moved)
             await announce_arrival(connection)
             # The path is the only record of where a folder was, and this rewrites it in five
-            # tables at once, so without an event there is nothing anywhere that says the folder
+            # tables together, so without an event there is nothing anywhere that says the folder
             # somebody is looking for used to be somewhere else. The old path is in the payload;
             # the new one is the snapshot, because that is what the folder is called now.
             await record_event(

@@ -218,8 +218,8 @@ class PeopleStore(PicturesStore):
     async def add_alias(self, person_id: str, alias: str) -> bool:
         """Give somebody another name they answer to. False when they already had it.
 
-        `OR IGNORE` lets the table's uniqueness decide between two imports at once. A name that
-        lands tells every admin in the same transaction: the person's page draws it.
+        `OR IGNORE` lets the table's uniqueness decide between two imports at the same time. A name
+        that lands tells every admin in the same transaction: the person's page draws it.
         """
         async with self._db.write() as connection:
             return await self.add_alias_on(connection, person_id, alias)

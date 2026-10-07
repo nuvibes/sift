@@ -10,7 +10,7 @@
  * throws the moment it renders, and the failure names the transition rather than the missing
  * method, which sends whoever hits it looking in the wrong file.
  *
- * So it is stood in for, and the stand-in finishes at once. That is the honest behaviour for a
+ * So it is stood in for, and the stand-in finishes immediately. That is the honest behaviour for a
  * place with no frames: there is no time passing to animate over, and a test asking what is on
  * screen wants the answer the animation was heading towards rather than a halfway state that only
  * exists between two paints. Anything that genuinely depends on the movement itself is measured in

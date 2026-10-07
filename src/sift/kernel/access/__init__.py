@@ -105,6 +105,7 @@ from sift.kernel.access.constraints import (
     is_refusal,
     like_anywhere,
     music_filter,
+    read_pick,
     title_filter,
 )
 from sift.kernel.access.related import related_filter
@@ -309,6 +310,7 @@ __all__ = [
     "people_named_on",
     "person_is_bare_on",
     "position_filed_from",
+    "read_pick",
     "refuse_person_on",
     "refused_for",
     "related_filter",

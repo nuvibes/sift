@@ -143,7 +143,7 @@ def test_a_second_press_joins_the_download_already_waiting_or_under_way(
 
     assert second == first
     assert list(_fetches(client)) == [first]
-    assert faces_jobs.FACE_FETCH_WEIGHTS in registered_alone(), "and two never run at once"
+    assert faces_jobs.FACE_FETCH_WEIGHTS in registered_alone(), "and two never run at the same time"
 
 
 #: Every job type this slice can put in the queue.
@@ -752,7 +752,7 @@ def no_workers(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(WorkerPool, "start", idle)
 
 
-def test_an_upload_answers_at_once_with_the_task_that_reads_it(
+def test_an_upload_answers_immediately_with_the_task_that_reads_it(
     no_workers: None, client: TestClient, scene: Scene, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The request copies the files and queues the task; no face is read inside it."""
@@ -1100,7 +1100,7 @@ def test_the_groups_screen_is_paged_and_says_how_many_there_are(
     """A swept library has a pile for every face that joined nothing: hundreds of them.
 
     Each one costs a query for its faces and a question to the resolver, so asking for all of them
-    at once is a screen nobody waits for. Asserted with more piles than fit on a page, because a
+    in one go is a screen nobody waits for. Asserted with more piles than fit on a page, because a
     limit is only a limit when something exceeds it.
 
     Every pile carries a real face on a file the viewer may see, and that is load-bearing rather

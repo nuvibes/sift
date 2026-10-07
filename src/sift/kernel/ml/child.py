@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """The inference runtime in a process of its own, below normal priority, and replaceable.
 
-Inference in the backend's own process, at normal priority, would be two faults at once. The
+Inference in the backend's own process, at normal priority, would be two faults together. The
 processor half: a face pass on the processor would take the machine's attention from a person
 watching a video, because a thread cannot be put below the process it is in and the runtime's
 threads are threads. The card half: a CUDA context, once lost, is dead for that process for ever

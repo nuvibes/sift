@@ -48,6 +48,7 @@ class Deadline:
     at: float = math.inf
     clock: Callable[[], float] = time.monotonic
     cut: bool = False
+    began: float = 0.0
 
     def passed(self) -> bool:
         if self.clock() >= self.at:
@@ -101,11 +102,11 @@ class Budget:
         weight = self._left.pop(name, 0.0)
         end = (self.started or now) + self.seconds - GRACE_SECONDS
         if math.isinf(end):
-            deadline = Deadline(name, math.inf, self.clock)
+            deadline = Deadline(name, math.inf, self.clock, began=now)
         else:
             weights = weight + sum(self._left.values())
             share = max(0.0, end - now) * (weight / weights if weights else 1.0)
-            deadline = Deadline(name, now + share, self.clock)
+            deadline = Deadline(name, now + share, self.clock, began=now)
         self.stages.append(deadline)
         return deadline
 

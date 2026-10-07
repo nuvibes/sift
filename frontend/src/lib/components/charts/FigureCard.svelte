@@ -3,8 +3,8 @@
 	 * ONE LARGE FIGURE ON A CARD: its label, the number, and at most one sentence under it.
 	 *
 	 * The number counts up from zero when the card arrives (a period's answer, a recap card turned
-	 * to), over the ambient duration, eased; a later change is drawn at once, and with reduced
-	 * motion it is drawn at once (`countUp`). A figure that is not a quantity, such as a time of day, is always drawn at once.
+	 * to), over the ambient duration, eased; a later change is drawn immediately, and with reduced
+	 * motion it is drawn immediately (`countUp`). A figure that is not a quantity, such as a time of day, is always drawn immediately.
 	 * The final figure sits unseen in the same cell as the counting one, so the card is as wide as
 	 * its answer from the first frame and nothing beside it moves while it counts.
 	 *

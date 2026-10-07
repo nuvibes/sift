@@ -30,14 +30,14 @@ _DEFAULT_INTERVALS: dict[str, float] = {
     "www.tikwm.com": 1.0,
     "tikwm.com": 1.0,
     # instasave's real limit is a token bucket (measured refill ~4s); 4.5s leaves clear margin. The
-    # burst below lets a small paste through at once before the pacing takes over.
+    # burst below lets a small paste through immediately before the pacing takes over.
     "instasave.website": 4.5,
     "api.instasave.website": 4.5,
 }
 
 # Token-bucket capacity per host (default 1 = plain min-interval spacing). instasave's limit really is
-# a bucket (measured ~3), so a one-to-three link paste resolves at once and only the fourth request
-# waits the refill; everything else stays at 1.
+# a bucket (measured ~3), so a one-to-three link paste resolves immediately and only the fourth
+# request waits the refill; everything else stays at 1.
 _DEFAULT_BURSTS: dict[str, int] = {
     "instasave.website": 3,
     "api.instasave.website": 3,
@@ -119,7 +119,7 @@ def middleman_backoff(measured: float, policy: RunPolicy | None) -> float:
 
 
 async def wait_out_backoff(url: str, *, limiter: HostRateLimiter | None = None) -> None:
-    """Wait until `url`'s host is no longer held by a refusal, then go on at once.
+    """Wait until `url`'s host is no longer held by a refusal, then go on immediately.
 
     Only ever a wait for a HOLD: a host with no pace of its own has an interval of zero here, so an
     unrefused host is never slowed by this. Called before a request or a tool run, never inside a
@@ -134,7 +134,7 @@ class Pacer:
 
     One per download, and shared by every request that download makes (the reads of a Site's
     pages, each redirect, each file of an album, each retry), because that is what "between one
-    request and the next" means to the Site on the other end. The first request goes at once.
+    request and the next" means to the Site on the other end. The first request goes immediately.
 
     Spacing is kept from the START of one request to the start of the next, the way both tools
     count it, so a slow answer does not add a second wait on top of itself.

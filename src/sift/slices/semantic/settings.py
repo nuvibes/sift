@@ -38,7 +38,7 @@ MODEL_KEY = "semantic.model"
 DEVICE_KEY = "semantic.device"
 
 
-def describes_at_once(*, workers: int, faces_at_once: int, faces_running: bool) -> int:
+def describes_together(*, workers: int, faces_together: int, faces_running: bool) -> int:
     """How many files may be described at the same time.
 
     **The two expensive passes over a library share one budget, and this is where describing gives
@@ -62,7 +62,7 @@ def describes_at_once(*, workers: int, faces_at_once: int, faces_running: bool) 
     """
     if not faces_running:
         return max(1, workers)
-    return max(1, workers - faces_at_once)
+    return max(1, workers - faces_together)
 
 
 def register() -> None:

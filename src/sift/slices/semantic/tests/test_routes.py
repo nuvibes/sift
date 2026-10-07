@@ -141,6 +141,46 @@ def test_status_counts_the_files_not_read_yet_once_it_can_describe(
     assert client.get("/api/semantic/status").json()["unread_files"] == 1
 
 
+def test_status_reads_its_settings_once_and_an_admins_count_off_the_library(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The pane's settings come from one read, and an admin's waiting files from the library's
+    kept count rather than a walk of what they may see."""
+    from collections import Counter
+    from contextlib import contextmanager
+    from typing import Any
+
+    from sift.kernel import db as db_module
+    from sift.kernel.content import ContentStore
+
+    sign_in(client, "admin")
+    switch_on(client)
+    client.get("/api/semantic/status")
+    heard: Counter[str] = Counter()
+    judged = db_module._judged
+
+    @contextmanager
+    def counted(stage: str, statement: Any, *rest: Any, **options: Any) -> Iterator[Any]:
+        heard[db_module.statement_name(statement)] += 1
+        with judged(stage, statement, *rest, **options) as timing:
+            yield timing
+
+    monkeypatch.setattr(db_module, "_judged", counted)
+    asked: list[bool] = []
+    visible = ContentStore.count_lacking_visible
+
+    async def spied(self: ContentStore, *args: Any, **options: Any) -> Any:
+        asked.append(bool(options.get("admin")))
+        return await visible(self, *args, **options)
+
+    monkeypatch.setattr(ContentStore, "count_lacking_visible", spied)
+
+    assert client.get("/api/semantic/status").status_code == 200
+    assert heard["settings.app_value"] == 0, sorted(heard.items())
+    assert sum(n for name, n in heard.items() if name.startswith("select:app_settings")) == 1
+    assert asked == [True]
+
+
 def test_status_names_which_models_and_device_are_chosen(client: TestClient) -> None:
     sign_in(client, "admin")
 

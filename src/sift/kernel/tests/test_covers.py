@@ -421,8 +421,8 @@ class TestHowLongItMayBeKept:
 
         `immutable` is a promise about the ADDRESS, so it cannot be made to `/cover` on its own:
         that address stands still through a change of cover and through the user's stamp moving,
-        which is the one thing that has to take every kept picture away at once. The server must not
-        answer both alike, reading only what it knows about the bytes.
+        which is the one thing that has to take every kept picture away in one go. The server must
+        not answer both alike, reading only what it knows about the bytes.
         """
         picture = tmp_path / "cover.jpg"
         picture.write_bytes(b"\xff\xd8\xff\xd9")
@@ -521,7 +521,7 @@ class TestTakingAPictureIn:
 
         A PNG goes in and a JPEG comes out, which is only possible if the bytes were re-encoded,
         and re-encoding is what disposes of camera metadata, of a polyglot file that is a picture
-        and an archive at once, and of every decoder bug in every browser that will ever open it.
+        and an archive together, and of every decoder bug in every browser that will ever open it.
         """
         pictures = await _store(tmp_path)
         arriving = a_png()

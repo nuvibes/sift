@@ -541,7 +541,7 @@
 		}
 	}
 
-	/* Re-read at once: the header's own Hide or Stop hiding is drawn off the row it holds. */
+	/* Re-read immediately: the header's own Hide or Stop hiding is drawn off the row it holds. */
 	async function reveal() {
 		const moved = await setHidden([id], false, hiddenAs);
 		if (moved.length > 0) await reread();

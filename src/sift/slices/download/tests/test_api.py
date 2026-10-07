@@ -273,7 +273,7 @@ def test_a_waiting_download_says_where_it_is_in_the_line(client: TestClient, app
     the browser: the queue's order is the queue's, and a client counting rows on a page would be
     answering about the page."""
     sign_in(client, "admin")
-    # The workers start as soon as the app is ready and the fixture's handler finishes at once, so
+    # The workers start as soon as the app is ready and the fixture's handler finishes immediately, so
     # the three would be done before the list is read: the pool is stopped first, on the app's loop.
     portal = client.portal
     assert portal is not None

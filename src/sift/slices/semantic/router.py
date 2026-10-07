@@ -31,6 +31,7 @@ from sift.kernel.access import (
 )
 from sift.kernel.jobs import WAITED_ON_PRIORITY, JobQueue, family_of
 from sift.kernel.jobs.families import Family
+from sift.kernel.jobs.switchboard import one_reading
 from sift.kernel.log import get_logger
 from sift.kernel.wiring import part_of
 from sift.slices.auth import csrf_protect, current_viewer, require_admin
@@ -93,31 +94,35 @@ async def read_status(
     for a feature that is merely switched off is how somebody ends up restarting a container to fix
     a switch.
     """
-    readiness = await service.readiness()
-    store = weights.store(service.settings)
-    return SemanticStatus(
-        supported=readiness.supported,
-        enabled=readiness.enabled,
-        ready=readiness.ready,
-        family=readiness.family,
-        device=readiness.device,
-        indexed_frames=await service.indexed_frames(),
-        described_files=await service.described_count(),
-        waiting_files=await service.waiting_count(viewer) if readiness.supported else 0,
-        unread_files=await service.unread_count() if readiness.ready else 0,
-        # Asked of the queue rather than inferred from the file counts. A run stopped halfway
-        # leaves exactly as many files undone as a run still going, so without this a screen
-        # cannot tell a bar that should be moving from one that never will again. A Build's
-        # tasks count: its Meaning row describes files through this feature's own per-file work.
-        running_jobs=await queue.outstanding(SEMANTIC_DESCRIBE) + await _building(queue),
-        problem=readiness.problem,
-        described_by_another_model=(
-            await service.described_by_others() if readiness.by_another_model else 0
-        ),
-        installed=sorted(
-            weight_id for weight_id, weight in weights.CATALOG.items() if store.installed(weight)
-        ),
-    )
+    # Every setting the pane's answers ask, from one read.
+    async with one_reading():
+        readiness = await service.readiness()
+        store = weights.store(service.settings)
+        return SemanticStatus(
+            supported=readiness.supported,
+            enabled=readiness.enabled,
+            ready=readiness.ready,
+            family=readiness.family,
+            device=readiness.device,
+            indexed_frames=await service.indexed_frames(),
+            described_files=await service.described_count(),
+            waiting_files=await service.waiting_count(viewer) if readiness.supported else 0,
+            unread_files=await service.unread_count() if readiness.ready else 0,
+            # Asked of the queue rather than inferred from the file counts. A run stopped halfway
+            # leaves exactly as many files undone as a run still going, so without this a screen
+            # cannot tell a bar that should be moving from one that never will again. A Build's
+            # tasks count: its Meaning row describes files through this feature's own work.
+            running_jobs=await queue.outstanding(SEMANTIC_DESCRIBE) + await _building(queue),
+            problem=readiness.problem,
+            described_by_another_model=(
+                await service.described_by_others() if readiness.by_another_model else 0
+            ),
+            installed=sorted(
+                weight_id
+                for weight_id, weight in weights.CATALOG.items()
+                if store.installed(weight)
+            ),
+        )
 
 
 @router.get("/semantic/available")

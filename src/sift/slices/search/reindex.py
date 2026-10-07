@@ -7,7 +7,7 @@ features that write indexed text say so here, and the existing reindex does the 
 
 `touched` and `touched_many` reindex named assets inside the request, so the next search is right:
 a tag, person, username or site knows its files. `queue_many` is for a rename, whose files may be
-thousands: the request answers at once and a job rewrites them a chunk at a time. `renamed()` queues the whole-library rebuild for
+thousands: the request answers immediately and a job rewrites them a chunk at a time. `renamed()` queues the whole-library rebuild for
 the one case that cannot name them, a merge, whose moved files are decided inside its own
 transaction. Its guard stands down only for a queued WHOLE-LIBRARY pass: a queued catch-up is blind
 to edits, so standing down for one would lose the edit.
@@ -73,7 +73,7 @@ class Reindexer:
         """A set of assets whose text changed, reindexed by a job rather than in the request.
 
         For a name many files carry: the write lock is then held a chunk at a time, never for the
-        seconds a whole set takes, and the rename answers at once. Swallows and logs as `touched`.
+        seconds a whole set takes, and the rename answers immediately. Swallows and logs as `touched`.
         """
         ids = list(asset_ids)
         if not ids:

@@ -266,7 +266,7 @@ _NAMES_PER_READ: Final = 500
 #: cost that appears at nine subjects and not at eight. What the cap enforces is that a call naming
 #: a long list has to stop and say what it is doing: either one event per file, or one event with
 #: a count, and eight is chosen because it is comfortably above every act that genuinely concerns
-#: several things at once (a merge names two people; a file gains three tags; a photo set is made
+#: several things together (a merge names two people; a file gains three tags; a photo set is made
 #: of a handful of files' worth of decision) and far below the size at which a list is really a
 #: pass. A writer that finds eight too few is nearly always a writer that should be handing a count.
 MOST_SUBJECTS: Final = 8

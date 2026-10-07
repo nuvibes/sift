@@ -99,7 +99,7 @@ _SITE_FOR_KEY = (
     "SELECT s.id AS id, s.name AS name FROM download_sites k JOIN sites s ON s.id = k.site_id"
     " WHERE k.key = ?"
 )
-#: The same for a page of keys at once, for a list that draws many rows.
+#: The same for a page of keys in one go, for a list that draws many rows.
 _SITES_FOR_KEYS = (
     "SELECT k.key AS key, s.name AS name FROM download_sites k JOIN sites s ON s.id = k.site_id"
     " WHERE k.key IN (SELECT value FROM json_each(?))"
@@ -138,7 +138,7 @@ async def site_for_key_on(connection: Connection, key: str) -> tuple[str, str] |
 
 
 async def site_names_for_keys_on(connection: Connection, keys: Sequence[str]) -> dict[str, str]:
-    """`site_for_key_on` for a page of keys at once: each key that files somewhere, to its name."""
+    """`site_for_key_on` for a page of keys in one go: each key that files somewhere, to its name."""
     if not keys or not await _keys_kept(connection):
         return {}
     rows = await connection.execute_fetchall(_SITES_FOR_KEYS, (json.dumps(list(keys)),))

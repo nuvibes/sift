@@ -408,7 +408,7 @@
 				{#each sites as site (site.scope)}
 					<li>
 						<!-- Folded, because a Site's answers are three controls AND the whole name
-						     builder: four Sites open at once is a pane nobody can find anything on.
+						     builder: four Sites open together is a pane nobody can find anything on.
 						     The pane's one fold, `Fold`, and a row of the pane rather than a card:
 						     a Site's rows are the pane's rows, a hairline between two Sites.
 

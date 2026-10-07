@@ -212,7 +212,7 @@ def test_a_username_can_become_somebody_new(client: TestClient) -> None:
     assert "Newcomer" in named
 
 
-def test_asking_for_both_at_once_is_refused(client: TestClient) -> None:
+def test_asking_for_both_together_is_refused(client: TestClient) -> None:
     """The branch with the larger consequence has to be asked for on purpose.
 
     A single field that created somebody when it failed to resolve would make the creating branch

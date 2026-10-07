@@ -566,6 +566,30 @@ async def test_a_file_arriving_still_reaches_admins_when_nobody_said_how(
     assert admin.take(as_admin=True).about == (About.ARRIVALS,)
 
 
+async def test_a_picture_is_an_arrival_on_the_wire_that_a_mark_can_leave_out(
+    bus: ChangeBus, database: Database
+) -> None:
+    """Every screen drawing the file is told as for an arrival; an answer that draws no picture
+    is kept under a mark the picture does not move, and a file arriving moves both."""
+    changes.resolves_arrivals(None)
+    admin = bus.subscribe("admin")
+    without = bus.mark_of({About.ARRIVALS}, pictures=False)
+    with_them = bus.mark_of({About.ARRIVALS})
+
+    async with database.write() as connection:
+        await connection.execute("INSERT INTO note (id) VALUES ('one')")
+        await changes.announce_picture(connection)
+
+    assert admin.take(as_admin=True).about == (About.ARRIVALS,)
+    assert bus.mark_of({About.ARRIVALS}, pictures=False) == without
+    assert bus.mark_of({About.ARRIVALS}) != with_them
+
+    async with database.write() as connection:
+        await connection.execute("INSERT INTO note (id) VALUES ('two')")
+        await changes.announce_arrival(connection)
+    assert bus.mark_of({About.ARRIVALS}, pictures=False) != without
+
+
 def test_an_audience_widened_to_admins_keeps_the_users_it_named() -> None:
     widened = Audience(frozenset({"guest"})).widened_to_admins()
 

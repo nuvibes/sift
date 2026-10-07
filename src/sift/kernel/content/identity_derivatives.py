@@ -8,7 +8,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-from sift.kernel.changes import announce_arrival
+from sift.kernel.changes import announce_picture
 from sift.kernel.content.hashing import digest_cache_file
 from sift.kernel.content.identity_models import (
     PICTURE_KINDS,
@@ -206,7 +206,7 @@ class Derivatives(StoreCore):
             before = connection.total_changes
             rows = list(await connection.execute_fetchall(sql, params))
             if connection.total_changes != before:
-                await announce_arrival(connection)
+                await announce_picture(connection)
             return rows
 
     async def add_derivative(

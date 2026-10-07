@@ -1,7 +1,7 @@
 <script lang="ts">
 	/* LAYS ITSELF OUT: the wall is a flex column that fills the box, with no page frame and no
-	   padding: several videos at once want the whole screen, and inside the shell's scrolling
-	   region the column would have no definite height to fill. */
+	   padding: several videos at the same time want the whole screen, and inside the shell's
+	   scrolling region the column would have no definite height to fill. */
 
 	/* WHY NOT FRAMED: the frame's body is a scrolling region with a foot of `--page-pad` under it,
 	   and this screen needs neither. A wall of playing feeds must be exactly the height of the box
@@ -15,7 +15,7 @@
 	   Reconsider the day the frame can be told its body does not scroll. */
 
 	/*
-	 * Theater: several videos at once, each cell drawing from a filter of its own.
+	 * Theater: several videos at the same time, each cell drawing from a filter of its own.
 	 *
 	 * Everything is inside one box: fullscreen composites only the fullscreen element's subtree, so
 	 * dialogs, the source picker and menus are drawn inside the wall, and cells are never reparented
@@ -213,8 +213,8 @@
 	$effect(() => () => screenBar.release(mine));
 
 	/*
-	 * The vault has shut, so every cell lets go of what it is holding, at once and mid-file, since it
-	 * may be concealed. Watched through `vault.unlocked`, the fact itself.
+	 * The vault has shut, so every cell lets go of what it is holding, immediately and mid-file,
+	 * since it may be concealed. Watched through `vault.unlocked`, the fact itself.
 	 */
 	$effect(() => {
 		const unlocked = vault.unlocked;
@@ -565,7 +565,7 @@
 			if (!key.repeat) wall.chooseByNumber(wanted);
 			return true;
 		},
-		// The key beside the numbers, doing what the numbers do for all of them at once.
+		// The key beside the numbers, doing what the numbers do for all of them together.
 		'theater.everyCell': () => {
 			wall.focusEvery();
 			return true;
@@ -581,8 +581,8 @@
 			return true;
 		},
 		'theater.mute': ({ key, value }) => {
-			// The phone sends the state it wants, for what the wall is addressing, at once: it has
-			// no key to let go of.
+			// The phone sends the state it wants, for what the wall is addressing, immediately: it
+			// has no key to let go of.
 			if (key === null) {
 				if (value === null) return false;
 				wall.setMuted(wall.addressedAt, value === 1);

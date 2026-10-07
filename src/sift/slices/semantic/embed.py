@@ -195,7 +195,7 @@ class Embedder:
 
         A whole file's frames in one call rather than one call per frame: the hop to a worker
         thread is paid once, and the model is loaded once for all of them. What it does NOT do is
-        hand all of them to the model at once. See `_describe_pictures`.
+        hand all of them to the model together. See `_describe_pictures`.
         """
         if not frames:
             return []

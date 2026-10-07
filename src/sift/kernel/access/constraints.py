@@ -26,6 +26,7 @@ from sift.kernel.access.entity_facets import EntityFacet as EntityFacet
 from sift.kernel.access.entity_facets import EntityNarrowing as EntityNarrowing
 from sift.kernel.access.entity_facets import asks_disagreements as asks_disagreements
 from sift.kernel.access.entity_facets import is_refusal as is_refusal
+from sift.kernel.access.entity_facets import read_pick as read_pick
 from sift.kernel.access.filter_parts import AGE_WITHIN as AGE_WITHIN
 from sift.kernel.access.filter_parts import AGE_YEARS as AGE_YEARS
 from sift.kernel.access.filter_parts import FILE_MADE_BY as FILE_MADE_BY

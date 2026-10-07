@@ -93,6 +93,7 @@ HANDED_OUT: dict[str, str] = {
 
 #: Every copy of a file's bytes into somewhere, and why it lands no place.
 COPIED: dict[str, str] = {
+    "kernel/jpeg_turn.py::_place": "a copy keeping the first orientation record, from Sift's scratch to Sift's cache",
     "slices/capture/pipeline.py::_copy_into_folder": (
         "called by import_file alone, after the door has made the copy it lands"
     ),

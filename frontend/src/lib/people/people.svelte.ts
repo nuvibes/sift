@@ -314,10 +314,10 @@ export class People {
 
 	/* The heart and the stars, written optimistically.
 	 *
-	 * The value moves at once and is put back if the server disagrees, exactly as a tile's does:
-	 * a control that waits for a round trip before it changes feels broken, and the request almost
-	 * always succeeds. Putting it back matters more than it looks: a heart left showing a state the
-	 * server never accepted is a lie with nothing on screen to reveal it.
+	 * The value moves immediately and is put back if the server disagrees, exactly as a tile's
+	 * does: a control that waits for a round trip before it changes feels broken, and the request
+	 * almost always succeeds. Putting it back matters more than it looks: a heart left showing a
+	 * state the server never accepted is a lie with nothing on screen to reveal it.
 	 */
 	async setFavorite(id: string, favorite: boolean): Promise<void> {
 		await this.#state(id, `/people/${id}/favorite`, { favorite });
@@ -521,7 +521,7 @@ export class People {
 	 * of the wall (a bounded number of rows in a chosen order), so anybody ranked past the cap
 	 * is not in it, and anything that replaces the page (the vault opening or shutting, a reload, a
 	 * later page being fetched) would take the subject out from under an already-open page: the
-	 * page losing its hero, its buttons and its wall at once.
+	 * page losing its hero, its buttons and its wall at the same time.
 	 */
 	async one(id: string): Promise<Person> {
 		return api.get<Person>(`/people/${id}`);

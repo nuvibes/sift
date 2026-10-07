@@ -44,8 +44,8 @@ _PENDING_LIKE = (
 
 # A settle collapsing onto the one already waiting: the waiting row is put off to a minute after
 # THIS file, never earlier than it was and never past its longest. See `enqueue_when_settled`.
-# Only a row that is itself waiting for a moment (`run_after IS NOT NULL`): one that runs at once is
-# a press or a watcher's walk, and a settle arriving must not hold it back.
+# Only a row that is itself waiting for a moment (`run_after IS NOT NULL`): one that runs
+# immediately is a press or a watcher's walk, and a settle arriving must not hold it back.
 _PUT_OFF = (
     "UPDATE jobs SET run_after = ?, updated_at = ?"
     " WHERE id = ? AND state = 'queued' AND run_after IS NOT NULL AND run_after < ?"
@@ -193,7 +193,7 @@ class Enqueuing(QueueCore):
         once per file. Everything `enqueue` decides is decided by the same code: the ceiling, the
         handler check and the switch once for the batch, every payload checked before anything is
         written, and `dedupe` per row. No parent and no `run_after`: the callers are presses on a
-        selection, bounded by what one press can select (`MOST_AT_ONCE`).
+        selection, bounded by what one press can select (`MOST_SELECTED`).
         """
         if not payloads:
             return []
@@ -398,8 +398,8 @@ class Enqueuing(QueueCore):
         A thousand files landing each make the same whole-library pass worth running once. The
         delay lets the batch finish before the pass looks; the dedupe collapses the batch's requests
         onto the one waiting; neither works alone. A row already RUNNING is not collapsed onto, as
-        it has read what it will read. A pass that must never run twice at once says so where its
-        handler is registered (`alone=True`). `priority` and `requested_by` pass through.
+        it has read what it will read. A pass that must never run twice at the same time says so
+        where its handler is registered (`alone=True`). `priority` and `requested_by` pass through.
         """
         return await self.enqueue(
             job_type,

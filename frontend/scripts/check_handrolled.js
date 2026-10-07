@@ -11,7 +11,7 @@
 //
 // A gate that refused every hand-rolled button on the day it was written would fail on dozens of
 // files. The only ways to ship that are to convert them all in one change (a rewrite touching
-// most of the interface at once) or to weaken the gate until it passes, which is a gate that
+// most of the interface together) or to weaken the gate until it passes, which is a gate that
 // lies.
 //
 // So it counts instead. The count may fall and may never rise. A new hand-rolled button fails the

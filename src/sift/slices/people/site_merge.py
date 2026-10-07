@@ -5,7 +5,7 @@ The same act a person merge is, on a different subject, and it is a SIBLING of `
 than a generalisation of it, deliberately. That file's own argument applies here twice over: each
 table gets its own literal pair so the whole set reads as one thing, and the question a reader has
 is "does this cover everything". A shared engine taking a table list as data would answer that
-question by asking somebody to read two files at once, and it would put the three decisions below
+question by asking somebody to read two files together, and it would put the three decisions below
 (the ones that exist here and nowhere else) behind a parameter.
 
 ## Three things a person merge never had to answer

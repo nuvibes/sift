@@ -986,7 +986,7 @@ class Sweep {
 		if (root && !this.jobId) this.follow(root);
 	}
 
-	/* Somebody pressed stop. The watcher is retired at once rather than left to notice on its own
+	/* Somebody pressed stop. The watcher is retired immediately rather than left to notice on its own
 	 * tick, because cancelling is instant and a screen still counting down reads as a button that
 	 * did nothing. */
 	stopped(): void {

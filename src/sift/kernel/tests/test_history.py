@@ -1232,7 +1232,7 @@ async def test_an_operation_with_no_verb_still_reads_the_way_it_always_did(
 ) -> None:
     """The fallback IS the plain sentence, and that is what makes naming the verb safe.
 
-    `edit` is what the editor writes when somebody did several things at once (genuinely several
+    `edit` is what the editor writes when somebody did several things together (genuinely several
     verbs and therefore none), and it takes the same path an operation added after this build does.
     Neither says something untrue; both say what a plain copy says.
     """
@@ -1987,7 +1987,7 @@ async def test_a_stash_box_match_says_it_was_a_stash_box(
 async def test_the_count_is_the_length_of_the_history_with_one_of_everything_in_it(
     temp_db: Database, access: Repository, actors: Actors
 ) -> None:
-    """The one property the tab's number has to have, over a file carrying every kind at once.
+    """The one property the tab's number has to have, over a file carrying every kind together.
 
     Against `len(...)`, because a literal would keep passing the day a source drew two lines for
     one, which is how a tab comes to disagree with its pane. The literal beside it only stops a

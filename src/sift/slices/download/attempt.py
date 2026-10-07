@@ -114,7 +114,7 @@ async def _fetch_guarding_disk(
     """Run the fetch, stopping it if free space on the download disk runs low or somebody pauses it.
 
     Every download path writes into `into` (the direct fetcher and the shell-out tools alike), so
-    watching the space there and cancelling the fetch covers all of them at once. Cancelling stops
+    watching the space there and cancelling the fetch covers all of them together. Cancelling stops
     the transfer and kills the tool (the shared subprocess runner reaps its child on cancellation),
     so a link that streams without end, or resolves to something far larger than the disk, cannot
     fill it out from under the database. Raises `_DiskLow` when it does; otherwise returns, or

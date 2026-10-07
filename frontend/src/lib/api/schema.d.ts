@@ -1409,8 +1409,8 @@ export interface paths {
          * Lock App
          * @description Shut this session, and say which way it was shut.
          *
-         *     The mark goes on the session row, so every path to the server is shut at once: another tab, a
-         *     reload, the credential replayed at the API by hand. A lock drawn over the screen leaves all
+         *     The mark goes on the session row, so every path to the server is shut immediately: another tab,
+         *     a reload, the credential replayed at the API by hand. A lock drawn over the screen leaves all
          *     three working, and that is the difference this route exists to make.
          *
          *     **Which way it shuts is decided here, not by the caller.** Whether a PIN may reopen a session
@@ -3655,7 +3655,7 @@ export interface paths {
          * @description Everybody the Disagreements tab is about, the most files first, with how many of each.
          *
          *     The tab's rows gathered by person, which is the shape they arrive in: a pass files a whole
-         *     folder at once, so its mistakes come by the hundred under one name. The counts are of the same
+         *     folder in one go, so its mistakes come by the hundred under one name. The counts are of the same
          *     rows the tab counts, so they add up to its number. Unpaged: one row per PERSON, never per file,
          *     and the rows it gathers are bounded by the read beneath (`tuning.FILED_FACES_AT_MOST`).
          *
@@ -4292,7 +4292,7 @@ export interface paths {
          *
          *     The folder must be inside one Sift has been given (`Settings > Library` and the folder dialog
          *     give them): the same confinement the folder picker keeps, so this door reads nothing the picker
-         *     could not show. Answers at once with the task; the folder is read by the task.
+         *     could not show. Answers immediately with the task; the folder is read by the task.
          */
         post: operations["import_reference_folder_by_path_api_faces_references_folder_path_post"];
         delete?: never;
@@ -5596,7 +5596,7 @@ export interface paths {
          * @description The folder tree, flat, and only what this viewer may see.
          *
          *     With no parameters this is every folder in every library, which is what the browser opens on
-         *     and builds its tree from. Flat rather than nested, and all at once rather than a level at a
+         *     and builds its tree from. Flat rather than nested, and all in one go rather than a level at a
          *     time: folders are cheap where files are not, and the alternative is a request per row or a
          *     second statement answering "has children the viewer may see", which is the scoping rule
          *     written twice, and two copies of that rule can disagree.
@@ -5797,7 +5797,7 @@ export interface paths {
          *     can say *why* as well as what and when and how big, which is the one thing somebody opening
          *     this screen wants.
          *
-         *     Both piles at once, deliberately. They have opposite answers to "where is my file": one is in a
+         *     Both piles together, deliberately. They have opposite answers to "where is my file": one is in a
          *     folder of Sift's own and one is untouched in the reader's library, and a screen showing either
          *     alone would leave somebody looking in the wrong place.
          *
@@ -7070,7 +7070,7 @@ export interface paths {
          * Start
          * @description Queue a run that suggests. Answers straight away; the result is read back below.
          *
-         *     A second request while one is coming is not an error and queues nothing: two runs at once
+         *     A second request while one is coming is not an error and queues nothing: two runs together
          *     would measure each other.
          */
         post: operations["start_api_performance_self_test_post"];
@@ -8355,7 +8355,7 @@ export interface paths {
          *
          *     ITS OWN ROUTE AND ITS OWN CEILING, which is why it is not folded into the report. This reads a
          *     page of an entity's files per user, where the report above is one statement for every
-         *     user at once; asked for everybody on arrival it would turn a panel somebody opens to check
+         *     user together; asked for everybody on arrival it would turn a panel somebody opens to check
          *     one thing into a read per user whether or not any of them needed it. The client asks it for
          *     the users whose yes has nothing behind it, which is the only case it answers differently.
          *
@@ -8641,7 +8641,7 @@ export interface paths {
          *
          *     **It writes nothing, and it needs no master key.** There is nothing to seal, so this works
          *     before anybody has unlocked anything, which matters, because pasting the wrong file and
-         *     unlocking are two separate problems and meeting both at once is how a form becomes a wall.
+         *     unlocking are two separate problems and meeting both together is how a form becomes a wall.
          *
          *     The same reading `POST /site-connections` does, from the same function, so the numbers somebody
          *     approves are the numbers that get stored rather than a second parse that could differ.
@@ -9686,9 +9686,9 @@ export interface paths {
          * Enrich Entities
          * @description Ask the stash-boxes about a batch of people, sites or tags.
          *
-         *     Queues and returns at once, for the reason the sweep does: one request per subject to somebody
-         *     else's service, paced, so forty of them is most of a minute and a screen that waited for it
-         *     would look broken.
+         *     Queues and returns immediately, for the reason the sweep does: one request per subject to
+         *     somebody else's service, paced, so forty of them is most of a minute and a screen that waited
+         *     for it would look broken.
          *
          *     Every id is resolved through the SCOPED read first, and one that resolves to nothing is dropped
          *     rather than refusing the batch. Two things follow. A subject this user may not be shown does
@@ -10067,7 +10067,7 @@ export interface paths {
          * @description Ask the stash-boxes what the library is, or what one folder of it is.
          *
          *     The body is optional and so is the folder in it, so a caller that wants the whole library
-         *     posts nothing at all. Queues the work and returns at once; it shows up in the job list. Refused
+         *     posts nothing at all. Queues the work and returns immediately; it shows up in the job list. Refused
          *     rather than ignored when the feature is off: a button whose job declines reads as broken.
          */
         post: operations["start_scan_api_stash_boxes_scan_post"];
@@ -12519,7 +12519,7 @@ export interface components {
          *
          *     The same shape the rating and heart routes reply with, and that is the point rather than a
          *     coincidence. A reply and a message reach the same screens by two routes (the control that
-         *     was pressed answers this tab at once, the connection tells this user's other browsers a
+         *     was pressed answers this tab immediately, the connection tells this user's other browsers a
          *     moment later) and the grid applies whichever arrives by naming the file and setting the row.
          *     Two shapes would mean the tab that pressed the control and the tab that did not were served by
          *     two different pieces of code, and the one that only runs for somebody else is the one nobody
@@ -15787,8 +15787,8 @@ export interface components {
          * ForgetLoops
          * @description Which marks to forget, as one request.
          *
-         *     A selection, so a wall of loops can forget many at once: the shared Delete verb is hidden there
-         *     on purpose (it removes the FILE), and `DELETE /loops/{id}` is per row.
+         *     A selection, so a wall of loops can forget many in one go: the shared Delete verb is hidden
+         *     there on purpose (it removes the FILE), and `DELETE /loops/{id}` is per row.
          */
         ForgetLoops: {
             /** Loop Ids */
@@ -19035,7 +19035,7 @@ export interface components {
         };
         /**
          * PasteLinksRequest
-         * @description Several addresses at once, and where they should land.
+         * @description Several addresses together, and where they should land.
          *
          *     Its own route: a paste of many must say what it refused and took, which one ledger row's id
          *     cannot.
@@ -20333,7 +20333,7 @@ export interface components {
         };
         /**
          * ReferenceStrengths
-         * @description How many reference faces every person has, for a screen drawing several of them at once.
+         * @description How many reference faces every person has, for a screen drawing several of them together.
          *
          *     The counts are keyed by person id and hold only the people who have any. A picker asking per
          *     row would be one request per candidate per keystroke; this is the same numbers in one answer.
@@ -20816,7 +20816,7 @@ export interface components {
          * RootKind
          * @description Where a root's files actually live.
          *
-         *     It decides how the library list asks whether the folder is there (every share at once, each
+         *     It decides how the library list asks whether the folder is there (every share together, each
          *     held to its own timeout, where a local folder is one `stat`), and whether the list names the
          *     device a folder is on. It does NOT decide how the folder is watched: a share on Windows
          *     reports its own changes through the file server, so every root gets a native
@@ -20934,7 +20934,7 @@ export interface components {
          * @description One stage of the Importing pane, and the passes under it that can run for one file.
          */
         RunNowGroup: {
-            /** @description The press that runs every pass below at once ('Identify all'), drawn first in the stage's flyout. Its key names the stage, and the server expands it into the passes. */
+            /** @description The press that runs every pass below together ('Identify all'), drawn first in the stage's flyout. Its key names the stage, and the server expands it into the passes. */
             every: components["schemas"]["RunNowPass"];
             /**
              * Family
@@ -21574,6 +21574,11 @@ export interface components {
              */
             held_while_measuring: number;
             /**
+             * Left Timed
+             * @default false
+             */
+            left_timed: boolean;
+            /**
              * Measured
              * @default false
              */
@@ -21602,16 +21607,30 @@ export interface components {
             rounds: number;
             /** Running */
             running: boolean;
+            /** Seconds Left */
+            seconds_left: number | null;
             /**
              * Share Reads Now
              * @default 0
              */
             share_reads_now: number;
+            /** Step */
+            step: string | null;
             /**
              * Whole Due
              * @default false
              */
             whole_due: boolean;
+            /**
+             * Whole Seconds
+             * @default 0
+             */
+            whole_seconds: number;
+            /**
+             * Whole Timed
+             * @default false
+             */
+            whole_timed: boolean;
             /**
              * Whole To Come
              * @default false
@@ -22790,7 +22809,7 @@ export interface components {
         };
         /**
          * StorageCurveView
-         * @description One storage as more files were read at once; `best_at_once` None where nothing was.
+         * @description One storage as more files were read at the same time; `best_at_once` None where nothing was.
          */
         StorageCurveView: {
             /** Best At Once */
@@ -22816,7 +22835,7 @@ export interface components {
         };
         /**
          * StorageLevelView
-         * @description One run against one storage: this many files read at once, and what came back.
+         * @description One run against one storage: this many files read at the same time, and what came back.
          */
         StorageLevelView: {
             /** At Once */
@@ -23572,7 +23591,7 @@ export interface components {
             starts_at: number | null;
             /**
              * Waits
-             * @description For Run during quiet hours, whether the work waits for the range to open; false when the range is open and it starts at once. Said here because only this device's clock can say it: a browser comparing `starts_at` with its own clock is wrong by however far the two clocks are apart.
+             * @description For Run during quiet hours, whether the work waits for the range to open; false when the range is open and it starts immediately. Said here because only this device's clock can say it: a browser comparing `starts_at` with its own clock is wrong by however far the two clocks are apart.
              * @default false
              */
             waits: boolean;

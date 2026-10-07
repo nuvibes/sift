@@ -76,7 +76,7 @@
 		 *
 		 * Beside the thread, not above or below it: stacked on top, the cards push down the thread
 		 * somebody came to read; put underneath, they sit below fifty rows nobody scrolls. As a
-		 * column, both are on screen at once. On a window too narrow for two columns the cards go
+		 * column, both are on screen together. On a window too narrow for two columns the cards go
 		 * under the thread: squeezed into half a phone, two values side by side with a button under
 		 * each is not a comparison anybody can read, and the tab's mark says they are there.
 		 */

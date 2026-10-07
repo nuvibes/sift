@@ -13,11 +13,11 @@ noServerAt('/api/site-options/preview');
 /* Settings, Downloads: what is set ONCE about downloading.
  *
  * Three things are guarded. The groups a person comes for are on the pane, in their order. The
- * knobs nobody should be invited to turn (at once, the speed limit, the pacing, the timeout,
- * the retries and the back-off) are NOT on the pane but one row away, on the More settings
- * page, and a deep link to one of them opens that page first. And a setting registered later that
- * nothing here names still lands somewhere (the More settings page) rather than on no screen at
- * all.
+ * knobs nobody should be invited to turn (downloads at the same time, the speed limit, the pacing,
+ * the timeout, the retries and the back-off) are NOT on the pane but one row away, on the More
+ * settings page, and a deep link to one of them opens that page first. And a setting registered
+ * later that nothing here names still lands somewhere (the More settings page) rather than on no
+ * screen at all.
  */
 
 const fetchSettings = vi.fn<() => Promise<SettingSection[]>>();
@@ -51,7 +51,7 @@ const DECLARED = [
 	row('download.finished_message', 'Say when a download finishes', 'off'),
 	row('download.sound', 'Play a sound when finished', false),
 	row('download.sound_volume', 'Sound volume', 40),
-	row('download.at_once', 'Downloads at once', 0),
+	row('download.at_once', 'Downloads at the same time', 0),
 	row('download.bandwidth_kbps', 'Download speed limit', 0),
 	row('download.pace_ms', 'Wait between requests', 500),
 	row('download.timeout_seconds', 'Connection timeout', 30),
@@ -109,7 +109,7 @@ it('draws what is set once, grouped as somebody reaches for it', async () => {
 
 it('keeps the expert knobs one row away, on the More settings page', async () => {
 	await draw();
-	for (const label of ['Downloads at once', 'Wait between requests', 'Retries per download']) {
+	for (const label of ['Downloads together', 'Wait between requests', 'Retries per download']) {
 		expect(words(host)).not.toContain(label);
 	}
 	// And never the pause, which is the queue's own control on the Downloads screen.
@@ -122,7 +122,7 @@ it('keeps the expert knobs one row away, on the More settings page', async () =>
 
 	expect(drilldown.title).toBe('More settings');
 	for (const label of [
-		'Downloads at once',
+		'Downloads at the same time',
 		'Download speed limit',
 		'Wait between requests',
 		'Connection timeout',

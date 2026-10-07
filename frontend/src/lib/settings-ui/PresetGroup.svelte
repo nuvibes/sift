@@ -72,7 +72,7 @@
 		 * Worked out by the caller, which is the only place that knows which keys are in the group.
 		 */
 		shared?: string | null;
-		/** Set every child at once. */
+		/** Set every child in one go. */
 		onchoose?: (value: string) => void;
 		/**
 		 * A switch master: the group's own answer, and what to do when it is flipped.

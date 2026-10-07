@@ -354,7 +354,7 @@ async def measure(
     sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
 ) -> Together:
     """The plan's work kept going for `seconds`, judged every `window`; a window behind steps it
-    down, after one more where other programs were busy. A cancel ends every slot at once."""
+    down, after one more where other programs were busy. A cancel ends every slot immediately."""
     run = _Run(current=plan)
     running = asyncio.gather(*_slots(plan, work, run))
     windows: list[Window] = []

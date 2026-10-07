@@ -269,7 +269,7 @@
 		swapPicks.toggle(item.id);
 	}
 
-	/* Hearts and stars set elsewhere land at once; `stillBelongs` drops a row that no longer fits. */
+	/* Hearts and stars set elsewhere land immediately; `stillBelongs` drops a row that no longer fits. */
 	onAssetStateChange((state) => {
 		// By FILE: a heart reaches every row about it, several on a wall of moments.
 		for (const row of rowsAbout(state.asset_id)) {

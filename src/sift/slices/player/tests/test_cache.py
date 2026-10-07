@@ -389,10 +389,10 @@ def test_a_long_browsing_session_stays_within_the_cap(tmp_path: Path) -> None:
 # --- moving the cap while the application is running -------------------------------------------
 
 
-def test_lowering_the_cap_evicts_at_once_rather_than_at_the_next_thing_played(
+def test_lowering_the_cap_evicts_immediately_rather_than_at_the_next_thing_played(
     tmp_path: Path,
 ) -> None:
-    """Lowering the cap evicts at once, not at the next thing played."""
+    """Lowering the cap evicts immediately, not at the next thing played."""
     cache = _cache(tmp_path, max_bytes=100)
     _write(cache, "a", 30)
     _write(cache, "b", 30)

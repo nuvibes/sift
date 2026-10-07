@@ -38,7 +38,7 @@
     "20000": 384,
     "80000": 384
    },
-   "count": 3
+   "count": 2
   },
   "access.person_by_id": {
    "stage": "db.read",
@@ -172,7 +172,39 @@
    },
    "count": 1
   },
+  "create:-#2039ed30": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1
+  },
+  "create:-#29470f24": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1
+  },
   "create:-#4505b03c": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1
+  },
+  "create:-#4d66683e": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1
+  },
+  "create:-#72ca3e83": {
    "stage": "db.write",
    "steps": {
     "20000": 0,
@@ -199,40 +231,40 @@
   "delete:acl_grants#17414ca6": {
    "stage": "db.write",
    "steps": {
-    "20000": 8736,
-    "80000": 8736
+    "20000": 6704,
+    "80000": 6720
    },
    "count": 1
   },
   "delete:acl_grants#1c4214ce": {
    "stage": "db.write",
    "steps": {
-    "20000": 8736,
-    "80000": 8736
+    "20000": 6704,
+    "80000": 6720
    },
    "count": 1
   },
   "delete:acl_grants#af26916e": {
    "stage": "db.write",
    "steps": {
-    "20000": 8720,
-    "80000": 8720
+    "20000": 6688,
+    "80000": 6704
    },
    "count": 1
   },
   "delete:asset_locations#637e2906": {
    "stage": "db.write",
    "steps": {
-    "20000": 75536,
-    "80000": 42320
+    "20000": 25520,
+    "80000": 18320
    },
    "count": 1
   },
   "delete:asset_people#bfac4959": {
    "stage": "db.write",
    "steps": {
-    "20000": 8720,
-    "80000": 8720
+    "20000": 3936,
+    "80000": 3936
    },
    "count": 1
   },
@@ -247,18 +279,19 @@
   "delete:asset_tags#08a540b4": {
    "stage": "db.write",
    "steps": {
-    "20000": 42624,
-    "80000": 27456
+    "20000": 10832,
+    "80000": 11056
    },
    "count": 10
   },
   "delete:assets#9cddc538": {
    "stage": "db.write",
    "steps": {
-    "20000": 46160,
+    "20000": 59808,
     "80000": 58416
    },
-   "count": 1
+   "count": 1,
+   "why": "an act marks itself and its two neighbours of the same press, three index seeks a row, flat with the library, so the History feed reads a page and not the record; a file's counts move once per write: a change records what the file held and one fold moves the counts before the write commits, so a file costs a read of its members where a thousand cost one fold; the hook asks once per connection whether the tables exist and once per write whether anything was touched"
   },
   "delete:assets_fts#4e33d47b": {
    "stage": "db.write",
@@ -360,8 +393,8 @@
   "delete:people#e8951392": {
    "stage": "db.write",
    "steps": {
-    "20000": 16224,
-    "80000": 16224
+    "20000": 4800,
+    "80000": 4800
    },
    "count": 1
   },
@@ -400,8 +433,8 @@
   "delete:person_user_state#f46191c4": {
    "stage": "db.write",
    "steps": {
-    "20000": 8720,
-    "80000": 8720
+    "20000": 3536,
+    "80000": 3536
    },
    "count": 1
   },
@@ -451,7 +484,7 @@
    "stage": "db.write",
    "steps": {
     "20000": 283024,
-    "80000": 3032832
+    "80000": 1488448
    },
    "count": 1,
    "per": "library",
@@ -460,56 +493,57 @@
   "insert:asset_tags#6687227f": {
    "stage": "db.write",
    "steps": {
-    "20000": 40048,
-    "80000": 27680
+    "20000": 11760,
+    "80000": 12048
    },
    "count": 10
   },
   "insert:asset_tags#84170590": {
    "stage": "db.write",
    "steps": {
-    "20000": 25936,
+    "20000": 30256,
     "80000": 28400
    },
-   "count": 1
+   "count": 1,
+   "why": "an act marks itself and its two neighbours of the same press, three index seeks a row, flat with the library, so the History feed reads a page and not the record; a file's counts move once per write: a change records what the file held and one fold moves the counts before the write commits, so a file costs a read of its members where a thousand cost one fold; the hook asks once per connection whether the tables exist and once per write whether anything was touched"
   },
   "insert:asset_user_state#05509c68": {
    "stage": "db.write",
    "steps": {
-    "20000": 24880,
-    "80000": 22304
+    "20000": 18128,
+    "80000": 16144
    },
    "count": 1
   },
   "insert:asset_user_state#7f09d6b1": {
    "stage": "db.write",
    "steps": {
-    "20000": 8816,
-    "80000": 8816
+    "20000": 3632,
+    "80000": 3632
    },
    "count": 1
   },
   "insert:asset_user_state#9ce0d1a0": {
    "stage": "db.write",
    "steps": {
-    "20000": 9856,
-    "80000": 9856
+    "20000": 4672,
+    "80000": 4672
    },
    "count": 1
   },
   "insert:asset_user_state#e84558e3": {
    "stage": "db.write",
    "steps": {
-    "20000": 42560,
-    "80000": 42160
+    "20000": 13760,
+    "80000": 13360
    },
    "count": 2
   },
   "insert:asset_user_state#f367f4b3": {
    "stage": "db.write",
    "steps": {
-    "20000": 42448,
-    "80000": 39616
+    "20000": 14912,
+    "80000": 12960
    },
    "count": 2
   },
@@ -586,6 +620,23 @@
    },
    "count": 1
   },
+  "insert:visibility_step_fold#006827f2": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 180288,
+    "80000": 163728
+   },
+   "count": 2,
+   "why": "the fold that moves a write's counts once costs by the files that write touched; a large share's owed counts are folded after its press a page of 2,000 files at a time, so a page costs by its own size (the walk's share owes only at the larger size: at 20,000 files it moves fewer than 1,000 pairs and is counted in its own write)"
+  },
+  "insert:visibility_step_fold_page#56236f66": {
+   "stage": "db.write",
+   "steps": {
+    "80000": 2120000
+   },
+   "count": 2,
+   "why": "the fold that moves a write's counts once costs by the files that write touched; a large share's owed counts are folded after its press a page of 2,000 files at a time, so a page costs by its own size (the walk's share owes only at the larger size: at 20,000 files it moves fewer than 1,000 pairs and is counted in its own write)"
+  },
   "insert:work_prices#efee5a69": {
    "stage": "db.write",
    "steps": {
@@ -605,10 +656,11 @@
   "insert:workbench_decisions#5d063211": {
    "stage": "db.write",
    "steps": {
-    "20000": 64,
-    "80000": 64
+    "20000": 1936,
+    "80000": 1936
    },
-   "count": 20
+   "count": 20,
+   "why": "an act marks itself and its two neighbours of the same press, three index seeks a row, flat with the library, so the History feed reads a page and not the record; a file's counts move once per write: a change records what the file held and one fold moves the counts before the write commits, so a file costs a read of its members where a thousand cost one fold; the hook asks once per connection whether the tables exist and once per write whether anything was touched"
   },
   "pragma:-#0110e23b": {
    "stage": "db.write",
@@ -651,6 +703,14 @@
    "count": 1
   },
   "pragma:-#582b20a1": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1
+  },
+  "pragma:-#5cb3c73c": {
    "stage": "db.write",
    "steps": {
     "20000": 0,
@@ -726,6 +786,15 @@
     "80000": 48
    },
    "count": 2
+  },
+  "select:asset_locations#0b61e840": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 25376,
+    "80000": 25360
+   },
+   "count": 41,
+   "why": "the Smart Search pane's waiting count builds its kept term a page at a time"
   },
   "select:asset_locations#0c91c39f": {
    "stage": "db.write",
@@ -1116,18 +1185,6 @@
    "count": 1,
    "scans": [
     "asset_locations"
-   ],
-   "why": "costs this before the ledger: a debt on the record, not a decision"
-  },
-  "select:assets#b7544f39": {
-   "stage": "db.sweep",
-   "steps": {
-    "20000": 280000,
-    "80000": 1120000
-   },
-   "count": 1,
-   "scans": [
-    "assets"
    ],
    "why": "costs this before the ledger: a debt on the record, not a decision"
   },
@@ -1570,6 +1627,15 @@
    "per": "library",
    "why": "costs this before the ledger: a debt on the record, not a decision"
   },
+  "select:jobs#088219c8": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 48,
+    "80000": 48
+   },
+   "count": 1,
+   "why": "the Smart Search pane asks the queue whether describing is running"
+  },
   "select:jobs#266fb86a": {
    "stage": "db.read",
    "steps": {
@@ -1625,6 +1691,15 @@
     "80000": 1168
    },
    "count": 1
+  },
+  "select:jobs#4b4060a2": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 592,
+    "80000": 592
+   },
+   "count": 1,
+   "why": "the Smart Search pane asks the queue for a Build's outstanding tasks"
   },
   "select:jobs#4e7a32a9": {
    "stage": "db.read",
@@ -2003,6 +2078,15 @@
    },
    "count": 1
   },
+  "select:placeless_assets#ba93d151": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1,
+   "why": "Maintenance's stranded files, read from the placeless rows the writes keep"
+  },
   "select:plays#3d927b3a": {
    "stage": "db.read",
    "steps": {
@@ -2016,6 +2100,14 @@
    "steps": {
     "20000": 144,
     "80000": 144
+   },
+   "count": 1
+  },
+  "select:pragma_table_xinfo#74ae4e09": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 224,
+    "80000": 224
    },
    "count": 1
   },
@@ -2091,15 +2183,64 @@
    },
    "count": 1
   },
-  "select:semantic_indexed#911b1bf8": {
+  "select:semantic_counts#236f36fa": {
    "stage": "db.read",
    "steps": {
-    "20000": 11088,
-    "80000": 44272
+    "20000": 0,
+    "80000": 0
    },
    "count": 1,
-   "per": "library",
-   "why": "costs this before the ledger: a debt on the record, not a decision"
+   "why": "the Smart Search pane's frames, from the counts the keys' triggers keep"
+  },
+  "select:semantic_counts#b26ac2c8": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 16,
+    "80000": 16
+   },
+   "count": 1,
+   "why": "files another model described, from the counts the records' triggers keep"
+  },
+  "select:semantic_counts#c8b8cf3d": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1,
+   "why": "the Smart Search pane's described files, from the counts the records' triggers keep"
+  },
+  "select:semantic_indexed#2b54a396": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 336,
+    "80000": 1216
+   },
+   "count": 1,
+   "why": "an admin's waiting files: the library's kept count less the files concealed from them, a range of the concealed index",
+   "per": "person"
+  },
+  "select:semantic_indexed#95128dca": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 60016,
+    "80000": 240016
+   },
+   "count": 1,
+   "scans": [
+    "assets"
+   ],
+   "why": "asked before its kept term is built, the waiting count walks once while the term builds in the background",
+   "per": "library"
+  },
+  "select:semantic_unrecorded#ce1c9c77": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1,
+   "why": "the descriptions held with no record, kept by triggers, for Maintenance's orphan count"
   },
   "select:shoot_proposals#0271c065": {
    "stage": "db.read",
@@ -2122,6 +2263,22 @@
    "steps": {
     "20000": 272,
     "80000": 272
+   },
+   "count": 1
+  },
+  "select:sqlite_master#03436766": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 3024,
+    "80000": 3024
+   },
+   "count": 1
+  },
+  "select:sqlite_master#1bfe4647": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 3264,
+    "80000": 3264
    },
    "count": 1
   },
@@ -2156,6 +2313,15 @@
     "80000": 3392
    },
    "count": 3
+  },
+  "select:sqlite_master#a380ce30": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 3056,
+    "80000": 3056
+   },
+   "count": 1,
+   "why": "an act marks itself and its two neighbours of the same press, three index seeks a row, flat with the library, so the History feed reads a page and not the record; a file's counts move once per write: a change records what the file held and one fold moves the counts before the write commits, so a file costs a read of its members where a thousand cost one fold; the hook asks once per connection whether the tables exist and once per write whether anything was touched"
   },
   "select:sqlite_master#adff5704": {
    "stage": "db.read",
@@ -2391,6 +2557,41 @@
    },
    "count": 1
   },
+  "select:visibility_owed#8f89a5dc": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 0,
+    "80000": 6016
+   },
+   "count": 3,
+   "why": "the fold that moves a write's counts once costs by the files that write touched; a large share's owed counts are folded after its press a page of 2,000 files at a time, so a page costs by its own size (the walk's share owes only at the larger size: at 20,000 files it moves fewer than 1,000 pairs and is counted in its own write)"
+  },
+  "select:visibility_owed#90cdd705": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1,
+   "why": "an act marks itself and its two neighbours of the same press, three index seeks a row, flat with the library, so the History feed reads a page and not the record; a file's counts move once per write: a change records what the file held and one fold moves the counts before the write commits, so a file costs a read of its members where a thousand cost one fold; the hook asks once per connection whether the tables exist and once per write whether anything was touched"
+  },
+  "select:visibility_owed#ba25c682": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 16,
+    "80000": 16
+   },
+   "count": 1793,
+   "why": "an act marks itself and its two neighbours of the same press, three index seeks a row, flat with the library, so the History feed reads a page and not the record; a file's counts move once per write: a change records what the file held and one fold moves the counts before the write commits, so a file costs a read of its members where a thousand cost one fold; the hook asks once per connection whether the tables exist and once per write whether anything was touched"
+  },
+  "select:visibility_owed#c9f07d5a": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1
+  },
   "select:work_prices#455f547d": {
    "stage": "db.read",
    "steps": {
@@ -2545,16 +2746,16 @@
   "update:asset_people#22cff55b": {
    "stage": "db.write",
    "steps": {
-    "20000": 8752,
-    "80000": 8752
+    "20000": 3968,
+    "80000": 3968
    },
    "count": 1
   },
   "update:asset_people#924adca5": {
    "stage": "db.write",
    "steps": {
-    "20000": 32368,
-    "80000": 31680
+    "20000": 11936,
+    "80000": 12288
    },
    "count": 1
   },
@@ -2662,8 +2863,8 @@
   "update:face_tracks#34651d28": {
    "stage": "db.write",
    "steps": {
-    "20000": 42000,
-    "80000": 8704
+    "20000": 1424,
+    "80000": 64
    },
    "count": 1
   },
@@ -2798,8 +2999,8 @@
   "update:person_user_state#f26335f6": {
    "stage": "db.write",
    "steps": {
-    "20000": 9696,
-    "80000": 9696
+    "20000": 4512,
+    "80000": 4512
    },
    "count": 1
   },
@@ -2883,6 +3084,15 @@
    },
    "count": 2
   },
+  "update:visibility_owed#792c4b99": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 16,
+    "80000": 90016
+   },
+   "count": 3,
+   "why": "the fold that moves a write's counts once costs by the files that write touched; a large share's owed counts are folded after its press a page of 2,000 files at a time, so a page costs by its own size (the walk's share owes only at the larger size: at 20,000 files it moves fewer than 1,000 pairs and is counted in its own write)"
+  },
   "update:work_runs#6ea648a3": {
    "stage": "db.write",
    "steps": {
@@ -2904,10 +3114,11 @@
   "update:workbench_decisions#79e6a7aa": {
    "stage": "db.write",
    "steps": {
-    "20000": 16,
-    "80000": 16
+    "20000": 240,
+    "80000": 240
    },
-   "count": 1
+   "count": 1,
+   "why": "an act marks itself and its two neighbours of the same press, three index seeks a row, flat with the library, so the History feed reads a page and not the record; a file's counts move once per write: a change records what the file held and one fold moves the counts before the write commits, so a file costs a read of its members where a thousand cost one fold; the hook asks once per connection whether the tables exist and once per write whether anything was touched"
   },
   "with:downloads#0b33ebfc": {
    "stage": "db.read",
@@ -2949,6 +3160,16 @@
    },
    "count": 1
   },
+  "with:json_each#010a9366": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 2371664,
+    "80000": 9462928
+   },
+   "count": 1,
+   "why": "a folded line counts and names the acts of its press that the vault leaves this viewer, one vault check per act, so a page costs the presses it draws; the walk folds every verb-less decision of the library into one press, a second apart, so here that press is the library",
+   "per": "library"
+  },
   "with:json_each#05f9a628": {
    "stage": "db.read",
    "steps": {
@@ -2956,6 +3177,16 @@
     "80000": 12592
    },
    "count": 1
+  },
+  "with:json_each#06d74dfd": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 2112512,
+    "80000": 8434160
+   },
+   "count": 1,
+   "why": "a folded line counts and names the acts of its press that the vault leaves this viewer, one vault check per act, so a page costs the presses it draws; the walk folds every verb-less decision of the library into one press, a second apart, so here that press is the library",
+   "per": "library"
   },
   "with:json_each#08186d72": {
    "stage": "db.read",
@@ -3105,16 +3336,6 @@
    },
    "count": 1
   },
-  "with:json_each#3fdf1a71": {
-   "stage": "db.read",
-   "steps": {
-    "20000": 1995072,
-    "80000": 7956896
-   },
-   "count": 1,
-   "per": "library",
-   "why": "costs this before the ledger: a debt on the record, not a decision"
-  },
   "with:json_each#40f14311": {
    "stage": "db.read",
    "steps": {
@@ -3241,25 +3462,17 @@
    "stage": "db.read",
    "steps": {
     "20000": 2080,
-    "80000": 1696
+    "80000": 2080
    },
-   "count": 1
+   "count": 1,
+   "why": "a guest's reads by id are priced on a file they are shown",
+   "per": "file"
   },
   "with:json_each#8517128a": {
    "stage": "db.read",
    "steps": {
     "20000": 20816,
     "80000": 55392
-   },
-   "count": 1,
-   "per": "library",
-   "why": "costs this before the ledger: a debt on the record, not a decision"
-  },
-  "with:json_each#852f62c4": {
-   "stage": "db.read",
-   "steps": {
-    "20000": 1735904,
-    "80000": 6928128
    },
    "count": 1,
    "per": "library",
@@ -3498,15 +3711,15 @@
    },
    "count": 1
   },
-  "with:workbench_decisions#0b00ecf0": {
+  "with:workbench_decisions#89efa7ce": {
    "stage": "db.read",
    "steps": {
-    "20000": 2928048,
-    "80000": 11707680
+    "20000": 988352,
+    "80000": 3923760
    },
    "count": 1,
-   "per": "library",
-   "why": "costs this before the ledger: a debt on the record, not a decision"
+   "why": "a folded line counts and names the acts of its press that the vault leaves this viewer, one vault check per act, so a page costs the presses it draws; the walk folds every verb-less decision of the library into one press, a second apart, so here that press is the library",
+   "per": "library"
   }
  }
 }

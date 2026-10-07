@@ -13,7 +13,7 @@ does is point ffmpeg at a path that service handed it.
 
 **Every call that waits runs on a thread.** Encoding is a subprocess, measuring is a stat, checking
 for room is a disk read; the API, the job feed and every video anybody is watching share one event
-loop, and a call that waits on this loop stops all of them at once with nothing logged.
+loop, and a call that waits on this loop stops all of them together with nothing logged.
 """
 
 from __future__ import annotations
@@ -236,8 +236,8 @@ async def _climb(
     The scratch file is one file, so each attempt writes over the last. That is what the final
     re-encode is for: when the winner is not the attempt that happens to be sitting there, it is
     produced again. One extra pass in the uncommon case, against keeping several full-size copies
-    of a video on somebody's disk at once, which is the alternative and is worse on the machines
-    Sift runs on.
+    of a video on somebody's disk at the same time, which is the alternative and is worse on the
+    machines Sift runs on.
     """
     target = request.target_bytes
     assert target is not None  # noqa: S101 (the caller branches on this above)

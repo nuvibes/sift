@@ -170,7 +170,7 @@ class Setting:
     #: judgement made once per setting.
     unit: str | None = None
     #: What ZERO is called where a bare 0 would be misread: a count where 0 means Sift decides (how
-    #: many jobs run at once, how many downloads, previews, folder scans, recognition threads), or a
+    #: many jobs run together, how many downloads, previews, folder scans, recognition threads), or a
     #: limit where 0 means none (a size floor, a lock timer, a keep-for). A box reading `0` says the
     #: opposite of what those mean, and nobody types a zero into a count on purpose, so the number on
     #: screen was only ever readable to whoever wrote it. `tests/gates/test_a_number_names_its_zero.py`

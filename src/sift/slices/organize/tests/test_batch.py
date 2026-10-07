@@ -296,7 +296,7 @@ def test_an_undo_says_nothing_extra_when_every_name_went_back() -> None:
 
 
 def test_the_line_says_at_once_only_for_more_than_one_file() -> None:
-    """One file renamed is not a batch, so its line leaves "at once" out."""
+    """One file renamed is not a batch, so its line leaves "together" out."""
     receipts = BatchRenameReceipts(None, touched=_nothing)  # type: ignore[arg-type]
 
     def line(moves: list[str]) -> str:
@@ -313,7 +313,7 @@ def test_the_line_says_at_once_only_for_more_than_one_file() -> None:
         return "".join(part for part in worded.said if isinstance(part, str))
 
     assert line(["m1"]).endswith("renamed 1 file")
-    assert line(["m1", "m2", "m3"]).endswith("renamed 3 files at once")
+    assert line(["m1", "m2", "m3"]).endswith("renamed 3 files together")
 
 
 # --- the plan's own refusals and clashes ----------------------------------------------------------

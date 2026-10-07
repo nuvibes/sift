@@ -144,7 +144,7 @@ def test_reading_cookies_back_needs_no_key_and_refuses_what_it_cannot_read(
     client: TestClient,
 ) -> None:
     """No master key, because there is nothing to seal: pasting the wrong file and being locked
-    are two separate problems and meeting both at once is how a form becomes a wall."""
+    are two separate problems and meeting both at the same time is how a form becomes a wall."""
     sign_in(client, "admin")
 
     assert (

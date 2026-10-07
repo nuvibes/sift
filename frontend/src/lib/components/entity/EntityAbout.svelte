@@ -154,7 +154,7 @@
 			{#if ontag || tags.length > 0}
 				<!-- The tags, and the one picker. Chips only while the form is up: the form edits tags
 				     into its draft and this writes on a press, and two live editors for one field would
-				     save half the changes at once and half on Save. -->
+				     save half the changes immediately and half on Save. -->
 				<div class="tags">
 					{#each tags as chip (chip.id)}
 						<TagChip

@@ -215,7 +215,7 @@ async def test_with_nothing_to_say_which_model_is_chosen_nothing_is_counted_or_t
 
     assert (await tidying.survey()).count is None
     assert await tidying.run() == 0
-    assert await VectorStore(resources.database).held_ids() != []
+    assert await VectorStore(resources.database).count() > 0
 
 
 async def test_a_chosen_model_this_build_does_not_know_counts_nothing_and_takes_nothing(
@@ -233,4 +233,4 @@ async def test_a_chosen_model_this_build_does_not_know_counts_nothing_and_takes_
 
     assert (await tidying.survey()).count is None
     assert await tidying.run() == 0
-    assert await VectorStore(resources.database).held_ids() != []
+    assert await VectorStore(resources.database).count() > 0

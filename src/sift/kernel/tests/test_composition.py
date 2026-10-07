@@ -214,8 +214,8 @@ class TestNamingATag:
         self, naming: LibraryNaming, world: World, temp_db: Database
     ) -> None:
         """The race between looking and making, handled by catching the refusal rather than by
-        locking. Two imports asking for the same new tag at once is an ordinary thing, and the
-        second one wants the row the first just made.
+        locking. Two imports asking for the same new tag at the same time is an ordinary thing, and
+        the second one wants the row the first just made.
 
         Played out by making the tag between the look and the make, which is exactly what the
         other import would have done.

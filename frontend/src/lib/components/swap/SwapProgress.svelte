@@ -22,8 +22,8 @@
 	 *
 	 * A swap that sends and receives draws each direction under the drawer's own words, Send and
 	 * Receive: its files and its size, or what it waits for while it is not moving yet. Under both,
-	 * one estimate for the whole (`timeLeftBothWays`): the two move at once, so the whole takes as
-	 * long as the slower.
+	 * one estimate for the whole (`timeLeftBothWays`): the two move at the same time, so the whole
+	 * takes as long as the slower.
 	 */
 	import { Button, Empty, Panel, ProgressBar, SectionHeading } from '$lib/components/common';
 	import { size, sizeOf } from '$lib/library/facts';

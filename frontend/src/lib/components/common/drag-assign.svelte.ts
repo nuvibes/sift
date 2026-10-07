@@ -93,9 +93,9 @@ export function carriesALink(event: DragEvent): boolean {
  * would have taken, which is files; `link` means links and nothing else: a card takes a link and
  * deliberately refuses a file, because a file dropped on a person is imported the ordinary way.
  *
- * A drag can be both at once, and that is the ordinary case rather than the strange one: dragging
- * an image out of a browser hands over a link and a file together. `carriesALink` decides it, so
- * the answer here is the same answer the zone itself will give. See below.
+ * A drag can be both at the same time, and that is the ordinary case rather than the strange one:
+ * dragging an image out of a browser hands over a link and a file together. `carriesALink` decides
+ * it, so the answer here is the same answer the zone itself will give. See below.
  */
 export function overADropZone(event: DragEvent): boolean {
 	const target = event.target;
@@ -106,8 +106,8 @@ export function overADropZone(event: DragEvent): boolean {
 	if (!takes) return true;
 	/*
 	 * The zone's own question, asked with the zone's own function: `dropTarget` asks
-	 * `carriesALink`. A drag out of a browser carries `text/uri-list` and `Files` at once, so
-	 * asking "is it carrying a file" instead would light the card and keep the window overlay
+	 * `carriesALink`. A drag out of a browser carries `text/uri-list` and `Files` at the same time,
+	 * so asking "is it carrying a file" instead would light the card and keep the window overlay
 	 * armed, drawing two offers and starting two downloads on a drop. Whether a zone takes this
 	 * drag has one answer, and it belongs to the zone.
 	 */

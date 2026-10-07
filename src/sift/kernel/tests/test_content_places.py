@@ -561,7 +561,7 @@ async def test_a_folder_reports_its_pictures_in_name_order_and_counts_what_moves
     """What the rule about turning a folder of pictures into a shoot reads.
 
     Name order because that is the order a shoot was numbered in; `added_at` would order by
-    whichever file finished being written first, which for a folder that arrived at once is a
+    whichever file finished being written first, which for a folder that arrived together is a
     shuffle.
     """
     folder_id = new_id()
@@ -789,8 +789,8 @@ async def test_hashing_a_file_takes_its_storage_lane(
     tmp_path: Path, settings: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The hash reads the whole file end to end (the heaviest read Sift makes of one), and a
-    share asked to serve a dozen of those at once collapses. The lane is what stops that, so a
-    hash that went round it would be exactly the reader the cap cannot see."""
+    share asked to serve a dozen of those at the same time collapses. The lane is what stops that,
+    so a hash that went round it would be exactly the reader the cap cannot see."""
     from contextlib import asynccontextmanager
 
     from sift.kernel import lanes

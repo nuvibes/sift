@@ -95,7 +95,7 @@ const CEILING_MS = 60_000;
 /* How long a rung row is kept in view while the pane goes on filling in around it.
  *
  * Finding the row is not the end of the pane loading. On Performance the "Is Sift keeping up?"
- * row is drawn at once and the device, GPU and measurement blocks ABOVE it arrive afterwards,
+ * row is drawn immediately and the device, GPU and measurement blocks ABOVE it arrive afterwards,
  * so a row scrolled to and rung would be pushed two screens down by the blocks landing above it:
  * a ring nobody could see. So after the row is rung it is FOLLOWED: while the pane is still
  * loading, a row whose place in the pane moved is scrolled back into view and rung again. It ends
@@ -432,8 +432,8 @@ export function revealSetting(key: string, section?: string): Promise<boolean> {
 
 		/* A row the pane is deliberately not drawing: ring what decides it and say why. Asked only
 		   while no request is out, so an answer is never read off a pane still filling in. True
-		   when the hunt ends here: the row that decides it rung at once, or a sentence with no row
-		   to ring. */
+		   when the hunt ends here: the row that decides it rung immediately, or a sentence with no
+		   row to ring. */
 		const explained = (): boolean => {
 			if (paneOnScreen() === null || requestsInFlight()) return false;
 			const why = whyNotDrawn(key);

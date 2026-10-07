@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """How many files may be read from one storage at the same time.
 
-A network share collapses under concurrent seeking readers: a dozen at once deliver about half
+A network share collapses under concurrent seeking readers: a dozen together deliver about half
 what two do, while the processor sits at a quarter. So the cap belongs to the STORAGE. Every read
 of a library file takes a place in its storage's lane first, and a network lane has as many places
 as that storage measured (two until it is), or the setting's number where one is set. A local
@@ -45,9 +45,9 @@ from sift.kernel.log import get_logger
 
 log = get_logger(__name__)
 
-#: How many files are read at once from a network share nobody has measured or set: the number
+#: How many files are read together from a network share nobody has measured or set: the number
 #: seen to work, rather than a larger one nobody has shown holds.
-NETWORK_READS_AT_ONCE = 2
+NETWORK_READS_AT_A_TIME = 2
 
 #: The most anybody may set by hand. Above this a share is being asked to do what the measurement
 #: says it cannot; a person who wants more than this has a link nobody here has seen.
@@ -86,7 +86,7 @@ class Lane:
 
     storage: Storage
     limit: int
-    """How many may read at once; zero means no cap."""
+    """How many may read together; zero means no cap."""
     active: int = 0
     waiting: int = 0
     #: How many of those waiting are of a kind above the ordinary.
@@ -179,7 +179,7 @@ class Lane:
 
     @property
     def whole_limit(self) -> int:
-        """How many reads may hold a place for a whole file at once: all of a capped storage's
+        """How many reads may hold a place for a whole file together: all of a capped storage's
         places but one, and never none. Zero means no cap."""
         return max(1, self.limit - 1) if self.capped else 0
 
@@ -256,7 +256,7 @@ class StorageLanes:
     def _limit(self, storage: Storage) -> int:
         if not storage.remote:
             return 0
-        return self._network or self._measured.get(storage.key, NETWORK_READS_AT_ONCE)
+        return self._network or self._measured.get(storage.key, NETWORK_READS_AT_A_TIME)
 
     @property
     def network_reads_at_once(self) -> int:
@@ -282,11 +282,11 @@ class StorageLanes:
 
     def reads_at_once(self, path: Path) -> int:
         """How many files a reader of `path`'s storage keeps open: the cap on a share, the
-        measured number or `LOCAL_READS_AT_ONCE` on a disk."""
+        measured number or `LOCAL_READS_AT_A_TIME` on a disk."""
         lane = self.lane_for(path)
         if lane.capped:
             return lane.limit
-        return self._measured.get(lane.storage.key, LOCAL_READS_AT_ONCE)
+        return self._measured.get(lane.storage.key, LOCAL_READS_AT_A_TIME)
 
     @asynccontextmanager
     async def reading(self, path: Path) -> AsyncIterator[None]:
@@ -337,7 +337,7 @@ _RANK: ContextVar[int] = ContextVar("lanes_rank", default=ORDINARY)
 
 #: How many files one reader keeps open on a local disk nobody has measured: enough to keep an
 #: NVMe busy without turning a spinning disk into a seek storm.
-LOCAL_READS_AT_ONCE = 4
+LOCAL_READS_AT_A_TIME = 4
 
 
 @asynccontextmanager
@@ -401,7 +401,7 @@ async def reading(path: Path) -> AsyncIterator[None]:
 @asynccontextmanager
 async def whole_file(path: Path) -> AsyncIterator[None]:
     """Around a read that keeps its place for a whole file, start to end: a stream copy a tool
-    makes of it. On a capped storage at most all its places but one are held that way at once, so
+    makes of it. On a capped storage at most all its places but one are held that way together, so
     the reads that let go block by block (a swap's streams, a scan) always have one, rather than
     every one of them waiting out two copies of two whole files. Not a place itself: the read
     inside still takes its place as every read does."""

@@ -12,8 +12,8 @@
 //
 // ## Why a ratchet and not a ban
 //
-// The same reason as the buttons. A gate that refused every undeclared key comparison at once would
-// fail on handlers that are correct and not yet moved, and the only ways to ship that are one
+// The same reason as the buttons. A gate that refused every undeclared key comparison immediately
+// would fail on handlers that are correct and not yet moved, and the only ways to ship that are one
 // change nobody can really review or a gate weakened until it passes.
 //
 // So it counts. The count may fall and may never rise: a new undeclared shortcut fails the build on

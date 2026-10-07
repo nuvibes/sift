@@ -379,7 +379,7 @@ def test_a_command_does_not_wait_for_the_next_beat(client: TestClient) -> None:
     """The connection is woken by the command, not found by its next look a second later.
 
     The command is sent a moment after the connection has settled into a rest, so a beat that was
-    not woken would hold it for most of a second; a woken one sends it at once.
+    not woken would hold it for most of a second; a woken one sends it immediately.
     """
     sign_in(client)
     report(client)

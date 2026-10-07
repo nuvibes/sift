@@ -155,16 +155,30 @@ _ITER_CHUNK = 64
 
 class _JudgedWriter(aiosqlite.Connection):
     """The write connection: every statement inside a write is named and timed like a read, so a
-    press's own writes are in the log beside its reads."""
+    press's own writes are in the log beside its reads. It counts the statements of the write
+    block it is in, so a block that holds the writer too long can say what it was running."""
+
+    statements = 0
+    last_statement: str | None = None
+
+    def began_block(self) -> None:
+        self.statements = 0
+        self.last_statement = None
+
+    def _on_statement(self, sql: str) -> None:
+        self.statements += 1
+        self.last_statement = statement_name(sql)
 
     @_a_result
     async def execute(self, sql: str, parameters: Iterable[Any] | None = None) -> aiosqlite.Cursor:
+        self._on_statement(sql)
         with _judged("db.write", sql, sql, _bound(parameters)) as timing:
             _ran_on(timing, self)
             return await super().execute(sql, parameters)
 
     @_a_result
     async def executemany(self, sql: str, parameters: Iterable[Iterable[Any]]) -> aiosqlite.Cursor:
+        self._on_statement(sql)
         with _judged("db.write", sql, sql) as timing:
             _ran_on(timing, self)
             return await super().executemany(sql, parameters)
@@ -173,6 +187,7 @@ class _JudgedWriter(aiosqlite.Connection):
     async def execute_fetchall(
         self, sql: str, parameters: Iterable[Any] | None = None
     ) -> Iterable[sqlite3.Row]:
+        self._on_statement(sql)
         with _judged("db.write", sql, sql, _bound(parameters)) as timing:
             _ran_on(timing, self)
             return await super().execute_fetchall(sql, parameters)

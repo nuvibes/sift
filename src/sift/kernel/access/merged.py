@@ -118,6 +118,10 @@ FOLLOWS: tuple[tuple[str, str], ...] = (
 #: in one list or the other, so the question "does a merge lose it" is answered on the day it is
 #: written rather than on the day somebody counts rows.
 NOT_FOLLOWED: Mapping[str, str] = {
+    "visibility_members": (
+        "What a file held per counted kind when a write first reached it, by the kind word the"
+        " counts use; folded and cleared by the end of that write, so a merge never finds a row"
+    ),
     "acl_grants": (
         "a grant is a decision about one specific thing, so both merges forget the grants of the "
         "one going before they start (`Repository.forget_object`): losing access is the safe way "

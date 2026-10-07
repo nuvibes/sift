@@ -36,7 +36,7 @@ export class SideScroll {
 		this.#box = element;
 	};
 
-	/** Where the strip stands, both ends at once. */
+	/** Where the strip stands, both ends together. */
 	measure(): void {
 		const box = this.#box;
 		if (box === null) return;

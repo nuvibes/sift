@@ -127,3 +127,92 @@ async def test_an_index_described_before_the_keys_is_keyed_when_the_library_open
     frames = await temp_db.fetch_all("SELECT asset_id FROM semantic_frame_keys")
     files = await temp_db.fetch_all("SELECT asset_id FROM semantic_file_keys")
     assert [row["asset_id"] for row in frames] == [row["asset_id"] for row in files] == ["clip"]
+
+
+async def _counts(database: Database) -> dict[str, tuple[int, int]]:
+    rows = await database.fetch_all("SELECT revision, files, frames FROM semantic_counts")
+    return {str(row["revision"]): (int(row["files"]), int(row["frames"])) for row in rows}
+
+
+async def _unrecorded(database: Database) -> list[str]:
+    rows = await database.fetch_all("SELECT asset_id FROM semantic_unrecorded ORDER BY asset_id")
+    return [str(row["asset_id"]) for row in rows]
+
+
+async def _keyed(database: Database, asset_id: str, revision: str, frames: int) -> None:
+    async with database.write() as connection:
+        await connection.execute(
+            "INSERT INTO semantic_file_keys (file, asset_id, revision) VALUES (NULL, ?, ?)",
+            (asset_id, revision),
+        )
+        for _ in range(frames):
+            await connection.execute(
+                "INSERT INTO semantic_frame_keys (frame, asset_id, revision) VALUES (NULL, ?, ?)",
+                (asset_id, revision),
+            )
+
+
+async def test_the_counts_follow_every_record_and_every_frame(temp_db: Database) -> None:
+    await temp_db.initialize_schema()
+    for one in ("a", "b", "c"):
+        await _seed_asset(temp_db, one)
+    await _mark_described(temp_db, "a")
+    await _mark_described(temp_db, "b")
+    await _mark_described(temp_db, "c", revision="r2")
+    await _keyed(temp_db, "a", "r1", 3)
+
+    assert await _counts(temp_db) == {"r1": (2, 3), "r2": (1, 0)}
+
+    await temp_db.execute("UPDATE semantic_indexed SET revision = 'r2' WHERE asset_id = 'b'")
+    await temp_db.execute(
+        "DELETE FROM semantic_frame_keys WHERE frame = (SELECT MIN(frame) FROM semantic_frame_keys)"
+    )
+    await temp_db.execute("DELETE FROM semantic_indexed WHERE asset_id = 'c'")
+
+    assert await _counts(temp_db) == {"r1": (1, 2), "r2": (1, 0)}
+
+
+async def test_a_file_that_leaves_with_its_numbers_held_is_kept_as_unrecorded(
+    temp_db: Database,
+) -> None:
+    """Its record goes with it and its numbers cannot: the one row Maintenance asks about."""
+    await temp_db.initialize_schema()
+    for one in ("gone", "kept", "unread"):
+        await _seed_asset(temp_db, one)
+    await _keyed(temp_db, "unread", "r1", 1)
+    await _mark_described(temp_db, "gone")
+    await _keyed(temp_db, "gone", "r1", 1)
+    await _mark_described(temp_db, "kept")
+    await _keyed(temp_db, "kept", "r1", 1)
+
+    assert await _unrecorded(temp_db) == ["unread"]
+
+    await temp_db.execute("DELETE FROM assets WHERE id = 'gone'")
+    await _mark_described(temp_db, "unread")
+    await temp_db.execute("DELETE FROM semantic_indexed WHERE asset_id = 'kept'")
+    await temp_db.execute("DELETE FROM semantic_file_keys WHERE asset_id = 'kept'")
+
+    assert await _unrecorded(temp_db) == ["gone"]
+
+
+async def test_an_index_described_before_the_counts_is_counted_when_the_library_opens(
+    temp_db: Database,
+) -> None:
+    await temp_db.initialize_schema()
+    for one in ("a", "b"):
+        await _seed_asset(temp_db, one)
+    await _mark_described(temp_db, "a")
+    await _keyed(temp_db, "a", "r1", 2)
+    await _keyed(temp_db, "b", "r1", 1)
+    async with temp_db.write() as connection:
+        await connection.execute("DROP TABLE semantic_counts")
+        await connection.execute("DROP TABLE semantic_unrecorded")
+        await connection.execute(
+            "UPDATE schema_version SET version = 4 WHERE component = ?", (COMPONENT,)
+        )
+
+    await temp_db.initialize_schema()
+
+    assert await temp_db.schema_version(COMPONENT) == VERSION
+    assert await _counts(temp_db) == {"r1": (1, 3)}
+    assert await _unrecorded(temp_db) == ["b"]

@@ -37,7 +37,7 @@ CANDIDATES = 200
 #: How many recent questions are remembered for each asker, vectors and rankings alike.
 REMEMBERED = 16
 
-#: How many askers' questions are remembered at once.
+#: How many askers' questions are remembered together.
 ASKERS = 16
 
 

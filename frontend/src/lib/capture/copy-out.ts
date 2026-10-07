@@ -248,7 +248,7 @@ export async function saveToDevice(
 	toasts.show(['Saved ', thing('asset', asset.id, filename)]);
 }
 
-/** Save a whole selection at once. Every one is a download (copying several images to the
+/** Save a whole selection in one go. Every one is a download (copying several images to the
  *  clipboard means nothing), and each keeps the name it was imported under. */
 export async function saveEach(
 	assets: Pick<components['schemas']['AssetSummary'], 'id' | 'original_filename'>[]

@@ -11,7 +11,7 @@ Two rules hold for everything registered here, and they are the whole design:
   by the rule and never queued. A queue that fills up with work a threshold could have done stops
   being opened, and then the real judgements rot inside it.
 - **Every decision leaves a receipt, and every receipt can be reversed.** A bulk decision writes
-  hundreds of rows at once, and the wrong one is often noticed a day later rather than in ten
+  hundreds of rows in one go, and the wrong one is often noticed a day later rather than in ten
   seconds. A decision nobody can find again is a decision nobody can undo.
 - **A queue says what KIND of pile it is, and the board sorts by nothing else.** See `Band`. The
   first rule above is not self-enforcing: piles that ask nothing at all accumulate here because
@@ -612,6 +612,15 @@ class Moves(Protocol):
     def moved_by(self) -> frozenset[About] | None: ...
 
 
+@runtime_checkable
+class Stills(Protocol):
+    """A queue whose cards draw only the files whose still has been made, so a picture made moves
+    it. Every other queue is kept through a Generate's pictures (`changes.mark_of`)."""
+
+    @property
+    def draws_stills(self) -> bool: ...
+
+
 @dataclass(frozen=True, slots=True)
 class Card:
     """The card on the board a decision was taken on: the queue whose page it opens, and the
@@ -834,7 +843,8 @@ class Workbench:
         """One queue's summary for this viewer: the kept one while nothing that can move it has
         been announced, or one survey shared by every reader asking meanwhile. See `board`."""
         moved_by = queue.moved_by if isinstance(queue, Moves) else MOVED_BY
-        mark = None if moved_by is None else mark_of(moved_by)
+        pictures = isinstance(queue, Stills) and queue.draws_stills
+        mark = None if moved_by is None else mark_of(moved_by, pictures=pictures)
         if mark is None:
             return await self._surveyed(queue, viewer)
         key = (queue.name, viewer)

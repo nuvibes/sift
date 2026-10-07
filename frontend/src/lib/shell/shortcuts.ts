@@ -259,14 +259,14 @@ export const SHORTCUTS: readonly Shortcut[] = [
 		id: 'view.previous',
 		keys: ['ArrowLeft'],
 		shown: 'Left arrow',
-		does: 'The file before this one — hold Shift for that while a video is open, where a bare arrow steps through it instead',
+		does: 'The file before this one — hold Shift or Ctrl for that while a video is open, where a bare arrow steps through it instead',
 		area: 'Looking at a file'
 	},
 	{
 		id: 'view.next',
 		keys: ['ArrowRight'],
 		shown: 'Right arrow',
-		does: 'The file after this one — hold Shift for that while a video is open',
+		does: 'The file after this one — hold Shift or Ctrl for that while a video is open',
 		area: 'Looking at a file'
 	},
 	{
@@ -409,7 +409,7 @@ export const SHORTCUTS: readonly Shortcut[] = [
 		ctrl: true,
 		shift: false,
 		shown: 'Ctrl + Left',
-		does: 'The file before this one',
+		does: 'The file before this one, on every kind of file',
 		area: 'Watching something'
 	},
 	{
@@ -418,7 +418,7 @@ export const SHORTCUTS: readonly Shortcut[] = [
 		ctrl: true,
 		shift: false,
 		shown: 'Ctrl + Right',
-		does: 'The file after this one',
+		does: 'The file after this one, on every kind of file',
 		area: 'Watching something'
 	},
 	{
@@ -654,6 +654,18 @@ export function matches(event: KeyboardEvent, id: ShortcutId): boolean {
 	if (one.shift !== undefined && one.shift !== event.shiftKey) return false;
 	if (!one.whileTyping && typingInto(event.target)) return false;
 	return true;
+}
+
+/** The file either side a press asks for: Ctrl or Shift on any kind, bare where no clip seeks. */
+export function stepAsked(
+	event: KeyboardEvent,
+	on: { clip: boolean; clipSteps: boolean }
+): 'next' | 'previous' | null {
+	const next = matches(event, 'view.next') || matches(event, 'player.next');
+	if (!next && !matches(event, 'view.previous') && !matches(event, 'player.previous')) return null;
+	const ctrl = event.ctrlKey || event.metaKey;
+	if (on.clip && !event.shiftKey && (!ctrl || on.clipSteps)) return null;
+	return next ? 'next' : 'previous';
 }
 
 /** Every shortcut in an area, for a list that shows them grouped. */

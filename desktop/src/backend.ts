@@ -370,7 +370,7 @@ export class Backend {
 
 	/* Polling /health, not sleeping for a guessed interval. A first start creates the database and
 	 * checks what SQLite can do, which takes as long as it takes, and on a warm start it is ready
-	 * almost at once. Either way the window opens the moment it is actually true. */
+	 * almost immediately. Either way the window opens the moment it is actually true. */
 	private async waitForHealth(): Promise<void> {
 		const deadline = Date.now() + HEALTH_TIMEOUT_MS;
 		let lastError = '';

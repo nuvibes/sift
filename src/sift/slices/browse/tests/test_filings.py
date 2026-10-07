@@ -171,7 +171,7 @@ def test_a_tag_and_a_person_line_open_their_own_files_and_a_box_splits_them(
     assert _ids(client, tagged=f"{tag_id}~~2023-11-14") == [library.private]
     assert _ids(client, named=f"{person_id}~stash_box~2023-11-14~fansdb mirror") == [library.shared]
     assert _ids(client, named=f"{person_id}~stash_box~2023-11-14") == [library.private]
-    # Two lines at once narrow together, like any two parameters side by side in the address.
+    # Two lines given together narrow together, like any two parameters side by side in the address.
     both = client.get(
         "/api/assets",
         params={"tagged": f"{tag_id}~sift~", "named": f"{person_id}~stash_box~2023-11-14"},

@@ -81,7 +81,7 @@ _IMAGE = "image"
 _VIDEO = "video"
 _GIF = "gif"
 
-#: How many files' orientation is remembered at once.
+#: How many files' orientation is remembered at a time.
 #:
 #: The note cannot change under an asset id: a file's identity in Sift IS its bytes, so a file
 #: whose note changed is a different asset with a different id. So this is a cache with no

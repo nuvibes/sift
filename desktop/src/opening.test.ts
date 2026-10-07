@@ -1,4 +1,4 @@
-/* The opening frame: shown over the window at once, gone when the real page has painted, and the
+/* The opening frame: shown over the window immediately, gone when the real page has painted, and the
  * look it is drawn in kept for the next start without ever holding a picture of the library. */
 
 import * as fs from 'node:fs';

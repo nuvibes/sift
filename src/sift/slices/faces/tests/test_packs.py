@@ -803,7 +803,7 @@ async def test_a_name_nothing_is_waiting_for_claims_nothing(
 async def test_a_person_a_swap_made_leaves_nothing_waiting(
     service: FaceService, store: Store, temp_db: Database
 ) -> None:
-    """A swap's person it made here gets the faces at once. An entry for her would be offered
+    """A swap's person it made here gets the faces immediately. An entry for her would be offered
     forever."""
     await make_person(temp_db, "Ada Lovelace")
 

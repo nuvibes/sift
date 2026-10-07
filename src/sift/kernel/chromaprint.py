@@ -81,7 +81,7 @@ _SAMPLES_PER_VALUE = 1_365
 #: How long one file may take. Generous on purpose: this decodes the whole sound track of a file
 #: that may be on a network share (a fraction of an MP4's bytes, possibly nearly all of an MKV's,
 #: see the module docstring), and the lane in front of it already keeps the share from being asked
-#: for too many at once. A limit tight enough to matter would refuse long files on slow shares,
+#: for too many together. A limit tight enough to matter would refuse long files on slow shares,
 #: which is the one case this is most worth having.
 TIME_LIMIT_SECONDS = 1800.0
 
@@ -191,7 +191,7 @@ async def read_whole_track(source: Path, *, settings: Settings) -> Fingerprint:
     """Fingerprint every second of a file's audio. An empty fingerprint where there is none.
 
     In the storage's lane, because this reads across the whole length of the file (its sound
-    track, not its picture) and a share asked for several at once delivers less to each. At
+    track, not its picture) and a share asked for several together delivers less to each. At
     background priority, because nobody is waiting for it. Timed as `READ_STAGE`, a stage of the
     run's record (`Ledger.stage`).
 

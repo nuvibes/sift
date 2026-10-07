@@ -143,7 +143,7 @@
 	   a stopped download wants that download, not a saved setting. */
 	let cookiesRetry = $state<string | null>(null);
 
-	/** Asking before several downloads are stopped at once. One row asks for itself. */
+	/** Asking before several downloads are stopped together. One row asks for itself. */
 	let confirmCancel = $state(false);
 
 	/* Read when the screen opens, and again whenever the connection says the queue moved, which

@@ -521,7 +521,7 @@ describe('the arrangement belongs to the account', () => {
 });
 
 describe('a machine two people share', () => {
-	it('drops a cached arrangement belonging to somebody else at once', async () => {
+	it('drops a cached arrangement belonging to somebody else immediately', async () => {
 		/* Before the request, not after it. Waiting for the server would leave one person's rail on
 		 * screen while the other person's account was being fetched, and it is their arrangement,
 		 * which says which parts of Sift they use. */

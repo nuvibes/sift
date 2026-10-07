@@ -1334,7 +1334,7 @@ async def test_the_newest_of_two_clips_is_the_one_served(
     content_store: ContentStore,
     settings: Settings,
 ) -> None:
-    """A rebuild writes the new row after the old, so the newest is current at once."""
+    """A rebuild writes the new row after the old, so the newest is current immediately."""
     await _a_clip(content_store, settings, world.solo, {"pieces": 5, "each_ms": 2000}, b"old-clip")
     await _a_clip(content_store, settings, world.solo, {"pieces": 6, "each_ms": 1500}, b"new-clip")
 

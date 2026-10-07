@@ -2,7 +2,7 @@
 """A read of the whole library goes through the lane, or it does not go.
 
 The cost of a read is the rows crossing out of SQLite into Python, multiplied by the readers doing
-it at once: several passes reading whole tables together can make every request time out, though
+it together: several passes reading whole tables together can make every request time out, though
 no query is slow. One at a time through the lane is faster for the passes and for everyone else.
 A pass left off the lane looks like one ordinary query among hundreds, so only this finds it.
 

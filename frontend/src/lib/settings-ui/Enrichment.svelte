@@ -187,7 +187,7 @@
 		}
 	}
 
-	/* Every rule at once, in ONE request.
+	/* Every rule together, in ONE request.
 	 *
 	 * A loop of thirty-five saves would be thirty-five round trips, thirty-five change broadcasts
 	 * and thirty-five chances to end up half applied. `saveSettings` already takes a batch. */

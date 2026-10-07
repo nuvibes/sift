@@ -22,7 +22,7 @@
  *
  * While a page watches the list and this phone is in front of somebody, the screen on the card is
  * told it is being driven, and by what (`PUT .../controllers/{this phone}`), so the desk can say
- * so; picking another screen, leaving the page or putting the phone away lets go of it at once.
+ * so; picking another screen, leaving the page or putting the phone away lets go of it immediately.
  * Said again every `REPORT_EVERY_MS` while it stays on the same screen, because the server lets a
  * phone go when it stops saying so, which is what happens to a phone that was simply switched off.
  */
@@ -314,7 +314,7 @@ export class RemoteList {
 	 *
 	 * A refusal says why in one line, in the server's own words where it wrote some for people
 	 * ("That screen can't do that."). A screen the server no longer has re-reads the list, so the
-	 * screen that went quiet leaves it at once. Resolves to the command's id, or null when refused.
+	 * screen that went quiet leaves it immediately. Resolves to the command's id, or null when refused.
 	 */
 	async send(
 		screen: string,

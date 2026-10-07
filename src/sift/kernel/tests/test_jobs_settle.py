@@ -186,7 +186,7 @@ async def test_a_running_job_cannot_be_retried_out_from_under_its_worker(
 
 
 @pytest.mark.integration
-async def test_everything_that_failed_can_be_put_back_at_once(job_queue: JobQueue) -> None:
+async def test_everything_that_failed_can_be_put_back_in_one_go(job_queue: JobQueue) -> None:
     """Failures arrive in batches, so the way out of them is one press rather than forty."""
     handler = noop_handler()
     failed = []

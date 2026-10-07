@@ -56,10 +56,10 @@
 		/**
 		 * The name of the row a pasted settings path just opened, while the moment lasts.
 		 *
-		 * A paste IS the choice: the pane moves and the box empties at once, which alone reads as
-		 * the paste having been dropped. So for as long as the row's ring lasts the box says where
-		 * it went, in its own place (the words it shows while empty) and to a screen reader, and
-		 * its edge takes the accent once. The shell decides when; the box only says it.
+		 * A paste IS the choice: the pane moves and the box empties immediately, which alone reads
+		 * as the paste having been dropped. So for as long as the row's ring lasts the box says
+		 * where it went, in its own place (the words it shows while empty) and to a screen reader,
+		 * and its edge takes the accent once. The shell decides when; the box only says it.
 		 */
 		landed?: string;
 	}

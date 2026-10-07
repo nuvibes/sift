@@ -65,7 +65,7 @@ from dataclasses import replace
 from typing import TYPE_CHECKING
 
 # The wording. EVERY sentence this module says is written next door, in one table with no database
-# in it, so the whole vocabulary can be read (and tested) at once.
+# in it, so the whole vocabulary can be read (and tested) in one go.
 from sift.kernel.access import sentences as say
 from sift.kernel.access.history_actors import (
     MADE_BY_BOX,

@@ -19,10 +19,11 @@ from fastapi.testclient import TestClient
 
 from sift.kernel.config import get_settings
 from sift.kernel.http import CSRF_HEADER_NAME, SESSION_COOKIE_NAME
-from sift.kernel.wiring import part_of_app
+from sift.kernel.wiring import HARDWARE, part_of_app
 from sift.main import create_app
 from sift.slices.auth.crypto import derive_csrf_token
-from sift.slices.performance import measure_encoder, measure_together, selftest
+from sift.slices.performance import measure_encoder, measure_together, selftest, selftest_time
+from sift.slices.performance.budget import ENCODING, Budget
 from sift.slices.performance.rates import MachineRates
 from sift.slices.performance.runner import SELF_TEST_RUNNER
 from sift.slices.performance.selftest import Level, Measurement, Recommendation, SelfTest
@@ -106,7 +107,7 @@ def a_finished_run() -> SelfTest:
         recommendations=[
             Recommendation(
                 key=selftest.GENERATION_LIMIT_KEY,
-                label="How many previews are built at once",
+                label="How many previews are built at the same time",
                 current=0,
                 suggested=4,
                 reason="measured",
@@ -150,6 +151,9 @@ def test_an_instance_that_has_never_measured_says_so_rather_than_failing(
     assert body["finished"] is False
     assert body["measurement"] is None
     assert body["recommendations"] == []
+    # Nothing timed here: a whole run is said by its limit, the drain included.
+    assert body["whole_seconds"] == 299 and body["whole_timed"] is False
+    assert body["step"] is None and body["seconds_left"] is None
 
 
 def test_a_process_that_queued_no_benchmark_of_its_own_says_none(client: TestClient) -> None:
@@ -252,8 +256,9 @@ def test_a_run_in_flight_shows_its_rungs_apart_from_the_result_it_will_replace(
     release = asyncio.Event()
 
     async def one_rung_then_a_pause(**kwargs: object) -> Measurement:
-        report = kwargs["report"]
-        assert callable(report)
+        report, budget = kwargs["report"], kwargs["budget"]
+        assert callable(report) and isinstance(budget, Budget)
+        budget.stage(ENCODING)
         report(Measurement(cores=8, levels=(a_level(1),)))
         await release.wait()
         return Measurement(cores=8, levels=(a_level(1), a_level(2)))
@@ -279,6 +284,10 @@ def test_a_run_in_flight_shows_its_rungs_apart_from_the_result_it_will_replace(
 
     assert part_way is not None, "a rung that has been measured is visible before the end"
     assert [level["at_once"] for level in part_way["progress"]["levels"]] == [1]
+    assert part_way["step"] == "encoding" and 0 < part_way["seconds_left"] <= 299
+    assert part_way["left_timed"] is False
+    cores = part_of_app(client.app, HARDWARE).cpu_count  # type: ignore[arg-type]
+    assert part_way["rounds"] == selftest_time.planned_rounds(cores)
     assert part_way["finished"] is True and part_way["recommendations"] != []
     assert [level["at_once"] for level in part_way["measurement"]["levels"]] == [1, 2]
 
@@ -494,7 +503,7 @@ def test_a_finished_runs_report_can_be_read_by_an_admin_only(client: TestClient)
     # a second loop, and once an earlier test has bound the lock the write here would be refused.
     portal = client.portal
     assert portal is not None
-    portal.call(functools.partial(book.settle, {}, settings={"jobs at once": 4}))
+    portal.call(functools.partial(book.settle, {}, settings={"jobs at the same time": 4}))
 
     # Probing's own family is recorded beside the scan; the scan is the run under test.
     row = next(one for one in portal.call(book.recent) if one.family == "scan")
@@ -507,7 +516,7 @@ def test_a_finished_runs_report_can_be_read_by_an_admin_only(client: TestClient)
     report = client.get(f"/api/performance/runs/{row.id}/report")
     assert report.status_code == 200, report.text
     text = report.json()["text"]
-    assert "Scan run" in text and "Settings: jobs at once 4" in text
+    assert "Scan run" in text and "Settings: jobs at the same time 4" in text
     assert "probe.fingerprint" in text
     assert client.get("/api/performance/runs/nope/report").status_code == 404
 

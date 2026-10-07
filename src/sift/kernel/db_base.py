@@ -26,7 +26,8 @@ PRAGMAS = (
     # How much of the database each connection may hold in memory, in kibibytes (negative), so 8 MB
     # whatever the page size. Per CONNECTION, and the pool is sized from the workers, so every
     # megabyte here is many on the box, and 8 buys nearly all that 64 does. `temp_store` stays
-    # unset: an unbounded in-memory sort over a large library is a worse failure than a slower one.
+    # unset for a reader: an unbounded in-memory sort over a large library is a worse failure than
+    # a slower one. The writer alone keeps its temporary tables in memory (`Database._open`).
     "PRAGMA cache_size=-8192",
 )
 

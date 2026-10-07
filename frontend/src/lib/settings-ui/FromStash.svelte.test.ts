@@ -77,7 +77,7 @@ it('stops offering to import the last read once a new read starts', async () => 
 });
 
 /* The database is chosen, never typed: in the desktop application its own file dialog answers the
-   path, and the read is asked for that file at once. */
+   path, and the read is asked for that file immediately. */
 it('reads the file chosen in the desktop file dialog, with no box to type in', async () => {
 	calls.get.mockImplementation(async () => null);
 	calls.post.mockImplementation(async () => EARLIER);

@@ -71,7 +71,7 @@ class _SharedDotEnvSource(PydanticBaseSettingsSource):
 
 
 #: The most workers `SIFT_WORKER_CONCURRENCY` may ask for. A backstop, not a knob: no household box
-#: has a reason to run more than this many jobs at once, and without a ceiling a typo (an extra
+#: has a reason to run more than this many jobs together, and without a ceiling a typo (an extra
 #: zero) would try to spawn thousands of worker tasks at boot. Set above the default so nobody who
 #: had a real reason to raise it hits the ceiling by accident.
 MAX_WORKER_CONCURRENCY = 64
@@ -382,7 +382,7 @@ class Settings(BaseSettings):
     handed down in the environment, which only the process that spawned this one can set."""
 
     worker_concurrency: int | None = Field(default=None, gt=0, le=MAX_WORKER_CONCURRENCY)
-    """Jobs to run at once. Unset means derive it from the hardware actually present.
+    """Jobs to run together. Unset means derive it from the hardware actually present.
 
     Bounded above by MAX_WORKER_CONCURRENCY so a mistyped value cannot try to spawn a runaway number
     of workers at boot; a value over the ceiling is a startup ConfigError, not a degraded run.

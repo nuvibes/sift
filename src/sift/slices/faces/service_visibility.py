@@ -295,7 +295,7 @@ class VisibilityMixin(FaceServiceBase):
 
         `moments` is when each appearance's picture was taken (`Store.picture_moments`), read once
         for the whole gather. REQUIRED rather than defaulted: a screen that forgot it would play a
-        pressed face from the wrong moment, silently, and a missing argument is an error at once.
+        pressed face from the wrong moment, silently, and a missing argument is an error immediately.
         An appearance absent from it has no face left to picture and plays from where it began.
         """
         named: str | None = None

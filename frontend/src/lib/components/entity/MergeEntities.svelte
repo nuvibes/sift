@@ -3,7 +3,7 @@
 	/*
 	 * Two people, or two Sites, who turn out to be one.
 	 *
-	 * One sheet holding the decision and its consequences at once: the candidates side by side as
+	 * One sheet holding the decision and its consequences together: the candidates side by side as
 	 * cards, what would happen in short lines under them, and one button that says which way it
 	 * goes, like a stash-box reconciliation. There is no second step to reach, and changing the
 	 * keeper brings the new keeper's numbers under it, answering "which way round?" by looking.
@@ -514,8 +514,8 @@
 	});
 
 	/*
-	 * The lines fold too, past six: a person who was looked up can fill fifteen boxes at once, and
-	 * fifteen lines push the promises and the button below the fold of the sheet. The first six
+	 * The lines fold too, past six: a person who was looked up can fill fifteen boxes in one go,
+	 * and fifteen lines push the promises and the button below the fold of the sheet. The first six
 	 * always show (the files and what moves come first) and "and N more" opens the rest in place.
 	 */
 	const shownLines = $derived(

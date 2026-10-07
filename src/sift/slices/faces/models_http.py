@@ -494,7 +494,7 @@ class WorkLeft(Wire):
 
 
 class ReferenceStrengths(Wire):
-    """How many reference faces every person has, for a screen drawing several of them at once.
+    """How many reference faces every person has, for a screen drawing several of them together.
 
     The counts are keyed by person id and hold only the people who have any. A picker asking per
     row would be one request per candidate per keystroke; this is the same numbers in one answer.
@@ -528,7 +528,7 @@ class FacesDecided(BulkWriteDone):
     #: offered rather than decided, so the screen says "and 19 more to check" rather than counting
     #: them as named, and they are answered on the person's own wall.
     offered: int = 0
-    #: The receipt this press wrote, so the surface that pressed can offer Undo at once. See
+    #: The receipt this press wrote, so the surface that pressed can offer Undo immediately. See
     #: `service.RunAnswered`. None where nothing changed, or on a route that writes no receipt.
     decision_id: str | None = None
 

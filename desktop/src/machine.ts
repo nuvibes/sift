@@ -183,7 +183,7 @@ export async function thisMachine(
   ask: Ask = askWindows,
 ): Promise<LocalMachine> {
   const processors = os.cpus();
-  /* Both questions at once. Each starts a process, and a settings screen that opened in half a
+  /* Both questions together. Each starts a process, and a settings screen that opened in half a
    * second and then took another half for a second answer would be slower for no reason. */
   const [memory, cards] = await Promise.all([
     installedMemory(ask),

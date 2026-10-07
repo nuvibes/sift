@@ -427,7 +427,7 @@
 			travel = Math.abs(index - from);
 			under = here;
 		}
-		/* A row changing size (a count landing, the window narrowing) moves the rule with it at once:
+		/* A row changing size (a count landing, the window narrowing) moves the rule with it immediately:
 		   only a change of tab travels. A report that finds the lit tab where the rule is headed
 		   (the observer's first, nearly always) changes nothing, so a travel under way goes on.
 		   Every tab is watched as well as the row, because a tab can change width inside a row that

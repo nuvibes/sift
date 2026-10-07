@@ -191,7 +191,7 @@
 	);
 
 	/* How long the rectangle has to hold still before the server is asked about it. Long enough to
-	   cover a drag, short enough that letting go feels like an answer arriving at once. */
+	   cover a drag, short enough that letting go feels like an answer arriving immediately. */
 	const ASK_AFTER = 150;
 
 	/* A photograph with nothing done to it yet. There is nothing to ask about and nothing to save:

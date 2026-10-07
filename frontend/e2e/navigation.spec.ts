@@ -13,7 +13,7 @@ import { signInAsAdmin } from './admin';
  * **A wall you step back to must be where you left it.** Sift scrolls inside a box rather than
  * scrolling the window, so the browser's own restoration reaches none of it. The position is kept
  * per history entry through SvelteKit's snapshot (see `page-scroll.ts`), and the only place the
- * whole chain exists at once is a real browser: the layout exports it, the frame says which box it
+ * whole chain exists together is a real browser: the layout exports it, the frame says which box it
  * is, and the router decides when to ask.
  */
 
@@ -187,7 +187,7 @@ test('a page you turned to is the page you come back to', async ({ page }) => {
 	 * own bare href. `goto` restores no scroll offset, so inside a page taller than the window you
 	 * land at that page's top, on any library; the promise is at page level, so the test is.
 	 *
-	 * Two things have to hold at once and neither is visible to a unit test: the crumb goes to the
+	 * Two things have to hold at the same time and neither is visible to a unit test: the crumb goes to the
 	 * remembered address rather than following its own bare href, and the wall that address names
 	 * comes back with the same rows on it.
 	 *

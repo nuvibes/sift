@@ -1141,7 +1141,7 @@
         "type": "object"
       },
       "AssetOpinion": {
-        "description": "What one user thinks of one file, as another of its own screens should draw it.\n\nA wire shape rather than something the feed converts into one, so there is exactly one\ndescription of it: the client's type is generated from the route that carries it, and a second\ninternal copy of the same three fields would be a second thing to keep in step.\n\nThe same shape the rating and heart routes reply with, and that is the point rather than a\ncoincidence. A reply and a message reach the same screens by two routes (the control that\nwas pressed answers this tab at once, the connection tells this user's other browsers a\nmoment later) and the grid applies whichever arrives by naming the file and setting the row.\nTwo shapes would mean the tab that pressed the control and the tab that did not were served by\ntwo different pieces of code, and the one that only runs for somebody else is the one nobody\nwould notice breaking.\n\nSo it names the file even in a reply, where the asker already knows which one it asked about,\nand it carries the tally of how many times the file has been opened even from a control that\ncannot change it. Both are the price of one description, and both are cheaper than the second\ndescription would be.",
+        "description": "What one user thinks of one file, as another of its own screens should draw it.\n\nA wire shape rather than something the feed converts into one, so there is exactly one\ndescription of it: the client's type is generated from the route that carries it, and a second\ninternal copy of the same three fields would be a second thing to keep in step.\n\nThe same shape the rating and heart routes reply with, and that is the point rather than a\ncoincidence. A reply and a message reach the same screens by two routes (the control that\nwas pressed answers this tab immediately, the connection tells this user's other browsers a\nmoment later) and the grid applies whichever arrives by naming the file and setting the row.\nTwo shapes would mean the tab that pressed the control and the tab that did not were served by\ntwo different pieces of code, and the one that only runs for somebody else is the one nobody\nwould notice breaking.\n\nSo it names the file even in a reply, where the asker already knows which one it asked about,\nand it carries the tally of how many times the file has been opened even from a control that\ncannot change it. Both are the price of one description, and both are cheaper than the second\ndescription would be.",
         "properties": {
           "asset_id": {
             "title": "Asset Id",
@@ -8282,7 +8282,7 @@
         "type": "object"
       },
       "ForgetLoops": {
-        "description": "Which marks to forget, as one request.\n\nA selection, so a wall of loops can forget many at once: the shared Delete verb is hidden there\non purpose (it removes the FILE), and `DELETE /loops/{id}` is per row.",
+        "description": "Which marks to forget, as one request.\n\nA selection, so a wall of loops can forget many in one go: the shared Delete verb is hidden\nthere on purpose (it removes the FILE), and `DELETE /loops/{id}` is per row.",
         "properties": {
           "loop_ids": {
             "items": {
@@ -14510,7 +14510,7 @@
         "type": "object"
       },
       "PasteLinksRequest": {
-        "description": "Several addresses at once, and where they should land.\n\nIts own route: a paste of many must say what it refused and took, which one ledger row's id\ncannot.",
+        "description": "Several addresses together, and where they should land.\n\nIts own route: a paste of many must say what it refused and took, which one ledger row's id\ncannot.",
         "properties": {
           "dest_folder_id": {
             "anyOf": [
@@ -17433,7 +17433,7 @@
         "type": "object"
       },
       "ReferenceStrengths": {
-        "description": "How many reference faces every person has, for a screen drawing several of them at once.\n\nThe counts are keyed by person id and hold only the people who have any. A picker asking per\nrow would be one request per candidate per keystroke; this is the same numbers in one answer.",
+        "description": "How many reference faces every person has, for a screen drawing several of them together.\n\nThe counts are keyed by person id and hold only the people who have any. A picker asking per\nrow would be one request per candidate per keystroke; this is the same numbers in one answer.",
         "properties": {
           "floor": {
             "default": 0,
@@ -18458,7 +18458,7 @@
         "type": "object"
       },
       "RootKind": {
-        "description": "Where a root's files actually live.\n\nIt decides how the library list asks whether the folder is there (every share at once, each\nheld to its own timeout, where a local folder is one `stat`), and whether the list names the\ndevice a folder is on. It does NOT decide how the folder is watched: a share on Windows\nreports its own changes through the file server, so every root gets a native\nwatch, and one that will not attach falls back to polling on that observation rather than on\nthis word. See `watcher._observe`. Repeating the values of the CHECK constraint is unavoidable\n(SQLite takes no placeholder in one) and a test compares the two, so a drift is caught here\nrather than by an insert failing months later.",
+        "description": "Where a root's files actually live.\n\nIt decides how the library list asks whether the folder is there (every share together, each\nheld to its own timeout, where a local folder is one `stat`), and whether the list names the\ndevice a folder is on. It does NOT decide how the folder is watched: a share on Windows\nreports its own changes through the file server, so every root gets a native\nwatch, and one that will not attach falls back to polling on that observation rather than on\nthis word. See `watcher._observe`. Repeating the values of the CHECK constraint is unavoidable\n(SQLite takes no placeholder in one) and a test compares the two, so a drift is caught here\nrather than by an insert failing months later.",
         "enum": [
           "local",
           "nas",
@@ -18684,7 +18684,7 @@
         "properties": {
           "every": {
             "$ref": "#/components/schemas/RunNowPass",
-            "description": "The press that runs every pass below at once ('Identify all'), drawn first in the stage's flyout. Its key names the stage, and the server expands it into the passes."
+            "description": "The press that runs every pass below together ('Identify all'), drawn first in the stage's flyout. Its key names the stage, and the server expands it into the passes."
           },
           "family": {
             "description": "scan, generate or identify: the stage, as the queue names it.",
@@ -20187,6 +20187,11 @@
             "title": "Held While Measuring",
             "type": "integer"
           },
+          "left_timed": {
+            "default": false,
+            "title": "Left Timed",
+            "type": "boolean"
+          },
           "measured": {
             "default": false,
             "title": "Measured",
@@ -20245,14 +20250,46 @@
             "title": "Running",
             "type": "boolean"
           },
+          "seconds_left": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seconds Left"
+          },
           "share_reads_now": {
             "default": 0,
             "title": "Share Reads Now",
             "type": "integer"
           },
+          "step": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Step"
+          },
           "whole_due": {
             "default": false,
             "title": "Whole Due",
+            "type": "boolean"
+          },
+          "whole_seconds": {
+            "default": 0,
+            "title": "Whole Seconds",
+            "type": "integer"
+          },
+          "whole_timed": {
+            "default": false,
+            "title": "Whole Timed",
             "type": "boolean"
           },
           "whole_to_come": {
@@ -20268,6 +20305,11 @@
           "recommendations",
           "finished",
           "rounds",
+          "step",
+          "seconds_left",
+          "left_timed",
+          "whole_seconds",
+          "whole_timed",
           "measured",
           "share_reads_now",
           "notes",
@@ -22674,7 +22716,7 @@
         "type": "object"
       },
       "StorageCurveView": {
-        "description": "One storage as more files were read at once; `best_at_once` None where nothing was.",
+        "description": "One storage as more files were read at the same time; `best_at_once` None where nothing was.",
         "properties": {
           "best_at_once": {
             "anyOf": [
@@ -22737,7 +22779,7 @@
         "type": "object"
       },
       "StorageLevelView": {
-        "description": "One run against one storage: this many files read at once, and what came back.",
+        "description": "One run against one storage: this many files read at the same time, and what came back.",
         "properties": {
           "at_once": {
             "title": "At Once",
@@ -24459,7 +24501,7 @@
           },
           "waits": {
             "default": false,
-            "description": "For Run during quiet hours, whether the work waits for the range to open; false when the range is open and it starts at once. Said here because only this device's clock can say it: a browser comparing `starts_at` with its own clock is wrong by however far the two clocks are apart.",
+            "description": "For Run during quiet hours, whether the work waits for the range to open; false when the range is open and it starts immediately. Said here because only this device's clock can say it: a browser comparing `starts_at` with its own clock is wrong by however far the two clocks are apart.",
             "title": "Waits",
             "type": "boolean"
           }
@@ -30021,7 +30063,7 @@
     },
     "/api/auth/lock": {
       "post": {
-        "description": "Shut this session, and say which way it was shut.\n\nThe mark goes on the session row, so every path to the server is shut at once: another tab, a\nreload, the credential replayed at the API by hand. A lock drawn over the screen leaves all\nthree working, and that is the difference this route exists to make.\n\n**Which way it shuts is decided here, not by the caller.** Whether a PIN may reopen a session\nis a setting this server holds and a PIN it stores. A client deciding it has to read both\nfirst, and asking before an answer had landed it would read \"no PIN\" for somebody who had one\nand sign them out, intermittently, which is the hardest kind of fault to be believed about.\nThe answer names what happened so the screen knows where to send somebody, rather than\nworking it out a second time.\n\nOffered to everybody, guests included, and **allowed on a session that is already locked**,\nwhich is the fourth route that has to work while shut, alongside the two unlocks and signing\nout. A panic control pressed twice must not be worse than pressed once, and every other route\nrefuses a locked session, so without the exception the second press would answer 423: the\nclient would read that as \"shut\" and bounce, which looks like the shortcut needing two presses\nand, once the session had been reopened and shut again, like being signed out.\n\nLocking never fails for the caller: a session that has already gone is already shut, and one\nalready locked is locked again to the same effect.",
+        "description": "Shut this session, and say which way it was shut.\n\nThe mark goes on the session row, so every path to the server is shut immediately: another tab,\na reload, the credential replayed at the API by hand. A lock drawn over the screen leaves all\nthree working, and that is the difference this route exists to make.\n\n**Which way it shuts is decided here, not by the caller.** Whether a PIN may reopen a session\nis a setting this server holds and a PIN it stores. A client deciding it has to read both\nfirst, and asking before an answer had landed it would read \"no PIN\" for somebody who had one\nand sign them out, intermittently, which is the hardest kind of fault to be believed about.\nThe answer names what happened so the screen knows where to send somebody, rather than\nworking it out a second time.\n\nOffered to everybody, guests included, and **allowed on a session that is already locked**,\nwhich is the fourth route that has to work while shut, alongside the two unlocks and signing\nout. A panic control pressed twice must not be worse than pressed once, and every other route\nrefuses a locked session, so without the exception the second press would answer 423: the\nclient would read that as \"shut\" and bounce, which looks like the shortcut needing two presses\nand, once the session had been reopened and shut again, like being signed out.\n\nLocking never fails for the caller: a session that has already gone is already shut, and one\nalready locked is locked again to the same effect.",
         "operationId": "lock_app_api_auth_lock_post",
         "responses": {
           "200": {
@@ -34603,7 +34645,7 @@
     },
     "/api/faces/disagreements": {
       "get": {
-        "description": "Everybody the Disagreements tab is about, the most files first, with how many of each.\n\nThe tab's rows gathered by person, which is the shape they arrive in: a pass files a whole\nfolder at once, so its mistakes come by the hundred under one name. The counts are of the same\nrows the tab counts, so they add up to its number. Unpaged: one row per PERSON, never per file,\nand the rows it gathers are bounded by the read beneath (`tuning.FILED_FACES_AT_MOST`).\n\nAdmin, like every list this feature offers. See `to_check`.",
+        "description": "Everybody the Disagreements tab is about, the most files first, with how many of each.\n\nThe tab's rows gathered by person, which is the shape they arrive in: a pass files a whole\nfolder in one go, so its mistakes come by the hundred under one name. The counts are of the same\nrows the tab counts, so they add up to its number. Unpaged: one row per PERSON, never per file,\nand the rows it gathers are bounded by the read beneath (`tuning.FILED_FACES_AT_MOST`).\n\nAdmin, like every list this feature offers. See `to_check`.",
         "operationId": "disagreeing_people_api_faces_disagreements_get",
         "responses": {
           "200": {
@@ -36061,7 +36103,7 @@
     },
     "/api/faces/references/folder/path": {
       "post": {
-        "description": "Import a folder of people that sits on the machine Sift runs on, read by Sift from its path.\n\nThe folder must be inside one Sift has been given (`Settings > Library` and the folder dialog\ngive them): the same confinement the folder picker keeps, so this door reads nothing the picker\ncould not show. Answers at once with the task; the folder is read by the task.",
+        "description": "Import a folder of people that sits on the machine Sift runs on, read by Sift from its path.\n\nThe folder must be inside one Sift has been given (`Settings > Library` and the folder dialog\ngive them): the same confinement the folder picker keeps, so this door reads nothing the picker\ncould not show. Answers immediately with the task; the folder is read by the task.",
         "operationId": "import_reference_folder_by_path_api_faces_references_folder_path_post",
         "requestBody": {
           "content": {
@@ -38403,7 +38445,7 @@
     },
     "/api/library/folders": {
       "get": {
-        "description": "The folder tree, flat, and only what this viewer may see.\n\nWith no parameters this is every folder in every library, which is what the browser opens on\nand builds its tree from. Flat rather than nested, and all at once rather than a level at a\ntime: folders are cheap where files are not, and the alternative is a request per row or a\nsecond statement answering \"has children the viewer may see\", which is the scoping rule\nwritten twice, and two copies of that rule can disagree.\n\nRoots themselves are never listed here. A root is a path on somebody's disk; the folder row\nstanding for it is the same place with none of that attached, so a guest shown one folder of\none library learns nothing about where any of it lives.\n\n`parent` narrows to one folder's direct children, `root` to one library. A folder somebody may\nnot see is absent, not a 403, which would confirm that it exists.\n\nBoth are handed down together rather than one being chosen between. They are narrowings of one\nread, and passing them as such means a request naming a folder in a library it is not in gets\nthe honest empty answer instead of having half of what it asked silently dropped.\n\n`writable` asks the disk which folders Sift may write in, for a chooser of where files land;\nthe tree does not ask, so a share that has gone silent never slows it.",
+        "description": "The folder tree, flat, and only what this viewer may see.\n\nWith no parameters this is every folder in every library, which is what the browser opens on\nand builds its tree from. Flat rather than nested, and all in one go rather than a level at a\ntime: folders are cheap where files are not, and the alternative is a request per row or a\nsecond statement answering \"has children the viewer may see\", which is the scoping rule\nwritten twice, and two copies of that rule can disagree.\n\nRoots themselves are never listed here. A root is a path on somebody's disk; the folder row\nstanding for it is the same place with none of that attached, so a guest shown one folder of\none library learns nothing about where any of it lives.\n\n`parent` narrows to one folder's direct children, `root` to one library. A folder somebody may\nnot see is absent, not a 403, which would confirm that it exists.\n\nBoth are handed down together rather than one being chosen between. They are narrowings of one\nread, and passing them as such means a request naming a folder in a library it is not in gets\nthe honest empty answer instead of having half of what it asked silently dropped.\n\n`writable` asks the disk which folders Sift may write in, for a chooser of where files land;\nthe tree does not ask, so a share that has gone silent never slows it.",
         "operationId": "list_folders_api_library_folders_get",
         "parameters": [
           {
@@ -38810,7 +38852,7 @@
     },
     "/api/library/quarantine": {
       "get": {
-        "description": "Everything Sift refused, in the two piles it actually falls into.\n\nA file can be quarantined with nowhere else in the application to see that it was. The reason\nfor a moved file is in the note beside it, not only a line in the security log, so the listing\ncan say *why* as well as what and when and how big, which is the one thing somebody opening\nthis screen wants.\n\nBoth piles at once, deliberately. They have opposite answers to \"where is my file\": one is in a\nfolder of Sift's own and one is untouched in the reader's library, and a screen showing either\nalone would leave somebody looking in the wrong place.\n\nAdmin-only, like everything else here: it names files on the server's disk.",
+        "description": "Everything Sift refused, in the two piles it actually falls into.\n\nA file can be quarantined with nowhere else in the application to see that it was. The reason\nfor a moved file is in the note beside it, not only a line in the security log, so the listing\ncan say *why* as well as what and when and how big, which is the one thing somebody opening\nthis screen wants.\n\nBoth piles together, deliberately. They have opposite answers to \"where is my file\": one is in a\nfolder of Sift's own and one is untouched in the reader's library, and a screen showing either\nalone would leave somebody looking in the wrong place.\n\nAdmin-only, like everything else here: it names files on the server's disk.",
         "operationId": "quarantined_api_library_quarantine_get",
         "responses": {
           "200": {
@@ -42592,7 +42634,7 @@
         ]
       },
       "post": {
-        "description": "Queue a run that suggests. Answers straight away; the result is read back below.\n\nA second request while one is coming is not an error and queues nothing: two runs at once\nwould measure each other.",
+        "description": "Queue a run that suggests. Answers straight away; the result is read back below.\n\nA second request while one is coming is not an error and queues nothing: two runs together\nwould measure each other.",
         "operationId": "start_api_performance_self_test_post",
         "responses": {
           "202": {
@@ -45556,7 +45598,7 @@
     },
     "/api/sharing/reach/through": {
       "get": {
-        "description": "WHY one user can see one entity, when nothing was ever said about the entity.\n\nThe second half of the report above, and the answer to the one thing it could not say. A\nperson, a tag, a Site, a collection or a Photo Set is on somebody else's wall because ONE\nfile under it can be reached (that is the rule, and it is what `reach_of` asks), so the yes\nis true and routinely has no grant naming the entity to put beside it. This names what does.\n\nITS OWN ROUTE AND ITS OWN CEILING, which is why it is not folded into the report. This reads a\npage of an entity's files per user, where the report above is one statement for every\nuser at once; asked for everybody on arrival it would turn a panel somebody opens to check\none thing into a read per user whether or not any of them needed it. The client asks it for\nthe users whose yes has nothing behind it, which is the only case it answers differently.\n\nONE USER AT A TIME, named as a parameter. The caller is an admin reading a report about\nsomebody else, exactly as with the rest of this slice: the user is the subject of the\nquestion rather than whoever is asking it.\n\nAdmin-only, and here the reason is at its plainest twice over: it is a list of what another\nuser can see, and it names the folders and collections that let them.",
+        "description": "WHY one user can see one entity, when nothing was ever said about the entity.\n\nThe second half of the report above, and the answer to the one thing it could not say. A\nperson, a tag, a Site, a collection or a Photo Set is on somebody else's wall because ONE\nfile under it can be reached (that is the rule, and it is what `reach_of` asks), so the yes\nis true and routinely has no grant naming the entity to put beside it. This names what does.\n\nITS OWN ROUTE AND ITS OWN CEILING, which is why it is not folded into the report. This reads a\npage of an entity's files per user, where the report above is one statement for every\nuser together; asked for everybody on arrival it would turn a panel somebody opens to check\none thing into a read per user whether or not any of them needed it. The client asks it for\nthe users whose yes has nothing behind it, which is the only case it answers differently.\n\nONE USER AT A TIME, named as a parameter. The caller is an admin reading a report about\nsomebody else, exactly as with the rest of this slice: the user is the subject of the\nquestion rather than whoever is asking it.\n\nAdmin-only, and here the reason is at its plainest twice over: it is a list of what another\nuser can see, and it names the folders and collections that let them.",
         "operationId": "reach_through_files_api_sharing_reach_through_get",
         "parameters": [
           {
@@ -46106,7 +46148,7 @@
     },
     "/api/site-connections/preview": {
       "post": {
-        "description": "Read pasted cookies back to whoever pasted them. Nothing is saved.\n\nThe read-back before Save: how many cookies, which sites they are for, and when they run out.\nIt exists because the two downloader tools are no help at all when the file is wrong (one\nrefuses it, the other carries on signed out), and both then report the failure days later as a\nsign-in problem, which sends somebody to export cookies that were never the fault.\n\n**It writes nothing, and it needs no master key.** There is nothing to seal, so this works\nbefore anybody has unlocked anything, which matters, because pasting the wrong file and\nunlocking are two separate problems and meeting both at once is how a form becomes a wall.\n\nThe same reading `POST /site-connections` does, from the same function, so the numbers somebody\napproves are the numbers that get stored rather than a second parse that could differ.",
+        "description": "Read pasted cookies back to whoever pasted them. Nothing is saved.\n\nThe read-back before Save: how many cookies, which sites they are for, and when they run out.\nIt exists because the two downloader tools are no help at all when the file is wrong (one\nrefuses it, the other carries on signed out), and both then report the failure days later as a\nsign-in problem, which sends somebody to export cookies that were never the fault.\n\n**It writes nothing, and it needs no master key.** There is nothing to seal, so this works\nbefore anybody has unlocked anything, which matters, because pasting the wrong file and\nunlocking are two separate problems and meeting both together is how a form becomes a wall.\n\nThe same reading `POST /site-connections` does, from the same function, so the numbers somebody\napproves are the numbers that get stored rather than a second parse that could differ.",
         "operationId": "preview_connection_api_site_connections_preview_post",
         "requestBody": {
           "content": {
@@ -49705,7 +49747,7 @@
     },
     "/api/stash-boxes/enrich": {
       "post": {
-        "description": "Ask the stash-boxes about a batch of people, sites or tags.\n\nQueues and returns at once, for the reason the sweep does: one request per subject to somebody\nelse's service, paced, so forty of them is most of a minute and a screen that waited for it\nwould look broken.\n\nEvery id is resolved through the SCOPED read first, and one that resolves to nothing is dropped\nrather than refusing the batch. Two things follow. A subject this user may not be shown does\nnot have its name sent to three public services, which is the same rule the file scan follows,\nfor the same reason. And a list that has drifted since the screen drew it (somebody deleted a\ntag a minute ago) still enriches the rest.\n\nThe key rides on the job because the boxes are asked with it and a job runs long after the\nrequest that made it. It is the same key the request already carried; nothing new is unsealed\nand nothing is written down anywhere it was not already.",
+        "description": "Ask the stash-boxes about a batch of people, sites or tags.\n\nQueues and returns immediately, for the reason the sweep does: one request per subject to\nsomebody else's service, paced, so forty of them is most of a minute and a screen that waited\nfor it would look broken.\n\nEvery id is resolved through the SCOPED read first, and one that resolves to nothing is dropped\nrather than refusing the batch. Two things follow. A subject this user may not be shown does\nnot have its name sent to three public services, which is the same rule the file scan follows,\nfor the same reason. And a list that has drifted since the screen drew it (somebody deleted a\ntag a minute ago) still enriches the rest.\n\nThe key rides on the job because the boxes are asked with it and a job runs long after the\nrequest that made it. It is the same key the request already carried; nothing new is unsealed\nand nothing is written down anywhere it was not already.",
         "operationId": "enrich_entities_api_stash_boxes_enrich_post",
         "requestBody": {
           "content": {
@@ -50615,7 +50657,7 @@
     },
     "/api/stash-boxes/scan": {
       "post": {
-        "description": "Ask the stash-boxes what the library is, or what one folder of it is.\n\nThe body is optional and so is the folder in it, so a caller that wants the whole library\nposts nothing at all. Queues the work and returns at once; it shows up in the job list. Refused\nrather than ignored when the feature is off: a button whose job declines reads as broken.",
+        "description": "Ask the stash-boxes what the library is, or what one folder of it is.\n\nThe body is optional and so is the folder in it, so a caller that wants the whole library\nposts nothing at all. Queues the work and returns immediately; it shows up in the job list. Refused\nrather than ignored when the feature is off: a button whose job declines reads as broken.",
         "operationId": "start_scan_api_stash_boxes_scan_post",
         "requestBody": {
           "content": {

@@ -336,7 +336,7 @@ class _Statements:
 
     triggers: dict[str, str]
     drop_triggers: tuple[str, ...]
-    #: Per kind: the one entity bound as `?`, and every entity at once.
+    #: Per kind: the one entity bound as `?`, and every entity in one go.
     assign_one: dict[str, str]
     assign_all: dict[str, str]
 
@@ -626,8 +626,8 @@ async def take_back_tags_and_sites(connection: Connection) -> dict[str, int]:
     """
     for name in _RETIRED_TRIGGERS:
         await connection.execute(splice(_DROP_TRIGGER, NAME=name))
-    # The two that sit on a file's copy wrote into every kind at once, the retired two included, so
-    # they are made again from this build's kinds.
+    # The two that sit on a file's copy wrote into every kind in one go, the retired two included,
+    # so they are made again from this build's kinds.
     for statement in drop_triggers():
         await connection.execute(statement)
     await _make_triggers(connection)

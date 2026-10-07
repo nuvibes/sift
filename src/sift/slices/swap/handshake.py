@@ -47,9 +47,9 @@ STREAMS_WITHOUT_A_RISE = 4
 #: How many windows the estimate's pace is the mean of: a minute at ten seconds a window.
 PACE_WINDOWS = 6
 
-#: The wanted files the host makes ready before a stream asks for them, and how many at once.
+#: The wanted files the host makes ready before a stream asks for them, and how many at a time.
 READY_AHEAD = 8
-READYING_AT_ONCE = 2
+READYING_AT_A_TIME = 2
 
 #: Chunks one stream may have sent and not yet had acknowledged.
 WINDOW = 2

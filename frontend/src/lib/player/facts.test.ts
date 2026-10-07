@@ -1,9 +1,9 @@
 /* The sentences the facts panel is made of.
  *
  * Worth their own file because two surfaces draw them: the player and a Theater cell share one
- * panel, so a wrong answer here is wrong in two places at once. Every one of these takes the shape
- * the library hands over (half of it null on a file Sift has not finished reading), and has to
- * answer without inventing anything.
+ * panel, so a wrong answer here is wrong in two places at the same time. Every one of these takes
+ * the shape the library hands over (half of it null on a file Sift has not finished reading), and
+ * has to answer without inventing anything.
  */
 
 import { describe, expect, it } from 'vitest';

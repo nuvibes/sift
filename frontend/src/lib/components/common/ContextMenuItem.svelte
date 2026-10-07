@@ -220,7 +220,7 @@
 	</ContextMenu.CheckboxItem>
 {:else if checked !== undefined}
 	<!--
-		A CHECKBOX row. `onSelect` takes the event and refuses it, which does two things at once and
+		A CHECKBOX row. `onSelect` takes the event and refuses it, which does two things together and
 		both are wanted: the menu stays OPEN, so the tick is seen to move, and the library does not
 		flip its own copy of `checked` underneath the answer the caller holds. The same shape
 		`PickMenu` uses, for the same two reasons.

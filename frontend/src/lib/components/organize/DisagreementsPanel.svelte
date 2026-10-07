@@ -7,12 +7,12 @@
 	 * stash-box put a name on a file, the file holds exactly one face, and that face is too far
 	 * from what Sift knows the person looks like to offer the match.
 	 *
-	 * BY PERSON, because that is the shape the rows come in. A pass files a whole folder at once, so
-	 * its mistakes arrive by the hundred under one name: a thousand files about a handful of people,
-	 * nearly all from a folder name. One card per file would be a thousand presses of the same question;
-	 * this is the people down one side (`DisagreementsByPerson`) and the chosen person's faces as a
-	 * wall beside them, closest to her first, with a Yes and a No on every face and over the page or
-	 * all of hers.
+	 * BY PERSON, because that is the shape the rows come in. A pass files a whole folder in one go,
+	 * so its mistakes arrive by the hundred under one name: a thousand files about a handful of
+	 * people, nearly all from a folder name. One card per file would be a thousand presses of the
+	 * same question; this is the people down one side (`DisagreementsByPerson`) and the chosen
+	 * person's faces as a wall beside them, closest to her first, with a Yes and a No on every face
+	 * and over the page or all of hers.
 	 *
 	 * Closest first so the faces that may be her after all (turned away, in poor light) are the first
 	 * page somebody sees and answers Yes to, and what is left behind them is what a No over all of

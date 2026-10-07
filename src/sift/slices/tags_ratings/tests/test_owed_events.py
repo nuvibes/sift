@@ -191,7 +191,7 @@ async def test_rating_a_tag_says_what_the_stars_were(
 async def test_a_parent_made_by_another_save_in_the_same_instant_is_the_one_filed_under(
     service: TagService, temp_db: Database, actors: Actors, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Two saves name one new parent at once: the second to write finds the name taken and files
+    """Two saves name one new parent together: the second to write finds the name taken and files
     its tag under the tag the first made, rather than failing or making a second one."""
     child = await _a_tag(temp_db)
     theirs = new_id()

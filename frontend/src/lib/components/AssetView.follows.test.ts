@@ -180,7 +180,7 @@ describe('a bell while the file is open', () => {
 		libraryChanges.changed();
 		flushSync();
 
-		expect(bandReads(), 'a tag or a person applied elsewhere shows under the file at once').toBe(
+		expect(bandReads(), 'a tag or person applied elsewhere is under the file immediately').toBe(
 			before + 1
 		);
 	});

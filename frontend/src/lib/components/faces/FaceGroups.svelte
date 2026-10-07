@@ -407,7 +407,7 @@
 		return { id: made.id, name: made.name };
 	}
 
-	/* Picking several piles at once, by the same gesture every other wall of tiles uses.
+	/* Picking several piles together, by the same gesture every other wall of tiles uses.
 	 *
 	 * Without it, holding a card would open it, so the gesture people have learned everywhere else
 	 * in the app (and in every photo app on a phone) would do the one thing it does not do

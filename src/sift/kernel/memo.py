@@ -15,7 +15,7 @@ from time import monotonic
 from sift.kernel.jobs.work_ahead import COUNTING_SHARE, FRESH_FOR_SECONDS
 
 #: How many answers to keep. A filter panel asks about a dozen dimensions per screen, and the
-#: number of distinct screens anybody has open at once is small; this is generous.
+#: number of distinct screens anybody has open together is small; this is generous.
 DEFAULT_KEPT = 256
 
 

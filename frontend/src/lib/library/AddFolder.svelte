@@ -17,8 +17,8 @@
 	 * added in one go. A browser cannot open that dialog (which is the whole security property of
 	 * it), so there the picker walks what the server may show, and the add is a second press.
 	 *
-	 * `scan` says whether the folder is read at once. Settings reads it (somebody adding a folder
-	 * to a working library expects it to fill); the empty Browse wall does not, because what
+	 * `scan` says whether the folder is read immediately. Settings reads it (somebody adding a
+	 * folder to a working library expects it to fill); the empty Browse wall does not, because what
 	 * follows there is the Scan Now offer with its warning about the hours a first read takes:
 	 * the same order first run keeps, see `NewRoot.scan` on the server.
 	 */

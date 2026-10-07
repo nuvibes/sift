@@ -22,7 +22,7 @@ function aBoard(count: number): Board {
 	return { queues: [{ name: 'folders', count } as Board['queues'][number]] };
 }
 
-/** An answer this test decides when to give, so two calls can be in flight at once. */
+/** An answer this test decides when to give, so two calls can be in flight at the same time. */
 function held(value: Board) {
 	let settle: (answer: Board) => void = () => {};
 	const promise = new Promise<Board>((resolve) => (settle = resolve));

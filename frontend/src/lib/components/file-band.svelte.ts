@@ -144,7 +144,7 @@ export class FileBand {
 		clearTimeout(this.#waiting);
 	}
 
-	/** Read the lists for this file all at once, each drawn as it lands. */
+	/** Read the lists for this file all together, each drawn as it lands. */
 	async load(wanted: string): Promise<void> {
 		/* A re-read that found nothing new writes nothing, so no chip is drawn twice. */
 		const here = () => wanted === this.current();

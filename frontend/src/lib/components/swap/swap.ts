@@ -225,10 +225,10 @@ function leftWords(seconds: number | null): string {
 }
 
 /*
- * One estimate for a swap that sends and receives: the two directions move at once, each at its
- * own pace up its own side's upload, so the whole takes as long as the slower of them. A direction
- * moving with no pace yet is not enough to say; one not moving yet is waiting for an answer, and
- * the estimate is of what is moving.
+ * One estimate for a swap that sends and receives: the two directions move at the same time, each
+ * at its own pace up its own side's upload, so the whole takes as long as the slower of them. A
+ * direction moving with no pace yet is not enough to say; one not moving yet is waiting for an
+ * answer, and the estimate is of what is moving.
  */
 export function timeLeftBothWays(session: Pick<SwapSession, 'sending' | 'receiving'>): string {
 	const moving = [session.sending, session.receiving].filter((one): one is SwapDirection =>
@@ -299,7 +299,7 @@ export function isLive(session: SwapSession | null): boolean {
 /*
  * What a session a tunnel cut off says: not ended, and how long it can be joined again. The host
  * waits for them to join again with the same token; the guest keeps dialling, and a Join with the
- * same token dials at once.
+ * same token dials immediately.
  */
 export function cutOffWords(
 	session: Pick<SwapSession, 'role' | 'rejoin_until'>,

@@ -69,7 +69,7 @@ def _record(payload: str) -> tuple[str, str, list[str]]:
 
     ONE parse for both callers rather than one each, and one place that knows what an unreadable
     record answers. A filing made under a site with nobody named carries no username, so BOTH are
-    read and either may be empty: what may not be empty is both at once.
+    read and either may be empty: what may not be empty is both together.
     """
     try:
         found = json.loads(payload)

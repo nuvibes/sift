@@ -309,7 +309,7 @@ it('draws a heading and a sentence that say what the whole block decides', async
 	);
 });
 
-it('answers every rule at once from the one control, in a single request', async () => {
+it('answers every rule in one go from the one control, in a single request', async () => {
 	const rules = ['enrich.person.name', 'enrich.person.aliases', 'enrich.asset.tags'];
 	mocks.fetchSettings.mockResolvedValue(
 		connections(

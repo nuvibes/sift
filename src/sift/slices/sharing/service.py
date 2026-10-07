@@ -16,6 +16,7 @@ an inert row is worse than no row, because the screen lists it as being in force
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 
 from sift.kernel.access import (
@@ -26,7 +27,9 @@ from sift.kernel.access import (
     Recording,
     Repository,
     Viewer,
+    visibility_settled,
 )
+from sift.kernel.changes import About, announce
 from sift.kernel.db import Database, in_clause
 from sift.kernel.ledger import NAME_NOW
 from sift.kernel.log import get_logger, security_event
@@ -117,6 +120,9 @@ _SHARED_KINDS: dict[ObjectType, str] = {
 # ULID cannot. The two lists name the same users and must not disagree about their order.
 _USERNAMES = "SELECT id, username, role FROM users ORDER BY id"
 
+#: Whether a share left counts owed (`visibility_settled`), so its fold is worth starting.
+_ANY_OWED = "SELECT 1 AS owed FROM visibility_owed WHERE owed = 1 LIMIT 1"
+
 
 @dataclass(frozen=True, slots=True)
 class GrantView:
@@ -147,6 +153,8 @@ class SharingService:
     def __init__(self, database: Database, access: Repository) -> None:
         self._db = database
         self._access = access
+        self._folding: asyncio.Task[None] | None = None
+        self._fold_asked = False
 
     async def users(self) -> list[ShareableUser]:
         """Everybody a grant could be made to, in the order the user list shows them.
@@ -205,7 +213,7 @@ class SharingService:
         be, so pressing it twice is one decision made twice.
 
         **The two effects are mutually exclusive on one object for one user, and the new one
-        replaces the old.** Both at once resolves to Restricted (a restrict beats every share),
+        replaces the old.** Both together resolve to Restricted (a restrict beats every share),
         so a share stored underneath one is a row that does nothing, for as long as it sits there,
         and then quietly takes effect the day the restrict is lifted. That is a decision nobody
         made showing up much later. Saying "share this with them" now means exactly that, whatever
@@ -231,6 +239,7 @@ class SharingService:
             subject_user_id=subject_user_id,
             effect=effect.value,
         )
+        await self._fold_soon()
         return await self.grants_on(object_type, object_id)
 
     async def revoke(
@@ -260,7 +269,37 @@ class SharingService:
             subject_user_id=subject_user_id,
             effect=effect.value,
         )
+        await self._fold_soon()
         return await self.grants_on(object_type, object_id)
+
+    async def _fold_soon(self) -> None:
+        """Fold a large share's counts after its press has answered: its files are visible once
+        the grant commits, and its counts follow a page at a time, each told to the users it moved.
+        Asked again while one runs, that one goes round again; a stop leaves them to the boot."""
+        if await self._db.fetch_one(_ANY_OWED) is None:
+            return
+        self._fold_asked = True
+        if self._folding is None or self._folding.done():
+            self._folding = asyncio.get_running_loop().create_task(self._fold())
+
+    async def _fold(self) -> None:
+        try:
+            while self._fold_asked:
+                self._fold_asked = False
+                while await self._fold_page():
+                    pass
+        except Exception:
+            log.exception("sharing.fold_failed")
+
+    async def _fold_page(self) -> bool:
+        async with self._db.write() as connection:
+            moved = await visibility_settled.fold_owed(
+                connection, visibility_settled.OWED_FOLD_PAGE
+            )
+            if moved:
+                announce(moved, About.LIBRARY)
+                log.info("sharing.counts_folded", users=len(moved.users))
+        return bool(moved)
 
     async def _recording(
         self,

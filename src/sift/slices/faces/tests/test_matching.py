@@ -310,7 +310,7 @@ def compare_everything_with_everything(
 
 
 def scattered_faces(seed: int, count: int) -> list[Vector]:
-    """Descriptions pointing in every direction, so the grouping meets every case at once.
+    """Descriptions pointing in every direction, so the grouping meets every case together.
 
     Deliberately not built from `person_vector`: those are tidy, well separated, and group the same
     way under almost any implementation. Random directions in a small number of dimensions sit

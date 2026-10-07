@@ -2,8 +2,8 @@
 	/*
 	 * Folders read for the people in them.
 	 *
-	 * Answering one names the faces and files every video and picture in the folder at once, which
-	 * is the reason a folder is worth reading at all.
+	 * Answering one names the faces and files every video and picture in the folder in one go,
+	 * which is the reason a folder is worth reading at all.
 	 */
 	import FolderSuggestions from '$lib/components/suggestions/FolderSuggestions.svelte';
 	import type { OnPaging } from '$lib/components/common/Pager.svelte';

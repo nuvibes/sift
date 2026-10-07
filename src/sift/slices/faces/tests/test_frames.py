@@ -101,7 +101,7 @@ def test_the_beginning_is_asked_for_without_a_seek(settings: Settings) -> None:
     assert "-ss" not in argv
 
 
-def test_a_gif_is_asked_for_all_at_once(settings: Settings) -> None:
+def test_a_gif_is_asked_for_all_in_one_go(settings: Settings) -> None:
     argv = all_frames_args(Path("loop.gif"), width=320, height=240, settings=settings)
 
     assert "-ss" not in argv
@@ -336,7 +336,7 @@ async def test_a_file_the_decoder_cannot_open_at_all_is_reported(
 
 
 async def test_a_reference_image_is_decoded_larger_than_a_video_frame(settings: Settings) -> None:
-    """Looked at once, and its landmarks are what everything about that person is aligned by."""
+    """Looked at only once, and its landmarks are what everything about that person is aligned by."""
     picture = await frames_module.decode_image(CORPUS / "accepted.jpg", settings)
 
     assert picture is not None
@@ -424,7 +424,7 @@ def test_however_dense_it_is_asked_to_be_there_is_a_ceiling() -> None:
     assert len(face_frames(7_200_000, density=8.0)) <= MAX_FACE_FRAMES
 
 
-def test_a_file_with_no_timeline_is_looked_at_once() -> None:
+def test_a_file_with_no_timeline_is_looked_one_time() -> None:
     assert face_frames(0) == (0,)
 
 

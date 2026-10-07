@@ -190,10 +190,10 @@
 	}
 
 	/*
-	 * Picking several folders at once.
+	 * Picking several folders together.
 	 *
 	 * Sharing or hiding a run of folders is the commonest thing anybody wants to do to several
-	 * things at once here, so the tree selects like every other surface. The gestures and the bar
+	 * things together here, so the tree selects like every other surface. The gestures and the bar
 	 * are the shared ones (see `Selection` and `EntitySelectionBar`), so a folder behaves like a
 	 * person, a tag or a file.
 	 */

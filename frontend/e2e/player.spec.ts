@@ -1217,7 +1217,7 @@ test('resting the pointer inside the drawer keeps it, and the bar, on screen', a
 	await expect(page.locator('.player-bar')).toHaveCSS('opacity', '1');
 });
 
-test('moving off the drawer without reaching it closes it at once', async ({ page }) => {
+test('moving off the drawer without reaching it closes it immediately', async ({ page }) => {
 	// Open on hover, gone on leave: the same as the volume. The grace belongs to the bar, not to
 	// this: a drawer that lingers after the pointer has moved on is a menu somebody has to dismiss.
 	await serveDirect(page);
@@ -1320,7 +1320,7 @@ test('a bare arrow on a video seeks rather than stepping', async ({ page }) => {
 	await expect(page).toHaveURL(/\/asset\/p1/);
 	/* Waited for deliberately, and it is a real thing rather than test hygiene: the viewer only
 	 * leaves a bare arrow alone once it knows the file is a video, so an arrow pressed in the moment
-	 * before the details arrive steps rather than seeking. Under four browsers at once that moment
+	 * before the details arrive steps rather than seeking. Under four browsers at the same time that moment
 	 * is long enough to land in. */
 	await expect(page.locator('video')).toBeVisible();
 

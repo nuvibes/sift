@@ -127,7 +127,7 @@ def triggers(halves: _Recompute, own: Counted | None) -> Panel:
         *halves.split(v._EVERY_USER_ONE_FILE.format(asset="NEW.id")),
         v._changed(columns),
     )
-    # A count row that reaches nought goes at once by its own key; the sweeps read every row.
+    # A count row that reaches nought goes immediately by its own key; the sweeps read every row.
     emptied = []
     for table, key in _EMPTIED_KEYS.items():
         name = "vis_" + table + "_emptied"

@@ -3,7 +3,7 @@
 
 Three kinds of statement. The writes (`_INSERT_GRANT`, `_DELETE_GRANT`) are the only way a
 permission changes. The marks say, for one object, what every user currently makes of it: the
-same ladder as the file query, run for everybody at once instead of for one person. The sources
+same ladder as the file query, run for everybody together instead of for one person. The sources
 answer "why can this be seen", which is what the sharing panel shows.
 
 `_USER_BY_ID` is here because the viewer is the subject every grant is resolved against: this is
@@ -104,7 +104,7 @@ _ANY_GRANT_AT_ALL = point_read("access.any_grant", "SELECT 1 FROM acl_grants LIM
 #: reach this, is anybody kept from it), and reports separately whether the decision was made on
 #: the file itself, because that is the one you can undo where you are standing.
 #:
-#: It is the resolver, run for every user at once instead of for one.
+#: It is the resolver, run for every user together instead of for one.
 #:
 #: That is the whole of the difference and it is worth stating plainly: `grant_effect` groups by
 #: SUBJECT as well as object rather than filtering to one viewer, every scope carries the subject
@@ -411,8 +411,8 @@ SELECT t.object_type AS source_type, t.object_id AS source_id, t.name AS source_
 #: The generic arm therefore excludes sites rather than standing beside a site arm that
 #: would repeat the label's own row. One statement, and the type is compared rather than
 #: interpolated: there is no ORM here, so a query built by formatting is the injection control
-#: gone. Two of the three arms can never match at once, so the UNION costs a lookup that finds
-#: nothing.
+#: gone. Two of the three arms can never match at the same time, so the UNION costs a lookup that
+#: finds nothing.
 _GRANT_SOURCES_FOR_OBJECT = splice(
     """
 SELECT g.subject_user_id, u.username, g.effect,
@@ -585,7 +585,7 @@ SELECT 'root', r.id, r.name, 0
 #:
 #: One statement rather than three, and the type is compared rather than interpolated: there is no
 #: ORM here, so a query built by formatting is the injection control gone. Two of the three rows can
-#: never match at once, so the UNION costs an index lookup that finds nothing.
+#: never match at the same time, so the UNION costs an index lookup that finds nothing.
 _VAULT_SOURCES_FOR_OBJECT = splice(
     """
 SELECT 'person' AS source_type, p.id AS source_id, p.name AS source_name, 1 AS here

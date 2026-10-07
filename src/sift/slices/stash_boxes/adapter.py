@@ -955,7 +955,7 @@ def _evidence(raw: Mapping[str, Any], sent: Mapping[str, str]) -> tuple[bool, in
     """Why a scene came back: whether it carries one of the exact hashes sent, and how many bits
     its nearest perceptual hash is from the one sent (None where it carries none to compare).
 
-    Read off the scene's own fingerprints, because the question carried every hash at once and the
+    Read off the scene's own fingerprints, because the question carried every hash together and the
     answer does not say which of them matched.
     """
     exact = False
@@ -1200,7 +1200,7 @@ def creator_store(studio: Mapping[str, Any], credited: list[str]) -> CreatorAcco
     """The username a creator's own studio stands for, read off ONE scene; None for a Site.
 
     Her store page among the studio's links, and her credited on this scene by the studio's name
-    or an alias: both signs at once (`creator_studios.read_studio` over one scene). The Site is the
+    or an alias: both signs together (`creator_studios.read_studio` over one scene). The Site is the
     store's, named the way Sift names its host, and the handle is the name her page there carries.
     """
     name = str(studio.get("name") or "").strip()

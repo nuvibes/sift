@@ -84,9 +84,9 @@ STARTING_ENCODER_PIXELS_PER_SECOND: dict[str, float] = {
 #: little, and a genuinely slow machine moves it all the way within a dozen.
 OBSERVATION_WEIGHT = 0.2
 
-#: Segments at once on a hardware encoder, whose throughput stays flat with parallel jobs (a CPU's
-#: falls, so its limit is one). Three, not four: the card has Sift's other picture work, and a
-#: quality switch needs two.
+#: Segments at the same time on a hardware encoder, whose throughput stays flat with parallel jobs
+#: (a CPU's falls, so its limit is one). Three, not four: the card has Sift's other picture work,
+#: and a quality switch needs two.
 HARDWARE_SEGMENT_JOBS = 3
 
 #: The shortest encode time the estimate learns from: below it the time is start-up and rounding,

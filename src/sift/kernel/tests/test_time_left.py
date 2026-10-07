@@ -107,7 +107,7 @@ def test_a_shown_range_counts_down_and_moves_only_when_the_figure_stayed_off() -
     assert steady.show("scan", 100.0, 200.0, 400.0) == (200.0, 400.0)
 
 
-def test_a_shown_range_that_ran_out_moves_at_once_and_a_forgotten_one_starts_again() -> None:
+def test_a_shown_range_that_ran_out_moves_immediately_and_a_forgotten_one_starts_again() -> None:
     steady = Steady()
     steady.show("scan", 0.0, 10.0, 20.0)
     assert steady.show("scan", 30.0, 50.0, 90.0) == (50.0, 90.0)

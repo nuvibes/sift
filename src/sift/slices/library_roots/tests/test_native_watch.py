@@ -279,7 +279,7 @@ def test_a_read_that_failed_for_another_reason_says_so_and_ends_the_watch(
 ) -> None:
     """Anything but the abort is worth a line: it is the watch going deaf, and nothing else in the
     application would ever say so. And it ENDS the watch, and says so to the watcher: re-issuing
-    the read on the same handle answers the same no at once, which is a loop that spins a core."""
+    the read on the same handle answers the same no immediately, which is a loop that spins a core."""
     ended: list[bool] = []
     emitter = _an_emitter(tmp_path, on_ended=lambda: ended.append(True))
     emitter._whandle = _A_HANDLE
@@ -325,7 +325,7 @@ def test_a_share_s_overflow_asks_for_the_catch_up_and_keeps_watching(
 def test_a_buffer_the_system_overflowed_asks_for_the_catch_up(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """ "Nothing happened" and "everything happened at once" are the same zero.
+    """ "Nothing happened" and "everything happened at the same time" are the same zero.
 
     Read as quiet, an overflow is changes lost for good. Reported, it is the same question the
     catch-up pass already answers, so it asks for that rather than for anything new.
@@ -360,7 +360,7 @@ def test_a_directory_that_goes_while_it_is_watched_ends_the_read_rather_than_spi
 ) -> None:
     """Not fatal and not this class's to decide about: the emitter STOPS its own loop and tells the
     watcher, once, which attaches again when the folder answers and catches up what it missed.
-    Asked again on the same handle, the read answers the same no at once: a spin."""
+    Asked again on the same handle, the read answers the same no immediately: a spin."""
     ended: list[bool] = []
     emitter = _an_emitter(tmp_path, on_ended=lambda: ended.append(True))
     emitter._whandle = _A_HANDLE

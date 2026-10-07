@@ -201,5 +201,5 @@
 	});
 </script>
 
-<!-- The drawing every whole-window offer shares; a guest is told at once that adding is not theirs. -->
+<!-- The drawing every whole-window offer shares; a guest is told immediately that adding is not theirs. -->
 <DropOffer shown={active} words={session.isAdmin ? 'Drop to add' : ADMINS_ONLY} />

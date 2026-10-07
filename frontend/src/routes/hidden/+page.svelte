@@ -28,7 +28,7 @@
 	import { vault, vaultPrompt } from '$lib/shell/vault.svelte';
 
 	/*
-	 * Arriving here with no PIN asks for one at once.
+	 * Arriving here with no PIN asks for one immediately.
 	 *
 	 * Nothing can be hidden, or shown again, without a PIN, so the first press on Hidden is where
 	 * one is made. Asked once per arrival: put off, the screen says why it is empty and the button on

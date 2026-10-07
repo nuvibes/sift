@@ -146,8 +146,8 @@ describe('a screen that carries its own constraint', () => {
 	});
 
 	it('still lets the screen win a field a file has only one of', async () => {
-		// A rating is one value per file, so two at once is nothing at all. Those keep the rule they
-		// have always had.
+		// A rating is one value per file, so two at the same time is nothing at all. Those keep the
+		// rule they have always had.
 		at.url = new URL('http://localhost/favorites?fav=no');
 
 		const sent = await grid({ fav: 'yes' });

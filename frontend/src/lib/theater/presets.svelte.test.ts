@@ -162,7 +162,7 @@ it('opens the save dialog for a new wall, or over the one being updated', () => 
 	presets.asking = null;
 });
 
-it('takes a wall out at once and tells the server after', async () => {
+it('takes a wall out immediately and tells the server after', async () => {
 	mocks.get.mockResolvedValue({ items: [KEPT, OTHER] });
 	await presets.ensure();
 

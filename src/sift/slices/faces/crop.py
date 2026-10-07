@@ -9,7 +9,7 @@ can detect.
 
 So a face is not cropped, it is **aligned**: the transform that carries its five landmarks onto
 the standard ones is worked out and the picture is resampled through it. Rotation, scale and
-position all come out right at once, which a rectangular crop cannot do at all.
+position all come out right together, which a rectangular crop cannot do at all.
 
 The squares are written out through the same separate encoder every other picture in Sift goes
 through, one call for a whole file's worth rather than one per face: starting the process costs

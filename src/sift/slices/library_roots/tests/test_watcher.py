@@ -118,7 +118,7 @@ async def test_the_folder_is_named_by_id_and_never_by_path(
             assert ".." not in PurePosixPath(str(named)).parts
 
 
-async def test_many_files_at_once_are_one_scan(
+async def test_many_files_together_are_one_scan(
     watcher: LibraryWatcher, root: Root, root_path: Path, job_queue: JobQueue
 ) -> None:
     """Copying many files in queues one scan: the folder is not quiet until the copying stops."""
@@ -609,10 +609,10 @@ async def test_a_file_that_arrives_is_not_held_back_by_a_walk_s_cooldown(
         await watcher.stop()
 
 
-async def test_waiting_on_a_watcher_that_was_never_started_returns_at_once(
+async def test_waiting_on_a_watcher_that_was_never_started_returns_immediately(
     watcher: LibraryWatcher,
 ) -> None:
-    """`watching()` before `start` returns at once: nothing is attaching."""
+    """`watching()` before `start` returns immediately: nothing is attaching."""
     await asyncio.wait_for(watcher.watching(), timeout=1)
 
 
@@ -941,7 +941,7 @@ async def test_more_arrivals_than_the_cap_give_the_folder_back(
     payloads = await scans_of(job_queue)
     assert payloads, "the copy must have produced a scan"
     assert all("paths" not in payload for payload in payloads), (
-        f"more than {jobs.MOST_NAMED_PATHS} at once is a walk, not a payload of paths"
+        f"more than {jobs.MOST_NAMED_PATHS} together is a walk, not a payload of paths"
     )
 
 

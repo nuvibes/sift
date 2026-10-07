@@ -2,7 +2,7 @@
 """The gate that refuses a style rule matching nothing, tested on a planted one and on the tree.
 
 A control whose rules stopped matching comes out in the browser's own chrome while the markup and
-the stylesheet each still read correctly; a renamed ancestor class can silence many rules at once.
+the stylesheet each still read correctly; a renamed ancestor class can silence many rules together.
 This runs before anything is drawn, where page checks see only the screens somebody opened.
 """
 

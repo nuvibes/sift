@@ -169,7 +169,7 @@ it('does not correct a file that has already been left', async () => {
 });
 
 it('gives every screen its own record', async () => {
-	/* Two of these views can be up at once (the corner panel and a full-size view behind it), and
+	/* Two of these views can be up together (the corner panel and a full-size view behind it), and
 	   a shared record would have the second one end the first one's sitting on the way in. */
 	const corner = newSitting();
 	const full = newSitting();

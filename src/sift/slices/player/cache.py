@@ -228,7 +228,7 @@ class SegmentCache:
         return len(held)
 
     def resize(self, max_bytes: int) -> bool:
-        """Move the cap, evicting down to it at once. True when the cap actually moved.
+        """Move the cap, evicting down to it immediately. True when the cap actually moved.
 
         EVICTING HERE RATHER THAN WAITING is the whole of it. Left to the next admission, a cap
         lowered from forty gigabytes to four would take effect only when something new was played,

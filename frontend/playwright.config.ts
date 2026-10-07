@@ -18,7 +18,7 @@ export default defineConfig({
 	reporter: process.env.CI ? 'github' : 'list',
 
 	/*
-	 * How many browsers at once, from the environment when it says.
+	 * How many browsers at the same time, from the environment when it says.
 	 *
 	 * Unset, Playwright takes half the cores. That is a reasonable default for the only thing
 	 * running and the wrong one here: several checkouts of this project can run at the same time,

@@ -165,7 +165,7 @@
 		pointer-events: none;
 		opacity: 0;
 		visibility: hidden;
-		/* Hidden once the fade has ended, shown at once on the way in. */
+		/* Hidden once the fade has ended, shown immediately on the way in. */
 		transition:
 			opacity var(--dur-base) var(--ease),
 			visibility var(--dur-base) linear;

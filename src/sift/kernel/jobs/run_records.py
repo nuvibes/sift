@@ -41,7 +41,7 @@ SELECT * FROM work_runs
  LIMIT 1
 """
 
-#: The same for several asks at once, each `[products, family]`, in one statement.
+#: The same for several asks together, each `[products, family]`, in one statement.
 LAST_RUNS_FOR_PRODUCTS = """
 SELECT asked.key AS asked, r.* FROM json_each(?) AS asked
   JOIN work_runs r ON r.id = (

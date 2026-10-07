@@ -97,7 +97,7 @@ async def _arrives(database: Database, root: LibraryRoot, media_type: str) -> st
 
 
 async def _read_and_made(database: Database, asset_id: str, media_type: str) -> None:
-    """The read, and every product made for it at once: the most done a row can be."""
+    """The read, and every product made for it in one go: the most done a row can be."""
     await database.execute(
         "UPDATE assets SET probed_at = ?, duration_ms = ?, acodec = ?, phash = 'p',"
         " videohash = 'v', oshash = 'o', video_phash = 'vp', fingerprint_version = 99 WHERE id = ?",

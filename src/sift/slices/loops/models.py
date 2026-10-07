@@ -120,8 +120,8 @@ MAX_BULK_LOOPS = 500
 class ForgetLoops(Wire):
     """Which marks to forget, as one request.
 
-    A selection, so a wall of loops can forget many at once: the shared Delete verb is hidden there
-    on purpose (it removes the FILE), and `DELETE /loops/{id}` is per row.
+    A selection, so a wall of loops can forget many in one go: the shared Delete verb is hidden
+    there on purpose (it removes the FILE), and `DELETE /loops/{id}` is per row.
     """
 
     loop_ids: list[str] = Field(min_length=1, max_length=MAX_BULK_LOOPS)

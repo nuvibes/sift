@@ -559,7 +559,7 @@ _ECHO = (
 
 @pytest.mark.integration
 async def test_a_tool_fed_its_input_finishes_while_the_shared_pool_has_one_thread_to_give() -> None:
-    """Fed, read and drained at once. Those three waits run on threads of the tool's own, so a
+    """Fed, read and drained together. Those three waits run on threads of the tool's own, so a
     shared pool with a single thread free does not leave the tool stopped on a full pipe until its
     time limit ends it."""
     asyncio.get_running_loop().set_default_executor(ThreadPoolExecutor(max_workers=1))
@@ -788,7 +788,7 @@ async def test_a_line_rewritten_in_place_is_still_seen_as_lines() -> None:
 
     A tool showing a progress bar rewrites one line with a carriage return and emits no newline at
     all until it is finished. A reader splitting only on newlines therefore waits for the whole
-    download and then receives every update at once, as a single enormous line, which is
+    download and then receives every update in one go, as a single enormous line, which is
     indistinguishable from progress reporting being broken.
     """
     seen: list[str] = []
@@ -904,7 +904,7 @@ _HEARTBEAT = (
     "    time.sleep(0.1)\n"
 )
 
-#: A launcher: starts the heartbeat as a child, then either hangs or leaves at once.
+#: A launcher: starts the heartbeat as a child, then either hangs or leaves immediately.
 _LAUNCHER = (
     "import subprocess, sys, time\n"
     "subprocess.Popen([sys.executable, '-c', sys.argv[1], sys.argv[2]],"

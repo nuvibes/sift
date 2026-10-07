@@ -103,7 +103,7 @@ describe('a row that is never coming', () => {
 });
 
 describe('a row the pane pushes down as it goes on loading', () => {
-	/* On Performance the "Is Sift keeping up?" row is drawn at once and the blocks above it
+	/* On Performance the "Is Sift keeping up?" row is drawn immediately and the blocks above it
 	   arrive afterwards, so the row would be scrolled to, rung, and then pushed two screens
 	   down: a ring nobody could see. A row whose place moves while the pane is loading is put
 	   back in view and rung again. */

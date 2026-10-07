@@ -450,9 +450,9 @@ class MiniPlayer {
 	 * Whether the full-size view still has to be left behind.
 	 *
 	 * Set when the panel was opened FROM the full-size view, and it is what tells the two cases
-	 * apart. The same file open in both places at once is two soundtracks a fraction of a second
-	 * apart, and which of them should go depends entirely on which arrived second: opening the panel
-	 * closes the view, and opening the view closes the panel.
+	 * apart. The same file open in both places at the same time is two soundtracks a fraction of a
+	 * second apart, and which of them should go depends entirely on which arrived second: opening
+	 * the panel closes the view, and opening the view closes the panel.
 	 *
 	 * The shell does the leaving, because leaving is navigation and the player has no business
 	 * knowing what it is being drawn inside.

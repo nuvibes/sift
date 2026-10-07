@@ -20,6 +20,7 @@ import {
 	rowFor,
 	ruleText,
 	sameChip,
+	quoted,
 	savedQuery,
 	SearchBox,
 	singleFor,
@@ -510,6 +511,20 @@ describe('saved searches', () => {
 
 	it('is nothing for a search that filters on nothing', () => {
 		expect(savedQuery('')).toBe('');
+	});
+
+	it('puts a refusal on the token and quotes each value of a list on its own', () => {
+		// Inside the quotes the minus would be part of a folder's name, which no folder has.
+		expect(savedQuery('in=-Raw+Cuts')).toBe('-in:"Raw Cuts"');
+		expect(savedQuery('people=Jane+Doe|Kim')).toBe('people:"Jane Doe"|Kim');
+		expect(savedQuery('tags=a,b')).toBe('tags:a,b');
+		expect(savedQuery('in="-Raw"')).toBe('in:"-Raw"');
+	});
+
+	it('quotes a value that begins with a minus or holds a pipe', () => {
+		expect(quoted('-Raw')).toBe('"-Raw"');
+		expect(quoted('a|b')).toBe('"a|b"');
+		expect(quoted('a-b')).toBe('a-b');
 	});
 
 	it("reads the Same music strip's filter, which names a file by its ID", () => {

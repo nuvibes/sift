@@ -334,7 +334,7 @@ async def test_a_build_over_several_pages_counts_every_file(
     library_root: LibraryRoot,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(backlog, "_BUILD_AT_ONCE", 2)
+    monkeypatch.setattr(backlog, "_BUILD_PER_WRITE", 2)
     for _ in range(5):
         await _file(temp_db, library_root)
     await _agree(content_store, walker, library_root)

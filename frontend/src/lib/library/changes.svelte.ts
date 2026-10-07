@@ -230,7 +230,7 @@ function scrollerOf(element: HTMLElement | null): HTMLElement | null {
 }
 
 /**
- * A list's newcomers, let in at once while its top is on screen (the rows below slide, see
+ * A list's newcomers, let in immediately while its top is on screen (the rows below slide, see
  * `slideFrom`), and otherwise held back with a quiet "N new" line until the reader scrolls up or
  * presses it, so nothing under somebody reading further down moves. Draw `shown`; hand it every
  * answer, saying whether a bell asked for it.

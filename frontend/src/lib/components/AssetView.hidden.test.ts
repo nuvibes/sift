@@ -606,8 +606,8 @@ describe('the rows under the player', () => {
 /*
  * The band, after something has been put on the file from this very screen. Adding a tag under "Add
  * to" goes out through the shared verb, which rings the library bell when the write lands; the band
- * re-reads on that bell, as every other list does, so the chip appears at once (removal moves the
- * local list directly from the chip).
+ * re-reads on that bell, as every other list does, so the chip appears immediately (removal moves
+ * the local list directly from the chip).
  */
 describe('the band after a pick', () => {
 	/** Ring the bell the way a verb does when its write has landed, and let the re-read finish. */

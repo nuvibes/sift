@@ -259,7 +259,7 @@ def test_the_reader_finds_copy_by_every_rule() -> None:
     source = '''
 """A module docstring about the job queue."""
 register_handler("thumb", make, name="Making what one file lacks")
-register_setting(key="a", label="Graphics card", disclosure=f"Uses {n} jobs at once.")
+register_setting(key="a", label="Graphics card", disclosure=f"Uses {n} jobs at the same time.")
 class Tidy:
     title = "Files Sift would not take"
 KEPT_LOCAL = "Kept local, nothing was sent outside this machine"
@@ -272,7 +272,7 @@ other(name="thumbnail")
     found = {(one.via, one.text) for one in server_copy.copy_in(source, "src/sift/x.py")}
     assert ("name", "Making what one file lacks") in found
     assert ("label", "Graphics card") in found
-    assert ("disclosure", "Uses   jobs at once.") in found
+    assert ("disclosure", "Uses   jobs at the same time.") in found
     assert ("assign:title", "Files Sift would not take") in found
     assert ("assign:KEPT_LOCAL", "Kept local, nothing was sent outside this machine") in found
     assert ("refusal:OrganizeRefused", "That job is already running.") in found
@@ -332,8 +332,8 @@ def test_each_check_counts_a_known_positive() -> None:
     assert vocabulary.offences("spelling", "Accent colour")
     assert vocabulary.offences("typography", "still going through the library...")
     assert vocabulary.offences("typography", "still going through the library\u2026") == []
-    assert vocabulary.offences("typography", "Tasks at once 12 -> 16")
-    assert vocabulary.offences("typography", "Tasks at once 12 \u2192 16") == []
+    assert vocabulary.offences("typography", "Tasks at the same time 12 -> 16")
+    assert vocabulary.offences("typography", "Tasks at the same time 12 \u2192 16") == []
     # And the agreed words pass.
     for check in (*vocabulary.CHECKS, *vocabulary.HELD_AT_ZERO):
         assert vocabulary.offences(check, "Share of this device to use. Accent color.") == [], check

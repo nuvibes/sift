@@ -153,7 +153,7 @@ export class Zoomable {
 	/**
 	 * Put the picture back exactly as it was before the last press, without animating: for a press
 	 * that proves to be the first half of a double-press (fill or leave the screen). The press acts
-	 * at once rather than wait out the double-click window, and is taken back if a second arrives;
+	 * immediately rather than wait out the double-click window, and is taken back if a second arrives;
 	 * easing back would draw the accident twice. Answers whether there was anything to take back.
 	 */
 	undoStep(): boolean {

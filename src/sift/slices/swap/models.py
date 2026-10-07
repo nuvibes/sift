@@ -67,7 +67,7 @@ FileKind = Literal["video", "image", "gif"]
 MAX_CHOSEN = 500
 
 #: The most files one offer may list. It bounds the guest's memory against a peer's lie rather
-#: than any real library: a hundred thousand files is a whole large library offered at once.
+#: than any real library: a hundred thousand files is a whole large library offered in one go.
 MAX_OFFER_FILES = 200_000
 
 #: The most people one offer may name.
@@ -123,7 +123,7 @@ def chosen_list(raw: object) -> tuple[Chosen, ...]:
     if not isinstance(raw, list):
         raise ValueError("Choose what to offer.")
     if len(raw) > MAX_CHOSEN:
-        raise ValueError(f"A swap can offer at most {MAX_CHOSEN} things at once.")
+        raise ValueError(f"A swap can offer at most {MAX_CHOSEN} things.")
     picked = tuple(dict.fromkeys(Chosen.model_validate(one) for one in raw))
     if sum(1 for one in picked if one.kind == "filter") > 1:
         raise ValueError("A swap can offer one saved filter.")

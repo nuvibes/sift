@@ -70,7 +70,7 @@ async def disagreeing_people(
     """Everybody the Disagreements tab is about, the most files first, with how many of each.
 
     The tab's rows gathered by person, which is the shape they arrive in: a pass files a whole
-    folder at once, so its mistakes come by the hundred under one name. The counts are of the same
+    folder in one go, so its mistakes come by the hundred under one name. The counts are of the same
     rows the tab counts, so they add up to its number. Unpaged: one row per PERSON, never per file,
     and the rows it gathers are bounded by the read beneath (`tuning.FILED_FACES_AT_MOST`).
 

@@ -442,7 +442,7 @@ describe('a server that does not answer', () => {
 	});
 });
 
-/* A page's first draw asks for the same addresses from several places at once: a second read of
+/* A page's first draw asks for the same addresses from several places together: a second read of
    an address already on its way joins it rather than going again. */
 describe('a read already on its way', () => {
 	it('is joined, and each caller holds its own copy of the answer', async () => {

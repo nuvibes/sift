@@ -79,7 +79,7 @@ class EntityTags {
 export const entityTags = new EntityTags();
 
 /**
- * Put one tag on several things at once, from a wall rather than from a detail page.
+ * Put one tag on several things in one go, from a wall rather than from a detail page.
  *
  * Deliberately NOT a method on the store above. That store holds the tags of the one thing a
  * detail page is showing, and every write to it replaces that set with the server's answer. So a
@@ -110,7 +110,7 @@ export async function tagMany(
  * wording that drifts and a fix that reaches three of them: the same reasoning the verb LIST is
  * declared once under, applied to the list behind one of those verbs.
  *
- * The bar and the menu both open out into it: one pick, written at once to everything picked.
+ * The bar and the menu both open out into it: one pick, written immediately to everything picked.
  */
 export function tagPickerFor(kind: EntityKind, many: string, done: () => void): VerbPick {
 	return {

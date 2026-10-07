@@ -171,7 +171,7 @@ def _raw(address: str, data: bytes, *, hang_up: bool = False) -> bytes:
 
 def _listening(address: str) -> bool:
     """Whether anything still listens at the proxy address. A listening socket accepts a connection
-    at once whether or not it is served, so a short wait answers it; a refusal here takes longer."""
+    immediately whether or not it is served, so a short wait answers it; a refusal here takes longer."""
     try:
         socket.create_connection(("127.0.0.1", urlsplit(address).port), timeout=0.5).close()
     except OSError:

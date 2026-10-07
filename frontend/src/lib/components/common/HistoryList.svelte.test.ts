@@ -2,7 +2,7 @@
  *
  * What the list owns, and therefore what is asserted here, is three things: the order it was given
  * is the order it draws, the spinner lands on the one row whose undo is in flight rather than on
- * every row at once, and nothing at all is a sentence rather than an empty box.
+ * every row together, and nothing at all is a sentence rather than an empty box.
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -107,8 +107,8 @@ describe('nothing yet', () => {
 
 describe('an undo in flight', () => {
 	it('is drawn on the row that asked and on no other', () => {
-		// An id rather than a boolean: a history is a list, and a spinner on every row at once would
-		// say every one of them is being taken back.
+		// An id rather than a boolean: a history is a list, and a spinner on every row at the same
+		// time would say every one of them is being taken back.
 		const { rows } = render({
 			events: [
 				event({ kind: 'renamed', undo: { kind: 'move', id: 'm1' } }),

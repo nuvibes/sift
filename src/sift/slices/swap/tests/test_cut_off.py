@@ -199,7 +199,7 @@ async def test_rejoin_a_cut_off_guest_dials_again_says_its_answer_again_and_take
         assert rig.context.notes[-1] == swap.CUT_OFF_NOTE
         await _until(lambda: all(task.done() for task in live.streams.values()), 3)
 
-        # A Join with the same token is the same session, and dials at once.
+        # A Join with the same token is the same session, and dials immediately.
         same = await rig.sessions.join(
             viewer_id=VIEWER,
             token_text=live.token.text,

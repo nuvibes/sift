@@ -187,7 +187,7 @@
 		if (key === FACES_ENABLED_KEY) faces = await faceSettings().catch(() => faces);
 		if (key === SEMANTIC_ENABLED_KEY) {
 			semantic = await semanticStatus().catch(() => semantic);
-			// The search box offers Smart Search only while it is on, so it hears at once.
+			// The search box offers Smart Search only while it is on, so it hears immediately.
 			await availability.refresh();
 		}
 		if (key === WATERMARKS_ENABLED_KEY)

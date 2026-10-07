@@ -1,5 +1,5 @@
 /* The wall: which shape it is in, what is in each cell, and the few things that are true of all of
- * them at once.
+ * them together.
  *
  * A cell runs itself. The wall owns the shape, the two controls that reach every cell (silence,
  * stop), which cell has the focus, and the one media session a page is given.
@@ -109,7 +109,7 @@ export class Wall {
 	focused = $state(0);
 
 	/**
-	 * Whether every cell is being talked to at once: the backtick beside the number keys.
+	 * Whether every cell is being talked to in one go: the backtick beside the number keys.
 	 *
 	 * A SELECTION, not a second set of shortcuts, so every verb reaches the whole wall. `focused`
 	 * stays underneath, since the bar still draws one timeline. Choosing one cell clears it.
@@ -161,7 +161,7 @@ export class Wall {
 		return [...this.inFocus, ...this.previews];
 	}
 
-	/** How many cells are on screen at once: the shape's places plus the strip. */
+	/** How many cells are on screen at the same time: the shape's places plus the strip. */
 	get drawn(): number {
 		return this.shape.slots.length + this.strip;
 	}
@@ -325,7 +325,7 @@ export class Wall {
 		this.chosenTimes += 1;
 	}
 
-	/** Talk to every cell at once. See `everyCell`. */
+	/** Talk to every cell in one go. See `everyCell`. */
 	focusEvery(): void {
 		this.everyCell = true;
 		this.keyed = true;
@@ -752,7 +752,7 @@ export class Wall {
 
 	/**
 	 * The vault has been locked or unlocked, and what the cells may draw has changed with it. On a
-	 * LOCK every drawn cell is emptied at once, since what is on screen and the run behind it may
+	 * LOCK every drawn cell is emptied immediately, since what is on screen and the run behind it may
 	 * now be nobody's; then every cell fills again.
 	 */
 	vaultChanged(locked: boolean): void {
@@ -768,7 +768,7 @@ export class Wall {
 
 	/*
 	 * Arriving from nothing, each cell still EMPTY opens somewhere else in the library: one page of a
-	 * fresh seeded shuffle per distinct filter, all asked at once, so the rows cannot repeat.
+	 * fresh seeded shuffle per distinct filter, all asked together, so the rows cannot repeat.
 	 */
 	async #openSomewhere(): Promise<void> {
 		const waiting = this.cells.filter((cell) => cell.state === 'empty');

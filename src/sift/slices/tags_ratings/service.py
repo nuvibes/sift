@@ -193,7 +193,7 @@ _CHOSEN_COVER = (
 #: One statement writes EVERY cover pointer, which is what makes "an entity has one cover" a
 #: property of the schema's use rather than a rule each writer remembers. A file cover, an uploaded
 #: cover, and the moment of a file are three columns and one decision, so choosing any of them
-#: clears the other two, and there is no arrangement in which a row claims both kinds at once.
+#: clears the other two, and there is no arrangement in which a row claims both kinds together.
 _SET_TAG_COVER = (
     "UPDATE tags SET cover_asset_id = ?, cover_at_ms = ?, cover_upload_id = ?, cover_frame = ?,"
     # The clear mark, and the rule's default let go (`kernel/access/default_covers.py`).

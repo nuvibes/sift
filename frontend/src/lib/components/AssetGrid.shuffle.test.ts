@@ -149,8 +149,8 @@ describe('pressing Random', () => {
 	it('asks for no page without the seed while the address is still on its way', async () => {
 		await grid();
 		/* The real `goto` lands the address a moment later, which is a gap a press can fall into:
-		   the remembered order changes at once, and the grid must not ask for a page under Random
-		   with no seed before the seeded one. */
+		   the remembered order changes immediately, and the grid must not ask for a page under
+		   Random with no seed before the seeded one. */
 		vi.mocked(goto).mockImplementationOnce(async (url: string | URL) => {
 			await Promise.resolve();
 			went.to.push(new URL(url));

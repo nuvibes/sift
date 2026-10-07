@@ -479,9 +479,9 @@ async def _songs_of(
     this viewer hid is no row while Hidden is shut), is absent. The artists are the ones the song
     credits, in order; the name says them too."""
     on: dict[str, str] = {}
-    for start in range(0, len(ids), _NAMES_AT_ONCE):
+    for start in range(0, len(ids), _NAMES_PER_READ):
         rows = await database.fetch_all(
-            _SONGS_OF_FILES, (json.dumps(list(ids[start : start + _NAMES_AT_ONCE])),)
+            _SONGS_OF_FILES, (json.dumps(list(ids[start : start + _NAMES_PER_READ])),)
         )
         on.update({str(row["asset_id"]): str(row["song_id"]) for row in rows})
     said: dict[str, OfferedSong | None] = {}
@@ -503,14 +503,14 @@ async def _songs_of(
 
 
 #: How many files one read of their names on disk asks about: a page, as every list read is.
-_NAMES_AT_ONCE = MAX_PAGE_SIZE
+_NAMES_PER_READ = MAX_PAGE_SIZE
 
 
 async def _names_on_disk(access: Repository, viewer: Viewer, ids: Sequence[str]) -> dict[str, str]:
     """What each offered file is called on disk now (the file page's own reading), a page at a time."""
     names: dict[str, str] = {}
-    for start in range(0, len(ids), _NAMES_AT_ONCE):
-        names.update(await access.names_on_disk(viewer, ids[start : start + _NAMES_AT_ONCE]))
+    for start in range(0, len(ids), _NAMES_PER_READ):
+        names.update(await access.names_on_disk(viewer, ids[start : start + _NAMES_PER_READ]))
     return names
 
 

@@ -319,7 +319,7 @@ def test_a_retired_key_is_answered_by_its_successors_and_says_why() -> None:
 
 
 def test_a_key_still_declared_cannot_be_retired() -> None:
-    """Retiring a key means removing its declaration in the same change; both at once would give
+    """Retiring a key means removing its declaration in the same change; both together would give
     one key two answers."""
     _register(key="test.old")
     with pytest.raises(SettingError, match="still registered"):

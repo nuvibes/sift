@@ -1,14 +1,14 @@
 /* The heart and the stars: one piece of state, wherever they are drawn.
  *
  * The same two facts appear on a tile, on the asset's own screen and on the player's controls, and
- * they are the same two facts, so a heart filled in one place is filled in all of them, at once,
- * without anything being reloaded. Three copies of this logic is three chances for one of them to
- * hold a value the others do not, and the person looking at two of them at the same time is the one
- * who finds out.
+ * they are the same two facts, so a heart filled in one place is filled in all of them,
+ * immediately, without anything being reloaded. Three copies of this logic is three chances for one
+ * of them to hold a value the others do not, and the person looking at two of them at the same time
+ * is the one who finds out.
  *
  * What it does:
  *
- *   - shows the choice at once, before the server has answered, because a heart that waits for a
+ *   - shows the choice immediately, before the server has answered, because a heart that waits for a
  *     round trip feels broken
  *   - keeps whatever the server ended up holding, rather than dropping back to what was passed in
  *   - puts it back and says so if the write was refused, because a heart showing a state the server
@@ -108,9 +108,9 @@ export function judge(subject: () => Subject): Judged {
 			// The server's answer rather than what was asked for, and kept rather than dropped: what
 			// was passed in is a snapshot from whenever the screen last loaded.
 			pending = state;
-			// And every other screen on this tab follows at once. The connection carries the same
-			// answer to this account's other browsers a moment later, a different route to the same
-			// place, so both ends read one shape rather than two.
+			// And every other screen on this tab follows immediately. The connection carries the
+			// same answer to this account's other browsers a moment later, a different route to the
+			// same place, so both ends read one shape rather than two.
 			assetState.changed(state);
 		} catch (caught) {
 			pending = null;
@@ -158,16 +158,16 @@ interface Tallied {
 
 /**
  * The O counter's state, beside the heart and the stars because it is the same kind of thing: one
- * number this account holds about one file, shown at once and settled onto whatever the server
+ * number this account holds about one file, shown immediately and settled onto whatever the server
  * ended up with.
  *
  * A HOOK OF ITS OWN and not a fourth field on `judge` above, and the reason is the write rather
  * than tidiness. A heart and a rating are written as VALUES (the control knows what it wants the
  * answer to be and says so), and a tally is written as an ACT: the browser must not send the
- * number it is holding, because two tabs pressing at once would both send the same one and one of
- * the presses would vanish. So the optimistic value and the request are worked out differently
- * here, and folding the two together would mean `judge` carrying a branch for whichever kind of
- * write it was making.
+ * number it is holding, because two tabs pressing at the same time would both send the same one and
+ * one of the presses would vanish. So the optimistic value and the request are worked out
+ * differently here, and folding the two together would mean `judge` carrying a branch for whichever
+ * kind of write it was making.
  *
  * What it shares is the CHANGE BUS, which is the part that matters: a press here reaches every
  * other screen drawing the file by the same route a heart does, and a press made in another tab

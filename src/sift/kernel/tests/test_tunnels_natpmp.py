@@ -203,7 +203,7 @@ class _Told:
         self.done.set()
 
     def sleeper(self, rounds: int) -> Any:
-        """Records how long each wait asked for, and returns at once, `rounds` times."""
+        """Records how long each wait asked for, and returns immediately, `rounds` times."""
 
         async def sleep(seconds: float) -> None:
             self.slept.append(seconds)

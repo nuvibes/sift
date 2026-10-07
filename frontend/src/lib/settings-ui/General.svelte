@@ -187,7 +187,7 @@
 	});
 
 	async function setStarting(on: boolean) {
-		/* Shown at once and then corrected by what the shell answers, as the close-button switch is:
+		/* Shown immediately and then corrected by what the shell answers, as the close-button switch is:
 		   a switch that waits for a round trip before moving reads as a switch that did not take. */
 		starting = on;
 		starting = await bridge.setStartsWithWindows(on);

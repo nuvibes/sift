@@ -334,8 +334,8 @@
 	}
 
 	/* The last answer while the next is coming: as quiet as the placeholders, after one fast beat,
-	   so an answer that lands at once swaps the cards with no dimming at all, and a slower one says
-	   it is coming. Back to full strength on the quicker pace, as everything arriving is. */
+	   so an answer that lands immediately swaps the cards with no dimming at all, and a slower one
+	   says it is coming. Back to full strength on the quicker pace, as everything arriving is. */
 	.wall {
 		transition: opacity var(--dur-fast) var(--ease);
 	}

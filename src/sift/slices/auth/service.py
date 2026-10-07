@@ -396,7 +396,7 @@ class AuthService:
         )
         # Argon2 is CPU-bound and memory-hungry by design. Every use runs on a worker thread so it
         # never stalls the event loop (otherwise one login flood would freeze the whole server,
-        # media serving and health check included) and this semaphore caps how many run at once so
+        # media serving and health check included) and this semaphore caps how many run together so
         # the flood cannot exhaust memory instead.
         self._hash_slots = asyncio.Semaphore(MAX_CONCURRENT_HASHES)
         # Computed once. The no-user login path verifies against this so it takes the same time
@@ -965,8 +965,8 @@ class AuthService:
         now = self._now()
 
         # Checked and inserted inside one write, for the same reason setup is: two admins adding
-        # the same name at once must not both find it free. The unique collation would catch the
-        # duplicate anyway, but as a database error rather than as the sentence below.
+        # the same name at the same time must not both find it free. The unique collation would
+        # catch the duplicate anyway, but as a database error rather than as the sentence below.
         async with telling(self._db, EVERY_ADMIN, About.SETTINGS) as connection:
             taken = list(await connection.execute_fetchall(_USER_BY_USERNAME, (cleaned,)))
             if taken:
@@ -1075,7 +1075,7 @@ class AuthService:
 
             # The cap is on renaming yourself, not on an admin renaming somebody. An admin can read
             # the user list on the same screen, so nothing here is being kept from them and a
-            # limit would only be in the way when they are tidying up several at once.
+            # limit would only be in the way when they are tidying up several together.
             if not counted_against_admin:
                 self._charge_rename(connection, existing[0])
                 await self._record_rename(connection, existing[0], user_id)

@@ -160,7 +160,7 @@ async def test_the_beat_stops_when_it_is_told_to_and_does_no_further_reading(
 async def test_being_told_to_stop_MID_WAIT_returns_without_one_last_read(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Shutdown during the three-second wait ends it at once (the wait is on the stop event), and
+    """Shutdown during the three-second wait ends it immediately (the wait is on the stop event), and
     the check after it skips one more round of reads against a closing database."""
     monkeypatch.setattr(lifespan, "apply_log_preferences", lambda **kw: None)
     cache = _Cache()

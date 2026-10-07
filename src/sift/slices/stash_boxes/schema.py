@@ -262,7 +262,7 @@ _INDEXES = (
     "CREATE INDEX IF NOT EXISTS ix_stash_scans_box ON stash_box_scans(box_id)",
     # One file's asks, newest last: what a History draws, and a seek rather than a walk.
     "CREATE INDEX IF NOT EXISTS ix_stash_scans_asset ON stash_box_scans(asset_id, box_id, scanned_at)",
-    # Sweeping stale rows asks by age across every box at once.
+    # Sweeping stale rows asks by age across every box in one go.
     "CREATE INDEX IF NOT EXISTS ix_stash_answers_age ON stash_box_answers(fetched_at)",
     # "Which of my people are linked to THIS box": what the box's own row shows, and what a re-key
     # has to invalidate. The other direction is the primary key.

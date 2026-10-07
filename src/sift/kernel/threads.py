@@ -31,9 +31,9 @@ MIN_SHARED_THREADS = 16
 #: as the database's reader pool is sized: no bigger than the workers, everything else would queue.
 SHARED_THREAD_HEADROOM = 8
 
-#: Threads one worker can hold at once: a tool is launched from one, and the file work either side
+#: Threads one worker can hold together: a tool is launched from one, and the file work either side
 #: of it takes others. A tool's pipes are read on threads of its own (`subprocess._collect`), since
-#: they are needed all at once and a pool short of them stalls the tool on a full pipe.
+#: they are needed all together and a pool short of them stalls the tool on a full pipe.
 THREADS_PER_WORKER = 3
 
 _serving: ThreadPoolExecutor | None = None

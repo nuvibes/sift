@@ -3,10 +3,10 @@
 	 * The people the Disagreements tab is about, one row each, the most files first.
 	 *
 	 * A disagreement is a name a pass filed (a folder, a filename, a stash-box) on a file whose one
-	 * face Sift recognized as somebody else. A pass files a whole folder at once, so its mistakes come
-	 * by the hundred under one name, so a thousand files are about a handful of people. One card per
-	 * file would ask the same question about the same person a thousand times; one row per person asks
-	 * it once, and her faces are the wall beside it.
+	 * face Sift recognized as somebody else. A pass files a whole folder in one go, so its mistakes
+	 * come by the hundred under one name, so a thousand files are about a handful of people. One
+	 * card per file would ask the same question about the same person a thousand times; one row per
+	 * person asks it once, and her faces are the wall beside it.
 	 *
 	 * Each row is her own picture, her name, how many of her files are here and where the name came
 	 * from. Pressing a row shows her faces; the row showing wears the picked ring. The rows are the

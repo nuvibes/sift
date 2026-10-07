@@ -2,7 +2,7 @@
 """Every number the queue is paced by, in one place.
 
 None is a setting: a setting is a promise that any value keeps working, and nobody has a reason to
-turn these (how many jobs run at once is the machine's, and is `SIFT_WORKER_CONCURRENCY`). Some are
+turn these (how many jobs run together is the machine's, and is `SIFT_WORKER_CONCURRENCY`). Some are
 only correct in relation to each other, which a config file cannot say and a test here asserts: a
 heartbeat slower than the watchdog's patience reclaims healthy jobs and runs them twice.
 """

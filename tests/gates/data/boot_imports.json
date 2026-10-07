@@ -1,5 +1,5 @@
 {
-  "sift_modules": 857,
+  "sift_modules": 860,
   "never_at_start": [
     "onnxruntime",
     "sentencepiece",
@@ -7,5 +7,5 @@
     "pillow_heif",
     "sqlite_vec"
   ],
-  "why": "857: four modules split out of ones already imported at start (backlog from the content schema, pacing from the ledger, visibility_walls and visibility_settled from visibility); none is new work"
+  "why": "860: db_writer (the writer's held-time words and the log's fold, split out of db at its length) and the visibility fold's own module; 858: the placeless component (the stranded files' kept rows), imported with the content store's places; 857: four modules split out of ones already imported at start (backlog from the content schema, pacing from the ledger, visibility_walls and visibility_settled from visibility); none is new work"
 }

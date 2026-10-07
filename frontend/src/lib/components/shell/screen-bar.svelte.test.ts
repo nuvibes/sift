@@ -69,7 +69,7 @@ describe('pointing', () => {
 
 		screenBar.leaving();
 		// Still open while the grace runs: the trigger is on the top bar and the panel is drawn
-		// further down, so shutting at once would make it unreachable by the gesture that opened it.
+		// further down, so shutting immediately would make it unreachable by the gesture that opened it.
 		vi.advanceTimersByTime(100);
 		expect(screenBar.open).toBe(FILTERS);
 
@@ -348,7 +348,7 @@ describe('a draft keeps the panel its box', () => {
 		expect(screenBar.shapeHeld).toBe(false);
 	});
 
-	it('lets go at once when the draft ends with the pointer elsewhere', () => {
+	it('lets go immediately when the draft ends with the pointer elsewhere', () => {
 		/* The positive control: a store that held forever would pass the two above. */
 		screenBar.showByHover(FILTERS);
 		screenBar.drafting(true);

@@ -175,7 +175,7 @@ async def test_a_person_reads_their_lists_from_the_tables_the_lists_live_in(
     assert held["accounts"] == []
 
 
-async def test_many_people_read_at_once_are_each_what_their_own_reads_say(
+async def test_many_people_read_together_are_each_what_their_own_reads_say(
     service: PeopleService, temp_db: Database
 ) -> None:
     """The survey reads every linked person in five reads; a plan against one person reads them

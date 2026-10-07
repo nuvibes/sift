@@ -26,20 +26,23 @@ language, the reindex job, and the endpoints.
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Mapping
+from typing import Any
 from urllib.parse import parse_qsl, urlencode
 
 from sift.kernel.db import Connection, register_schema_initializer
 from sift.kernel.ids import is_id
 from sift.kernel.log import get_logger
 from sift.kernel.migrations import column_exists
+from sift.slices.search.filter_parse import _as_field, _scan, quoted
 from sift.slices.search.filters import Field
 from sift.slices.search.stored import TYPED, entity_values, swapped
 
 log = get_logger(__name__)
 
 COMPONENT = "search_history"
-VERSION = 10
+VERSION = 11
 
 # A row of the box's memory: the queries somebody typed and ran, and the people, tags, Sites,
 # collections, folders and files picked straight out of the dropdown.
@@ -409,6 +412,91 @@ async def _renamed_from(
     return followed
 
 
+_KEPT_TYPED = "SELECT id, query FROM saved_searches WHERE kind = 'asset' AND query LIKE '%q=%'"
+
+
+def _named(found: Field, value: str, owners: Owners, renamed: Owners) -> bool:
+    key = _folded(value).strip("/") if found is Field.IN else _folded(value)
+    return bool(owners[found].get(key) or renamed.get(found, {}).get(key))
+
+
+def _old_refusals(text: str) -> list[tuple[int, str, Field, str]]:
+    """Each `field:"-X"` piece: where it starts, the piece, its field, and X."""
+    out: list[tuple[int, str, Field, str]] = []
+    for begin, piece in _scan(text):
+        name, colon, value = piece.partition(":")
+        found = _as_field(name) if colon and not piece.startswith("-") else None
+        quoted_minus = value.startswith('"-') and value.endswith('"') and value.count('"') == 2
+        if found is not None and found in _NAMES_OF and quoted_minus and len(value) > 3:
+            out.append((begin, piece, found, value[2:-1]))
+    return out
+
+
+def _respelled(text: str, owners: Owners, renamed: Owners) -> tuple[str, list[str]]:
+    """Typed text with each old refusal written `-field:X`, where `-X` names nothing and X does.
+
+    Before the minus was put on the token, a refused value holding a space was written inside the
+    quotes (`in:"-Raw Cuts"`), which reads as a name beginning with a minus and matches nothing.
+    """
+    fields: list[str] = []
+    for begin, piece, found, body in reversed(_old_refusals(text)):
+        parts = re.split(r"([|,])", body)
+        names = [one.strip() for one in parts[0::2]]
+        if _named(found, f"-{body}", owners, renamed) or not all(
+            one and _named(found, one, owners, renamed) for one in names
+        ):
+            continue
+        parts[0::2] = [quoted(one) for one in names]
+        written = f"-{piece.partition(':')[0]}:{''.join(parts)}"
+        text = text[:begin] + written + text[begin + len(piece) :]
+        fields.append(found.value)
+    return text, fields
+
+
+async def _refusals_respelled(connection: Connection) -> tuple[int, int]:
+    """Every saved Theater cell and saved filter holding an old refusal, respelled; each logged.
+
+    Answers how many rows were rewritten and how many such pieces were left as written, because
+    a thing is named by the minus-led name itself or nothing is named by the rest.
+    """
+    cells: list[Any] = []
+    if list(await connection.execute_fetchall(_HAS_CELLS)):
+        cells = [row for row in await connection.execute_fetchall(_CELLS) if ':"-' in row["source"]]
+    kept = [
+        (row, dict(parse_qsl(str(row["query"]), keep_blank_values=True)).get(TYPED, ""))
+        for row in await connection.execute_fetchall(_KEPT_TYPED)
+    ]
+    kept = [(row, typed) for row, typed in kept if ':"-' in typed]
+    texts = [str(row["source"]) for row in cells] + [typed for _, typed in kept]
+    candidates = [one for text in texts for one in _old_refusals(text)]
+    if not candidates:
+        return 0, 0
+    owners, renamed = await _owners(connection, {found for _, _, found, _ in candidates})
+    rewritten = respelled = 0
+    for row in cells:
+        source, fields = _respelled(str(row["source"]), owners, renamed)
+        if fields:
+            await connection.execute(
+                _REWRITE_CELL, (source, row["arrangement_id"], row["position"])
+            )
+            log.info(
+                "theater.cell.refusal_respelled",
+                arrangement=row["arrangement_id"],
+                position=row["position"],
+                fields=fields,
+            )
+            rewritten, respelled = rewritten + 1, respelled + len(fields)
+    for row, typed in kept:
+        text, fields = _respelled(typed, owners, renamed)
+        if fields:
+            pairs = parse_qsl(str(row["query"]), keep_blank_values=True)
+            query = urlencode([(name, text if name == TYPED else value) for name, value in pairs])
+            await connection.execute(_REWRITE_KEPT, (query, row["id"]))
+            log.info("search.saved.refusal_respelled", saved=row["id"], fields=fields)
+            rewritten, respelled = rewritten + 1, respelled + len(fields)
+    return rewritten, len(candidates) - respelled
+
+
 async def initialize(connection: Connection, on_disk: int) -> None:
     if on_disk < 1:
         for statement in (
@@ -433,6 +521,9 @@ async def initialize(connection: Connection, on_disk: int) -> None:
                 await connection.execute(statement)
         for statement in (_CREATE_SEARCH_OPENS, *_OPEN_INDEXES):
             await connection.execute(statement)
+    if 0 < on_disk < 11:
+        rewritten, left = await _refusals_respelled(connection)
+        log.info("search.refusals_respelled", rewritten=rewritten, left=left)
 
 
 # `users` comes from the identity component, so the key names a table that exists by the time this

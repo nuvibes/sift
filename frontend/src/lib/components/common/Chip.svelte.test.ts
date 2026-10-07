@@ -140,7 +140,7 @@ describe('a cross that asks first', () => {
 		flushSync();
 	}
 
-	it('removes at once when nothing was handed in, which is what a filter token does', () => {
+	it('removes immediately when nothing was handed in, which is what a filter token does', () => {
 		remembered.skipped = false;
 		const removed = vi.fn();
 		const chip = render({ onremove: removed, removeLabel: 'Remove this filter' });
@@ -238,7 +238,7 @@ describe('a cross that asks first', () => {
 		opens?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
 		flushSync();
 
-		/* Waited for rather than read at once: the sheet has an exit transition, so it is still in
+		/* Waited for rather than read immediately: the sheet has an exit transition, so it is still in
 		   the document for a frame after it has been told to go. */
 		await vi.waitFor(() => {
 			flushSync();
@@ -272,7 +272,7 @@ describe('a cross that asks first', () => {
 		expect(dressing).toContain('.chip:focus-within .remove');
 	});
 
-	it('removes at once for an account that has said to stop asking', () => {
+	it('removes immediately for an account that has said to stop asking', () => {
 		remembered.skipped = true;
 		const removed = vi.fn();
 		const chip = render({

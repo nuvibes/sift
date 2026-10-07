@@ -184,7 +184,7 @@ class AssetOpinion(Wire):
 
     The same shape the rating and heart routes reply with, and that is the point rather than a
     coincidence. A reply and a message reach the same screens by two routes (the control that
-    was pressed answers this tab at once, the connection tells this user's other browsers a
+    was pressed answers this tab immediately, the connection tells this user's other browsers a
     moment later) and the grid applies whichever arrives by naming the file and setting the row.
     Two shapes would mean the tab that pressed the control and the tab that did not were served by
     two different pieces of code, and the one that only runs for somebody else is the one nobody
@@ -294,7 +294,7 @@ class RemoteAction(StrEnum):
     THEATER_SOLO = "theater.solo"
     #: How long the cell holds a file before it moves on, in `value` seconds; 0 for no limit.
     THEATER_TIMER = "theater.timer"
-    #: Talk to every cell at once.
+    #: Talk to every cell together.
     THEATER_EVERY_CELL = "theater.everyCell"
     #: A layout or a saved preset, by its place in the list the wall reported.
     THEATER_LAYOUT = "theater.layout"
@@ -385,7 +385,7 @@ class Subscription:
         self._opinions.append(opinion)
 
     def note_command(self, command: RemoteCommand, *, expires_at: float) -> None:
-        """A command for one of this user's screens, sent at once rather than on the next beat.
+        """A command for one of this user's screens, sent immediately rather than on the next beat.
 
         Held on THIS connection and nowhere else, which is what keeps it from being repeated to a
         tab that connects later: a new connection starts with nothing waiting. Past the cap the
@@ -453,6 +453,8 @@ class ChangeBus:
         self._published = 0
         #: The same count kept per subject. See `mark_of`.
         self._by_subject: Counter[About] = Counter()
+        #: How many of the `ARRIVALS` were a file gaining or losing a picture and nothing else.
+        self._pictures = 0
         #: What tells one run of the application from the next. See `mark`.
         self._boot = secrets.token_hex(4)
 
@@ -483,14 +485,21 @@ class ChangeBus:
         """
         return f"{self._boot}:{self._published}"
 
-    def mark_of(self, subjects: Iterable[About]) -> str:
+    def mark_of(self, subjects: Iterable[About], *, pictures: bool = True) -> str:
         """Where the announcements about `subjects` alone stand, compared like `mark`.
 
         For an answer only some subjects can change. Kept under `mark` it is thrown away by work
         that could not have moved it: the job queue is announced several times a second while
-        anything runs.
+        anything runs. Without `pictures`, a picture made or dropped does not move `ARRIVALS`:
+        Generate announces one per file, and an answer that draws no picture stays kept.
         """
-        counts = ".".join(str(self._by_subject[one]) for one in sorted(set(subjects)))
+        counts = ".".join(
+            str(
+                self._by_subject[one]
+                - (self._pictures if one is About.ARRIVALS and not pictures else 0)
+            )
+            for one in sorted(set(subjects))
+        )
         return f"{self._boot}:{counts}"
 
     def subscribe(self, user_id: str) -> Subscription:
@@ -530,15 +539,16 @@ class ChangeBus:
     def _everyone(self) -> list[Subscription]:
         return [one for open_now in self._by_user.values() for one in open_now]
 
-    def publish(self, audience: Audience, about: About) -> None:
+    def publish(self, audience: Audience, about: About, *, picture: bool = False) -> None:
         """Mark this change waiting for everyone whose view it moved.
 
         Nothing is sent from here. Each connection sends on its own beat, which is what turns a
         sweep's thousands of changes into one message and what keeps a slow reader from setting
-        everybody else's pace.
+        everybody else's pace. `picture` says an arrival was only a picture (`mark_of`).
         """
         self._published += 1
         self._by_subject[about] += 1
+        self._pictures += picture
         if audience.every_admin:
             for subscription in self._everyone():
                 subscription.note(about, admins_only=True)
@@ -615,10 +625,10 @@ def current_mark() -> str | None:
     return None if _LISTENER is None else _LISTENER.mark
 
 
-def mark_of(subjects: Iterable[About]) -> str | None:
+def mark_of(subjects: Iterable[About], *, pictures: bool = True) -> str | None:
     """Where the announcements about `subjects` stand right now, or None when nothing is
     listening. See `ChangeBus.mark_of`, and `current_mark` for what None means."""
-    return None if _LISTENER is None else _LISTENER.mark_of(subjects)
+    return None if _LISTENER is None else _LISTENER.mark_of(subjects, pictures=pictures)
 
 
 def announce(audience: Audience, about: About) -> None:
@@ -674,6 +684,12 @@ async def announce_arrival(connection: Connection) -> None:
     Called from inside the write that took the file in, and does nothing until that write commits.
     """
     announce(await who_may_see_a_file(connection), About.ARRIVALS)
+
+
+async def announce_picture(connection: Connection) -> None:
+    """A file gained or lost a picture: an arrival to every screen, told apart in `mark_of`."""
+    audience = await who_may_see_a_file(connection)
+    after_commit(lambda: _deliver(audience, About.ARRIVALS, picture=True))
 
 
 async def who_may_see_a_file(connection: Connection) -> Audience:
@@ -746,12 +762,15 @@ def announce_opinion(user_id: str, opinion: AssetOpinion) -> None:
     after_commit(lambda: _deliver_opinion(user_id, opinion))
 
 
-def _deliver(audience: Audience, about: About) -> None:
+def _deliver(audience: Audience, about: About, *, picture: bool = False) -> None:
     """Hand a landed change to whoever is listening. Runs after the commit, off the lock."""
     bus = _LISTENER
     if bus is None:
         return
-    bus.publish(audience, about)
+    if picture:
+        bus.publish(audience, about, picture=True)
+    else:
+        bus.publish(audience, about)
 
 
 def _deliver_opinion(user_id: str, opinion: AssetOpinion) -> None:

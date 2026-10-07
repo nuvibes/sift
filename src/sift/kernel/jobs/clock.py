@@ -23,7 +23,7 @@ schedule itself started: a head row nobody pressed (`requested_by` and `timing` 
 Counted from a press, a backup pressed at four in the morning would put that afternoon's off to the
 next day, and a setting changed and put back would move it again. The one place a press counts is
 a run already due: a schedule that is behind (the device off at its time) or has never run catches
-up at once, and a press that began after the run fell due IS that catch-up, so the schedule goes on
+up immediately, and a press that began after the run fell due IS that catch-up, so the schedule goes on
 from it rather than running a second one straight after.
 
 The scheduler holds no timer. The row with its `run_after` is still what is going to happen, and a
@@ -93,7 +93,7 @@ class TaskClock:
 
         `since` is when the last run ended; left out, it is read from the queue's record of the
         task's runs, and only of the runs its schedule started (the module's docstring says why).
-        A task the schedule has never run falls due at once (in quiet hours, at the range's next
+        A task the schedule has never run falls due immediately (in quiet hours, at the range's next
         opening; with a time of day, at its next one), which is what somebody switching a daily
         backup on this afternoon expects: tonight, not tomorrow night.
 

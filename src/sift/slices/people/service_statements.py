@@ -365,7 +365,7 @@ _USERNAME_NAME = "SELECT name, person_id FROM usernames WHERE id = ?"
 #: Every username one person holds, with the site each sits on. Ordered so a record reads the same
 #: way twice: by the site's name, then the spelling.
 
-# The one-person reads above, for many people at once (`enrichment_view_of_people`): the same
+# The one-person reads above, for many people in one go (`enrichment_view_of_people`): the same
 # joins and the same order within each person, the ids bound as one JSON array.
 _PEOPLE_AMONG = "SELECT * FROM people WHERE id IN (SELECT value FROM json_each(?))"
 

@@ -352,8 +352,8 @@
 				body: { asset_ids: [assetId] }
 			});
 			forget(assetId);
-			// The set's History thread records this, so it is told at once, as every other write in
-			// this tab that a history shows does.
+			// The set's History thread records this, so it is told immediately, as every other
+			// write in this tab that a history shows does.
 			recorded.changed();
 			subject.value = { ...set, item_count: Math.max(0, set.item_count - 1) };
 			toasts.show('Out of the set. The file is where it was.', { tone: 'success' });

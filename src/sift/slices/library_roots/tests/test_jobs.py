@@ -1750,7 +1750,7 @@ def test_a_walk_of_the_roots_own_top_folder_is_the_whole_root(root: Root) -> Non
     A press names no folder; the watcher names the root's own top folder, because that is the row
     it has when something changes in the root's own directory. `enqueue(dedupe=True)` matches the
     serialized payload exactly, so the two would never collide and the same folder would be walked
-    twice at once, for one answer.
+    twice at the same time, for one answer.
 
     They MEAN the same walk: `_scope` resolves a missing folder id to `ROOT_REL_PATH`, and
     the top folder's own `rel_path` is `ROOT_REL_PATH`.

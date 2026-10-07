@@ -1,6 +1,6 @@
 <script lang="ts">
 	/*
-	 * The one bar of a screen showing several things at once, for whichever is selected. Beside its
+	 * The one bar of a screen showing several things together, for whichever is selected. Beside its
 	 * one user rather than in `common/`, which refuses a single consumer; it knows nothing of Theater.
 	 * The shape is the selection bar's (a floating pill that rises), the surface the facts panel's.
 	 */
@@ -135,8 +135,8 @@
 		backdrop-filter: blur(var(--blur-glass));
 		/*
 		 * No shadow: the hairline and the blur separate a pane from the picture under it. It slides
-		 * on the top bar's token, one gesture from two edges, and is visible at once on the way up,
-		 * so the Tab that raises it can enter it.
+		 * on the top bar's token, one gesture from two edges, and is visible immediately on the way
+		 * up, so the Tab that raises it can enter it.
 		 */
 		transition:
 			translate var(--dur-slow) var(--ease),

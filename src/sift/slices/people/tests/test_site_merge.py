@@ -858,7 +858,7 @@ def test_every_store_naming_a_thing_by_a_kind_word_is_followed_or_says_why(
         tables = [
             str(name)
             for (name,) in looking.execute(
-                "SELECT name FROM sqlite_master WHERE type = 'table' AND sql NOT LIKE '%VIRTUAL%'"
+                "SELECT name FROM sqlite_master WHERE type = 'table' AND sql NOT LIKE 'CREATE VIRTUAL%'"
             )
         ]
         for table in tables:

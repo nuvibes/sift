@@ -3,7 +3,7 @@
 
 Two addresses, and they answer the same question in two ways. The socket says "something changed"
 as it happens; the plain read says "here is where you stand" and exists for three
-reasons at once: it is where the shape the socket sends is declared, so the client's types are
+reasons together: it is where the shape the socket sends is declared, so the client's types are
 generated rather than hand-written; it is what a reconnecting client compares against; and it is
 how a client tells a refusal from a dropped connection, because a handshake refused before it
 completes has no frame to carry a reason.
@@ -110,7 +110,7 @@ def _marker(bus: ChangeBus) -> str:
 
     Not the user's `cache_stamp`: that counts changes to what a user may SEE and is the cache key
     every thumbnail address carries, so a setting, a job, a download or a saved search never moves
-    it. The bus's own count answers "has anything been announced" for every subject at once. See
+    it. The bus's own count answers "has anything been announced" for every subject in one go. See
     `ChangeBus.mark`.
     """
     return bus.mark
@@ -184,7 +184,7 @@ async def stream_changes(websocket: WebSocket) -> None:
 
     **Re-checked on every beat, not once at the handshake.** Everywhere else in Sift a permission is
     resolved from the database on every single request, so that revoking something denies the very
-    next one and disabling a user ends its session at once. A socket authorized only when it
+    next one and disabling a user ends its session immediately. A socket authorized only when it
     opened would be the one place that promise is false: it would go on telling a user about
     a library it was removed from an hour ago, for as long as the tab stayed open.
 

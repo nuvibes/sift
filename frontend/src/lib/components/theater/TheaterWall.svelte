@@ -47,7 +47,7 @@
 
 	const grid = $derived(template(wall.shape));
 
-	/* A file deleted elsewhere leaves every cell showing it at once, not at its next turn. */
+	/* A file deleted elsewhere leaves every cell showing it immediately, not at its next turn. */
 	whenChanged(libraryChanges, () => {
 		for (const cell of wall.cells) {
 			const id = cell.playing?.id;
@@ -511,7 +511,7 @@
 		background: var(--sift-bg);
 	}
 
-	/* While the cells are drawn by `follow`, the room the page gives them lands at once. */
+	/* While the cells are drawn by `follow`, the room the page gives them lands immediately. */
 	.wall.following .grid,
 	.wall.following .strip {
 		transition: none;

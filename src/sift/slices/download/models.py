@@ -54,7 +54,7 @@ MAX_PASTED_LINES = 5000
 
 
 class PasteLinksRequest(Wire):
-    """Several addresses at once, and where they should land.
+    """Several addresses together, and where they should land.
 
     Its own route: a paste of many must say what it refused and took, which one ledger row's id
     cannot.
@@ -107,7 +107,7 @@ class BulkPreview(Wire):
     site: str
     #: How many will be queued if this goes ahead.
     count: int
-    #: Whether the site had more than one paste may take at once.
+    #: Whether the site had more than one paste may take at the same time.
     truncated: bool
     #: How many one paste may take, so the screen states it rather than keeping a stale copy.
     limit: int

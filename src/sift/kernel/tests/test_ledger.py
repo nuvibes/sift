@@ -51,10 +51,10 @@ async def test_a_run_opens_with_the_first_job_and_closes_when_the_family_drains(
     ledger.finished("probe", duration_ms=500, ok=False, media_type="image", size_bytes=4)
     assert ledger.open_run(Family.SCAN) is not None
 
-    await ledger.settle({"probe": 3}, settings={"jobs at once": 8})
+    await ledger.settle({"probe": 3}, settings={"jobs together": 8})
     assert ledger.open_run(Family.SCAN) is not None, "still busy: nothing should close"
 
-    await ledger.settle({"probe": 0, "thumbnail": 2}, settings={"jobs at once": 8})
+    await ledger.settle({"probe": 0, "thumbnail": 2}, settings={"jobs together": 8})
     assert ledger.open_run(Family.SCAN) is None
 
     (run,) = await ledger.recent()
@@ -65,7 +65,7 @@ async def test_a_run_opens_with_the_first_job_and_closes_when_the_family_drains(
         "image": {"n": 1, "bytes": 4, "ms": 500},
     }
     assert run.worker_ms == 2000
-    assert run.settings == {"jobs at once": 8}
+    assert run.settings == {"jobs together": 8}
     assert run.machine == "a box" and run.profile == "abc123" and run.version == "0.1.0"
     assert run.finished_at is not None and not run.stopped
 
@@ -182,14 +182,14 @@ async def test_the_report_is_plain_text_a_person_can_paste(ledger: Ledger) -> No
     run = ledger.open_run(Family.SCAN)
     assert run is not None
     run.started_at -= 600
-    await ledger.settle({}, settings={"jobs at once": 8, "network share reads": 2})
+    await ledger.settle({}, settings={"jobs together": 8, "network share reads": 2})
     (row,) = await ledger.recent()
 
     text = report_text(row)
     assert text.isascii()
     assert "Scan run" in text and "took 10.0 min" in text
     assert "Machine: a box" in text
-    assert "Settings: jobs at once 8, network share reads 2" in text
+    assert "Settings: jobs together 8, network share reads 2" in text
     assert "1 image (3 MB)" in text and "1 video (2.0 GB)" in text
     assert "Jobs: 2 done, 0 failed" in text
     assert "probe.fingerprint: 4 s over 1, 4.00 s each" in text
@@ -486,7 +486,7 @@ async def test_the_range_is_the_cheapest_and_dearest_stretch_divided_by_the_work
     ledger: Ledger, temp_db: Database
 ) -> None:
     """Twenty items costing ten seconds each and twenty costing thirty: the cheapest stretch is ten
-    a file, the dearest thirty, and forty files at twelve at once is between 33 and 100 seconds.
+    a file, the dearest thirty, and forty files at twelve at a time is between 33 and 100 seconds.
 
     Not divided by one: the price of a file is what a worker spends on it, and twelve workers
     spend it twelve at a time."""
@@ -549,8 +549,8 @@ async def test_a_settings_change_ends_the_sample(ledger: Ledger, temp_db: Databa
     await _job_rows(temp_db, "face_scan", costs=[20] * 30, started=now - 10_000)
     assert await ledger.pace(Family.IDENTIFY, ["face_scan"]) is not None
 
-    await ledger.settle({}, settings={"jobs at once": 8})
-    await ledger.settle({}, settings={"jobs at once": 12})
+    await ledger.settle({}, settings={"jobs together": 8})
+    await ledger.settle({}, settings={"jobs together": 12})
     assert await ledger.pace(Family.IDENTIFY, ["face_scan"]) is None
 
 
@@ -933,10 +933,10 @@ async def test_runs_from_before_a_settings_change_or_that_timed_nothing_price_no
     older.started_at -= 100
     for _ in range(50):
         ledger.finished("thumbnail", duration_ms=300, ok=True, media_type="video")
-    await ledger.settle({}, settings={"jobs at once": 8})
-    await ledger.settle({}, settings={"jobs at once": 12})
+    await ledger.settle({}, settings={"jobs together": 8})
+    await ledger.settle({}, settings={"jobs together": 12})
     ledger.finished("thumbnail", duration_ms=300, ok=True, media_type="video", units=0)
-    await ledger.settle({}, settings={"jobs at once": 12})
+    await ledger.settle({}, settings={"jobs together": 12})
     # Between the two runs, whichever way the machine's clock stepped.
     ledger._settings_changed_at = older.started_at + 1
 
@@ -1129,17 +1129,17 @@ async def test_a_run_mostly_stepped_back_is_kept_with_its_seconds_and_not_priced
     ledger._ticked -= 80
     for _ in range(50):
         ledger.finished("thumbnail", duration_ms=300, ok=True, media_type="video")
-    await ledger.settle({}, settings={"jobs at once": 8}, stepped_back=False)
+    await ledger.settle({}, settings={"jobs together": 8}, stepped_back=False)
 
     (kept,) = await ledger.recent()
-    assert kept.settings["jobs at once"] == 8
+    assert kept.settings["jobs together"] == 8
     assert 79 <= int(kept.settings[ledger_module.STEPPED_BACK]) <= 81  # type: ignore[call-overload]
     assert await ledger.pace(Family.GENERATE, []) is None
     assert (await ledger.kind_prices(Family.GENERATE, at_once=1)).paces == {}
 
     for _ in range(50):
         ledger.finished("thumbnail", duration_ms=300, ok=True, media_type="video")
-    await ledger.settle({}, settings={"jobs at once": 8})
+    await ledger.settle({}, settings={"jobs together": 8})
     found = await ledger.pace(Family.GENERATE, [])
     assert found is not None and found.items == 50, "a run at the full count is priced"
 
@@ -1174,8 +1174,8 @@ async def test_a_type_and_kind_is_priced_from_ten_items_and_a_settings_change_fo
     ledger.finished("thumbnail", duration_ms=4000, ok=True, media_type="video", units=4)
     assert ledger.prices() == {("thumbnail", "video"): 1.9, ("thumbnail", ""): 1.9}
 
-    await ledger.settle({"thumbnail": 1}, settings={"jobs at once": 8})
-    await ledger.settle({"thumbnail": 1}, settings={"jobs at once": 4})
+    await ledger.settle({"thumbnail": 1}, settings={"jobs together": 8})
+    await ledger.settle({"thumbnail": 1}, settings={"jobs together": 4})
     assert ledger.prices() == {}
 
 

@@ -236,7 +236,7 @@
 			.finally(() => void show());
 	});
 
-	/* Asked again when the narrowing changes: at once for the level, after a pause for the words.
+	/* Asked again when the narrowing changes: immediately for the level, after a pause for the words.
 	   Read here rather than in each control's handler so the two cannot come to ask differently. */
 	let typing: ReturnType<typeof setTimeout> | undefined;
 	function narrowAgain(now = false) {

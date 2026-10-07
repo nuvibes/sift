@@ -323,11 +323,11 @@
 	 * across. A mixed row is not "already on" either way, so the first press makes the whole
 	 * selection agree.
 	 *
-	 * Both at once is not offered: a restrict beats every share, so the share underneath would do
+	 * Both together is not offered: a restrict beats every share, so the share underneath would do
 	 * nothing, look like it did, and quietly come into force the day the restrict was lifted.
 	 *
-	 * Two buttons rather than a menu: two buttons show both answers at once, where a menu hides the
-	 * one not chosen.
+	 * Two buttons rather than a menu: two buttons show both answers together, where a menu hides
+	 * the one not chosen.
 	 */
 	function choose(user: ShareableUser, word: Standing) {
 		// Against what is recorded HERE, not against the resolved answer. Pressing Share on a file
@@ -384,7 +384,7 @@
 		saving = true;
 		try {
 			for (const [subjectUserId, desired] of Object.entries(staged)) {
-				// One at a time rather than all at once. These are small writes and there are at most a
+				// One at a time rather than all together. These are small writes and there are at most a
 				// few users times a selection of them; firing them together would make the failure
 				// case "some of it happened, in no particular order" for no gain anybody can see.
 				for (const [index, target] of targets.entries()) {

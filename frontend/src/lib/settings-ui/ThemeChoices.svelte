@@ -41,10 +41,10 @@
 	 *
 	 * ## It writes as you press, and it is the only thing that does
 	 *
-	 * `theme.set` puts the choice on the page, in the browser's mirror and on the server at once, so
-	 * the answer to "what does this look like" is the app changing under you. A caller that wants
-	 * the choices RECORDED as answered (the first run does, so it never asks again), writes the
-	 * keys itself; that is a different question from what the value is.
+	 * `theme.set` puts the choice on the page, in the browser's mirror and on the server at the
+	 * same time, so the answer to "what does this look like" is the app changing under you. A
+	 * caller that wants the choices RECORDED as answered (the first run does, so it never asks
+	 * again), writes the keys itself; that is a different question from what the value is.
 	 */
 	import ChoiceCard from '$lib/components/common/ChoiceCard.svelte';
 	import ChoiceGroup from '$lib/components/common/ChoiceGroup.svelte';
@@ -262,7 +262,7 @@
 		}
 	}
 
-	/* Taking a colour out, with Undo, the house way: the row changes at once, and the toast puts it
+	/* Taking a colour out, with Undo, the house way: the row changes immediately, and the toast puts it
 	   back where it was. */
 	async function unkeep(colour: string): Promise<void> {
 		keepSaid = '';
@@ -700,7 +700,7 @@
 		background: var(--sift-accent);
 	}
 
-	/* The seventh chip's dot: every hue at once, which is what the chip stands for. The gradient is
+	/* The seventh chip's dot: every hue together, which is what the chip stands for. The gradient is
 	   a token: a rainbow written here would be a colour outside the one file allowed to name one,
 	   and this one is not a theme decision but the colour space itself. */
 	.dot.rainbow {

@@ -108,7 +108,7 @@ class Recording:
     #: None makes `viewer_for` answer "that user has gone".
     viewer: Any = "viewer-1"
 
-    #: How many rows the access layer hands back at once however many were asked for. None is no
+    #: How many rows the access layer hands back at a time however many were asked for. None is no
     #: cap. Set it to model the cap: a sweep that stepped by what it asked for would step over
     #: every file between the cap and the request.
     cap: int | None = None
@@ -309,7 +309,7 @@ class Bell:
 
     rung: list[tuple[object, object]] = field(default_factory=list)
 
-    def publish(self, audience: object, about: object) -> None:
+    def publish(self, audience: object, about: object, *, picture: bool = False) -> None:
         self.rung.append((audience, about))
 
 
@@ -813,7 +813,7 @@ class _Folders:
         return PersonReport(name=folder.name, added=1)
 
 
-async def test_a_folder_import_that_held_somebody_asks_for_the_fingerprints_pass_at_once(
+async def test_a_folder_import_that_held_somebody_asks_for_the_fingerprints_pass_immediately(
     clean_handlers: None, tmp_path: Path
 ) -> None:
     """Somebody pressed and is watching the waiting list: the pass waits for no batch to settle."""
@@ -1426,7 +1426,7 @@ async def test_a_link_asks_after_everybody_linked_and_skips_who_no_longer_wants_
 ) -> None:
     """With no People named, the door says who is linked and the feature says who still wants
     starters; each is asked again on her turn, so a face confirmed since is not followed by
-    starters that would be retired at once. Nothing passing the checks is said so."""
+    starters that would be retired immediately. Nothing passing the checks is said so."""
     monkeypatch.setattr(face_jobs, "_PROGRESS_TICK", 0)
     service = _StarterService(wanting={"linked-two"})
     door = _Door()

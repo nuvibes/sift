@@ -669,6 +669,25 @@ describe('stepping onto a file that is hidden', () => {
 	});
 });
 
+/* The panel's player is compact and never steps, so the panel answers Ctrl itself, on any kind. */
+describe('Ctrl and an arrow in the corner panel', () => {
+	it.each(['image', 'video'])('walks the list either way on a %s', async (mediaType) => {
+		const asked = () => vi.mocked(api.get).mock.calls.map(([path]) => path);
+		for (const [key, to] of [
+			['ArrowRight', 'asset-2'],
+			['ArrowLeft', 'asset-0']
+		]) {
+			openAsset('asset-1', ['asset-0', 'asset-1', 'asset-2'].map(CLIP));
+			served.detail = { id: to, media_type: mediaType, concealed: false, added_at: 0 };
+			await show({ id: 'asset-1', mediaType });
+			vi.mocked(api.get).mockClear();
+
+			window.dispatchEvent(new KeyboardEvent('keydown', { key, ctrlKey: true, cancelable: true }));
+			await vi.waitFor(() => expect(asked()).toContain(`/assets/${to}`));
+		}
+	});
+});
+
 describe('Hidden shut on the file in the Audio player', () => {
 	const position = () =>
 		host.querySelector('.bar-timeline input[type="range"]') as HTMLInputElement | null;
@@ -690,7 +709,7 @@ describe('Hidden shut on the file in the Audio player', () => {
 		flushSync();
 	}
 
-	it('stops the clip and takes its picture, its poster and its clock away at once', async () => {
+	it('stops the clip and takes its picture, its poster and its clock away immediately', async () => {
 		await veiledMidway();
 
 		expect(host.querySelector('video')).toBeNull();

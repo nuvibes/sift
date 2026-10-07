@@ -290,7 +290,7 @@ it('keeps the other rows on screen while it reloads after a decision', async () 
 	 * Answering a question re-reads the list, and the panel must not draw "Looking..." over
 	 * everything while it does, or the screen blinks for every answer. `EntityGrid` draws its
 	 * skeleton only when there is nothing on screen yet, and these panels do the same. The row
-	 * pressed leaves at once (see below); the one beside it stays.
+	 * pressed leaves immediately (see below); the one beside it stays.
 	 */
 	mocks.labels = [
 		{ subject: 'person', key: 'birth_date', label: 'Born' },
@@ -363,8 +363,8 @@ it('puts the row back where it stood when the server refuses it, and says so', a
 });
 
 it('does not bring a pressed row back from a read that answers before its write lands', async () => {
-	// Height is pressed and its write never lands; Born is pressed and lands at once, which reads
-	// the rows again, and the server, not having Height's answer yet, still lists it.
+	// Height is pressed and its write never lands; Born is pressed and lands immediately, which
+	// reads the rows again, and the server, not having Height's answer yet, still lists it.
 	mocks.disagreementsOf.mockResolvedValue([row(), row({ key: 'height', mine: 160, theirs: 165 })]);
 	await draw();
 	mocks.settle.mockReturnValueOnce(new Promise(() => {}));

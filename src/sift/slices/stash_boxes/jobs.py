@@ -543,7 +543,7 @@ async def link_invented(
     other link gets.
 
     One going wrong does not stop the rest, for the reason `_one_of_many` gives, and `JobBlocked`
-    still parks the whole job because it is true of every row at once.
+    still parks the whole job because it is true of every row together.
     """
     tally: Counter[Outcome] = Counter()
     for one in wanted:

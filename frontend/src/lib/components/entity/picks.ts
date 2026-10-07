@@ -27,8 +27,8 @@
  *
  * Every named parameter combines with AND on the server (`parse_modal`), and a repeated parameter
  * demands every value, so `people=Jane+Else&people=Grace+Hopper&tags=beach` beside the page's own
- * `people: <this person>` is all four at once. `bothNarrowings` joins the page's own constraint to
- * the address's without either replacing the other.
+ * `people: <this person>` is all four at the same time. `bothNarrowings` joins the page's own
+ * constraint to the address's without either replacing the other.
  */
 
 import type { components } from '$lib/api/schema';

@@ -139,7 +139,7 @@ def sureness(low: float | None, high: float | None, figure: float, unit: str) ->
 
 @dataclass(frozen=True)
 class Level:
-    """One run: how many encodes at once, and what came of it."""
+    """One run: how many encodes at the same time, and what came of it."""
 
     at_once: int
     seconds: float
@@ -189,7 +189,7 @@ SEEK_BOUND_SECONDS = TOO_BUSY_SECONDS
 
 @dataclass(frozen=True)
 class StorageLevel:
-    """One run against one storage: how many files were read at once, and what came back."""
+    """One run against one storage: how many files were read at the same time, and what came back."""
 
     at_once: int
     seconds: float
@@ -245,7 +245,7 @@ def storage_name(storage: str) -> str:
 
 @dataclass(frozen=True)
 class StorageCurve:
-    """How one storage behaved as more files were read from it at once."""
+    """How one storage behaved as more files were read from it together."""
 
     storage: str
     """The storage as the operating system names it: `\\\\server\\share\\` or `C:\\`."""
@@ -325,7 +325,7 @@ class Measurement:
         last = self.levels[-1] if self.levels else None
         if last is not None and not last.responsive:
             said.append(
-                f"Encoding more than {last.at_once} at once was not tried: at {last.at_once} "
+                f"Encoding more than {last.at_once} at the same time was not tried: at {last.at_once} "
                 f"Sift stopped keeping up."
             )
         said += [f"On {one.name}, {one.unmeasured}" for one in self.storages if one.unmeasured]
@@ -383,7 +383,7 @@ def recommend(measurement: Measurement, *, current: dict[str, int]) -> list[Reco
 
     if measurement.at_ceiling:
         found = (
-            f"Measured: this device was still finishing more work at {measured} encodes at once, "
+            f"Measured: this device was still finishing more work at {measured} encodes at the same time, "
             f"which is as wide as the test goes \u2014 nothing wider was tried, so {measured} is "
             f"the most this run can show rather than the point where it stopped helping."
         )
@@ -467,7 +467,8 @@ def _tasks_said(jobs: int, measured: int, threads: int) -> str:
 def _share_said(curve: StorageCurve, best: StorageLevel) -> str:
     """One share's number, the readings it came from, and why wider was not chosen."""
     readings = ", ".join(
-        f"{level.at_once} at once {level.megabytes_per_second:.0f} MB/s" for level in curve.levels
+        f"{level.at_once} at the same time {level.megabytes_per_second:.0f} MB/s"
+        for level in curve.levels
     )
     slow = curve.too_slow
     if slow is not None:
@@ -478,12 +479,12 @@ def _share_said(curve: StorageCurve, best: StorageLevel) -> str:
     elif best.at_once == curve.levels[-1].at_once:
         why = "nothing wider was tried"
     elif curve.collapsed:
-        why = "reading more at once delivered less, not more"
+        why = "reading more at the same time delivered less, not more"
     else:
-        why = f"reading more at once delivered under {round((1 - NEAR_BEST) * 100)}% more"
+        why = f"reading more at the same time delivered under {round((1 - NEAR_BEST) * 100)}% more"
     files = "file" if best.at_once == 1 else "files"
     sure = sureness(best.low, best.high, best.megabytes_per_second, "MB/s")
-    return f"Measured on {curve.name}: {best.at_once} {files} at once ({readings}); {why}.{sure}"
+    return f"Measured on {curve.name}: {best.at_once} {files} at the same time ({readings}); {why}.{sure}"
 
 
 def recommend_share_reads(
@@ -573,7 +574,7 @@ async def build_clip(into: Path, settings: Settings) -> Path:
     return target
 
 
-#: Threads one encode is allowed, fixed so the encodes at once are the only thing that varies:
+#: Threads one encode is allowed, fixed so the encodes run together are the only thing that varies:
 #: uncapped, one encode fills a large machine and the curve is flat from the start.
 THREADS_PER_ENCODE = 2
 
@@ -758,19 +759,19 @@ def _stops(done: Sequence[StorageLevel], sample: int, wider: int | None) -> tupl
     last = done[-1]
     if not last.quick_enough:
         return True, (
-            f"nothing wider than {last.at_once} at once was tried: one reader waited "
+            f"nothing wider than {last.at_once} at the same time was tried: one reader waited "
             f"{last.seconds_per_seek:.2f} s for each seek, past the quarter second a person notices."
         )
     if len(done) > 1 and max(map(_mbps, done[:-1])) >= _mbps(last) * NEAR_BEST:
         return True, None
     if wider is None:
         return True, (
-            f"nothing wider than {last.at_once} at once was tried, the most Sift reads from one "
+            f"nothing wider than {last.at_once} at the same time was tried, the most Sift reads from one "
             f"storage, and it was still getting quicker."
         )
     if wider * 2 > sample:
         return True, (
-            f"nothing wider than {last.at_once} at once was tried: only {sample} files large "
+            f"nothing wider than {last.at_once} at the same time was tried: only {sample} files large "
             f"enough to seek into were found."
         )
     return False, None
@@ -786,7 +787,7 @@ async def measure_storage(
     busy: Callable[[], bool] = others_busy,
     deadline: Deadline | None = None,
 ) -> StorageCurve:
-    """How many files this storage serves at once, never raising: doubling until a level gains
+    """How many files this storage serves at the same time, never raising: doubling until a level gains
     nothing, a seek passes `SEEK_BOUND_SECONDS`, the sample or `deadline` runs out, then the midpoint."""
     deadline = deadline or Deadline(STORAGE)
     curve = StorageCurve(storage=one.storage, label=one.label, remote=one.remote)

@@ -71,7 +71,7 @@ describe('what a finished download says', () => {
 		expect(toaster).toContain('<HistorySentence pieces={toast.pieces} />');
 	});
 
-	/* Several at once have no single thing to open: `toasts-downloads.svelte.test.ts` holds that
+	/* Several together have no single thing to open: `toasts-downloads.svelte.test.ts` holds that
 	   by what is said ("4 downloads finished", and no file to open), which a search of the source
 	   could not. */
 });

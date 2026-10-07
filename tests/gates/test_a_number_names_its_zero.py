@@ -2,7 +2,7 @@
 """A number setting whose zero means something other than an amount says so in words.
 
 A box reading "Skip files smaller than 0 MB" reads as a size, when it means there is no minimum at
-all; "Lock Hidden after 0 min" reads as locking at once, when it means never. So every whole-number
+all; "Lock Hidden after 0 min" reads as locking immediately, when it means never. So every whole-number
 setting that accepts zero either declares `automatic_label` (the word the screen draws in place of
 the zero, and the word the activity line says) or is named below as one whose zero is a real
 amount. A new setting that accepts zero has to take one side or the other.

@@ -2,7 +2,7 @@
 """A browser-client gate that nothing runs is not a gate.
 
 Two runners run the client's gates: `scripts/ci-local.sh`, one step per gate, and the workflows,
-which run every structural gate at once through `npm run gate:structure` (frontend/scripts/gates.js
+which run every structural gate together through `npm run gate:structure` (frontend/scripts/gates.js
 runs each `check_*.js` beside it but the few it names in NOT_HERE) plus those few as steps of their
 own. This holds the two to the same set, read through gates.js rather than from a copy of its list,
 and catches the one thing a shared list would not: a gate in `package.json` that neither runs.

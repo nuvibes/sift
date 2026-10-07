@@ -179,8 +179,8 @@ async def check_for_an_update_at_start(clock: TaskClock) -> None:
     last check before it can say a release is out.
 
     The ONE waiting run is moved rather than a second queued beside it: the schedule's own run is
-    already due at once on a new library, or after a check older than the interval, and two rows
-    due together are two checks. Placed as a check that never ran would be (`since=0`): at once,
+    already due together on a new library, or after a check older than the interval, and two rows
+    due together are two checks. Placed as a check that never ran would be (`since=0`): immediately,
     or at the opening of quiet hours when that is its When.
     """
     await clock.ensure("update-check", since=0, move=True)

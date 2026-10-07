@@ -9,9 +9,9 @@
 	 * Grouped by what somebody comes for, in the order they reach for it: what gets downloaded,
 	 * the limits that stop a download, what a finish says and sounds like, then where a download
 	 * lands and what it is called (`NamingTemplate`, which owns the per-Site list). The knobs
-	 * somebody should be able to reach and not be invited to turn (how many at once, the speed
-	 * limit, the pacing, the timeout, the retries and the wait after a rate limit) are one row at
-	 * the foot, "More settings", which
+	 * somebody should be able to reach and not be invited to turn (how many at the same time, the
+	 * speed limit, the pacing, the timeout, the retries and the wait after a rate limit) are one
+	 * row at the foot, "More settings", which
 	 * opens a page of their own: the sub-page Importing uses for its groups (`drilldown`), so a deep
 	 * link to one of them opens the page first and rings the row.
 	 *

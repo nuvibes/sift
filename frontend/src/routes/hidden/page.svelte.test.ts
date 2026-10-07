@@ -2,7 +2,7 @@
  * Hidden, for somebody with no PIN yet.
  *
  * Nothing can be hidden or shown again without a PIN, so the first press on Hidden is where one
- * is made: the screen asks at once, and its button names what pressing it will do.
+ * is made: the screen asks immediately, and its button names what pressing it will do.
  */
 
 import { afterEach, describe, expect, it } from 'vitest';
@@ -33,7 +33,7 @@ function render(): HTMLElement {
 }
 
 describe('arriving at Hidden', () => {
-	it('asks for a PIN at once when there is none', () => {
+	it('asks for a PIN immediately when there is none', () => {
 		vault.loaded = true;
 		vault.pinSet = false;
 

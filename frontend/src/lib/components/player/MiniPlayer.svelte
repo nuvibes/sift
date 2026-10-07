@@ -36,7 +36,7 @@
 	import { run } from '$lib/player/run.svelte';
 	import TheaterWall from '$lib/components/theater/TheaterWall.svelte';
 	import { showing as theater } from '$lib/theater/wall.svelte';
-	import { matches, pressed } from '$lib/shell/shortcuts';
+	import { pressed, stepAsked } from '$lib/shell/shortcuts';
 	import { panelKeys } from './mini-keys';
 	import { api, isMissing } from '$lib/api/client';
 	import { libraryChanges, whenChanged } from '$lib/library/changes.svelte';
@@ -322,14 +322,11 @@
 	function onKeydown(event: KeyboardEvent) {
 		if (!mini.showing || somethingElsePlaying) return;
 		if (pressed(event, keys)) return;
-		if (matches(event, 'view.previous') || matches(event, 'view.next')) {
-			// A bare arrow on a clip steps through the clip; the list wants Shift, as it does on the
-			// full-size view. A picture has no playhead, so a bare arrow steps the list there.
-			if (isClip() && !event.shiftKey) return;
+		// As on the full-size view; the panel's compact player never steps, so Ctrl is answered here.
+		const asked = stepAsked(event, { clip: isClip(), clipSteps: false });
+		if (asked !== null) {
 			event.preventDefault();
-			if (matches(event, 'view.next') ? around.forward : around.back) {
-				void walk(matches(event, 'view.next'));
-			}
+			if (asked === 'next' ? around.forward : around.back) void walk(asked === 'next');
 		}
 	}
 

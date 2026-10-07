@@ -83,7 +83,7 @@
 		);
 	}
 
-	/* The choice at the sheet's head, remembered at once; the sheet starts over on it. */
+	/* The choice at the sheet's head, remembered immediately; the sheet starts over on it. */
 	function chooseWay(next: string) {
 		way = next === 'only' ? 'only' : 'except';
 		rememberExportWay(way);

@@ -1347,7 +1347,7 @@ async def test_a_face_refused_as_two_people_is_refused_as_both_after_a_rescan(
     recognizer: FakeRecognizer,
     person: str,
 ) -> None:
-    """Refusals add up, where a name or a pile is one place. Matched across every refusal at once,
+    """Refusals add up, where a name or a pile is one place. Matched across every refusal together,
     the rule gives each fresh face to the FIRST remembered decision it agrees with, and the
     other "no" is lost."""
     other = await make_person(temp_db, "Nadia Vance")

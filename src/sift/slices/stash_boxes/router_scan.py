@@ -54,7 +54,7 @@ router = APIRouter(tags=["stash-boxes"])
 # --- the bulk pass --------------------------------------------------------------------------
 
 #: The most files one Enrich press may name. The grid's "Select all" picks at most this many
-#: (`MOST_AT_ONCE` in the client's grid), so a selection made in one gesture is always taken whole.
+#: (`MOST_SELECTED` in the client's grid), so a selection made in one gesture is always taken whole.
 #: Each named file is one open, one kept-local read and one queued task before the reply, which is
 #: why there is a ceiling at all.
 MOST_NAMED_FILES = 1000
@@ -76,7 +76,7 @@ async def start_scan(
     """Ask the stash-boxes what the library is, or what one folder of it is.
 
     The body is optional and so is the folder in it, so a caller that wants the whole library
-    posts nothing at all. Queues the work and returns at once; it shows up in the job list. Refused
+    posts nothing at all. Queues the work and returns immediately; it shows up in the job list. Refused
     rather than ignored when the feature is off: a button whose job declines reads as broken.
     """
     if not bool(await settings.get_app(SCAN_KEY)):
@@ -207,9 +207,9 @@ async def enrich_entities(
 ) -> EnrichStarted:
     """Ask the stash-boxes about a batch of people, sites or tags.
 
-    Queues and returns at once, for the reason the sweep does: one request per subject to somebody
-    else's service, paced, so forty of them is most of a minute and a screen that waited for it
-    would look broken.
+    Queues and returns immediately, for the reason the sweep does: one request per subject to
+    somebody else's service, paced, so forty of them is most of a minute and a screen that waited
+    for it would look broken.
 
     Every id is resolved through the SCOPED read first, and one that resolves to nothing is dropped
     rather than refusing the batch. Two things follow. A subject this user may not be shown does

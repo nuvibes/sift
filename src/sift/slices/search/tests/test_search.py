@@ -928,7 +928,7 @@ def test_unrated_is_this_account_s_own_question(client: TestClient, world: World
     assert world.beach in found(client, q="rating:none")[0]
 
 
-def test_asking_for_unrated_and_a_star_count_at_once_matches_nothing(
+def test_asking_for_unrated_and_a_star_count_together_matches_nothing(
     client: TestClient, world: World
 ) -> None:
     """Two things that cannot both hold. Answered as nothing, never as everything."""

@@ -1072,7 +1072,7 @@ async def preview_connection(
 
     **It writes nothing, and it needs no master key.** There is nothing to seal, so this works
     before anybody has unlocked anything, which matters, because pasting the wrong file and
-    unlocking are two separate problems and meeting both at once is how a form becomes a wall.
+    unlocking are two separate problems and meeting both together is how a form becomes a wall.
 
     The same reading `POST /site-connections` does, from the same function, so the numbers somebody
     approves are the numbers that get stored rather than a second parse that could differ.
@@ -1389,7 +1389,7 @@ async def import_tunnel(
     except TunnelError as exc:
         raise _refused(exc) from exc
     # The tunnels moved: every open screen that offers them (the swap's chooser above all) re-reads.
-    # Told at once: the store's own writes are done, and a route holds no transaction of its own.
+    # Told immediately: the store's own writes are done, and a route holds no transaction of its own.
     announce_now(EVERY_ADMIN, About.SETTINGS)
     return ImportedTunnel(id=tunnel_id)
 

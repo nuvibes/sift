@@ -39,7 +39,7 @@ def asking(**numbers: Any) -> EditRequest:
     """One operation, as the request carrying only it.
 
     Most of what is asserted below is about one thing being done to one file, which is still the
-    ordinary case. The tests about several at once build their own list.
+    ordinary case. The tests about several together build their own list.
     """
     return EditRequest(steps=[EditStep(**numbers)])
 

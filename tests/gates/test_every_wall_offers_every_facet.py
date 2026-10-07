@@ -7,7 +7,7 @@ A facet is declared twice, once per side, for each kind of thing a wall can show
 list of what it groups by (`FACETS` for files, `ENTITY_FACETS` for the five walls of things, the
 Downloads queue's own), and the browser's list of the columns the filter panel draws for that
 kind (`facet-labels.ts`). Each side reads complete on its own, and they drift two ways with no
-symptom anybody sees at once:
+symptom anybody sees immediately:
 
   * a column the browser offers that the server does not count for THAT kind is a column that
     draws empty forever (the panel turns the refusal into an empty list);

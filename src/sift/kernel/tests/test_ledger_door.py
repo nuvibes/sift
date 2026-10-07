@@ -4,7 +4,7 @@
 The RULES are asserted against a bare database, because what is being asked is whether the door
 refuses what it says it refuses: a verb it has no word for, a list of subjects long enough to be
 a pass, a count beside seven subjects. A real library would make those answers depend on two things
-at once.
+together.
 
 The PROMISE is asserted against real rows: a person deleted, and the event that named them read
 back afterwards with the name it wrote down. That is the half worth having, because "an event

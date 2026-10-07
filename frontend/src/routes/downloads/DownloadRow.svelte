@@ -1125,7 +1125,7 @@
 	.where {
 		color: inherit;
 		text-decoration: none;
-		/* The ink steps over --dur-instant. The underline arrives at once, which is right: a
+		/* The ink steps over --dur-instant. The underline arrives immediately, which is right: a
 		   mark either identifies the word under the pointer or it does not. */
 		transition: color var(--dur-instant) var(--ease);
 	}

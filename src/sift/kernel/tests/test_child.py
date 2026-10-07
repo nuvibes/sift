@@ -215,7 +215,7 @@ def test_a_lost_device_is_held_against_for_a_while_and_then_tried_again(
     with pytest.raises(DeviceUnavailable, match="stopped answering"):
         runner.load(weight)
     assert runner.broken is not None and "tried again in a minute" in runner.broken
-    # Held: the next ask is refused at once, with the same sentence, and starts nothing.
+    # Held: the next ask is refused immediately, with the same sentence, and starts nothing.
     with pytest.raises(DeviceUnavailable, match="tried again"):
         runner.load(weight)
     # And after the hold the sentence is gone, and the next ask would start a fresh child.

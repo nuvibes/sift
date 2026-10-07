@@ -179,7 +179,7 @@ async def import_reference_folder_by_path(
 
     The folder must be inside one Sift has been given (`Settings > Library` and the folder dialog
     give them): the same confinement the folder picker keeps, so this door reads nothing the picker
-    could not show. Answers at once with the task; the folder is read by the task.
+    could not show. Answers immediately with the task; the folder is read by the task.
     """
     if not await service.enabled():
         raise _off()
@@ -243,7 +243,7 @@ async def import_reference_folder(
     sent_paths = [path for path, _ in claimed if path is not None]
     paths = _drop_the_chosen_folder(sent_paths)
     # The chosen folder's own name, where the browser put one in front of everything: what the
-    # people it holds say they came from. None where several were chosen at once.
+    # people it holds say they came from. None where several were chosen together.
     named = sent_paths[0].parts[0] if sent_paths and paths != sent_paths else None
     root = Path(
         await asyncio.to_thread(

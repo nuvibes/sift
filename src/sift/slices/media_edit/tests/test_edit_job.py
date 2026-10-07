@@ -94,7 +94,7 @@ def reindexer() -> FakeReindexer:
 def step(**numbers: Any) -> dict[str, Any]:
     """One operation, as it sits in a job's payload.
 
-    A Save carries a list of these, because several operations at once produce one file rather than
+    A Save carries a list of these, because several operations together produce one file rather than
     one file each. Most of what is asserted here is one of them, which is still the ordinary case.
     """
     return numbers

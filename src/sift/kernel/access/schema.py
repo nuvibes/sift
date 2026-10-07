@@ -55,7 +55,7 @@ ACCESS_VERSION = 5
 # `cache_stamp` is how many times what this user may see has changed. It rides in the address of
 # every generated picture alongside the picture's digest, so raising it (on any hide, unhide, share,
 # unshare or delete, in the same transaction) makes every address this user was given unreachable
-# at once: a copy served from the browser's own store is served with no permission check. On the
+# immediately: a copy served from the browser's own store is served with no permission check. On the
 # USER and not the session, because on the session every sign-in would start with an empty cache.
 # `renames` and `renames_since` are how many times this user has renamed themselves, and when that
 # count started. A guest may change their own name a few times a day and no more: the refusal on a
@@ -419,8 +419,8 @@ CREATE TABLE IF NOT EXISTS collections (
 #: OWN JPEG, re-encoded from what arrived by piping it into ffmpeg on standard input (see
 #: `kernel.covers.receive_cover_picture`). That is the security property of the whole feature and it
 #: is stronger than deleting the original afterwards, because the original is never a file: it
-#: disposes of camera metadata, of polyglot files that are a picture and an archive at once, and of
-#: every decoder bug in every browser that will ever open what is served.
+#: disposes of camera metadata, of polyglot files that are a picture and an archive at the same
+#: time, and of every decoder bug in every browser that will ever open what is served.
 #:
 #: KEPT OUT OF THE LIBRARY on purpose, and that is not tidiness. An uploaded cover must never become
 #: an asset: `assets` is what a scan found on a disk, and a row there that no disk has would be a

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""The first faces of every card on a page of people, read for the page at once."""
+"""The first faces of every card on a page of people, read for the page in one go."""
 
 from __future__ import annotations
 

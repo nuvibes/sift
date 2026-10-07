@@ -286,7 +286,7 @@ async def test_a_persons_proposals_come_before_every_group(
     service: FaceService, temp_db: Database, admin: Viewer, proposed: str, seeded_pile: str
 ) -> None:
     """The order is the answer rather than a presentation choice: agreeing to a person's proposals
-    settles every face standing for them at once, and each one becomes a reference picture that
+    settles every face standing for them in one go, and each one becomes a reference picture that
     improves the next pass. A group settles itself and teaches nothing until it is named."""
     await seed_group(temp_db, "9", 6)
 
@@ -1236,7 +1236,7 @@ async def test_the_faces_card_counts_questions_not_people(
     service: FaceService, admin: Viewer
 ) -> None:
     """The board's Faces card draws the first queue's words after the group's number (every
-    pending tab added up, people and files and groups at once), not "people Sift is proposing",
+    pending tab added up, people and files and groups together), not "people Sift is proposing",
     which only the Faces to confirm tab counts."""
     found = await SuggestionsQueue(service).survey(admin)
 

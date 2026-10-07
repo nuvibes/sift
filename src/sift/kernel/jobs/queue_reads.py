@@ -38,7 +38,7 @@ _NEXT_SCHEDULED = (
     "WHERE type = ? AND state = 'queued' AND run_after IS NOT NULL"
 )
 
-#: The same for several types at once, each type a seek of `ix_jobs_by_type`.
+#: The same for several types together, each type a seek of `ix_jobs_by_type`.
 _NEXT_SCHEDULED_OF = (
     "SELECT type, MIN(run_after) AS due FROM jobs"
     " WHERE type IN (SELECT value FROM json_each(?)) AND state = 'queued' AND run_after IS NOT NULL"
@@ -225,8 +225,8 @@ _UNFINISHED_AMONG = (
     "SELECT id FROM jobs WHERE id IN (?*) AND state IN ('queued', 'running', 'blocked', 'paused')"
 )
 
-#: How many ids one of those asks about at once: under SQLite's default ceiling of 999.
-_ASK_ABOUT_AT_ONCE = 500
+#: How many ids one of those asks about in one go: under SQLite's default ceiling of 999.
+_ASKED_ABOUT_PER_READ = 500
 
 #: How many jobs of the named types have not finished, `blocked` and `paused` included: a pass
 #: must not call itself finished while a piece of it is deliberately held.
@@ -479,8 +479,8 @@ class Reads(QueueCore):
         workspaces asks about a handful, in chunks under SQLite's parameter cap."""
         living: set[str] = set()
         ids = list(job_ids)
-        for start in range(0, len(ids), _ASK_ABOUT_AT_ONCE):
-            chunk = ids[start : start + _ASK_ABOUT_AT_ONCE]
+        for start in range(0, len(ids), _ASKED_ABOUT_PER_READ):
+            chunk = ids[start : start + _ASKED_ABOUT_PER_READ]
             sql, params = in_clause(_UNFINISHED_AMONG, chunk)
             living.update(str(row["id"]) for row in await self._db.fetch_all(sql, params))
         return living

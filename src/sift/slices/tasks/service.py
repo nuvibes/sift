@@ -627,7 +627,7 @@ class TasksService:
         range and pauses with it whatever the task's When says.
 
         `only` is the part of the task asked for, already checked (`selection`). `dry` queues the
-        task's dry run instead of the task: at once, since it changes nothing and somebody is
+        task's dry run instead of the task: immediately, since it changes nothing and somebody is
         waiting for its answer.
         """
         task = get_schedule(task_id)

@@ -77,7 +77,7 @@ class _Reactions:
         # and the fetch that brings them asks for it itself.
         if faces.MODEL_KEY in changed and await understanding.faces.ready():
             await queue.enqueue_when_settled(faces.FACE_REMEASURE, delay=0)
-        # Turning "Find usernames in photo details" on asks for the folder pass at once, so the
+        # Turning "Find usernames in photo details" on asks for the folder pass immediately, so the
         # files already waiting on a username number have their pictures read now rather than
         # when the next import settles. The pass itself reads them again: a pass made with the
         # switch off remembers nothing as read (`suggestions.service.NOT_READ`).
@@ -87,7 +87,7 @@ class _Reactions:
             with contextlib.suppress(JobSwitchedOff):
                 await queue.enqueue_when_settled(suggestions.SUGGESTION_SCAN, delay=0)
         # Turning "Create people from these fingerprints as their faces are recognized" on runs the
-        # pass over facial fingerprints at once, so the entries held already that faces match are
+        # pass over facial fingerprints immediately, so the entries held already that faces match are
         # made People now rather than at the next scan; turning recognition on runs it too, since
         # a fingerprints file may be taken in while it is off. Each person is announced as they
         # are made, and the run is on Activity. Off needs nothing done: a person made stays.
@@ -123,7 +123,7 @@ class _Reactions:
         whens = {task.when_key for task in registered_schedules().values()}
         if expanded & (quiet_range | whens):
             # The next claim asks quiet hours again rather than a few seconds from now, so a task
-            # moved to "As soon as there is work" starts at once.
+            # moved to "As soon as there is work" starts immediately.
             queue.forget_quiet_hours()
         if expanded & quiet_range:
             await task_clock.reschedule_all()

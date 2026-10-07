@@ -12,7 +12,7 @@ cookie. Only the event loop touches it, with no await between read and write, so
 from __future__ import annotations
 
 MAX_OPEN_SESSIONS = 256
-"""A cap on sessions holding an open vault at once.
+"""A cap on sessions holding an open vault at the same time.
 
 Entries leave on lock and logout but not when a session expires or is revoked; those leftovers are
 inert (their token hash matches nothing) but unbounded, so the oldest is dropped at the cap. Far

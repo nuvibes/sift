@@ -178,7 +178,7 @@ def resample(picture: np.ndarray, width: int, height: int) -> np.ndarray:
     Everything the DECODER can be asked for is asked of the decoder instead.
 
     Bilinear, and read as a gather rather than a loop: the four neighbours of every output pixel
-    are addressed at once, so the cost is the size of the output and not the size of the input.
+    are addressed together, so the cost is the size of the output and not the size of the input.
     """
     source_height, source_width = picture.shape[:2]
     if (source_width, source_height) == (width, height):

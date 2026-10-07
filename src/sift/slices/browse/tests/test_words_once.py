@@ -70,7 +70,7 @@ def _guest(stamp: int = 0) -> Viewer:
 
 
 async def _address(service: BrowseService, viewer: Viewer, text: str = "zqxv") -> None:
-    """The wall and the Filter panel's five columns, asked at once as the client asks them."""
+    """The wall and the Filter panel's five columns, asked at the same time as the client asks them."""
     asked = _asked(text)
     await asyncio.gather(
         service.page(viewer, limit=50, offset=0, asset_filter=asked),

@@ -64,7 +64,7 @@ class PreviewCommand(Protocol):
 
 @dataclass(frozen=True)
 class CardLevel:
-    """One width: how many previews were built at once on the card, and what came of them."""
+    """One width: how many previews were built at the same time on the card, and what came of them."""
 
     at_once: int
     seconds: float
@@ -94,7 +94,7 @@ class CardLevel:
 
 @dataclass(frozen=True)
 class CardCurve:
-    """How the card did as more previews were built on it at once."""
+    """How the card did as more previews were built on it together."""
 
     encoder: str
     decodes_on_card: bool
@@ -291,7 +291,7 @@ async def measure_card(
 def recommend_previews(
     curve: CardCurve | None, *, tasks: int, current: dict[str, int], key: str, label: str
 ) -> Recommendation | None:
-    """Previews at once from what the card did with the preview's own command; never above the
+    """Previews at the same time from what the card did with the preview's own command; never above the
     tasks, which a preview is one of. None where the card was not measured."""
     best = None if curve is None else curve.best
     if curve is None or best is None:

@@ -1,7 +1,7 @@
 /*
  * An entity page's tabs across a change of wall: the wall being left stays over the new one, out
  * of reach, until the new one has its answer, so a press never shows an empty screen between two
- * full ones; and the new wall is drawn from the first moment, so it asks at once.
+ * full ones; and the new wall is drawn from the first moment, so it asks immediately.
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -58,7 +58,7 @@ describe('a tab on another wall', () => {
 
 		props.tab = 'people';
 		flushSync();
-		// Both walls are drawn: the new one asks at once, under the old one, which is out of reach.
+		// Both walls are drawn: the new one asks immediately, under the old one, which is out of reach.
 		expect(layers()).toEqual(['files held', 'people']);
 		const held = host.querySelector<HTMLElement>('.layer.held');
 		expect(held?.inert || held?.hasAttribute('inert')).toBe(true);

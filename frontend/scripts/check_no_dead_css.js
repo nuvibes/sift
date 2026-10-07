@@ -5,7 +5,7 @@
  * This is not a tidiness check. A control whose rules stopped matching does not come out plain:
  * it comes out wearing the browser's own chrome, a grey 3D button in the middle of a dark
  * interface. Rename a class on one element and every rule keyed on the old name as an ancestor goes
- * quiet at once, while the markup and the stylesheet each still read correctly on their own.
+ * quiet together, while the markup and the stylesheet each still read correctly on their own.
  *
  * The compiler already knows, in a warning on every build. This listens, and it is the only check
  * of its kind that runs before anything is drawn. Every other one measures a page, which means it

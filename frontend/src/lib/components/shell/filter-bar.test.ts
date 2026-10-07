@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { ChipOrder, flip, opposite, placed } from './filter-bar.svelte';
+import { ChipOrder, flip, opposite, pick, placed, stanceOf } from './filter-bar.svelte';
 import type { Narrowing } from './screen-bar.svelte';
 
 /** A filtering held in a string, which is all a writer needs. */
@@ -26,6 +26,21 @@ describe('a facet written back', () => {
 		expect(placed(at, 'tags', ['a']).toString()).toBe('people=c&tags=a');
 		expect(placed(at, 'people', []).toString()).toBe('');
 	});
+});
+
+describe('a name beginning with a minus on a wall of things', () => {
+	it.each(['person', 'tag', 'site'] as const)(
+		'%s: is picked in quotes and refused outside them',
+		(wall) => {
+			const where = held('');
+			pick(wall, 'tags', '-raw', 'on', where);
+			expect(where.now).toBe('tags=%22-raw%22');
+			expect(stanceOf('tags', '-raw', where)).toBe('on');
+			pick(wall, 'tags', '-raw', 'out', where);
+			expect(where.now).toBe('tags=-%22-raw%22');
+			expect(stanceOf('tags', '-raw', where)).toBe('out');
+		}
+	);
 });
 
 describe('a press on a chip', () => {

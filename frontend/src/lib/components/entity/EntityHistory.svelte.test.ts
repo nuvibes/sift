@@ -378,8 +378,8 @@ describe('the subject', () => {
 
 describe('a decision made beside it', () => {
 	/*
-	 * A stash-box answer pressed beside the thread must update the thread at once: the decision is
-	 * written into this very history. `answered` is the one signal every decision moves.
+	 * A stash-box answer pressed beside the thread must update the thread immediately: the decision
+	 * is written into this very history. `answered` is the one signal every decision moves.
 	 */
 	it('reads the thread again when something is decided, keeping the old one up meanwhile', async () => {
 		asked.history.mockResolvedValue([event({ what: 'Added to the library.' })]);
@@ -390,7 +390,7 @@ describe('a decision made beside it', () => {
 		let land: (events: HistoryEvent[]) => void = () => {};
 		asked.history.mockReturnValue(new Promise((yes) => (land = yes)));
 		answered.changed();
-		// Settled over a short window rather than at once. See `rereadOnHistoryChange`.
+		// Settled over a short window rather than immediately. See `rereadOnHistoryChange`.
 		await vi.waitFor(() => expect(asked.history).toHaveBeenCalledTimes(2));
 		// Not blanked to the busy line while the new thread is on its way.
 		expect(host.querySelector('.empty')).toBeNull();

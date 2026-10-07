@@ -14,7 +14,7 @@ import { fileURLToPath } from 'node:url';
  */
 
 // Serial, and it is not a workaround. Every test here adds a real folder to the one library the
-// one server has, so they are not independent: run at once they collide over the same roots, and a
+// one server has, so they are not independent: run together they collide over the same roots, and a
 // locator for "the folder I just added" finds three of them. The suite is parallel across files,
 // which is where the time is.
 test.describe.configure({ mode: 'serial' });

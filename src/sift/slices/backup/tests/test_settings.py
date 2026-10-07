@@ -44,7 +44,7 @@ def test_the_three_preferences_are_declared_where_each_one_is_answered() -> None
     into Scheduled tasks. Where to save a backup and how many to keep are questions about the file, and they are
     answered on the pane about backups whether anything is scheduled or not.
 
-    Asserted per key rather than over the three at once, because the split IS the thing: filing all
+    Asserted per key rather than over the three together, because the split IS the thing: filing all
     three together, on either screen, is exactly what this catches.
     """
     wanted = {

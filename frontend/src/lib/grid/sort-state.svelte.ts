@@ -99,7 +99,7 @@ export function mintSeed(): number {
  *
  * A table, since `Select` owns the entries' shape (as `facetIcon` for dimensions). The two name
  * rows share the alphabet, the words saying which way; the time orders do not share, since an arrow
- * up or down is read at once: a clock for arrival, an hourglass for running time.
+ * up or down is read immediately: a clock for arrival, an hourglass for running time.
  */
 const SORT_ICONS: Record<string, IconName> = {
 	relevance: 'search',

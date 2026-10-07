@@ -56,7 +56,7 @@ async def set_username_numbers(db: Database, by_username: Mapping[str, str]) -> 
     """Fill in the site's own number for each username id named here. Returns how many it filled.
 
     By id, never by name: one name on two sites is two usernames, and since only a blank is ever
-    filled (in the SQL, so two passes at once are harmless), a wrong number would be permanent.
+    filled (in the SQL, so two passes together are harmless), a wrong number would be permanent.
     """
     filled = 0
     async with db.write() as connection:

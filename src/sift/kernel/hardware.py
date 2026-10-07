@@ -37,7 +37,7 @@ _WINDOWS = sys.platform == "win32"
 
 log = get_logger(__name__)
 
-# Above this, more workers stop helping. Jobs are mostly ffmpeg and disk, so a dozen at once on a
+# Above this, more workers stop helping. Jobs are mostly ffmpeg and disk, so a dozen together on a
 # machine with a single spinning disk finishes slower than four, and a big server is far more
 # likely to be running Sift alongside other things than to want every core given to it.
 MAX_WORKERS = 8
@@ -66,7 +66,7 @@ _TRANSCODE_ENCODERS: dict[str, str] = {
 
 
 def worker_concurrency(settings: Settings) -> int:
-    """How many jobs to run at once.
+    """How many jobs to run together.
 
     One core is left for everything that is not a job: the web server, the database, the browser
     on the other end waiting for a thumbnail. A box with two cores gets one worker, which is
@@ -687,7 +687,7 @@ def _kept_key(settings: Settings, *, cuda: bool) -> str | None:
 
 
 async def _ask_the_programs(settings: Settings, *, cuda: bool) -> tuple[frozenset[str], list[Card]]:
-    """The slow half of the probe: three programs, asked at once rather than in turn."""
+    """The slow half of the probe: three programs, asked together rather than in turn."""
 
     async def nvidia() -> list[Card]:
         return await _nvidia_identity() if cuda else []

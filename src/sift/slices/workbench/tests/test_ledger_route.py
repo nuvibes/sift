@@ -55,7 +55,7 @@ def client(app: FastAPI) -> Iterator[TestClient]:
         yield running
 
 
-#: The boot's own lines. The scheduler places the two clean-ups' first runs at once
+#: The boot's own lines. The scheduler places the two clean-ups' first runs at the same time
 #: (`sift.wiring.tasks.build_tasks`), and each of those tasks records its run, so a feed these tests
 #: read can carry a "Sift ran Delete old search history" line the test did not seed (the update
 #: check the start queues writes none: its declaration says why): newest, since the seeded events are dated, and present or

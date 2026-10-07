@@ -2,7 +2,7 @@
 /*
  * Whether this browser draws a phone's HEIC, asked once per tab: of `ImageDecoder` where there is
  * one, else by drawing an eight-pixel sample held here (plain http withholds the decoder), so no
- * request is spent. A no draws the copy at once; with no answer the original is tried first.
+ * request is spent. A no draws the copy immediately; with no answer the original is tried first.
  */
 
 /** `undefined` until asked, `null` where the browser cannot say. */

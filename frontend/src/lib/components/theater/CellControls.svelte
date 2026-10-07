@@ -208,8 +208,8 @@
 	 * FIVE SECONDS BACK, in everything this row is addressing.
 	 *
 	 * A RELATIVE move, which is why it reaches the whole wall where the scrubber above it does not:
-	 * "five seconds ago" is true of nine clips at once, and "four minutes and eleven seconds in" is
-	 * true of exactly the one whose timeline is drawn.
+	 * "five seconds ago" is true of nine clips at the same time, and "four minutes and eleven
+	 * seconds in" is true of exactly the one whose timeline is drawn.
 	 *
 	 * Each cell is asked to seek itself, from its own position: the element is the only thing that
 	 * can move a playhead, and a cell that is not on screen has handed nothing in.

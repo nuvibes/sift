@@ -111,7 +111,7 @@ export async function interfaceState(): Promise<Record<string, string>> {
 	return { ...held };
 }
 
-/** Write one key through, at once. Held locally as well, so the screen that set it does not have to
+/** Write one key through, immediately. Held locally as well, so the screen that set it does not have to
  *  wait for the round trip to read its own answer back. */
 function remember(key: string, value: string): void {
 	held[key] = value;
@@ -240,7 +240,7 @@ export function recentFolders(): string[] {
 }
 
 /**
- * Remember that a download named this folder. Written through at once: the next visit is the
+ * Remember that a download named this folder. Written through immediately: the next visit is the
  * point, and it may be on another machine.
  *
  * The id moves to the FRONT whether or not it was already held, which is what makes this recency

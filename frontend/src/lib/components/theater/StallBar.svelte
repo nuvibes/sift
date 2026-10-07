@@ -92,7 +92,7 @@
 	const chosen = $derived(Math.min(wall.focused, wall.cells.length - 1));
 	const cell = $derived(wall.cells[chosen]);
 
-	/* Nothing is being aimed at once the bar goes, or the wall would keep a wash on a cell nobody is
+	/* Nothing is being aimed at after the bar goes, or the wall would keep a wash on a cell nobody is
 	   pointing at: leaving fullscreen with the pointer over a number is exactly how that happens.
 	   The bar fading counts as going: it is `inert` while it is quiet, so the pointer never leaves
 	   the number it was on and the wash would stay lit under a bar that is no longer there. */
@@ -181,7 +181,7 @@
 		>
 			{#if controlled}{@render controlledMark()}{/if}
 			<!--
-				EVERY CELL AT ONCE, at the head of the numbers: it is one of them.
+				EVERY CELL TOGETHER, at the head of the numbers: it is one of them.
 
 				The wall's own verbs reach all of it (stop everything, silence everything), and without
 				this nothing else would: "next file in all four" and "five seconds back in all four" could

@@ -1294,7 +1294,7 @@ describe('an advance that is already in flight when the order changes', () => {
 describe('what the shared filter panel narrows, when it is narrowing a cell', () => {
 	/* The seam Theater is a consumer of. `FilterBar` reads and writes a `Narrowing`, and the
 	   others behind it are the address and a kept filter's draft. A cell is the one that shows
-	   why the shape is right: a wall has four queries at once, so it cannot be the address.
+	   why the shape is right: a wall has four queries at the same time, so it cannot be the address.
 	   This is the cell's own half of it. */
 
 	it('gives back what the panel wrote, in the spelling the panel uses', async () => {

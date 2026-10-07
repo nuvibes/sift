@@ -691,8 +691,8 @@ async def first_presses(database: Database, kind: str, subject_id: str) -> dict[
 # One file-name task can write thousands of feed lines, a line per file; one floor task deleting
 # Photo Sets hundreds; a volume slider dragged across a sitting two dozen. Each act
 # is right to be its own row (the unit of undo is the file, and a history of one file needs its
-# own line), and the feed is the one reader that wants the PRESS, so the fold is a reading of the
-# rows and never a change to them.
+# own line), and the feed is the one reader that wants the PRESS, so the fold is marked beside
+# the rows and never changes them.
 #
 # ## Which acts are one press
 #
@@ -735,15 +735,13 @@ async def first_presses(database: Database, kind: str, subject_id: str) -> dict[
 #
 # ## Its cost
 #
-# A window over the whole filtered record, per page (`history_feed`): the walk the exact total
-# beside it takes. ONE walk and one sort: every act is marked against its neighbours of the same key
-# (does a press open here, does it close here), a press is the stretch from an opening to the next
-# closing, and the page's lines are the newest closings. A second window over runs, or a grouping
-# of every press, would each sort the whole record again to answer for fifty lines. What a folded
-# line was done with and about is then a SEEK on the stretch of time its press spans
-# (`ix_workbench_decided`): a press is every act of its key between its oldest and its newest.
-# The day the walk stops being cheap the answer is a run id written at the door; until then there
-# is nothing to write it from, and every row already in the table would still need this reading.
+# Kept at the door, so a page reads the presses it draws and never the record. Each act stores its
+# key and its gap (columns generated from its own row) and whether a press opens or closes on it;
+# triggers mark an act and its neighbours of the same key wherever one arrives, moves or goes
+# (`history_presses.PRESS_TRIGGERS`). A press is the stretch of its key from an opening to the
+# next closing, and the feed's lines are the closings, newest first (`history_feed`). The press
+# is the whole record's: what the vault holds back or a narrowing leaves out is not drawn and not
+# counted, but it does not split the press it falls in.
 
 #: The longest gap, in seconds, between two acts of one key that are still one press. A task writes
 #: as fast as it can (four thousand filings in four seconds), so any window folds them; what the
@@ -764,55 +762,48 @@ FEED_FOLD_SHOWN: Final = 100
 # edit, and for a payload that is not JSON: `json_valid` first, because `json_extract` on text
 # that is not JSON is an error, and a feed that fails on one row is no feed.
 _SETTING_KEY = (
-    "(CASE WHEN d.verb = 'edited' AND d.object_kind IS NULL AND json_valid(d.payload)"
-    " THEN json_extract(d.payload, '$.key') END)"
+    "(CASE WHEN verb = 'edited' AND object_kind IS NULL AND json_valid(payload)"
+    " THEN json_extract(payload, '$.key') END)"
 )
 _DELETED_FROM = (
-    "(CASE WHEN d.verb = 'deleted' AND json_valid(d.payload)"
-    " THEN json_extract(d.payload, '$.from') END)"
+    "(CASE WHEN verb = 'deleted' AND json_valid(payload) THEN json_extract(payload, '$.from') END)"
 )
 _BACKFILLED = (
-    "(CASE WHEN d.verb = 'added' AND json_valid(d.payload)"
-    " THEN json_extract(d.payload, '$.backfilled') END)"
+    "(CASE WHEN verb = 'added' AND json_valid(payload)"
+    " THEN json_extract(payload, '$.backfilled') END)"
 )
 #: The song a `song_named` act wrote (`identity.seed_music_on`'s payload); NULL for any other.
-_SONG = (
-    "(CASE WHEN d.verb = 'song_named' AND json_valid(d.payload)"
-    " THEN json_extract(d.payload, '$.song') END)"
-)
+_SONG = "(CASE WHEN verb = 'song_named' AND json_valid(payload) THEN json_extract(payload, '$.song') END)"
 
 #: The session a file that arrived BY SWAP came in (`vocabulary.VIA_SWAP`, the payload's `session`,
 #: its short id); NULL for any other act.
 _SWAP_SESSION = (
-    "(CASE WHEN d.verb = 'added' AND d.actor_kind = 'sift' AND d.actor_id = 'swap'"
-    " AND json_valid(d.payload) THEN json_extract(d.payload, '$.session') END)"
+    "(CASE WHEN verb = 'added' AND actor_kind = 'sift' AND actor_id = 'swap'"
+    " AND json_valid(payload) THEN json_extract(payload, '$.session') END)"
 )
 
 #: The passes a press of a pass over a file ran (`kernel.presses`), as their stored JSON list; NULL
 #: for any other act. Presses of different passes are different acts, so they never fold together.
-_PRESSED_PASSES = (
-    "(CASE WHEN d.verb = 'pressed' AND json_valid(d.payload)"
-    " THEN json_extract(d.payload, '$.passes') END)"
-)
+_PRESSED_PASSES = "(CASE WHEN verb = 'pressed' AND json_valid(payload) THEN json_extract(payload, '$.passes') END)"
 
-#: The key one press shares. See the section's head for each branch.
+#: The key one press shares: the stored `fold_key`. See the section's head for each branch.
 _FOLD_KEY = splice(
     """
 CASE
-  WHEN d.verb IN ('ran', 'merged', 'renamed', 'forgot', 'swap_started', 'swap_ended') THEN d.id
-  WHEN d.verb IN ('sharing_turned_on', 'sharing_turned_off', 'start_with_windows_on',
-                  'start_with_windows_off', 'firewall_opened', 'storage_moved',
-                  'update_started', 'library_opened', 'restarted') THEN d.id
-  WHEN {{BACKFILLED}} THEN 'added|backfilled|' || COALESCE(d.object_kind, '')
-  ELSE d.verb || '|' || d.queue || '|' || COALESCE(d.actor_kind, '') || '|'
-       || COALESCE(d.actor_id, '') || '|' || COALESCE(d.object_kind, '') || '|'
+  WHEN verb IN ('ran', 'merged', 'renamed', 'forgot', 'swap_started', 'swap_ended') THEN id
+  WHEN verb IN ('sharing_turned_on', 'sharing_turned_off', 'start_with_windows_on',
+                'start_with_windows_off', 'firewall_opened', 'storage_moved',
+                'update_started', 'library_opened', 'restarted') THEN id
+  WHEN {{BACKFILLED}} THEN 'added|backfilled|' || COALESCE(object_kind, '')
+  ELSE verb || '|' || queue || '|' || COALESCE(actor_kind, '') || '|'
+       || COALESCE(actor_id, '') || '|' || COALESCE(object_kind, '') || '|'
        || CASE
-            WHEN d.verb = 'edited' THEN COALESCE({{SETTING_KEY}}, d.id)
-            WHEN d.verb = 'decided' THEN d.title
-            WHEN d.verb = 'song_named' THEN COALESCE(d.object_id, '') || '|' || COALESCE({{SONG}}, '')
+            WHEN verb = 'edited' THEN COALESCE({{SETTING_KEY}}, id)
+            WHEN verb = 'decided' THEN title
+            WHEN verb = 'song_named' THEN COALESCE(object_id, '') || '|' || COALESCE({{SONG}}, '')
             WHEN {{SWAP_SESSION}} IS NOT NULL THEN {{SWAP_SESSION}}
             WHEN {{PRESSED_PASSES}} IS NOT NULL THEN {{PRESSED_PASSES}}
-            WHEN d.actor_kind IS NULL OR d.actor_kind = 'user' THEN COALESCE(d.object_id, '')
+            WHEN actor_kind IS NULL OR actor_kind = 'user' THEN COALESCE(object_id, '')
             ELSE ''
           END
        || '|' || COALESCE({{DELETED_FROM}}, '')

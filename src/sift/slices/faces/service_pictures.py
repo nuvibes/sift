@@ -23,7 +23,7 @@ if TYPE_CHECKING:  # numpy is only needed for a signature
 
 def _place(destination: Path, picture: bytes) -> None:
     """Write a cut picture where it belongs, making the directory for it. Off the loop. See the
-    face store, where the same pair of calls is made for a whole pass at once."""
+    face store, where the same pair of calls is made for a whole pass in one go."""
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_bytes(picture)
 

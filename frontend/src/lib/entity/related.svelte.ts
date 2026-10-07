@@ -644,7 +644,7 @@ async function readThread(on: EntityKind, id: string): Promise<number | undefine
  *
  * ## The two sources, and why both
  *
- * `follow` asks the server for every tab's number at once, so a page opens with a complete strip.
+ * `follow` asks the server for every tab's number in one go, so a page opens with a complete strip.
  * `saw` is what the wall on screen reported, and it OVERWRITES the map's number for that tab: it
  * is the fresher of the two the moment somebody is looking at it, and it keeps working when the
  * map's request failed. Neither is a second population: the counts route runs the same listings the

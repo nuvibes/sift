@@ -144,7 +144,7 @@
 		 * Ask before removing, naming the thing being taken off: the cross is a small target beside the
 		 * half that opens, and a gone chip is hard to notice. Here, so every surface asks; the
 		 * sentence is the caller's `removeLabel`. The sheet draws the chip itself, opening `where` (the
-		 * chip's own `href`). Absent removes at once, as a filter token does.
+		 * chip's own `href`). Absent removes immediately, as a filter token does.
 		 */
 		confirm?: { what: string; where?: string };
 		/** Drawn as the drop target it currently is. Set by whoever owns the drag. */

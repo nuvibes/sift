@@ -64,20 +64,20 @@ class BuildRow(Wire):
     files: int
     #: What one file cost a WORKER the last time this machine built this, in seconds, or null where
     #: no Build has finished on this machine yet: a guess would read as a measurement. How hard
-    #: the machine worked per file, not how long anybody waited: several jobs run at once, so this
-    #: is several times the wall clock. Not what the estimate below is made of.
+    #: the machine worked per file, not how long anybody waited: several jobs run at the same time,
+    #: so this is several times the wall clock. Not what the estimate below is made of.
     seconds_per_file: float | None = None
     #: How long `files` of them would take ON THE CLOCK, at the cheapest and at the dearest stretch
     #: of this machine's recent runs that made it: each run's wall time shared between the products
     #: it made, divided by how many files each got. Null where those runs made too few to say.
     #:
     #: Not `files` times the figure above, which is worker-seconds presented as wall time and out by
-    #: the number of jobs running at once.
+    #: the number of jobs running at the same time.
     quick_seconds: int | None = None
     slow_seconds: int | None = None
-    #: How many jobs ran at once during the newest run the window was priced from. It assumes
-    #: the next run gets the same, so the sentence on screen says the number rather than leaving
-    #: somebody to guess what it was measured under. Null where the run predates this being
+    #: How many jobs ran at the same time during the newest run the window was priced from. It
+    #: assumes the next run gets the same, so the sentence on screen says the number rather than
+    #: leaving somebody to guess what it was measured under. Null where the run predates this being
     #: recorded, or where there is no run.
     jobs_at_once: int | None = None
     #: How many files this product has given up on (a file that will not decode, one with no
@@ -180,7 +180,7 @@ class RunNowGroup(Wire):
     label: str = Field(description="The stage's press, as Settings words it: 'Identify now'.")
     every: RunNowPass = Field(
         description=(
-            "The press that runs every pass below at once ('Identify all'), drawn first in the"
+            "The press that runs every pass below together ('Identify all'), drawn first in the"
             " stage's flyout. Its key names the stage, and the server expands it into the passes."
         )
     )

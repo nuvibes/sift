@@ -184,6 +184,16 @@
     "vis_wall_totals_delete",
     "vis_wall_totals_update",
     "vis_recompute_settle",
-    "vis_recompute_settled"
+    "vis_recompute_settled",
+    "vis_recompute_answers",
+    "vis_recompute_fold",
+    "vis_recompute_going",
+    "vis_recompute_owe",
+    "vis_recompute_rows",
+    "vis_recompute_touch",
+    "vis_recompute_touch_face_tracks",
+    "vis_recompute_touch_loops",
+    "vis_recompute_touch_music_waiting",
+    "vis_recompute_fold_page"
   ]
 }

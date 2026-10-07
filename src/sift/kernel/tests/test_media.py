@@ -374,7 +374,7 @@ async def test_bytes_can_be_handed_to_a_tool_on_its_input(tmp_path: Path) -> Non
 def test_a_background_job_gets_a_share_of_the_machine_rather_than_all_of_it(
     tmp_path: Path,
 ) -> None:
-    """ffmpeg is capped to a share of the machine: uncapped, several at once starve the application
+    """ffmpeg is capped to a share of the machine: uncapped, several together starve the application
     itself, which looks like a slow database."""
     settings = Settings(data_dir=tmp_path / "data", cache_dir=tmp_path / "cache")
 
@@ -617,6 +617,33 @@ async def test_a_heif_photograph_is_handed_over_as_its_whole_picture_and_never_a
     assert found.original == photograph
 
 
+@pytest.mark.parametrize("apart", [True, False])
+async def test_a_jpeg_two_readers_turn_apart_is_handed_over_as_the_browser_reads_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, apart: bool
+) -> None:
+    """Only a JPEG photograph's head is read, and only one turned apart goes through its copy."""
+    photograph = tmp_path / "photo.jpg"
+    photograph.write_bytes(b"data")
+    copy = tmp_path / "turned.jpg"
+    asset = dataclasses.replace(_asset(), media_type="image", mime="image/jpeg")
+    store = _store(asset=asset, locations=[_location("one")], paths={"one": photograph})
+    settings = Settings(data_dir=tmp_path / "data", cache_dir=tmp_path / "cache")
+
+    from sift.kernel import jpeg_turn
+
+    async def made(_store: object, asked: Asset, original: Path, **_kwargs: object) -> Path:
+        assert asked is asset and original == photograph
+        return copy
+
+    monkeypatch.setattr(jpeg_turn, "drawn_apart", lambda path: apart)
+    monkeypatch.setattr(jpeg_turn, "readable_copy", made)
+
+    found = await media.resolve_decodable(store, "01HX0000000000000000000A01", settings=settings)
+
+    assert found.path == (copy if apart else photograph)
+    assert found.original == photograph
+
+
 def test_an_uploaded_picture_is_read_off_the_pipe_and_never_seeks(tmp_path: Path) -> None:
     """An uploaded picture is read off `pipe:0`, never written to disk, with NO `-ss` (on ffmpeg 7 a
     seek before a still discards its only frame and writes nothing) and `-frames:v 1`, so an
@@ -656,7 +683,7 @@ def test_a_cover_is_cut_from_sifts_own_picture_by_name_with_no_seek(tmp_path: Pa
     assert argv[-1] == str(tmp_path / "cover.jpg")
 
 
-# --- how many jobs really run at once, and who gets to say
+# --- how many jobs really run together, and who gets to say
 #
 # `jobs_at_once` is what every ffmpeg's thread cap divides by. It is MODULE-LEVEL, so a test that
 # boots the application decides the share for every command built after it in the process.

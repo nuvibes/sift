@@ -263,7 +263,7 @@ class GrantReads(RepositoryCore):
                 _VAULT_SOURCES_FOR_FOLDER, {"folder_id": object_id, "viewer": viewer.id}
             )
         elif object_id is None:
-            # Nothing can be concealed on everything at once, so there is nothing to look for.
+            # Nothing can be concealed on everything in one go, so there is nothing to look for.
             return []
         else:
             rows = await self._db.fetch_all(

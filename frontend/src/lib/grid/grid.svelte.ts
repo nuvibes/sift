@@ -171,7 +171,7 @@ export const SERVER_PAGE_CAP = 200;
  * chunked many times over: not a gesture to make by accident. `ActionBar` announces the cap
  * ("Select 1,000 of 9,000"), so the short answer is a stated limit, not a silent one.
  */
-export const MOST_AT_ONCE = 1000;
+export const MOST_SELECTED = 1000;
 
 /*
  * How many times a page may go back for more before it draws what it has. Three covers very tall
@@ -201,8 +201,8 @@ const CONTINUABLE = new Set([
 
 /*
  * WHAT A WALL ASKS FOR: the query language's parameters, with a repeated one where two filters
- * apply to the same field at once (`bothNarrowings`), since the server reads a repeat as "all of
- * these", each value whole.
+ * apply to the same field at the same time (`bothNarrowings`), since the server reads a repeat as
+ * "all of these", each value whole.
  */
 type WallQuery = Record<string, string | readonly string[]>;
 
@@ -549,7 +549,7 @@ export class Grid {
 		);
 
 		/*
-		 * A row the screen is not about any more leaves at once (a heart taken off on Favorites).
+		 * A row the screen is not about any more leaves immediately (a heart taken off on Favorites).
 		 * Only the screen can judge that, so it passes the test; the total comes down with the row.
 		 */
 		if (!stillBelongs) return;
@@ -594,20 +594,20 @@ export class Grid {
 	}
 
 	/**
-	 * Every ROW this query matches, up to `MOST_AT_ONCE`, without moving the wall: what "select all"
+	 * Every ROW this query matches, up to `MOST_SELECTED`, without moving the wall: what "select all"
 	 * means. Throws rather than return a short answer, which would look like a small library.
 	 */
 	async everyRow(query: WallQuery): Promise<GridItem[]> {
 		const rows: GridItem[] = [];
 		// Up to the reported count plus one block, which tells an exact multiple of the page size
-		// from a list that goes on; capped at `MOST_AT_ONCE`.
-		const most = Math.min(this.total + SERVER_PAGE_CAP, MOST_AT_ONCE);
+		// from a list that goes on; capped at `MOST_SELECTED`.
+		const most = Math.min(this.total + SERVER_PAGE_CAP, MOST_SELECTED);
 		for (let at = 0; at < most; at += SERVER_PAGE_CAP) {
-			const block = await this.#block(query, at, Math.min(SERVER_PAGE_CAP, MOST_AT_ONCE - at));
+			const block = await this.#block(query, at, Math.min(SERVER_PAGE_CAP, MOST_SELECTED - at));
 			for (const one of block) rows.push(one);
 			if (block.length < SERVER_PAGE_CAP) break;
 		}
-		return rows.slice(0, MOST_AT_ONCE);
+		return rows.slice(0, MOST_SELECTED);
 	}
 
 	/** A page somebody asked for has landed: where it begins, and what the wall is now showing. */

@@ -184,7 +184,7 @@ async def test_a_question_that_now_clears_the_line_is_recognized_and_undo_asks_i
     assert (back.person_id, back.attribution) == (person, Attribution.SUGGESTED)
     assert back.confidence == pytest.approx(0.5705, abs=1e-3)
     # And it STAYS asked. The next re-match meets the same face at the same score against the same
-    # line, and without the Undo written down on the face it would recognize it again at once.
+    # line, and without the Undo written down on the face it would recognize it again immediately.
     assert await _asked_by(temp_db, track_id) == "undone"
     assert await service.rematch() == 0
     kept = await store.track(track_id)
@@ -682,6 +682,9 @@ async def test_two_runs_that_do_not_say_what_they_rested_on_both_go_with_her_las
     await temp_db.execute(
         "CREATE TEMP TABLE kept AS SELECT * FROM workbench_decisions WHERE id = ?", (run,)
     )
+    # The press marks are generated from the row, so the copy carries only what is stored.
+    await temp_db.execute("ALTER TABLE kept DROP COLUMN fold_key")
+    await temp_db.execute("ALTER TABLE kept DROP COLUMN fold_gap")
     await temp_db.execute(
         "UPDATE kept SET id = ?, payload = ?",
         (second, json.dumps({**payload, "track_ids": [others[1]]})),

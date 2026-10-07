@@ -123,7 +123,7 @@ class Job:
     started_at: int | None = None
     #: The user whose press queued this job, or None when nobody pressed anything.
     requested_by: str | None = None
-    #: `now` for a press that runs at once, `quiet` for work held to quiet hours, None otherwise.
+    #: `now` for a press that runs immediately, `quiet` for work held to quiet hours, None otherwise.
     timing: str | None = None
 
 

@@ -44,7 +44,7 @@ frame, and is accepted only while the session is transferring.
 ## The watchdog, and why it listens rather than waits
 
 With the host's tunnel killed mid-transfer, the SENDER's own connection can take many seconds to
-notice, while the receiver's acknowledgements stop at once. So neither side waits for its transport
+notice, while the receiver's acknowledgements stop immediately. So neither side waits for its transport
 to fail. Every frame from the other side (a chunk, an acknowledgement, the ping each side sends
 every two seconds) is heard, and ten seconds of silence cuts the session off (see "Cut off"). It is armed from the hello onward, not only during the transfer: a session waiting at the
 code is just as gone when the tunnel is, and a person looking at the code screen should be told.
@@ -652,7 +652,7 @@ class SwapSessions:
         if live is not None:
             # The task's own drive returns once the session has ended, so the task settles as
             # finished rather than cancelled; one still waiting for a worker finds the row ended
-            # when it runs and returns at once.
+            # when it runs and returns immediately.
             await live.end(ENDED_BY_YOU)
             return
         await self.store.end(session_id, state="ended", reason=ENDED_BY_YOU, now=self.now())
@@ -707,8 +707,8 @@ class SwapSessions:
         moving = [one for one in self._live.values() if one.moving and one.cut_at is None]
         if not moving:
             return OwnEstimate(waiting=True)
-        # Each direction by its own pace: in a swap that sends and receives the two move at once,
-        # so the session takes as long as the slower of them.
+        # Each direction by its own pace: in a swap that sends and receives the two move at the same
+        # time, so the session takes as long as the slower of them.
         lefts = [
             int(max(0, flow.wanted_bytes - flow.moved_bytes) * 8 / flow.pace_bps)
             for one in moving

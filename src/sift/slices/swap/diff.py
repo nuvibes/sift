@@ -88,7 +88,7 @@ from sift.slices.swap.models import (
     PersonRow,
 )
 
-#: Up to this many offered people, the screen gives each a row; above it, the whole offer at once.
+#: Up to this many offered people, the screen gives each a row; above it, the whole offer in one go.
 #: Ten rows fit one screen without scrolling.
 ROWS_UP_TO = 10
 

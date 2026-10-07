@@ -177,7 +177,7 @@ describe('a press', () => {
 		expect(list.problem).toBe("That screen can't do that.");
 	});
 
-	it('re-reads the list when the screen is gone, so it leaves the page at once', async () => {
+	it('re-reads the list when the screen is gone, so it leaves the page immediately', async () => {
 		answering();
 		mocked.post.mockRejectedValue(
 			new ApiError(404, 'Not found.', "Sift couldn't find that screen.")

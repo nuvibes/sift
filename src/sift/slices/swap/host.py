@@ -14,7 +14,7 @@ the same landing a guest's files go through (`land`).
 The guest still dials every connection: the host cannot dial a device behind its VPN. A stream says
 which way it carries in its first frame. `{"stream", "session"}` carries files to the guest, as it
 always has; `{"stream", "session", "send": 1}` carries them to the host, the guest the sender on it
-and the host the receiver. The two directions move at once, each with its own streams, its own
+and the host the receiver. The two directions move together, each with its own streams, its own
 ladder and its own pace, because they go up two different uploads (the host's and the guest's): a
 sum would judge one side's line by the other's, and one direction after the other would leave the
 first sender's line idle while the second waited. The estimate is the longer of the two.

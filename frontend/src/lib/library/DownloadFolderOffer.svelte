@@ -1,5 +1,5 @@
 <script lang="ts">
-	/* LIVE: nothing moves it (the stored default, read at the moment an offer is weighed and written back at once) */
+	/* LIVE: nothing moves it (the stored default, read at the moment an offer is weighed and written back immediately) */
 	/*
 	 * Where downloads go, proposed the moment a library gains its first folder.
 	 *

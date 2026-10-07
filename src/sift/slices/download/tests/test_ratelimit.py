@@ -65,7 +65,7 @@ def test_a_retry_after_the_remote_host_made_up_is_absent_rather_than_fatal() -> 
     assert parse_retry_after("\u0663") == 3.0
 
 
-async def test_a_burst_goes_through_at_once_then_pacing_takes_over() -> None:
+async def test_a_burst_goes_through_immediately_then_pacing_takes_over() -> None:
     clock = _Clock()
     waits: list[float] = []
     lim = HostRateLimiter(
@@ -232,7 +232,7 @@ async def test_the_pacer_spaces_each_request_from_the_start_of_the_one_before() 
     slept: list[float] = []
     pacer = Pacer(0.5, clock=clock, sleep=_sleep_into(clock, slept))
 
-    await pacer.wait()  # the first goes at once
+    await pacer.wait()  # the first goes immediately
     clock.t += 0.2  # the request took a fifth of a second
     await pacer.wait()
     await pacer.wait()
@@ -273,7 +273,7 @@ def test_the_rate_limit_codes_are_the_ones_the_failure_reader_writes() -> None:
     assert {status, worded.code} == RATE_LIMIT_CODES
 
 
-async def test_a_request_slower_than_the_pace_is_followed_at_once() -> None:
+async def test_a_request_slower_than_the_pace_is_followed_immediately() -> None:
     clock = _Clock()
     slept: list[float] = []
     pacer = Pacer(0.5, clock=clock, sleep=_sleep_into(clock, slept))

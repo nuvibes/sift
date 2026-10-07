@@ -59,7 +59,7 @@ describe('the kick', () => {
 		/*
 		 * The failure this file exists for, in the shape it would really happen in.
 		 *
-		 * Pressing the heart shows the choice at once and sends the write; a moment later the
+		 * Pressing the heart shows the choice immediately and sends the write; a moment later the
 		 * server's answer replaces the held one. The answer says the same thing: still a favourite,
 		 * but it is a different object, so everything reading through it is worked out again,
 		 * including the effect that started the kick. With the timer tied to that effect, the
@@ -80,7 +80,7 @@ describe('the kick', () => {
 		});
 		flushSync();
 
-		held.answer = { favorite: true }; // pressed: shown at once
+		held.answer = { favorite: true }; // pressed: shown immediately
 		flushSync();
 		expect(host.querySelector('.heart.popped')).not.toBeNull();
 

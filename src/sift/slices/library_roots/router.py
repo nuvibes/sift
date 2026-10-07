@@ -297,7 +297,7 @@ async def list_roots(
     # Every root is asked, because a folder that is not there is worth saying so about wherever it
     # lives: a local disk unplugged, a container started without the mount that carries it, a share
     # whose server has gone. Only the shares need protecting from their own timeout, and those are
-    # asked all at once: one after another, a list holding several dead shares would wait the
+    # asked all together: one after another, a list holding several dead shares would wait the
     # timeout multiplied by however many there are. A local folder is a stat, and is asked here.
     elsewhere = [root for root in roots if root.kind == RootKind.NAS]
     answered = await asyncio.gather(
@@ -484,7 +484,7 @@ async def rescan_root(
     if scan_only:
         payload["scan_only"] = True
     # DEDUPED, because this is a button and buttons get pressed twice: undeduped, a double press
-    # walks the same folder twice at once, minutes each time on a large root, for one answer.
+    # walks the same folder twice together, minutes each time on a large root, for one answer.
     # `dedupe` and not `is_live`: with no parent, the row it collapses onto IS the scan asked for.
     # It deliberately does not stand down for a RUNNING scan. That one built its file list before
     # this request existed, so a file that arrived since would wait for a walk nobody is going to
@@ -526,7 +526,7 @@ async def quarantined(
     can say *why* as well as what and when and how big, which is the one thing somebody opening
     this screen wants.
 
-    Both piles at once, deliberately. They have opposite answers to "where is my file": one is in a
+    Both piles together, deliberately. They have opposite answers to "where is my file": one is in a
     folder of Sift's own and one is untouched in the reader's library, and a screen showing either
     alone would leave somebody looking in the wrong place.
 
@@ -687,7 +687,7 @@ async def list_folders(
     """The folder tree, flat, and only what this viewer may see.
 
     With no parameters this is every folder in every library, which is what the browser opens on
-    and builds its tree from. Flat rather than nested, and all at once rather than a level at a
+    and builds its tree from. Flat rather than nested, and all in one go rather than a level at a
     time: folders are cheap where files are not, and the alternative is a request per row or a
     second statement answering "has children the viewer may see", which is the scoping rule
     written twice, and two copies of that rule can disagree.

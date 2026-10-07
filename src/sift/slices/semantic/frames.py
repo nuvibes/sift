@@ -6,7 +6,7 @@ Two decisions here are not obvious.
 **The decoder is launched from a thread, never from the event loop.** Starting a process out of a
 large Python process is not free, and the ordinary async way to do it runs the launch *on* the loop,
 which stops the whole application while it happens. One launch is a blink; a pass over a long video
-is thirty of them, several files at once, and together they can hold the loop for minutes with
+is thirty of them, several files at the same time, and together they can hold the loop for minutes with
 nothing reporting it but an application that has stopped answering. So every launch goes through the
 kernel's threaded helper, at background priority: whoever is watching something right now matters
 more than an index that will finish either way.

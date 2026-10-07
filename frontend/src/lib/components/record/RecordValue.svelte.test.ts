@@ -2,9 +2,9 @@
  *
  * This is the only place in the app that turns a stored number into something to read, and every
  * record surface goes through it: the facts under a name, the panel beside it, and the fields a
- * form cannot edit. A wrong unit here is wrong on all three at once and looks perfectly plausible
- * on each, which is why the conversions are asserted against exact strings rather than against
- * "contains a number".
+ * form cannot edit. A wrong unit here is wrong on all three at the same time and looks perfectly
+ * plausible on each, which is why the conversions are asserted against exact strings rather than
+ * against "contains a number".
  *
  * The other half is the dash. A field with nothing in it draws a dash rather than a blank, so a
  * record with gaps reads as a record with gaps instead of as a screen that failed to load, and

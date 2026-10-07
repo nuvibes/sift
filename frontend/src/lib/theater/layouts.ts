@@ -136,7 +136,7 @@ export const LAYOUTS: readonly Layout[] = [
 	 * The focus half of Center stage is an ordinary wall and can be any shape, so these are the
 	 * three the picker already offers with the strip kept underneath. They are here rather than
 	 * left to somebody picking Center stage and then a shape, because that is two presses and a
-	 * thing to know, and the four together are what 'nine at once' looks like as a choice.
+	 * thing to know, and the four together are what 'nine together' looks like as a choice.
 	 */
 	{
 		id: 'center_stage_two',

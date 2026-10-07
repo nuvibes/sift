@@ -10,7 +10,7 @@
 	 * fewer of is said by what is NOT here: no tags of its own (its Tags tab is its files' tags).
 	 *
 	 * Its artists are a line under the name, each a press to the Music wall filtered to that artist,
-	 * and a list in the record's form: the whole ordered list is sent at once
+	 * and a list in the record's form: the whole ordered list is sent in one go
 	 * (`PUT /songs/{id}/artists`), so adding, removing, reordering and correcting are one save.
 	 *
 	 * A song nobody chose a cover for is drawn as the music glyph, as its card on the wall is.
@@ -131,7 +131,7 @@
 		song ? { type: 'song', id: song.id, label: song.name } : null
 	);
 
-	/* The numbers beside the tab words, asked for all at once when the page settles. */
+	/* The numbers beside the tab words, asked for all together when the page settles. */
 	const counts = new TabCounts();
 	let editing = $state(false);
 

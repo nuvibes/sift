@@ -116,7 +116,7 @@ SELECT rel_path, size_bytes FROM scan_rejections
  WHERE root_id = ? AND reason = ? AND substr(rel_path, 1, ?) = ?
 """
 
-# Every refusal under one root at once, for a pass that is about to ask about every file in it.
+# Every refusal under one root in one go, for a pass that is about to ask about every file in it.
 # Asked per file instead, it would be one indexed read for each of a hundred thousand files, almost
 # all answering "no row". Refusals are few: a root's worth is a small mapping, read once.
 _REJECTIONS_OF_ROOT = "SELECT rel_path, size_bytes, mtime_ns FROM scan_rejections WHERE root_id = ?"
@@ -293,7 +293,7 @@ class LibraryService:
 
         Renaming and moving are the same operation to a filesystem and are the same one here, so
         there is one path through the checks rather than two that have to agree. Either half may be
-        left out: a rename says a name, a move says a parent, and doing both at once is what
+        left out: a rename says a name, a move says a parent, and doing both together is what
         dragging a folder somewhere and typing over its name is.
 
         **Sift doing this itself is what makes it free of guesswork.** A folder rearranged in a file
@@ -506,7 +506,7 @@ class LibraryService:
         )
 
     async def rejection_count(self) -> int:
-        """How many files the scanner is walking past, across every folder at once.
+        """How many files the scanner is walking past, across every folder together.
 
         One statement rather than a listing per folder folded together, because the card on the
         board wants a number and asking each root for its rows to measure how many there are is a

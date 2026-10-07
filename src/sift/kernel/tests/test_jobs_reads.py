@@ -245,7 +245,7 @@ async def test_outstanding_counts_a_blocked_job_as_work_that_will_happen(
 
 
 @pytest.mark.integration
-async def test_outstanding_answers_across_several_types_at_once(job_queue: JobQueue) -> None:
+async def test_outstanding_answers_across_several_types_together(job_queue: JobQueue) -> None:
     """A feature's progress is the whole of its own work, which is more than one kind of job: the
     pass that queues, and the pieces it queued. Asking per type and adding up would be two round
     trips and two moments, and the second could disagree with the first."""

@@ -534,7 +534,7 @@ async def test_a_machine_without_the_add_on_holds_no_models_and_purges_nothing(
 async def test_many_files_are_described_in_one_read_where_the_record_vouches_for_them(
     store: VectorStore, temp_db: Database
 ) -> None:
-    """The Shoots pass's read: a pool's numbers at once. A file the record says the model in use
+    """The Shoots pass's read: a pool's numbers in one read. A file the record says the model in use
     described is in the answer (a pooled row, or the frames pooled on the way past for one
     described before the pooled table); a file with no record at this revision is not."""
     from sift.slices.semantic.records import Records

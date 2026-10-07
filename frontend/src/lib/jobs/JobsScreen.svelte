@@ -187,7 +187,7 @@
 	/* Families, newest first, under every kind; a kind's tasks, flat, while one is chosen. */
 	const jobs = $derived(queue.listed?.jobs ?? []);
 	const counts = $derived(queue.page?.counts ?? {});
-	/* From the rail's own read, so a press there answers here at once too. Activity is an admin's. */
+	/* From the rail's own read, so a press there answers here immediately too. Activity is an admin's. */
 	const eco = $derived(currentTurboMode(true));
 
 	// Only the states that exist right now, so the row of tallies is not mostly zeroes. Ordered by the
@@ -411,7 +411,7 @@
 		}
 	}
 
-	/* All of them at once.
+	/* All of them together.
 	 *
 	 * Failures arrive in batches (a fix to how a kind of file is read, a drive that was unplugged
 	 * and is back), and a row at a time is not something anybody does with forty of them. Offered
@@ -1045,7 +1045,7 @@
 				{/if}
 			</MenuButton>
 		</div>
-		<!-- Under the running count, in eco mode or out of it by a press: the sidebar leaf's words. -->
+		<!-- Under the running count, in eco mode or turbo mode: the sidebar leaf's words. -->
 		{#if eco !== null}
 			<div class="stepping-back"><Note>{COPY.steppingBack(eco)}</Note></div>
 		{/if}

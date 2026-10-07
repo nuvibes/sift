@@ -14,11 +14,7 @@ from dataclasses import dataclass, field, replace
 from sift.kernel.access.history_events import (
     _EVENT_COLUMNS,
     _FILTERED,
-    _FOLD_KEY,
-    _SETTING_KEY,
     DEFAULT_LIMIT,
-    FEED_FOLD_GAP,
-    FEED_SITTING_GAP,
     NOTHING_HIDDEN,
     LedgerEvent,
     Thing,
@@ -32,75 +28,132 @@ from sift.kernel.db import Database, in_clause
 from sift.kernel.sql_splice import splice
 from sift.kernel.vocabulary import LEDGER_QUEUE
 
-# Every act the filtered feed holds, marked where its key's press opens (`opens`: no act of the key
-# within its gap before it) and where it closes (`closes`: none within the gap after it), with its
-# place among its key's acts (`n`). A press is the acts of one key from an opening to the next
-# closing, and its line is the closing, its newest act. The closing reads the NEXT act's gap, so it
-# is exactly the opening test seen from the other side. The shared body of the three reads below.
-_EDGES = splice(
-    """
-WITH keyed AS (
-  SELECT d.id AS id, d.decided_at AS at,
-         {{KEY}} AS fold_key,
-         CASE WHEN {{SETTING_KEY}} IS NOT NULL THEN :sitting ELSE :gap END AS gap
-    FROM workbench_decisions d
-   WHERE 1 = 1
+# The acts of the press `{{C}}` closes, as a condition on `d`: its key, from its opening (the newest
+# act of the key at or before the closing that a press opens on) to the closing. Seeks on the marks
+# the record keeps (`history_presses.PRESS_TRIGGERS`), so a press costs its own acts.
+_IN_PRESS = """d.fold_key IS {{C}}.fold_key
+     AND (d.decided_at, d.id) <= ({{C}}.decided_at, {{C}}.id)
+     AND (d.decided_at, d.id) >= (
+           SELECT o.decided_at, o.id FROM workbench_decisions o
+            WHERE o.fold_key IS {{C}}.fold_key AND o.opens = 1
+              AND (o.decided_at, o.id) <= ({{C}}.decided_at, {{C}}.id)
+            ORDER BY o.decided_at DESC, o.id DESC LIMIT 1)"""
+
+# A press is on the feed when the vault and the narrowing leave it an act. Its verb and its queue
+# are its key's, so those two narrow on the closing before any act is read.
+_SHOWN = """(:verb IS NULL OR {{C}}.verb = :verb)
+   AND (:decisions = 0 OR {{C}}.queue <> :ledger)
+   AND EXISTS (SELECT 1 FROM workbench_decisions d WHERE {{IN_PRESS}}
+{{NOTHING_HIDDEN}}
+{{FILTERED}})"""
+
+# Each press on a page as its line: the newest and oldest act of it the feed holds, and how many.
+_LINES = """
+SELECT (SELECT d.id FROM workbench_decisions d WHERE {{IN_PRESS}}
 {{NOTHING_HIDDEN}}
 {{FILTERED}}
-),
-edges AS MATERIALIZED (
-  SELECT id, at, fold_key,
-         ROW_NUMBER() OVER w AS n,
-         CASE WHEN at - LAG(at) OVER w <= gap THEN 0 ELSE 1 END AS opens,
-         CASE WHEN LEAD(at - gap) OVER w <= at THEN 0 ELSE 1 END AS closes
-    FROM keyed
-  WINDOW w AS (PARTITION BY fold_key ORDER BY at, id)
-)""",
-    KEY=_FOLD_KEY,
-    SETTING_KEY=_SETTING_KEY,
-    NOTHING_HIDDEN=NOTHING_HIDDEN,
-    FILTERED=_FILTERED,
-)
+         ORDER BY d.decided_at DESC, d.id DESC LIMIT 1) AS id,
+       (SELECT d.id FROM workbench_decisions d WHERE {{IN_PRESS}}
+{{NOTHING_HIDDEN}}
+{{FILTERED}}
+         ORDER BY d.decided_at, d.id LIMIT 1) AS first,
+       (SELECT COUNT(*) FROM workbench_decisions d WHERE {{IN_PRESS}}
+{{NOTHING_HIDDEN}}
+{{FILTERED}}) AS folded,
+       p.fold_key AS fold_key,
+       {{TOTAL}} AS total
+  FROM page p
+ ORDER BY p.decided_at DESC, p.id DESC
+"""
 
-# One page of presses, newest first, ordered as the record's own feed orders acts (`_RECENT`), by
-# the press's newest. Only
-# the page's lines look back for where they opened. Each line says its key and the moments of its
-# oldest and newest act, which is what `_MEMBERS` seeks on.
+
+def _shown(press: str) -> str:
+    """`_SHOWN` for the closing named `press`."""
+    return splice(
+        _SHOWN, IN_PRESS=_IN_PRESS, C=press, NOTHING_HIDDEN=NOTHING_HIDDEN, FILTERED=_FILTERED
+    )
+
+
+def _lines(total: str) -> str:
+    """`_LINES` with the pager's count read by `total`."""
+    return splice(
+        _LINES,
+        IN_PRESS=_IN_PRESS,
+        C="p",
+        NOTHING_HIDDEN=NOTHING_HIDDEN,
+        FILTERED=_FILTERED,
+        TOTAL=total,
+    )
+
+
+# One page of presses, newest first by their newest act: a walk down the closings that stops at the
+# page, and the count of every press the feed holds for the pager.
 _FOLDED_PAGE = splice(
-    """{{EDGES}}
-, page AS (
-  SELECT id, at, fold_key, n
-    FROM edges
-   WHERE closes = 1
-   ORDER BY at DESC, id DESC
+    """
+WITH page AS (
+  SELECT c.id AS id, c.decided_at AS decided_at, c.fold_key AS fold_key
+    FROM workbench_decisions c
+   WHERE c.closes = 1 AND {{SHOWN}}
+   ORDER BY c.decided_at DESC, c.id DESC
    LIMIT :limit OFFSET :offset
-),
-opened AS (
-  SELECT p.id AS id, p.at AS at, p.fold_key AS fold_key, p.n AS n, MAX(o.n) AS first_n
-    FROM page p
-    JOIN edges o ON o.fold_key IS p.fold_key AND o.opens = 1 AND o.n <= p.n
-   GROUP BY p.id, p.at, p.fold_key, p.n
-)
-SELECT l.id AS id, f.id AS first, l.n - l.first_n + 1 AS folded, l.fold_key AS fold_key,
-       l.at AS at, f.at AS first_at,
-       (SELECT COUNT(*) FROM edges WHERE closes = 1) AS total
-  FROM opened l
-  JOIN edges f ON f.fold_key IS l.fold_key AND f.n = l.first_n
- ORDER BY l.at DESC, l.id DESC
-""",
-    EDGES=_EDGES,
+){{LINES}}""",
+    SHOWN=_shown("c"),
+    LINES=_lines(
+        splice(
+            "(SELECT COUNT(*) FROM workbench_decisions t WHERE t.closes = 1 AND {{SHOWN}})",
+            SHOWN=_shown("t"),
+        )
+    ),
 )
 
 # How many presses, for a page that came back empty (a page past the end carries no total).
 _FOLDED_TOTAL = splice(
-    "{{EDGES}}\nSELECT COUNT(*) AS total FROM edges WHERE closes = 1\n",
-    EDGES=_EDGES,
+    "SELECT COUNT(*) AS total FROM workbench_decisions c WHERE c.closes = 1 AND {{SHOWN}}\n",
+    SHOWN=_shown("c"),
+)
+
+# The presses a narrowing to one kind holds: the closing of each act the feed holds that named a
+# thing of that kind, read from the kind's side, so a rare kind costs its own acts.
+_KIND_HITS = """
+WITH hits AS MATERIALIZED (
+  SELECT DISTINCT (SELECT x.id FROM workbench_decisions x
+                    WHERE x.fold_key IS d.fold_key AND x.closes = 1
+                      AND (x.decided_at, x.id) >= (d.decided_at, d.id)
+                    ORDER BY x.decided_at, x.id LIMIT 1) AS id
+    FROM workbench_decisions d
+   WHERE d.id IN (SELECT s.decision_id FROM workbench_decision_subjects s WHERE s.kind = :kind)
+{{NOTHING_HIDDEN}}
+{{FILTERED}}
+)"""
+
+# `_FOLDED_PAGE` narrowed to one kind.
+_FOLDED_KIND_PAGE = splice(
+    """{{HITS}},
+page AS (
+  SELECT c.id AS id, c.decided_at AS decided_at, c.fold_key AS fold_key
+    FROM hits h
+    JOIN workbench_decisions c ON c.id = h.id
+   ORDER BY c.decided_at DESC, c.id DESC
+   LIMIT :limit OFFSET :offset
+){{LINES}}""",
+    HITS=_KIND_HITS,
+    LINES=_lines("(SELECT COUNT(*) FROM hits)"),
+    NOTHING_HIDDEN=NOTHING_HIDDEN,
+    FILTERED=_FILTERED,
+)
+
+# `_FOLDED_TOTAL` narrowed to one kind.
+_FOLDED_KIND_TOTAL = splice(
+    "{{HITS}}\nSELECT COUNT(*) AS total FROM hits\n",
+    HITS=_KIND_HITS,
+    NOTHING_HIDDEN=NOTHING_HIDDEN,
+    FILTERED=_FILTERED,
 )
 
 # The acts of each folded line on a page (`:lines`, a JSON list of `[top, key, oldest moment,
 # oldest id, newest moment]`), each with its line's newest act as `top`: the acts of the line's key
-# from its oldest to its newest, under the same vault and the same narrowing as the walk. A seek on
-# the moments, so it costs the stretch of time a press spans and not the record.
+# from its oldest to its newest, under the same vault and the same narrowing as the page. A seek on
+# the key and the moments, so it costs the press and not the record.
 _MEMBERS = splice(
     """
 WITH lines AS (
@@ -112,14 +165,13 @@ WITH lines AS (
 folds AS (
   SELECT d.id AS id, d.decided_at AS at, l.top AS top
     FROM lines l
-    JOIN workbench_decisions d ON d.decided_at BETWEEN l.from_at AND l.to_at
+    JOIN workbench_decisions d
+      ON d.fold_key IS l.fold_key AND d.decided_at BETWEEN l.from_at AND l.to_at
    WHERE (d.decided_at, d.id) >= (l.from_at, l.from_id)
      AND (d.decided_at, d.id) <= (l.to_at, l.top)
-     AND ({{KEY}}) IS l.fold_key
 {{NOTHING_HIDDEN}}
 {{FILTERED}}
 )""",
-    KEY=_FOLD_KEY,
     NOTHING_HIDDEN=NOTHING_HIDDEN,
     FILTERED=_FILTERED,
 )
@@ -152,27 +204,28 @@ SELECT f.top AS top, s.kind AS kind, s.subject_id AS id, MAX(s.name) AS name, MA
     MEMBERS=_MEMBERS,
 )
 
-# Every act of the press one act belongs to, newest first: what "Undo all" puts back. The press is
-# the stretch of the act's key from the last opening at or before it to the first closing at or
-# after it.
+# Every act of the press one act belongs to that the feed holds, newest first: what "Undo all" puts
+# back. The press is the stretch of the act's key from its opening to the first closing at or after
+# the act.
 _FOLDED_MEMBERS = splice(
-    """{{EDGES}}
-, me AS (SELECT fold_key, n FROM edges WHERE id = :event),
-span AS (
-  SELECT (SELECT MAX(o.n) FROM edges o
-           WHERE o.fold_key IS me.fold_key AND o.opens = 1 AND o.n <= me.n) AS low,
-         (SELECT MIN(c.n) FROM edges c
-           WHERE c.fold_key IS me.fold_key AND c.closes = 1 AND c.n >= me.n) AS high,
-         me.fold_key AS fold_key
-    FROM me
-)
-SELECT e.id AS id, d.queue AS queue
-  FROM span
-  JOIN edges e ON e.fold_key IS span.fold_key AND e.n BETWEEN span.low AND span.high
-  JOIN workbench_decisions d ON d.id = e.id
- ORDER BY e.at DESC, e.id DESC
+    """
+SELECT d.id AS id, d.queue AS queue
+  FROM workbench_decisions me
+  JOIN workbench_decisions c
+    ON c.id = (SELECT x.id FROM workbench_decisions x
+                WHERE x.fold_key IS me.fold_key AND x.closes = 1
+                  AND (x.decided_at, x.id) >= (me.decided_at, me.id)
+                ORDER BY x.decided_at, x.id LIMIT 1)
+  JOIN workbench_decisions d ON {{IN_PRESS}}
+ WHERE me.id = :event
+{{NOTHING_HIDDEN}}
+{{FILTERED}}
+ ORDER BY d.decided_at DESC, d.id DESC
 """,
-    EDGES=_EDGES,
+    IN_PRESS=_IN_PRESS,
+    C="c",
+    NOTHING_HIDDEN=NOTHING_HIDDEN,
+    FILTERED=_FILTERED,
 )
 
 # The acts a page of presses is drawn from: each press's newest and, where it folded, its oldest.
@@ -221,8 +274,6 @@ def _fold_values(
         "verb": verb,
         "decisions": int(decisions),
         "ledger": LEDGER_QUEUE,
-        "gap": FEED_FOLD_GAP,
-        "sitting": FEED_SITTING_GAP,
     }
 
 
@@ -244,14 +295,17 @@ async def presses_recent(
     the last two a seek on the stretch of time each folded press spans.
     """
     values = _fold_values(viewer, kind, verb, decisions)
+    page, total = (
+        (_FOLDED_PAGE, _FOLDED_TOTAL) if kind is None else (_FOLDED_KIND_PAGE, _FOLDED_KIND_TOTAL)
+    )
     rows = [
         dict(row)
         for row in await database.fetch_all(
-            _FOLDED_PAGE, {**values, "limit": _kept(limit), "offset": max(0, offset)}
+            page, {**values, "limit": _kept(limit), "offset": max(0, offset)}
         )
     ]
     if not rows:
-        totals = await database.fetch_all(_FOLDED_TOTAL, values)
+        totals = await database.fetch_all(total, values)
         return [], int(dict(totals[0])["total"]) if totals else 0
     folded = {str(row["id"]): int(row["folded"]) for row in rows}
     firsts = {str(row["id"]): str(row["first"]) for row in rows if int(row["folded"]) > 1}
@@ -262,7 +316,15 @@ async def presses_recent(
     }
     named = await subjects_of(database, wanted)
     events = {key: replace(one, subjects=tuple(named.get(key, ()))) for key, one in events.items()}
-    held = await _held(database, values, [row for row in rows if int(row["folded"]) > 1])
+    held = await _held(
+        database,
+        values,
+        [
+            [key, row["fold_key"], events[firsts[key]].at, firsts[key], events[key].at]
+            for row in rows
+            if (key := str(row["id"])) in firsts and key in events and firsts[key] in events
+        ],
+    )
     presses: list[Press] = []
     for line in rows:
         key = str(line["id"])
@@ -299,16 +361,13 @@ class _Held:
 
 
 async def _held(
-    database: Database, values: dict[str, object], lines: Sequence[dict[str, object]]
+    database: Database, values: dict[str, object], spans: Sequence[list[object]]
 ) -> dict[str, _Held]:
-    """What each folded line on a page was done with and about, by its newest act's id."""
-    if not lines:
+    """What each folded line on a page was done with and about, by its newest act's id. Each line
+    as `_MEMBERS` seeks it: its newest act, its key, and the moment and id of its oldest, then the
+    moment of its newest."""
+    if not spans:
         return {}
-    # Each line as `_MEMBERS` seeks it: its key and the moments of its oldest and newest act.
-    spans = [
-        [str(one["id"]), one["fold_key"], one["first_at"], str(one["first"]), one["at"]]
-        for one in lines
-    ]
     bound = {**values, "lines": json.dumps(spans)}
     held: dict[str, _Held] = {}
     for row in await database.fetch_all(_FOLDED_OBJECTS, bound):
@@ -350,4 +409,6 @@ async def press_of(
     rows = await database.fetch_all(
         _FOLDED_MEMBERS, {**_fold_values(viewer, kind, verb, decisions), "event": event_id}
     )
-    return [(str(row["id"]), str(row["queue"])) for row in rows]
+    acts = [(str(row["id"]), str(row["queue"])) for row in rows]
+    # An act the feed does not hold is no line's, so its press is nobody's to undo from here.
+    return acts if any(one == event_id for one, _queue in acts) else []

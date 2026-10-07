@@ -181,7 +181,7 @@ export class MusicLookup {
 		}
 	}
 
-	/** Turn the lookup on or off. Shown at once, and put back if the server refuses. */
+	/** Turn the lookup on or off. Shown immediately, and put back if the server refuses. */
 	async turn(on: boolean): Promise<void> {
 		await this.#setting('on', LOOKUP_KEY, on);
 	}

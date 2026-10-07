@@ -110,6 +110,8 @@ class DedupQueue:
 
     name = NAME
     title = "Near duplicates"
+    #: Its card draws only files whose still is made (`_card_pictures`).
+    draws_stills = True
     #: Whether two files that look alike ARE the same thing is a judgement and no
     #: threshold settles it: a re-encode, a crop and a different shot from one scene all
     #: measure the same. That is the whole reason this is here and not under Maintenance.
@@ -288,7 +290,7 @@ class DedupQueue:
         Asked in ONE batch rather than one question per file. Deciding who may see a file runs a
         recursive walk over the sharing rules, so a card with twenty-four stills on it would be
         twenty-four of those, and this is drawn on the workbench board, which surveys every queue
-        at once.
+        together.
 
         The order is the caller's and not the answer's. `visible_of` hands back an unordered
         collection, and reading one back would shuffle the pairs on the card into an order nothing
@@ -468,6 +470,8 @@ class ReclaimQueue:
 
     name = RECLAIM_NAME
     title = "Exact duplicates"
+    #: Its card draws only files whose still is made (`_stills`).
+    draws_stills = True
     #: Nothing to judge: identical bytes are identical. It is still nobody else's decision
     #: (a second copy on a second disk may be exactly what somebody wanted), which is why it
     #: is on the board at all; it is simply not a question being weighed up.

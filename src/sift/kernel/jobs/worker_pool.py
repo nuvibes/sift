@@ -216,7 +216,7 @@ class JobContext:
     def stopping(self) -> str | None:
         """What this job is being asked to do, as of the last heartbeat: None, `pause` or `cancel`.
 
-        A request made through the queue makes that heartbeat happen at once (see
+        A request made through the queue makes that heartbeat happen immediately (see
         `WorkerPool._stop_asked`), so this is current to within one beat of the press, not to within
         a heartbeat interval. A handler reading it every couple of seconds hears a pause in about
         that time without writing anything itself.
@@ -839,7 +839,7 @@ class _Worker:
 class WorkerPool:
     """Runs jobs until told to stop, and resizes itself while it runs.
 
-    `concurrency` is how many run at once. It is asked for rather than decided here: the right
+    `concurrency` is how many run together. It is asked for rather than decided here: the right
     number depends on the machine, and this class has no business knowing what machine it is on.
 
     `limits` caps particular types below that: one transcode at a time however many workers are
@@ -1422,10 +1422,10 @@ class WorkerPool:
     async def _beat(self, context: JobContext, wake: asyncio.Event | None = None) -> None:
         """Keep saying the job is alive, and return the moment it is no longer ours.
 
-        Once a heartbeat interval, or at once when `wake` is set, which is how a pause or a cancel
-        reaches the handler in the time one beat takes (see `_stop_asked`). The event is cleared
-        BEFORE the beat is read, so a request landing while the beat is in flight sets it again and
-        is read by the next one rather than lost.
+        Once a heartbeat interval, or immediately when `wake` is set, which is how a pause or a
+        cancel reaches the handler in the time one beat takes (see `_stop_asked`). The event is
+        cleared BEFORE the beat is read, so a request landing while the beat is in flight sets it
+        again and is read by the next one rather than lost.
 
         Returning is the signal. The worker waits on this task and the handler's together, so this
         one coming back first is what tells it the job has been taken away.

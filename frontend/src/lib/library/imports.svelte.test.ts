@@ -209,7 +209,7 @@ describe('the Downloads status light', () => {
 
 	/* Marked on the rows, so the dot is out in every window and a reload does not bring it back:
 	   a memory held in one window would come back on every restart, or never light at all. */
-	it('goes out at once when seen, and the rows are told', async () => {
+	it('goes out immediately when seen, and the rows are told', async () => {
 		const post = vi.spyOn(api, 'post').mockResolvedValue(undefined);
 		imports.glance({ ...NOTHING_TO_GLANCE_AT, landed_unseen: 2, failed_unseen: 1 });
 
@@ -274,8 +274,8 @@ describe('whether one file is done with', () => {
 	it('is TRUE once the import is done, even though its thumbnail is not', () => {
 		/* The library row exists as soon as the import finishes, so the grid already draws a real
 		 * tile for the file, shimmering, because it has no picture yet. Holding the placeholder
-		 * until the thumbnail lands would put both on screen at once: one file, drawn twice, in
-		 * two different placeholder styles, under a header correctly saying one.
+		 * until the thumbnail lands would put both on screen at the same time: one file, drawn
+		 * twice, in two different placeholder styles, under a header correctly saying one.
 		 */
 		push(job('import-1', 'import', 'done'), job('thumb-1', 'thumbnail', 'running', 'import-1'));
 

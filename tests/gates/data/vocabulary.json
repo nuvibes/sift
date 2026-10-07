@@ -198,7 +198,8 @@
 
 	"wrong_words": [
 		{ "word": "platform", "instead": "Site", "why": "the object's old name" },
-		{ "word": "full amount", "instead": "turbo mode", "why": "the press out of eco mode has one name on every screen" },
+		{ "word": "full amount", "instead": "turbo mode", "why": "the press that lets background tasks use all of this device has one name on every screen" },
+		{ "word": "out of eco mode", "instead": "turbo mode", "why": "the same press, the same one name: \"Turbo mode on this device although you're working\"" },
 		{ "word": "making", "instead": "creating", "why": "Sift creates a file, a backup or a Loop; it never makes one" },
 		{ "word": "at once", "instead": "immediately", "why": "the screen says immediately; where it meant at the same time, together or in one go" },
 		{ "word": "platforms", "instead": "Sites", "why": "the same" },

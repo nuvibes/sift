@@ -13,7 +13,7 @@ one person's filing habit rather than on a tool's signature, so it makes a claim
 answers it.
 
 What neither of them writes is a PERSON. A username is what a site calls somebody, and one name
-can be a username on several different sites at once, so a username is evidence of where a file
+can be a username on several different sites together, so a username is evidence of where a file
 came from and never of who is in it.
 """
 

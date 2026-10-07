@@ -571,7 +571,7 @@ async def _held_for_quiet_hours(board: Switchboard, queue: JobQueue | None) -> M
     return await queue.held_by_type(hold.types)
 
 
-def _at_once(pool: WorkerPool | None, job_types: Sequence[str]) -> int:
+def _running_together(pool: WorkerPool | None, job_types: Sequence[str]) -> int:
     """How many workers this family can occupy: its types' caps added, held under the pool's count;
     one with no pool."""
     if pool is None:
@@ -753,7 +753,7 @@ async def _family(family: Family, types: list[str], reads: _Reads) -> tuple[Fami
         left=carried_left.get(family, 0.0),
         outstanding=carried_outstanding.get(family, 0),
     )
-    at_once = _at_once(reads.pool, types)
+    at_once = _running_together(reads.pool, types)
     # Its own kinds' items, plus a carrier's whose every live task is this family's.
     priced = [one for one in types if one not in reads.carriers] + [
         one for one, whose in carried_by.items() if whose is family
@@ -1095,7 +1095,7 @@ async def _housekeeping(
                 Family.OTHER,
                 [chore.job_type],
                 left=one.outstanding,
-                at_once=_at_once(pool, [chore.job_type]),
+                at_once=_running_together(pool, [chore.job_type]),
             )
         # Work whose length is a person's says where it stands itself, never from the runs before.
         own = None if chore.priced or one.outstanding == 0 else own_estimate(chore.job_type)

@@ -410,7 +410,7 @@ class _Bytes(_Answer):
     """A picture arriving the way one actually arrives: in pieces.
 
     `read(n)` on a response body returns whatever has arrived, not `n` bytes, so a double that
-    hands over everything at once would pass a proxy that serves only the first packet. The pieces
+    hands over everything in one go would pass a proxy that serves only the first packet. The pieces
     are deliberately smaller than anything the code asks for, so a reader that does not loop is
     caught rather than accidentally satisfied.
     """

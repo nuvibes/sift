@@ -39,8 +39,8 @@
  * TWO SELECTORS, ONE LIST, and the second one is not decoration. The appearance pane draws a
  * miniature of each base painted in that base: a swatch carrying `data-base="midnight"` while the
  * page is wearing `chrome`. A rule matching the swatch itself beats a value inherited from the page,
- * so both samples are honest at once. On `:root` alone the default swatch would quietly show
- * whichever base was already in force, which is the one thing a preview must never do.
+ * so both samples are honest at the same time. On `:root` alone the default swatch would quietly
+ * show whichever base was already in force, which is the one thing a preview must never do.
  */
 :root,
 [data-base='midnight'] {
@@ -863,7 +863,7 @@
 	   state changing. It lives in this family and takes these durations: a motion of its own pace
 	   would be a second rhythm in the app. On a transition rather than a keyframe wherever it can. */
 	--ease-spring: cubic-bezier(0.34, 1.36, 0.44, 1);
-	--hover-intent: 180ms; /* before a tile starts its preview, so the grid does not all fire at once */
+	--hover-intent: 180ms; /* before a tile starts its preview, so the grid does not all fire at the same time */
 	/* The two blurs. A veil softens what is behind a panel just enough to say it is behind; glass is
 	   a bar or a panel standing over a picture, blurred hard so words stay readable on any frame.
 	   The numbers are here and nowhere else. */
@@ -1051,7 +1051,7 @@
 	   that inset: the nesting rule at the top of this file, applied once for every menu in the app
 	   instead of guessed at per surface. `--radius-sm` is the answer for an inset of
 	   `--space-2` and is 4px too tight here: the lit row's corners read as sharper than the box they
-	   sit in, on every menu, chooser and flyout at once. */
+	   sit in, on every menu, chooser and flyout together. */
 	--menu-row-radius: calc(var(--radius-lg) - var(--space-1));
 	/* The hover layer (see `--layer-hover`) over the surface every floating list sits on. A layer
 	   rather than the next surface up, so a row lit on a translucent menu stays translucent. */
@@ -1083,7 +1083,7 @@
 	 * the glyph is 16 at every size, and the gap between a glyph and what follows it is `space-1`.
 	 *
 	 * The height is `--chip-height-sm` because that is what the scale calls the size for something
-	 * inside a tile. A small tile steps all of this down at once. See the container query in
+	 * inside a tile. A small tile steps all of this down together. See the container query in
 	 * `Tile`, which sets these four and nothing else. */
 	--tile-chip-height: var(--chip-height-sm);
 	/*
@@ -1330,7 +1330,7 @@
 		);
 		/* Every box and every row's press a finger's height on a phone. The control height is what
 		   every button, chooser and field in a ROW is built from, so raising it here raises all of
-		   them at once; a component naming a pixel height of its own would miss this, which is why
+		   them together; a component naming a pixel height of its own would miss this, which is why
 		   none does. The SMALL height stays: it is a press inside something else (a card, a strip,
 		   a dense row), where at three cards to a phone's line the glyph keeps its size and its
 		   REACH grows to a finger's instead (the ring `Pressable` and `Button` draw). */

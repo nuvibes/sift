@@ -274,7 +274,7 @@ class _BadCertificate:
 
 
 class _Refused:
-    """A request whose connection is refused at once, which costs nothing to ask again."""
+    """A request whose connection is refused immediately, which costs nothing to ask again."""
 
     async def __aenter__(self) -> _Response:
         raise aiohttp.ClientConnectionError("refused")
@@ -336,7 +336,7 @@ async def test_a_stall_is_asked_again_only_once_however_high_the_retry_count(
     assert len(session.calls) == 2
 
 
-async def test_a_refused_connection_is_asked_again_at_once_up_to_the_retry_count(
+async def test_a_refused_connection_is_asked_again_immediately_up_to_the_retry_count(
     tmp_path: Path,
 ) -> None:
     waits: list[float] = []
@@ -651,8 +651,8 @@ async def test_a_speed_limit_holds_a_two_megabyte_file_to_about_ten_seconds(
 ) -> None:
     """The limit, counted rather than waited: 2 MB at 200 KB/s.
 
-    A second's worth goes at once (the bucket starts full) and the rest is earned at the limit, so
-    (2048 - 200) / 200 = 9.24 s. A limit that reached only the tools would make this 0 s.
+    A second's worth goes immediately (the bucket starts full) and the rest is earned at the limit,
+    so (2048 - 200) / 200 = 9.24 s. A limit that reached only the tools would make this 0 s.
     """
     time_ = _Time()
     session = _SeqSession([_Response(chunks=[b"x" * (64 * _KIB)] * 32)])

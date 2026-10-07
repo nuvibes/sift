@@ -15,7 +15,7 @@ const DISMISS_AFTER_MS = 4000;
  * a scrap of the screen somebody has to clear by hand, which is its own small papercut. */
 const ERROR_DISMISS_AFTER_MS = 10000;
 
-/** Three at once. A fourth pushes the oldest out rather than growing a wall of them. */
+/** Three at a time. A fourth pushes the oldest out rather than growing a wall of them. */
 const MAX_STACKED = 3;
 
 export type ToastTone = 'info' | 'success' | 'error';

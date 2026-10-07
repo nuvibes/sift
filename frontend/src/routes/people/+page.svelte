@@ -61,7 +61,7 @@
 	import { thing } from '$lib/components/common/toast-pieces';
 	import { ApiError } from '$lib/api/client';
 
-	/* Picking several at once, exactly as the wall of files does: the same Selection, the same
+	/* Picking several together, exactly as the wall of files does: the same Selection, the same
 	   gesture object, the same long press. Written here rather than inside the card so the wall
 	   owns what "everything on screen, in order" means, which changes with a search or a filter,
 	   and a copy held in the card would be an older answer to it. */

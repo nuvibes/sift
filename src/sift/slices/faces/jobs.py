@@ -677,7 +677,7 @@ async def starters(
     number of attempts makes a model arrive; see `scan` for the measurement behind that rule), and
     while the stash-box keys are sealed, the way the stash-box work itself waits. Each person is
     asked again whether she still wants starters when her turn comes, so a face confirmed after the
-    press is not followed by starters that would be retired at once.
+    press is not followed by starters that would be retired immediately.
     """
     if not await service.enabled():
         log.info("faces.job.skipped", job=FACE_STARTERS, reason="switched off")
@@ -961,7 +961,7 @@ def register_handlers(
 
 
 async def _fingerprints_now(queue: JobQueue) -> None:
-    """The pass over facial fingerprints, asked for at once after a folder import landed faces."""
+    """The pass over facial fingerprints, asked for immediately after a folder import landed faces."""
     await ask_for_fingerprints(queue, delay=0)
 
 

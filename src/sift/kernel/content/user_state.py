@@ -393,8 +393,8 @@ RETURNING *
 # arm would always be reading a value that was clamped for the other.
 #
 # The arithmetic is in SQL rather than read-then-written, exactly as `view_count` is and for the
-# same reason: two presses arriving at once from two tabs would otherwise both read the same number
-# and both write it back, and one of the two would be lost with nothing to say so.
+# same reason: two presses arriving at the same time from two tabs would otherwise both read the
+# same number and both write it back, and one of the two would be lost with nothing to say so.
 #
 # Each touches ONE column and leaves every other alone, which the upsert on the natural key gives
 # for free: pressing the mark does not disturb a rating, a heart, a pin or a resume point.
@@ -570,8 +570,8 @@ RETURNING *
 # three separate sittings accumulates instead of reading as whatever the last one happened to be.
 #
 # In SQL rather than as a read-add-write, for the reason written over `_RECORD_VIEW`: the player
-# supports two elements on one clip at once, and two browsers merging a list in Python would keep
-# one of the two.
+# supports two elements on one clip at the same time, and two browsers merging a list in Python
+# would keep one of the two.
 _ADD_HEAT = """
 INSERT INTO asset_replay_heat (asset_id, user_id, bucket, watched_ms, updated_at)
 VALUES (?, ?, ?, ?, ?)
@@ -840,8 +840,8 @@ class UserStateStore:
         appear, which is what keeps a ten-second look at a two-hour film to a single row.
 
         Every slice is its own upsert, and the addition happens in SQL for the reason the view
-        counter's does: two players can be on one clip at once, and a read-add-write from both would
-        keep one of the two.
+        counter's does: two players can be on one clip at the same time, and a read-add-write from
+        both would keep one of the two.
 
         Out-of-range indexes and non-positive times are dropped rather than raised on. This is
         called with arithmetic done in a browser against a duration the browser measured, and a

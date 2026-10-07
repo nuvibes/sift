@@ -296,7 +296,7 @@ class CompressService:
         """Queue a few seconds encoded the way the whole file would be, so it can be looked at.
 
         A prediction is a guess and a sample is slow, which is why there are both: the number
-        appears at once and this is for the moment somebody wants to see what they are about to
+        appears immediately and this is for the moment somebody wants to see what they are about to
         commit four minutes to.
         """
         # Visibility before permission, so somebody who cannot see the file is told it is not

@@ -38,7 +38,7 @@ def _signature(folder: FolderNode, stamp: object) -> str:
 def _read_all(
     folders: Sequence[FolderNode], sites: Sequence[str], known: Sequence[KnownName]
 ) -> list[Reading]:
-    """Every folder's chain read at once, on a thread. Pure work over strings."""
+    """Every folder's chain read in one go, on a thread. Pure work over strings."""
     return [read_chain(folder.chain, sites=sites, known=known) for folder in folders]
 
 

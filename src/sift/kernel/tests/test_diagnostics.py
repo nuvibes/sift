@@ -975,7 +975,7 @@ async def test_a_closed_database_skips_a_probe_and_the_watch_keeps_watching() ->
 # long, no thread pool full, no connection queued, and requests taking seconds.
 
 
-def test_a_queue_that_drains_at_once_is_not_reported() -> None:
+def test_a_queue_that_drains_immediately_is_not_reported() -> None:
     watch = LoopBacklogWatch()
 
     assert watch.record(0.0) is False

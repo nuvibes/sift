@@ -118,7 +118,7 @@ export class Imports {
 	 * How many pieces of work are in flight that will end in something new to look at.
 	 *
 	 * A floor rather than a total: what is read is the first page of the queue, so a library
-	 * importing three hundred files at once reports the fifty it can see. That is why nothing here
+	 * importing three hundred files together reports the fifty it can see. That is why nothing here
 	 * shows the number as a total. See how the grid words it.
 	 */
 	busy = $state(0);
@@ -237,7 +237,7 @@ export class Imports {
 		return 'none';
 	}
 
-	/** The outcomes have been seen: the dot goes out here at once, and the rows are marked, so it is
+	/** The outcomes have been seen: the dot goes out here immediately, and the rows are marked, so it is
 	 *  out in every other window too and a reload does not bring it back. A mark that could not be
 	 *  sent leaves the dot to come back on the next read, which is the honest answer. */
 	clearDownloadStatus(): void {

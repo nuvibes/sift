@@ -579,9 +579,9 @@ describe('pressing a cell with nothing in it', () => {
 });
 
 describe('the mark saying this cell is being converted', () => {
-	/* A wall is four to nine pictures at once, and converting one of them costs the machine
+	/* A wall is four to nine pictures together, and converting one of them costs the machine
 	 * something for every second it plays. Which cell is doing it is the fact worth having per cell:
-	 * four at once is why the whole wall struggles, and without the mark nothing on screen says which.
+	 * four at the same time is why the whole wall struggles, and without the mark nothing on screen says which.
 	 *
 	 * The mark is deliberately NOT drawn for every file with something to explain. It is drawn for
 	 * the one path that is doing work right now. */

@@ -230,7 +230,7 @@ async def test_a_selection_cannot_be_rated_off_the_scale_either(
 ) -> None:
     """The same refusal as the singular, checked before a statement is built: zero especially,
     because it is the value a caller reaches for to mean "unrated" and it would sort and filter as
-    a real rating for ever after, across a whole selection at once."""
+    a real rating for ever after, across a whole selection in one go."""
     with pytest.raises(ValueError, match="rating is"):
         await state.set_rating_many([world.solo], actors.admin.id, rating)
 
@@ -463,7 +463,7 @@ async def test_an_opinion_belongs_to_the_user_that_held_it(
 async def test_a_selection_writes_one_opinion_per_file(
     state: UserStateStore, temp_db: Database, world: World, actors: Actors
 ) -> None:
-    """A hundred files hearted at once is a hundred opinions, not one saying "some files".
+    """A hundred files hearted together is a hundred opinions, not one saying "some files".
 
     The count is what the CALLER reports. A history holding the count could answer nothing about
     any of the files in it, which is the question the table exists for.
@@ -822,7 +822,7 @@ async def test_a_sitting_that_ran_backwards_is_refused(
 async def test_the_replay_curve_adds_up_across_sittings_and_is_per_user(
     state: UserStateStore, world: World, actors: Actors
 ) -> None:
-    """Added in SQL rather than read-add-written, because two players can be on one clip at once and
+    """Added in SQL rather than read-add-written, because two players can be on one clip together and
     a round trip through Python would keep one of the two."""
     await state.add_replay_heat(world.solo, actors.admin.id, {2: 500, 5: 250})
     await state.add_replay_heat(world.solo, actors.admin.id, {2: 100})
@@ -940,8 +940,8 @@ def test_watched_to_the_end_starts_over() -> None:
 def test_the_edges_scale_with_the_length() -> None:
     """Five seconds into an hour is the beginning; five seconds into a ninety-second video is not.
 
-    Fixed edges would make a short-but-eligible video unresumable at both ends at once: the first
-    five seconds and the last fifteen of a twenty-second clip leave nothing in between.
+    Fixed edges would make a short-but-eligible video unresumable at both ends at the same time: the
+    first five seconds and the last fifteen of a twenty-second clip leave nothing in between.
     """
     ninety = 90_000
     # 5% of ninety seconds is 4.5, so four seconds in is still the beginning and five is not.

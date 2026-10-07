@@ -96,7 +96,7 @@ SELECT *, COUNT(*) OVER () AS total_count
 # Only for an empty page: an offset past the end has no row to carry the window count.
 _COUNT_SAVES = "SELECT COUNT(*) AS total FROM save_log"
 
-# The most rows the save log will hand back at once. It is an audit view, read a page at a time.
+# The most rows the save log will hand back in one go. It is an audit view, read a page at a time.
 MAX_SAVE_LOG_PAGE = 200
 
 #: Users whose answers are kept; only this many other Users asking since can push mine out.
@@ -130,7 +130,7 @@ class _WordLists:
         if held is not None:
             self._lists.move_to_end(key)
             return held
-        # The panel's columns ask at once, so they wait on one match.
+        # The panel's columns ask at the same time, so they wait on one match.
         asking = self._asking.get((key, mark))
         if asking is None:
             asking = self._asking[(key, mark)] = asyncio.ensure_future(compute())

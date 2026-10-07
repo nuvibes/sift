@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-/* An artist: who a song credits, renamed on every song at once.
+/* An artist: who a song credits, renamed on every song in one go.
  *
  * An artist has no page and no wall of its own: it is a field of a song, reached as a press under a
  * song's name and as the Artists column of the Music wall. What it has is one verb, Rename, which
@@ -60,7 +60,7 @@ class ArtistRename {
 			);
 			return;
 		}
-		// The chip on the bar names the artist by id; it says the new name at once.
+		// The chip on the bar names the artist by id; it says the new name immediately.
 		rememberFacetNames(ARTIST_FIELD, [{ value: artist.id, label: wanted, count: 0 }]);
 		// Every wall of songs, every song's page and every card's line read the name again.
 		libraryChanges.changed();

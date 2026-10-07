@@ -65,7 +65,7 @@ export const NOUNS: Record<ShareableType, readonly [string, string]> = {
  *
  * One thing is called by its name, because that is the only way to be sure it is the thing you
  * meant. Several are counted, because forty filenames is not a heading, and the count is the
- * fact that matters when the next press changes all of them at once.
+ * fact that matters when the next press changes all of them together.
  */
 export function subjectOf(targets: ShareTarget[]): string {
 	if (targets.length === 1) return targets[0].label;

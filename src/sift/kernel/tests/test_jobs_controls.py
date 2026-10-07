@@ -488,7 +488,7 @@ async def _paused_workspaces(tmp_path: Path) -> Workspaces:
 
 
 @pytest.mark.integration
-async def test_a_waiting_job_is_paused_at_once_and_nobody_claims_it(job_queue: JobQueue) -> None:
+async def test_a_waiting_job_is_paused_now_and_nobody_claims_it(job_queue: JobQueue) -> None:
     """Nothing is running it, so there is nobody to ask and nothing half-written to look after."""
     noop_handler("probe")
     job_id = await job_queue.enqueue("probe")
@@ -701,7 +701,7 @@ async def test_a_cancel_drops_a_running_handler_without_waiting_for_a_beat(
     library_store: LibraryStore,
     tmp_path: Path,
 ) -> None:
-    """The same wake for a cancel: the worker beats at once, finds the claim gone, and drops the
+    """The same wake for a cancel: the worker beats immediately, finds the claim gone, and drops the
     handler, rather than waiting for the next heartbeat, fetching all the while."""
     running = asyncio.Event()
     dropped = asyncio.Event()
@@ -759,7 +759,7 @@ async def test_a_listener_that_raises_does_not_stop_the_pause_or_the_other_liste
 
 
 async def test_a_queued_job_is_told_to_whoever_listens_for_work(job_queue: JobQueue) -> None:
-    """An idle worker hears a press at once rather than at its next poll; a listener that raises
+    """An idle worker hears a press immediately rather than at its next poll; a listener that raises
     is logged, not fatal, and one that stopped listening hears nothing."""
     heard: list[int] = []
 

@@ -3,7 +3,7 @@
 	 * A photograph, and the picture itself as the control.
 	 *
 	 * Cropping is a rectangle dragged directly on the picture, with everything outside it dimmed.
-	 * Rotate and mirror are four buttons that take effect on what is drawn at once. There is no
+	 * Rotate and mirror are four buttons that take effect on what is drawn immediately. There is no
 	 * separate resize: a rectangle drawn freely is the same instruction with fewer words.
 	 * There are no number fields: the numbers are shown, small, because somebody who wants to know
 	 * what they have selected should be able to find out, and they are not how it is set.
@@ -96,7 +96,7 @@
 			</Button>
 		{/each}
 	</div>
-	<!-- Four presses rather than a mode of their own. Each one takes effect on the picture at once,
+	<!-- Four presses rather than a mode of their own. Each one takes effect on the picture immediately,
 	     and a rectangle already drawn is turned with it rather than left where its numbers were. -->
 	<div class="modes" role="group" aria-label="Which way round">
 		{#each TURNS as turn (turn.id)}

@@ -1281,12 +1281,12 @@ class TestMovingTheRunningLoggerOntoTheStoredPreferences:
         assert handler.maxBytes == 4096
         handler.close()
 
-    def test_a_lowered_cap_trims_the_older_files_at_once_and_a_raised_one_trims_nothing(
+    def test_a_lowered_cap_trims_the_older_files_immediately_and_a_raised_one_trims_nothing(
         self, tmp_path: Path
     ) -> None:
         """The handler only ever looks at the file it writes, so a rotated file bigger than the new
         cap would keep the whole set over the setting until later rotations pushed it out. Lowering
-        trims the oldest at once; raising has nothing to trim, and deletes nothing."""
+        trims the oldest immediately; raising has nothing to trim, and deletes nothing."""
         root = logging.getLogger()
         current = tmp_path / "sift.log"
         current.write_bytes(b"x" * 1_000)

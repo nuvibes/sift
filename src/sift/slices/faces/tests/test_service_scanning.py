@@ -1212,7 +1212,7 @@ async def test_a_run_whose_tuning_was_never_kept_falls_back_to_the_settings(
     assert scan.depth == Depth.DEEP
 
 
-async def test_the_machine_limits_are_not_pinned_and_take_effect_at_once(
+async def test_the_machine_limits_are_not_pinned_and_take_effect_immediately(
     service: FaceService, preferences: FakePreferences
 ) -> None:
     """ "Stop taking my whole processor" is not a request about some future run.

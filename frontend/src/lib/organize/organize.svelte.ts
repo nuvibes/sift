@@ -42,7 +42,7 @@ export type Board = components['schemas']['BoardView'];
 export class Held {
 	found = $state<Board | null>(null);
 
-	/* A request already in flight, so several screens asking at once ask once. Not state: nothing
+	/* A request already in flight, so several screens asking together ask once. Not state: nothing
 	   draws it, and making it reactive would re-run every effect that reads this store twice per
 	   load. */
 	#asking: Promise<Board> | null = null;

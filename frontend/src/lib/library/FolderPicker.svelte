@@ -26,8 +26,8 @@
 		/** The ids of the help and error text belonging to it, space separated. */
 		describedBy?: string;
 		/** Whether each folder gets a tick to add it to a set. On for the first-run wizard, which
-		 * gathers several folders at once; off for the Settings add-folder form, which takes one at a
-		 * time by navigating into it. Off by default, so the plain picker is unchanged. */
+		 * gathers several folders in one go; off for the Settings add-folder form, which takes one
+		 * at a time by navigating into it. Off by default, so the plain picker is unchanged. */
 		selectable?: boolean;
 	}
 

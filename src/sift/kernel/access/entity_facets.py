@@ -371,8 +371,9 @@ class EntityNarrowing:
                 continue
             if key == DISAGREES and disagreeing is None:
                 raise ConstraintError("a disagreement pick needs the records that disagree")
-            wanted = [one for one in values if not is_refusal(one)]
-            unwanted = [one[1:] for one in values if is_refusal(one)]
+            read = [read_pick(one) for one in values]
+            wanted = [name for refused, name in read if not refused]
+            unwanted = [name for refused, name in read if refused]
             if wanted:
                 chosen.append((key, tuple(sorted(dict.fromkeys(wanted)))))
             if unwanted:
@@ -413,6 +414,15 @@ class EntityNarrowing:
 def is_refusal(value: str) -> bool:
     """Whether a facet value says "not this" (a leading minus; a lone `-` is a value)."""
     return value.startswith("-") and len(value) > 1
+
+
+def read_pick(value: str) -> tuple[bool, str]:
+    """A facet value as (refused, name). Quotes hold a name as written: `"-raw"` is a name."""
+    refused = is_refusal(value)
+    name = value[1:] if refused else value
+    if len(name) > 1 and name.startswith('"') and name.endswith('"'):
+        name = name[1:-1]
+    return refused, name
 
 
 def asks_disagreements(picks: Mapping[str, Sequence[str] | None], counting: str = "") -> bool:

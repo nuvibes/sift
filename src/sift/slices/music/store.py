@@ -99,8 +99,8 @@ ON CONFLICT(identity) DO UPDATE SET algorithm = excluded.algorithm,
 # The claim, in one transaction: copy the waiting row onto the file and take the waiting row away.
 # Two transactions would leave a window in which a crash keeps both, and the next claim would then
 # write a fingerprint the file already has: harmless, and still two answers to one question
-# sitting in the database at once. A waiting row read under an algorithm no longer in force is
-# not copied: the file is then read afresh, and the row goes with the claim either way.
+# sitting in the database at the same time. A waiting row read under an algorithm no longer in force
+# is not copied: the file is then read afresh, and the row goes with the claim either way.
 _CLAIM = """
 INSERT INTO audio_fingerprints
   (asset_id, algorithm, tool, duration_ms, offset_ms, fingerprint, computed_at)
@@ -117,7 +117,7 @@ _DROP_STALE = "DELETE FROM audio_fingerprints_pending WHERE computed_at < ? OR a
 
 #: A row read under the algorithm in force. One read by an older algorithm is the count's lack too
 #: (`LACKS_AUDIO_FINGERPRINT`), so it must not count as answered here, or the Build would hand the
-#: file out on every run and the task would return at once without reading it again.
+#: file out on every run and the task would return immediately without reading it again.
 _HAS_ROW = "SELECT 1 AS ok FROM audio_fingerprints WHERE asset_id = ? AND algorithm = ?"
 
 # --- which files share a song: the keys and the pairs (v3) ------------------------------------
@@ -694,13 +694,13 @@ class NameStore:
         return asset_id in found
 
     async def wanting_lookup(self, asset_ids: Sequence[str], *, shortest_ms: int) -> set[str]:
-        """Which of these files `wants_lookup`, asked of the page at once."""
+        """Which of these files `wants_lookup`, asked of the page in one go."""
         return await self._wanting(_WANTS_LOOKUP, asset_ids, shortest_ms=shortest_ms)
 
     async def wanting_asking_again(
         self, asset_ids: Sequence[str], *, shortest_ms: int, before: int
     ) -> set[str]:
-        """Which of these files `wants_asking_again`, asked of the page at once."""
+        """Which of these files `wants_asking_again`, asked of the page in one go."""
         return await self._wanting(
             _WANTS_AGAIN, asset_ids, shortest_ms=shortest_ms, before=before or _ANY_AGE
         )

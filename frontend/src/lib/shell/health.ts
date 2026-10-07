@@ -8,8 +8,8 @@
  * missing reading is the ordinary answer for everyone else rather than a fault.
  *
  * Five readings, not one, because there are five ways Sift stops being usable and they need
- * different fixes. Work that will not let go stops everything at once, pages included. Work
- * waiting its turn for a thread leaves the pages quick while video stutters. Work waiting its
+ * different fixes. Work that will not let go stops everything at the same time, pages included.
+ * Work waiting its turn for a thread leaves the pages quick while video stutters. Work waiting its
  * turn for a database connection stops every screen together while the first two read perfectly
  * healthy.
  *

@@ -201,7 +201,7 @@ async def build_file(context: JobContext, *, products: ProductRegistry) -> None:
 
     **ONE PRODUCT THAT HAS TO WAIT DOES NOT PARK THE OTHERS.** A product raises `JobBlocked` when
     it needs something no retry can supply (face recognition with its model files not fetched,
-    for one), and raising at once would leave every product after it in the list unattempted
+    for one), and raising immediately would leave every product after it in the list unattempted
     while the queue said "waiting" about all of them. Every product is attempted; the wait is
     raised at the end, so the row still parks and still comes back the moment the thing it waits
     for arrives, and the products that could be made have been made by then.

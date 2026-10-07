@@ -35,7 +35,7 @@ LOOP_WHOLE = "loop_whole"
 
 #: How many moments one sweep asks for. A ceiling rather than "all of them" because each row becomes
 #: a queued job, and a library with ten thousand marks should not turn one boot into ten thousand
-#: rows on the dashboard at once. What is left is picked up by the next sweep, and the count is
+#: rows on the dashboard together. What is left is picked up by the next sweep, and the count is
 #: LOGGED rather than left silent: a bounded pass that says nothing reads as a complete one.
 SWEEP_LIMIT = 500
 

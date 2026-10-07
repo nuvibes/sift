@@ -483,7 +483,7 @@ async def test_a_picture_that_arrives_in_pieces_is_kept_whole(
     band of colour with the rest missing. Nothing would fail anywhere: a truncated PNG is a file,
     and a browser draws as much of one as it was given.
     """
-    picture = _png(bytes(range(256)) * 40)  # comfortably more than the double hands over at once
+    picture = _png(bytes(range(256)) * 40)  # comfortably more than the double hands over in one go
     page = b'<head><meta property="og:image" content="https://example.test/share.png"></head>'
     opened, _ = _serving(
         {
@@ -841,7 +841,7 @@ async def test_a_row_whose_picture_left_the_cache_is_no_picture(store: ArtStore)
 async def test_an_old_row_another_screen_brought_through_first_is_not_made_twice(
     store: ArtStore, door: _Door, tmp_path: Path
 ) -> None:
-    """Two screens ask for the same old row at once: the one that waited for the lock reads the
+    """Two screens ask for the same old row together: the one that waited for the lock reads the
     row again and answers what the first made, and a row dropped meanwhile is no picture."""
     old = tmp_path / "site-art" / "onlyfans_quillmoss.png"
     old.parent.mkdir(parents=True)

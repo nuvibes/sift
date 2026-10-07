@@ -67,7 +67,7 @@ describe('whether one specific row exists', () => {
 	});
 });
 
-describe('one answer across several things at once', () => {
+describe('one answer across several things together', () => {
 	it('is the word they all agree on', () => {
 		expect(readingOf([[grant('sam', 'share')], [grant('sam', 'share')]], 'sam')).toBe('shared');
 	});

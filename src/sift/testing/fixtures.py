@@ -147,8 +147,8 @@ def the_machine_keeps_utc() -> Iterator[None]:
 @pytest.fixture
 def machine_zone() -> Iterator[Callable[[str], None]]:
     """Put the machine's clock in a zone for one test: `machine_zone("EST5EDT")`, a POSIX rule
-    (the one spelling both C runtimes read). Back to the suite's UTC after, and read again at once,
-    because the runtime keeps a zone it has read until it is asked again."""
+    (the one spelling both C runtimes read). Back to the suite's UTC after, and read again
+    immediately, because the runtime keeps a zone it has read until it is asked again."""
     yield _hold_zone
     _hold_zone(SUITE_ZONE)
 
@@ -331,7 +331,7 @@ def first_folder_benchmarks() -> None:
 def no_benchmark_on_a_first_folder(
     request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A test that adds its first library folder has it read at once, unless it is about the benchmark.
+    """A test that adds its first library folder has it read immediately, unless it is about the benchmark.
 
     In use, the first folder on a device never measured queues the benchmark first and holds the
     folder's scan behind it (`performance.benchmark.FirstFolder`). In a booted test application

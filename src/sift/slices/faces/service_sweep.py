@@ -53,7 +53,7 @@ class SweepMixin(FaceServiceBase):
         that copy, so a scan OLDER than the copy, or of a file with no copy yet, read a tile. A
         scan taken again reads the copy and is newer than it, so the file leaves the list and the
         pass ends. A copy swept from the cache and made again is newer than every scan, and the
-        file is looked at once more: a picture's faces read again from the same picture.
+        file is looked at one more time: a picture's faces read again from the same picture.
         """
         page = await self._content.heif_stills(after=after, limit=limit)
         if not page:

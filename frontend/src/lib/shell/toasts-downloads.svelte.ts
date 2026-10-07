@@ -60,8 +60,8 @@ const LOOK = 50;
  *
  * One download is always the same message, whichever answer asked for it: its file's name, and
  * Open where it landed in the library (a download that was skipped or filed nowhere has no file to
- * open, and an Open that went nowhere would be a door to nothing). Several at once under Once for
- * many is the count and no Open: twenty files have no single thing to open.
+ * open, and an Open that went nowhere would be a door to nothing). Several at the same time under
+ * Once for many is the count and no Open: twenty files have no single thing to open.
  */
 export function finishedToasts(answer: FinishedMessage, finished: Finished[]): FinishedToast[] {
 	if (answer === 'off' || finished.length === 0) return [];

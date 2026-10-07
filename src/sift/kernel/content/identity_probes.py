@@ -8,6 +8,7 @@ from collections.abc import Sequence
 
 from sift.kernel.content.identity_models import (
     PROBE_VERSION,
+    PROBE_VERSION_NOT_A_JPEG,
     Asset,
     ProbeKeep,
     VerdictProduct,
@@ -71,13 +72,20 @@ ON CONFLICT(asset_id) DO UPDATE SET
     probed_at     = excluded.probed_at
 """
 
+_PROBE_CURRENT = (
+    "UPDATE asset_probes SET probe_version = ? WHERE asset_id = ? AND probe_version >= ?"
+    " RETURNING asset_id"
+)
+
 #: Read files whose reading is not kept (or kept under an older `PROBE_VERSION`, which is how a
 #: change to the reading reaches files already read), for the one-ffprobe-a-file catch-up.
 _ASSETS_LACKING_PROBE_ROWS = """
 SELECT a.id FROM assets a
 WHERE a.probed_at IS NOT NULL
   AND NOT EXISTS (SELECT 1 FROM asset_probes p
-                   WHERE p.asset_id = a.id AND p.probe_version >= ?)
+                   WHERE p.asset_id = a.id AND p.probe_version >= ?
+                     AND (p.probe_version >= ? OR a.mime IS NOT 'image/jpeg'
+                          OR a.media_type IS NOT 'image'))
 ORDER BY a.added_at, a.id
 LIMIT ?
 """
@@ -94,7 +102,9 @@ _COUNT_ASSETS_LACKING_PROBE_ROWS = """
 SELECT COUNT(*) AS total FROM assets a
 WHERE a.probed_at IS NOT NULL
   AND NOT EXISTS (SELECT 1 FROM asset_probes p
-                   WHERE p.asset_id = a.id AND p.probe_version >= ?)
+                   WHERE p.asset_id = a.id AND p.probe_version >= ?
+                     AND (p.probe_version >= ? OR a.mime IS NOT 'image/jpeg'
+                          OR a.media_type IS NOT 'image'))
 """
 
 # THE SAME WRITE WITH THE FINGERPRINTS LEFT ALONE, for a scan-only read. A second statement, not
@@ -437,12 +447,16 @@ class Probes(StoreCore):
 
     async def assets_lacking_probe_rows(self, limit: int) -> list[str]:
         """A page of files read before their reading was kept, oldest first, for the catch-up."""
-        rows = await self._db.fetch_all(_ASSETS_LACKING_PROBE_ROWS, (PROBE_VERSION, limit))
+        rows = await self._db.fetch_all(
+            _ASSETS_LACKING_PROBE_ROWS, (PROBE_VERSION_NOT_A_JPEG, PROBE_VERSION, limit)
+        )
         return [str(row["id"]) for row in rows]
 
     async def assets_lacking_probe_rows_count(self) -> int:
         """How many of those there are, for the pass's bar."""
-        (row,) = await self._db.fetch_all(_COUNT_ASSETS_LACKING_PROBE_ROWS, (PROBE_VERSION,))
+        (row,) = await self._db.fetch_all(
+            _COUNT_ASSETS_LACKING_PROBE_ROWS, (PROBE_VERSION_NOT_A_JPEG, PROBE_VERSION)
+        )
         return int(row["total"])
 
     async def keep_probe(
@@ -468,6 +482,15 @@ class Probes(StoreCore):
             await connection.execute(
                 _KEEP_PROBE, (asset_id, keep.version, keep.tool, keep.body, self._now())
             )
+
+    async def probe_still_current(self, asset_id: str) -> bool:
+        """Mark a file's kept reading current where it was kept at all: for a file this version
+        reads the same way. False where it has none, and is read."""
+        async with self._db.write() as connection:
+            marked = await connection.execute_fetchall(
+                _PROBE_CURRENT, (PROBE_VERSION, asset_id, PROBE_VERSION_NOT_A_JPEG)
+            )
+        return bool(marked)
 
     async def unfingerprinted_among(self, asset_ids: Sequence[str]) -> set[str]:
         """Which of these files still have a fingerprint missing (see `unfingerprinted`)."""

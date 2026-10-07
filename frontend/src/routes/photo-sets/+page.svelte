@@ -118,7 +118,7 @@
 	   and the anchor exactly as a facet does, through the one key both effects read. */
 	const listKey = $derived(`${narrowedKey}\n${prefix}`);
 
-	/* Picking several at once, the same gesture and the same bar every other wall of cards has. */
+	/* Picking several together, the same gesture and the same bar every other wall of cards has. */
 	const selection = new Selection();
 	const gesture = new TileGesture(selection, () =>
 		items.filter((one) => !one.locked).map((one) => one.id)
@@ -318,7 +318,7 @@
 
 	const pickedIds = $derived(selection.ordered(items.map((one) => one.id)));
 
-	/* The row moves at once and the server's answer is kept, the same optimistic write the heart on a
+	/* The row moves immediately and the server's answer is kept, the same optimistic write the heart on a
 	   tile makes: a control that waits for a round trip before filling in reads as broken. */
 	function put(id: string, state: components['schemas']['PhotoSetStateView']) {
 		items = items.map((one) => (one.id === id ? { ...one, ...state } : one));

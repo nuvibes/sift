@@ -1,4 +1,4 @@
-/* Measuring what this machine can do: the start is a POST that answers at once, the result a GET
+/* Measuring what this machine can do: the start is a POST that answers immediately, the result a GET
  * the screen polls, often enough to feel alive rather than to catch a moment. */
 
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';

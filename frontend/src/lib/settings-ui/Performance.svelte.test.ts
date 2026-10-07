@@ -66,7 +66,7 @@ const PERFORMANCE: SettingSection = {
 		{
 			key: 'performance.worker_count',
 			value: 0,
-			label: 'How many jobs run at once',
+			label: 'How many jobs run at the same time',
 			help: '0 lets Sift choose.',
 			minimum: 0,
 			maximum: 64,
@@ -173,7 +173,7 @@ afterEach(() => {
 });
 
 describe('the performance screen', () => {
-	it('draws how much Sift does at once as one row, its numbers on a page behind its Edit', async () => {
+	it('draws how much Sift does at the same time as one row, its numbers on a page behind its Edit', async () => {
 		/* Concurrency is beside the step back that lowers it, not beside the stages on Importing.
 		   The pane itself draws no number: they are on the page its Edit opens. */
 		await render();
@@ -228,7 +228,7 @@ describe('the performance screen', () => {
 
 	it('draws the one setting it owns: stepping back while the computer is in use', async () => {
 		/* Filed under Performance by the registry and drawn here, on by default. Turning it off
-		   is written at once, like every row on a settings pane. */
+		   is written immediately, like every row on a settings pane. */
 		const stepBack: SettingSection = {
 			name: 'Performance',
 			settings: [
@@ -534,6 +534,11 @@ describe('is Sift keeping up', () => {
 const MEASURED: SelfTest = {
 	running: false,
 	rounds: 5,
+	step: null,
+	seconds_left: null,
+	left_timed: false,
+	whole_seconds: 299,
+	whole_timed: false,
 	finished: true,
 	measured: true,
 	progress: null,
@@ -555,7 +560,7 @@ const MEASURED: SelfTest = {
 	recommendations: [
 		{
 			key: 'performance.generation_limit',
-			label: 'How many previews are built at once',
+			label: 'How many previews are built at the same time',
 			current: 0,
 			suggested: 2,
 			reason: 'Measured directly.',
@@ -604,6 +609,11 @@ describe('testing this machine', () => {
 		await withTest({
 			running: false,
 			rounds: 5,
+			step: null,
+			seconds_left: null,
+			left_timed: false,
+			whole_seconds: 299,
+			whole_timed: false,
 			finished: false,
 			measured: false,
 			share_reads_now: 0,
@@ -635,6 +645,11 @@ describe('testing this machine', () => {
 		await withTest({
 			running: false,
 			rounds: 5,
+			step: null,
+			seconds_left: null,
+			left_timed: false,
+			whole_seconds: 299,
+			whole_timed: false,
 			finished: false,
 			measured: false,
 			share_reads_now: 0,
@@ -658,6 +673,11 @@ describe('testing this machine', () => {
 		await withTest({
 			running: false,
 			rounds: 5,
+			step: null,
+			seconds_left: null,
+			left_timed: false,
+			whole_seconds: 299,
+			whole_timed: false,
 			finished: false,
 			measured: true,
 			share_reads_now: 0,
@@ -681,6 +701,11 @@ describe('testing this machine', () => {
 		await withTest({
 			running: true,
 			rounds: 5,
+			step: null,
+			seconds_left: null,
+			left_timed: false,
+			whole_seconds: 299,
+			whole_timed: false,
 			finished: false,
 			measured: false,
 			share_reads_now: 0,
@@ -710,6 +735,11 @@ describe('testing this machine', () => {
 		await withTest({
 			running: true,
 			rounds: 5,
+			step: null,
+			seconds_left: null,
+			left_timed: false,
+			whole_seconds: 299,
+			whole_timed: false,
 			finished: false,
 			measured: false,
 			share_reads_now: 0,
@@ -750,6 +780,11 @@ describe('testing this machine', () => {
 		await withTest({
 			running: true,
 			rounds: 5,
+			step: null,
+			seconds_left: null,
+			left_timed: false,
+			whole_seconds: 299,
+			whole_timed: false,
 			finished: false,
 			measured: false,
 			share_reads_now: 0,
@@ -788,6 +823,11 @@ describe('testing this machine', () => {
 		await withTest({
 			running: true,
 			rounds: 5,
+			step: null,
+			seconds_left: null,
+			left_timed: false,
+			whole_seconds: 299,
+			whole_timed: false,
 			finished: false,
 			measured: false,
 			share_reads_now: 0,
@@ -824,6 +864,11 @@ describe('testing this machine', () => {
 		await withTest({
 			running: true,
 			rounds: 5,
+			step: null,
+			seconds_left: null,
+			left_timed: false,
+			whole_seconds: 299,
+			whole_timed: false,
 			finished: false,
 			measured: false,
 			share_reads_now: 0,
@@ -849,6 +894,77 @@ describe('testing this machine', () => {
 		expect(said).toContain('Encoding rounds done: 3 of up to 5');
 	});
 
+	/* Past the rounds the run names the step it is on and how long is left, from the server's
+	   figure: "about" where this device's last run timed it, "up to" where only the limit is known. */
+	it('names the step past the rounds and says how long is left, revised as the run goes', async () => {
+		const progress = {
+			cores: 24,
+			failed: null,
+			levels: [rung(1), rung(2), rung(4), rung(8), rung(12), rung(16)],
+			storages: [],
+			decode: null
+		};
+		await withTest({
+			...MEASURED,
+			running: true,
+			rounds: 6,
+			progress,
+			step: 'models',
+			seconds_left: 100,
+			left_timed: true
+		});
+
+		const said = () => panel()?.querySelector('[data-testid="self-test-rounds"]')?.textContent;
+		const left = () => panel()?.querySelector('[data-testid="self-test-left"]')?.textContent;
+		expect(said()).toContain(
+			'Encoding rounds done: 6 of up to 6. Now timing each installed model.'
+		);
+		expect(left()?.trim()).toBe('About 2 minutes left.');
+
+		await withTest({
+			...MEASURED,
+			running: true,
+			rounds: 6,
+			progress,
+			step: 'together',
+			seconds_left: 38,
+			left_timed: true
+		});
+		expect(left()?.trim()).toBe('About 40 seconds left.');
+		await withTest({
+			...MEASURED,
+			running: true,
+			rounds: 6,
+			step: 'encoding',
+			seconds_left: 3,
+			left_timed: true,
+			progress: { ...progress, levels: [rung(1), rung(2), rung(4), rung(8), rung(16, false)] }
+		});
+		expect(said()).toContain(
+			'Encoding rounds done: 5 of up to 6. Now one more round, between the two quickest.'
+		);
+		expect(left()?.trim()).toBe('Almost done.');
+		await withTest({
+			...MEASURED,
+			running: true,
+			rounds: 6,
+			// The widest round cut at its share of the time: the rounds are over, short of six.
+			progress: { ...progress, levels: [rung(1), rung(2), rung(4), rung(8), rung(16)] },
+			step: 'storage',
+			seconds_left: 241,
+			left_timed: false
+		});
+		expect(said()).toContain('5 of up to 6. Now reading a few large files from each drive');
+		expect(left()?.trim()).toBe('Up to 5 minutes left.');
+	});
+
+	it('says how long a whole run takes here, from the last one where it was timed', async () => {
+		await withTest({ ...MEASURED, whole_seconds: 224, whole_timed: true });
+		expect(panel()?.textContent).toContain('On this device it takes about 4 minutes');
+		await withTest({ ...MEASURED, whole_seconds: 299, whole_timed: false });
+		expect(panel()?.textContent).toContain('It takes up to 5 minutes and keeps this device busy');
+	});
+
 	/* Right after a press the run is queued or pausing work: no rung of it is measured yet, and the
 	   last result stays on screen under the same press, never its rungs read as this run's. */
 	it('starts a pressed run at round one and keeps the last result under it', async () => {
@@ -860,7 +976,7 @@ describe('testing this machine', () => {
 			'[role="progressbar"][aria-label="Benchmarking this device"]'
 		);
 		expect(bar?.getAttribute('aria-valuenow')).toBe('0');
-		expect(panel()?.textContent).toContain('How many previews are built at once');
+		expect(panel()?.textContent).toContain('How many previews are built at the same time');
 		expect(panel()?.textContent).toContain(COPY.measure.again);
 	});
 
@@ -880,7 +996,7 @@ describe('testing this machine', () => {
 	it('shows what it found, and changes nothing by itself', async () => {
 		await withTest(MEASURED);
 
-		expect(panel()?.textContent).toContain('How many previews are built at once');
+		expect(panel()?.textContent).toContain('How many previews are built at the same time');
 		expect(panel()?.textContent).toContain('Nothing is changed until you press that');
 		expect(saveSettings).not.toHaveBeenCalled();
 	});
@@ -1046,6 +1162,11 @@ describe('testing this machine', () => {
 		await withTest({
 			running: false,
 			rounds: 5,
+			step: null,
+			seconds_left: null,
+			left_timed: false,
+			whole_seconds: 299,
+			whole_timed: false,
 			finished: true,
 			measured: true,
 			share_reads_now: 0,
@@ -1237,7 +1358,7 @@ describe('testing this machine', () => {
 	});
 
 	it('says nothing about a number the server did not send', async () => {
-		// Zero is not a reading, and "Sift reads 0 files at once" says the opposite of what happens.
+		// Zero is not a reading, and "Sift reads 0 files at the same time" says the opposite of what happens.
 		await withTest(MEASURED);
 
 		expect(panel()?.querySelector('[data-testid="self-test-share-reads"]')).toBeNull();

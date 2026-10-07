@@ -227,10 +227,10 @@ async def test_a_backup_missed_while_the_machine_was_off_is_claimable_the_moment
     actors: Actors,
 ) -> None:
     """The reason the schedule is a row and not a timer: a week with nothing running, and a worker
-    claims it at once rather than waiting for another day."""
+    claims it immediately rather than waiting for another day."""
     await turn_on(preferences, actors, elsewhere)
     register_handlers(service=backup, queue=queue)
-    # A run on record, so the next is on the day after it rather than due at once.
+    # A run on record, so the next is on the day after it rather than due immediately.
     moment = await clock.ensure("backup", since=int(fake_clock.now()))
     assert moment == placed(fake_clock.now(), 1)
     assert moment > fake_clock.now()

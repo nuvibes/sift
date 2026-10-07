@@ -239,7 +239,7 @@ def prune(settings: Settings, *, keep_days: int, now: float | None = None) -> in
     return removed
 
 
-# --- what each folder refused, read for every folder at once ------------------------------------
+# --- what each folder refused, read for every folder in one go ------------------------------------
 
 #: Each folder's first refusals by path, every folder in one statement.
 _REFUSED_IN_ROOTS = """
@@ -256,7 +256,7 @@ SELECT root_id, COUNT(*) AS n FROM scan_rejections WHERE root_id IN (?*) GROUP B
 """
 
 #: Folders per statement: a bound list has a ceiling.
-_ROOTS_AT_ONCE = 500
+_ROOTS_PER_STATEMENT = 500
 
 
 async def refused_in_roots(
@@ -267,8 +267,8 @@ async def refused_in_roots(
     rows: dict[str, list[Row]] = {}
     counts: dict[str, int] = {}
     ids = list(dict.fromkeys(root_ids))
-    for start in range(0, len(ids), _ROOTS_AT_ONCE):
-        chunk = ids[start : start + _ROOTS_AT_ONCE]
+    for start in range(0, len(ids), _ROOTS_PER_STATEMENT):
+        chunk = ids[start : start + _ROOTS_PER_STATEMENT]
         sql, params = in_clause(_REFUSED_IN_ROOTS, chunk)
         for row in await database.fetch_all(sql, [*params, limit]):
             rows.setdefault(str(row["root_id"]), []).append(row)

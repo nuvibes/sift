@@ -117,8 +117,8 @@ def _plain(piece: str) -> str:
 
 
 def _spelled_value(value: str) -> str:
-    """A value as a parameter holds it: quoted only where a separator would otherwise cut it."""
-    if any(character in value for character in ",|"):
+    """A value as a parameter holds it: quoted where a separator or a minus would misread it."""
+    if value.startswith("-") or any(character in value for character in ",|"):
         return '"' + value.replace('"', "") + '"'
     return value
 

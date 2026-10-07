@@ -35,7 +35,7 @@
 # ---------------------------------------------------------------------------------------------
 # The concurrency budget. One number, honoured by the fan-out below AND by the full suite, because
 # the two run in the same machine. Leaving the suite on "as many workers as there are cores" while
-# the gates also fan out is how several checkouts running their gates at once put three times the
+# the gates also fan out is how several checkouts running their gates at the same time put three times the
 # processes on the machine that it has cores, and load-induced flakiness follows.
 #
 # The budget is a share of what is SPARE, not a share of the machine. Dividing every core between
@@ -134,7 +134,7 @@ sift_ci_load_warning() {
 # Each gate gets processes of its own, and the fan-out narrows to pay for them.
 #
 # Single-process gates, parallel only with each other, make the whole phase as slow as its slowest
-# gate no matter how many run at once, and one of them is minutes long on its own. Splitting
+# gate no matter how many run together, and one of them is minutes long on its own. Splitting
 # inside each gate moves the floor instead of the queue, and the coverage figure is the same.
 #
 # Coverage is still exact under this. Each worker writes its own data file and they are combined
@@ -166,7 +166,7 @@ _cov() {  # _cov <test-path>... <--cov=...>...
   local split=()
   [ "$COV_INNER" -gt 1 ] && split=(-n "$COV_INNER")
   # A gate sourced on its own (someone running `_cov_<name>` by hand, beside another doing the same)
-  # would otherwise write the working directory's one data file, and two at once overwrite each
+  # would otherwise write the working directory's one data file, and two together overwrite each
   # other's numbers into a green, meaningless figure (point 1 above). The whole run sets
   # COVERAGE_FILE per gate below; a lone call gets a file of its own here and clears it up after.
   local own="" rc
@@ -235,7 +235,7 @@ _cov_wiring() { _cov src/sift/kernel/tests/test_wiring.py src/sift/kernel/tests/
 # The country names a nationality is said by, on the server: the client has the same list and a
 # gate holds the two equal, so the server copy is read by the disagreement words and that gate.
 _cov_countries() { _cov src/sift/slices/stash_boxes/tests/test_disagreement_words.py tests/gates/test_country_names_agree.py --cov=sift.kernel.countries; }
-_cov_content() { _cov src/sift/kernel/tests/test_pipeline_certainty.py src/sift/kernel/tests/test_a_bar_counts_one_set_of_files.py src/sift/kernel/tests/test_content.py src/sift/kernel/tests/test_content_derivatives.py src/sift/kernel/tests/test_content_places.py src/sift/kernel/tests/test_content_tables.py src/sift/kernel/tests/test_content_user_state.py src/sift/kernel/tests/test_content_stamps.py src/sift/kernel/tests/test_duplicates.py src/sift/kernel/tests/test_content_schema_baseline.py src/sift/kernel/tests/test_migration_helpers.py src/sift/kernel/tests/test_song_sources.py src/sift/kernel/tests/test_backlog_counts.py src/sift/kernel/tests/test_counts_held.py --cov=sift.kernel.content.identity --cov=sift.kernel.content.backlog --cov=sift.kernel.content.identity_arrivals --cov=sift.kernel.content.identity_counts --cov=sift.kernel.content.identity_derivatives --cov=sift.kernel.content.identity_fields --cov=sift.kernel.content.identity_models --cov=sift.kernel.content.identity_paths --cov=sift.kernel.content.identity_places --cov=sift.kernel.content.identity_probes --cov=sift.kernel.content.identity_store --cov=sift.kernel.content.identity_verdicts --cov=sift.kernel.content.hashing --cov=sift.kernel.content.schema --cov=sift.kernel.content.user_state --cov=sift.kernel.content.entity_state --cov=sift.kernel.content.duplicates --cov=sift.kernel.content.presence --cov=sift.kernel.migrations; }
+_cov_content() { _cov src/sift/kernel/tests/test_pipeline_certainty.py src/sift/kernel/tests/test_a_bar_counts_one_set_of_files.py src/sift/kernel/tests/test_content.py src/sift/kernel/tests/test_content_derivatives.py src/sift/kernel/tests/test_content_places.py src/sift/kernel/tests/test_content_tables.py src/sift/kernel/tests/test_content_user_state.py src/sift/kernel/tests/test_content_stamps.py src/sift/kernel/tests/test_duplicates.py src/sift/kernel/tests/test_content_schema_baseline.py src/sift/kernel/tests/test_migration_helpers.py src/sift/kernel/tests/test_song_sources.py src/sift/kernel/tests/test_backlog_counts.py src/sift/kernel/tests/test_counts_held.py src/sift/kernel/tests/test_placeless.py --cov=sift.kernel.content.identity --cov=sift.kernel.content.placeless --cov=sift.kernel.content.backlog --cov=sift.kernel.content.identity_arrivals --cov=sift.kernel.content.identity_counts --cov=sift.kernel.content.identity_derivatives --cov=sift.kernel.content.identity_fields --cov=sift.kernel.content.identity_models --cov=sift.kernel.content.identity_paths --cov=sift.kernel.content.identity_places --cov=sift.kernel.content.identity_probes --cov=sift.kernel.content.identity_store --cov=sift.kernel.content.identity_verdicts --cov=sift.kernel.content.hashing --cov=sift.kernel.content.schema --cov=sift.kernel.content.user_state --cov=sift.kernel.content.entity_state --cov=sift.kernel.content.duplicates --cov=sift.kernel.content.presence --cov=sift.kernel.migrations; }
 # The library store decides what a root may be and moves real folders on disk. Its refusals (a
 # root that overlaps another, or that sits inside a directory Sift writes to) are the difference
 # between reading a person's files and writing into them.
@@ -306,13 +306,13 @@ _cov_serving() { _cov src/sift/kernel/tests/test_serving.py --cov=sift.kernel.se
 _cov_covers() { _cov src/sift/kernel/tests/test_covers.py src/sift/kernel/tests/test_cover_frame.py --cov=sift.kernel.covers; }
 # The site logos that ship with Sift, and finding one by host or by name. A branch here that lets a
 # slug off the wire become part of a path is a directory to walk out of; one that matches the wrong
-# host draws somebody else's logo beside a site's name on every wall at once.
+# host draws somebody else's logo beside a site's name on every wall at the same time.
 _cov_site_icons() { _cov src/sift/kernel/tests/test_site_icons.py --cov=sift.kernel.site_icons; }
 # A vector logo drawn to a picture before the cover door re-encodes it. A branch here that lets a
 # script or an outside reference through is the one door an untrusted file has into the process.
 _cov_svg_raster() { _cov src/sift/kernel/tests/test_svg_raster.py --cov=sift.kernel.svg_raster; }
 # How a list of names is put in order. A branch here that folds the wrong thing puts a name
-# where nobody would look for it, on every wall at once, and nothing fails.
+# where nobody would look for it, on every wall at the same time, and nothing fails.
 _cov_sorting() { _cov src/sift/kernel/tests/test_sorting.py --cov=sift.kernel.sorting; }
 # The counter that rides in every keepable picture address. A branch here that fails to raise it is
 # a permission change that leaves the pictures behind it readable out of a browser's own store,
@@ -516,7 +516,7 @@ _cov_search() { _cov src/sift/slices/search/tests --cov=sift.slices.search; }
 # never checked. Neither looks wrong until the day somebody needs the backup.
 _cov_backup() { _cov src/sift/slices/backup/tests --cov=sift.slices.backup; }
 # Where a fetched file lands: the one question both downloads and captured links ask before any
-# bytes move, so a folder that is gone or never chosen fails at once and not after the fetch.
+# bytes move, so a folder that is gone or never chosen fails immediately and not after the fetch.
 _cov_destination() { _cov src/sift/slices/capture/tests/test_pipeline.py src/sift/slices/download/tests/test_jobs.py src/sift/slices/download/tests/test_jobs_landing.py --cov=sift.kernel.destination; }
 # The naming words: the tokens, the fill, the tidying and the next number, read by a download's
 # name and by a batch rename. Proved by the kernel's own test and by the download names that use it.
@@ -572,7 +572,7 @@ _cov_forgetting() { _cov src/sift/kernel/tests/test_forgetting.py --cov=sift.ker
 _cov_chromaprint() { _cov src/sift/kernel/tests/test_chromaprint.py --cov=sift.kernel.chromaprint; }
 _cov_landing() { _cov src/sift/kernel/tests/test_landing.py --cov=sift.kernel.landing; }
 # Obtaining and loading the models. Two features run one of these and neither may import the other,
-# so a gap here is a gap in both at once. The lines that matter are the refusals: a file whose
+# so a gap here is a gap in both together. The lines that matter are the refusals: a file whose
 # digest does not match is refused rather than loaded, because a truncated model loads perfectly
 # well and then returns numbers that are quietly wrong, and a device that was asked for and is
 # missing stops rather than falling back, because silent CPU is a nine-hour job with no explanation
@@ -589,6 +589,7 @@ _cov_ml() {
 # which does not error, it quietly returns two answers to one question, one of them from a model
 # whose numbers mean something else.
 _cov_semantic() { _cov src/sift/slices/semantic/tests --cov=sift.slices.semantic; }
+_cov_jpeg_turn() { _cov src/sift/kernel/tests/test_jpeg_turn.py --cov=sift.kernel.jpeg_turn; }
 # The first feature that WRITES a file into somebody's library rather than reading one. Every line
 # here is either a refusal, an arithmetic answer somebody acts on before spending four minutes of
 # their machine, or the path that produces the file itself, and the two that matter most do
@@ -616,6 +617,7 @@ _cov_workbench() { _cov src/sift/slices/workbench/tests --cov=sift.slices.workbe
 # of them as dead code.
 _cov_db() {
   _cov src/sift/kernel/tests/test_db.py src/sift/kernel/tests/test_db_lead_and_inline_reads.py \
+    src/sift/kernel/tests/test_db_writer_held.py --cov=sift.kernel.db_writer \
     src/sift/kernel/tests/test_db_steps.py \
     src/sift/kernel/tests/test_library_preflight.py src/sift/kernel/tests/test_db_blocking.py \
     src/sift/kernel/tests/test_baseline_refusal.py src/sift/kernel/tests/test_db_inline_schema.py \
@@ -760,10 +762,10 @@ _cov_settings_registry() {
 # Folding and comparing the text people search by. Held here because the answer has to be the same
 # for the writer and the reader, and a difference between them is a file nobody can find.
 _cov_text() { _cov src/sift/kernel/tests/test_text.py --cov=sift.kernel.text; }
-# What may run off the event loop and how many at once. A fault here freezes the whole
+# What may run off the event loop and how many at the same time. A fault here freezes the whole
 # application.
 _cov_threads() { _cov src/sift/kernel/tests/test_threads.py --cov=sift.kernel.threads; }
-# How many files may be read from one storage at once. A share that has stopped coping reads as a
+# How many files may be read from one storage at the same time. A share that has stopped coping reads as a
 # healthy loop and healthy pools with every job slow; an untested branch here is a reader the cap
 # cannot see.
 _cov_lanes() { _cov src/sift/kernel/tests/test_lanes.py --cov=sift.kernel.lanes; }
@@ -891,6 +893,7 @@ COV_LABELS=(
   "coverage: landing gate"
   "coverage: model runtime gate"
   "coverage: semantic slice gate"
+  "coverage: jpeg turn gate"
   "coverage: compress slice gate"
   "coverage: filename rules gate"
   "coverage: workbench slice gate"
@@ -1025,6 +1028,7 @@ COV_FNS=(
   _cov_landing
   _cov_ml
   _cov_semantic
+  _cov_jpeg_turn
   _cov_media_edit
   _cov_filenames
   _cov_workbench

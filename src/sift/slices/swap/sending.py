@@ -6,7 +6,7 @@
 The host LOOKS at each wanted file before it is sent (`transfer.prepare`): one with no location in
 it goes as it is, its chunks read from the original; one that carries a place is stripped into a
 copy first. Either way the reading is done AHEAD of the streams, a few files at a time
-(`READY_AHEAD`, `READYING_AT_ONCE`), so a stream that finishes a file finds the next one ready
+(`READY_AHEAD`, `READYING_AT_A_TIME`), so a stream that finishes a file finds the next one ready
 rather than waiting for it. A stream with nothing to carry opens the first queued file that IS
 ready, and waits for any to become ready, never for one in particular, so a ready file is never
 left to a single stream at one connection's pace.
@@ -15,7 +15,7 @@ left to a single stream at one connection's pace.
 
 A stream carries a SHARE of a file: the chunks the host hands it (`chunks` in the file's header),
 cut from what no stream holds and the guest has not confirmed. The shares shrink as the file's
-last chunks are cut, so a large file ends on every stream at once rather than on one alone at one
+last chunks are cut, so a large file ends on every stream together rather than on one alone at one
 stream's pace. The guest keeps one map of each file's missing chunks across its streams, answers
 each chunk on the stream it came on, and checks the whole file once: the stream that lands the
 last chunk says `file_done`, and every other stream says `share_done`. A share dropped with its
@@ -47,7 +47,7 @@ from sift.slices.swap.frames import ProtocolError as ProtocolError
 from sift.slices.swap.handshake import (
     LOST,
     READY_AHEAD,
-    READYING_AT_ONCE,
+    READYING_AT_A_TIME,
     SHARE_MOST,
     STREAMS_START,
     WINDOW,
@@ -103,7 +103,7 @@ class _Sending(_Figures):
         #: The files being made ready, or ready and not yet opened, by index (see "Making files
         #: ready, ahead of the streams").
         self.readying: dict[int, asyncio.Task[Prepared]] = {}
-        self._readying_slots = asyncio.Semaphore(READYING_AT_ONCE)
+        self._readying_slots = asyncio.Semaphore(READYING_AT_A_TIME)
         #: Files that failed part-way through a share (an original changed under the read), not
         #: yet said to the receiver: the next stream to ask hears it before anything else.
         self.untold: set[int] = set()

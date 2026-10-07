@@ -115,7 +115,7 @@ describe('what the tooltip says', () => {
 			"In eco mode while you're working: using a quarter of this device. Press for turbo mode."
 		);
 		expect(turboModeTip('full', 25, 'input', [])).toBe(
-			"Out of eco mode: turbo mode on this device although you're working. Press to go back to eco mode."
+			"Turbo mode on this device although you're working. Press to go back to eco mode."
 		);
 	});
 
@@ -143,7 +143,7 @@ describe('what the tooltip says', () => {
 		expect(ecoWhy('others', null)).toBe('other programs are busy');
 		expect(ecoWhy('input', ['graphics'])).toBe("you're working");
 		expect(turboModeSays('full', 25, 'others', ['processor'])).toBe(
-			'Out of eco mode: turbo mode on this device although other programs are using the CPU'
+			'Turbo mode on this device although other programs are using the CPU'
 		);
 	});
 
@@ -178,9 +178,7 @@ describe('a video playing', () => {
 		expect(turboModeTip('less')).toBe(
 			'In eco mode while a video is playing: using a quarter of this device. Press for turbo mode.'
 		);
-		expect(turboModeSays('full', 25)).toBe(
-			'Out of eco mode: turbo mode on this device although a video is playing'
-		);
+		expect(turboModeSays('full', 25)).toBe('Turbo mode on this device although a video is playing');
 		expect(leafDimmed('less')).toBe(false);
 	});
 });
@@ -193,7 +191,7 @@ describe("in the app's client mode", () => {
 			"In eco mode while someone's working there: using a quarter of the device running Sift. Press for turbo mode."
 		);
 		expect(turboModeTip('full', 50, 'playing', [])).toBe(
-			'Out of eco mode: turbo mode on the device running Sift although a video is playing. Press to go back to eco mode.'
+			'Turbo mode on the device running Sift although a video is playing. Press to go back to eco mode.'
 		);
 		expect(usingShare(25, 'others', ['processor'], true)).toBe(
 			'In eco mode while other programs are using the CPU: using a quarter of the device running Sift'
@@ -202,7 +200,7 @@ describe("in the app's client mode", () => {
 });
 
 describe('the press', () => {
-	it('sends what was asked for and reads the queue again at once', async () => {
+	it('sends what was asked for and reads the queue again immediately', async () => {
 		await pressTurboMode(true);
 		await pressTurboMode(false);
 		expect(sent.posts).toEqual([
@@ -212,7 +210,7 @@ describe('the press', () => {
 		expect(sent.refreshed).toBe(2);
 	});
 
-	it("draws the press's own answer at once, without waiting for the queue's next read", async () => {
+	it("draws the press's own answer immediately, without waiting for the queue's next read", async () => {
 		held.page = { ...page(4, true, false), step_back_for: 'input' };
 		await pressTurboMode(true);
 		expect(held.page).toEqual({ ...page(4, false, true), step_back_for: 'input' });

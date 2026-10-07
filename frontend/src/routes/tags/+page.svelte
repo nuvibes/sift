@@ -154,7 +154,7 @@
 
 	$effect(() => () => screenBar.release(mine));
 
-	/* Picking several at once, the same gesture and the same bar as every other wall. A library
+	/* Picking several together, the same gesture and the same bar as every other wall. A library
 	   that has accumulated forty tags is where sharing or hiding a set of them matters, rather
 	   than doing it one context menu at a time. */
 	const selection = new Selection();

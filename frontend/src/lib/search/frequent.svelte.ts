@@ -58,7 +58,7 @@ import { interfaceState, rereadInterfaceState } from '$lib/shell/interface-state
  */
 export type FrequentKind = 'collection' | 'photo_set' | 'person' | 'site' | 'tag' | 'song';
 
-/** Every one of them, for the one read that fills every kind at once. */
+/** Every one of them, for the one read that fills every kind in one go. */
 const FREQUENT_KINDS: readonly FrequentKind[] = [
 	'collection',
 	'photo_set',
@@ -79,7 +79,7 @@ export const FREQUENT_KEPT = 50;
 /**
  * How many of the most recent picks a picker draws in front of the alphabetical list: the top five.
  * One number for every picker of every kind: `PickMenu` and `PickDialog` both take what
- * `remembered` hands them and never cut it again, so moving this moves all of them at once.
+ * `remembered` hands them and never cut it again, so moving this moves all of them together.
  */
 export const RECENT_SHOWN = 5;
 
@@ -87,7 +87,7 @@ export const RECENT_SHOWN = 5;
  * How many rows one page of a picker holds.
  *
  * Here rather than in each store because every kind pages the same way, and one number moving moves
- * every picker in the application at once.
+ * every picker in the application together.
  *
  * Sixty, because it is past the size of the lists this application actually holds (the walls page
  * at sixty for the same reason), so the common library is one page and the ceiling line is drawn

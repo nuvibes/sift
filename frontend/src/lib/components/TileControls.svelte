@@ -3,9 +3,9 @@
 	 * What fills the tile's overlay: the heart, and the rating if the file has one.
 	 *
 	 * The writes are optimistic. A heart that waits for a round trip before filling in feels
-	 * broken, and the request almost always succeeds, so the value moves at once and is put back
-	 * if the server disagrees. Putting it back matters more than it looks: a heart left showing a
-	 * state the server never accepted is a lie the person has no way to notice.
+	 * broken, and the request almost always succeeds, so the value moves immediately and is put
+	 * back if the server disagrees. Putting it back matters more than it looks: a heart left
+	 * showing a state the server never accepted is a lie the person has no way to notice.
 	 */
 	import { Heart } from '$lib/components/common';
 	import { judge, type Judgement, type Subject } from '$lib/library/judgement.svelte';

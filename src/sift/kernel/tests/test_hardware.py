@@ -479,7 +479,7 @@ def test_a_machine_that_will_not_say_how_many_cores_it_has_still_gets_a_worker(
 
 @pytest.mark.unit
 def test_a_big_machine_is_capped(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Jobs are ffmpeg and disk. Thirty-two at once on one disk finishes slower than eight."""
+    """Jobs are ffmpeg and disk. Thirty-two together on one disk finishes slower than eight."""
     monkeypatch.setattr(os, "cpu_count", lambda: 64)
 
     assert worker_concurrency(Settings(worker_concurrency=None)) == MAX_WORKERS
@@ -1157,7 +1157,7 @@ async def test_a_start_uses_the_programs_answers_the_last_start_kept(
 
 
 @pytest.mark.unit
-async def test_a_changed_ffmpeg_is_asked_again_at_once(
+async def test_a_changed_ffmpeg_is_asked_again_immediately(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     asked = _counted_programs(monkeypatch, [REAL_ENCODERS])

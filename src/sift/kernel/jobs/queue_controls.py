@@ -160,7 +160,7 @@ _CALL_OFF_THE_HEADS = (
 )
 
 #: How many heads one statement names: under SQLite's limit on bound values, with room to spare.
-_HEADS_AT_ONCE = 400
+_HEADS_PER_ASK = 400
 
 # The roll-up after it, matched on the moment rather than on ids: every row this run cancelled
 # carries the same `updated_at`, and a list of ids would meet SQLite's parameter cap on a big queue.
@@ -192,8 +192,8 @@ class Controls(HandOffs):
     ) -> list[str]:
         """Cancel a job and everything it spawned. Returns the ids actually cancelled.
 
-        A running job's worker is told at once (`listen_for_stops`), beats, finds the claim gone and
-        drops it; nothing it writes meanwhile can land. `on_canceled` is told which kinds of job
+        A running job's worker is told immediately (`listen_for_stops`), beats, finds the claim gone
+        and drops it; nothing it writes meanwhile can land. `on_canceled` is told which kinds of job
         this stopped BEFORE the commit, so the work ledger cannot see a family drain untold. `why`
         is Sift's own reason, kept on the named row; a person's cancel gives none.
         """
@@ -212,7 +212,7 @@ class Controls(HandOffs):
         await self._tell_settled(rows)
         canceled = [row["id"] for row in rows]
         log.info("job.canceled", job_id=job_id, job_count=len(canceled))
-        # Any of them running is dropped at once rather than at its worker's next heartbeat.
+        # Any of them running is dropped immediately rather than at its worker's next heartbeat.
         self._stop_asked(canceled)
         return canceled
 
@@ -251,8 +251,8 @@ class Controls(HandOffs):
                 return 0
             await connection.execute(_ROLL_UP_CANCELED, (now, now))
             heads = sorted({str(row["root_id"]) for row in rows if row["root_id"] is not None})
-            for start in range(0, len(heads), _HEADS_AT_ONCE):
-                sql, params = in_clause(_CALL_OFF_THE_HEADS, heads[start : start + _HEADS_AT_ONCE])
+            for start in range(0, len(heads), _HEADS_PER_ASK):
+                sql, params = in_clause(_CALL_OFF_THE_HEADS, heads[start : start + _HEADS_PER_ASK])
                 await connection.execute(sql, (now, *params))
 
         log.info("job.canceled_everything", job_count=len(rows))

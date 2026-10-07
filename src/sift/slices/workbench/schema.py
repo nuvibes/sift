@@ -17,11 +17,12 @@ file rule keeps this from becoming the largest table.
 
 from __future__ import annotations
 
-from sift.kernel.db import Connection, register_schema_initializer
+from sift.kernel.access.history_presses import keep_presses
+from sift.kernel.db import Connection, register_schema_initializer, register_schema_invariant
 from sift.kernel.migrations import column_exists
 
 COMPONENT = "workbench"
-VERSION = 16
+VERSION = 17
 
 # `user_id` carries a key with `ON DELETE SET NULL`; `actor_kind` and `actor_id` are the snapshot
 # that keeps saying who did an act after the user is deleted (see the module docstring).
@@ -98,6 +99,9 @@ async def initialize_workbench(connection: Connection, on_disk: int) -> None:
         for column, statement in _ADD_CLIENT:
             if not await column_exists(connection, "workbench_decisions", column):
                 await connection.execute(statement)
+    if on_disk < 17:
+        # Each act marked with its press, so the feed reads a page and not the record.
+        await keep_presses(connection)
 
 
 # `user_id` references `users` (the identity component). It leads: other components' steps that
@@ -105,3 +109,5 @@ async def initialize_workbench(connection: Connection, on_disk: int) -> None:
 register_schema_initializer(
     COMPONENT, VERSION, initialize_workbench, depends_on=["identity"], baseline=15, leads=True
 )
+# Every boot as well: a rebuild of the table takes its triggers, and a changed key rule regenerates.
+register_schema_invariant("workbench_presses", keep_presses)

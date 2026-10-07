@@ -1,7 +1,7 @@
 <script lang="ts">
 	// The placeholder a file wears while it is being taken in. It appears the moment a file is
 	// accepted and stays until the real tile, with its thumbnail, exists, so the person sees that
-	// something happened at once rather than waiting on a grid that quietly fills in later.
+	// something happened immediately rather than waiting on a grid that quietly fills in later.
 	//
 	// A shimmer, never a spinner: a spinner says "working" and a shimmer says "this is becoming
 	// content", which is what it is. The amber dot is the same status colour the rest of the app uses

@@ -52,7 +52,7 @@ async def build_machine(app: FastAPI, settings: Settings) -> HardwareReport:
     The SQLite check comes first of all: a library that cannot do what the schema needs should stop
     the boot while there is still nothing on disk to be sorry about.
 
-    The hardware is looked at once. The result sizes the worker pool and the read pool, is
+    The hardware is looked at one time. The result sizes the worker pool and the read pool, is
     served at /health, and logs at startup any accelerator that was asked for but is not here.
     """
     provide(app, wiring.SQLITE, check_sqlite_capabilities())

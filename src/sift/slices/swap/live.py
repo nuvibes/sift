@@ -10,7 +10,7 @@ session is not ended: it is CUT OFF. The row says so beside its step (`cut_off_a
 connections go, and the task stays, waiting. The host keeps its listener, hosts again on the same
 tunnel as soon as the tunnel lets it (the token is remade if the port moved), and takes the same
 guest's hello again; the guest dials again every `RETRY_SECONDS`, and a Join with the same token
-dials at once. Joined again, each side carries on from its step, resending what the other may not
+dials immediately. Joined again, each side carries on from its step, resending what the other may not
 have heard (the offer, the answer), and a file part-way through resumes from the chunks the guest
 already verified. The wait is bounded by the token's own life: a session still cut off when the
 token runs out ends as `lost`. A person's End is never a cut: it ends the session on both sides.
@@ -526,7 +526,7 @@ class _Live(_Figures):
             self.spawn(self.measure(), "measure")
 
     async def both_ways(self, sending: Awaitable[bool], receiving: Awaitable[bool]) -> bool:
-        """The two directions at once. True once both are complete; a failure in either is the
+        """The two directions together. True once both are complete; a failure in either is the
         session's, as it is in a swap one way."""
         tasks = [self.spawn(sending, "send"), self.spawn(receiving, "receive")]
         await asyncio.wait(tasks, return_when=asyncio.FIRST_EXCEPTION)

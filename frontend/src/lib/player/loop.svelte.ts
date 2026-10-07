@@ -23,8 +23,8 @@
  * other.
  *
  * It is wrong the moment two views can show the same clip and not be the same view. The `owns`
- * check tells clips apart, not views, so with several frames on screen at once, marking a loop
- * in one of them enforces it in every other frame that happens to hold that file, which is a
+ * check tells clips apart, not views, so with several frames on screen at the same time, marking a
+ * loop in one of them enforces it in every other frame that happens to hold that file, which is a
  * video jumping backwards for no reason anybody can see. Anything like that builds its own `Loop`
  * rather than reading this one. Same behaviour, one instance per frame.
  */
@@ -92,7 +92,7 @@ export class Loop {
 	}
 
 	/**
-	 * Set both ends at once, from a stretch somebody saved earlier.
+	 * Set both ends together, from a stretch somebody saved earlier.
 	 *
 	 * The one way marks arrive from outside a press of the button, and it is what makes opening a
 	 * saved loop play the LOOP rather than the video it was cut from, not a mark that opens its
@@ -123,7 +123,7 @@ export class Loop {
 	/**
 	 * A player is showing this clip.
 	 *
-	 * Counted rather than flagged, because a clip can be on screen in two places at once and the
+	 * Counted rather than flagged, because a clip can be on screen in two places together and the
 	 * marks belong to the clip rather than to either player. Handing a video from the full-size view
 	 * to the panel in the corner builds a second player and destroys the first, and the two overlap:
 	 * without a count, whichever one happens to leave second decides whether the loop lives.

@@ -4,8 +4,8 @@
  * every time the queue moves would otherwise announce the same finished download over and over, and
  * the screen would chirp and toast for every one of those. The second half is the door: a single
  * download that finished carries the file it made, so the message can offer to open it, and several
- * at once carry none. An Open that quietly picked one of twenty would be a door to a file nobody
- * chose.
+ * at the same time carry none. An Open that quietly picked one of twenty would be a door to a file
+ * nobody chose.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 

@@ -80,7 +80,7 @@ it('does not ask a second time while the first answer is still coming', async ()
 });
 
 it('stops saying it is busy even when the read fails', async () => {
-	// Left true, every later `ensure` returns at once and the list is empty for the rest of the
+	// Left true, every later `ensure` returns immediately and the list is empty for the rest of the
 	// session: a screen that has quietly stopped asking.
 	mocks.get.mockRejectedValue(new Error('no'));
 
@@ -103,7 +103,7 @@ it('reloads after a save rather than adding a row of its own', async () => {
 	expect(savedSearches.items).toEqual([BEACH]);
 });
 
-it('moves a label at once, keeping the query it points at', async () => {
+it('moves a label immediately, keeping the query it points at', async () => {
 	mocks.get.mockResolvedValue({ items: [BEACH, DOGS] });
 	await savedSearches.ensure();
 
@@ -123,7 +123,7 @@ it('puts the old name back when the rename is refused, and says so', async () =>
 	expect(savedSearches.items).toEqual([BEACH, DOGS]);
 });
 
-it('takes a row out at once and tells the server after', async () => {
+it('takes a row out immediately and tells the server after', async () => {
 	mocks.get.mockResolvedValue({ items: [BEACH, DOGS] });
 	await savedSearches.ensure();
 

@@ -48,7 +48,7 @@ from sift.kernel.log import get_logger
 
 log = get_logger(__name__)
 
-#: How much of a file to read at once when hashing it. The same size the transfer uses, and read
+#: How much of a file to read at a time when hashing it. The same size the transfer uses, and read
 #: from there rather than declared again.
 _CHUNK = CHUNK
 

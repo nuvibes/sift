@@ -83,7 +83,7 @@ describe('a sweep in swap mode', () => {
 		const picks = new SwapSelection(() => ROWS);
 		const gesture = new TileGesture(picks, order);
 
-		// Something on screen is picked, so the press sweeps at once, with no hold.
+		// Something on screen is picked, so the press sweeps immediately, with no hold.
 		press(gesture, 'r1', 50, picks);
 		move(150);
 		lift();

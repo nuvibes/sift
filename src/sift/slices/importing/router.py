@@ -92,9 +92,9 @@ def _wall_seconds_per_file(
 ) -> float | None:
     """How long one file of this product took ON THE CLOCK, from the last run that made any.
 
-    Worker seconds presented as wall time would be out by the number of jobs running at once, and
-    a person reading "about four days" for a one-day run decides not to press. The worker figure is
-    not wrong, it is simply not an answer to "how long will I be waiting": it is kept, on
+    Worker seconds presented as wall time would be out by the number of jobs running at the same
+    time, and a person reading "about four days" for a one-day run decides not to press. The worker
+    figure is not wrong, it is simply not an answer to "how long will I be waiting": it is kept, on
     `seconds_per_file`, for the screen that asks how hard the machine worked.
 
     The clock is divided between the PRODUCTS of the run in proportion to the worker time each one
@@ -385,7 +385,7 @@ async def start_runs(
     to find nothing, and shows on the Activity screen as work somebody is waiting on.
 
     A PRESS RUNS WHATEVER THE TASK'S WHEN SAYS. `at` is marked on the run and handed to every page
-    and task it gives out (`JobContext.enqueue_child`): `now` runs at once at the urgency of the
+    and task it gives out (`JobContext.enqueue_child`): `now` runs immediately at the urgency of the
     person waiting; `quiet` waits for quiet hours and pauses when they close, at the ordinary
     priority, because nobody is sitting in front of it and it should not step in front of whatever
     is. Both name the person who pressed, so the pass says who started it.

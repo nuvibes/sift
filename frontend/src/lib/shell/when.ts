@@ -60,7 +60,7 @@ import { counted } from '$lib/entity/entity-counts';
  */
 
 /** A minute and a half either side of now. Below this, saying a number is noise. */
-const AT_ONCE_SECONDS = 90;
+const JUST_NOW_SECONDS = 90;
 
 const MINUTE = 60;
 const HOUR = 60 * MINUTE;
@@ -76,7 +76,7 @@ export function sayWhen(at: number, now: number): string {
 	/* "now" would be the obvious word for the forward half and it does not read: these words go
 	   after "Next", and "Next now" is a sentence nobody writes. A queued job that is due reads as
 	   about to happen, which is what "any moment" says. */
-	if (seconds < AT_ONCE_SECONDS) return away < 0 ? 'just now' : 'any moment';
+	if (seconds < JUST_NOW_SECONDS) return away < 0 ? 'just now' : 'any moment';
 	if (seconds < HOUR) {
 		const minutes = Math.round(seconds / MINUTE);
 		return away < 0 ? `${minutes} minutes ago` : `in ${minutes} minutes`;

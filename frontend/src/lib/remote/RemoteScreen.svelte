@@ -501,7 +501,7 @@
 									{/snippet}
 								</ChoiceCard>
 							{/each}
-							<!-- Every cell at once, the selection the desk's cell chooser and its backtick
+							<!-- Every cell together, the selection the desk's cell chooser and its backtick
 							     make: a row of its own under the cells, as "or all of them". -->
 							{#if offers.has('theater.everyCell') && screen.cells > 1}
 								<span class="every">

@@ -99,7 +99,7 @@ class GroupingMixin(FaceServiceBase):
         piles = await self._store.open_piles_for_grouping()
         # **A face turned past the bar's angle is in no group.** It is kept to be named on its file
         # and asked about by a match, never to decide anything alone, and a group is a way of
-        # deciding many at once: one name given to a group names every face in it. A turned
+        # deciding many together: one name given to a group names every face in it. A turned
         # face's nearest face of SOMEBODY ELSE clears the bar for joining about twice as often as a
         # square-on face's does, so it would also carry strangers in.
         turned = await self._store.turned_away(configured.bar.min_frontality)

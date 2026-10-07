@@ -6,7 +6,7 @@
 	 * Shaped as People Sift can recognize is, just above it: the same box filtering the list as
 	 * you type, the count, and the list in a scroll of its own capped at that list's height, so a
 	 * file of five hundred people is one scroll among the rows rather than the pane growing by all
-	 * of them. The whole list is read at once (the route holds no pages), so the box narrows what
+	 * of them. The whole list is read in one go (the route holds no pages), so the box narrows what
 	 * is held rather than asking again.
 	 */
 	import { goto } from '$app/navigation';

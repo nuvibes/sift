@@ -382,6 +382,33 @@ async def test_a_queue_naming_its_subjects_is_kept_under_those_alone(
     assert music.surveys == 2
 
 
+class Stilled(FakeQueue):
+    """A queue whose cards draw only files whose still is made. See `Stills`."""
+
+    draws_stills = True
+
+
+async def test_a_picture_made_moves_only_a_queue_that_draws_stills(
+    admin: Viewer, bus: ChangeBus
+) -> None:
+    """Generate announces an arrival per picture: a pile it cannot move is kept through them, and
+    a card that draws only made stills is surveyed again. A file arriving moves both."""
+    bench = Workbench()
+    faces = FakeQueue("faces", count=2)
+    duplicates = Stilled("duplicates", count=1)
+    bench.register(faces)
+    bench.register(duplicates)
+
+    await bench.board(admin)
+    bus.publish(EVERY_ADMIN, About.ARRIVALS, picture=True)
+    await bench.board(admin)
+    assert (faces.surveys, duplicates.surveys) == (1, 2)
+
+    _told(bus, About.ARRIVALS)
+    await bench.board(admin)
+    assert (faces.surveys, duplicates.surveys) == (2, 3)
+
+
 async def test_a_queue_naming_none_is_surveyed_on_every_read(admin: Viewer, bus: ChangeBus) -> None:
     """A folder on disk moves without any announcement, so nothing could say it went stale."""
     _ = bus

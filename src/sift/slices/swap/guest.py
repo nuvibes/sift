@@ -111,7 +111,7 @@ class GuestSession(_Receiving, _Live):
 
     def join_again(self, token: Token) -> None:
         """A Join with this session's own token: where the host is now (a token remade after
-        its port moved names the new one), and a dial at once if the session is cut off."""
+        its port moved names the new one), and a dial immediately if the session is cut off."""
         self.token = token
         self.address, self.port = token.address, token.port
         self.nudged.set()
@@ -123,7 +123,7 @@ class GuestSession(_Receiving, _Live):
         self.spawn(self.dial_again(), "redial")
 
     async def dial_again(self) -> None:
-        """Dial the host again every `RETRY_SECONDS`, or at once on a Join, while cut off."""
+        """Dial the host again every `RETRY_SECONDS`, or immediately on a Join, while cut off."""
         while self.cut_at is not None and not self.ended.is_set():
             self.nudged.clear()
             try:

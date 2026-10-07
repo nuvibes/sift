@@ -9,7 +9,7 @@
  * that makes it a button, the reset included. What is left is the site's own grey slab with
  * somebody's positioning on it.
  *
- * In a shared component it draws every call site bare at once (in `Pressable`: the facet panel's
+ * In a shared component it draws every call site bare together (in `Pressable`: the facet panel's
  * value rows, the organize board's cards, the folder rows and tiles, the face tiles, the settings
  * nav), and only a browser measuring pixels can see it.
  *

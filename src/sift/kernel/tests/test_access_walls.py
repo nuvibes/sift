@@ -1075,3 +1075,13 @@ async def test_every_wall_orders_by_the_running_time_under_a_row_and_puts_none_l
     await temp_db.execute("UPDATE assets SET duration_ms = NULL WHERE id = ?", (world.solo,))
     assert await pair("longest_total") == [second_row, world_row]
     assert await pair("shortest_total") == [second_row, world_row]
+
+
+def test_a_quoted_pick_is_a_name_and_only_a_bare_minus_refuses() -> None:
+    """A name beginning with a minus is picked in quotes; a minus outside them refuses."""
+    narrowing = EntityNarrowing.of(
+        "person", {"country": ['"-raw"', '-"-cut"', "-de", "-"]}, is_admin=True
+    )
+
+    assert narrowing.picks == (("country", ("-", "-raw")),)
+    assert narrowing.refused == (("country", ("-cut", "de")),)

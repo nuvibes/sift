@@ -236,8 +236,8 @@ class ArtStore:
         is the same answer as never having had one: the next download from that creator asks again.
 
         On first read rather than at a start, so it costs nothing for a creator nobody looks at, and
-        under one lock, so two screens asking at once make one picture. The old file is left where it
-        is, under the cache Sift may empty; nothing names it any more.
+        under one lock, so two screens asking at the same time make one picture. The old file is
+        left where it is, under the cache Sift may empty; nothing names it any more.
         """
         async with self._bringing:
             # Asked again inside the lock: whoever held it may have brought this very row through.
@@ -259,7 +259,7 @@ class ArtStore:
     async def creators_with_art(self) -> list[str]:
         """Every username a creator picture is filed under, without the site half of the name.
 
-        For a screen that draws many People at once and would otherwise ask about each of them
+        For a screen that draws many People together and would otherwise ask about each of them
         separately. The files are not checked here: this answers which names are worth asking
         about, and asking is what checks.
         """

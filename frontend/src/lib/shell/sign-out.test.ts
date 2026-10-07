@@ -50,7 +50,7 @@ describe('signing out', () => {
 		expect(mocks.post).toHaveBeenCalledWith('/auth/logout');
 	});
 
-	it('signs out at once when nothing is on its way', async () => {
+	it('signs out immediately when nothing is on its way', async () => {
 		await signOut();
 		expect(mocks.post).toHaveBeenCalledWith('/auth/logout');
 		expect(mocks.closePanel).toHaveBeenCalled();

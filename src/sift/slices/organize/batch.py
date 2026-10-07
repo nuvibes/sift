@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Renaming many files at once from one template, planned in full before anything is written.
+"""Renaming many files together from one template, planned in full before anything is written.
 
     preview(ids, template)   every new name, with the ones that clash marked. Writes nothing.
     apply(ids, template)     the same plan, carried out one file at a time through `rename`,
@@ -495,10 +495,10 @@ class BatchRenameReceipts:
         count = len(_moves(recorded.payload))
         if count == 0:
             return None
-        # "At once" only says something about a batch; one file was simply renamed.
+        # "Together" only says something about a batch; one file was simply renamed.
         if count == 1:
             return Worded(said=(DOER, " renamed 1 file"))
-        return Worded(said=(DOER, f" renamed {count:,} files at once"))
+        return Worded(said=(DOER, f" renamed {count:,} files together"))
 
 
 def _moves(payload: str) -> list[str]:

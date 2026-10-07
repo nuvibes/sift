@@ -57,7 +57,7 @@ CREATE TABLE IF NOT EXISTS jobs (
   -- press (a schedule, a file arriving, a pass handing out its own work), and a child does not
   -- inherit it.
   requested_by TEXT,
-  -- Whether this row was asked for AT A TIME: `now` runs at once whatever quiet hours say, `quiet`
+  -- Whether this row was asked for AT A TIME: `now` runs immediately whatever quiet hours say, `quiet`
   -- is held to quiet hours. NULL is work nobody pressed, whose timing is its task's When, read at
   -- the claim. Unlike `requested_by` it reaches the children of the same family
   -- (`JobContext.enqueue_child`).

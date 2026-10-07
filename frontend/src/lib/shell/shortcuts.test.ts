@@ -22,6 +22,7 @@ import {
 	shortcut,
 	shortcutsByArea,
 	shortcutsIn,
+	stepAsked,
 	typingInto,
 	type Actions,
 	type PlayerAction,
@@ -140,6 +141,34 @@ describe('which press is which shortcut', () => {
 		expect(matches(press('1'), 'theater.cell')).toBe(true);
 		expect(matches(press('9'), 'theater.cell')).toBe(true);
 		expect(matches(press('0'), 'theater.cell')).toBe(false);
+	});
+});
+
+/* Ctrl and an arrow is the file either side whatever is on screen; only a clip seeks on a bare one. */
+describe('which press steps to the file either side', () => {
+	const still = { clip: false, clipSteps: false };
+	it.each(['a picture', 'a GIF'])('steps on %s with Ctrl, Shift or a bare arrow', () => {
+		expect(stepAsked(press('ArrowRight', { ctrlKey: true }), still)).toBe('next');
+		expect(stepAsked(press('ArrowLeft', { metaKey: true }), still)).toBe('previous');
+		expect(stepAsked(press('ArrowRight', { shiftKey: true }), still)).toBe('next');
+		expect(stepAsked(press('ArrowLeft'), still)).toBe('previous');
+		expect(stepAsked(press('ArrowRight', { ctrlKey: true, shiftKey: true }), still)).toBeNull();
+		expect(stepAsked(press('ArrowRight', { altKey: true }), still)).toBeNull();
+		expect(stepAsked(press('ArrowRight', { ctrlKey: true }, box('input')), still)).toBeNull();
+	});
+
+	it('leaves a bare arrow on a video to its player, and Ctrl too where the player steps', () => {
+		expect(stepAsked(press('ArrowRight'), { clip: true, clipSteps: true })).toBeNull();
+		expect(
+			stepAsked(press('ArrowRight', { ctrlKey: true }), { clip: true, clipSteps: true })
+		).toBeNull();
+		expect(stepAsked(press('ArrowLeft', { shiftKey: true }), { clip: true, clipSteps: true })).toBe(
+			'previous'
+		);
+		expect(
+			stepAsked(press('ArrowRight', { ctrlKey: true }), { clip: true, clipSteps: false })
+		).toBe('next');
+		expect(stepAsked(press('ArrowRight'), { clip: true, clipSteps: false })).toBeNull();
 	});
 });
 

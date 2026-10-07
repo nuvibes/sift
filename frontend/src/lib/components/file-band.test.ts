@@ -1,4 +1,4 @@
-/* The lists under an open file are asked all at once, and each is drawn as it lands: a chain of
+/* The lists under an open file are asked all together, and each is drawn as it lands: a chain of
  * four waits put a tag added elsewhere over a second behind. */
 import { describe, expect, it, vi } from 'vitest';
 
@@ -89,7 +89,7 @@ describe('the panel under a file that is stepped to', () => {
 		expect(asked).toContain('/assets/f1/people');
 		expect(after).toHaveBeenCalledOnce();
 
-		// The next file: the last one's rows go at once, the new ones wait for its picture.
+		// The next file: the last one's rows go immediately, the new ones wait for its picture.
 		current = 'f2';
 		asked.length = 0;
 		band.step();
@@ -115,7 +115,7 @@ describe('the panel under a file that is stepped to', () => {
 		}
 	});
 
-	it('reads the same file again at once, with nothing to wait for', () => {
+	it('reads the same file again immediately, with nothing to wait for', () => {
 		asked.length = 0;
 		const band = new FileBand(() => 'f4');
 		band.pictured();

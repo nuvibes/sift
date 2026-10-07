@@ -156,7 +156,7 @@ FACE_SAID_YES = "confirmed"
 #: `how` on a `RECEIPT_FACES` entry: the face was refused as the person.
 FACE_SAID_NO = "refused"
 
-#: Every kind of thing an event may name, one closed list every reader learns at once. A kind with
+#: Every kind of thing an event may name, one closed list every reader learns in one go. A kind with
 #: no page is still a true subject: the Settings feed draws events naming anything.
 SubjectKind = Literal[
     "asset",

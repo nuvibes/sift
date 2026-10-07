@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """The numbers read off the stored counts are the numbers the page's own statement counts: every
 Filter column read that way, its Has and No rows, and a wall narrowed by one term, for every way a
-vault can stand; an empty term answers at once, and a question is counted once."""
+vault can stand; an empty term answers immediately, and a question is counted once."""
 
 from __future__ import annotations
 

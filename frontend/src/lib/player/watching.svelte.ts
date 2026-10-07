@@ -7,7 +7,7 @@
  * alone they have left: the timer fires, the shell goes, and the film goes with it. This is the
  * sign they have not.
  *
- * A COUNT, not a flag. Two players can be mounted at once (the panel in the corner and a
+ * A COUNT, not a flag. Two players can be mounted at the same time (the panel in the corner and a
  * full-size view behind it), and the moment one is handed to the other they are both alive for an
  * instant. A flag set by the first to start and cleared by the first to stop reads as "nothing is
  * playing" right in the middle of the handover, which is the one moment a timer must not believe.

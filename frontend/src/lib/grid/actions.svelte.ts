@@ -81,7 +81,7 @@ export interface Surroundings<Item extends Actionable> {
 	/**
 	 * Move this screen's own copy of a file, before the server has answered.
 	 *
-	 * The heart on a tile moves at once and the server's answer is kept when it lands. A screen
+	 * The heart on a tile moves immediately and the server's answer is kept when it lands. A screen
 	 * with nothing to move (one that simply re-reads) leaves this out.
 	 */
 	setState?: (
@@ -117,8 +117,8 @@ type LandedKind = 'tag' | 'collection' | 'person' | 'site' | 'photo_set' | 'song
  * and not the other four. Read straight down, this is also the list somebody checks when the
  * product decides a Site is called something else.
  *
- * `lead` stops before the name, which follows it as a link (a toast's piece). `many` is the whole sentence, because several things picked at once have no one
- * page to point at.
+ * `lead` stops before the name, which follows it as a link (a toast's piece). `many` is the whole
+ * sentence, because several things picked together have no one page to point at.
  */
 const LANDED: Record<
 	LandedKind,
@@ -166,7 +166,7 @@ const LANDED: Record<
 			`${files} ${single ? 'was' : 'were'} added to ${counted(onto)} Photo Sets`
 	},
 	/* A file carries one song, so "added to the song" may also have moved it off another one;
-	   the sentence says where it is now, which is the fact. Several songs at once is a pick that
+	   the sentence says where it is now, which is the fact. Several songs together is a pick that
 	   cannot be kept (the last one wins), so `many` is never reached from a menu, and says so
 	   plainly if it ever is. */
 	song: {
@@ -259,7 +259,7 @@ export class AssetActions<Item extends Actionable> {
 			if (!one) continue;
 			// Optimistic, and deliberately WITHOUT the drop test: a row removed on the way out has
 			// nowhere to come back to if the write is refused, and putting it back where it was is
-			// not something this can do. The heart still moves at once; only the leaving waits.
+			// not something this can do. The heart still moves immediately; only the leaving waits.
 			this.#around.setState?.(one.id, { favorite: wanted, rating: one.rating });
 		}
 		/* ONE request for the whole selection, not one per file: a selection of a hundred and
@@ -443,7 +443,7 @@ export class AssetActions<Item extends Actionable> {
 
 	/**
 	 * Save from the menu. One file is copied or downloaded by its own type; a whole selection is
-	 * downloaded, each file at once.
+	 * downloaded, each file at the same time.
 	 */
 	async save(ids: string[]): Promise<void> {
 		const only = ids.length === 1 ? this.#around.lookup(ids[0]) : undefined;
@@ -594,8 +594,8 @@ export class AssetActions<Item extends Actionable> {
 		try {
 			// One call per collection, because that is the shape of the endpoint: it takes a
 			// collection and the items going into it, so the whole selection goes in ONE request
-			// per destination, never one per file. Sequential rather than at once, so a failure
-			// part-way is one message about one thing instead of a race of them.
+			// per destination, never one per file. Sequential rather than at the same time, so a
+			// failure part-way is one message about one thing instead of a race of them.
 			const each: BulkWriteDone[] = [];
 			for (const one of chosen) each.push(await collections.add(one.id, ids));
 			const done = mergeBulk(each);
@@ -666,8 +666,8 @@ export class AssetActions<Item extends Actionable> {
 		try {
 			// One call per set, because that is the shape of the endpoint: it takes a set and the
 			// pictures going into it, so the whole selection goes in ONE request per destination,
-			// never one per picture. Sequential rather than at once, so a failure part-way is one
-			// message about one thing instead of a race of them.
+			// never one per picture. Sequential rather than at the same time, so a failure part-way
+			// is one message about one thing instead of a race of them.
 			const each: BulkWriteDone[] = [];
 			for (const one of chosen) each.push(await photoSets.add(one.id, ids));
 			const done = mergeBulk(each);

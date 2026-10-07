@@ -15,7 +15,7 @@ import time
 import pytest
 
 from sift.kernel.content import ContentStore, DerivativeKind, lacks_derivative
-from sift.kernel.content.identity import PROBE_VERSION, ProbeKeep, made_for
+from sift.kernel.content.identity import PROBE_VERSION_NOT_A_JPEG, ProbeKeep, made_for
 from sift.kernel.db import Database
 from sift.kernel.ids import new_id
 from sift.kernel.jobs import (
@@ -99,11 +99,28 @@ async def test_a_reading_kept_under_an_older_version_is_read_again(
     older = await _file(temp_db, library_root, "video", 5000)
     await content_store.keep_probe(current, ProbeKeep(body=b"{}", tool="t"))
     await content_store.keep_probe(
-        older, ProbeKeep(body=b"{}", tool="t", version=PROBE_VERSION - 1)
+        older, ProbeKeep(body=b"{}", tool="t", version=PROBE_VERSION_NOT_A_JPEG - 1)
     )
 
     assert await content_store.assets_lacking_probe_rows(10) == [older]
     assert await content_store.assets_lacking_probe_rows_count() == 1
+
+
+async def test_a_jpeg_photograph_kept_before_the_browser_s_turn_is_looked_at_again(
+    temp_db: Database, content_store: ContentStore, library_root: LibraryRoot
+) -> None:
+    photograph = await _file(temp_db, library_root, "image", None)
+    await temp_db.execute("UPDATE assets SET mime = 'image/jpeg' WHERE id = ?", (photograph,))
+    kept = ProbeKeep(body=b"{}", tool="t", version=PROBE_VERSION_NOT_A_JPEG)
+    await content_store.keep_probe(photograph, kept)
+
+    assert await content_store.assets_lacking_probe_rows(10) == [photograph]
+    assert await content_store.probe_still_current(photograph)
+    assert await content_store.assets_lacking_probe_rows(10) == []
+    # A file with no reading kept is read, never marked.
+    assert not await content_store.probe_still_current(
+        await _file(temp_db, library_root, "image", None)
+    )
 
 
 class _CardStopped(Exception):

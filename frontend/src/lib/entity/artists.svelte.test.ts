@@ -4,8 +4,8 @@
  * The verb is an admin's, declared once for the three doors that draw it (the right-click on an
  * artist's press, on its chip on the Music wall's bar, and the door on that wall filtered to one
  * artist). What is held here: who may see it, that it sends the artist's id and the typed name to
- * `PUT /artists/{id}`, that the bar's chip says the new name at once, that every screen is told,
- * and that an unchanged name sends nothing.
+ * `PUT /artists/{id}`, that the bar's chip says the new name immediately, that every screen is
+ * told, and that an unchanged name sends nothing.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 

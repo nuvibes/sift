@@ -57,7 +57,7 @@ describe('whether leaving the popout keeps the clip going', () => {
 		expect(popoutLeavesToMini()).toBe(true);
 	});
 
-	it('reads back at once what was just written, without waiting for the round trip', async () => {
+	it('reads back immediately what was just written, without waiting for the round trip', async () => {
 		await recallInterfaceState();
 
 		rememberPopoutLeavesToMini(false);
@@ -92,7 +92,7 @@ describe('whether taking a face off a file asks first', () => {
 		expect(faceRemovalConfirmSkipped()).toBe(true);
 	});
 
-	it('reads back at once what was just written, and can be put back', async () => {
+	it('reads back immediately what was just written, and can be put back', async () => {
 		await recallInterfaceState();
 
 		skipFaceRemovalConfirm();

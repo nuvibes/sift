@@ -207,6 +207,9 @@ def test_swapping_leaves_a_filter_with_nothing_to_swap_exactly_as_written() -> N
 
 def test_a_value_swapped_back_to_a_name_holding_a_separator_is_quoted() -> None:
     assert swapped("tags=ID", {Field.TAGS: {"ID": "a|b"}}) == "tags=%22a%7Cb%22"
+    # A name beginning with a minus is quoted, or the parameter would read as refusing it.
+    assert swapped("tags=ID", {Field.TAGS: {"ID": "-raw"}}) == "tags=%22-raw%22"
+    assert swapped("tags=-ID", {Field.TAGS: {"ID": "-raw"}}) == "tags=-%22-raw%22"
 
 
 # --- the box's memory of what was picked ---------------------------------------------------------
@@ -579,3 +582,57 @@ def test_the_dropdown_offers_a_song_by_any_word_of_its_name(
     assert [(row["value"], row["id"], row["count"]) for row in answer["matches"]] == [
         ("Blue - Marla Quist", song, 1)
     ]
+
+
+def test_the_version_eleven_step_puts_an_old_refusal_back_on_the_token(
+    client: TestClient, world: World
+) -> None:
+    """A refused value once written inside the quotes is respelled where only its name names
+    something; a name that begins with a minus, or one naming nothing, is left as written."""
+    admin = sign_in(client, "admin")
+    wall, kept = new_id(), new_id()
+    sources = (
+        'in:"-holiday" media:video',
+        'tags:"-raw"',
+        'tags:"-nowhere"',
+        'tags:"-beach|city" people:"-Jane Doe,beach"',
+    )
+    write(
+        db_path(client),
+        [
+            ("INSERT INTO tags (id, name, created_at) VALUES (?, '-raw', 0)", (new_id(),)),
+            ("INSERT INTO tags (id, name, created_at) VALUES (?, 'raw', 0)", (new_id(),)),
+            (
+                "INSERT INTO theater_arrangements (id, user_id, name, layout, created_at,"
+                " updated_at) VALUES (?, ?, 'Wall', 'grid', 0, 0)",
+                (wall, admin),
+            ),
+            *(
+                (
+                    "INSERT INTO theater_cells (arrangement_id, position, source, media_kind,"
+                    " ordering, end_behaviour, volume) VALUES (?, ?, ?, 'all', 'random', 'next', 0)",
+                    (wall, position, source),
+                )
+                for position, source in enumerate(sources)
+            ),
+            (
+                "INSERT INTO saved_searches (id, user_id, kind, name, query, created_at)"
+                " VALUES (?, ?, 'asset', 'Kept', ?, 0)",
+                (kept, admin, "q=people%3A%22-Jane+Doe%22&media=video"),
+            ),
+        ],
+    )
+
+    _step(client, 10)
+
+    assert _cells(client) == [
+        "-in:holiday media:video",
+        'tags:"-raw"',
+        'tags:"-nowhere"',
+        '-tags:beach|city people:"-Jane Doe,beach"',
+    ]
+    query = read(db_path(client), "SELECT query FROM saved_searches WHERE id = ?", (kept,))
+    assert parse_qs(str(query[0]["query"])) == {"q": ['-people:"Jane Doe"'], "media": ["video"]}
+    # Twice is once.
+    _step(client, 10)
+    assert _cells(client)[0] == "-in:holiday media:video"

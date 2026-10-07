@@ -20,6 +20,7 @@ import aiosqlite
 import pytest
 
 from sift.kernel import db as db_module
+from sift.kernel import db_writer
 from sift.kernel.db import (
     DEFAULT_READERS,
     PRAGMAS,
@@ -58,21 +59,18 @@ class Recorded:
 
 @pytest.fixture
 def said(monkeypatch: pytest.MonkeyPatch) -> Recorded:
-    """The lines the check wrote.
+    """The lines the check wrote: the logger is recorded rather than the output read, which writes
+    structured lines straight to the stream, never `caplog`, and fails under a parallel run."""
+    from sift.kernel import db_writer
 
-    The logger is recorded rather than the output read: it writes structured lines straight to the
-    stream, so it never reaches `caplog`, and reading the captured stream instead passes alone and
-    fails under a parallel run.
-    """
     recorded = Recorded()
-    monkeypatch.setattr(
-        db_module.log, "info", lambda event, **fields: recorded.info.append((event, fields))
-    )
-    monkeypatch.setattr(
-        db_module.log,
-        "warning",
-        lambda event, **fields: recorded.warnings.append((event, fields)),
-    )
+    for spoken in (db_module.log, db_writer.log):
+        monkeypatch.setattr(
+            spoken, "info", lambda event, **fields: recorded.info.append((event, fields))
+        )
+        monkeypatch.setattr(
+            spoken, "warning", lambda event, **fields: recorded.warnings.append((event, fields))
+        )
     return recorded
 
 
@@ -284,7 +282,7 @@ async def test_a_write_storm_never_hits_a_locked_database(temp_db: Database) -> 
 async def test_write_transactions_never_interleave(temp_db: Database) -> None:
     """The property the lock actually provides.
 
-    Every transaction runs on the same connection, so if two are open at once their statements
+    Every transaction runs on the same connection, so if two are open together their statements
     land in the same SQLite transaction: one's commit publishes the other's half-finished work,
     and one's rollback throws it away. Whoever holds the writer holds it alone, start to finish.
     """
@@ -628,7 +626,7 @@ async def _boot(path: Path, name: str, version: int, initialize: Initializer) ->
 async def test_a_database_two_versions_behind_gets_every_step_it_missed(tmp_path: Path) -> None:
     """The guarantee the whole chained-`if` rule exists for, on a database that really is old.
 
-    Somebody who skips a release upgrades across two steps at once, and both have to land in the
+    Somebody who skips a release upgrades across two steps in one go, and both have to land in the
     one boot. They cannot be retried afterwards: this records the component as fully up to date the
     moment the initializer returns, whatever it actually did, so a step passed over here is passed
     over for the life of that database. The failure is silent: the boot succeeds, the version
@@ -895,8 +893,8 @@ def test_ordinary_reads_are_not_refused(sql: str) -> None:
 #
 # Whole-library reads take turns. Not because SQLite readers block each other (they do not), but
 # because the cost is rows crossing out of SQLite into Python and it multiplies by however many
-# readers are doing it at once. A table scan that takes milliseconds alone can take many seconds
-# beside a dozen others, while the identical scan returning a count stays in milliseconds.
+# readers are doing it at the same time. A table scan that takes milliseconds alone can take many
+# seconds beside a dozen others, while the identical scan returning a count stays in milliseconds.
 
 
 async def test_the_lane_lets_one_pass_through_at_a_time(tmp_path: Path) -> None:
@@ -1057,7 +1055,7 @@ async def test_raising_the_worker_count_raises_the_pool(
         async with contextlib.AsyncExitStack() as held:
             take = [held.enter_async_context(database.read()) for _ in range(database.readers)]
             borrowed = await asyncio.wait_for(asyncio.gather(*take), timeout=5)
-            assert len({id(one) for one in borrowed}) == readers_for(12), "each one held at once"
+            assert len({id(one) for one in borrowed}) == readers_for(12), "each one held together"
         idle = [database._read_pool.get_nowait() for _ in range(readers_for(12))]
         database._readers += 1
         monkeypatch.setattr(database, "_open", lambda: asyncio.wait_for(asyncio.Event().wait(), 0))
@@ -1572,10 +1570,10 @@ async def test_the_keeper_says_so_when_it_reclaims_something_worth_saying(
     await database.connect()
     said_lines: list[tuple[str, dict[str, object]]] = []
     monkeypatch.setattr(
-        db_module.log, "info", lambda event, **fields: said_lines.append((event, fields))
+        db_writer.log, "info", lambda event, **fields: said_lines.append((event, fields))
     )
     sizes = iter([db_module.RECLAIM_WORTH_SAYING_BYTES * 2, 0])
-    monkeypatch.setattr(db_module, "_log_bytes", lambda _path: next(sizes, 0))
+    monkeypatch.setattr(db_writer, "_log_bytes", lambda _path: next(sizes, 0))
     stop = asyncio.Event()
     try:
         keeper = asyncio.create_task(keep_the_log_folded(database, stop, interval=0.005))
@@ -1601,10 +1599,10 @@ async def test_a_reclaim_too_small_to_be_worth_saying_is_not_said(
     await database.connect()
     said_lines: list[tuple[str, dict[str, object]]] = []
     monkeypatch.setattr(
-        db_module.log, "info", lambda event, **fields: said_lines.append((event, fields))
+        db_writer.log, "info", lambda event, **fields: said_lines.append((event, fields))
     )
     sizes = iter([db_module.RECLAIM_WORTH_SAYING_BYTES // 2, 0])
-    monkeypatch.setattr(db_module, "_log_bytes", lambda _path: next(sizes, 0))
+    monkeypatch.setattr(db_writer, "_log_bytes", lambda _path: next(sizes, 0))
     stop = asyncio.Event()
     try:
         keeper = asyncio.create_task(keep_the_log_folded(database, stop, interval=0.005))
@@ -1627,7 +1625,7 @@ async def test_a_log_that_could_not_be_started_over_is_a_quiet_line_and_not_a_fa
     await database.connect()
     said_lines: list[tuple[str, dict[str, object]]] = []
     monkeypatch.setattr(
-        db_module.log, "debug", lambda event, **fields: said_lines.append((event, fields))
+        db_writer.log, "debug", lambda event, **fields: said_lines.append((event, fields))
     )
 
     async def busy() -> tuple[bool, int]:

@@ -580,7 +580,7 @@ describe('two narrowings on one wall', () => {
 	});
 
 	it('lets the screen win a field a file has only one of', () => {
-		/* A rating, a codec, whether something is a favourite: one value per file, so two at once is
+		/* A rating, a codec, whether something is a favourite: one value per file, so two at the same time is
 		   nothing at all. Those keep the rule they have always had: the constraint that names the
 		   screen wins. */
 		expect(bothNarrowings({ fav: 'no' }, { fav: 'yes' })).toEqual({ fav: 'yes' });

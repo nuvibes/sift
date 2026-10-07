@@ -127,9 +127,9 @@ const VAULT_LOCKED = 423;
  * here: a dozen callers each writing their own sentence is a dozen chances to forget the button.
  *
  * A caller that says `That could not be saved.` and stops is, on a file in the vault, two
- * wrong things at once: it says something went wrong when nothing did, and it leaves somebody
- * with a heart that will not stick and no idea why. The server has said exactly what the matter is
- * and named the one thing that fixes it; this is what carries that to the screen.
+ * wrong things at the same time: it says something went wrong when nothing did, and it leaves
+ * somebody with a heart that will not stick and no idea why. The server has said exactly what the
+ * matter is and named the one thing that fixes it; this is what carries that to the screen.
  *
  * The server's own sentence rather than a copy of it, for the reason `ApiError.detail` exists: this
  * refusal is written for the person reading it, and the wording lives in one place. Anything that
