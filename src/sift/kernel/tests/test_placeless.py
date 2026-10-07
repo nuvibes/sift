@@ -117,3 +117,10 @@ async def test_a_library_from_before_the_rows_is_filled_when_it_opens(
 
     assert await database.schema_version(placeless.COMPONENT) == placeless.VERSION
     assert await _kept(database) == ["stranded"]
+
+
+async def test_a_library_already_at_the_version_is_left_as_it_is(database: Database) -> None:
+    before = await database.fetch_all("SELECT asset_id FROM placeless_assets")
+    async with database.write() as connection:
+        await placeless.initialize(connection, on_disk=1)
+    assert await database.fetch_all("SELECT asset_id FROM placeless_assets") == before

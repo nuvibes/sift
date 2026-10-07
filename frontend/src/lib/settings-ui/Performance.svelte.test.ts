@@ -919,7 +919,7 @@ describe('testing this machine', () => {
 		expect(said()).toContain(
 			'Encoding rounds done: 6 of up to 6. Now timing each installed model.'
 		);
-		expect(left()?.trim()).toBe('About 2 minutes left.');
+		expect(left()?.trim()).toBe('About 2 min left.');
 
 		await withTest({
 			...MEASURED,
@@ -930,7 +930,7 @@ describe('testing this machine', () => {
 			seconds_left: 38,
 			left_timed: true
 		});
-		expect(left()?.trim()).toBe('About 40 seconds left.');
+		expect(left()?.trim()).toBe('About under a minute left.');
 		await withTest({
 			...MEASURED,
 			running: true,
@@ -955,14 +955,14 @@ describe('testing this machine', () => {
 			left_timed: false
 		});
 		expect(said()).toContain('5 of up to 6. Now reading a few large files from each drive');
-		expect(left()?.trim()).toBe('Up to 5 minutes left.');
+		expect(left()?.trim()).toBe('Up to 5 min left.');
 	});
 
 	it('says how long a whole run takes here, from the last one where it was timed', async () => {
 		await withTest({ ...MEASURED, whole_seconds: 224, whole_timed: true });
-		expect(panel()?.textContent).toContain('On this device it takes about 4 minutes');
+		expect(panel()?.textContent).toContain('On this device it takes about 4 min');
 		await withTest({ ...MEASURED, whole_seconds: 299, whole_timed: false });
-		expect(panel()?.textContent).toContain('It takes up to 5 minutes and keeps this device busy');
+		expect(panel()?.textContent).toContain('It takes up to 5 min and keeps this device busy');
 	});
 
 	/* Right after a press the run is queued or pausing work: no rung of it is measured yet, and the

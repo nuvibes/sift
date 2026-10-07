@@ -390,7 +390,7 @@ async def keep_presses(connection: Connection) -> None:
             "SELECT name FROM pragma_table_xinfo('workbench_decisions')", ()
         )
     }
-    if not set(_KEYED_FROM) <= columns:
+    if not set(_KEYED_FROM) <= columns:  # pragma: no cover (a library older than those columns)
         return
     table = await connection.execute_fetchall(
         "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'workbench_decisions'", ()

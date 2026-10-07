@@ -218,12 +218,16 @@ async function dragGrip(page: Page, grip: string, to: { x: number; y: number }):
 			return before === JSON.stringify(await stage.boundingBox());
 		})
 		.toBe(true);
-	await page.locator(`[data-grip="${grip}"]`).hover();
-	// Read before the press, as the stage does, before anything the press redraws moves it.
-	const box = (await stage.boundingBox())!;
-	await page.mouse.down();
-	await page.mouse.move(box.x + box.width * to.x, box.y + box.height * to.y, { steps: 10 });
-	await page.mouse.up();
+	for (let attempt = 0; attempt < 2; attempt += 1) {
+		await page.locator(`[data-grip="${grip}"]`).hover();
+		// Read before the press, as the stage does; a stage that moved under the drag is dragged again.
+		const box = (await stage.boundingBox())!;
+		await page.mouse.down();
+		await page.mouse.move(box.x + box.width * to.x, box.y + box.height * to.y, { steps: 10 });
+		await page.mouse.up();
+		const after = (await stage.boundingBox())!;
+		if (Math.abs(after.x - box.x) < 1 && Math.abs(after.width - box.width) < 1) return;
+	}
 }
 
 test.beforeEach(async ({ page }) => {

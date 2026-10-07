@@ -589,7 +589,7 @@ _cov_ml() {
 # which does not error, it quietly returns two answers to one question, one of them from a model
 # whose numbers mean something else.
 _cov_semantic() { _cov src/sift/slices/semantic/tests --cov=sift.slices.semantic; }
-_cov_jpeg_turn() { _cov src/sift/kernel/tests/test_jpeg_turn.py --cov=sift.kernel.jpeg_turn; }
+_cov_jpeg_turn() { _cov src/sift/kernel/tests/test_jpeg_turn.py src/sift/slices/media_jobs/tests/test_orientation.py --cov=sift.kernel.jpeg_turn; }
 # The first feature that WRITES a file into somebody's library rather than reading one. Every line
 # here is either a refusal, an arithmetic answer somebody acts on before spending four minutes of
 # their machine, or the path that produces the file itself, and the two that matter most do

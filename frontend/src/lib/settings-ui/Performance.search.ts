@@ -12,6 +12,7 @@
  * "processor" and "graphics card" for the same two things.
  */
 import type { Searchable } from './search';
+import { sayDuration } from '$lib/shell/duration';
 import { counted } from '$lib/entity/entity-counts';
 
 /* The two hand-drawn blocks' addresses, so a search result and a link can ring them the way a
@@ -24,15 +25,6 @@ export const KEEPING_UP_ANCHOR = 'performance.keeping_up';
 export const MEASURE_ROW = 'performance.benchmark';
 /* The Concurrency row, whose Edit opens the page of numbers for how much Sift does at the same time. */
 export const CONCURRENCY_ANCHOR = 'performance.concurrency';
-
-/* A length as the run says it: tens of seconds under a minute, whole minutes over; `up` rounds up. */
-function span(seconds: number, up: boolean): string {
-	const round = up ? Math.ceil : Math.round;
-	const tens = Math.max(10, round(seconds / 10) * 10);
-	if (tens < 60) return `${tens} seconds`;
-	const minutes = Math.max(1, round(seconds / 60));
-	return minutes === 1 ? 'a minute' : `${minutes} minutes`;
-}
 
 /* What a run is doing past its encoding rounds, by the server's name for each step. */
 const NOW: Record<string, string> = {
@@ -81,14 +73,14 @@ export const COPY = {
 			seconds ? `${COPY.measure.lede} ${COPY.measure.takes(seconds, timed)}` : COPY.measure.lede,
 		takes: (seconds: number, timed: boolean) =>
 			timed
-				? `On this device it takes about ${span(seconds, false)}, and keeps it busy while it runs.`
-				: `It takes up to ${span(seconds, true)} and keeps this device busy while it runs.`,
+				? `On this device it takes about ${sayDuration(seconds) ?? 'a moment'}, and keeps it busy while it runs.`
+				: `It takes up to ${sayDuration(Math.ceil(seconds / 60) * 60) ?? 'a moment'} and keeps this device busy while it runs.`,
 		left: (seconds?: number | null, timed = false) =>
 			seconds == null
 				? ''
 				: seconds < 5
 					? 'Almost done.'
-					: `${timed ? 'About' : 'Up to'} ${span(seconds, !timed)} left.`,
+					: `${timed ? 'About' : 'Up to'} ${sayDuration(timed ? seconds : Math.ceil(seconds / 60) * 60) ?? 'a moment'} left.`,
 		busy: 'Benchmarking\u2026 this device is busy until it finishes.',
 		round: (at: number, of: number) =>
 			`Round ${at} of up to ${of}. Each one encodes more clips at the same time than the last, then one steps back between the two quickest. It stops early if this device stops keeping up.`,

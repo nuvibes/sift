@@ -590,7 +590,7 @@ def test_the_version_eleven_step_puts_an_old_refusal_back_on_the_token(
     """A refused value once written inside the quotes is respelled where only its name names
     something; a name that begins with a minus, or one naming nothing, is left as written."""
     admin = sign_in(client, "admin")
-    wall, kept = new_id(), new_id()
+    wall, kept, plain = new_id(), new_id(), new_id()
     sources = (
         'in:"-holiday" media:video',
         'tags:"-raw"',
@@ -620,6 +620,11 @@ def test_the_version_eleven_step_puts_an_old_refusal_back_on_the_token(
                 " VALUES (?, ?, 'asset', 'Kept', ?, 0)",
                 (kept, admin, "q=people%3A%22-Jane+Doe%22&media=video"),
             ),
+            (
+                "INSERT INTO saved_searches (id, user_id, kind, name, query, created_at)"
+                " VALUES (?, ?, 'asset', 'Plain', 'q=tags%3A%22-nowhere%22', 0)",
+                (plain, admin),
+            ),
         ],
     )
 
@@ -633,6 +638,10 @@ def test_the_version_eleven_step_puts_an_old_refusal_back_on_the_token(
     ]
     query = read(db_path(client), "SELECT query FROM saved_searches WHERE id = ?", (kept,))
     assert parse_qs(str(query[0]["query"])) == {"q": ['-people:"Jane Doe"'], "media": ["video"]}
+    untouched = read(db_path(client), "SELECT query FROM saved_searches WHERE id = ?", (plain,))
+    assert str(untouched[0]["query"]) == "q=tags%3A%22-nowhere%22", (
+        "a name nothing has: left as it is"
+    )
     # Twice is once.
     _step(client, 10)
     assert _cells(client)[0] == "-in:holiday media:video"

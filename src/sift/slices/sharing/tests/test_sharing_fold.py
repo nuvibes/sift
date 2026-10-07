@@ -4,6 +4,7 @@ and its counts follow, folded after it; a fold that fails leaves them for the bo
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator
 from pathlib import Path
 
@@ -96,3 +97,25 @@ async def test_a_fold_that_fails_leaves_the_counts_owed(
     await service.share(admin, ObjectType.ROOT, root, lib.guests[-1], Effect.SHARE)
     await _folded(service)
     assert await _owed(database) > 0
+
+
+async def test_a_fold_asked_while_one_runs_goes_round_again_rather_than_twice(
+    library: tuple[FixtureLibrary, Database, SharingService],
+) -> None:
+    """A fold page runs inside a write, so a second ask cannot start a second task: it marks
+    the one running to go round again."""
+    lib, database, service = library
+    admin = Viewer(id=lib.admin, role=Role.ADMIN)
+    guest = lib.guests[-1]
+    root = await _unseen_root(database, guest)
+    await _folded(service)
+    # A fold already under way, standing in for one on its page.
+    running = asyncio.get_running_loop().create_task(asyncio.sleep(0.2))
+    service._folding = running
+    service._fold_asked = False
+    await service.share(admin, ObjectType.ROOT, root, guest, Effect.SHARE)
+    assert service._folding is running, "the fold already running is asked to go round again"
+    assert service._fold_asked
+    await running
+    await service._fold()
+    assert await _owed(database) == 0

@@ -113,3 +113,13 @@ async def test_the_copy_is_made_once_and_made_again_when_swept(
     first.unlink()
     swept = await jpeg_turn.readable_copy(content_store, asset, original, settings=settings)
     assert swept.read_bytes() == _jpeg(_exif(6))
+
+
+async def test_a_file_that_is_not_a_jpeg_photograph_gets_no_copy(tmp_path: Path) -> None:
+    from types import SimpleNamespace
+
+    source = SimpleNamespace(
+        asset=SimpleNamespace(mime="video/mp4", media_type="video"), path=tmp_path / "clip.mp4"
+    )
+    copy = await jpeg_turn.as_the_browser_draws(None, source, settings=None)  # type: ignore[arg-type]
+    assert copy is None
