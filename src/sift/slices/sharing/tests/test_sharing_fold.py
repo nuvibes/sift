@@ -109,13 +109,19 @@ async def test_a_fold_asked_while_one_runs_goes_round_again_rather_than_twice(
     guest = lib.guests[-1]
     root = await _unseen_root(database, guest)
     await _folded(service)
-    # A fold already under way, standing in for one on its page.
-    running = asyncio.get_running_loop().create_task(asyncio.sleep(0.2))
+    # A fold already under way, standing in for one on its page: held until the share has asked.
+    held = asyncio.Event()
+
+    async def until_released() -> None:
+        await held.wait()
+
+    running = asyncio.get_running_loop().create_task(until_released())
     service._folding = running
     service._fold_asked = False
     await service.share(admin, ObjectType.ROOT, root, guest, Effect.SHARE)
     assert service._folding is running, "the fold already running is asked to go round again"
     assert service._fold_asked
+    held.set()
     await running
     await service._fold()
     assert await _owed(database) == 0

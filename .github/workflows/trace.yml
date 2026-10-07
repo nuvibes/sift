@@ -1,0 +1,62 @@
+# One browser spec on the runner with Playwright's trace recorded, for a red that this PC cannot
+# reproduce: the trace carries every action, the DOM at each, the console and the network, which
+# a photograph does not. Run by hand, never on a push.
+name: trace
+
+on:
+  workflow_dispatch:
+    inputs:
+      spec:
+        description: "The spec file under frontend, such as e2e/edit.spec.ts"
+        required: true
+        type: string
+      grep:
+        description: "Only the tests whose title matches this (Playwright's -g); empty for the whole spec"
+        required: false
+        type: string
+        default: ""
+
+# Each job states the permissions it needs, and the workflow grants none by default.
+permissions: {}
+
+defaults:
+  run:
+    shell: bash
+
+concurrency:
+  group: trace-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  trace:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      E2E_WORKERS: "1"
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/prepare-suite
+      - name: A browser to run in
+        working-directory: frontend
+        run: npx playwright install chromium
+      - name: The one spec, traced
+        working-directory: frontend
+        env:
+          SPEC: ${{ inputs.spec }}
+          GREP: ${{ inputs.grep }}
+        run: |
+          if [ -n "$GREP" ]; then
+            npx playwright test "$SPEC" --project=chromium --trace on --reporter=line -g "$GREP"
+          else
+            npx playwright test "$SPEC" --project=chromium --trace on --reporter=line
+          fi
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: browser-trace
+          path: frontend/test-results/
+          retention-days: 7
