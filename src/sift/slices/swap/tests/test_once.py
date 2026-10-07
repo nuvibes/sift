@@ -179,6 +179,9 @@ async def _a_swap_of_one_file(
     hoster = _Hoster()
     proxy = _Proxy(hoster)
     await proxy.start()
+    # The rig's two-second watchdog, tripped on a loaded runner, cuts the stream and the file is
+    # sent again from what landed: a count of reads needs one unbroken stream.
+    patient = {"watchdog_seconds": 30.0}
     host = _sessions(
         host_db,
         tmp_path / "h",
@@ -186,8 +189,11 @@ async def _a_swap_of_one_file(
         make_offer=make_offer,
         path_of=path_of,
         prepare=_as_it_is,
+        **patient,
     )
-    guest = _sessions(guest_db, tmp_path / "g", egress=_Egress(proxy.url), assess=assess, land=land)
+    guest = _sessions(
+        guest_db, tmp_path / "g", egress=_Egress(proxy.url), assess=assess, land=land, **patient
+    )
     try:
         started = await _start_host(host)
         joined = await guest.join(

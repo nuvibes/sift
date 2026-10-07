@@ -146,6 +146,7 @@ def test_status_reads_its_settings_once_and_an_admins_count_off_the_library(
 ) -> None:
     """The pane's settings come from one read, and an admin's waiting files from the library's
     kept count rather than a walk of what they may see."""
+    import asyncio
     from collections import Counter
     from contextlib import contextmanager
     from typing import Any
@@ -156,26 +157,37 @@ def test_status_reads_its_settings_once_and_an_admins_count_off_the_library(
     sign_in(client, "admin")
     switch_on(client)
     client.get("/api/semantic/status")
-    heard: Counter[str] = Counter()
+    # Each statement with the task that ran it: the first status queued the models' fetch, whose
+    # own settings reads run on the pool's task and are not the request's.
+    ran: list[tuple[asyncio.Task[Any] | None, str]] = []
     judged = db_module._judged
+
+    def on_task() -> asyncio.Task[Any] | None:
+        try:
+            return asyncio.current_task()
+        except RuntimeError:
+            return None
 
     @contextmanager
     def counted(stage: str, statement: Any, *rest: Any, **options: Any) -> Iterator[Any]:
-        heard[db_module.statement_name(statement)] += 1
+        ran.append((on_task(), db_module.statement_name(statement)))
         with judged(stage, statement, *rest, **options) as timing:
             yield timing
 
     monkeypatch.setattr(db_module, "_judged", counted)
     asked: list[bool] = []
+    serving: list[asyncio.Task[Any] | None] = []
     visible = ContentStore.count_lacking_visible
 
     async def spied(self: ContentStore, *args: Any, **options: Any) -> Any:
         asked.append(bool(options.get("admin")))
+        serving.append(on_task())
         return await visible(self, *args, **options)
 
     monkeypatch.setattr(ContentStore, "count_lacking_visible", spied)
 
     assert client.get("/api/semantic/status").status_code == 200
+    heard: Counter[str] = Counter(name for task, name in ran if task is serving[0])
     assert heard["settings.app_value"] == 0, sorted(heard.items())
     assert sum(n for name, n in heard.items() if name.startswith("select:app_settings")) == 1
     assert asked == [True]
