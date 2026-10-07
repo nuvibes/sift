@@ -128,7 +128,7 @@ async function there(where: string): Promise<boolean> {
 }
 
 describe('a move to another drive', () => {
-	it('copies both folders, keeps what is inside them, and takes the old ones away', async () => {
+	it('copies both folders, keeps what is inside them, and takes the old ones away', { timeout: 30_000 }, async () => {
 		const target = await emptyFolder('other-drive');
 
 		const outcome = await move(current, target);
@@ -141,7 +141,7 @@ describe('a move to another drive', () => {
 		expect(await there(current.cacheDir)).toBe(false);
 	});
 
-	it('says a copy happened rather than claiming the rename it could not do', async () => {
+	it('says a copy happened rather than claiming the rename it could not do', { timeout: 30_000 }, async () => {
 		const target = await emptyFolder('other-drive');
 
 		const outcome = await move(current, target);

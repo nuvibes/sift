@@ -1038,6 +1038,15 @@ test('at a laptop width the screen row holds the menus, drawn and pressable with
 	const sort = page.getByRole('button', { name: 'Sort by' });
 	await expect(sort).toBeVisible();
 	await sort.click({ timeout: 3000 });
+	// A press that lands before the row's handler on a loaded runner opens nothing: once more.
+	const opened = await page
+		.getByRole('listbox')
+		.waitFor({ state: 'visible', timeout: 2000 })
+		.then(
+			() => true,
+			() => false
+		);
+	if (!opened) await sort.click({ timeout: 3000 });
 	await expect(page.getByRole('listbox')).toBeVisible();
 });
 

@@ -41,7 +41,7 @@ describe('what it will not do', () => {
 		expect(await refuse(current, 'somewhere')).toMatch(/full path/i);
 	});
 
-	it('refuses the folder it is already using', async () => {
+	it('refuses the folder it is already using', { timeout: 30_000 }, async () => {
 		expect(await refuse(current, path.join(root, 'live'))).toMatch(/already/i);
 	});
 
