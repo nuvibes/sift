@@ -169,6 +169,45 @@ describe('a bell while the file is open', () => {
 		await vi.waitFor(() => expect(recordReads()).toBe(before + 1));
 	});
 
+	it('re-reads the people and filings under the file on the library bell itself', async () => {
+		served.detail = detail();
+		await show(() => {});
+		const bandReads = () =>
+			vi.mocked(api.get).mock.calls.filter(([path]) => String(path) === '/assets/a-1/people')
+				.length;
+		const before = bandReads();
+
+		libraryChanges.changed();
+		flushSync();
+
+		expect(bandReads(), 'a tag or a person applied elsewhere shows under the file at once').toBe(
+			before + 1
+		);
+	});
+
+	it('reads the band once for a library bell, and after the settle only for a jobs bell', async () => {
+		served.detail = detail();
+		await show(() => {});
+		const bandReads = () =>
+			vi.mocked(api.get).mock.calls.filter(([path]) => String(path) === '/assets/a-1/people')
+				.length;
+		let before = bandReads();
+		let records = recordReads();
+
+		libraryChanges.changed();
+		flushSync();
+		await vi.waitFor(() => expect(recordReads()).toBe(records + 1));
+		expect(bandReads(), 'the band read again after the settle it had already had').toBe(before + 1);
+
+		before = bandReads();
+		records = recordReads();
+		jobChanges.changed();
+		flushSync();
+		expect(bandReads()).toBe(before);
+		await vi.waitFor(() => expect(recordReads()).toBe(records + 1));
+		expect(bandReads(), 'a job that moved the file reads its band once settled').toBe(before + 1);
+	});
+
 	it('says the file is gone when it was deleted somewhere else', async () => {
 		served.detail = detail();
 		await show(() => {});

@@ -62,7 +62,9 @@ DELETE FROM acl_grants
  WHERE object_type = ? AND object_id IS ? AND subject_user_id = ? AND effect = ?
 """
 
-_DELETE_OBJECT_GRANTS = "DELETE FROM acl_grants WHERE object_type = ? AND object_id IS ?"
+_DELETE_OBJECT_GRANTS = (
+    "DELETE FROM acl_grants WHERE object_type = ? AND object_id IS ? RETURNING subject_user_id"
+)
 
 _DELETE_ITEM_GRANTS = "DELETE FROM acl_grants WHERE object_type = 'item' AND object_id IN (?*)"
 

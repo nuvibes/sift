@@ -65,6 +65,7 @@ vi.mock('$lib/settings-ui/settings', () => ({
 }));
 
 import PlayerHarness from './PlayerHarness.svelte';
+import { reactiveProps } from '$lib/design/testing.svelte';
 import type { SittingPlace } from '$lib/player/sitting.svelte';
 
 let host: HTMLElement;
@@ -172,6 +173,32 @@ function reports() {
 		.filter((call) => String(call[0]).endsWith('/view'))
 		.map((call) => (call[1] as { body: Record<string, unknown> }).body);
 }
+
+it("sends the leaving file's last piece at the next file's first frame, not in the gap", async () => {
+	host = document.createElement('div');
+	document.body.append(host);
+	const props = reactiveProps({ id: 'asset-1' });
+	mount(PlayerHarness, { target: host, props });
+	await settle();
+	await settle();
+	const video = host.querySelector('video') as HTMLVideoElement;
+	video.dispatchEvent(new Event('play'));
+	flushSync();
+	await watch(video, 3_000);
+	const earlier = reports().length;
+
+	props.id = 'asset-2';
+	flushSync();
+	await settle();
+	expect(reports()).toHaveLength(earlier);
+
+	video.dispatchEvent(new Event('playing'));
+	flushSync();
+	await settle();
+	expect(reports()).toHaveLength(earlier + 1);
+	const last = post.mock.calls.filter((call) => String(call[0]).endsWith('/view')).at(-1);
+	expect(last?.[0]).toBe('/assets/asset-1/view');
+});
 
 it('reports the crossing once, and not again on every tick after it', async () => {
 	const video = await watching();

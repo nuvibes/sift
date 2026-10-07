@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from sift.kernel.access.repository.walls import (
     _NOTHING,
+    HIDDEN_SITES,
     _cut,
     _filtered,
     _narrowed,
@@ -15,6 +16,8 @@ from sift.kernel.access.repository.walls import (
     _with_stored_counts,
     locked_tile,
     one_row,
+    ordered,
+    plain_total,
     shown,
 )
 from sift.kernel.access.sites import SITE_CONCEALED, SITE_REACH, site_address
@@ -296,6 +299,18 @@ _SITES_HEAD, _SITES_ACCESS = _cut(_VISIBLE_SITES, "_VISIBLE_SITES")
 _SITES = _wall(_VISIBLE_SITES, "_VISIBLE_SITES")
 SITES_POSITION = _position(_SITES)
 _SITES_STORED = _with_stored_counts(_VISIBLE_SITES, "_VISIBLE_SITES")
+#: The plain wall: its total off the stored totals (`plain_total`).
+_SITES_PLAIN = ordered(
+    plain_total(
+        _SITES_STORED,
+        "_SITES_STORED",
+        "site",
+        "sites",
+        HIDDEN_SITES,
+        "site_user_state",
+    ),
+    "_SITES_PLAIN",
+)
 
 #: One site by id, as the unfiltered wall reads it: what a cover or a page asks before it
 #: answers, at one row's cost (`one_row`).
@@ -313,7 +328,7 @@ SITES_BY_ID = _one_seam(
 )
 
 
-def sites_query(where: str, rows: str = _NOTHING) -> str:
+def sites_query(where: str, rows: str = _NOTHING, *, plain: str | None = None) -> str:
     """Sites this viewer may know about, counted over only the files a filter reaches.
 
     `rows` filters the sites themselves: the network they are part of, their own tags. Unfiltered
@@ -321,7 +336,9 @@ def sites_query(where: str, rows: str = _NOTHING) -> str:
     filtered, they are counted live, because no stored number can know a filter on files.
     """
     if not _narrowed(where):
-        return _row_narrowed(_SITES_STORED, rows)
+        return _row_narrowed(
+            _SITES_PLAIN[plain] if plain and not _narrowed(rows) else _SITES_STORED, rows
+        )
     return _row_narrowed(_filtered(_SITES_HEAD, _SITES_ACCESS, where), rows)
 
 

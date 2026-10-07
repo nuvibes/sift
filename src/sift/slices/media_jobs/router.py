@@ -59,7 +59,7 @@ from sift.kernel.jobs.ledger import Estimate, Ledger
 from sift.kernel.jobs.queue import LiveProducts, LiveWork
 from sift.kernel.jobs.queue_rows import FilesToRead
 from sift.kernel.jobs.schedules import get_schedule
-from sift.kernel.jobs.switchboard import Readiness, Switch, Switchboard
+from sift.kernel.jobs.switchboard import Readiness, Switch, Switchboard, one_reading
 from sift.kernel.jobs.work_ahead import Ahead
 from sift.kernel.log import get_logger
 from sift.kernel.sampling import PREVIEW_SHAPE_SETTING, preview_shape
@@ -1255,31 +1255,31 @@ async def list_jobs(
 ) -> JobsPage:
     """A page of the queue, newest first: of every row, or with `fold`, of every family.
 
-    The bounds are declared rather than checked in the body, so the schema says them. A folded page
-    filtered by state reads the state the family's row shows (`folded_state`: a family with a
-    failed step is a failed family), so every family is under exactly one state (`_tallies`).
+    The bounds are declared, so the schema says them. A folded page filtered by state reads the
+    state its family's row shows (`folded_state`), so every family is under one state (`_tallies`).
     """
     if fold and parent_id is not None:
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_CONTENT,
             "fold pages families and cannot be filtered by parent_id",
         )
-    return await _page(
-        queue,
-        work_ahead,
-        database,
-        ledger=ledger,
-        pool=pool,
-        state=state,
-        job_type=type,
-        parent_id=parent_id,
-        limit=limit,
-        offset=offset,
-        fold=fold,
-        older=older,
-        shown=_Shown(access, viewer),
-        library=library,
-    )
+    async with one_reading():
+        return await _page(
+            queue,
+            work_ahead,
+            database,
+            ledger=ledger,
+            pool=pool,
+            state=state,
+            job_type=type,
+            parent_id=parent_id,
+            limit=limit,
+            offset=offset,
+            fold=fold,
+            older=older,
+            shown=_Shown(access, viewer),
+            library=library,
+        )
 
 
 @router.get("/{job_id}/steps")

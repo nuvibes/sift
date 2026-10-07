@@ -14,12 +14,13 @@
 		id: string;
 		filename: string | null;
 		onrenamed?: (filename: string | null) => void;
+		held?: boolean;
 	}
 
-	let { id, filename, onrenamed }: Props = $props();
+	let { id, filename, onrenamed, held = false }: Props = $props();
 </script>
 
-<FileActions {id} {filename} {onrenamed}>
+<FileActions {id} {filename} {onrenamed} {held}>
 	{#snippet children({ canOrganize, rename, undo })}
 		{#if canOrganize}
 			<button type="button" onclick={rename}>Rename</button>

@@ -780,11 +780,6 @@
             "title": "Hidden Here",
             "type": "boolean"
           },
-          "history_count": {
-            "default": 0,
-            "title": "History Count",
-            "type": "integer"
-          },
           "id": {
             "title": "Id",
             "type": "string"
@@ -1125,7 +1120,6 @@
           "song_id",
           "links",
           "enriched_by",
-          "history_count",
           "disagreements",
           "disagreement_boxes",
           "browser_may_not_draw",
@@ -17671,17 +17665,6 @@
             ],
             "title": "Files Bytes"
           },
-          "history": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "History"
-          },
           "loops": {
             "anyOf": [
               {
@@ -17783,7 +17766,6 @@
           "sites",
           "collections",
           "songs",
-          "history",
           "disagreements",
           "disagreement_boxes"
         ],
@@ -37317,7 +37299,7 @@
     },
     "/api/jobs": {
       "get": {
-        "description": "A page of the queue, newest first: of every row, or with `fold`, of every family.\n\nThe bounds are declared rather than checked in the body, so the schema says them. A folded page\nfiltered by state reads the state the family's row shows (`folded_state`: a family with a\nfailed step is a failed family), so every family is under exactly one state (`_tallies`).",
+        "description": "A page of the queue, newest first: of every row, or with `fold`, of every family.\n\nThe bounds are declared, so the schema says them. A folded page filtered by state reads the\nstate its family's row shows (`folded_state`), so every family is under one state (`_tallies`).",
         "operationId": "list_jobs_api_jobs_get",
         "parameters": [
           {

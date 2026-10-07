@@ -19,13 +19,14 @@ missing and only complain at the first insert, which is a long way from the mist
 
 from __future__ import annotations
 
+from sift.kernel.content import backlog
 from sift.kernel.db import Connection, register_schema_initializer
 
 LIBRARY_COMPONENT = "library"
 LIBRARY_VERSION = 7
 
 CONTENT_COMPONENT = "content"
-CONTENT_VERSION = 30
+CONTENT_VERSION = 31
 
 USER_STATE_COMPONENT = "user_state"
 USER_STATE_VERSION = 6
@@ -418,6 +419,16 @@ _START_INDEXES = (
     "CREATE INDEX IF NOT EXISTS ix_assets_print_version ON assets(fingerprint_version)",
 )
 
+#: Content version 31: the passes' counts kept as rows, and the marks every write of a file leaves
+#: for them (see `backlog`). A location moves a count only by its place, its file or its presence.
+_BACKLOG = (
+    *backlog.TABLES,
+    *backlog.marks("assets", "id"),
+    *backlog.marks("asset_locations", watched=("status", "asset_id", "root_id")),
+    *backlog.marks("derivatives"),
+    *backlog.marks("file_verdicts"),
+)
+
 _CONTENT_INDEXES = (
     # Near-duplicate search sorts on this.
     "CREATE INDEX IF NOT EXISTS ix_assets_phash ON assets(phash)",
@@ -591,6 +602,7 @@ _STEPS: tuple[tuple[int, tuple[str, ...]], ...] = (
     (28, (_RECLASSIFY_THE_WEBP_AND_HEIF_ROWS,)),
     (29, (_REREAD_THE_HEIF_STILLS,)),
     (30, _START_INDEXES),
+    (31, _BACKLOG),
 )
 
 
@@ -607,6 +619,7 @@ async def initialize_content(connection: Connection, on_disk: int) -> None:
             _CREATE_OPINIONS,
             *_OPINION_INDEXES,
             *_START_INDEXES,
+            *_BACKLOG,
         ):
             await connection.execute(statement)
     for version, statements in _STEPS:

@@ -12,26 +12,28 @@ import pytest
 from fastapi.testclient import TestClient
 
 from sift.kernel import db as db_module
-from sift.kernel.log import Timing, timing_hook
+from sift.kernel.db_readers import PointRead
 from sift.slices.browse.tests.conftest import Library, sign_in
 
 #: The most statements one read of a file's record may run, the session's own included.
-MOST_STATEMENTS = 23
+MOST_STATEMENTS = 17
 
 
 @pytest.fixture
 def statements(monkeypatch: pytest.MonkeyPatch) -> Counter[str]:
     """Every statement the database layer ran, by name."""
     heard: Counter[str] = Counter()
+    judged = db_module._judged
 
     @contextmanager
-    def counted(stage: str, **fields: Any) -> Iterator[Timing]:
-        with timing_hook(stage, **fields) as timing:
+    def counted(
+        stage: str, statement: str | PointRead, *rest: Any, **options: Any
+    ) -> Iterator[Any]:
+        heard[db_module.statement_name(statement)] += 1
+        with judged(stage, statement, *rest, **options) as timing:
             yield timing
-        if stage.startswith("db.") and "statement" in fields:
-            heard[str(fields["statement"])] += 1
 
-    monkeypatch.setattr(db_module, "timing_hook", counted)
+    monkeypatch.setattr(db_module, "_judged", counted)
     return heard
 
 

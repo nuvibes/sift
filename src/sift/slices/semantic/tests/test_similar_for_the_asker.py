@@ -43,6 +43,7 @@ class Counted:
     def __init__(self, database: Database) -> None:
         self.database = database
         self.reads = 0
+        self.named: list[str] = []
 
     def __getattr__(self, name: str) -> Any:
         real = getattr(self.database, name)
@@ -51,6 +52,7 @@ class Counted:
 
         async def counted(*args: Any, **kwargs: Any) -> Any:
             self.reads += 1
+            self.named.append(name)
             return await real(*args, **kwargs)
 
         return counted
@@ -136,6 +138,7 @@ async def library(temp_db: Database) -> Library:
 
 async def _strip(library: Library, viewer: Viewer, subject: str) -> tuple[list[str], int]:
     library.counted.reads = 0
+    library.counted.named = []
     page = await router.find_similar(
         library.subjects[subject],
         service=Service(library.finder),
@@ -176,6 +179,7 @@ async def test_the_reads_do_not_follow_what_is_hidden(library: Library, who: str
 async def test_an_admin_with_nothing_hidden_keeps_the_whole_read(library: Library) -> None:
     """The fingerprints alone with the vault open, and one seek more with it shut."""
     shut, shut_reads = await _strip(library, library.admin, "crowded")
+    shut_named = list(library.counted.named)
     unlocked, open_reads = await _strip(
         library, replace(library.admin, show_hidden=True), "crowded"
     )
@@ -183,3 +187,5 @@ async def test_an_admin_with_nothing_hidden_keeps_the_whole_read(library: Librar
     assert set(shut) <= set(library.hidden)
     assert shut == unlocked
     assert (shut_reads, open_reads) == (2, 1)
+    # The whole read is the sweep, either way; the seek more is whether this admin hid anything.
+    assert (shut_named, library.counted.named) == (["fetch_one", "sweep_all"], ["sweep_all"])

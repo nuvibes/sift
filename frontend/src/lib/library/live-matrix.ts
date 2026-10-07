@@ -361,9 +361,8 @@ export const LIVE_MATRIX: MatrixRow[] = [
 	{
 		screen: 'routes/theater/+page.svelte',
 		file: 'routes/theater/+page.svelte',
-		shows: ['settings', 'files'],
-		owes: ['files'],
-		why: 'a cell keeps a file deleted elsewhere until its next turn (lib/theater/wall.svelte.ts)'
+		via: ['lib/components/theater/TheaterWall.svelte'],
+		shows: ['settings', 'files']
 	},
 	{
 		screen: 'settings/library',
@@ -493,11 +492,5 @@ export const LIVE_MATRIX: MatrixRow[] = [
 		shows: ['record', 'counts']
 	},
 	{ screen: 'player/audio-strip', file: 'lib/components/player/MiniBar.svelte', shows: ['record'] },
-	{
-		screen: 'player/mini',
-		file: 'lib/components/player/MiniPlayer.svelte',
-		shows: ['record'],
-		owes: ['record'],
-		why: 'the corner panel hears nothing itself; only the Audio strip lets go of a file deleted elsewhere'
-	}
+	{ screen: 'player/mini', file: 'lib/components/player/MiniPlayer.svelte', shows: ['record'] }
 ];

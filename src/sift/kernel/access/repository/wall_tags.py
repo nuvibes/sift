@@ -13,8 +13,11 @@ from sift.kernel.access.repository.walls import (
     _row_narrowed,
     _wall,
     _with_stored_counts,
+    hidden_by,
     locked_tile,
     one_row,
+    ordered,
+    plain_total,
     shown,
 )
 from sift.kernel.sql_splice import splice
@@ -291,6 +294,18 @@ TAGS_POSITION = _position(_TAGS)
 # statements rather than halves, because the filter seam sits inside the live count block and an
 # unfiltered wall has nothing to splice there.
 _TAGS_STORED = _with_stored_counts(_VISIBLE_TAGS, "_VISIBLE_TAGS")
+#: The plain wall: its total off the stored totals (`plain_total`).
+_TAGS_PLAIN = ordered(
+    plain_total(
+        _TAGS_STORED,
+        "_TAGS_STORED",
+        "tag",
+        "tags",
+        hidden_by("tag_user_state", "tag_id"),
+        "tag_user_state",
+    ),
+    "_TAGS_PLAIN",
+)
 
 #: One tag by id, as the unfiltered wall reads it: what a cover or a page asks before it
 #: answers, at one row's cost (`one_row`).
@@ -313,14 +328,16 @@ TAGS_BY_ID = _one_seam(
 )
 
 
-def tags_query(where: str, rows: str = _NOTHING) -> str:
+def tags_query(where: str, rows: str = _NOTHING, *, plain: str | None = None) -> str:
     """Tags this viewer may know about, counted over only the files a filter reaches.
 
     `rows` filters the TAGS themselves (see `_row_narrowed`). The two compose: a wall can be
     "tags in a category, on beach photographs", and neither seam knows about the other.
     """
     if not _narrowed(where):
-        return _row_narrowed(_TAGS_STORED, rows)
+        return _row_narrowed(
+            _TAGS_PLAIN[plain] if plain and not _narrowed(rows) else _TAGS_STORED, rows
+        )
     return _row_narrowed(_filtered(_TAGS_HEAD, _TAGS_ACCESS, where), rows)
 
 

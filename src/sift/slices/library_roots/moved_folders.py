@@ -277,7 +277,7 @@ async def _reconcile_folders(
         above = _parent_of(now)
         if above != ROOT_REL_PATH:
             # The chain the folder is landing in has to exist before it can hang off it.
-            await context.library.upsert_folder(root_id, above)
+            await service.adopt_locations(await context.library.upsert_folder(root_id, above))
         # SIFT, by the scan: this is the catch-up recognising that a directory somebody renamed
         # outside Sift is the same folder, not a person moving one from the screen.
         if await context.library.move_folder(row, now, actor=Actor.sift(VIA_FOLDER)) is None:
@@ -302,7 +302,7 @@ async def _reconcile_folders(
 
     on_disk = {prefix + one for one in walk.directories}
     for path in sorted(on_disk - settled):
-        await context.library.upsert_folder(root_id, path)
+        await service.adopt_locations(await context.library.upsert_folder(root_id, path))
 
     # Deepest first, so a folder is removed before whatever holds it. The other order works by
     # cascade and reports nothing, which makes a count of what was removed a lie.

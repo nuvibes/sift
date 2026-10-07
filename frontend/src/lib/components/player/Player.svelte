@@ -210,11 +210,12 @@
 			rate: () => video?.playbackRate ?? 1,
 			playhead: () => (video ? video.currentTime : null),
 			viewAt: () => plan?.view_at_ms ?? 0,
-			post: (piece, final) =>
-				api.post(`/assets/${watching}/view`, {
-					body: { ...sittingPlace, ...piece },
-					keepalive: final
-				})
+			post: (piece, final, after) => {
+				// Bound now: a held piece goes after `watching` has moved on (`WatchReport.report`).
+				const to = `/assets/${watching}/view` as const;
+				const sent = { body: { ...sittingPlace, ...piece }, keepalive: final };
+				return after ? after.then(() => api.post(to, sent)) : api.post(to, sent);
+			}
 		},
 		HEAT_BUCKETS
 	);
@@ -233,8 +234,8 @@
 	let heldAcross = $state(false);
 	const drawn = $derived(ready || heldAcross);
 
-	/* This account's replay curve for the clip, or null where there is nothing worth drawing; its
-	   own request, so a history query never stands in front of the first frame. */
+	/* This account's replay curve for the clip, or null where there is nothing worth drawing; asked
+	   once the first frame is up (or the clip opens paused), so it never queues before the stream. */
 	let replays = $state<readonly number[] | null>(null);
 
 	async function loadReplays(clip: string) {
@@ -254,8 +255,8 @@
 		const next = id;
 		untrack(() => {
 			if (next === watching) return;
-			// Reported before anything is reset, while `watching` still names the clip it describes.
-			void watch.report();
+			// Counted before anything is reset, while `watching` still names the clip it describes.
+			void watch.report(true);
 			teardown();
 			// Off the loop's audience for the old clip and onto the new one's, before `watching` moves.
 			abLoop.unwatch(watching);
@@ -275,8 +276,8 @@
 			heldAcross = video !== null;
 			plan = null;
 			onplan?.(null);
+			replays = null;
 			void load();
-			void loadReplays(next);
 		});
 	});
 
@@ -291,26 +292,23 @@
 		if (plan?.route === 'unread') void load();
 	});
 
-	/* Torn down mid-play fires no `pause`, so the count of running players is brought down here. */
-	onMount(() => () => {
-		if (playing) playback.stopped();
-	});
-
 	onMount(() => {
 		// Counted in first, so a clip handed to the corner is never watched by nobody for a moment.
 		abLoop.watch(watching);
 		watch.start();
 		void load();
-		void loadReplays(watching);
 		// `pagehide` covers closing the tab, navigating away and reloading, which unmount nothing.
-		const onLeave = () => void watch.report();
+		const onLeave = () => (watch.release(), void watch.report());
 		window.addEventListener('pagehide', onLeave);
 		return () => {
 			window.removeEventListener('pagehide', onLeave);
 			// Flushed: a level set just before closing is the one somebody expects to have stuck.
 			loudness.settle();
 			teardown();
+			// Torn down mid-play fires no `pause`, so the count of running players comes down here.
+			if (playing) playback.stopped();
 			watch.stop();
+			watch.release();
 			void watch.report();
 			// One fewer player on this clip; the last one out forgets the loop a turn later.
 			abLoop.unwatch(watching);
@@ -322,7 +320,7 @@
 		unasked = false;
 		replanned = false;
 		try {
-			const answer = takePlan(wanted) ?? (await planFor(wanted));
+			const answer = await (takePlan(wanted) ?? planFor(wanted));
 			// A slower answer for a clip already moved on from must not attach itself to this one.
 			if (wanted !== watching) return;
 			plan = answer;
@@ -449,6 +447,8 @@
 	function onPlaying() {
 		if (started) return;
 		started = true;
+		watch.release();
+		void loadReplays(watching);
 		onstarted?.();
 	}
 
@@ -481,6 +481,7 @@
 		/* Started here rather than by `autoplay`, which plays on every source load, and the quality
 		   menu loads a new source into this element: a paused clip would start on a size change. */
 		if (!(startPaused || handover.take(watching)) && video) requestPlay(video);
+		else void loadReplays(watching);
 		const start = startAt(plan?.resume_ms, duration);
 		if (video && start !== null) video.currentTime = start;
 	}

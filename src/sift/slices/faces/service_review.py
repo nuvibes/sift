@@ -405,10 +405,16 @@ class ReviewMixin(MayBeMixin):
     ) -> list[ToCheckView]:
         """Some of the rows `_filed_in_reach` answered, drawn as the tab's rows."""
         moments = await self._store.picture_moments([one.track.id for one in rows])
+        # Every face's person named in one read, not one per row.
+        names = await self._names_of(viewer, [one.track for one in rows])
         drawn: list[ToCheckView] = []
         for one in rows:
             sighting = await self._sighting(
-                viewer, one.track, moments=moments, locked=reach.shown[one.track.asset_id]
+                viewer,
+                one.track,
+                moments=moments,
+                names=names,
+                locked=reach.shown[one.track.asset_id],
             )
             drawn.append(
                 ToCheckView(

@@ -69,7 +69,7 @@ shape; the file history's reads ARE declared, and every one of them answers abou
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING
 
 # The wording, and the addresses the numbers in it go to. One table for all three histories (see
 # that module's header for why the words moved out of the reads that say them).
@@ -1340,56 +1340,3 @@ async def history_of_song(
     )
     events.extend(await _ledger_events(database, viewer, "song", song_id, kept))
     return await _ordered(database, viewer, events, kept, None)
-
-
-#: What every one of the four reads above looks like from outside.
-#:
-#: Positional-only up to the cap, deliberately: each of them names its own subject (`tag_id`,
-#: `site_id`), and a protocol that named one would fit exactly one of the four.
-class _ReadsAHistory(Protocol):
-    async def __call__(
-        self, database: Database, viewer: Viewer, entity_id: str, /, *, limit: int
-    ) -> list[Event]: ...
-
-
-#: Which read answers for which kind of entity, in the server's own word for it.
-#:
-#: A mapping rather than a chain of `elif`s, for the reason this module's `_ORIGINS` is one and the
-#: related route's `walls` is: a kind added above and forgotten here fails LOUDLY at the caller
-#: instead of quietly counting nothing. A silent nought on a tab is the exact state the counts
-#: endpoint exists to end.
-_HISTORIES: dict[str, _ReadsAHistory] = {
-    "tag": history_of_tag,
-    "site": history_of_site,
-    "collection": history_of_collection,
-    "photo_set": history_of_photo_set,
-    "song": history_of_song,
-}
-
-
-async def history_count_of_entity(
-    database: Database, viewer: Viewer, kind: str, entity_id: str, *, limit: int = DEFAULT_LIMIT
-) -> int:
-    """How many lines one entity's thread has, for the number beside the word History.
-
-    ## Why this is the history itself and not a COUNT statement
-
-    The same reason `history_count_of_person` gives next door, and it is the rule the related-counts
-    route is built around: a number beside a list must come from the read that draws the list. A
-    history is not a table (it is several statements GROUPED by day and by what decided them,
-    capped, and sorted), so there is no statement that counts what it comes to. Anything simpler
-    would count ROWS where the thread counts days, and be wrong by however many files were tagged in
-    one afternoon.
-
-    So this asks the same question at the same cap and measures the answer. The two cannot differ.
-
-    An unknown kind raises rather than answering nought, for the reason the route refuses one: a
-    strip drawn from a silent nothing is indistinguishable from a tab with nothing behind it.
-
-    UNSCOPED, like the four reads it calls. The caller resolves the subject first (see
-    `history_of_tag`, which is where that rule and its reason live).
-    """
-    read = _HISTORIES.get(kind)
-    if read is None:
-        raise KeyError(f"nothing knows the history of a {kind!r}")
-    return len(await read(database, viewer, entity_id, limit=limit))

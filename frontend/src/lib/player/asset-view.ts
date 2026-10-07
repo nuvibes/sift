@@ -7,6 +7,7 @@ import { api } from '$lib/api/client';
 import { planFor, type PlaybackPlan } from '$lib/player/playback';
 import type { components } from '$lib/api/schema';
 import { noteSearchOpen } from '$lib/shell/visits';
+import { jobChanges, libraryChanges } from '$lib/library/changes.svelte';
 
 /* Opening an asset, and the one rule about how.
  *
@@ -148,6 +149,7 @@ export function openAsset(
 	sequence = among;
 	continues = more;
 	ahead = null;
+	planBeside(id);
 	// A new list, so whatever shuffled order was being walked was an order of another one.
 	run.reset();
 	openedLoop = loop === null ? null : { file: id, loop };
@@ -401,6 +403,7 @@ export function showAsset(id: string): void {
 	// that was opened cold is still one after moving through five of them, and closing it still
 	// has to go to the library rather than out of Sift.
 	replaceState(`/asset/${id}`, { asset: id, direct: page.state.direct } satisfies AssetModalState);
+	if (ahead?.next !== id || ahead.plan === null) planBeside(id);
 }
 
 /**
@@ -753,7 +756,20 @@ interface Ahead {
 	to: Promise<string | null>;
 	next: string | null;
 	record: AssetDetail | null;
+	/* `bellsRung` when the record was asked for. */
+	bells: number;
 	plan: PlaybackPlan | null;
+}
+
+/** How many library and jobs bells have rung: a record asked for before the latest may be stale. */
+export function bellsRung(): number {
+	return libraryChanges.generation + jobChanges.generation;
+}
+
+/** A record found ahead, and whether a bell has rung since it was asked for. */
+interface HeldRecord {
+	record: AssetDetail;
+	stale: boolean;
 }
 
 let ahead: Ahead | null = null;
@@ -769,12 +785,13 @@ export function lookAhead(id: string, rule: EndRule = {}): void {
 	const walk = walkFrom(id);
 	const { pictures = false, wraps = true } = rule;
 	const where = walk ? walk.peek(id, { pictures, wraps }) : findNext(id, rule);
-	const held: Ahead = { key, to: where, next: null, record: null, plan: null };
+	const held: Ahead = { key, to: where, next: null, record: null, bells: 0, plan: null };
 	ahead = held;
 	void held.to
 		.then(async (to) => {
 			if (to === null || to === id || ahead !== held) return;
 			held.next = to;
+			held.bells = bellsRung();
 			const record = await api.get<AssetDetail>(`/assets/${to}`);
 			if (ahead !== held) return;
 			held.record = record;
@@ -786,15 +803,33 @@ export function lookAhead(id: string, rule: EndRule = {}): void {
 }
 
 /** The record found ahead for this file, once. */
-export function takeRecord(id: string): AssetDetail | null {
+export function takeRecord(id: string): HeldRecord | null {
 	if (ahead === null || ahead.next !== id || ahead.record === null) return null;
 	const record = ahead.record;
 	ahead.record = null;
-	return record;
+	return { record, stale: bellsRung() !== ahead.bells };
 }
 
-/** The playback plan found ahead for this file, once. */
-export function takePlan(id: string): PlaybackPlan | null {
+/* A plan asked at the press, beside the record rather than after it. */
+let beside: { id: string; plan: Promise<PlaybackPlan> } | null = null;
+
+/** Ask how a pressed file plays while its record is read; only one the list says runs. */
+function planBeside(id: string): void {
+	beside = null;
+	if (!sequence.some((each) => each.id === id && each.runs)) return;
+	const plan = planFor(id);
+	// Unclaimed, it is dropped; a claimed one's failure is the player's to hear.
+	plan.catch(() => undefined);
+	beside = { id, plan };
+}
+
+/** The playback plan found ahead for this file, or asked at its press, once. */
+export function takePlan(id: string): PlaybackPlan | Promise<PlaybackPlan> | null {
+	if (beside?.id === id) {
+		const asked = beside.plan;
+		beside = null;
+		return asked;
+	}
 	if (ahead === null || ahead.next !== id || ahead.plan === null) return null;
 	const plan = ahead.plan;
 	ahead.plan = null;

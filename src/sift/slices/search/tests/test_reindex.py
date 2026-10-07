@@ -12,7 +12,7 @@ from fastapi.testclient import TestClient
 
 from sift.kernel.db import Database
 from sift.kernel.jobs import JobContext, JobQueue
-from sift.slices.search.jobs import FTS_REINDEX
+from sift.slices.search.jobs import FTS_REINDEX, FTS_REINDEX_FILES
 from sift.slices.search.tests.conftest import (
     EPOCH,
     World,
@@ -154,24 +154,35 @@ async def test_an_initializer_at_its_current_version_does_nothing() -> None:
     assert calls == []
 
 
-async def _run_job(path: Path, payload: dict[str, object]) -> None:
-    """Drive the handler the way a worker would, against a real database."""
-    from sift.slices.search.jobs import reindex as handler
+async def _run_job(path: Path, payload: dict[str, object], *, files: bool = False) -> list[str]:
+    """Drive the handler the way a worker would, against a real database; the notes it left."""
+    from sift.slices.search.jobs import reindex, reindex_files
 
+    handler = reindex_files if files else reindex
     database = Database(path, readers=1)
     await database.connect()
+    notes: list[str] = []
     try:
         queue = JobQueue(database)
-        job_id = await queue.enqueue(FTS_REINDEX, payload, require_handler=False)
+        job_type = FTS_REINDEX_FILES if files else FTS_REINDEX
+        job_id = await queue.enqueue(job_type, payload, require_handler=False)
         # Claimed past the work the application queued at boot.
         while True:
             job = await queue.claim("a-worker")
             assert job is not None, "the queue lost the job this test enqueued"
             if job.id == job_id:
                 break
+        said = queue.set_note
+
+        async def noting(job_id: str, worker_id: str, note: str) -> bool:
+            notes.append(note)
+            return await said(job_id, worker_id, note)
+
+        queue.set_note = noting  # type: ignore[method-assign]
         await handler(JobContext(job=job, worker_id="a-worker", queue=queue), database=database)
     finally:
         await database.close()
+    return notes
 
 
 @pytest.mark.parametrize("payload", [{}, {"asset_id": None}])
@@ -216,6 +227,17 @@ def test_the_handler_is_registered_under_the_name_the_queue_knows(
     assert FTS_REINDEX in registered_handlers()
 
 
+def test_a_rebuild_and_a_reindex_of_some_files_are_named_for_what_they_do(
+    client: TestClient,
+) -> None:
+    """Activity reads the name: a rename's few files must not read as the whole index rebuilt."""
+    from sift.kernel.jobs import registered_job_names
+
+    names = registered_job_names()
+    assert names[FTS_REINDEX] == "Recreating the search index"
+    assert names[FTS_REINDEX_FILES] == "Updating the search index"
+
+
 def test_the_job_reindexes_named_assets_a_chunk_at_a_time_and_tells_the_library(
     client: TestClient, world: World, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -236,8 +258,11 @@ def test_the_job_reindexes_named_assets_a_chunk_at_a_time_and_tells_the_library(
     monkeypatch.setattr(jobs, "index_assets", counting)
     write(db_path(client), [("DELETE FROM assets_fts", ())])
 
-    asyncio.run(_run_job(db_path(client), {"asset_ids": [world.beach, world.walk]}))
+    notes = asyncio.run(
+        _run_job(db_path(client), {"asset_ids": [world.beach, world.walk]}, files=True)
+    )
 
+    assert notes == ["For 2 files", "Indexed 2 files"]
     assert written == [[world.beach], [world.walk]]
     assert sorted(str(row["asset_id"]) for row in _index(client)) == sorted(
         [world.beach, world.walk]
@@ -250,7 +275,7 @@ def test_the_job_refuses_named_assets_that_are_not_ids(
     client: TestClient, world: World, named: object
 ) -> None:
     with pytest.raises(ValueError, match="asset_ids"):
-        asyncio.run(_run_job(db_path(client), {"asset_ids": named}))
+        asyncio.run(_run_job(db_path(client), {"asset_ids": named}, files=True))
 
 
 @pytest.mark.anyio
@@ -271,7 +296,7 @@ async def test_queue_many_queues_jobs_of_named_files_and_nothing_for_none() -> N
     ids = [f"a{index}" for index in range(jobs.IDS_PER_JOB + 1)]
     await seam.queue_many(ids)
     ((job_type, payloads, how),) = asked
-    assert job_type == FTS_REINDEX
+    assert job_type == FTS_REINDEX_FILES
     assert payloads == [{"asset_ids": ids[: jobs.IDS_PER_JOB]}, {"asset_ids": ids[-1:]}]
     assert how["at"] == AT_NOW
 

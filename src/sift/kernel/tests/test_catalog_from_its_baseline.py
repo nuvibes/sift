@@ -17,6 +17,7 @@ import sift.slices.stash_boxes.schema
 import sift.slices.workbench.schema  # noqa: F401
 from sift.kernel.access import default_covers, edited, schema
 from sift.kernel.db import Connection, Database
+from sift.kernel.ids import new_id
 from sift.kernel.migrations import column_exists, table_exists
 
 pytestmark = pytest.mark.anyio
@@ -92,3 +93,37 @@ async def test_a_catalog_at_its_baseline_is_brought_up_by_every_step_since(
             "SELECT name FROM sqlite_master WHERE type = 'index'"
         )
         assert set(LATER_INDEXES) <= {str(row[0]) for row in indexes}
+
+
+async def test_a_catalog_at_89_lets_go_of_a_row_whose_parent_is_gone(temp_db: Database) -> None:
+    """Step 90: a filing whose tag is gone goes, as its key's cascade says; a cover whose file is
+    gone is emptied, as its key's SET NULL says; nothing else moves."""
+    await temp_db.initialize_schema()
+    kept, gone, tag, person = new_id(), new_id(), new_id(), new_id()
+    async with temp_db.write() as connection:
+        await connection.execute("PRAGMA foreign_keys=OFF")
+        await connection.execute(
+            "INSERT INTO assets (id, identity, identity_version, media_type, added_at)"
+            " VALUES (?, 'digest-kept', 1, 'video', 0)",
+            (kept,),
+        )
+        await connection.execute(
+            "INSERT INTO tags (id, name, created_at) VALUES (?, 'b', 0)", (tag,)
+        )
+        for filed in (tag, gone):
+            await connection.execute(
+                "INSERT INTO asset_tags (asset_id, tag_id) VALUES (?, ?)", (kept, filed)
+            )
+        await connection.execute(
+            "INSERT INTO people (id, name, cover_asset_id, created_at)"
+            " VALUES (?, 'Esme Wrenfield', ?, 0)",
+            (person, gone),
+        )
+    async with temp_db.write() as connection:
+        assert await connection.execute_fetchall("SELECT 1 FROM pragma_foreign_key_check")
+        await schema.initialize_catalog(connection, 89)
+        assert not await connection.execute_fetchall("SELECT 1 FROM pragma_foreign_key_check")
+        tags = await connection.execute_fetchall("SELECT tag_id FROM asset_tags")
+        assert [str(row[0]) for row in tags] == [tag]
+        cover = await connection.execute_fetchall("SELECT cover_asset_id FROM people")
+        assert [row[0] for row in cover] == [None]

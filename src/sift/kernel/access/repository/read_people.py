@@ -33,7 +33,7 @@ from sift.kernel.access.repository.views import (
     _like_prefix,
     _suggested,
 )
-from sift.kernel.access.repository.walls import _one_seam
+from sift.kernel.access.repository.walls import _one_seam, plain_order
 from sift.kernel.access.viewer import Viewer
 from sift.kernel.paging import MAX_PAGE_SIZE
 
@@ -130,22 +130,25 @@ class PeopleReads(RepositoryCore):
         # ...and the wall's OWN rows, filtered by what the thing is rather than by its files. A
         # second seam beside the file filter rather than part of it; see `_row_narrowed`.
         narrowed, picked = narrowing.predicate()
+        params = self._person_params(
+            viewer,
+            person_id=None,
+            site_id=site_id,
+            prefix=prefix,
+            anywhere=anywhere,
+            limit=limit,
+            offset=max(0, offset),
+            sort=sort,
+            asset_filter=asset_filter,
+            count_narrowed=count_narrowed,
+        )
         rows = await self._db.fetch_all(
-            people_query(where, narrowed),
-            bound
-            | picked
-            | self._person_params(
-                viewer,
-                person_id=None,
-                site_id=site_id,
-                prefix=prefix,
-                anywhere=anywhere,
-                limit=limit,
-                offset=max(0, offset),
-                sort=sort,
-                asset_filter=asset_filter,
-                count_narrowed=count_narrowed,
+            people_query(
+                where,
+                narrowed,
+                plain=plain_order(params, "person_id", "person_ids", "site_id", "username_sites"),
             ),
+            bound | picked | params,
         )
         # Nothing on the page means nothing to read a total from: nobody, or past the end.
         total = int(rows[0]["total_count"]) if rows else 0

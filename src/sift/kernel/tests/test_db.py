@@ -1052,15 +1052,15 @@ async def test_raising_the_worker_count_raises_the_pool(tmp_path: Path) -> None:
     await database.connect()
     try:
         assert database.readers == readers_for(4)
-
+        # Boot opens a handful; the rest cost nothing until a read finds every open one out.
+        assert database._read_pool.qsize() == DEFAULT_READERS < readers_for(4)
         assert await database.resize_readers(readers_for(12)) is True
-
         assert database.readers == readers_for(12)
         assert database.readers > 12, "twelve workers must not be able to take every connection"
-        # The connections themselves, not the number the pool reports about itself. Recording the
-        # new size without opening anything satisfies every assertion above and leaves the browser
-        # with exactly the pool it had, which is the fault this is about.
-        assert database._read_pool.qsize() == readers_for(12)
+        async with contextlib.AsyncExitStack() as held:
+            take = [held.enter_async_context(database.read()) for _ in range(database.readers)]
+            borrowed = await asyncio.wait_for(asyncio.gather(*take), timeout=5)
+            assert len({id(one) for one in borrowed}) == readers_for(12), "each one held at once"
     finally:
         await database.close()
 

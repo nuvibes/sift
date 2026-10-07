@@ -65,6 +65,23 @@ function allowed(extra: Record<string, unknown> = {}) {
 	get.mockResolvedValue({ can_organize: true, reason: null, undo_move_id: null, ...extra });
 }
 
+describe('a file whose picture is not up yet', () => {
+	it('asks nothing until the hold is let go, then asks about this file', async () => {
+		allowed();
+		const props = await render({ held: true });
+		expect(get).not.toHaveBeenCalled();
+		expect(button('Rename')).toBeUndefined();
+
+		(props as { held?: boolean }).held = false;
+		flushSync();
+		await Promise.resolve();
+		await Promise.resolve();
+		flushSync();
+		expect(get).toHaveBeenCalledWith('/assets/asset-1/organize');
+		expect(button('Rename')).toBeDefined();
+	});
+});
+
 describe('whether the actions are offered at all', () => {
 	it('shows them when the server says the file can be organized', async () => {
 		allowed();

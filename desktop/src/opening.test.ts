@@ -16,6 +16,7 @@ import {
 	lookFrom,
 	Opening,
 	openingAddress,
+	StartFrame,
 	UNSAID_MS
 } from './opening';
 
@@ -107,6 +108,18 @@ describe('the frame', () => {
 		expect(opening.showing).toBe(true);
 		vi.advanceTimersByTime(1);
 		expect(opening.showing).toBe(false);
+	});
+
+	it('is taken away by the start the moment the page says it painted', () => {
+		const shown = window();
+		const frame = new StartFrame(Date.now());
+		frame.open(asWindow(shown), 'sift-shell://app', () => true);
+		expect(shown.views).toHaveLength(1);
+
+		frame.drawn('painted', null, '/login');
+
+		expect(shown.views).toEqual([]);
+		expect(WebContentsView.instances[0]?.closed).toBe(true);
 	});
 
 	it('never holds the window back waiting for its own paint', async () => {

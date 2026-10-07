@@ -38,7 +38,8 @@
 	import { showing as theater } from '$lib/theater/wall.svelte';
 	import { matches, pressed } from '$lib/shell/shortcuts';
 	import { panelKeys } from './mini-keys';
-	import { api } from '$lib/api/client';
+	import { api, isMissing } from '$lib/api/client';
+	import { libraryChanges, whenChanged } from '$lib/library/changes.svelte';
 	import { saveToDevice } from '$lib/capture/copy-out';
 	import type { components } from '$lib/api/schema';
 	import { phoneWidth } from '$lib/components/common/phone-width.svelte';
@@ -62,6 +63,14 @@
 	 */
 	const concealed = $derived(asset?.concealed === true);
 
+	/* A file deleted elsewhere leaves the panel, whichever shape it is drawn in. */
+	whenChanged(libraryChanges, () => {
+		const id = asset?.id;
+		if (!id || concealed) return;
+		void api.get(`/assets/${id}`).catch((error) => {
+			if (isMissing(error) && mini.asset?.id === id) mini.close();
+		});
+	});
 	/* What the panel says it is holding, a word for each kind of thing. */
 	const holding = $derived(
 		mini.wall ? 'Theater' : concealed ? 'Hidden' : showsPicture ? 'Showing' : 'Playing'
@@ -278,15 +287,15 @@
 		if (!id) return;
 		try {
 			const file =
-				takeRecord(id) ?? (await api.get<components['schemas']['AssetDetail']>(`/assets/${id}`));
+				takeRecord(id)?.record ??
+				(await api.get<components['schemas']['AssetDetail']>(`/assets/${id}`));
 			mini.open(heldOf(file), { width: window.innerWidth, height: window.innerHeight });
 		} catch {
 			toasts.show("Sift couldn't open that. The file isn't where it was.", { tone: 'error' });
 		}
 	}
 
-	/* The panel's own keys (`panelKeys`), and what the last one did, echoed in the corner in the
-	   words the full-size player and a Theater cell use (`$lib/theater/echoes`). */
+	/* The panel's own keys (`panelKeys`), the last one echoed in the words of `$lib/theater/echoes`. */
 	let keyed = $state<Echo>(muteEcho(false));
 	let keyedPresses = $state(0);
 

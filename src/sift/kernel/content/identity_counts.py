@@ -9,6 +9,7 @@ from time import monotonic
 from typing import Any, TypeVar, cast
 
 from sift.kernel.changes import About, mark_of
+from sift.kernel.content.backlog import StoredCounts, Term, Totals
 from sift.kernel.content.identity_models import (
     _EVERY_READ_FILE,
     RECIPE_VERSIONS,
@@ -163,13 +164,18 @@ _COMING = """(a.probed_at IS NULL
 
 # THE ONE RULE for what a product still has to do, both ends of every bar after the read: a file with
 # a present copy, not given up on, made for it, read or coming. Binds the read's verdict, then its.
-_COUNT_WANTING = """
-SELECT COUNT(*) AS total FROM assets a
- WHERE {{PRESENT}}
+_WANTING = """{{PRESENT}}
    AND ((a.probed_at IS NOT NULL AND {{MADE_FOR}}) OR ({{COMING}} AND {{MADE_FOR_UNREAD}}))
    AND NOT EXISTS (SELECT 1 FROM file_verdicts v
                     WHERE v.asset_id = a.id AND v.product = ? AND v.transient = 0)
 """
+
+_COUNT_WANTING = (
+    """
+SELECT COUNT(*) AS total FROM assets a
+ WHERE """
+    + _WANTING
+)
 
 _COUNT_COMING = """
 SELECT COUNT(*) AS total FROM assets a
@@ -195,6 +201,8 @@ def _bar_statement(template: str, product: str | None) -> str:
 _NARROWED = (*sorted(set(_MADE_FOR_READ) | set(UNREAD_KINDS)), None)
 
 _COUNT_WANTING_OF = {key: _bar_statement(_COUNT_WANTING, key) for key in _NARROWED}
+
+_WANTING_OF = {key: _bar_statement(_WANTING, key) for key in _NARROWED}
 
 _COUNT_COMING_OF = {key: _bar_statement(_COUNT_COMING, key) for key in _NARROWED}
 
@@ -333,10 +341,59 @@ _NOT_VERDICTED = (
 )
 
 
+def _within_term(condition: str, params: tuple[Any, ...], within: Within | None) -> Term:
+    """A kept term over the files `within` wants, as `_within_statement` filters a count."""
+    if within is None:
+        return Term(condition, params)
+    return Term(f"{condition} AND ({within.condition})", (*params, *within.params))
+
+
 def _within_statement(statement: str, within: Within) -> str:
     """A count filtered to the files `within` wants; only its constant condition goes in as text."""
     joiner = " AND " if " WHERE " in statement else " WHERE "
     return f"{statement}{joiner}({within.condition})"
+
+
+def _term(one: Lack) -> str:
+    """One term's condition: its own, the files that want it, and not given up on."""
+    parts = [f"({one.condition})"]
+    if one.within is not None:
+        parts.append(f"({one.within.condition})")
+    if one.product is not None:
+        parts.append(_NOT_VERDICTED)
+    return parts[0] if len(parts) == 1 else "(" + " AND ".join(parts) + ")"
+
+
+#: The files a lacking count is over, as a kept term's head: read, with a copy present.
+_READ_AND_PRESENT = splice(
+    "a.probed_at IS NOT NULL AND {{PRESENT}}<<IN_ROOTS>>", PRESENT=HAS_A_PRESENT_COPY
+)
+
+
+def _kept_terms(
+    lacks: Sequence[Lack], ticked: Sequence[bool], roots: Sequence[str] | None
+) -> list[Term]:
+    """`_lacking_statement`'s counts as kept terms: one per term, then the union of the ticked
+    ones when any is."""
+    head, bound = _in_roots(_READ_AND_PRESENT, roots), _roots_bound(roots)
+    terms = [Term(f"{head} AND {_term(one)}", (*bound, *_term_params([one]))) for one in lacks]
+    chosen = [one for one, on in zip(lacks, ticked, strict=True) if on]
+    if len(chosen) == 1:
+        terms.append(terms[list(ticked).index(True)])
+    elif chosen:
+        either = " OR ".join(_term(one) for one in chosen)
+        terms.append(Term(f"{head} AND ({either})", (*bound, *_term_params(chosen))))
+    return terms
+
+
+def _lacking_of(totals: Sequence[Totals], count: int, kind: str | None = None) -> Lacking:
+    """The kept totals of `_kept_terms` as a `Lacking`, of one kind or of all."""
+
+    def total(one: Totals) -> int:
+        return sum(one.values()) if kind is None else one.get(kind, 0)
+
+    files = total(totals[count]) if len(totals) > count else 0
+    return Lacking(each=tuple(total(one) for one in totals[:count]), files=files)
 
 
 def _lacking_statement(
@@ -351,15 +408,7 @@ def _lacking_statement(
     constant condition goes in as text; every value binds, `roots`' after every term's.
     """
 
-    def term(one: Lack) -> str:
-        parts = [f"({one.condition})"]
-        if one.within is not None:
-            parts.append(f"({one.within.condition})")
-        if one.product is not None:
-            parts.append(_NOT_VERDICTED)
-        return parts[0] if len(parts) == 1 else "(" + " AND ".join(parts) + ")"
-
-    terms = ", ".join(f"{term(one)} AS t{n}" for n, one in enumerate(lacks))
+    terms = ", ".join(f"{_term(one)} AS t{n}" for n, one in enumerate(lacks))
     each = ", ".join(f"COALESCE(SUM(t{n}), 0) AS n{n}" for n in range(len(lacks)))
     any_ticked = " OR ".join(f"t{n}" for n, on in enumerate(ticked) if on) or "0"
     return (
@@ -373,6 +422,14 @@ def _lacking_statement(
 
 class Counts(StoreCore):
     """How much each pass has left, and the pages it reads."""
+
+    @property
+    def _kept(self) -> StoredCounts:
+        """The counts kept as rows (`backlog`), made on first use."""
+        kept: StoredCounts | None = getattr(self, "_kept_counts", None)
+        if kept is None:
+            kept = self._kept_counts = StoredCounts(self._db, self._clock)
+        return kept
 
     async def _held(self, key: tuple[object, ...], count: Callable[[], Awaitable[_T]]) -> _T:
         """The count `key` names, taken again only once the library has moved since it was taken:
@@ -396,17 +453,29 @@ class Counts(StoreCore):
         """How many files the library holds (of those `within` wants): the denominator for a
         feature that may not query the asset table itself."""
         statement = _COUNT_PLACED if within is None else _COUNT_ASSETS
-        return await self._held(
-            ("asset_count", within), lambda: self._count_within(statement, within)
-        )
+        term = _within_term(_HAS_A_PLACE, (), within)
+
+        async def count() -> int:
+            kept = await self._kept.totals([term])
+            if kept is not None:
+                return sum(kept[0].values())
+            return await self._count_within(statement, within)
+
+        return await self._held(("asset_count", within), count)
 
     async def wanting_count(self, product: str, within: Within | None = None) -> int:
         """How many files want this product, read or coming, done or not: its bar's whole."""
         statement = _COUNT_WANTING_OF.get(product, _COUNT_WANTING_OF[None])
         params = (VerdictProduct.PROBE.value, product)
-        return await self._held(
-            ("wanting", product, within), lambda: self._count_bound(statement, params, within)
-        )
+        term = _within_term(_WANTING_OF.get(product, _WANTING_OF[None]), params, within)
+
+        async def count() -> int:
+            kept = await self._kept.totals([term])
+            if kept is not None:
+                return sum(kept[0].values())
+            return await self._count_bound(statement, params, within)
+
+        return await self._held(("wanting", product, within), count)
 
     async def coming_count(self, product: str, within: Within | None = None) -> int:
         """How many unread files want this product: what `count_lacking` cannot see."""
@@ -477,8 +546,12 @@ class Counts(StoreCore):
             raise ValueError("count_lacking needs one tick per term")
         params = [*_term_params(lacks), *_roots_bound(roots)]
         statement = _lacking_statement(lacks, flags, roots=roots)
+        terms = _kept_terms(lacks, flags, roots)
 
         async def count() -> Lacking:
+            kept = await self._kept.totals(terms)
+            if kept is not None:
+                return _lacking_of(kept, len(lacks))
             (row,) = await self._db.fetch_all(statement, params)
             return Lacking(
                 each=tuple(int(row[f"n{n}"]) for n in range(len(lacks))),
@@ -506,8 +579,14 @@ class Counts(StoreCore):
             lacks, flags, statement=_COUNT_LACKING_BY_KIND, roots=roots, among=among
         )
         params = [*_term_params(lacks), *_roots_bound(roots), *_roots_bound(among)]
+        terms = _kept_terms(lacks, flags, roots)
 
         async def count() -> dict[str, Lacking]:
+            # A few chosen files are read as they are; the library's split is kept.
+            kept = None if among is not None else await self._kept.totals(terms)
+            if kept is not None:
+                kinds = sorted({kind for one in kept for kind in one})
+                return {kind: _lacking_of(kept, len(lacks), kind) for kind in kinds}
             rows = await self._db.fetch_all(statement, params)
             return {
                 str(row["kind"]): Lacking(

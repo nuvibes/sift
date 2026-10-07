@@ -249,7 +249,14 @@ export class HeldNewcomers<T extends { id: string }> {
 		const drawn = new Set(this.shown.map((row) => row.id));
 		const fresh = items.filter((row) => !drawn.has(row.id)).length;
 		if (fresh === 0 || this.#atTop()) return this.letIn();
-		this.shown = items.filter((row) => drawn.has(row.id));
+		// The rows the held ones pushed off the page's end stay drawn until they come in.
+		const answered = new Set(items.map((row) => row.id));
+		const pushedOff: T[] = [];
+		for (let at = this.shown.length - 1; at >= 0 && pushedOff.length < fresh; at--) {
+			if (answered.has(this.shown[at].id)) break;
+			pushedOff.unshift(this.shown[at]);
+		}
+		this.shown = [...items.filter((row) => drawn.has(row.id)), ...pushedOff];
 		this.waiting = fresh;
 	}
 

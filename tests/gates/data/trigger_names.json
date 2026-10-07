@@ -179,6 +179,11 @@
     "vis_folders_name",
     "vis_folders_name_before",
     "vis_viewer_entity_counts_emptied",
-    "vis_viewer_pair_counts_emptied"
+    "vis_viewer_pair_counts_emptied",
+    "vis_wall_totals_insert",
+    "vis_wall_totals_delete",
+    "vis_wall_totals_update",
+    "vis_recompute_settle",
+    "vis_recompute_settled"
   ]
 }

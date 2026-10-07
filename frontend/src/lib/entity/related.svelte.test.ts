@@ -444,15 +444,31 @@ describe('the strip after the library moves', () => {
 	 * somebody left. */
 
 	it('asks again for the page it follows, and the later answer wins', async () => {
-		mocked.get.mockResolvedValueOnce({ files: 1, history: 3 });
+		let lines = 3;
+		mocked.get.mockImplementation(async (path: string) =>
+			path === '/songs/s1/history' ? Array(lines).fill({}) : { files: 1 }
+		);
 		const counts = new TabCounts();
 		counts.follow('song', 's1');
 		await vi.waitFor(() => expect(counts.current.history).toBe(3));
+		expect(mocked.get).toHaveBeenCalledWith('/related/song/s1');
 
-		mocked.get.mockResolvedValueOnce({ files: 1, history: 4 });
+		lines = 4;
 		counts.refresh();
 		await vi.waitFor(() => expect(counts.current.history).toBe(4));
-		expect(mocked.get).toHaveBeenLastCalledWith('/related/song/s1');
+	});
+
+	it('leaves History without a number when its thread cannot be read', async () => {
+		/* A subject this user may not see answers no thread: no number, as for a tab not there. */
+		mocked.get.mockImplementation(async (path: string) => {
+			if (path === '/people/p1/history') throw new Error('not found');
+			return { files: 1 };
+		});
+		const counts = new TabCounts();
+		counts.follow('person', 'p1');
+		await vi.waitFor(() => expect(counts.current.files).toBe(1));
+		await Promise.resolve();
+		expect(counts.current.history).toBeUndefined();
 	});
 
 	it('names the boxes the History mark is about, from the same answer', async () => {

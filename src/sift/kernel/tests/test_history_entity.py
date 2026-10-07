@@ -30,7 +30,6 @@ import sift.slices.workbench.schema  # noqa: F401
 from sift.kernel.access import Repository, Viewer
 from sift.kernel.access.history import Actor, Event
 from sift.kernel.access.history_entity import (
-    history_count_of_entity,
     history_of_collection,
     history_of_photo_set,
     history_of_site,
@@ -1231,7 +1230,6 @@ async def test_a_song_says_every_file_it_was_named_on_by_day_and_by_where_the_na
         (Actor.SIFT, "Sift named this song on 785.mp4 from AcoustID", PUT_AT + A_DAY),
     ]
     assert all(one.detail == () for one in named)
-    assert await history_count_of_entity(temp_db, actors.admin, "song", SONG) == len(events)
 
 
 async def test_a_day_of_many_files_on_a_song_counts_them_and_opens_to_the_newest(

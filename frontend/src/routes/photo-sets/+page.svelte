@@ -156,6 +156,7 @@
 		screenBar.publish(mine, {
 			filterable: true,
 			subject: 'photo_set',
+			count: loading ? undefined : total,
 			resizable: true,
 			playable: "A cover is a still, and a still doesn't play",
 			sorts: [...COLLECTION_ORDERS],

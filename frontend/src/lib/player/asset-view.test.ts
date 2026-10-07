@@ -11,6 +11,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 // the panel tests at the bottom read what was written to it.
 const pushState = vi.fn();
 const replaceState = vi.fn();
+/* A press asks its plan beside the record (`planBeside`); nothing here is about the plan. */
+vi.mock('$lib/player/playback', () => ({ planFor: async () => ({}) }));
 vi.mock('$app/navigation', () => ({
 	pushState: (...args: unknown[]) => pushState(...args),
 	replaceState: (...args: unknown[]) => replaceState(...args)

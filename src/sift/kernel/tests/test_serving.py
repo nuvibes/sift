@@ -283,6 +283,11 @@ class TestHowLongTheClientIsKept:
         listed = Path("elsewhere") / "web" / "index.html"
         assert client.cache_control_for("index.html", listed) == "no-store"
 
+    def test_the_brand_icons_are_kept_a_week_without_asking(self) -> None:
+        icon = client.CLIENT_DIR / "brand" / "favicon.svg"
+        assert client.cache_control_for("brand/favicon.svg", icon) == client.BRAND
+        assert "max-age=604800" in client.BRAND
+
     def test_any_other_file_is_kept_and_asked_about(self) -> None:
         version = client.CLIENT_DIR / "_app" / "version.json"
         assert client.cache_control_for("_app/version.json", version) == "no-cache"

@@ -6,6 +6,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+from sift.kernel.access.sites import SITE_REACH
 from sift.kernel.db import PointRead, point_read
 
 #: What a wall of things may be ordered by, bound as a value, in the file grid's own words; the id
@@ -245,3 +246,93 @@ def one_row(stored: str, name: str, kind: str, row: str, key: str) -> PointRead:
 def _narrowed(where: str) -> bool:
     """Whether a filter filters anything. The empty filter is the one word `1`."""
     return " ".join(where.split()) != _NOTHING
+
+
+#: A plain wall's total off the stored totals rather than a window over every row: the whole table
+#: on an admin's plain wall, else the things with a file this viewer may see, less the ones this
+#: viewer hid where those are kept off. `{hidden}` selects the hidden ids, `{state}` holds the flag.
+_STORED_TOTAL = """(CASE WHEN :list_empty = 1 THEN (SELECT COUNT(*) FROM {table})
+       ELSE COALESCE((SELECT CASE WHEN :reveal = 1 THEN wt.permitted ELSE wt.shown END
+                        FROM viewer_wall_totals wt
+                       WHERE wt.user_id = :viewer AND wt.kind = '{kind}'), 0) END
+     - CASE WHEN :reveal_named = 1 OR NOT EXISTS (SELECT 1 FROM {state} hx
+                                                   WHERE hx.user_id = :viewer AND hx.hidden = 1)
+       THEN 0 ELSE (SELECT COUNT(*) FROM ({hidden}) hx JOIN {table} he ON he.id = hx.id
+                     WHERE :list_empty = 1 OR EXISTS (SELECT 1 FROM viewer_entity_counts hn
+                       WHERE hn.user_id = :viewer AND hn.kind = '{kind}' AND hn.object_id = hx.id
+                         AND hn.permitted - CASE WHEN :reveal = 1 THEN 0 ELSE hn.concealed END > 0))
+       END)"""
+
+_WINDOW_TOTAL = "COUNT(*) OVER ()"
+
+
+_HIDDEN_BY = "SELECT {column} AS id FROM {state} WHERE user_id = :viewer AND hidden = 1"
+
+
+def hidden_by(state: str, column: str) -> str:
+    """The ids this viewer hid themselves, off one state table's flag."""
+    return _HIDDEN_BY.format(state=state, column=column)
+
+
+#: The Sites this viewer has concealed: each one hidden and everything under it.
+HIDDEN_SITES = (
+    "SELECT DISTINCT reach.site_id AS id FROM site_user_state hl"  # noqa: S608
+    " JOIN (" + SITE_REACH + ") reach ON reach.ancestor_id = hl.site_id"
+    " WHERE hl.user_id = :viewer AND hl.hidden = 1"
+)
+
+
+def plain_total(stored: str, name: str, kind: str, table: str, hidden: str, state: str) -> str:
+    """The unfiltered wall with its total read off `viewer_wall_totals`: the form for a wall that
+    nothing narrows (no filter, no typed word, no id), whose rows are exactly the counted ones."""
+    total = _STORED_TOTAL.format(table=table, kind=kind, hidden=hidden, state=state)
+    return _one_seam(stored, name, _WINDOW_TOTAL, total)
+
+
+def plain_order(params: dict[str, object], *scoping: str) -> str | None:
+    """The order a wall is asked in when its binds narrow nothing (no typed word and none of its
+    scoping ids), or None when they narrow it."""
+    if params["prefix"] != "" or any(params[key] is not None for key in scoping):
+        return None
+    return str(params["entity_sort"])
+
+
+#: One term of a wall's order that only one order asks for, as `CASE` leaves it for the rest.
+_ONE_ORDERS = re.compile(
+    r"CASE :entity_sort WHEN '(\w+)' THEN (.*) END( (?:ASC|DESC)(?: NULLS (?:LAST|FIRST))?)", re.S
+)
+
+
+def _terms(order: str) -> list[str]:
+    """The ORDER BY terms of a wall's order seam, comments dropped, split at its own commas."""
+    body = "\n".join(line for line in order.split("\n") if not line.strip().startswith("--"))
+    terms, depth, term = [], 0, ""
+    for char in body.split("ORDER BY", 1)[1]:
+        depth += {"(": 1, ")": -1}.get(char, 0)
+        if char == "," and depth == 0:
+            terms.append(" ".join(term.split()))
+            term = ""
+        else:
+            term += char
+    return [*terms, " ".join(term.split())]
+
+
+def ordered(statement: str, name: str) -> dict[str, str]:
+    """The statement once per order, its ORDER BY holding only the terms that order reads: every
+    other `CASE :entity_sort` term is NULL on every row, so the rows come back in the same order
+    without each row working out a dozen orders it was not asked for."""
+    cut = _wall(statement, name)
+    forms = {}
+    for sort in SONG_SORT_KEYS:
+        kept = []
+        for term in _terms(cut.order):
+            one = _ONE_ORDERS.fullmatch(term)
+            if one is None and term.startswith("CASE :entity_sort"):  # pragma: no cover
+                raise RuntimeError(f"{name} has an order term this cannot read: {term[:60]}")
+            if one is None:
+                kept.append(term)
+            elif one.group(1) == sort:
+                kept.append(one.group(2) + one.group(3))
+        order = "\n ORDER BY " + ",\n          ".join(kept)
+        forms[sort] = statement.replace(_ORDER_AT + cut.order, _ORDER_AT + order, 1)
+    return forms

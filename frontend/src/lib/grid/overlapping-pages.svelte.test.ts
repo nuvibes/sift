@@ -33,11 +33,11 @@ function measured(): Grid {
 	return grid;
 }
 
-/* A file of a fixed shape, so the layout arithmetic is predictable, and a TALL one, because a
-   page of tall files takes far more of them than the first estimate allows for, which is exactly
-   the case that asks a second time. */
+/* A file of a fixed shape, so the layout arithmetic is predictable, and a very TALL one, because
+   a page of them takes far more than even a generous first ask allows for, which is exactly the
+   case that asks a second time. */
 function file(id: string) {
-	return { id, width: 608, height: 1080 };
+	return { id, width: 300, height: 1080 };
 }
 
 beforeEach(() => vi.clearAllMocks());

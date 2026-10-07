@@ -26,6 +26,7 @@ from sift.kernel.access.repository.views import (
     _like_prefix,
 )
 from sift.kernel.access.repository.wall_collections import COLLECTION_BY_ID
+from sift.kernel.access.repository.walls import plain_order
 from sift.kernel.access.viewer import Viewer
 from sift.kernel.paging import MAX_PAGE_SIZE
 
@@ -126,20 +127,19 @@ class CollectionReads(RepositoryCore):
         # ...and the wall's OWN rows, filtered by what the thing is rather than by its files. A
         # second seam beside the file filter rather than part of it; see `_row_narrowed`.
         narrowed, picked = narrowing.predicate()
+        params = self._collection_params(
+            viewer,
+            collection_id=None,
+            prefix=prefix,
+            anywhere=anywhere,
+            limit=limit,
+            offset=offset,
+            sort=sort,
+            asset_filter=asset_filter,
+        )
         rows = await self._db.fetch_all(
-            collections_query(where, narrowed),
-            bound
-            | picked
-            | self._collection_params(
-                viewer,
-                collection_id=None,
-                prefix=prefix,
-                anywhere=anywhere,
-                limit=limit,
-                offset=offset,
-                sort=sort,
-                asset_filter=asset_filter,
-            ),
+            collections_query(where, narrowed, plain=plain_order(params, "collection_id")),
+            bound | picked | params,
         )
         total = int(rows[0]["total_count"]) if rows else 0
         return CollectionPage(items=[_collection_from_row(row) for row in rows], total=total)

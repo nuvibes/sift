@@ -267,6 +267,7 @@
 		screenBar.publish(mine, {
 			filterable: true,
 			subject: 'person',
+			count: people.loaded ? people.total : undefined,
 			resizable: true,
 			playable: "A card is a face, and a face doesn't play",
 			/*

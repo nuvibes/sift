@@ -26,6 +26,7 @@ from sift.kernel.access.repository.views import (
     _song_from_row,
 )
 from sift.kernel.access.repository.wall_songs import SONG_BY_ID
+from sift.kernel.access.repository.walls import plain_order
 from sift.kernel.access.viewer import Viewer
 from sift.kernel.paging import MAX_PAGE_SIZE
 
@@ -84,23 +85,20 @@ class SongReads(RepositoryCore):
             raise ValueError("a page cannot start before the first row")
         where, bound = asset_filter.predicate()
         narrowed, picked = narrowing.predicate()
+        params = self._song_params(
+            viewer,
+            song_id=None,
+            prefix=prefix,
+            anywhere=anywhere,
+            limit=limit,
+            offset=offset,
+            sort=sort,
+            asset_filter=asset_filter,
+            count_narrowed=count_narrowed,
+        )
         rows = await self._db.fetch_all(
-            songs_query(where, narrowed),
-            {
-                **bound,
-                **picked,
-                **self._song_params(
-                    viewer,
-                    song_id=None,
-                    prefix=prefix,
-                    anywhere=anywhere,
-                    limit=limit,
-                    offset=offset,
-                    sort=sort,
-                    asset_filter=asset_filter,
-                    count_narrowed=count_narrowed,
-                ),
-            },
+            songs_query(where, narrowed, plain=plain_order(params, "song_id")),
+            {**bound, **picked, **params},
         )
         total = int(rows[0]["total_count"]) if rows else 0
         return SongPage(items=[_song_from_row(row) for row in rows], total=total)

@@ -29,6 +29,7 @@ from sift.kernel.jobs import (
     register_handler,
 )
 from sift.kernel.jobs.families import Family
+from sift.kernel.jobs.switchboard import QuietHold, one_reading, one_reading_now
 
 pytestmark = pytest.mark.usefixtures("clean_handlers")
 
@@ -258,3 +259,39 @@ async def test_quiet_hours_that_cannot_be_read_hold_nothing_back() -> None:
     board.declare_quiet_hours(unreadable)  # type: ignore[arg-type]
 
     assert await board.quiet_hold() == NOTHING_HELD
+
+
+async def test_each_question_reads_its_settings_once_and_a_nested_one_shares_it() -> None:
+    """A question's asks share one reading; the next question gets its own, read live."""
+    seen: list[object] = []
+
+    async def remember() -> bool:
+        seen.append(one_reading_now())
+        return True
+
+    async def ready() -> Readiness:
+        seen.append(one_reading_now())
+        return Readiness(ready=True)
+
+    async def quiet() -> QuietHold:
+        seen.append(one_reading_now())
+        return QuietHold()
+
+    board = Switchboard()
+    board.declare(Switch(key="k", refusal="off", on=remember), "a", "b")
+    board.declare_ready(Family.SCAN, ready)
+    board.declare_ready(Family.SEMANTIC, ready)
+    board.declare_quiet_hours(quiet)
+
+    await board.readiness()
+    await board.quiet_hold()
+    async with one_reading():
+        outer = one_reading_now()
+        await board.refusal("a")
+        await board.refusal("b")
+
+    assert None not in seen
+    assert seen[0] is seen[1], "one question, one reading"
+    assert seen[2] is not seen[0], "the next question reads again"
+    assert seen[3] is seen[4] is outer, "a question inside another shares its reading"
+    assert one_reading_now() is None

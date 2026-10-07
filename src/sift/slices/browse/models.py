@@ -183,10 +183,6 @@ class AssetDetail(AssetSummary):
     #: What wrote to this file, in the filter's own words through the same predicates the Browse
     #: column counts by, so the marks agree. Empty for a file nothing has touched.
     enriched_by: list[EnrichedBy] = Field(default=[])
-    #: Lines on this file's History pane, so the tab wears its number as the dialog opens, like the
-    #: other tabs. The kernel makes it the history route's own `total`, never a separate count (see
-    #: `count_of_asset_history`); zero for a viewer who cannot read it.
-    history_count: int = 0
     #: Fields a linked stash-box disagrees with, for the History tab's mark (the panel settling them
     #: is inside it). None where there is no question to ask (`DisagreementSeam`).
     disagreements: int | None = None

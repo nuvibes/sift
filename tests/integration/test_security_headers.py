@@ -61,6 +61,16 @@ def test_the_csp_confines_everything_to_sifts_own_origin(client: TestClient) -> 
     assert "object-src 'none'" in csp
 
 
+def test_a_worker_runs_only_from_sifts_own_files() -> None:
+    """The stream's unpacking runs in a worker loaded by address; a `blob:` one is refused."""
+    directives = dict(
+        part.strip().split(" ", 1)
+        for part in content_security_policy(()).split(";")
+        if part.strip()
+    )
+    assert directives["worker-src"] == "'self'"
+
+
 # --- HSTS: only over HTTPS ------------------------------------------------------------------
 
 

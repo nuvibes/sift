@@ -179,6 +179,12 @@ export const MOST_AT_ONCE = 1000;
  */
 const MAX_FETCHES = 3;
 
+/* A page is sized for portrait clips, never off its own answer, which would resize and re-read it. */
+const PLANNED_ASPECT = 9 / 16;
+
+/* The first ask allows for files this narrow: a top-up costs a round trip, a surplus only bytes. */
+const FIRST_ASK_ASPECT = 3 / 4;
+
 /* The orders a page may be continued under by naming its last row: the server's offer, copied.
    Relevance, similarity and last-viewed order by something outside the row. */
 const CONTINUABLE = new Set([
@@ -379,6 +385,18 @@ export class Grid {
 	/** Whether a request for this grid is out, however asked: `loading` a quiet catch-up leaves alone. */
 	reading = $state(false);
 
+	/** Whether the page on screen is its first block, the rows that top it up still on their way. */
+	filling = $state(false);
+
+	#said = { offset: 0, shown: 0, total: 0 };
+
+	/** What the pager says: the page as it last landed whole, never a number it takes back. */
+	readonly said = $derived.by(() => {
+		const now = { offset: this.offset, shown: this.wall.tiles.length, total: this.total };
+		if (!this.loading && !this.filling) this.#said = now;
+		return this.#said;
+	});
+
 	/**
 	 * How many files have arrived above the page on screen: derived from where the page now sits,
 	 * so it cannot drift from what is shown.
@@ -473,7 +491,7 @@ export class Grid {
 	readonly pageRows = $derived.by(() => {
 		const perScreen = this.rowsPerScreen;
 		for (let screens = PAGE_SCREENS; screens > 1; screens -= 1) {
-			if (this.#estimateFor(perScreen * screens) <= SERVER_PAGE_CAP * MAX_FETCHES) {
+			if (this.#estimateFor(perScreen * screens, PLANNED_ASPECT) <= SERVER_PAGE_CAP * MAX_FETCHES) {
 				return perScreen * screens;
 			}
 		}
@@ -544,12 +562,11 @@ export class Grid {
 	}
 
 	/** Roughly how many files it takes to fill this many rows, at the geometry on screen now. */
-	#estimateFor(rows: number): number {
+	#estimateFor(rows: number, aspect: number): number {
 		return itemsToFill(rows, {
 			containerWidth: this.containerWidth,
 			rowHeight: this.rowHeight,
-			// Off what is already up: a library of vertical clips is wrong about the default.
-			averageAspect: averageAspect(this.items)
+			averageAspect: aspect
 		});
 	}
 
@@ -610,6 +627,19 @@ export class Grid {
 		} catch {
 			return null;
 		}
+	}
+
+	/** The page at `start`, or with `sizeOnly` the page on screen fitted to a new page size. */
+	fit(query: WallQuery, start: PageStart, sizeOnly: boolean): Promise<void> {
+		return sizeOnly ? this.#refit(query, start) : this.loadAt(query, start);
+	}
+
+	/* A read on its way takes the new size; only a page grown past what it holds is read. */
+	async #refit(query: WallQuery, start: PageStart): Promise<void> {
+		if (this.reading) return;
+		const held = { total: this.total, complete: this.complete };
+		if (this.#stillWanted(this.items, this.offset, held, this.#fromEnd) <= 0) return;
+		await this.loadAt(query, this.#fromEnd ? start : { at: this.offset }, { quiet: true });
 	}
 
 	/**
@@ -788,6 +818,7 @@ export class Grid {
 			if (generation === this.#generation) {
 				this.loading = false;
 				this.reading = false;
+				this.filling = false;
 				this.#payOwed(query, options);
 			}
 		}
@@ -819,6 +850,7 @@ export class Grid {
 		this.problems = known.problems;
 		this.username = known.username;
 		this.loading = false;
+		this.filling = true;
 	}
 
 	/*
@@ -846,7 +878,10 @@ export class Grid {
 	 * estimated from the shapes in hand, which is why a second round is usually enough.
 	 */
 	#shortfall(collected: readonly GridItem[], fromEnd: boolean): number {
-		if (collected.length === 0) return this.#estimateFor(this.pageRows);
+		if (collected.length === 0) {
+			const aspect = Math.min(averageAspect(this.items), FIRST_ASK_ASPECT);
+			return this.#estimateFor(this.pageRows, aspect);
+		}
 
 		const laid = (fromEnd ? fillRowsFromEnd : fillRows)(collected, {
 			containerWidth: this.containerWidth,

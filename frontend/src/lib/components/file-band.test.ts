@@ -27,7 +27,7 @@ vi.mock('$lib/library/filings', () => ({
 }));
 vi.mock('$lib/shell/toasts.svelte', () => ({ toasts: { show: vi.fn() } }));
 
-const { FileBand } = await import('./file-band.svelte');
+const { FileBand, PANEL_WAIT_MS } = await import('./file-band.svelte');
 
 describe("an open file's lists", () => {
 	it('are all asked before any has answered, and the tags drawn while the people wait', async () => {
@@ -71,5 +71,58 @@ describe("an open file's lists", () => {
 		await again;
 
 		expect(band.tags, 'the same tags were written again').toBe(drawn);
+	});
+});
+
+describe('the panel under a file that is stepped to', () => {
+	it('asks nothing until the picture is up, then reads the file on screen', () => {
+		asked.length = 0;
+		let current = 'f1';
+		const band = new FileBand(() => current);
+		const after = vi.fn();
+		band.step(after);
+		expect(asked).toEqual([]);
+		expect(band.settled).toBe('');
+
+		band.pictured();
+		expect(band.settled).toBe('f1');
+		expect(asked).toContain('/assets/f1/people');
+		expect(after).toHaveBeenCalledOnce();
+
+		// The next file: the last one's rows go at once, the new ones wait for its picture.
+		current = 'f2';
+		asked.length = 0;
+		band.step();
+		expect(band.settled).toBe('f1');
+		expect(band.tags).toEqual([]);
+		expect(asked).toEqual([]);
+		band.stop();
+	});
+
+	it('reads anyway once the wait is over, for a clip that never plays', () => {
+		vi.useFakeTimers();
+		try {
+			asked.length = 0;
+			const band = new FileBand(() => 'f3');
+			band.step();
+			vi.advanceTimersByTime(PANEL_WAIT_MS - 1);
+			expect(asked).toEqual([]);
+			vi.advanceTimersByTime(1);
+			expect(band.settled).toBe('f3');
+			expect(asked).toContain('/assets/f3/tags');
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it('reads the same file again at once, with nothing to wait for', () => {
+		asked.length = 0;
+		const band = new FileBand(() => 'f4');
+		band.pictured();
+		asked.length = 0;
+		const after = vi.fn();
+		band.step(after);
+		expect(asked).toContain('/assets/f4/people');
+		expect(after).toHaveBeenCalledOnce();
 	});
 });

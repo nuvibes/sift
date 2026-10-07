@@ -96,7 +96,8 @@ vi.mock('$lib/api/client', () => ({
 		put: vi.fn(async () => ({})),
 		// The phone's offer takes its quiet line back as a panel goes (`remote/offer`).
 		del: vi.fn(async () => ({}))
-	}
+	},
+	isMissing: (error: unknown) => (error as { status?: number } | null)?.status === 404
 }));
 
 vi.mock('$lib/settings-ui/settings', () => ({
@@ -112,6 +113,7 @@ import { openAsset, reopenAsset, stepBack, stepForward } from '$lib/player/asset
 import { run } from '$lib/player/run.svelte';
 import { dwell } from '$lib/player/dwell.svelte';
 import { phoneWidth } from '$lib/components/common/phone-width.svelte';
+import { libraryChanges } from '$lib/library/changes.svelte';
 
 /** The panel's source and its two children's, read as one: the rules these hold moved with the
  *  markup they style. */
@@ -216,6 +218,24 @@ describe('a clip in the panel', () => {
 		await show({ id: 'asset-1', mediaType: 'video' });
 
 		expect(button('Why this file is being converted')).toBeNull();
+	});
+});
+
+describe('a file deleted elsewhere', () => {
+	it('leaves the corner panel when its re-read says it is gone', async () => {
+		await show({ id: 'asset-gone', mediaType: 'video' });
+		vi.mocked(api.get).mockRejectedValueOnce({ status: 404 });
+		libraryChanges.changed();
+		flushSync();
+		await vi.waitFor(() => expect(mini.asset).toBeNull());
+	});
+
+	it('stays when the re-read answers', async () => {
+		await show({ id: 'asset-here', mediaType: 'video' });
+		libraryChanges.changed();
+		flushSync();
+		await Promise.resolve();
+		expect(mini.asset?.id).toBe('asset-here');
 	});
 });
 

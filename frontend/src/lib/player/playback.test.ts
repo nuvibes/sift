@@ -133,6 +133,20 @@ describe('direct play', () => {
 
 		expect(element.getAttribute('src')).toBeNull();
 	});
+
+	/* The server names the file itself for both: a remux's `/stream` serves the repackaged copy. */
+	it.each(['remux', 'unread'] as const)(
+		'plays a %s plan the same way, never through hls.js',
+		(route) => {
+			const element = video();
+
+			attach(element, plan({ route, url: '/api/assets/abc/stream' }));
+
+			expect(element.src).toContain('/api/assets/abc/stream');
+			expect(construct).not.toHaveBeenCalled();
+			expect(loadSource).not.toHaveBeenCalled();
+		}
+	);
 });
 
 describe('native HLS', () => {
@@ -200,6 +214,13 @@ describe('hls.js', () => {
 		expect(config.maxBufferLength).toBeLessThanOrEqual(60);
 		expect(config.maxMaxBufferLength).toBeGreaterThanOrEqual(config.maxBufferLength);
 		expect(config.maxMaxBufferLength).toBeLessThanOrEqual(120);
+	});
+
+	it('unpacks the stream in a worker loaded from its own file, not a blob', () => {
+		attach(video(), plan());
+
+		const config = construct.mock.calls[0][0] as { workerPath: unknown };
+		expect(config.workerPath).toEqual(expect.stringContaining('hls.worker'));
 	});
 
 	it('sends the session with every segment request', () => {

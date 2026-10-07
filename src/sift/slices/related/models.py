@@ -32,12 +32,9 @@ class RelatedCounts(Wire):
     collections: int | None = None
     #: The songs these files carry: the Music tab. See `TABS_FOR` for the pages that have it.
     songs: int | None = None
-    #: Lines on this thing's History tab, on every entity page. Served here so every number on the
-    #: strip is taken in one request at one moment. None where this user may not see the subject.
-    history: int | None = None
     #: Fields a linked stash-box disagrees with about this record: not a tab but the mark on the
-    #: History tab, whose top panel settles them, and here for the reason `history` is. None (no
-    #: mark) for a non-admin, a kind no box can know, or a record this user may not see.
+    #: History tab, whose top panel settles them. None (no mark) for a non-admin, a kind no box can
+    #: know, or a record this user may not see.
     disagreements: int | None = None
     #: The boxes those fields are about, by name, so the mark says which box it means.
     disagreement_boxes: list[str] = Field(default=[])

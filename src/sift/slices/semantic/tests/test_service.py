@@ -821,7 +821,7 @@ async def test_the_cheap_tier_ranks_only_what_the_asker_may_see(
 
 
 async def test_a_file_only_the_previous_model_described_gets_the_cheap_tier_and_the_screen_says_so(
-    wired: Any, temp_db: Database
+    wired: Any, temp_db: Database, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """After a model change a file's numbers are the previous model's: not comparable with the
     question, so not an answer. It falls to the tier every file can answer by, and the readiness
@@ -839,10 +839,19 @@ async def test_a_file_only_the_previous_model_described_gets_the_cheap_tier_and_
     embedder.revision = "siglip2-newer"
 
     found = await service.similar_to("mine")
+    counted = Records.described_by_others
+
+    async def never(*_: object) -> int:
+        raise AssertionError("readiness counted every file a previous model described")
+
+    # Asked by every search phrase, so it asks whether any, never how many.
+    monkeypatch.setattr(Records, "described_by_others", never)
     readiness = await service.readiness()
+    monkeypatch.setattr(Records, "described_by_others", counted)
 
     assert found.tier.value == "matches"
-    assert readiness.described_by_another_model == 2
+    assert readiness.by_another_model is True
+    assert await service.described_by_others() == 2
     assert await service.nearest([1.0] + [0.0] * (DIMENSION - 1), limit=5) == []
 
 

@@ -333,11 +333,50 @@ const PASTE_HALF = '.add .half.trail';
 interface Need {
 	room: number;
 	end: number;
+	/* The end group as drawn, which the centre keeps clear of (`--bar-end`). */
+	barEnd: number;
 }
 
-/* By route, for the session: a screen met again draws its menus in their home on its first frame.
-   The bar's width is read live, so a sidebar or window changed since is still decided fresh. */
-const needs = new Map<string, Need>();
+/* By route, kept in this browser. Every screen lays the bar out for the widest one met, so moving
+   between screens moves nothing on it, and a screen met before, in this sitting or the last, is in
+   place on its first frame. The bar's width is read live, so a window changed since is decided fresh. */
+const NEEDS_KEY = 'sift.screen-bar.needs';
+const needs = new Map<string, Need>(readNeeds());
+
+function readNeeds(): [string, Need][] {
+	try {
+		const kept: unknown = JSON.parse(localStorage.getItem(NEEDS_KEY) ?? '{}');
+		if (kept === null || typeof kept !== 'object') return [];
+		return Object.entries(kept as Record<string, Need>).filter(([, one]) =>
+			[one?.room, one?.end, one?.barEnd].every(Number.isFinite)
+		);
+	} catch {
+		return [];
+	}
+}
+
+/** The most any screen met has needed: what every screen's bar is laid out for. */
+function widest(): Need {
+	let most: Need = { room: 0, end: 0, barEnd: 0 };
+	for (const one of needs.values())
+		most = {
+			room: Math.max(most.room, one.room),
+			end: Math.max(most.end, one.end),
+			barEnd: Math.max(most.barEnd, one.barEnd)
+		};
+	return most;
+}
+
+function keepNeed(screen: string, need: Need): void {
+	const was = needs.get(screen);
+	if (was && was.room === need.room && was.end === need.end && was.barEnd === need.barEnd) return;
+	needs.set(screen, need);
+	try {
+		localStorage.setItem(NEEDS_KEY, JSON.stringify(Object.fromEntries(needs)));
+	} catch {
+		// Kept for this sitting only.
+	}
+}
 
 class ScreenBar {
 	#tools = $state<ScreenTools>(NOTHING);
@@ -400,7 +439,9 @@ class ScreenBar {
 		let room = 0;
 		const decide = () => {
 			const onPhone = phone?.matches ?? false;
-			this.roomOnTopBar = onPhone || width >= Math.max(sum() + raised, room);
+			const most = widest();
+			const menus = 2 * (Math.max(end, most.end) + gapOf(bar)) + MENUS_ROOM + FIELD_FLOOR;
+			this.roomOnTopBar = onPhone || width >= Math.max(menus + raised, room, most.room);
 			// Each end must hold the whole end group beside the field's floor, or the group slides.
 			const holds = (group: number) => width >= 2 * (group + gapOf(bar)) + FIELD_FLOOR;
 			this.sizeOnBar = onPhone || holds(end);
@@ -411,14 +452,15 @@ class ScreenBar {
 				if (entry.target === field || ends.includes(entry.target as HTMLElement)) continue;
 				width = entry.contentBoxSize?.[0]?.inlineSize ?? entry.contentRect.width;
 			}
-			this.barEnd = endWidth();
+			const drawn = endWidth();
+			this.barEnd = Math.max(drawn, widest().barEnd);
 			const standing = size?.getBoundingClientRect().width ?? 0;
 			const holder = ends.find((one) => size !== null && one.contains(size));
 			if (standing > 0 && holder !== undefined)
 				sizeRoom = standing + (holder.childElementCount > 1 ? gapOf(holder) : 0);
 			const pasting = pasteWidth();
 			if (pasting > 0) pasteRoom = pasting;
-			end = this.barEnd + (standing > 0 ? 0 : sizeRoom) + (pasting > 0 ? 0 : pasteRoom);
+			end = drawn + (standing > 0 ? 0 : sizeRoom) + (pasting > 0 ? 0 : pasteRoom);
 			if (field !== null && this.roomOnTopBar && !(phone?.matches ?? false)) {
 				const has = field.getBoundingClientRect().width;
 				if (has > 0 && has < FIELD_FLOOR && Number.isFinite(width)) {
@@ -426,12 +468,14 @@ class ScreenBar {
 					room = Math.max(room, sum() + raised);
 				}
 			}
-			if (this.#screen !== null) needs.set(this.#screen, { room, end });
+			if (this.#screen !== null) keepNeed(this.#screen, { room, end, barEnd: drawn });
 			decide();
 		});
 		/* A new screen starts from what it needed last time, or from the sum: never from another's. */
 		this.#screenChanged = () => {
-			({ room, end } = (this.#screen !== null && needs.get(this.#screen)) || { room: 0, end });
+			const known = this.#screen === null ? undefined : needs.get(this.#screen);
+			({ room, end } = known ?? { room: 0, end });
+			this.barEnd = Math.max(known?.barEnd ?? this.barEnd, widest().barEnd);
 			raised = 0;
 			decide();
 		};

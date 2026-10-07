@@ -12,10 +12,10 @@
  */
 
 import { flushSync } from 'svelte';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { ApiError } from '$lib/api/client';
-import { EntitySubject } from './subject.svelte';
+import { EntitySubject, prime, primedOr } from './subject.svelte';
 
 interface Row {
 	id: string;
@@ -180,4 +180,15 @@ describe('no subject at all', () => {
 		expect(subject.settling).toBe(true);
 		flushSync();
 	});
+});
+
+it('hands a primed answer to the first read of its subject only, and asks afresh after it', async () => {
+	const early = Promise.resolve('early');
+	prime('kind-a', 'p1', early);
+	const ask = vi.fn(() => Promise.resolve('fresh'));
+
+	expect(primedOr('kind-a', 'p2', ask)).not.toBe(early);
+	expect(primedOr('kind-a', 'p1', ask)).toBe(early);
+	expect(await primedOr('kind-a', 'p1', ask)).toBe('fresh');
+	expect(ask).toHaveBeenCalledTimes(2);
 });

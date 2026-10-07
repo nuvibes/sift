@@ -7,7 +7,14 @@ import pytest
 
 import sift.slices.workbench.schema  # noqa: F401
 from sift.kernel.access import Repository, Viewer
-from sift.kernel.access.history_entity import history_count_of_entity
+from sift.kernel.access.history import DEFAULT_LIMIT
+from sift.kernel.access.history_entity import (
+    history_of_collection,
+    history_of_photo_set,
+    history_of_site,
+    history_of_song,
+    history_of_tag,
+)
 from sift.kernel.db import Database
 from sift.kernel.tests.test_history_entity import (
     COLLECTION,
@@ -28,6 +35,13 @@ from sift.testing.fixtures import Actors
 pytestmark = pytest.mark.anyio
 
 DECISION = "01HX0000000000000000000881"
+_THREADS = {
+    "tag": history_of_tag,
+    "site": history_of_site,
+    "collection": history_of_collection,
+    "photo_set": history_of_photo_set,
+    "song": history_of_song,
+}
 SHOWN = "01HX0000000000000000000882"
 
 
@@ -64,7 +78,7 @@ async def test_a_pass_over_the_whole_library_is_an_admins_line_on_every_thread(
 
     async def counts(viewer: Viewer) -> list[int]:
         return [
-            await history_count_of_entity(temp_db, viewer, kind, one)
+            len(await _THREADS[kind](temp_db, viewer, one, limit=DEFAULT_LIMIT))
             for kind, one in things.items()
         ]
 

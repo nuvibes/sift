@@ -221,6 +221,20 @@ describe('a newcomer to a list somebody is reading', () => {
 		box.remove();
 	});
 
+	it('keeps the row a held one pushed off the page drawn, and only that row', () => {
+		const { box, held, stop } = list(500);
+		// A full page: the newcomer at the head pushes 'd' off its end, and 'b' was deleted.
+		held.take([{ id: 'b' }, { id: 'c' }, { id: 'd' }], false);
+		held.take([{ id: 'a' }, { id: 'c' }], true);
+		expect(
+			held.shown.map((row) => row.id),
+			'a row left the page under the reader'
+		).toEqual(['c', 'd']);
+		expect(held.waiting).toBe(1);
+		stop();
+		box.remove();
+	});
+
 	it('draws a new question as it is, wherever the list was scrolled', () => {
 		const { box, held, stop } = list(500);
 		held.take([{ id: 'x' }, { id: 'y' }], false);

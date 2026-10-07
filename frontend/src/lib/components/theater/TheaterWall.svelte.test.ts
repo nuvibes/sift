@@ -12,7 +12,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushSync, mount, unmount } from 'svelte';
 
 vi.mock('$lib/api/client', () => ({
-	api: { get: vi.fn(async () => ({ items: [], total: 0 })), post: vi.fn(async () => ({})) }
+	api: { get: vi.fn(async () => ({ items: [], total: 0 })), post: vi.fn(async () => ({})) },
+	isMissing: (error: unknown) => (error as { status?: number } | null)?.status === 404
 }));
 
 import TheaterWall, { between } from './TheaterWall.svelte';
@@ -21,6 +22,9 @@ import { Wall } from '$lib/theater/wall.svelte';
 import type { PlaybackPlan } from '$lib/player/playback';
 import { stage } from '$lib/components/shell/stage.svelte';
 import { wallChrome } from '$lib/theater/chrome.svelte';
+import { api } from '$lib/api/client';
+import { arrivals, libraryChanges } from '$lib/library/changes.svelte';
+import type { Playable } from '$lib/theater/cell.svelte';
 
 let host: HTMLElement;
 let running: Record<string, unknown>;
@@ -117,6 +121,52 @@ function drawnAt(to: DOMRect) {
 	const [sx, sy] = frame.style.scale.split(' ').map(Number);
 	return new DOMRect(to.left + x, to.top + y, to.width * sx, to.height * sy);
 }
+
+describe('a file deleted elsewhere', () => {
+	afterEach(() => unmount(running));
+
+	it('leaves the cell showing it at once, and a cell whose file is there stays', async () => {
+		const wall = draw();
+		const [gone, kept] = wall.cells;
+		gone.playing = { id: 'file-gone' } as Playable;
+		kept.playing = { id: 'file-kept' } as Playable;
+		const stepped = vi.spyOn(gone, 'advance').mockResolvedValue();
+		const stayed = vi.spyOn(kept, 'advance').mockResolvedValue();
+		vi.mocked(api.get).mockImplementation(async (path: string) => {
+			if (path === '/assets/file-gone') throw { status: 404 };
+			return {};
+		});
+		libraryChanges.changed();
+		flushSync();
+		await vi.waitFor(() => expect(stepped).toHaveBeenCalledOnce());
+		expect(stayed).not.toHaveBeenCalled();
+	});
+
+	it('keeps the grid unseen while the opening draw has cells with no file yet', () => {
+		const wall = draw();
+		wall.opening = true;
+		flushSync();
+		const grid = host.querySelector('.grid') as HTMLElement;
+		expect(grid.classList.contains('settling')).toBe(true);
+		for (const cell of wall.inFocus)
+			cell.coming = { id: `file-${cell.key}`, width: 9, height: 16 } as Playable;
+		flushSync();
+		expect(grid.classList.contains('settling')).toBe(false);
+	});
+
+	it('has a cell that found nothing look again when files arrive', () => {
+		const wall = draw();
+		const [empty, playing] = wall.cells;
+		empty.state = 'nothing_here';
+		playing.state = 'ready';
+		const looked = vi.spyOn(empty, 'restart').mockResolvedValue();
+		const left = vi.spyOn(playing, 'restart').mockResolvedValue();
+		arrivals.changed();
+		flushSync();
+		expect(looked).toHaveBeenCalledOnce();
+		expect(left).not.toHaveBeenCalled();
+	});
+});
 
 describe('the wall around a change of screen', () => {
 	beforeEach(watchTheWall);
@@ -264,10 +314,12 @@ describe('the keyboard and the wall\u2019s chrome', () => {
 		expect(bar().inert, 'the bar came up out of reach of the Tab').toBeFalsy();
 	});
 
-	it('holds them while the keyboard is in the bar, and lets them go once it is back on the wall', () => {
+	it('holds them while the keyboard is in the bar, and lets them go once it is back on the wall', async () => {
 		draw();
 		press('Tab');
 		bar().querySelector('button')!.focus();
+		// Focus is heard after the update it may land in (`focusMoved`).
+		await Promise.resolve();
 		flushSync();
 		vi.advanceTimersByTime(5000);
 		flushSync();
@@ -275,6 +327,7 @@ describe('the keyboard and the wall\u2019s chrome', () => {
 		(host.querySelector('.cell') as HTMLElement).dispatchEvent(
 			new FocusEvent('focusin', { bubbles: true })
 		);
+		await Promise.resolve();
 		vi.advanceTimersByTime(1600);
 		flushSync();
 		expect(wallChrome.up, 'the bars stayed after the keyboard left them').toBe(false);

@@ -30,7 +30,7 @@ from sift.kernel.changes import (
     announce_now,
     telling,
 )
-from sift.kernel.db import Database, DatabaseError, Row
+from sift.kernel.db import Connection, Database, DatabaseError, Row
 
 pytestmark = pytest.mark.unit
 
@@ -481,6 +481,27 @@ async def test_a_write_that_moved_nothing_says_nothing(bus: ChangeBus, database:
         await connection.execute("UPDATE note SET id = 'two' WHERE id = 'nothing here'")
 
     assert watching.take(as_admin=False).about == ()
+
+
+async def test_an_audience_read_after_the_write_is_read_only_when_a_row_moved(
+    bus: ChangeBus, database: Database
+) -> None:
+    watching = bus.subscribe("guest")
+    asked: list[Connection] = []
+
+    async def whoever(connection: Connection) -> Audience:
+        asked.append(connection)
+        return _guest()
+
+    async with telling(database, whoever, About.LIBRARY) as connection:
+        await connection.execute("UPDATE note SET id = 'two' WHERE id = 'nothing here'")
+    assert asked == []
+    assert watching.take(as_admin=False).about == ()
+
+    async with telling(database, whoever, About.LIBRARY) as connection:
+        await connection.execute("INSERT INTO note (id) VALUES ('one')")
+    assert asked == [connection]
+    assert watching.take(as_admin=False).about == (About.LIBRARY,)
 
 
 async def test_a_write_that_failed_says_nothing(bus: ChangeBus, database: Database) -> None:

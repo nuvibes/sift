@@ -3,13 +3,14 @@
 
 from __future__ import annotations
 
+import json
 import time
 from collections.abc import Sequence
 from dataclasses import dataclass
 
 from sift.kernel.access.catalog.people import _LINK_ASSET_PERSON
 from sift.kernel.access.catalog.usernames import _LINK_ASSET_USERNAME
-from sift.kernel.db import Connection, Database, in_clause
+from sift.kernel.db import Connection, Database
 
 # Copies of the same bytes are one asset already. This carries onto a file that merely looks the
 # same (a re-encode, a second download), as an offer somebody presses on a group, and only where
@@ -43,7 +44,7 @@ _PEOPLE_ON = """
 SELECT link.asset_id AS asset_id, p.id AS id, p.name AS name
   FROM asset_people link
   JOIN people p ON p.id = link.person_id
- WHERE link.asset_id IN (?*)
+ WHERE link.asset_id IN (SELECT value FROM json_each(?))
  ORDER BY link.asset_id, p.id
 """
 
@@ -53,12 +54,9 @@ SELECT link.asset_id AS asset_id, ac.id AS id, ac.name AS name,
   FROM asset_usernames link
   JOIN usernames ac ON ac.id = link.username_id
   LEFT JOIN sites pl ON pl.id = ac.site_id
- WHERE link.asset_id IN (?*)
+ WHERE link.asset_id IN (SELECT value FROM json_each(?))
  ORDER BY link.asset_id, ac.id
 """
-
-#: Files per statement: a bound list has a ceiling, so a whole library is asked in batches.
-_CARRY_CHUNK = 500
 
 
 #: Taking back exactly what a carry wrote: `source = 'copy'` in the WHERE leaves a row somebody
@@ -80,24 +78,22 @@ async def attribution_of_files(
     if not found:
         return found
     wanted = sorted(found)
-    for start in range(0, len(wanted), _CARRY_CHUNK):
-        batch = wanted[start : start + _CARRY_CHUNK]
-        statement, bound = in_clause(_PEOPLE_ON, batch)
-        for row in await database.fetch_all(statement, bound):
-            found[str(row["asset_id"])].append(
-                Carried(kind="person", id=str(row["id"]), name=str(row["name"]))
+    # One JSON list binds any number of files, so the whole set is two statements.
+    bound = (json.dumps(wanted),)
+    for row in await database.fetch_all(_PEOPLE_ON, bound):
+        found[str(row["asset_id"])].append(
+            Carried(kind="person", id=str(row["id"]), name=str(row["name"]))
+        )
+    for row in await database.fetch_all(_USERNAMES_ON, bound):
+        found[str(row["asset_id"])].append(
+            Carried(
+                kind="username",
+                id=str(row["id"]),
+                name=str(row["name"]),
+                site_id=None if row["site_id"] is None else str(row["site_id"]),
+                site=None if row["site"] is None else str(row["site"]),
             )
-        statement, bound = in_clause(_USERNAMES_ON, batch)
-        for row in await database.fetch_all(statement, bound):
-            found[str(row["asset_id"])].append(
-                Carried(
-                    kind="username",
-                    id=str(row["id"]),
-                    name=str(row["name"]),
-                    site_id=None if row["site_id"] is None else str(row["site_id"]),
-                    site=None if row["site"] is None else str(row["site"]),
-                )
-            )
+        )
     return found
 
 

@@ -65,6 +65,9 @@ async function membershipsOf(assetId: string): Promise<Membership[]> {
 	];
 }
 
+/** The longest the panel waits for a picture before it reads anyway: a clip held paused never plays. */
+export const PANEL_WAIT_MS = 1000;
+
 function moved(held: unknown, read: unknown): boolean {
 	return JSON.stringify(held) !== JSON.stringify(read);
 }
@@ -103,6 +106,42 @@ export class FileBand {
 		this.filings = [];
 		this.tags = [];
 		this.bandFor = null;
+	}
+
+	/*
+	 * The file the panel under the picture is about. It follows the file on screen once that file's
+	 * picture is up (`pictured`), or after `PANEL_WAIT_MS`, so the panel's dozen requests never
+	 * queue in front of the stream.
+	 */
+	settled = $state('');
+	#waiting: ReturnType<typeof setTimeout> | undefined;
+	#then: (() => void) | undefined;
+
+	/** The view was pointed at a file: the band reads it once its picture is up, then `then`. */
+	step(then?: () => void): void {
+		clearTimeout(this.#waiting);
+		this.#then = then;
+		// The same file read again (a refresh, a rename) has no picture to wait for.
+		if (this.settled === this.current()) return this.pictured(true);
+		this.clear();
+		this.#waiting = setTimeout(() => this.pictured(), PANEL_WAIT_MS);
+	}
+
+	/** The picture is up: the panel follows it, and the band is read. */
+	pictured(again = false): void {
+		clearTimeout(this.#waiting);
+		const now = this.current();
+		if (this.settled === now && !again) return;
+		this.settled = now;
+		void this.load(now);
+		const then = this.#then;
+		this.#then = undefined;
+		then?.();
+	}
+
+	/** The view is going: nothing waits on it. */
+	stop(): void {
+		clearTimeout(this.#waiting);
 	}
 
 	/** Read the lists for this file all at once, each drawn as it lands. */

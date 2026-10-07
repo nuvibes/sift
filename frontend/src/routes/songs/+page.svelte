@@ -142,6 +142,7 @@
 		screenBar.publish(mine, {
 			filterable: true,
 			subject: 'song',
+			count: loading ? undefined : total,
 			/* A chip for one artist renames that artist on every song, by its right-click: the
 			   same verbs the artist's own press under a song's name opens. */
 			chipVerbs: (field, value, label) =>

@@ -416,6 +416,16 @@ UPDATE photo_sets
    AND (archive_rel_path = :old OR substr(archive_rel_path, 1, :prefix_length) = :prefix)
 """
 
+# A folder row made again (forgotten, then found by a walk) takes back the present files lying
+# directly in it whose location lost its folder: an unchanged file is never rewritten to say so.
+# The range's end is the prefix with its slash moved one character on, so it stays on the index.
+_ADOPT_LOCATIONS = """
+UPDATE asset_locations SET folder_id = ?
+ WHERE root_id = ? AND folder_id IS NULL AND status = 'present'
+   AND rel_path > ? AND rel_path < ?
+   AND instr(substr(rel_path, ?), '/') = 0
+"""
+
 # The subtree of a folder, by path rather than by walking parents: every descendant's path starts
 # with this folder's path and a separator. `substr` compares the prefix exactly, where LIKE would
 # read a % or an _ in somebody's folder name as a wildcard and match more than the subtree.
@@ -683,21 +693,13 @@ class LibraryStore:
     async def repoint_root(self, root_id: str, abs_path: Path) -> Root | None:
         """The same library, at a new place on the disk. Every check adding one makes, again.
 
-        **Nothing under it moves, and that is what makes this cheap.** Every file is recorded
-        relative to its root, so a library that moved has one thing wrong with it: the one path
-        that is absolute. Re-pointing rewrites that path and the whole library is correct again:
-        no re-reading, no re-hashing, and every share, concealment and attribution still attached to
-        the folders that carry them.
+        Nothing under it moves: every file is recorded relative to its root, so re-pointing the
+        one absolute path makes the whole library correct again, every share, concealment and
+        attribution still on its folder. Removing and adding it back would recover the files by
+        digest, lose the folders' grants and read every byte again.
 
-        The alternative is removing the library and adding it back, which recovers the FILES by
-        their digests and loses everything recorded about the FOLDERS (removing a library drops
-        those grants deliberately), and reads every byte again to do it.
-
-        Refused for anything `create_root` would refuse: a path that is not a readable directory,
-        one that holds Sift's own files, and one that overlaps another library. The overlap check
-        skips this root's own row, because a library being told where it now is will very often
-        still be recorded at a path that no longer exists, and comparing it against itself would
-        make the operation impossible exactly when it is needed.
+        Refused for anything `create_root` would refuse. The overlap check skips this root's own
+        row: the library is very often still recorded at a path that no longer exists.
         """
         if not is_id(root_id):
             return None
@@ -887,25 +889,15 @@ class LibraryStore:
     ) -> FolderRow | None:
         """The same folder, somewhere else in its library. The one place a stored path is rewritten.
 
-        THE FOLDER KEEPS ITS ID, and that is the entire point of this existing. A folder is what a
-        share, a restrict, a concealment and an attribution rule are written on (none of which is
-        attached to the files inside it), so a folder that is deleted and re-created loses every
-        one of them silently. Renaming a directory must not be a way to un-share it.
+        THE FOLDER KEEPS ITS ID: a share, a restrict, a concealment and an attribution rule are
+        written on the folder, not its files, so a folder deleted and re-created loses them all.
 
-        **Five columns record where something sits inside a library, and all five move together.**
-        They are listed out rather than found by walking the schema, because a column this misses
-        is not a crash, it is a row quietly pointing at a path that no longer exists: a photo set
-        that splits in two on the next scan, a refusal that is remembered against nothing.
-        `tests/gates/test_one_stored_path.py` is what stops a sixth being added without joining
-        them, and `scan_rejections` is the one that is not here: it belongs to the feature that
-        owns it and is moved by the same act, a line later.
-
-        One transaction. Half a move is a library that disagrees with itself about where its own
-        files are, which is worse than not having moved at all.
-
-        Refused, rather than half-done, where the destination is already taken. That can only
-        happen if something is already recorded at the new path, which means the two are not the
-        same folder after all, so the caller treats it as new, which is the safe direction.
+        The five columns that record where something sits move together, listed out because a
+        column this misses is a row quietly pointing at a path that no longer exists
+        (`tests/gates/test_one_stored_path.py` holds the list); `scan_rejections` belongs to its
+        feature and is moved by the same act, a line later. One transaction. Refused where the
+        destination is already taken: then the two are not the same folder, and the caller treats
+        it as new.
         """
         new_rel_path = check_rel_path(new_rel_path)
         old = folder.rel_path
@@ -1019,19 +1011,11 @@ class LibraryStore:
     ) -> AsyncIterator[Location]:
         """Every location Sift currently believes is present, a batch at a time.
 
-        A scan finishes by marking what it did not see as missing, and it cannot ask for a list to
-        do that: a library of a million files is a million rows, and reading them into memory to
-        compare against a directory walk is a design that works on the machine it was written on.
-        This yields them in id order and holds one batch at a time.
-
-        `under` filters it to one folder's subtree, which is what a scan of a single folder needs
-        and needs exactly: it must see the files under that folder and no others, because the ones
-        it does not see are the ones it marks missing. The default is the root's own folder, whose
-        path is empty and which everything is under.
-
-        It is deliberately not a snapshot. A scan runs for a long time and the library changes
-        under it, so a row inserted behind the cursor is simply not seen this pass, which is
-        correct, because a row the scanner just wrote is a file the scanner just saw.
+        A scan ends by marking what it did not see as missing, and a million rows are not read
+        into memory for that: this yields them in id order, one batch held at a time. `under`
+        keeps it to one folder's subtree, exactly the files a scan of that folder marks missing
+        when unseen; the default is the root's own folder, which everything is under. Not a
+        snapshot: a row inserted behind the cursor is a file the scanner just saw.
         """
         prefix = subtree_prefix(under)
         cursor = ""
@@ -1068,6 +1052,14 @@ class LibraryStore:
             )
         )
         return folder_from_row(rows[0])
+
+    async def adopt_locations(self, folder: FolderRow) -> None:
+        """Give a folder row the present files directly in it that have no folder."""
+        prefix = folder.rel_path + "/"
+        await self._write_shared(
+            _ADOPT_LOCATIONS,
+            (folder.id, folder.root_id, prefix, folder.rel_path + "0", len(prefix) + 1),
+        )
 
     async def _write(self, sql: str, params: tuple[object, ...]) -> list[Row]:
         async with self._db.write() as connection:

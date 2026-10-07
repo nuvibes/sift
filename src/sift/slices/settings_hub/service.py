@@ -27,6 +27,7 @@ from sift.kernel.access.history_names import tunnel_ids, tunnels_said_in
 from sift.kernel.audience import EVERY_ADMIN, NOBODY, Audience
 from sift.kernel.changes import About, announce_now, telling
 from sift.kernel.db import Database, point_read
+from sift.kernel.jobs.switchboard import one_reading_now
 from sift.kernel.ledger import Actor, Reversal, record_event
 from sift.kernel.log import get_logger
 from sift.kernel.settings_registry import (
@@ -303,8 +304,8 @@ class SettingsService:
         if retired is not None:
             return retired.read(tuple([await self.get_app(one) for one in retired.into]))
         setting = self._require(key, Scope.APP)
-        row = await self._db.fetch_one(_GET_APP, (key,))
-        return self._decode(setting, row["value"]) if row is not None else setting.default
+        stored = await self._stored_app(key)
+        return self._decode(setting, stored) if stored is not None else setting.default
 
     async def app_is_stored(self, key: str) -> bool:
         """Whether somebody chose a value for this app setting, as against it answering its default.
@@ -316,7 +317,19 @@ class SettingsService:
         if retired is not None:
             return any([await self.app_is_stored(one) for one in retired.into])
         self._require(key, Scope.APP)
-        return await self._db.fetch_one(_GET_APP, (key,)) is not None
+        return await self._stored_app(key) is not None
+
+    async def _stored_app(self, key: str) -> str | None:
+        """One key's stored text, or None. Inside a question the switchboard asks, every key comes
+        from one read of the whole table (a fixed list of settings), taken when first needed."""
+        reading = one_reading_now()
+        if reading is None:
+            row = await self._db.fetch_one(_GET_APP, (key,))
+            return None if row is None else str(row["value"])
+        if reading.values is None:
+            rows = await self._db.fetch_all(_ALL_APP)
+            reading.values = {str(row["key"]): str(row["value"]) for row in rows}
+        return reading.values.get(key)
 
     # --- writing ---------------------------------------------------------------------------
 

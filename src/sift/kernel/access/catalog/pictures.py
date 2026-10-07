@@ -3,11 +3,11 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from sift.kernel.access.catalog.carried import _CARRY_CHUNK
-from sift.kernel.db import Database, in_clause
+from sift.kernel.db import Database
 
 # --- LOOSE PICTURES: one creator's stills that are in no Photo Set ------------------------------
 #
@@ -73,7 +73,7 @@ async def loose_pictures_of(db: Database, person_id: str, *, limit: int) -> list
 _UNNAMED_PICTURES_AMONG = """
 SELECT a.id AS id
   FROM assets a
- WHERE a.id IN (?*)
+ WHERE a.id IN (SELECT value FROM json_each(?))
    AND a.media_type IN ('image', 'gif')
    AND NOT EXISTS (SELECT 1 FROM asset_people ap WHERE ap.asset_id = a.id)
    AND NOT EXISTS (SELECT 1 FROM photo_set_items i WHERE i.asset_id = a.id)
@@ -82,13 +82,11 @@ SELECT a.id AS id
 
 async def unnamed_pictures_among(db: Database, asset_ids: Sequence[str]) -> set[str]:
     """Which of these are pictures with nobody named in them and no Photo Set of their own."""
-    found: set[str] = set()
     wanted = sorted({str(one) for one in asset_ids})
-    for start in range(0, len(wanted), _CARRY_CHUNK):
-        statement, bound = in_clause(_UNNAMED_PICTURES_AMONG, wanted[start : start + _CARRY_CHUNK])
-        for row in await db.fetch_all(statement, bound):
-            found.add(str(row["id"]))
-    return found
+    if not wanted:
+        return set()
+    rows = await db.fetch_all(_UNNAMED_PICTURES_AMONG, (json.dumps(wanted),))
+    return {str(row["id"]) for row in rows}
 
 
 #: Which Photo Set holds each of these files: a proposal whose pictures were filed since is a
@@ -96,7 +94,7 @@ async def unnamed_pictures_among(db: Database, asset_ids: Sequence[str]) -> set[
 _PHOTO_SETS_HOLDING = """
 SELECT i.asset_id AS asset_id, i.photo_set_id AS photo_set_id
   FROM photo_set_items i
- WHERE i.asset_id IN (?*)
+ WHERE i.asset_id IN (SELECT value FROM json_each(?))
  ORDER BY i.asset_id, i.photo_set_id
 """
 
@@ -105,8 +103,8 @@ async def photo_sets_holding(db: Database, asset_ids: Sequence[str]) -> dict[str
     """Photo Sets holding each of these files, by file. A file in none is not in the answer."""
     held: dict[str, list[str]] = {}
     wanted = sorted({str(one) for one in asset_ids})
-    for start in range(0, len(wanted), _CARRY_CHUNK):
-        statement, bound = in_clause(_PHOTO_SETS_HOLDING, wanted[start : start + _CARRY_CHUNK])
-        for row in await db.fetch_all(statement, bound):
-            held.setdefault(str(row["asset_id"]), []).append(str(row["photo_set_id"]))
+    if not wanted:
+        return {}
+    for row in await db.fetch_all(_PHOTO_SETS_HOLDING, (json.dumps(wanted),)):
+        held.setdefault(str(row["asset_id"]), []).append(str(row["photo_set_id"]))
     return {asset_id: tuple(sets) for asset_id, sets in held.items()}

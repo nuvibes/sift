@@ -6,7 +6,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+from collections import Counter
 from pathlib import Path
+from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
@@ -159,6 +161,33 @@ async def test_the_rows_are_gathered_by_person_most_first_and_add_up_to_the_tab(
         (WREN, 1, "stash_box"),
     ]
     assert sum(one.count for one in people) == total == 3
+
+
+async def test_the_faces_on_a_page_of_rows_are_named_in_one_read(
+    library: Database,
+    service: FaceService,
+    store: Store,
+    admin: Viewer,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Each row's face is named from one read for the page, never one read per row."""
+    for _ in range(2):
+        _asset, track = await _filed(library, service, RASHA, None)
+        await store.attribute(track, WREN, confidence=0.9, attribution=Attribution.MATCHED)
+    asked: list[str] = []
+    one_at_a_time = service._repository.visible_person
+
+    async def counted(viewer: Viewer, person_id: str) -> Any:
+        asked.append(person_id)
+        return await one_at_a_time(viewer, person_id)
+
+    monkeypatch.setattr(service._repository, "visible_person", counted)
+
+    items, total, _small = await service.to_check(admin, kind=ToCheckKind.MISMATCH, limit=24)
+
+    assert total == len(items) == 2
+    assert {face.person_id for item in items for face in item.faces} == {WREN}
+    assert asked == []
 
 
 async def test_a_person_filed_from_a_filename_is_said_so_with_no_folder_or_box_read(
@@ -637,6 +666,35 @@ async def test_the_people_known_from_starter_pictures_alone_are_set_apart(
     assert await service.starters_apart(admin) == (1, 1)
     assert await service.position_of_identified(admin, WREN, starters=StartersShow.ONLY) is None
     assert await service.position_of_identified(admin, WREN, starters=StartersShow.WITHOUT) == 0
+
+
+async def test_a_page_of_cards_reads_its_faces_marks_and_best_once_for_the_page(
+    library: Database,
+    service: FaceService,
+    store: Store,
+    admin: Viewer,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Each card's moments, reference marks and best percentage: one read for the page, not one
+    per card."""
+    for person_id in (WREN, RASHA):
+        _asset, track = await _filed(library, service, person_id, None)
+        await store.attribute(track, person_id, confidence=0.9, attribution=Attribution.MATCHED)
+    asked: Counter[str] = Counter()
+    for name in ("picture_moments", "reference_tracks", "surest_matched"):
+        real = getattr(store, name)
+
+        async def counted(*args: Any, _real: Any = real, _name: str = name, **kw: Any) -> Any:
+            asked[_name] += 1
+            return await _real(*args, **kw)
+
+        monkeypatch.setattr(store, name, counted)
+
+    cards, total = await service.identified_people(admin)
+
+    assert total == 2
+    assert [card.surest for card in cards] == [0.9, 0.9]
+    assert asked == {"picture_moments": 1, "reference_tracks": 1}
 
 
 # --- the routes ----------------------------------------------------------------------------------

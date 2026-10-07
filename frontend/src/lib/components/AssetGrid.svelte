@@ -429,7 +429,7 @@
 			loadedFrom = at;
 			// A page that answered nothing answers nothing at every size.
 			if (measureOnly && grid.answeredEmpty) return;
-			void grid.loadAt(order.fullQuery, at).then(rememberWhereWeAre);
+			void grid.fit(order.fullQuery, at, measureOnly).then(rememberWhereWeAre);
 			// Back to the top for a new page: its previous scroll position means nothing.
 			if (scroller) scroller.scrollTop = 0;
 		});
@@ -860,9 +860,9 @@
 <!-- The pager, in the frame's own row: it says where you are as well as how to move. -->
 {#snippet pagerFooter()}
 	<Pager
-		offset={grid.offset}
-		shown={grid.wall.tiles.length}
-		total={grid.total}
+		offset={grid.said.offset}
+		shown={grid.said.shown}
+		total={grid.said.total}
 		loading={grid.loading && grid.loaded === 0}
 		onfirst={() => turnTo({ at: 0 })}
 		onprevious={() => (start = walk.previous(grid, source.anchored))}

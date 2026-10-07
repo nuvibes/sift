@@ -4,12 +4,17 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Iterator
+from contextlib import contextmanager
+from typing import Any
 
 import pytest
 
 from sift.kernel import changes
+from sift.kernel import db as db_module
 from sift.kernel.changes import About, ChangeBus
 from sift.kernel.db import Database
+from sift.kernel.jobs.switchboard import one_reading
 from sift.kernel.settings_registry import Scope, SettingError, get_registered, register_setting
 from sift.slices.music.settings import LOOKUP_ROUTE_KEY
 from sift.slices.settings_hub.service import (
@@ -54,6 +59,33 @@ async def test_an_app_setting_says_whether_somebody_chose_it(
     assert await service.app_is_stored(GUEST_SAVE_KEY) is False
     await service.apply(users.admin, {GUEST_SAVE_KEY: True})
     assert await service.app_is_stored(GUEST_SAVE_KEY) is True
+
+
+async def test_one_question_of_the_switchboard_reads_its_settings_once_and_live(
+    service: SettingsService, users: Users, temp_db: Database, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Every setting a switchboard question asks comes from one read; the next question reads
+    again, so a switch moved between two is seen by the second."""
+    heard: list[str] = []
+    judged = db_module._judged
+
+    @contextmanager
+    def counted(stage: str, statement: Any, *rest: Any, **options: Any) -> Iterator[Any]:
+        heard.append(db_module.statement_name(statement))
+        with judged(stage, statement, *rest, **options) as timing:
+            yield timing
+
+    monkeypatch.setattr(db_module, "_judged", counted)
+    async with one_reading():
+        first = [await service.get_app(GUEST_SAVE_KEY) for _ in range(5)]
+        stored = await service.app_is_stored(GUEST_SAVE_KEY)
+    assert (first, stored, len(heard)) == ([False] * 5, False, 1)
+
+    await service.apply(users.admin, {GUEST_SAVE_KEY: True})
+    heard.clear()
+    async with one_reading():
+        assert await service.get_app(GUEST_SAVE_KEY) is True
+    assert len(heard) == 1
 
 
 # --- per-user isolation ---------------------------------------------------------------------

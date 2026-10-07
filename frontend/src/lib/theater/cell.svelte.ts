@@ -383,6 +383,9 @@ export class Cell {
 	/** The poster's own size, for a file with no stored size that the player has not measured yet. */
 	posterSize = $state<{ file: string; width: number; height: number } | null>(null);
 
+	/** The file being started, whose shape the cell holds while its plan is asked. */
+	coming = $state<Playable | null>(null);
+
 	/**
 	 * The shape the cell, the wall and the corner panel all draw this cell at, or null: the chosen
 	 * shape, the measured size, the stored size, then the poster's, kept through its even rounding.
@@ -390,7 +393,7 @@ export class Cell {
 	get shape(): number | null {
 		const asked = ratioOf(this.aspect);
 		if (asked !== null) return asked;
-		const file = this.playing;
+		const file = this.playing ?? this.coming;
 		if (file === null) return null;
 		const seen = this.measured?.file === file.id ? this.measured : null;
 		if (file.width && file.height)
@@ -541,6 +544,7 @@ export class Cell {
 		this.#failures = 0;
 		this.problem = null;
 		this.state = 'loading';
+		this.coming = file;
 		let plan: PlaybackPlan | null;
 		try {
 			plan = await this.#planOr(file.id);
@@ -622,7 +626,7 @@ export class Cell {
 		this.#failures = 0;
 		if (this.sort === RANDOM) this.seed = mintSeed();
 		this.plan = null;
-		this.playing = null;
+		this.playing = this.coming = null;
 		this.sheet = null;
 		this.facts = null;
 		this.repair = null;
@@ -633,18 +637,12 @@ export class Cell {
 		await this.advance();
 	}
 
-	/**
-	 * SOMEWHERE ELSE OUT OF WHAT THIS CELL DRAWS FROM, and never back where it already was: the
-	 * casino control's verb, which leaves out the file on screen so the press always changes it.
-	 */
+	/** SOMEWHERE ELSE out of this cell's source, never the file on screen: the casino control. */
 	async somethingElse(): Promise<void> {
 		await this.restart(this.playing?.id ?? null);
 	}
 
-	/**
-	 * Take one file out of a freshly filled run, where there is anything else left to play. A seeded
-	 * shuffle is a permutation, so dropping it from this page keeps it out of the run.
-	 */
+	/** Take one file out of a fresh run, if anything else is left: a seeded shuffle keeps it out. */
 	#leaveOut(id: string | null): void {
 		if (id === null) return;
 		const rest = this.#queue.filter((file) => file.id !== id);
@@ -685,7 +683,7 @@ export class Cell {
 		this.#passed.clear();
 		this.#direct.clear();
 		this.#shownRound = [];
-		this.playing = null;
+		this.playing = this.coming = null;
 		this.plan = null;
 		this.sheet = null;
 		this.facts = null;
@@ -872,9 +870,8 @@ export class Cell {
 	 */
 	started(): void {
 		this.#failures = 0;
-		/* What comes after this one is found now. On the element starting rather than on the
-		   handover, so the wall's opening draw (`Wall.open`) does not have nine cells each ask
-		   for a page at once. Repeated calls return at once. */
+		/* What comes after this one, found on the element starting, not the handover, so the
+		   opening draw (`Wall.open`) has no nine cells asking at once. Repeats return at once. */
 		void this.#lookAhead();
 	}
 

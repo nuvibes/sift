@@ -42,6 +42,7 @@
 		 * having failed.
 		 */
 		onrenamed?: (filename: string | null) => void;
+		held?: boolean;
 		/**
 		 * Drawn with the two rows ready to place.
 		 *
@@ -57,7 +58,7 @@
 
 	type Organized = components['schemas']['OrganizeDone'];
 
-	let { id, filename, onrenamed, children }: Props = $props();
+	let { id, filename, onrenamed, held = false, children }: Props = $props();
 
 	let options = $state<Options | null>(null);
 	let renaming = $state(false);
@@ -75,7 +76,7 @@
 		options = null;
 		shownName = null;
 		renaming = false;
-		void ask(id);
+		if (!held) void ask(id);
 	});
 	/* Whether this file may be organized, and what it is called, move with the library (a folder
 	   handed over, a file renamed in another window): asked again on its bell. */

@@ -12,6 +12,9 @@ import { FilledClock, SeekLog, SpeedTimes } from '$lib/player/inside';
 /** The most the server will accept for one sitting, from `ViewReport.watch_ms`. */
 const MAX_WATCH_MS = 24 * 60 * 60 * 1000;
 
+/** The longest a leaving file's last piece waits for the next file's first frame. */
+export const LEAVING_WAIT_MS = 1000;
+
 /** One piece of a sitting, less where it happened, which the player adds. */
 export type WatchPiece = Pick<
 	components['schemas']['ViewReport'],
@@ -41,8 +44,8 @@ export interface Watched {
 	playhead(): number | null;
 	/** The plan's threshold for a view, in milliseconds; nought where it gave none. */
 	viewAt(): number;
-	/** Post one piece of the sitting. */
-	post(piece: WatchPiece, final: boolean): Promise<unknown>;
+	/** Post one piece of the sitting, once `after` settles where one is given. */
+	post(piece: WatchPiece, final: boolean, after?: Promise<void>): Promise<unknown>;
 }
 
 export class WatchReport {
@@ -148,13 +151,38 @@ export class WatchReport {
 		this.passes.count += 1;
 	}
 
-	/** Tell the server what is left, once, on the way out. */
-	async report(): Promise<void> {
+	/* Lets a held last piece go (`report`). */
+	private letGo: (() => void) | null = null;
+
+	/**
+	 * Tell the server what is left, once, on the way out. `held`, the piece is counted now and sent
+	 * at `release` (the next file's first frame) or after `LEAVING_WAIT_MS`, so its writes never sit
+	 * in the gap between two clips.
+	 */
+	async report(held = false): Promise<void> {
 		if (this.reported) return;
 		this.reported = true;
 		// The final stretch since the last tick, or it is dropped from every view.
 		this.accumulate();
-		await this.send(true);
+		await this.send(true, held ? this.hold() : undefined);
+	}
+
+	/** Send a held last piece now. */
+	release(): void {
+		this.letGo?.();
+	}
+
+	private hold(): Promise<void> {
+		this.release();
+		return new Promise((resolve) => {
+			const go = () => {
+				clearTimeout(timer);
+				if (this.letGo === go) this.letGo = null;
+				resolve();
+			};
+			const timer = setTimeout(go, LEAVING_WAIT_MS);
+			this.letGo = go;
+		});
 	}
 
 	/* Close the pass that just finished: a view is a playthrough, so a clip on repeat forty-six
@@ -180,7 +208,7 @@ export class WatchReport {
 	}
 
 	/** Send everything of this sitting not sent yet; answers the total sent, or null. */
-	private async send(final: boolean): Promise<number | null> {
+	private async send(final: boolean, after?: Promise<void>): Promise<number | null> {
 		// Clamped to the server's ceiling: repeat is unbounded, and a 422 would discard the whole view.
 		const total = Math.min(Math.round(this.watchedMs), MAX_WATCH_MS);
 		const piece = Math.max(0, total - (this.sentMs ?? 0));
@@ -218,7 +246,8 @@ export class WatchReport {
 					completions
 				},
 				// Only the last has to survive the page going: keepalive is a small shared budget.
-				final
+				final,
+				after
 			);
 			log.spend(moves.length);
 			times.spend(speeds);

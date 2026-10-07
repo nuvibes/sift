@@ -166,7 +166,7 @@ _KINDS: tuple[_Kind, ...] = (
         covered=_COLLECTION,
         membership="collection_items m",
         belongs="m.collection_id = {{ENTITY}}",
-        order="m.added_at, m.asset_id",
+        order="m.added_at",
         filed_on="collection_items",
         entity_of_new="NEW.collection_id",
         entities_of_file=(
@@ -199,13 +199,27 @@ _PREFIX = "default_cover_"
 # --- the templates ----------------------------------------------------------------------------
 
 #: The first file filed under the entity `{{ENTITY}}` that is still in the library and has a copy
-#: there to read, a file nobody keeps in Hidden before any file somebody does. Joined to `assets`
-#: so a file whose row is being deleted is never chosen: a cover taken away by that delete's
-#: `SET NULL` is decided after the file's row has gone, while its filings may not have followed it
-#: yet.
+#: there to read. Joined to `assets` so a file whose row is being deleted is never chosen: a cover
+#: taken away by that delete's `SET NULL` is decided after the file's row has gone, while its
+#: filings may not have followed it yet.
 _FIRST = (
     "SELECT m.asset_id FROM {{MEMBERSHIP}} JOIN assets a ON a.id = m.asset_id"
-    " WHERE {{BELONGS}} AND {{PRESENT}} ORDER BY {{HIDDEN}}, {{ORDER}}, m.asset_id LIMIT 1"
+    " WHERE {{BELONGS}} AND {{PRESENT}}{{KEPT}} ORDER BY {{ORDER}}, m.asset_id LIMIT 1"
+)
+
+#: A file nobody keeps in Hidden before any file somebody does: the first of the first kind, else
+#: the first of all. Each reads the kind's index in its order and stops at the first that passes,
+#: where ordering by the Hidden test worked it out for every file filed there.
+_FIRST_SHOWN = "SELECT picked FROM (SELECT COALESCE(({{SHOWN}}), ({{ANY}})) AS picked) WHERE picked IS NOT NULL"
+
+#: Each kind's filings in the order its first file is read in, so the pick is a seek.
+INDEXES = (
+    "CREATE INDEX IF NOT EXISTS ix_asset_people_first"
+    " ON asset_people(person_id, decided_at, asset_id)",
+    "CREATE INDEX IF NOT EXISTS ix_collection_items_first"
+    " ON collection_items(collection_id, added_at, asset_id)",
+    "CREATE INDEX IF NOT EXISTS ix_psi_first"
+    " ON photo_set_items(photo_set_id, added_at, position, asset_id)",
 )
 
 #: Whether the file `{{FILE}}` is in somebody's Hidden: concealed for a user, so it is drawn to
@@ -270,14 +284,17 @@ def _first(kind: _Kind, *, hidden: bool = True) -> str:
     """The kind's first-file subquery, correlated on the entity row of the UPDATE it sits in.
     Without `hidden` for a catalog brought up before the stored verdict it reads exists, where no
     file can be in anybody's Hidden yet."""
-    return splice(
-        _FIRST,
-        MEMBERSHIP=kind.membership,
-        BELONGS=splice(kind.belongs, ENTITY=kind.table + ".id"),
-        PRESENT=HAS_A_PRESENT_COPY,
-        HIDDEN=splice(_IN_HIDDEN, FILE="m.asset_id") if hidden else "NULL",
-        ORDER=kind.order,
-    )
+    pieces = {
+        "MEMBERSHIP": kind.membership,
+        "BELONGS": splice(kind.belongs, ENTITY=kind.table + ".id"),
+        "PRESENT": HAS_A_PRESENT_COPY,
+        "ORDER": kind.order,
+    }
+    first = splice(_FIRST, KEPT="", **pieces)
+    if not hidden:
+        return first
+    kept = " AND NOT " + splice(_IN_HIDDEN, FILE="m.asset_id")
+    return splice(_FIRST_SHOWN, SHOWN=splice(_FIRST, KEPT=kept, **pieces), ANY=first)
 
 
 def _empty(row: str) -> str:
@@ -533,10 +550,17 @@ async def start(connection: Connection) -> dict[str, int]:
     """The catalog step that brings the rule in: the triggers, and every entity with no cover, no
     clear mark and a file given its first file's picture. Answers how many landed per kind, which
     the step logs."""
+    await index_the_picks(connection)
     await _make_triggers(connection)
     filled = await fill_every_empty(connection)
     log.info("covers.default.filled", **filled)
     return filled
+
+
+async def index_the_picks(connection: Connection) -> None:
+    """Catalog version 92: each kind's filings indexed in its pick's order (`INDEXES`)."""
+    for statement in INDEXES:
+        await connection.execute(statement)
 
 
 # --- giving back what the rule put on a tag or a Site ------------------------------------------

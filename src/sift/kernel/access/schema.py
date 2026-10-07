@@ -42,7 +42,7 @@ IDENTITY_COMPONENT = "identity"
 IDENTITY_VERSION = 4
 
 CATALOG_COMPONENT = "catalog"
-CATALOG_VERSION = 91
+CATALOG_VERSION = 92
 
 ACCESS_COMPONENT = "access"
 ACCESS_VERSION = 5
@@ -1620,9 +1620,8 @@ async def initialize_catalog(connection: Connection, on_disk: int) -> None:
         # The default-cover rule leaves tags and Sites: their triggers and given covers go back.
         await default_covers.take_back_tags_and_sites(connection)
     if 0 < on_disk < 77:
-        # When each thing was last edited, for "Recently edited" (`edited`): the column where it is
-        # missing, a file's table, and the first moments off the ledger. The triggers that keep it
-        # are written by `edited.keep_true`, which runs at every boot after every step.
+        # When each thing was last edited (`edited`): the column, a file's table, the first moments
+        # off the ledger; its triggers are written by `edited.keep_true` at every boot.
         for table in edited.EDITED_TABLES:
             if not await column_exists(connection, table, "edited_at"):
                 # nosemgrep: sift-no-string-built-sql
@@ -1636,14 +1635,11 @@ async def initialize_catalog(connection: Connection, on_disk: int) -> None:
         # somebody's cover goes back to the rule (`default_covers`), which logs how many.
         await default_covers.faces_back_to_the_rule(connection)
     if 0 < on_disk < 80:
-        # A stash-box studio that is one creator's own store is her username, never a Site: every
-        # Site a box made that reads so has its files moved, with a History line and an Undo each
-        # (`creator_studios`), and the table that remembers each answer is made.
+        # A stash-box studio that is one creator's own store is her username, never a Site.
         await creator_studios.repair(connection)
     if 0 < on_disk < 81:
-        # A song is a thing of its own: the three tables, the triggers that keep each file's Music
-        # field equal to its song's name, and every song a file already carries moved onto a row,
-        # with one History line saying how many (`kernel/content/songs.py`).
+        # A song is a thing of its own: its tables and triggers, and every song a file carries
+        # moved onto a row (`kernel/content/songs.py`).
         for statement in (
             _CREATE_SONGS,
             _CREATE_SONG_FILES,
@@ -1672,10 +1668,8 @@ async def initialize_catalog(connection: Connection, on_disk: int) -> None:
         # What an Undo of a take-back puts back (`catalog.keep_for_undo_on`); the same for a new library.
         await connection.execute(_CREATE_UNDO_ROWS)
     if 0 < on_disk < 85:
-        # Who pressed a pass over one file is an act in the event ledger, one per press and kept
-        # for ever (`kernel.presses`). The table that kept only the latest press of each pass goes,
-        # and each press it holds is carried into the ledger first, where its file's History reads
-        # it. A library that never had the table has nothing to carry.
+        # A press of a pass is an act in the event ledger (`kernel.presses`): the table that kept
+        # only the latest press goes, each press it holds carried into the ledger first.
         await presses.carry_into_the_ledger(connection)
     if 0 < on_disk < 86 and not await check_allows(connection, "photo_sets", "stash_library"):
         # Only the CHECK widens, in the stored definition, so no set or membership moves.
@@ -1689,11 +1683,17 @@ async def initialize_catalog(connection: Connection, on_disk: int) -> None:
     if 0 < on_disk < 89:
         # A cover nobody chose is never a Hidden file while one nobody hides is filed there.
         await default_covers.out_of_hidden(connection)
-    if 0 < on_disk < 90:
-        await let_go_of_broken_references(connection)
-    if 0 < on_disk < 91:
-        await schema_columns.forget_the_arrangements(connection)
+    for below, step in _LATER_STEPS:
+        if 0 < on_disk < below:
+            await step(connection)
 
+
+#: The steps after 89, each run below its version: 92 indexes the default covers' picks.
+_LATER_STEPS = (
+    (90, let_go_of_broken_references),
+    (91, schema_columns.forget_the_arrangements),
+    (92, default_covers.index_the_picks),
+)
 
 register_schema_initializer(IDENTITY_COMPONENT, IDENTITY_VERSION, initialize_identity, baseline=4)
 register_schema_initializer(

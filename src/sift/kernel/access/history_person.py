@@ -726,29 +726,3 @@ def _faces_left(event: Event, left: int) -> Event:
         _faces_agreed(person_id, left) if event.kind == "confirmed" else say.faces_refused(left)
     )
     return replace(event, pieces=pieces)
-
-
-async def history_count_of_person(
-    database: Database, viewer: Viewer, person_id: str, *, limit: int = DEFAULT_LIMIT
-) -> int:
-    """How many lines one person's thread has, for the number beside the word History.
-
-    ## Why this is the history itself and not a COUNT statement
-
-    Because a count beside a wall must come from the very read the wall draws. That is the rule the
-    related-counts route is written around in as many words: a number from one statement beside a
-    list from another is two populations on one screen, and the day either moves they disagree with
-    nothing on screen to say which is lying. Here it would be worse than usual: a history is not a
-    table, it is four statements GROUPED by day and by what decided them, capped, and sorted. There
-    is no SQL that counts what that comes to; anything simpler would count rows and the thread
-    counts DAYS.
-
-    So it asks the same question and measures the answer, at the same cap the pane opens with, and
-    the two cannot differ by construction. What it costs is one more pass of the reads the module
-    header measures (every one of them a seek, one row per day out of SQLite), paid once when an
-    entity page opens rather than when the tab is pressed.
-
-    UNSCOPED for the reason `history_of_person` above is: the caller resolves the person first. Its
-    viewer is passed straight through, so a rule written there is the rule here.
-    """
-    return len(await history_of_person(database, viewer, person_id, limit=limit))

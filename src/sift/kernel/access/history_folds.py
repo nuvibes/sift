@@ -14,7 +14,7 @@ so does the link row's line, because the ledger records what the act was done WI
 file was filed under, the person named in it), and that is the same thing the link row holds. The
 survivor is the one that says more: the decision, which says HOW it happened and carries the Undo.
 It takes the dropped line's `via` mark and the way to whatever that line named, so nothing leaves
-the pane but the repetition. `history_count` follows, because the count is the length of this same
+the pane but the repetition. The History tab's number follows, because it is the length of this same
 list.
 
 **Not the clock.** The filing and its receipt are written inside one transaction but ask the clock

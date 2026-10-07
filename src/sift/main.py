@@ -116,6 +116,7 @@ def content_security_policy(script_hashes: tuple[str, ...] = ()) -> str:
         "style-src 'self' 'unsafe-inline'; "
         "img-src 'self' data: blob:; "
         "media-src 'self' blob:; "
+        "worker-src 'self'; "
         "object-src 'none'; "
         "base-uri 'self'; "
         "frame-ancestors 'none'; "

@@ -688,10 +688,11 @@ async def who_may_see_a_file(connection: Connection) -> Audience:
     return EVERY_ADMIN if resolve is None else (await resolve(connection)).widened_to_admins()
 
 
+Told = Audience | Callable[[Connection], Awaitable[Audience]]
+
+
 @asynccontextmanager
-async def telling(
-    database: Database, audience: Audience, about: About
-) -> AsyncIterator[Connection]:
+async def telling(database: Database, audience: Told, about: About) -> AsyncIterator[Connection]:
     """A write, and whoever is drawing what it changed told once it has landed.
 
     **The one way a write says what it did.** Almost everything on a screen in Sift is a list, and
@@ -717,7 +718,8 @@ async def telling(
         before = connection.total_changes
         yield connection
         if connection.total_changes != before:
-            announce(audience, about)
+            told = audience if isinstance(audience, Audience) else await audience(connection)
+            announce(told, about)
 
 
 def announce_now(audience: Audience, about: About) -> None:

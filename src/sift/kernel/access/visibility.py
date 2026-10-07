@@ -38,7 +38,7 @@ import re
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
 
-from sift.kernel.access import visibility_panel
+from sift.kernel.access import visibility_panel, visibility_settled, visibility_walls
 from sift.kernel.access.sites import FILES_SITES_REACH, SITE_REACH
 from sift.kernel.access.viewer import Viewer, reveals_existence
 from sift.kernel.db import (
@@ -69,7 +69,7 @@ def _filled(template: str, **names: str) -> str:
 
 
 COMPONENT = "visibility"
-VERSION = 16
+VERSION = 17
 
 # --- the tables ----------------------------------------------------------------------------
 
@@ -118,11 +118,9 @@ CREATE TABLE IF NOT EXISTS viewer_stats (
 )
 """
 
-# Scratch: the pairs a recompute is working on. Every recompute stages its pairs here first and
-# reads them from here for each of its steps, so the pairs are worked out once rather than once
-# per step, and the folder-move trigger can read which copies it reaches BEFORE the ancestry is
-# rewritten and re-decide them AFTER. Emptied on the way out; Sift has one writer, so nothing else
-# can see it in between.
+# Scratch: the pairs a recompute is working on, staged once and read by each of its steps, so the
+# folder-move trigger can read which copies it reaches BEFORE the ancestry is rewritten and
+# re-decide them AFTER. Emptied on the way out; with one writer nothing else sees it in between.
 _CREATE_PENDING = """
 CREATE TABLE IF NOT EXISTS visibility_pending (
   user_id  TEXT NOT NULL,
@@ -131,11 +129,10 @@ CREATE TABLE IF NOT EXISTS visibility_pending (
 ) WITHOUT ROWID
 """
 
-# Scratch: what each place (a folder, or a root for a copy sitting directly in one) says for
-# one user, for the places the staged pairs' copies sit in. The place rules walk the folder
-# chain and read the grants at each step, and every copy in a folder gets the same answer, so a
-# recompute works each place out once here and the verdict reads the answer per copy with one
-# probe. Filled for exactly the places in question at the start of a recompute, and emptied at
+# Scratch: what each place (a folder, or a root for a copy sitting directly in one) says for one
+# user, for the places the staged pairs' copies sit in: the rules walk the folder chain, and every
+# copy in a folder gets the same answer, so each place is worked out once and probed per copy.
+# Filled for exactly the places in question at the start of a recompute, and emptied at
 # the end; the backfill fills it for every place there is.
 _CREATE_PLACES = """
 CREATE TABLE IF NOT EXISTS visibility_places (
@@ -767,12 +764,18 @@ CONCEALED_BY_THIS_FILE = """CASE WHEN EXISTS (SELECT 1 FROM asset_user_state h
                           WHERE h.asset_id = a.id AND h.user_id = :viewer AND h.hidden = 1)
             THEN 1 ELSE 0 END"""
 
+#: Every site one file reaches: its usernames' sites and every network above them, `SITE_REACH`'s
+#: relation walked up from the file, since that walk read per file walks every site once per file.
+_FILE_SITES = """WITH RECURSIVE up(site_id) AS (SELECT s0.id FROM asset_usernames aa
+  JOIN usernames ac ON ac.id = aa.username_id JOIN sites s0 ON s0.id = ac.site_id
+  WHERE aa.asset_id = p.asset_id
+  UNION SELECT s.parent_id FROM up JOIN sites s ON s.id = up.site_id WHERE s.parent_id IS NOT NULL)
+SELECT site_id FROM up"""
+
 #: What a file belongs to, as the objects a grant can name. The site arm is the one that is not
 #: a single column: A SITE REACHES WHAT ITS LABELS RELEASED, so a file filed under a label belongs
 #: to that label AND to every network above it: a network has no usernames of its own, so asking
-#: only for the username's own site would make sharing a network share nothing. It reads the same
-#: fragment the search leaf, the wall count and the
-#: concealment rule read; see `kernel/access/sites.py`.
+#: only for the username's own site would make sharing a network share nothing.
 LOGICAL_BITS = _filled(
     """
 (SELECT MAX(g.effect = 'restrict') * 2 + MAX(g.effect = 'share')
@@ -782,17 +785,14 @@ LOGICAL_BITS = _filled(
          UNION ALL
          SELECT 'collection', collection_id FROM collection_items WHERE asset_id = p.asset_id
          UNION ALL
-         SELECT 'site', reach.ancestor_id
-           FROM asset_usernames aa JOIN usernames ac ON ac.id = aa.username_id
-           JOIN (<<SITE_REACH>>) reach ON reach.site_id = ac.site_id
-          WHERE aa.asset_id = p.asset_id
+         SELECT 'site', up.site_id FROM (<<FILE_SITES>>) up
          UNION ALL
          SELECT 'photo_set', photo_set_id FROM photo_set_items WHERE asset_id = p.asset_id
          UNION ALL
          SELECT 'song', song_id FROM song_files WHERE asset_id = p.asset_id) m
    JOIN acl_grants g ON g.subject_user_id = p.user_id
                     AND g.object_type = m.kind AND g.object_id = m.object)""",
-    SITE_REACH=SITE_REACH,
+    FILE_SITES=_FILE_SITES,
 )
 
 ITEM_BITS = """
@@ -809,9 +809,8 @@ EXISTS (SELECT 1 FROM asset_user_state h
 #
 # A SITE HIDES WHAT ITS LABELS RELEASED, the one arm here that is not a single join. A network owns
 # labels and a label publishes the files, so asking only about the file's own site (the label) would
-# make hiding a network hide nothing. The reach fragment is the same one the search leaf and the
-# wall count read (see `kernel/access/sites.py`), so what a site CONCEALS and what a site SHOWS
-# cannot come apart, which is the whole reason it is a fragment and not a fourth copy.
+# make hiding a network hide nothing. The same walk as `LOGICAL_BITS`, so what a site CONCEALS and
+# what a site SHOWS cannot come apart; asked only of a user who hid a site at all.
 _HIDDEN_BY_MEMBERSHIP = _filled(
     """
 EXISTS (SELECT 1 FROM asset_people ap
@@ -823,18 +822,16 @@ OR EXISTS (SELECT 1 FROM collection_items ci
 OR EXISTS (SELECT 1 FROM asset_tags vt
             JOIN tag_user_state ht ON ht.tag_id = vt.tag_id
            WHERE vt.asset_id = p.asset_id AND ht.user_id = p.user_id AND ht.hidden = 1)
-OR EXISTS (SELECT 1 FROM asset_usernames va
-            JOIN usernames vac ON vac.id = va.username_id
-            JOIN (<<SITE_REACH>>) reach ON reach.site_id = vac.site_id
-            JOIN site_user_state hl ON hl.site_id = reach.ancestor_id
-           WHERE va.asset_id = p.asset_id AND hl.user_id = p.user_id AND hl.hidden = 1)
+OR (EXISTS (SELECT 1 FROM site_user_state hz WHERE hz.user_id = p.user_id AND hz.hidden = 1)
+    AND EXISTS (SELECT 1 FROM (<<FILE_SITES>>) up JOIN site_user_state hl ON hl.site_id = up.site_id
+                 WHERE hl.user_id = p.user_id AND hl.hidden = 1))
 OR EXISTS (SELECT 1 FROM photo_set_items vp
             JOIN photo_set_user_state hs ON hs.photo_set_id = vp.photo_set_id
            WHERE vp.asset_id = p.asset_id AND hs.user_id = p.user_id AND hs.hidden = 1)
 OR EXISTS (SELECT 1 FROM song_files vs
             JOIN song_user_state hg ON hg.song_id = vs.song_id
            WHERE vs.asset_id = p.asset_id AND hg.user_id = p.user_id AND hg.hidden = 1)""",
-    SITE_REACH=SITE_REACH,
+    FILE_SITES=_FILE_SITES,
 )
 
 #: THE LADDER, as one expression over three bit columns of one alias: whether a user may see a file.
@@ -877,9 +874,8 @@ def ladder_restricts(alias: str) -> str:
 PAIRS = "<<PAIRS>>"
 
 # The rows for a set of pairs. A pair is kept when the file is somewhere and the ladder admits the
-# user; `concealed` is the vault's answer for that user. The ladder: a restrict on anything the file
-# belongs to wins, then the item's own grant, then where the copies sit, then whether any membership
-# shares it. See `LADDER_ADMITS`.
+# user; `concealed` is the vault's answer for that user (see `LADDER_ADMITS`). `LIMIT -1` keeps `x`
+# whole, so each pair's bits are worked out once rather than once per read in the ladder.
 _VERDICT_ROWS = splice(
     """
 SELECT x.user_id, x.asset_id,
@@ -892,7 +888,8 @@ SELECT x.user_id, x.asset_id,
                CASE WHEN {{HIDDEN_BY_MEMBERSHIP}} THEN 1 ELSE 0 END AS lv
           FROM (<<PAIRS>>) p
           JOIN users u ON u.id = p.user_id
-         WHERE EXISTS (SELECT 1 FROM asset_locations al WHERE al.asset_id = p.asset_id)) x
+         WHERE EXISTS (SELECT 1 FROM asset_locations al WHERE al.asset_id = p.asset_id)
+         LIMIT -1) x
  WHERE x.role = 'admin'
     OR {{LADDER}} = 1""",
     LADDER=ladder_admits("x"),
@@ -907,7 +904,6 @@ if _VERDICT_ROWS.count(PAIRS) != 1:  # pragma: no cover (an edit that broke the 
     raise RuntimeError("the verdict statement must take its pairs in exactly one place")
 
 
-#: The staged pairs, which is where every step of a recompute reads them from.
 _STAGED = "SELECT user_id, asset_id FROM visibility_pending"
 
 _CLEAR_PENDING = "DELETE FROM visibility_pending"
@@ -1197,10 +1193,9 @@ def _each_kind(
 #: trigger runs in the same transaction with the same conflict handling, so writing one row here
 #: runs the step's statements exactly as if they were written in place.
 #:
-#: That is what keeps the schema small. Every half reads only the staged pairs, never the
-#: trigger's own row, so written in place they were the same text in every trigger that ran them,
-#: and every connection parses the whole schema before its first statement and again after any
-#: change to it. One copy of each step, called from each trigger, is the same rules parsed once.
+#: That keeps the schema small: every half reads only the staged pairs, so in place they were the
+#: same text in every trigger, and every connection parses the whole schema; one copy of each step
+#: is the same rules parsed once.
 RECOMPUTE = "visibility_recompute"
 
 _CREATE_RECOMPUTE = (
@@ -1247,10 +1242,14 @@ class _Recompute:
         return [_CLEAR_PENDING, _filled(_STAGE_PAIRS, PAIRS=pairs), *self.take()], self.give()
 
     def whole(self, pairs: str) -> list[str]:
-        """The statements that bring the rows for these pairs up to date: stage them, take their
-        counts away, drop them, work out their places, re-decide them, give the counts back."""
+        """The statements that bring the rows for these pairs up to date around a change that
+        moves no membership: stage them, decide them and let go the ones whose answer stands
+        (`visibility_settled`), take the rest's counts away, give the new ones back."""
         before, after = self.split(pairs)
-        return before + after
+        if self.version_13:
+            return before + after
+        steps = (visibility_settled.SETTLE, "take", visibility_settled.SETTLED)
+        return [*before[:2], *(_filled(_RUN, STEP=step) for step in steps)]
 
     def user(self, user: str) -> list[str]:
         """Every file for one user re-decided from nothing (see `rebuilt`), by a call."""
@@ -1873,11 +1872,9 @@ def _triggers(halves: _Recompute, watched: Sequence[Counted]) -> list[tuple[str,
         for kind, members in _MEMBERS_OF.items():
             kinds[kind] = halves.whole(members.format(user=user, object=obj))
         for kind, body in kinds.items():
-            # THE KIND, in the trigger's name AND in what it watches for: the STORED spelling of
-            # `object_type`. A trigger watching for a value no row carries never fires, and
-            # nothing fails: a share simply stops changing what anybody can see. The access
-            # component's version 4 step rewrote the older word for a Site in the rows and the
-            # CHECK, and the three triggers that carried the old name are retired below.
+            # THE KIND, in the name AND the guard: the STORED spelling of `object_type`, since a
+            # trigger watching for a value no row carries never fires and a share silently stops
+            # changing anything (access version 4 rewrote a Site's older word; see the retired).
             name = "vis_acl_grants_" + event.lower() + "_" + kind + tail
             when = row + ".object_type = '" + kind + "'"
             if event == "UPDATE" and not halves.version_13:
@@ -1936,11 +1933,12 @@ def _triggers(halves: _Recompute, watched: Sequence[Counted]) -> list[tuple[str,
 
     # The steps every trigger above calls, each written once (see `RECOMPUTE`).
     if not halves.version_13:
-        made += panel.emptied
+        made += panel.emptied + visibility_walls.triggers()
         for step, body in (
             ("take", halves.taken),
             ("give", panel.given),
             ("user", halves.rebuilt("NEW.user_id")),
+            *visibility_settled.steps(panel.given),
         ):
             name = "vis_recompute_" + step
             add(
@@ -2055,10 +2053,8 @@ RETIRED_TRIGGERS = (
     "vis_stats_insert",
     "vis_stats_delete",
     "vis_stats_update",
-    # The eight the storage rename moved. A database upgraded across catalog version 50 has them
-    # under these names, on the renamed tables, with bodies SQLite rewrote as it renamed, so they
-    # are live triggers this build does not know, and `keep_true` would report one every boot and
-    # rebuild every stored answer for ever. Named here, they are dropped instead.
+    # The eight the storage rename moved (catalog version 50): live under these names on the renamed
+    # tables, so `keep_true` would rebuild every answer at every boot. Named here, they are dropped.
     "vis_accounts_platform",
     "vis_platforms_parent",
     "vis_acl_grants_insert_platform",
@@ -2174,6 +2170,8 @@ async def refresh_everything(connection: Connection) -> None:
     two million times when one GROUP BY says the same thing afterwards.
     """
     await _drop_triggers(connection)
+    for table in (visibility_walls.CREATE, visibility_settled.CREATE):
+        await connection.execute(table)
     await connection.execute(_CLEAR_ANCESTRY)
     await connection.execute(_FILL_ANCESTRY)
     await connection.execute(_CLEAR_PENDING)
@@ -2186,6 +2184,7 @@ async def refresh_everything(connection: Connection) -> None:
     await connection.execute(_FILL_STATS)
     await connection.execute(_CLEAR_ENTITY_COUNTS)
     await connection.execute(_built().fill_every_entity_count)
+    await visibility_walls.fill(connection)
     await connection.execute(_CLEAR_PAIR_COUNTS)
     await connection.execute(_built().fill_every_pair_count)
     await connection.execute(_CLEAR_PARTNER_COUNTS)
@@ -2193,12 +2192,9 @@ async def refresh_everything(connection: Connection) -> None:
     await _create_triggers(connection)
 
 
-# What is stored, compared with what the facts say. Empty when the two agree. Read by the gate
-# that proves the triggers, and by a check over a whole library.
-#
-# The expected rows go into a temporary table first. Written as one statement with the recompute
-# as a common table expression referenced twice, the engine re-runs it per row of the second
-# comparison, which turns a check of seconds into one of minutes and a gigabyte.
+# What is stored, compared with what the facts say: empty when the two agree. The expected rows go
+# into a temporary table first: as a CTE read twice, the engine re-runs it per row of the second
+# comparison, a check of seconds turned into one of minutes and a gigabyte.
 _EXPECTED_ROWS = _filled(
     "CREATE TEMP TABLE visibility_expected AS <<ROWS>>",
     ROWS=_filled(_VERDICT_ROWS, PAIRS=_EVERY_USER_EVERY_FILE),
@@ -2313,6 +2309,7 @@ async def differences(connection: Connection) -> list[tuple[str, str, str | None
             _built().entity_count_differences,
             _built().pair_count_differences,
             _PARTNER_COUNT_DIFFERENCES,
+            visibility_walls.DIFFERENCES,
         ):
             rows = await connection.execute_fetchall(statement)
             found.extend(
@@ -2366,6 +2363,9 @@ async def initialize(connection: Connection, on_disk: int) -> None:
     # Version 16: the Filter panel's kinds counted (every step above counted them already).
     if on_disk == 15:
         await visibility_panel.count_the_panel(connection)
+    # Version 17: the walls' totals, from the stored counts.
+    if 0 < on_disk < 17:
+        await visibility_walls.total_the_walls(connection)
 
 
 async def _add_columns(connection: Connection, table: str, columns: Sequence[str]) -> None:

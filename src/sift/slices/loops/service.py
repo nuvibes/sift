@@ -17,7 +17,6 @@ import time
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 
-from sift.kernel.audience import Audience
 from sift.kernel.changes import About, telling, who_may_see_a_file
 from sift.kernel.db import Database, Row
 from sift.kernel.ids import new_id
@@ -25,13 +24,6 @@ from sift.kernel.log import get_logger
 from sift.kernel.wiring import Part
 
 log = get_logger(__name__)
-
-
-async def _whoever_may_see(database: Database) -> Audience:
-    """Every admin and every user given anything. Read before the write, so `telling` still says
-    nothing when no row moved."""
-    async with database.read() as connection:
-        return await who_may_see_a_file(connection)
 
 
 class Refused(ValueError):
@@ -189,7 +181,7 @@ class LoopService:
         given rather than refused, which is the honest reading of "we do not know how long this is".
         """
         self._check(start_ms, end_ms, duration_ms)
-        async with telling(self._db, await _whoever_may_see(self._db), About.LIBRARY) as connection:
+        async with telling(self._db, who_may_see_a_file, About.LIBRARY) as connection:
             rows = list(
                 await connection.execute_fetchall(
                     _INSERT,
@@ -239,7 +231,7 @@ class LoopService:
             raise Refused("a loop cannot end after the file does")
 
     async def rename(self, loop_id: str, name: str | None) -> Loop | None:
-        async with telling(self._db, await _whoever_may_see(self._db), About.LIBRARY) as connection:
+        async with telling(self._db, who_may_see_a_file, About.LIBRARY) as connection:
             rows = list(await connection.execute_fetchall(_RENAME, (name, loop_id)))
         return loop_from_row(rows[0]) if rows else None
 
@@ -255,7 +247,7 @@ class LoopService:
         """
         if not loop_ids:
             return 0
-        async with telling(self._db, await _whoever_may_see(self._db), About.LIBRARY) as connection:
+        async with telling(self._db, who_may_see_a_file, About.LIBRARY) as connection:
             gone = 0
             for loop_id in loop_ids:
                 cursor = await connection.execute(_DELETE, (loop_id,))
@@ -280,7 +272,7 @@ class LoopService:
         Ordered the other way round (removing before the new row exists), an insert that failed
         would leave a library with neither the mark nor the clip on the wall.
         """
-        async with telling(self._db, await _whoever_may_see(self._db), About.LIBRARY) as connection:
+        async with telling(self._db, who_may_see_a_file, About.LIBRARY) as connection:
             marks = list(
                 await connection.execute_fetchall(_SUPERSEDED, (asset_id, start_ms, end_ms))
             )
@@ -298,7 +290,7 @@ class LoopService:
         return len([row for row in marks if str(row["id"]) != into])
 
     async def set_tag(self, loop_id: str, tag_id: str, *, on: bool) -> None:
-        async with telling(self._db, await _whoever_may_see(self._db), About.LIBRARY) as connection:
+        async with telling(self._db, who_may_see_a_file, About.LIBRARY) as connection:
             if on:
                 await connection.execute(_SET_TAG, (loop_id, tag_id, self._now()))
             else:

@@ -22,7 +22,13 @@ from sift.kernel.db import Database
 from sift.kernel.jobs import WAITED_ON_PRIORITY, JobQueue
 from sift.kernel.jobs.quiet_hours import AT_NOW
 from sift.kernel.log import get_logger
-from sift.slices.search.jobs import ASSET_IDS, FTS_REINDEX, IDS_PER_JOB, rebuild_pending
+from sift.slices.search.jobs import (
+    ASSET_IDS,
+    FTS_REINDEX,
+    FTS_REINDEX_FILES,
+    IDS_PER_JOB,
+    rebuild_pending,
+)
 
 logger = get_logger(__name__)
 
@@ -74,7 +80,7 @@ class Reindexer:
             return
         try:
             await self._queue.enqueue_many(
-                FTS_REINDEX,
+                FTS_REINDEX_FILES,
                 [{ASSET_IDS: ids[at : at + IDS_PER_JOB]} for at in range(0, len(ids), IDS_PER_JOB)],
                 priority=WAITED_ON_PRIORITY,
                 at=AT_NOW,

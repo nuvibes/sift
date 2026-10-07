@@ -92,6 +92,8 @@
 	const RECAPS_NAMED = 6;
 
 	let answer = $state<InsightsPage | null>(null);
+	/* Bumped when a period's answer lands, never by a re-read: the groups arrive (and count) on it. */
+	let arrival = $state(0);
 	let failed = $state(false);
 	let loading = $state(true);
 
@@ -110,6 +112,7 @@
 			.then((found) => {
 				if (!current) return;
 				answer = found;
+				arrival += 1;
 				loading = false;
 			})
 			.catch(() => {
@@ -261,7 +264,7 @@
 		{:else if answer}
 			<div class="answer" class:stale={loading} aria-busy={loading}>
 				<Statements lines={lead} lead />
-				{#each groups as group, order (`${data.period}-${data.at}-${group.id}`)}
+				{#each groups as group, order (`${arrival}-${group.id}`)}
 					<div
 						class="group"
 						class:pair={group.kind === 'pair'}

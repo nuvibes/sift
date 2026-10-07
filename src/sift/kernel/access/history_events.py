@@ -40,6 +40,7 @@ the reading side, and these three functions are what it reads.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from typing import Final
@@ -351,6 +352,32 @@ UNION
     NOTHING_HIDDEN=NOTHING_HIDDEN,
 )
 
+#: The newest event naming each of several things of one kind, from both sides as `_OF_ENTITY`:
+#: one statement for a page that shows when each last happened.
+_LATEST_OF_ENTITIES = splice(
+    """
+SELECT * FROM (
+  SELECT named.*,
+         ROW_NUMBER() OVER (PARTITION BY named.entity ORDER BY named.at DESC, named.id DESC) AS nth
+    FROM (
+{{COLUMNS}}, s.subject_id AS entity
+  FROM workbench_decision_subjects s
+  JOIN workbench_decisions d ON d.id = s.decision_id
+ WHERE s.kind = :kind AND s.subject_id IN (SELECT value FROM json_each(:subjects))
+{{NOTHING_HIDDEN}}
+UNION
+{{COLUMNS}}, d.object_id AS entity
+  FROM workbench_decisions d
+ WHERE d.object_kind = :kind AND d.object_id IN (SELECT value FROM json_each(:subjects))
+{{NOTHING_HIDDEN}}
+    ) named
+)
+ WHERE nth = 1
+""",
+    COLUMNS=_EVENT_COLUMNS,
+    NOTHING_HIDDEN=NOTHING_HIDDEN,
+)
+
 #: What the feed was filtered to, where it was filtered at all.
 #:
 #: Both halves are written as "the parameter was not given OR it matches", so ONE statement answers
@@ -506,6 +533,20 @@ async def events_of_entity(
         {**verdict_of(viewer), "kind": kind, "subject": entity_id, "limit": _kept(limit)},
     )
     return await objects_named(database, [_event(row) for row in rows])
+
+
+async def latest_events_of_entities(
+    database: Database, viewer: Viewer, kind: SubjectKind, entity_ids: Sequence[str]
+) -> dict[str, LedgerEvent]:
+    """The newest event naming each of these things, by id; one with none is absent."""
+    if not entity_ids:
+        return {}
+    rows = await database.fetch_all(
+        _LATEST_OF_ENTITIES,
+        {**verdict_of(viewer), "kind": kind, "subjects": json.dumps(sorted(set(entity_ids)))},
+    )
+    named = await objects_named(database, [_event(row) for row in rows])
+    return {str(row["entity"]): event for row, event in zip(rows, named, strict=True)}
 
 
 async def events_recent(

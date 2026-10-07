@@ -27,7 +27,7 @@ from sift.kernel.audience import EVERY_ADMIN
 from sift.kernel.changes import About, announce_now, telling
 from sift.kernel.content import ROOT_REL_PATH, FolderRow, LibraryStore, Root, RootKind
 from sift.kernel.content.mounts import is_remote
-from sift.kernel.db import Database, Params, Row
+from sift.kernel.db import Database, IntegrityError, Params, Row
 from sift.kernel.filenames import InvalidFilename, check_folder_name
 from sift.kernel.ids import new_id
 from sift.kernel.ingress import IngressRejected
@@ -71,6 +71,17 @@ def _folder_on_disk(base: Path, rel_path: str) -> Path | None:
             f"There's already something called \"{at.name}\" in that folder, and it isn't a folder."
         )
     return _inside(base, rel_path)
+
+
+async def _put_back(source: Path, destination: Path) -> str:
+    """A move the rows refused, undone on the disk so the two still agree, and said either way."""
+    try:
+        await move_directory(destination, source)
+    except LibraryWriteRefused:
+        return "Sift moved the folder but couldn't record where it went. Rescan this library."
+    return (
+        "Sift couldn't record that move, so the folder is back where it was. Rescan this library."
+    )
 
 
 # One row per path. A file that changed since it was refused overwrites its own row rather than
@@ -324,11 +335,13 @@ class LibraryService:
         destination = await asyncio.to_thread(_inside, base, rel_path)
         await move_directory(source, destination)
 
-        moved = await self._library.move_folder(folder, rel_path, actor=actor)
+        try:
+            moved = await self._library.move_folder(folder, rel_path, actor=actor)
+        except IntegrityError:
+            # A file already recorded at the new path, left by an earlier walk.
+            moved = None
         if moved is None:
-            raise LibraryWriteRefused(
-                "Sift moved the folder but couldn't record where it went. Rescan this library."
-            )
+            raise LibraryWriteRefused(await _put_back(source, destination))
         await self.move_rejections(
             root_id=root.id, old_rel_path=folder.rel_path, new_rel_path=rel_path
         )
@@ -472,6 +485,10 @@ class LibraryService:
     async def forget_rejection(self, *, root_id: str, rel_path: str) -> None:
         """The file at this path is readable now, or is gone. Either way the refusal is stale."""
         await self._say(_FORGET_REJECTION, (root_id, rel_path))
+
+    async def adopt_locations(self, folder: FolderRow) -> None:
+        """Give a folder row the present files directly in it that have no folder."""
+        await self._library.adopt_locations(folder)
 
     async def move_rejections(self, *, root_id: str, old_rel_path: str, new_rel_path: str) -> None:
         """A folder moved, so what it was refusing moved with it. See `_MOVE_REJECTIONS`."""

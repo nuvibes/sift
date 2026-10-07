@@ -93,6 +93,14 @@ SILENT: dict[str, str] = {
     # landed, which is the one moment the size on the settings screen is right.
     "semantic.store._delete_in_batches": "a batch of `clear`, which announces when all have landed",
     "semantic.store._forget_in_batches": "a batch of `clear`, which announces when all have landed",
+    # The passes' kept counts: folded forward from the files marked since the last read. The
+    # counts are what a screen reads, and the read that folds them is the one that announces.
+    "kernel.content.backlog.totals": "folds the kept counts forward; the rows are not drawn",
+    "kernel.content.backlog._ensure": "folds the kept counts forward; the rows are not drawn",
+    "kernel.content.backlog._build": "folds the kept counts forward; the rows are not drawn",
+    # A long pass's kept price, written as its run closes: the run's own close announces, and the
+    # jobs page re-reads the price with it.
+    "kernel.jobs.ledger._keep_prices": "written as a run closes, whose close announces",
     # Sessions and credentials. These decide whether a request is answered at all; a screen drawing
     # them would be a screen showing somebody's session tokens.
     "auth.admin_cli.reset_password": (

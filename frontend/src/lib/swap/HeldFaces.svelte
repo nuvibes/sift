@@ -15,7 +15,7 @@
 	 */
 	import { Button } from '$lib/components/common';
 	import { addHeldFaces, heldFaces } from '$lib/components/swap/swap';
-	import { readingAbout } from '$lib/entity/subject.svelte';
+	import { primedOr, readingAbout } from '$lib/entity/subject.svelte';
 	import { counted } from '$lib/entity/entity-counts';
 	import { session } from '$lib/shell/session.svelte';
 	import { toasts } from '$lib/shell/toasts.svelte';
@@ -36,7 +36,7 @@
 
 	const held = readingAbout<number>(
 		() => personId,
-		async (id) => (session.isAdmin ? (await heldFaces(id)).waiting : 0),
+		async (id) => (session.isAdmin ? (await primedOr('held', id, () => heldFaces(id))).waiting : 0),
 		0,
 		() => asked
 	);

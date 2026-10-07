@@ -8,7 +8,7 @@ import pytest
 # Imported for its side effect: registering the stash-boxes' tables.
 import sift.slices.stash_boxes.schema  # noqa: F401
 from sift.kernel.access.history import Actor
-from sift.kernel.access.history_person import history_count_of_person, history_of_person
+from sift.kernel.access.history_person import history_of_person
 from sift.kernel.db import Database
 from sift.testing.fixtures import Actors, World
 
@@ -34,4 +34,3 @@ async def test_a_person_a_box_made_is_said_to_be_made_by_that_box(
     events = await history_of_person(temp_db, actors.admin, world.person)
 
     assert [one.actor_name for one in events if one.actor is Actor.STASH_BOX] == ["StashDB"]
-    assert await history_count_of_person(temp_db, actors.admin, world.person) == len(events)

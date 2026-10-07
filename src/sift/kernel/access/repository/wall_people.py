@@ -12,8 +12,11 @@ from sift.kernel.access.repository.walls import (
     _row_narrowed,
     _wall,
     _with_stored_counts,
+    hidden_by,
     locked_tile,
     one_row,
+    ordered,
+    plain_total,
     shown,
 )
 from sift.kernel.access.sites import SITE_CONCEALED, SITE_REACH
@@ -380,20 +383,34 @@ _PEOPLE = _wall(_VISIBLE_PEOPLE, "_VISIBLE_PEOPLE")
 PEOPLE_POSITION = _position(_PEOPLE)
 _PEOPLE_HEAD, _PEOPLE_ACCESS = _cut(_VISIBLE_PEOPLE, "_VISIBLE_PEOPLE")
 _PEOPLE_STORED = _with_stored_counts(_VISIBLE_PEOPLE, "_VISIBLE_PEOPLE")
+#: The plain wall: its total off the stored totals (`plain_total`).
+_PEOPLE_PLAIN = ordered(
+    plain_total(
+        _PEOPLE_STORED,
+        "_PEOPLE_STORED",
+        "person",
+        "people",
+        hidden_by("person_user_state", "person_id"),
+        "person_user_state",
+    ),
+    "_PEOPLE_PLAIN",
+)
 
 #: One person by id, as the unfiltered wall reads it: what a cover or a page asks before it
 #: answers, at one row's cost (`one_row`).
 PERSON_BY_ID = one_row(_PEOPLE_STORED, "_PEOPLE_STORED", "person", "p", "person_id")
 
 
-def people_query(where: str, rows: str = _NOTHING) -> str:
+def people_query(where: str, rows: str = _NOTHING, *, plain: str | None = None) -> str:
     """People this viewer may know about, counted over only the files a filter reaches.
 
     `rows` filters the PEOPLE themselves (red-haired, born in the eighties) and composes with
     the file filter rather than competing with it. See `_row_narrowed`.
     """
     if not _narrowed(where):
-        return _row_narrowed(_PEOPLE_STORED, rows)
+        return _row_narrowed(
+            _PEOPLE_PLAIN[plain] if plain and not _narrowed(rows) else _PEOPLE_STORED, rows
+        )
     return _row_narrowed(_filtered(_PEOPLE_HEAD, _PEOPLE_ACCESS, where), rows)
 
 

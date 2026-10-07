@@ -9,6 +9,10 @@ to hand it.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
+from typing import Any
+
 import pytest
 
 # Imported for their side effect: registering the tables the picture-reading pass, the record and
@@ -16,6 +20,7 @@ import pytest
 import sift.slices.stash_boxes.schema
 import sift.slices.watermarks.schema
 import sift.slices.workbench.schema  # noqa: F401
+from sift.kernel import db
 from sift.kernel.access import catalog
 from sift.kernel.access.catalog import (
     COPIED,
@@ -369,6 +374,29 @@ async def test_an_attribution_carries_onto_copies_once_and_comes_back_off(
         )
     assert removed == 2
     assert (await catalog.attribution_of_files(temp_db, [world.twin]))[world.twin] == []
+
+
+async def test_the_attribution_of_any_number_of_files_is_two_statements(
+    temp_db: Database, world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Who is named and where each file is filed: one read each, however many files are asked."""
+    heard: list[str] = []
+    judged = db._judged
+
+    @contextmanager
+    def counted(stage: str, statement: Any, *rest: Any, **options: Any) -> Iterator[Any]:
+        heard.append(db.statement_name(statement))
+        with judged(stage, statement, *rest, **options) as timing:
+            yield timing
+
+    monkeypatch.setattr(db, "_judged", counted)
+    many = [world.solo, *(new_id() for _ in range(1_200))]
+
+    carried = await catalog.attribution_of_files(temp_db, many)
+
+    assert len(heard) == 2
+    assert len(carried) == len(many)
+    assert [one.kind for one in carried[world.solo]] == ["person", "username"]
 
 
 # --- kept local, and what has been enriched when --------------------------------------------------

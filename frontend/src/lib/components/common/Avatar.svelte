@@ -119,7 +119,7 @@
 	/* Bare only where it means something. See `bare`. */
 	const bareMark = $derived(bare && mark && shape === 'face');
 
-	const initial = $derived(name.trim().charAt(0).toUpperCase() || '?');
+	const initial = $derived(name.trim().charAt(0).toUpperCase());
 
 	/* Which of the two addresses is being tried. Reset whenever the first one changes, so a cover
 	   that was replaced is asked for again rather than staying on whatever it fell back to. */

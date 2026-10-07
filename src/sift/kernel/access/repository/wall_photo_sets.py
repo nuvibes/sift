@@ -12,8 +12,11 @@ from sift.kernel.access.repository.walls import (
     _row_narrowed,
     _wall,
     _with_stored_counts,
+    hidden_by,
     locked_tile,
     one_row,
+    ordered,
+    plain_total,
     shown,
 )
 from sift.kernel.sql_splice import splice
@@ -247,6 +250,18 @@ _PHOTO_SETS = _wall(_VISIBLE_PHOTO_SETS, "_VISIBLE_PHOTO_SETS")
 PHOTO_SETS_POSITION = _position(_PHOTO_SETS)
 _PHOTO_SETS_HEAD, _PHOTO_SETS_ACCESS = _cut(_VISIBLE_PHOTO_SETS, "_VISIBLE_PHOTO_SETS")
 _PHOTO_SETS_STORED = _with_stored_counts(_VISIBLE_PHOTO_SETS, "_VISIBLE_PHOTO_SETS")
+#: The plain wall: its total off the stored totals (`plain_total`).
+_PHOTO_SETS_PLAIN = ordered(
+    plain_total(
+        _PHOTO_SETS_STORED,
+        "_PHOTO_SETS_STORED",
+        "photo_set",
+        "photo_sets",
+        hidden_by("photo_set_user_state", "photo_set_id"),
+        "photo_set_user_state",
+    ),
+    "_PHOTO_SETS_PLAIN",
+)
 
 #: One photo set by id, as the unfiltered wall reads it: what a cover or a page asks before it
 #: answers, at one row's cost (`one_row`).
@@ -255,13 +270,15 @@ PHOTO_SET_BY_ID = one_row(
 )
 
 
-def photo_sets_query(where: str, rows: str = _NOTHING) -> str:
+def photo_sets_query(where: str, rows: str = _NOTHING, *, plain: str | None = None) -> str:
     """Photo sets this viewer may know about, counted over only the files a filter reaches.
 
     `rows` filters the sets themselves; a set has one facet and it is admin-only.
     """
     if not _narrowed(where):
-        return _row_narrowed(_PHOTO_SETS_STORED, rows)
+        return _row_narrowed(
+            _PHOTO_SETS_PLAIN[plain] if plain and not _narrowed(rows) else _PHOTO_SETS_STORED, rows
+        )
     return _row_narrowed(_filtered(_PHOTO_SETS_HEAD, _PHOTO_SETS_ACCESS, where), rows)
 
 

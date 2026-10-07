@@ -21,11 +21,8 @@ which the gate below holds to that listing. Never `facet_counts` or a count writ
 populations drift apart with nothing on screen to say which one is lying. A subject this viewer may
 not be shown is counted off the listings alone.
 
-**History keeps that rule the hard way.** A thread is not a table: it is several statements
-grouped by day, capped and sorted, so there is no statement that counts what it comes to, and one
-that counted rows would be wrong by however many files were tagged in an afternoon. The count is
-therefore the length of the thread itself, at the cap the pane opens with. See
-`history_count_of_entity`.
+History is not counted here. Its number is the length of the thread its own request answers, which
+the page asks beside this one, so the strip never waits on the walk a thread is.
 
 The gate `test_every_count_hides_what_the_vault_hides` fetches each of these numbers over HTTP
 beside the list its own tab draws, with the vault shut, and refuses any that is larger.
@@ -35,13 +32,6 @@ beside the list its own tab draws, with the vault shut, and refuses any that is 
 Every LISTING is the scoped one, so a count is over what this viewer may be shown and nothing else.
 A tag on Jane's page reading "12" is twelve of the files this user may see: reporting the
 library's number instead would publish the size of the set the whole model is keeping back.
-
-**History is the exception, and it has to be.** The reads behind a thread are unscoped by design
-and rely on the caller having resolved the subject first, which is what every `.../history` route
-does. So the subject is resolved first, by one by-id visibility read, and History answers
-nothing at all where it fails. See `_history`. Without it the one number here that is not about
-files would say a hidden tag has twelve things recorded against it while every wall beside it said
-nought.
 """
 
 from __future__ import annotations
@@ -64,9 +54,6 @@ from sift.kernel.access import (
     Viewer,
     related_filter,
 )
-from sift.kernel.access.history_entity import history_count_of_entity
-from sift.kernel.access.history_person import history_count_of_person
-from sift.kernel.db import Database
 from sift.kernel.seams import DisagreementSeam
 from sift.slices.auth import current_viewer
 from sift.slices.related.models import RelatedCounts
@@ -175,7 +162,6 @@ async def related_counts(
     kind: str,
     entity_id: str,
     access: Annotated[Repository, Depends(wiring.access)],
-    database: Annotated[Database, Depends(wiring.database)],
     viewer: Annotated[Viewer, Depends(current_viewer)],
     waiting: Annotated[DisagreementSeam, Depends(_disagreement_seam)],
 ) -> RelatedCounts:
@@ -207,7 +193,6 @@ async def related_counts(
                 setattr(counts, wall, cells[wall])
         rest = [wall for wall in wanted if wall != "files" and wall not in cells]
         await _count_by_listing(counts, rest, kind, entity_id, access, viewer, subject=subject)
-    counts.history = await _history(database, viewer, kind, entity_id, subject)
     # The mark beside History, deliberately not one of the `walls`: each of those is counted off
     # the listing its tab draws. This is a question about the RECORD (where a stash-box disagrees
     # with it), asked through a seam because it is another slice's.
@@ -295,38 +280,6 @@ async def _count_by_listing(
 
     for wall in wanted:
         setattr(counts, wall, await walls[wall]())
-
-
-async def _history(
-    database: Database,
-    viewer: Viewer,
-    kind: str,
-    entity_id: str,
-    subject: object | None,
-) -> int | None:
-    """How many lines this thing's History tab has, or None where it may not be shown at all.
-
-    ## Why the subject is resolved here and nowhere else in this file
-
-    Every other number on the strip comes off a SCOPED listing, so a thing this user may not be
-    shown simply counts nought and no rule has to be written. A history is not scoped that way: the
-    four reads behind it are unscoped by design and rely on the caller having resolved the subject
-    first, which is what every `/<thing>/{id}/history` route does and what this has to do too.
-    Left out, the one number on this strip that is not about files would say a hidden tag has twelve
-    things recorded against it while every wall beside it said nought.
-
-    None rather than nought for a subject that cannot be shown, and the difference matters on this
-    field: nought means the tab is there and empty, and None means the client draws no number,
-    which is what it already does for a wall this page has not got. A guest is told the same thing
-    by an id that was never minted.
-
-    `subject` is the route's one by-id read, the lookup the subject's own page has already made.
-    """
-    if subject is None:
-        return None
-    if kind == "person":
-        return await history_count_of_person(database, viewer, entity_id)
-    return await history_count_of_entity(database, viewer, kind, entity_id)
 
 
 async def _total(page: Coroutine[Any, Any, Any]) -> int:

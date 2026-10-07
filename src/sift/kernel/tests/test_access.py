@@ -825,6 +825,27 @@ async def test_a_deleted_object_takes_its_grants_with_it(
     assert await access.can_view(actors.guest, world.solo) is False
 
 
+async def test_a_deleted_objects_grants_move_only_their_holders_pictures(
+    access: Repository, actors: Actors, world: World, temp_db: Database
+) -> None:
+    """Only a user a grant named sees differently once the object goes; nobody else re-fetches."""
+    bystander = await create_user(temp_db, Role.GUEST)
+    await access.grant(ObjectType.TAG, world.tag, actors.guest.id, Effect.SHARE)
+
+    async def stamps() -> dict[str, int]:
+        rows = await temp_db.fetch_all("SELECT id, cache_stamp FROM users")
+        return {str(row["id"]): int(row["cache_stamp"]) for row in rows}
+
+    before = await stamps()
+    await access.forget_object(ObjectType.TAG, world.tag)
+    await access.forget_object(ObjectType.PERSON, world.tag)
+    after = await stamps()
+
+    moved = {user for user, stamp in after.items() if stamp != before[user]}
+    assert moved == {actors.guest.id}
+    assert bystander.id not in moved
+
+
 async def test_who_one_object_is_shared_with_reads_back_both_effects(
     access: Repository, actors: Actors, world: World, temp_db: Database
 ) -> None:

@@ -166,6 +166,7 @@
 		screenBar.publish(mine, {
 			filterable: true,
 			subject: 'collection',
+			count: collections.loaded ? collections.total : undefined,
 			resizable: true,
 			playable: "A cover is a still, and a still doesn't play",
 			sorts: [...COLLECTION_ORDERS],
@@ -382,8 +383,8 @@
 		/>
 	{/snippet}
 
-	<!-- Beside the title, so the line coming and going moves nothing under it. -->
-	{#snippet beside()}
+	<!-- After the count, so the line coming and going moves nothing. -->
+	{#snippet status()}
 		{#if held.waiting > 0}
 			<Button size="small" tone="secondary" icon="arrow_upward" onclick={() => held.letIn()}>
 				{held.waiting.toLocaleString()}

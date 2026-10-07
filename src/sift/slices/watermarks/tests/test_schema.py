@@ -12,6 +12,7 @@ import pytest
 import sift.slices.workbench.schema  # noqa: F401
 from sift.kernel.access import catalog
 from sift.kernel.access.catalog import MADE_BY_A_PERSON
+from sift.kernel.content import backlog
 from sift.kernel.db import Connection, Database
 from sift.slices.watermarks import schema, weights
 from sift.slices.watermarks.store import Store
@@ -24,7 +25,10 @@ _TABLES = "SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'wa
 
 
 async def _parent(connection: Connection) -> None:
-    """The table the watermark tables point at. Foreign keys are on, so it exists first."""
+    """The tables the watermark tables point at and mark into. Foreign keys are on, so they exist
+    first."""
+    for statement in backlog.TABLES:
+        await connection.execute(statement)
     await connection.execute(
         "CREATE TABLE assets (id TEXT PRIMARY KEY, identity TEXT NOT NULL UNIQUE, "
         "media_type TEXT NOT NULL, added_at INTEGER NOT NULL)"

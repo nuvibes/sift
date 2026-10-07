@@ -30,7 +30,7 @@ def _counted(monkeypatch: pytest.MonkeyPatch) -> Iterator[Counter[str]]:
     def counting(
         stage: str, statement: str | PointRead, *rest: Any, **options: Any
     ) -> Iterator[object]:
-        if not isinstance(statement, PointRead):
+        if not isinstance(statement, PointRead) or statement.name.startswith("settings.app"):
             seen[db.statement_name(statement)] += 1
         with judged(stage, statement, *rest, **options) as timing:
             yield timing
@@ -46,6 +46,7 @@ def test_no_statement_is_asked_once_per_task(
     client.get(TASKS)
     with _counted(monkeypatch) as seen:
         assert client.get(TASKS).status_code == 200
-    # A task writing its own History line is read through History's own read, one per task.
-    history = "select:workbench_decision_subjects#"
-    assert [name for name, n in seen.items() if n > 1 and not name.startswith(history)] == []
+    # The tasks writing their own History line too: every one's newest line in one read.
+    assert [name for name, n in seen.items() if n > 1] == []
+    # Every setting the screen asks, from one reading of them.
+    assert "settings.app_value" not in seen

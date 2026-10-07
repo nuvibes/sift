@@ -241,8 +241,7 @@
 		}),
 		/* And it wears its number: the strip is a MAP of what this page can show, and one bare
 		   word on a row of numbered ones reads as a tab nobody has looked at yet. It is the
-		   count of the very thread the pane draws, at the same cap. See
-		   `history_count_of_entity`. */
+		   length of the very thread the pane draws, read beside the strip (`readThread`). */
 		{
 			id: HISTORY,
 			label: 'History',

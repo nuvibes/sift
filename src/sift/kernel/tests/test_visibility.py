@@ -21,7 +21,7 @@ from typing import Any
 
 import pytest
 
-from sift.kernel.access import Effect, ObjectType, Repository, visibility
+from sift.kernel.access import Effect, ObjectType, Repository, visibility, visibility_settled
 from sift.kernel.access.visibility import VERSION
 from sift.kernel.db import Database
 from sift.kernel.ids import new_id
@@ -310,7 +310,7 @@ def test_every_table_the_verdict_reads_carries_a_trigger() -> None:
     assert "users" in visibility.triggered_tables()
     # The statement really does declare one, so a regex that stopped matching would silently
     # widen the check rather than narrow it, which is the direction that passes quietly.
-    assert "reach_up" in set(_DECLARED.findall(text))
+    assert "up" in set(_DECLARED.findall(text))
     # ...and the tables that fragment reads are watched like any other.
     assert {"sites", "usernames", "asset_usernames"} <= visibility.triggered_tables()
     missing = sorted(read - visibility.triggered_tables())
@@ -322,13 +322,20 @@ def test_the_verdict_is_one_statement_and_every_trigger_is_it() -> None:
     this build only the shared steps write them: every other trigger calls a step."""
     verdict_shape = " ".join(visibility._VERDICT_ROWS.split()).split("FROM (<<PAIRS>>)")[0]
     built = visibility._built()
-    for form, expected in ((built.triggers, 2), (built.version_13_triggers, 40)):
-        writers = [ddl for _name, _table, ddl in form if "INSERT INTO viewer_assets" in ddl]
+    # The settled give writes what the settle step decided, which is the verdict's own text.
+    settled = "vis_recompute_" + visibility_settled.SETTLED
+    for form, expected in ((built.triggers, 3), (built.version_13_triggers, 40)):
+        writers = [
+            ddl
+            for name, _table, ddl in form
+            if ("INSERT INTO viewer_assets" in ddl and name != settled)
+            or "INSERT INTO visibility_decided" in ddl
+        ]
         assert len(writers) >= expected
         for ddl in writers:
             assert verdict_shape in " ".join(ddl.split()), "a trigger carries a different verdict"
     named = {name for name, _t, ddl in built.triggers if "INSERT INTO viewer_assets" in ddl}
-    assert named == {"vis_recompute_give", "vis_recompute_user"}
+    assert named == {"vis_recompute_give", "vis_recompute_user", settled}
 
 
 def test_the_schema_carries_each_step_once() -> None:
@@ -1085,4 +1092,37 @@ async def test_a_library_at_version_fourteen_is_given_its_running_times(
     assert await _timed(temp_db, admin, "person", world.person) == (7_000, 7_000)
     assert await _timed(temp_db, admin, "folder", world.leaf) == (9_000, 7_000)
     await temp_db.execute("UPDATE assets SET duration_ms = 9000 WHERE id = ?", (world.solo,))
+    await _nothing_differs(temp_db)
+
+
+_COUNT_ROWS_WRITTEN = (
+    "CREATE TEMP TRIGGER {name} AFTER {event} ON viewer_assets"
+    " BEGIN UPDATE rows_written SET n = n + 1; END"
+)
+
+
+async def test_a_share_that_changes_no_answer_rewrites_no_row(
+    temp_db: Database, world: World, actors: Actors
+) -> None:
+    """A grant settles first: pairs whose answer stands are let go before any row or count moves."""
+    grant = (
+        "INSERT INTO acl_grants (id, object_type, object_id, subject_user_id, effect, created_at)"
+        " VALUES (?, ?, ?, ?, ?, 0)"
+    )
+    await temp_db.execute(grant, (new_id(), "root", world.root, actors.guest.id, "share"))
+    async with temp_db.write() as connection:
+        await connection.execute("CREATE TEMP TABLE rows_written (n INTEGER NOT NULL)")
+        await connection.execute("INSERT INTO rows_written (n) VALUES (0)")
+        for name, event in (("written_in", "INSERT"), ("written_out", "DELETE")):
+            # Fixed names from the loop above: nothing from outside reaches the text.
+            # nosemgrep: sift-no-string-built-sql
+            await connection.execute(_COUNT_ROWS_WRITTEN.format(name=name, event=event))
+        await connection.execute(grant, (new_id(), "folder", world.top, actors.guest.id, "share"))
+        written = list(await connection.execute_fetchall("SELECT n FROM rows_written"))
+        assert written[0][0] == 0
+        await connection.execute(
+            grant, (new_id(), "folder", world.mid, actors.guest.id, "restrict")
+        )
+        written = list(await connection.execute_fetchall("SELECT n FROM rows_written"))
+        assert written[0][0] > 0
     await _nothing_differs(temp_db)

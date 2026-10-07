@@ -135,6 +135,7 @@
 		screenBar.publish(mine, {
 			filterable: true,
 			subject: 'tag',
+			count: tags.loaded ? tags.total : undefined,
 			resizable: true,
 			playable: "A tag is a word, and a word doesn't play",
 			sorts: [...TAG_ORDERS],
@@ -388,8 +389,8 @@
 		/>
 	{/snippet}
 
-	<!-- Beside the title, so the line coming and going moves nothing under it. -->
-	{#snippet beside()}
+	<!-- After the count, so the line coming and going moves nothing. -->
+	{#snippet status()}
 		{#if held.waiting > 0}
 			<Button size="small" tone="secondary" icon="arrow_upward" onclick={() => held.letIn()}>
 				{held.waiting.toLocaleString()}

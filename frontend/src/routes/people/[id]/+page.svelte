@@ -67,6 +67,7 @@
 	import UsernameLines from '$lib/components/entity/UsernameLines.svelte';
 	import { libraryChanges, reloadOnLibraryChange } from '$lib/library/changes.svelte';
 	import { EntitySubject } from '$lib/entity/subject.svelte';
+	import { underCover } from '$lib/people/under-cover.svelte';
 	import { entityTags } from '$lib/entity/entity-tags.svelte';
 	import { fields } from '$lib/entity/records.svelte';
 	import LinkToStashBox from '$lib/components/record/LinkToStashBox.svelte';
@@ -173,17 +174,13 @@
 	 * what the page is showing: one save at the end of a whole record is a screen's worth of boxes,
 	 * and a strip above a wall of files is not where that goes. */
 	let editing = $state(false);
-	/* The subject, and the three flags that go with fetching it, shared with every other entity
-	 * detail page rather than written out here. See `EntitySubject` for what it decides, which is
-	 * one thing: a placeholder belongs on a screen with nothing on it, so re-reading this person
-	 * leaves this person on screen.
-	 *
-	 * `follow` takes both subscriptions. The address one is obvious; the other is that sharing
-	 * something, or taking a share back, changes which files this account may see and produces no
-	 * import job to announce it. So without it the faces band would go on showing a face from a
-	 * file that had just been taken away. */
+	/* The subject and its fetching flags, shared with every entity page (`EntitySubject`): a re-read
+	 * leaves this person on screen. `follow` also hears a share given or taken back, which changes
+	 * what this account may see and announces no import job. */
 	const subject = new EntitySubject<Person>((id) => people.one(id));
 	subject.follow(() => personId);
+	/* Held until what sits under the cover answers too, so the header is drawn once (`underCover`). */
+	const cover = underCover(() => personId);
 	/* Read through a `const` so the markup keeps its narrowing. A field on a class is not narrowed
 	 * inside an event handler (the checker has to assume anything could have reassigned it since
 	 * the enclosing block was entered), and every button on this page reads a field off it. */
@@ -253,7 +250,7 @@
 			narrowedFiles = null;
 			return;
 		}
-		void narrowedFilesTotal(url, { people: person.name }).then((total) => {
+		void narrowedFilesTotal(url, { people: person.id }).then((total) => {
 			if (ask === narrowedAsk) narrowedFiles = total;
 		});
 	});
@@ -268,8 +265,7 @@
 		}),
 		/* And it wears its number: the strip is a MAP of what this page can show, and one bare
 		   word on a row of numbered ones reads as a tab nobody has looked at yet. It is the
-		   count of the very thread the pane draws, at the same cap. See
-		   `history_count_of_entity`. */
+		   length of the very thread the pane draws, read beside the strip (`readThread`). */
 		{
 			id: HISTORY,
 			label: 'History',
@@ -764,7 +760,7 @@
 	already measures that body, so there is nothing left for this page to arrange. The tall part
 	of the band, the fields, folds into a dialog; see `EntityHeader`'s `foldFields`.
 -->
-{#if subject.settling}
+{#if subject.settling || !cover.ready}
 	<Skeleton lines={3} />
 {:else if subject.unreadable}
 	<Problem
@@ -966,7 +962,7 @@
 				{#if tab === 'files'}
 					<AssetGrid
 						oncount={arrived}
-						query={{ people: person.name }}
+						query={{ people: person.id }}
 						title="Files"
 						titleLevel={2}
 						beside={tabStrip}
@@ -1080,7 +1076,7 @@
 	<PickPicture
 		bind:open={pickingPicture}
 		name={person.name}
-		query={{ people: person.name }}
+		query={{ people: person.id }}
 		current={person.cover_asset_id}
 		onpick={makeCover}
 		onupload={uploadCover}

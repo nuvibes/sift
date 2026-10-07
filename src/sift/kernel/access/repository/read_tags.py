@@ -29,6 +29,7 @@ from sift.kernel.access.repository.views import (
     _like_prefix,
     _tag_from_row,
 )
+from sift.kernel.access.repository.walls import plain_order
 from sift.kernel.access.viewer import Viewer
 from sift.kernel.paging import MAX_PAGE_SIZE
 
@@ -102,21 +103,20 @@ class TagReads(RepositoryCore):
         # ...and the wall's OWN rows, filtered by what the thing is rather than by its files. A
         # second seam beside the file filter rather than part of it; see `_row_narrowed`.
         narrowed, picked = narrowing.predicate()
+        params = self._tag_params(
+            viewer,
+            tag_id=None,
+            prefix=prefix,
+            anywhere=anywhere,
+            limit=limit,
+            offset=offset,
+            sort=sort,
+            asset_filter=asset_filter,
+            count_narrowed=count_narrowed,
+        )
         rows = await self._db.fetch_all(
-            tags_query(where, narrowed),
-            bound
-            | picked
-            | self._tag_params(
-                viewer,
-                tag_id=None,
-                prefix=prefix,
-                anywhere=anywhere,
-                limit=limit,
-                offset=offset,
-                sort=sort,
-                asset_filter=asset_filter,
-                count_narrowed=count_narrowed,
-            ),
+            tags_query(where, narrowed, plain=plain_order(params, "tag_id")),
+            bound | picked | params,
         )
         # Nothing on the page means nothing to read a total from: no tags, or past the end.
         total = int(rows[0]["total_count"]) if rows else 0

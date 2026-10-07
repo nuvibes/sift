@@ -35,7 +35,7 @@
 	import { noticeLabel, noticeWords } from '$lib/player/facts';
 	import type { PlaybackPlan } from '$lib/player/playback';
 	import { newSitting } from '$lib/player/sitting.svelte';
-	import { panelPlace, takeRecord } from '$lib/player/asset-view';
+	import { bellsRung, panelPlace, takeRecord } from '$lib/player/asset-view';
 	import { run } from '$lib/player/run.svelte';
 	import { dwell } from '$lib/player/dwell.svelte';
 	import MediaStage from '$lib/components/player/MediaStage.svelte';
@@ -134,8 +134,7 @@
 		});
 	});
 
-	/* The arrows step through whatever this was opened over, but not while somebody types, and not
-	   with a modifier (the browser's back is Alt and an arrow); Shift is the step. */
+	/* The arrows step through the run, not while typing or with a modifier; Shift is the step. */
 	function stepping(event: KeyboardEvent): boolean {
 		if (event.ctrlKey || event.metaKey || event.altKey) return false;
 		const element = event.target as HTMLElement | null;
@@ -171,8 +170,7 @@
 	/* Moves only when the file does: a re-read record is a new object (`AssetView.flash.test.ts`). */
 	const shownId = $derived(asset === null ? '' : asset.id);
 
-	/* This view offers itself to the phone whatever it shows (`offerViewer`), with the two presses
-	   about the file itself: a favourite and one more on the O counter. */
+	/* Offered to the phone whatever it shows (`offerViewer`), with a favourite and the O counter. */
 	let shownClip = $state<ReturnType<typeof Player> | null>(null);
 	let shownStill = $state<ReturnType<typeof StillView> | null>(null);
 	const offeredMarks = judge(() => ({
@@ -212,8 +210,7 @@
 
 	let failed = $state(false);
 
-	/* What to call it: the name on disk, else the name it came in under, which is the only name
-	   there is when no copy can be read. */
+	/* The name on disk, else the one it came in under: all there is when no copy can be read. */
 	const label = $derived(asset ? (asset.filename ?? asset.original_filename ?? null) : null);
 
 	/* The record form's id, unique per view, so Save can be a submit button standing outside it. */
@@ -336,8 +333,7 @@
 		rememberPopoutExpanded(expanded);
 	}
 
-	/* On a phone the stroke steps through the run, so the bar's Previous and Next stand down there,
-	   and the file's sections are a sheet from Show info rather than under the picture. */
+	/* On a phone the stroke steps, so Previous and Next stand down; the sections are a sheet. */
 	const stepButtons = $derived(!(phoneWidth.yes && finger.yes));
 	let detailsOpen = $state(false);
 	/* The sheet's sections are drawn once asked for, and kept while it slides away. */
@@ -414,10 +410,14 @@
 	/* Re-read in place, never the whole `load`, which blanks; only the queue's chatter settles. */
 	let following: ReturnType<typeof setTimeout> | undefined;
 
+	/* The band only where the jobs bell owed it: the library bell reads it on the bell itself. */
+	let bandOwed = false;
 	function followNow() {
 		clearTimeout(following);
-		void rereadRecord();
-		void band.load(id);
+		// Not again for a record asked for after the last bell, which already says what it moved.
+		if (bellsRung() !== askedAt) void rereadRecord();
+		if (bandOwed) void band.load(id);
+		bandOwed = false;
 	}
 	/* The record once a bell has settled: its re-read restarts the sitting's dwell. */
 	function followSoon() {
@@ -426,16 +426,19 @@
 	}
 	whenChanged(libraryChanges, () => (void band.load(id), followSoon()));
 	// The thread has its own settle, shared with every other bell it hears.
-	whenChanged(jobChanges, () => (thread.soon(() => id), followSoon()));
+	whenChanged(jobChanges, () => (thread.soon(() => id), (bandOwed = true), followSoon()));
 	$effect(() => () => {
 		clearTimeout(following);
 		thread.stop();
+		band.stop();
 	});
 
 	/* The record read again for the same file, put on screen only when the answer moved. */
+	let askedAt = -1;
 	async function rereadRecord() {
 		const wanted = id;
 		if (asset === null || asset.id !== wanted) return;
+		askedAt = bellsRung();
 		try {
 			const loaded = await api.get<AssetDetail>(`/assets/${wanted}`);
 			if (wanted !== id || asset === null || asset.id !== wanted) return;
@@ -467,13 +470,18 @@
 	async function load() {
 		const wanted = id;
 		failed = false;
-		band.clear();
-		/* The history goes with the file, and is asked again at once only where its pane is open. */
+		// The history goes with the file: read at once where its pane is open, else after the picture.
 		thread.reset();
 		if (recordTab === 'history') void thread.load(id, () => id);
 		const held = takeRecord(wanted);
+		askedAt = bellsRung();
+		band.step(() => {
+			void thread.load(wanted, () => id);
+			// A record found while the last file played is read again only if a bell rang since.
+			if (held?.stale) void rereadRecord();
+		});
 		try {
-			const loaded = held ?? (await api.get<AssetDetail>(`/assets/${wanted}`));
+			const loaded = held?.record ?? (await api.get<AssetDetail>(`/assets/${wanted}`));
 			// A slower request for a clip already moved on from must not overwrite a newer one.
 			if (wanted !== id) return;
 			asset = loaded;
@@ -483,11 +491,7 @@
 		} catch {
 			// A 404 covers both "gone" and "not yours", and says the same thing either way.
 			if (wanted === id) failed = true;
-			return;
 		}
-		await band.load(wanted);
-		// A record found while the last file played may be minutes old.
-		if (held !== null) void rereadRecord();
 	}
 
 	const HIDDEN = 'This one is hidden';
@@ -550,8 +554,7 @@
 			asset={asset.concealed ? undefined : { id: asset.id, filename: label ?? asset.id }}
 		>
 			{#snippet media()}
-				<!-- Asked again inside the snippet: a snippet body is a separate scope, so the check that
-			     got us into this branch does not narrow the type in here. -->
+				<!-- Asked again: a snippet body is its own scope, so the branch above does not narrow it. -->
 				{#if !asset}
 					<span></span>
 				{:else if asset.concealed}
@@ -612,7 +615,7 @@
 						}}
 						{onopen}
 						{onplayedthrough}
-						{onstarted}
+						onstarted={() => (band.pictured(), onstarted?.())}
 						{seekTo}
 						{place}
 						onplan={(next) => (plan = next)}
@@ -629,6 +632,7 @@
 						durationMs={asset.duration_ms}
 						file={asset}
 						mayNotDraw={asset.browser_may_not_draw}
+						onpicturesize={() => band.pictured()}
 						{onopen}
 						{onplayedthrough}
 						{reachedByRun}
@@ -722,7 +726,12 @@
 							rating={file.rating}
 							oCount={file.o_count}
 						/>
-						<FileActions id={shownId} filename={label} onrenamed={() => void load()}>
+						<FileActions
+							id={shownId}
+							held={band.settled !== shownId}
+							filename={label}
+							onrenamed={() => void load()}
+						>
 							{#snippet children({ canOrganize, rename, undo })}
 								<!-- One control, two doors: what somebody came to press, and the rarer verbs. A phone's
 								     bar gives each its own square, with Share and Show info between. -->
@@ -816,24 +825,21 @@
 					<!-- Full-width sections, each folding under its own heading: what it is filed under,
 					     who is in it, what looks like it, and the record. -->
 					<div class="under">
-						<FileBandRows {band} fileId={file.id} />
-						<!-- Who is in it, as faces, FIRST: the one time-linked row, since a face moves the playhead
-						     (`AssetView.under.test.ts`). -->
-						<FacesInThis
-							id={shownId}
-							seekable={file.media_type === 'video'}
-							onseek={(moment) => (seekTo = moment)}
-						/>
-
-						<!-- What else looks like this, SECOND; nothing where nothing can be compared. -->
-						<LooksLikeThis id={shownId} cannotCompare={file.fingerprint_verdict ?? null} />
-
-						<!-- The files that share a song with this one, THIRD. -->
-						<SameMusic id={shownId} name={file.title ?? label} />
-
+						<!-- These follow the picture (`band.settled`). Faces FIRST, the one time-linked row
+						     (`AssetView.under.test.ts`); what looks like it SECOND; the same song THIRD. -->
+						{#if band.settled}
+							<FileBandRows {band} fileId={band.settled} />
+							<FacesInThis
+								id={band.settled}
+								seekable={file.media_type === 'video'}
+								onseek={(moment) => (seekTo = moment)}
+							/>
+							<LooksLikeThis id={band.settled} cannotCompare={file.fingerprint_verdict ?? null} />
+							<SameMusic id={band.settled} name={file.title ?? label} />
+						{/if}
 						<FileRecordPanel
 							{file}
-							{shownId}
+							shownId={band.settled || shownId}
 							onlySite={band.onlySite}
 							bind:tab={recordTab}
 							editing={editingRecord}
@@ -873,8 +879,7 @@
 {/if}
 
 <style>
-	/* What can be done with it, directly under the stage; the name at its leading edge takes the
-	   space between the two ends (`flex-grow` on `.named`). */
+	/* What can be done with it, under the stage; the name takes the room between (`.named`). */
 	.acts {
 		display: flex;
 		align-items: center;
@@ -883,8 +888,7 @@
 		margin-block-start: var(--space-3);
 	}
 
-	/* The name and its marks, taking what the controls leave: `flex: 1 1 0` and `min-inline-size: 0`
-	   together stop a long name pushing the buttons onto a second row. */
+	/* The name and its marks: `flex: 1 1 0` and no minimum keep a long name off a second row. */
 	.named {
 		display: flex;
 		align-items: center;
@@ -905,8 +909,7 @@
 		min-inline-size: 0;
 	}
 
-	/* One line, cut with an ellipsis (the record carries it in full), at a control's ink rather than
-	   full ink. `:global`: the class is handed to `Pressable`. */
+	/* One line with an ellipsis, at a control's ink. `:global`: the class is handed to `Pressable`. */
 	.named :global(.filename) {
 		display: block;
 		min-inline-size: 0;
@@ -918,8 +921,7 @@
 		text-align: start;
 	}
 
-	/* The trailing end as ONE box, sharing the row equally with `.named` (`flex-basis: 0` on both),
-	   which puts the Expand control on the centre line; too narrow, the row wraps instead. */
+	/* The trailing end as ONE box, half the row with `.named`: Expand on the centre line. */
 	.ends {
 		display: flex;
 		align-items: center;
@@ -928,8 +930,7 @@
 		justify-content: flex-end;
 	}
 
-	/* The box the stroke is heard on. It lays nothing out on a desktop, where the stage is the
-	   dialog's child. */
+	/* The box the stroke is heard on; nothing on a desktop, where the stage is the dialog's child. */
 	.swipe {
 		display: contents;
 	}
@@ -946,8 +947,7 @@
 		min-block-size: var(--touch-target);
 	}
 
-	/* A phone's bar: one line, the controls spread across it a finger's width each, the marks' own
-	   group opened into the row. */
+	/* A phone's bar: one line, a finger's width a control, the marks' group opened into the row. */
 	.acts.fills {
 		flex-wrap: nowrap;
 		block-size: var(--topbar-height);

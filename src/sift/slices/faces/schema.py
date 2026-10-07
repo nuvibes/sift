@@ -33,11 +33,12 @@ crop cannot be rebuilt at all.
 from __future__ import annotations
 
 from sift.kernel.access.visibility import WAITING_FACES_KIND, Counted, register_counted
+from sift.kernel.content.backlog import marks
 from sift.kernel.db import Connection, register_schema_initializer
 from sift.kernel.migrations import check_allows, column_exists, widen_a_check
 
 COMPONENT = "faces"
-VERSION = 41
+VERSION = 42
 
 # Where a scan got to, per asset. The fifth status (never scanned) is the absence of a row,
 # so it cannot drift out of step with reality by being written down somewhere and not updated.
@@ -814,6 +815,10 @@ async def initialize(connection: Connection, on_disk: int) -> None:
     # reads as the pack's name and as a count nobody gave.
     if 0 < on_disk < 39:
         await _add_columns(connection, "pack_entries", _ENTRY_SOURCE_AND_COUNT)
+    await _steps_from_40(connection, on_disk)
+
+
+async def _steps_from_40(connection: Connection, on_disk: int) -> None:
     # Version 40: the folder import's left-out pictures, by file. Empty until the next import.
     if 0 < on_disk < 40:
         await connection.execute(_CREATE_FOLDER_LEFT_OUT)
@@ -822,6 +827,25 @@ async def initialize(connection: Connection, on_disk: int) -> None:
         await _add_columns(connection, "face_packs", {"library": _PACKS_LIBRARY})
         await connection.execute(_INDEX_PACKS_LIBRARY)
         await connection.execute(_CREATE_OWN_LIBRARY)
+    # Version 42: a scan marks its file for the passes' kept counts, whoever writes it.
+    if on_disk < 42:
+        for statement in _MARKS:
+            await connection.execute(statement)
+
+
+#: What a scan's settledness is read from; its status and counts move no kept count.
+_MARKS = marks(
+    "face_scans",
+    watched=(
+        "asset_id",
+        "coverage",
+        "quality_version",
+        "sampling_version",
+        "settings_digest",
+        "settings_shape",
+        "settings_density",
+    ),
+)
 
 
 async def _add_columns(connection: Connection, table: str, columns: dict[str, str]) -> None:
@@ -831,7 +855,8 @@ async def _add_columns(connection: Connection, table: str, columns: dict[str, st
             await connection.execute(statement)
 
 
-register_schema_initializer(COMPONENT, VERSION, initialize, baseline=33)
+# On the content component for the tables its marks write into.
+register_schema_initializer(COMPONENT, VERSION, initialize, depends_on=["content"], baseline=33)
 
 
 # The faces still waiting for a name, counted per user and group by the kernel's visibility

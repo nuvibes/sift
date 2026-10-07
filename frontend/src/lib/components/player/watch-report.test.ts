@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { WatchReport, type WatchPiece, type Watched } from './watch-report';
+import { LEAVING_WAIT_MS, WatchReport, type WatchPiece, type Watched } from './watch-report';
 
 /* A player whose post answers at once, or, once `hold()` is called, only when `land()` says, so
    a reply can land after the next file began. */
@@ -78,5 +78,60 @@ describe('a reply that lands after the next file began', () => {
 		await report.report();
 		expect(pieces[1]?.watch_ms).toBe(1000);
 		expect(pieces[1]?.already_reported_ms).toBeNull();
+	});
+});
+
+describe('the last piece of a file left for the next one', () => {
+	function held() {
+		const sent: { piece: WatchPiece; final: boolean; after?: Promise<void> }[] = [];
+		const watched: Watched = {
+			...player().watched,
+			post: (piece, final, after) => {
+				sent.push({ piece, final, after });
+				return after ?? Promise.resolve();
+			}
+		};
+		return { watched, sent };
+	}
+
+	it('is counted at once and held until the next first frame', async () => {
+		const { watched, sent } = held();
+		const report = new WatchReport(watched, 10);
+		watch(report, 3000);
+		void report.report(true);
+		expect(sent[0]?.piece.watch_ms).toBe(3000);
+		expect(sent[0]?.final).toBe(true);
+		let gone = false;
+		void sent[0]?.after?.then(() => (gone = true));
+		await Promise.resolve();
+		expect(gone).toBe(false);
+
+		report.release();
+		await vi.waitFor(() => expect(gone).toBe(true));
+	});
+
+	it('goes after a second when no frame comes', async () => {
+		vi.useFakeTimers();
+		try {
+			const { watched, sent } = held();
+			const report = new WatchReport(watched, 10);
+			void report.report(true);
+			let gone = false;
+			void sent[0]?.after?.then(() => (gone = true));
+			vi.advanceTimersByTime(LEAVING_WAIT_MS - 1);
+			await Promise.resolve();
+			expect(gone).toBe(false);
+			vi.advanceTimersByTime(1);
+			await Promise.resolve();
+			expect(gone).toBe(true);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it('is not held on the way out of the page', () => {
+		const { watched, sent } = held();
+		void new WatchReport(watched, 10).report();
+		expect(sent[0]?.after).toBeUndefined();
 	});
 });

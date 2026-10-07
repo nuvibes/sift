@@ -18,6 +18,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import Wall from './+page.svelte';
 import { PEOPLE_PER_PAGE, people } from '$lib/people/people.svelte';
 import { MEASURED, SHORT, wallHarness } from '$lib/design/testing-walls';
+import { screenBar } from '$lib/components/shell/screen-bar.svelte';
 
 /*
  * The cold link names row 8 of the 17: the first request, at the unmeasured size, answers rows 8 to
@@ -142,5 +143,13 @@ describe('the People wall hands each card its cover moment', () => {
 		const host = await wall('/people');
 		const src = host.querySelector('img.picture')?.getAttribute('src') ?? '';
 		expect(src).toMatch(/\?v=stamp\.cover1\.4200$/);
+	});
+});
+
+describe('the People wall tells the bar it has drawn', () => {
+	it('publishes its count once its first page lands, so the Filter numbers are asked ahead', async () => {
+		server.whole = SHORT;
+		await measuredWall('/people');
+		expect(screenBar.tools.count, 'the Filter panel would wait for its hover').toBe(SHORT);
 	});
 });

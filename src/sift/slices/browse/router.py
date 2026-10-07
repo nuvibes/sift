@@ -50,6 +50,7 @@ from sift.kernel.content import (
     ContentStore,
     Derivative,
     DerivativeKind,
+    Location,
     LocationStatus,
     Verdict,
     VerdictProduct,
@@ -520,10 +521,10 @@ async def get_asset(
     """One asset. A concealed one comes back as the placeholder, not as its contents,
     unless this viewer has the vault open, in which case it is exactly as visible as anything
     else on their Hidden screen."""
-    view = await access.get_asset(viewer, asset_id)
-    if view is None:
+    record = await access.file_record(viewer, asset_id)
+    if record is None:
         raise _missing()
-
+    view = record.view
     if view.concealed and not viewer.show_hidden:
         return AssetDetail(id=view.asset.id, media_type="", concealed=True, added_at=0)
 
@@ -568,8 +569,8 @@ async def get_asset(
         fps=view.asset.fps,
         bit_depth=view.asset.bit_depth,
         original_filename=view.asset.original_filename,
-        filename=await _name_on_disk(access, viewer, view.asset.id),
-        where=await _where_on_disk(request, access, viewer, view.asset.id),
+        filename=record.name_on_disk,
+        where=await _where_on_disk(request, viewer, record.locations),
         added_at=view.asset.added_at,
         # What to put on the end of this file's picture addresses.
         art=view.art_version,
@@ -582,9 +583,7 @@ async def get_asset(
         views=state.view_count if state else 0,
         o_count=state.o_count if state else 0,
         last_viewed_at=state.last_viewed_at if state else None,
-        sprite=_sheet_layout(
-            await service.sprite_sheet(viewer, view.asset.id), view.asset.duration_ms
-        ),
+        sprite=_sheet_layout(await service.sprite_of(viewer, record), view.asset.duration_ms),
         playback_repair=await _repair_state(request, access, viewer, view.asset),
         # Why this file has none of the four numbers other files are compared by.
         fingerprint_verdict=_standing(
@@ -645,21 +644,16 @@ async def _repair_state(
 
 
 async def _where_on_disk(
-    request: Request, access: Repository, viewer: Viewer, asset_id: str
+    request: Request, viewer: Viewer, locations: Sequence[Location]
 ) -> str | None:
     """Where the file is, said the way this viewer may be told it (`kernel.where`): the full path
     for an admin, the library folder's name and the folders they may see for anyone else."""
-    for location in await access.locations(viewer, asset_id):
+    for location in locations:
         if location.status is not LocationStatus.PRESENT:
             continue
         where = await wiring.whereabouts(request, viewer, root_id=location.root_id)
         return where.of(location.root_id, location.rel_path)
     return None
-
-
-async def _name_on_disk(access: Repository, viewer: Viewer, asset_id: str) -> str | None:
-    """What the file is called now, rather than what it was called when Sift first saw it."""
-    return (await access.names_on_disk(viewer, [asset_id])).get(asset_id)
 
 
 async def _serve_derivative(

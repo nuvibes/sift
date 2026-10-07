@@ -4,7 +4,8 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from pathlib import Path
+from dataclasses import dataclass
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 from sift.kernel.access.constraints import (
@@ -34,6 +35,17 @@ from sift.kernel.content import (
     params_key,
 )
 from sift.kernel.serving import art_version
+
+
+@dataclass(frozen=True, slots=True)
+class FileRecord:
+    """A file's own page: the file, where its bytes sit and what its first present copy is
+    called now. No places and no name for a file this viewer sees only as a placeholder."""
+
+    view: AssetView
+    locations: tuple[Location, ...] = ()
+    name_on_disk: str | None = None
+
 
 #: The five ways a file is enriched, in the order the screen draws them. The filter's own words.
 _ENRICHED_NAMES = ("stash", "faces", "folder", "filename", "watermark")
@@ -122,6 +134,24 @@ class OneFileReads(RepositoryCore):
             self._log_denied(viewer, asset_id)
             return None
         return _asset_view(row, viewer)
+
+    async def file_record(self, viewer: Viewer, asset_id: str) -> FileRecord | None:
+        """`get_asset`, `locations` and `names_on_disk` behind ONE check, for the file's page.
+
+        A file this viewer may have the bytes of is one the first check already answered: either
+        not concealed, or concealed with the vault open, which is `open_asset`'s own question.
+        """
+        view = await self.get_asset(viewer, asset_id)
+        if view is None:
+            return None
+        if view.concealed and not viewer.show_hidden:
+            return FileRecord(view)
+        rows = await self._db.fetch_all(_LOCATIONS_OF_ASSET, (asset_id,))
+        places = tuple(location_from_row(row) for row in rows)
+        present = next((one for one in places if one.status is LocationStatus.PRESENT), None)
+        return FileRecord(
+            view, places, None if present is None else PurePosixPath(present.rel_path).name
+        )
 
     async def open_asset(self, viewer: Viewer, asset_id: str) -> Asset | None:
         """The asset, if this viewer may have its bytes: never a concealed one, even where its

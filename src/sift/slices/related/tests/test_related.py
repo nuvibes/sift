@@ -7,8 +7,14 @@ number the wall will draw, so the tests fetch the wall itself and compare.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
+from typing import Any
+
+import pytest
 from fastapi.testclient import TestClient
 
+from sift.kernel import db as db_module
 from sift.kernel.records import FoundRecord, Subject
 from sift.slices.related.tests.conftest import World, db_path, sign_in, write
 from sift.slices.stash_boxes.adapter import as_json
@@ -29,8 +35,6 @@ def counts(client: TestClient, kind: str, entity_id: str) -> dict[str, object]:
 def test_a_person_page_gets_every_number_in_one_request(client: TestClient, world: World) -> None:
     sign_in(client)
     seen = counts(client, "person", world.jane)
-    # History is not a wall; it is checked against its thread below.
-    assert seen.pop("history") is not None
     # Nor is the disagreement mark: nothing here is linked to a stash-box, so it is nought.
     assert seen.pop("disagreements") == 0
     assert seen.pop("disagreement_boxes") == []
@@ -67,29 +71,26 @@ def test_the_numbers_are_the_ones_the_walls_will_draw(client: TestClient, world:
         assert seen[wall] == len(page["items"]), wall
 
 
-def test_the_history_number_is_the_length_of_the_thread_it_counts(
-    client: TestClient, world: World
+def test_the_strip_never_walks_a_thread(
+    client: TestClient, world: World, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The History number is the length of the thread itself, compared with the pane's endpoint:
-    the thread is grouped by day, so no statement counts it."""
+    """History's number is its own request's: the strip answers none and reads no thread."""
+    heard: list[str] = []
+    judged = db_module._judged
+
+    @contextmanager
+    def counted(stage: str, statement: Any, *rest: Any, **options: Any) -> Iterator[Any]:
+        heard.append(db_module.statement_name(statement))
+        with judged(stage, statement, *rest, **options) as timing:
+            yield timing
+
+    monkeypatch.setattr(db_module, "_judged", counted)
     sign_in(client)
-    for kind, path, one in (
-        ("person", "/api/people", world.jane),
-        ("tag", "/api/tags", world.portrait),
-        ("site", "/api/sites", world.site),
-    ):
-        thread = client.get(f"{path}/{one}/history")
-        assert thread.status_code == 200, thread.text
-        assert counts(client, kind, one)["history"] == len(thread.json()), kind
-
-
-def test_a_thread_this_account_may_not_be_shown_is_not_counted_at_all(
-    client: TestClient, world: World
-) -> None:
-    """A thread this account may not be shown counts None, as for an id never minted."""
-    sign_in(client, role="guest", who="two")
-    assert counts(client, "person", world.jane)["history"] is None
-    assert counts(client, "person", "01JQZZZZZZZZZZZZZZZZZZZZZZ")["history"] is None
+    for kind, one in (("person", world.jane), ("tag", world.portrait), ("site", world.site)):
+        heard.clear()
+        assert "history" not in counts(client, kind, one), kind
+        # Every thread first asks which feature tables exist; no wall does.
+        assert not [name for name in heard if "sqlite_master" in name], kind
 
 
 def test_seen_with_does_not_count_the_person_whose_page_it_is(
@@ -132,8 +133,6 @@ def test_a_collection_has_no_photo_sets_or_collections_tab(
 def test_a_photo_set_page_counts_over_its_own_pictures(client: TestClient, world: World) -> None:
     sign_in(client)
     seen = counts(client, "photo_set", world.photo_set)
-    # History is not a wall.
-    assert seen.pop("history") is not None
     # No stash-box knows a Photo Set, so there is no mark.
     assert seen.pop("disagreements") is None
     assert seen.pop("disagreement_boxes") == []

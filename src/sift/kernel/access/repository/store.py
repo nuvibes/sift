@@ -46,7 +46,8 @@ from sift.kernel.access.repository.views import (
     _is_object_id,
 )
 from sift.kernel.access.viewer import Effect, ObjectType, Viewer
-from sift.kernel.cache_stamp import bump_cache_stamp, bump_every_cache_stamp
+from sift.kernel.audience import NOBODY
+from sift.kernel.cache_stamp import bump_cache_stamp
 from sift.kernel.changes import About, announce
 from sift.kernel.content.entity_state import OpinionWrite, opinion_before
 from sift.kernel.content.user_state import OpinionKind, record_opinion
@@ -323,10 +324,16 @@ class Repository(
         without calling this leaves grants applying to whatever next has that id.
         """
         self._check_object(object_type, object_id)
-        # Everybody's: whoever could see the thing had pictures of it.
         async with self._db.write() as connection:
-            await connection.execute(_DELETE_OBJECT_GRANTS, (object_type.value, object_id))
-            announce(await bump_every_cache_stamp(connection), About.LIBRARY)
+            named = await connection.execute_fetchall(
+                _DELETE_OBJECT_GRANTS, (object_type.value, object_id)
+            )
+            # Only the users a grant named see differently once it goes; nobody else is told.
+            told = NOBODY
+            for user_id in sorted({str(row["subject_user_id"]) for row in named}):
+                told = told | await bump_cache_stamp(connection, user_id)
+            if told:
+                announce(told, About.LIBRARY)
 
     async def forget_items(self, asset_ids: Sequence[str]) -> None:
         """Drop every grant naming files that have ended, in one write.

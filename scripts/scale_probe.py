@@ -24,8 +24,10 @@ import shutil
 import sys
 import tempfile
 import time
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterator
+from contextlib import contextmanager
 from pathlib import Path
+from typing import Any
 
 from sift.kernel.access import Repository
 from sift.kernel.config import Settings
@@ -36,8 +38,10 @@ from sift.testing.fixture_library import FixtureLibrary, files_under, fixture_li
 #: What one of a person's files costs the page that lists them (see the budget below).
 PER_MEMBER_MS = 0.012
 
-#: What one copy under a folder costs the share that reaches it (see the budget below).
-PER_SHARED_FILE_MS = 0.06
+#: What one copy under a folder costs the share that reaches it (see the budget below): its
+#: verdict and its row, and the stored counts of every kind the Filter panel and the walls read
+#: at once, about 1,240 steps a copy. The line was 0.06 before those counts were stored.
+PER_SHARED_FILE_MS = 0.12
 
 BUDGETS = {
     "admin page, newest": 25.0,
@@ -77,12 +81,49 @@ async def timed_read(read: Callable[[], Awaitable[object]], *, runs: int = 5) ->
     return best * 1000
 
 
+#: How long the build's own writes may take to reach the disk before the questions are asked.
+SETTLE_SECONDS = 120.0
+
+
+async def settle(database: Database, path: Path) -> None:
+    """Fold the log back and wait until the file stops moving: a question asked while the build's
+    gigabytes are still being written times the disk, not the question."""
+    await database.fold_the_log_back()
+    files = [path, path.with_name(path.name + "-wal")]
+    sizes: list[int] = []
+    deadline = time.monotonic() + SETTLE_SECONDS
+    while time.monotonic() < deadline:
+        now = sum(one.stat().st_size for one in files if one.exists())
+        sizes.append(now)
+        if sizes[-3:] == [now] * 3:
+            return
+        await asyncio.sleep(0.5)
+
+
+@contextmanager
+def rolled_back(database: Database) -> Iterator[None]:
+    """Every write in the block rolled back where it would commit, so a write is timed three times
+    on the library as built."""
+    writer: Any = database._require_writer()
+    writer.commit = writer.rollback
+    try:
+        yield
+    finally:
+        del writer.commit
+
+
 async def measure(database: Database, access: Repository, lib: FixtureLibrary) -> dict[str, float]:
-    """Each question in milliseconds: a read the best of five, a write once, cold."""
+    """Each question in milliseconds, after the build has settled: a read the best of five, a write
+    the best of three, each rolled back."""
+    await settle(database, lib.path)
     asked = await questions(database, access, lib)
     found: dict[str, float] = {}
     for name, question in asked.items():
-        found[name] = await timed_read(question, runs=1 if "(trigger)" in name else 5)
+        if "(trigger)" in name:
+            with rolled_back(database):
+                found[name] = await timed_read(question, runs=3)
+        else:
+            found[name] = await timed_read(question, runs=5)
     return found
 
 

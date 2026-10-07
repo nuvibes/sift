@@ -4,6 +4,7 @@
     "ix_acl_subject": "create index ix_acl_subject on acl_grants ( subject_user_id )",
     "ix_app_sessions_device": "create index ix_app_sessions_device on app_sessions ( user_id , device_id , last_at_ms )",
     "ix_asset_links_asset": "create index ix_asset_links_asset on asset_links ( asset_id )",
+    "ix_asset_people_first": "create index ix_asset_people_first on asset_people ( person_id , decided_at , asset_id )",
     "ix_asset_people_person": "create index ix_asset_people_person on asset_people ( person_id )",
     "ix_asset_people_source_decided": "create index ix_asset_people_source_decided on asset_people ( source , decided_at )",
     "ix_asset_person_refusals_person": "create index ix_asset_person_refusals_person on asset_person_refusals ( person_id )",
@@ -28,7 +29,9 @@
     "ix_aus_favorite": "create index ix_aus_favorite on asset_user_state ( user_id , favorite ) where favorite = 1",
     "ix_aus_hidden": "create index ix_aus_hidden on asset_user_state ( user_id , hidden ) where hidden = 1",
     "ix_aus_recent": "create index ix_aus_recent on asset_user_state ( user_id , last_viewed_at desc ) where last_viewed_at is not null",
+    "ix_backlog_moved_seq": "create index ix_backlog_moved_seq on backlog_moved ( seq )",
     "ix_collection_items_asset": "create index ix_collection_items_asset on collection_items ( asset_id )",
+    "ix_collection_items_first": "create index ix_collection_items_first on collection_items ( collection_id , added_at , asset_id )",
     "ix_collection_tags_tag": "create index ix_collection_tags_tag on collection_tags ( tag_id )",
     "ix_cus_favorite": "create index ix_cus_favorite on collection_user_state ( user_id , favorite ) where favorite = 1",
     "ix_cus_hidden": "create index ix_cus_hidden on collection_user_state ( user_id , hidden ) where hidden = 1",
@@ -121,6 +124,7 @@
     "ix_produced_at": "create index ix_produced_at on produced_files ( produced_at )",
     "ix_produced_source": "create index ix_produced_source on produced_files ( source_asset_id )",
     "ix_psi_asset": "create index ix_psi_asset on photo_set_items ( asset_id )",
+    "ix_psi_first": "create index ix_psi_first on photo_set_items ( photo_set_id , added_at , position , asset_id )",
     "ix_psi_set": "create index ix_psi_set on photo_set_items ( photo_set_id , position )",
     "ix_pst_tag": "create index ix_pst_tag on photo_set_tags ( tag_id )",
     "ix_psus_hidden": "create index ix_psus_hidden on photo_set_user_state ( user_id , hidden ) where hidden = 1",
@@ -200,6 +204,12 @@
     "ux_usernames_number": "create unique index ux_usernames_number on usernames ( site_id , number ) where number is not null"
   },
   "rows": {
+    "backlog_clock": [
+      {
+        "id": 1,
+        "seq": 0
+      }
+    ],
     "search_unindexed": [
       {
         "id": 1,
@@ -504,6 +514,54 @@
         "identity": "text primary key",
         "offset_ms": "integer not null default 0",
         "tool": "text not null"
+      },
+      "constraints": [],
+      "options": ""
+    },
+    "backlog_clock": {
+      "columns": {
+        "id": "integer primary key check ( id = 1 )",
+        "seq": "integer not null"
+      },
+      "constraints": [],
+      "options": ""
+    },
+    "backlog_counts": {
+      "columns": {
+        "bit": "integer not null",
+        "kind": "text not null",
+        "n": "integer not null"
+      },
+      "constraints": [
+        "primary key ( bit , kind )"
+      ],
+      "options": "without rowid"
+    },
+    "backlog_files": {
+      "columns": {
+        "asset_id": "text primary key",
+        "kind": "text not null",
+        "mask": "integer not null"
+      },
+      "constraints": [],
+      "options": "without rowid"
+    },
+    "backlog_moved": {
+      "columns": {
+        "asset_id": "text primary key",
+        "seq": "integer not null"
+      },
+      "constraints": [],
+      "options": "without rowid"
+    },
+    "backlog_terms": {
+      "columns": {
+        "asked_at": "integer not null",
+        "bit": "integer primary key check ( bit between 0 and 61 )",
+        "building": "integer not null default 0",
+        "checked_at": "integer not null",
+        "folded_to": "integer not null",
+        "signature": "text not null unique"
       },
       "constraints": [],
       "options": ""
@@ -1193,9 +1251,9 @@
     },
     "job_tallies": {
       "columns": {
-        "type": "text not null",
+        "n": "integer not null",
         "state": "text not null",
-        "n": "integer not null"
+        "type": "text not null"
       },
       "constraints": [
         "primary key ( type , state )"
@@ -1805,8 +1863,8 @@
     },
     "semantic_file_keys": {
       "columns": {
-        "file": "integer primary key",
         "asset_id": "text not null unique",
+        "file": "integer primary key",
         "revision": "text not null"
       },
       "constraints": [],
@@ -1814,8 +1872,8 @@
     },
     "semantic_frame_keys": {
       "columns": {
-        "frame": "integer primary key",
         "asset_id": "text not null",
+        "frame": "integer primary key",
         "revision": "text not null"
       },
       "constraints": [],
@@ -2592,6 +2650,29 @@
       "constraints": [],
       "options": ""
     },
+    "viewer_wall_totals": {
+      "columns": {
+        "kind": "text not null",
+        "permitted": "integer not null default 0",
+        "shown": "integer not null default 0",
+        "user_id": "text not null references users ( id ) on delete cascade"
+      },
+      "constraints": [
+        "primary key ( user_id , kind )"
+      ],
+      "options": "without rowid"
+    },
+    "visibility_decided": {
+      "columns": {
+        "asset_id": "text not null references assets ( id ) on delete cascade",
+        "concealed": "integer not null",
+        "user_id": "text not null references users ( id ) on delete cascade"
+      },
+      "constraints": [
+        "primary key ( user_id , asset_id )"
+      ],
+      "options": "without rowid"
+    },
     "visibility_pending": {
       "columns": {
         "asset_id": "text not null",
@@ -2651,6 +2732,23 @@
       },
       "constraints": [],
       "options": ""
+    },
+    "work_prices": {
+      "columns": {
+        "family": "text not null",
+        "from_items": "integer not null default 0",
+        "items": "integer",
+        "kind": "text not null",
+        "middle": "real",
+        "profile": "text not null",
+        "quick": "real",
+        "runs": "text not null default '[]'",
+        "slow": "real"
+      },
+      "constraints": [
+        "primary key ( family , profile , kind )"
+      ],
+      "options": "without rowid"
     },
     "work_runs": {
       "columns": {
@@ -2716,6 +2814,39 @@
     }
   },
   "triggers": {
+    "backlog_asset_locations_added": "asset_locations",
+    "backlog_asset_locations_moved": "asset_locations",
+    "backlog_asset_locations_removed": "asset_locations",
+    "backlog_assets_added": "assets",
+    "backlog_assets_moved": "assets",
+    "backlog_assets_removed": "assets",
+    "backlog_audio_fingerprints_added": "audio_fingerprints",
+    "backlog_audio_fingerprints_moved": "audio_fingerprints",
+    "backlog_audio_fingerprints_removed": "audio_fingerprints",
+    "backlog_derivatives_added": "derivatives",
+    "backlog_derivatives_moved": "derivatives",
+    "backlog_derivatives_removed": "derivatives",
+    "backlog_face_scans_added": "face_scans",
+    "backlog_face_scans_moved": "face_scans",
+    "backlog_face_scans_removed": "face_scans",
+    "backlog_file_verdicts_added": "file_verdicts",
+    "backlog_file_verdicts_moved": "file_verdicts",
+    "backlog_file_verdicts_removed": "file_verdicts",
+    "backlog_music_waiting_added": "music_waiting",
+    "backlog_music_waiting_moved": "music_waiting",
+    "backlog_music_waiting_removed": "music_waiting",
+    "backlog_semantic_indexed_added": "semantic_indexed",
+    "backlog_semantic_indexed_moved": "semantic_indexed",
+    "backlog_semantic_indexed_removed": "semantic_indexed",
+    "backlog_watermark_reads_added": "watermark_reads",
+    "backlog_watermark_reads_moved": "watermark_reads",
+    "backlog_watermark_reads_removed": "watermark_reads",
+    "backlog_watermark_refusals_added": "watermark_refusals",
+    "backlog_watermark_refusals_moved": "watermark_refusals",
+    "backlog_watermark_refusals_removed": "watermark_refusals",
+    "backlog_watermark_scans_added": "watermark_scans",
+    "backlog_watermark_scans_moved": "watermark_scans",
+    "backlog_watermark_scans_removed": "watermark_scans",
     "default_cover_collection_filed": "collection_items",
     "default_cover_collection_filed_seen": "collection_items",
     "default_cover_collection_lost": "collections",
@@ -2920,6 +3051,8 @@
     "vis_photo_set_user_state_insert": "photo_set_user_state",
     "vis_photo_set_user_state_update": "photo_set_user_state",
     "vis_recompute_give": "visibility_recompute",
+    "vis_recompute_settle": "visibility_recompute",
+    "vis_recompute_settled": "visibility_recompute",
     "vis_recompute_take": "visibility_recompute",
     "vis_recompute_user": "visibility_recompute",
     "vis_root_user_state_delete": "root_user_state",
@@ -2949,31 +3082,34 @@
     "vis_users_insert": "users",
     "vis_users_role": "users",
     "vis_viewer_entity_counts_emptied": "viewer_entity_counts",
-    "vis_viewer_pair_counts_emptied": "viewer_pair_counts"
+    "vis_viewer_pair_counts_emptied": "viewer_pair_counts",
+    "vis_wall_totals_delete": "viewer_entity_counts",
+    "vis_wall_totals_insert": "viewer_entity_counts",
+    "vis_wall_totals_update": "viewer_entity_counts"
   },
   "versions": {
     "access": 5,
     "benchmarks": 3,
-    "catalog": 91,
-    "content": 30,
+    "catalog": 92,
+    "content": 31,
     "dedup": 4,
     "download": 38,
-    "faces": 41,
+    "faces": 42,
     "file_moves": 4,
     "identity": 4,
     "importing": 1,
     "insights": 6,
     "jobs": 16,
-    "ledger": 7,
+    "ledger": 8,
     "library": 7,
-    "music": 5,
+    "music": 6,
     "performance": 2,
     "player": 7,
     "produced_files": 1,
     "save_log": 1,
     "scan_memory": 2,
     "search_history": 10,
-    "semantic": 3,
+    "semantic": 4,
     "sessions": 3,
     "settings": 18,
     "shoots": 1,
@@ -2985,8 +3121,8 @@
     "tidy": 1,
     "tunnels": 1,
     "user_state": 6,
-    "visibility": 16,
-    "watermarks": 7,
+    "visibility": 17,
+    "watermarks": 8,
     "workbench": 16
   },
   "views": {

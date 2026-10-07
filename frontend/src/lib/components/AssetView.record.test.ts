@@ -18,6 +18,7 @@ import { api, ApiError } from '$lib/api/client';
 import { rereadInterfaceState } from '$lib/shell/interface-state.svelte';
 import { jobChanges, libraryChanges, recorded } from '$lib/library/changes.svelte';
 import { toasts } from '$lib/shell/toasts.svelte';
+import { PANEL_WAIT_MS } from './file-band.svelte';
 
 vi.mock('$lib/shell/session.svelte', () => ({ session: { isAdmin: true, canSave: false } }));
 /*
@@ -222,9 +223,6 @@ function detail(over: Record<string, unknown> = {}) {
 		enriched: [],
 		// What wrote to it without a person doing it. Drawn as the marks beside the name.
 		enriched_by: [],
-		// How many lines the History pane will hold, counted by the server with the file. The tab
-		// wears it before anybody opens the pane; see the case about it below.
-		history_count: 0,
 		links: [],
 		playback_repair: null,
 		sprite: null,
@@ -330,25 +328,42 @@ describe('the three panes', () => {
 	it('counts what is filled in, not what is declared', async () => {
 		/*
 		 * Two record fields and one of them written, two machine facts and one of them measured,
-		 * and a history the server says is empty. The file's own read carries the history count, and
-		 * a nought is drawn as the word alone: nothing has happened to this file.
+		 * and no history number before the thread is read.
 		 */
 		await show();
 
 		expect(strip()).toEqual(['About2', 'Media1', 'History']);
 	});
 
-	it('wears the number of history lines before the pane has been opened', async () => {
+	it('wears no history number until the thread answers, then its total', async () => {
 		/*
-		 * The history number is on the strip from the first frame, from `history_count`, while the
-		 * pane itself is still not fetched; together those are what makes the field worth carrying.
+		 * The thread is read once the picture is up (here, the panel's ceiling on waiting for it),
+		 * never before; until then the tab says the word alone, so no number is drawn to be taken
+		 * back.
 		 */
-		served.detail = detail({ history_count: 3 });
+		served.history = [1, 2, 3].map((at) => ({
+			kind: 'added',
+			what: 'Added from a folder',
+			actor: 'sift',
+			actor_name: null,
+			detail: [],
+			at,
+			reversed: false,
+			undo: null
+		}));
 
 		await show();
-
-		expect(strip()).toEqual(['About2', 'Media1', 'History3']);
+		expect(strip()).toEqual(['About2', 'Media1', 'History']);
 		expect(served.historyAsks).toBe(0);
+
+		await vi.waitFor(
+			() => {
+				flushSync();
+				expect(strip()).toEqual(['About2', 'Media1', 'History3']);
+			},
+			{ timeout: PANEL_WAIT_MS + 1000 }
+		);
+		expect(served.historyAsks).toBe(1);
 	});
 
 	it('draws every record field, filled or not, and only the facts the file answers', async () => {

@@ -129,15 +129,19 @@ def keep_days_from(value: object) -> int:
 
 #: The files one queued job names, and how many of them one write transaction rewrites: a chunk
 #: holds the write lock for a fraction of a second, so no other write waits on a rename's files.
+#: Its own job type, so Activity names it for what it does rather than as a rebuild.
+FTS_REINDEX_FILES = "fts_reindex_files"
 ASSET_IDS = "asset_ids"
 IDS_PER_JOB = 2000
 IDS_PER_WRITE = 100
 
 
-async def _reindex_named(context: JobContext, database: Database, asset_ids: object) -> None:
+async def reindex_files(context: JobContext, *, database: Database) -> None:
     """Rewrite these assets' rows a chunk at a time, then tell whoever may be searching them."""
+    asset_ids = context.payload.get(ASSET_IDS)
     if not isinstance(asset_ids, list) or not all(isinstance(one, str) for one in asset_ids):
         raise ValueError("asset_ids must be a list of asset ids")
+    await context.set_note(_files(len(asset_ids), "For"))
     written = 0
     for at in range(0, len(asset_ids), IDS_PER_WRITE):
         await context.raise_if_canceled()
@@ -146,7 +150,12 @@ async def _reindex_named(context: JobContext, database: Database, asset_ids: obj
     # A search on screen reads again now its words have moved; word only, each re-reads its own.
     async with database.write() as connection:
         announce(await who_may_see_a_file(connection), About.LIBRARY)
+    await context.set_note(_files(written, "Indexed"))
     log.info("search.reindexed", assets=written, whole_library=False)
+
+
+def _files(count: int, verb: str) -> str:
+    return f"{verb} {count:,} {'file' if count == 1 else 'files'}"
 
 
 #: Which kind of pass a queued job is. The payload carries it so one handler serves both and there
@@ -175,9 +184,6 @@ async def reindex(context: JobContext, *, database: Database) -> None:
         written = await index_assets(database, asset_id=asset_id)
         log.info("search.reindexed", assets=written, whole_library=False)
         return
-    if ASSET_IDS in context.payload:
-        await _reindex_named(context, database, context.payload[ASSET_IDS])
-        return
 
     catching_up = context.payload.get(SCOPE) == CATCH_UP
 
@@ -200,7 +206,7 @@ async def reindex(context: JobContext, *, database: Database) -> None:
     await context.set_progress(1.0)
     # The count it really wrote, which is not always the count it expected: a rebuild writes every
     # asset rather than only the unindexed ones, and files can arrive while it runs.
-    await context.set_note(f"Indexed {written:,} {'file' if written == 1 else 'files'}")
+    await context.set_note(_files(written, "Indexed"))
     log.info("search.reindexed", assets=written, whole_library=not catching_up)
 
 
@@ -243,11 +249,7 @@ def _is_whole_library(payload: dict[str, Any]) -> bool:
     and is deliberately blind to edits: an asset whose tag changed already has a row, so it is
     never revisited.
     """
-    return (
-        payload.get("asset_id") is None
-        and ASSET_IDS not in payload
-        and payload.get(SCOPE) != CATCH_UP
-    )
+    return payload.get("asset_id") is None and payload.get(SCOPE) != CATCH_UP
 
 
 async def rebuild_pending(queue: JobQueue) -> bool:
@@ -348,6 +350,11 @@ def register_handlers(
         await reindex(context, database=database)
 
     register_handler(FTS_REINDEX, handler, name="Recreating the search index")
+
+    async def files(context: JobContext) -> None:
+        await reindex_files(context, database=database)
+
+    register_handler(FTS_REINDEX_FILES, files, name="Updating the search index")
 
     if preferences is None or queue is None:
         return

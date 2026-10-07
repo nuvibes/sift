@@ -30,6 +30,14 @@ SOURCE = REPO / "src" / "sift"
 #: Tables that hold an asset id on purpose and are not cleared when the asset ends: each entry says
 #: why a row about a file is still TRUE after the file has gone. It stays short.
 KEEPS_ITS_IDS: dict[str, str] = {
+    "backlog_moved": (
+        "A file marked as moved for the kept counts. A file that has ended is marked so the next "
+        "read folds it out, so no key on purpose."
+    ),
+    "backlog_files": (
+        "Which kept counts a file is in. The next read after the file ends takes its row and its "
+        "counts out, which a cascade would skip."
+    ),
     "plays": (
         "One sitting somebody spent with a file. It is the user's history rather than the "
         "file's, so a file being deleted is part of that history and not the end of it: there is "

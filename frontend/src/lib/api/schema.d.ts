@@ -5038,9 +5038,8 @@ export interface paths {
          * List Jobs
          * @description A page of the queue, newest first: of every row, or with `fold`, of every family.
          *
-         *     The bounds are declared rather than checked in the body, so the schema says them. A folded page
-         *     filtered by state reads the state the family's row shows (`folded_state`: a family with a
-         *     failed step is a failed family), so every family is under exactly one state (`_tallies`).
+         *     The bounds are declared, so the schema says them. A folded page filtered by state reads the
+         *     state its family's row shows (`folded_state`), so every family is under one state (`_tallies`).
          */
         get: operations["list_jobs_api_jobs_get"];
         put?: never;
@@ -12406,11 +12405,6 @@ export interface components {
              * @default false
              */
             hidden_here: boolean;
-            /**
-             * History Count
-             * @default 0
-             */
-            history_count: number;
             /** Id */
             id: string;
             /** Last Viewed At */
@@ -20468,8 +20462,6 @@ export interface components {
             files: number | null;
             /** Files Bytes */
             files_bytes: number | null;
-            /** History */
-            history: number | null;
             /** Loops */
             loops: number | null;
             /** People */

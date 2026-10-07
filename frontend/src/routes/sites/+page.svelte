@@ -197,6 +197,7 @@
 		screenBar.publish(mine, {
 			filterable: true,
 			subject: 'site',
+			count: sites.loaded ? sites.total : undefined,
 			resizable: true,
 			playable: "A card is a Site mark, and a mark doesn't play",
 			// For everybody, not only an admin. See the People wall: the server refuses a guest

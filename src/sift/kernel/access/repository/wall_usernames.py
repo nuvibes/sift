@@ -5,12 +5,15 @@ from __future__ import annotations
 
 from sift.kernel.access.repository.walls import (
     _NOTHING,
+    HIDDEN_SITES,
     _cut,
     _filtered,
     _narrowed,
     _position,
     _wall,
     _with_stored_counts,
+    ordered,
+    plain_total,
     shown,
 )
 from sift.kernel.access.sites import SITE_CONCEALED
@@ -235,12 +238,24 @@ _USERNAMES_HEAD, _USERNAMES_ACCESS = _cut(_VISIBLE_USERNAMES, "_VISIBLE_USERNAME
 _USERNAMES = _wall(_VISIBLE_USERNAMES, "_VISIBLE_USERNAMES")
 USERNAMES_POSITION = _position(_USERNAMES)
 _USERNAMES_STORED = _with_stored_counts(_VISIBLE_USERNAMES, "_VISIBLE_USERNAMES")
+#: The plain wall: its total off the stored totals (`plain_total`).
+_USERNAMES_PLAIN = ordered(
+    plain_total(
+        _USERNAMES_STORED,
+        "_USERNAMES_STORED",
+        "username",
+        "usernames",
+        "SELECT un.id FROM usernames un WHERE un.site_id IN (" + HIDDEN_SITES + ")",  # noqa: S608
+        "site_user_state",
+    ),
+    "_USERNAMES_PLAIN",
+)
 
 
-def usernames_query(where: str) -> str:
+def usernames_query(where: str, *, plain: str | None = None) -> str:
     """Usernames this viewer may know about, counted over only the files a filter reaches."""
     if not _narrowed(where):
-        return _USERNAMES_STORED
+        return _USERNAMES_PLAIN[plain] if plain else _USERNAMES_STORED
     return _filtered(_USERNAMES_HEAD, _USERNAMES_ACCESS, where)
 
 

@@ -91,18 +91,31 @@ describe('a period arriving', () => {
 		expect(getComputedStyle(value).display).toBe('grid');
 	});
 
-	it('counts again when the next period arrives', () => {
-		const props = draw([sessions(1240)]);
+	it('counts again when the next period arrives, which draws its cards anew', () => {
+		draw([sessions(1240)]);
 		frameAt(1000);
 		frameAt(1600);
 		expect(counted()).toBe('1,240');
 
-		props.figures = [sessions(310)];
-		flushSync();
+		if (drawn) unmount(drawn);
+		host.remove();
+		draw([sessions(310)]);
 		expect(counted()).toBe('0');
 		frameAt(2000);
 		frameAt(2600);
 		expect(counted()).toBe('310');
+	});
+
+	it('draws a figure changed by a re-read at once, and an unchanged one stays still', () => {
+		const props = draw([sessions(1240), figure('Hours', 12, 'count')]);
+		frameAt(1000);
+		frameAt(1600);
+		expect(counted()).toBe('1,240');
+
+		props.figures = [sessions(1241), figure('Hours', 12, 'count')];
+		flushSync();
+		expect(counted(), 'a re-read counted the figure up from zero again').toBe('1,241');
+		expect(frames, 'a re-read started a count').toHaveLength(0);
 	});
 
 	it('draws a time of day at once, because it is not a quantity', () => {

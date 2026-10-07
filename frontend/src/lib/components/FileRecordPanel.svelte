@@ -100,9 +100,9 @@
 		{
 			id: 'history',
 			label: 'History',
-			// The file's own count until the thread itself has landed, then the thread's total: the
-			// whole history, never the length of the page drawn.
-			count: thread.total ?? file.history_count,
+			// No number until the thread has landed (read once the picture is up), then its total: the
+			// whole history, never the length of the page drawn, and never a number taken back.
+			count: thread.total ?? undefined,
 			/* The mark where a stash-box disagrees, naming the box: the panel that settles it is in this tab. */
 			attention:
 				(file.disagreements ?? 0) > 0

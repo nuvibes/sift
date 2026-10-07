@@ -509,8 +509,6 @@
 	<!-- The tab title is fixed: it shows in the tab strip, the window switcher and history, which
 	     the vault cannot conceal. -->
 	<title>Sift</title>
-	<link rel="icon" href="/brand/favicon.svg" type="image/svg+xml" />
-	<link rel="icon" href="/brand/favicon-32.png" sizes="32x32" />
 </svelte:head>
 
 <!-- The desktop window's own title bar, on every screen and outside every branch (nothing in a

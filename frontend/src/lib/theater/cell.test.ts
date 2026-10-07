@@ -1650,3 +1650,19 @@ describe('what a cell keeps of the file it is playing', () => {
 		expect(menu, 'an empty list cannot word a heart').not.toContain('items={[]}');
 	});
 });
+
+describe('a cell starting on a file', () => {
+	it("holds that file's shape while its plan is asked, so nothing moves when it lands", async () => {
+		let answer!: (plan: unknown) => void;
+		vi.spyOn(api, 'post').mockReturnValue(new Promise((resolve) => (answer = resolve)));
+		const cell = new Cell();
+		const tall = { ...file('tall'), width: 720, height: 1280 };
+		const starting = cell.startOn(tall);
+		expect(cell.playing).toBeNull();
+		expect(cell.shape).toBeCloseTo(720 / 1280);
+		answer({ route: 'direct', url: '/api/assets/tall/stream', streamable: true });
+		await starting;
+		expect(cell.shape).toBeCloseTo(720 / 1280);
+		vi.mocked(api.post).mockReset();
+	});
+});

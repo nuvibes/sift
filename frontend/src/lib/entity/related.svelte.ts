@@ -20,6 +20,14 @@
  */
 
 import { api, type ApiPath } from '$lib/api/client';
+import {
+	historyOfCollection,
+	historyOfPerson,
+	historyOfPhotoSet,
+	historyOfSite,
+	historyOfSong,
+	historyOfTag
+} from '$lib/api/history';
 import { fieldOf } from '$lib/components/shell/facet-labels';
 import { LOOP_WORDS, WallWords, WORDS, wordsIn } from '$lib/components/shell/wall-words';
 import { ARTIST_ORDER, ENTITY_OPINION_SORTS, UNIVERSAL_SORTS } from '$lib/grid/sort-state.svelte';
@@ -65,9 +73,8 @@ export type RelatedKind =
  * Putting it in that table to save naming it here would give a tab with no endpoint to all five
  * pages that read the table.
  *
- * It has a NUMBER all the same, which is what this type is for. The server answers it beside the
- * wall counts, in the same request, so every number on one strip is taken at one moment. See
- * `RelatedCounts.history`.
+ * It has a NUMBER all the same, which is what this type is for: the length of the thread its own
+ * request answers, asked beside the strip's so the strip never waits on it (`readThread`).
  */
 type TabKind = RelatedKind | 'history';
 
@@ -76,9 +83,8 @@ type TabKind = RelatedKind | 'history';
  *
  * `disagreements` is NOT a tab and must never become one. It is how many fields a stash-box
  * disagrees with about this record: the mark the History tab wears while something is waiting,
- * and the panel that settles it is drawn at the top of that tab. It rides on the same request for
- * the reason `history` does: every number on one strip is taken at one moment, and a second
- * endpoint for one mark would be a second round trip and a second moment.
+ * and the panel that settles it is drawn at the top of that tab. It rides on the strip's request:
+ * a second endpoint for one mark would be a second round trip and a second moment.
  *
  * It is a separate type from `TabKind` rather than another member of it, because `tabsFor` builds a
  * tab per member of that type's wall half and a strip with a "Disagreements" word on it is exactly
@@ -605,6 +611,29 @@ async function readCounts(
 	}
 }
 
+/** Each kind's thread, at the cap its History tab opens with. */
+const THREADS: Record<EntityKind, (id: string) => Promise<unknown[]>> = {
+	person: historyOfPerson,
+	tag: historyOfTag,
+	site: historyOfSite,
+	collection: historyOfCollection,
+	photo_set: historyOfPhotoSet,
+	song: historyOfSong
+};
+
+/**
+ * The History tab's number: the length of the very thread the tab draws. Its own request, so the
+ * strip's numbers land without waiting on the walk a thread is. Nothing where it cannot be read:
+ * a subject this user may not see answers no thread, and its tab no number.
+ */
+async function readThread(on: EntityKind, id: string): Promise<number | undefined> {
+	try {
+		return (await THREADS[on](id)).length;
+	} catch {
+		return undefined;
+	}
+}
+
 /**
  * The numbers on one page's tab strip, kept for as long as the page is about the same thing.
  *
@@ -660,6 +689,15 @@ export class TabCounts {
 			this.current = { ...found.numbers, ...this.current };
 			if (!panelSaw) this.sawBoxes(found.boxes);
 		});
+		this.#thread(on, id, mine);
+	}
+
+	/** History's number, off its own request; the strip's generation guards it the same way. */
+	#thread(on: EntityKind, id: string, mine: number): void {
+		void readThread(on, id).then((lines) => {
+			if (mine !== this.#generation || lines === undefined) return;
+			this.saw('history', lines);
+		});
 	}
 
 	/**
@@ -679,6 +717,7 @@ export class TabCounts {
 			this.current = { ...this.current, ...found.numbers };
 			this.sawBoxes(found.boxes);
 		});
+		this.#thread(this.#on, this.#about, mine);
 	}
 
 	/**

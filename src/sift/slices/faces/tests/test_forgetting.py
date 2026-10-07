@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import pytest
 
+from sift.kernel.content import backlog
 from sift.kernel.db import Database
 from sift.kernel.forgetting import declared_tables, registered_forgettings
 from sift.slices.faces import forgetting
@@ -28,6 +29,8 @@ _TRACK = "01HX0000000000000000000753"
 
 async def _library(database: Database) -> None:
     async with database.write() as connection:
+        for statement in backlog.TABLES:
+            await connection.execute(statement)
         await connection.execute(
             "CREATE TABLE assets (id TEXT PRIMARY KEY, identity TEXT NOT NULL UNIQUE, "
             "media_type TEXT NOT NULL, added_at INTEGER NOT NULL)"

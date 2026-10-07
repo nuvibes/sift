@@ -24,10 +24,26 @@ from dataclasses import dataclass, field
 
 from sift.kernel.audience import EVERY_ADMIN
 from sift.kernel.changes import About, telling
-from sift.kernel.db import Connection, Database, register_schema_initializer
+from sift.kernel.db import Connection, Database, Row, register_schema_initializer
 from sift.kernel.ids import new_id
 from sift.kernel.jobs.failure_words import KINDS, OTHERWISE, in_plain_words, kind_of
 from sift.kernel.jobs.families import FAMILY_LABELS, LONG_PASSES, Family
+from sift.kernel.jobs.pacing import FEWEST_ITEMS as FEWEST_ITEMS
+from sift.kernel.jobs.pacing import STRETCH_ITEMS as STRETCH_ITEMS
+from sift.kernel.jobs.pacing import Estimate as Estimate
+from sift.kernel.jobs.pacing import KindPrices as KindPrices
+from sift.kernel.jobs.pacing import Pace as Pace
+from sift.kernel.jobs.pacing import (
+    _kept_kind_prices,
+    _kept_pace,
+    _mean,
+    _pace_of_runs,
+    _price_row,
+    _quantile,
+    _shares,
+    _stretches,
+)
+from sift.kernel.jobs.pacing import priced as priced
 from sift.kernel.jobs.run_records import LAST_RUN_FOR_PRODUCTS as LAST_RUN_FOR_PRODUCTS
 from sift.kernel.jobs.run_records import RunReads, run_record
 from sift.kernel.jobs.run_records import RunRecord as RunRecord
@@ -42,7 +58,7 @@ from sift.kernel.when import stamp as machine_stamp
 log = get_logger(__name__)
 
 COMPONENT = "ledger"
-VERSION = 7
+VERSION = 8
 
 # `files` and `stages` are JSON rather than rows of their own: a run is read whole or not at all,
 # nothing ever asks for one stage across runs, and a row per stage per run would be a table an
@@ -106,6 +122,39 @@ CREATE TABLE IF NOT EXISTS said_times (
 """
 _SAID_INDEX = "CREATE INDEX IF NOT EXISTS ix_said_times_run ON said_times(run_id, at)"
 
+#: Each long pass's price on this machine, kept when one of its runs closes, so a screen reads a
+#: few rows rather than the runs. `kind` is a media kind, `''` the family's pace over its runs
+#: (with `runs`, the recent runs' [files, worker ms, seconds] for how busy they kept the pool) and
+#: `'*'` its pace over its timed items. A NULL pace is a sample too small to quote.
+_CREATE_PRICES = """
+CREATE TABLE IF NOT EXISTS work_prices (
+  family     TEXT NOT NULL,
+  profile    TEXT NOT NULL,
+  kind       TEXT NOT NULL,
+  items      INTEGER,
+  quick      REAL,
+  middle     REAL,
+  slow       REAL,
+  from_items INTEGER NOT NULL DEFAULT 0,
+  runs       TEXT NOT NULL DEFAULT '[]',
+  PRIMARY KEY (family, profile, kind)
+) WITHOUT ROWID
+"""
+_PRICES_OF = "SELECT * FROM work_prices WHERE family = ? AND profile = ?"
+_FORGET_PRICES = "DELETE FROM work_prices WHERE family = ? AND profile = ?"
+_KEEP_PRICE = (
+    "INSERT OR REPLACE INTO work_prices"
+    " (family, profile, kind, items, quick, middle, slow, from_items, runs)"
+    " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+)
+_PRICED_PAIRS = "SELECT DISTINCT family, profile FROM work_runs WHERE finished_at IS NOT NULL"
+#: The kinds a family's runs did since the settings moved: the ones it has a price for.
+_KINDS_OF_FAMILY = """
+SELECT DISTINCT one.key AS kind FROM work_runs w, json_each(w.files) one
+ WHERE w.family = ? AND w.profile = ? AND w.finished_at IS NOT NULL AND w.started_at >= ?
+   AND json_extract(one.value, '$.n') > 0
+"""
+
 _INDEXES = (
     # The screen reads the newest runs of every family; the estimate reads the newest of one.
     "CREATE INDEX IF NOT EXISTS ix_work_runs_recent ON work_runs(started_at DESC)",
@@ -124,6 +173,53 @@ async def initialize(connection: Connection, on_disk: int) -> None:
         await connection.execute("ALTER TABLE work_runs ADD COLUMN time_left TEXT")
     await connection.execute(_CREATE_SAID)
     await connection.execute(_SAID_INDEX)
+    await connection.execute(_CREATE_PRICES)
+    if 0 < on_disk < 8:
+        # A library from before kept prices prices at once, from the runs it already has.
+        passes = {family.value for family in LONG_PASSES}
+        for row in await connection.execute_fetchall(_PRICED_PAIRS):
+            if str(row[0]) in passes:
+                rows = await _prices_from_runs(
+                    connection.execute_fetchall, str(row[0]), str(row[1]), 0
+                )
+                await connection.executemany(_KEEP_PRICE, rows)
+
+
+Fetch = Callable[[str, Sequence[object]], Awaitable[Iterable[Row]]]
+
+
+async def _prices_from_runs(
+    fetch: Fetch, family: str, profile: str, since: int
+) -> list[tuple[object, ...]]:
+    """A family's kept prices from its runs since `since`: one row per kind it did, and `''`."""
+    recent = [
+        one
+        for one in map(
+            run_record,
+            await fetch(_RUNS_FOR_KINDS, (family, profile, STEPPED_BACK_PRICED, KIND_OVER_RUNS)),
+        )
+        if one.started_at >= since
+    ]
+    rows: list[tuple[object, ...]] = []
+    for kind_row in await fetch(_KINDS_OF_FAMILY, (family, profile, since)):
+        kind = str(kind_row[0])
+        sample: list[tuple[float, int]] = []
+        for run in map(
+            run_record,
+            await fetch(
+                _RUNS_FOR_KIND,
+                (family, profile, STEPPED_BACK_PRICED, since, kind, KIND_OVER_RUNS),
+            ),
+        ):
+            n = int(run.files[kind].get("n", 0))
+            if sum(weight for _cost, weight in sample) < PACE_OVER_ITEMS:
+                sample.append((int(run.files[kind].get("ms", 0)) / 1000 / n, n))
+        if (found := priced(sample)) is not None:
+            rows.append(_price_row(family, profile, kind, found))
+    last = await fetch(_LAST_RUNS_OF_FAMILY, (family, profile, STEPPED_BACK_PRICED, PACE_OVER_RUNS))
+    busy = [[one.files_total, one.worker_ms, one.seconds or 0] for one in recent]
+    rows.append(_price_row(family, profile, "", _pace_of_runs(map(run_record, last), since), busy))
+    return rows
 
 
 register_schema_initializer(COMPONENT, VERSION, initialize, baseline=5)
@@ -250,7 +346,6 @@ STEPPED_BACK_PRICED = 0.05
 STEPPED_BACK = "seconds stepped back"
 #: How many stepped-back stretches of this process are kept, to leave their jobs out of a price.
 STEPPED_SPANS_KEPT = 256
-FEWEST_ITEMS = 20
 
 #: How many finished runs of a family stand in when the per-item clock cannot price it. Each one
 #: contributes its own mean, so several runs are a spread and one run is a single figure.
@@ -261,12 +356,6 @@ PACE_OVER_RUNS = 5
 #: estimate says so rather than borrowing another kind's.
 KIND_OVER_RUNS = 50
 
-#: How many items one stretch of the sample holds. The range is quoted between the cheapest and
-#: the dearest stretch's mean: what the rest will cost is a SUM of many items, which lands near
-#: their mean, and the mean moves with what the files are: a stretch of photographs, a stretch of
-#: long videos. Quartiles of single items are the wrong spread for a sum: a pass whose items are
-#: mostly cheap and sometimes very dear costs more than its third quarter says, every time.
-STRETCH_ITEMS = 10
 
 #: Stages that are not the work: every database statement is timed, and every request.
 _NOT_A_STAGE = ("db.", "http.", "job")
@@ -387,127 +476,6 @@ class Run:
             json.dumps(sorted(self.made_for)),
             json.dumps(self.ended_with) if self.ended_with else None,
         )
-
-
-@dataclass(frozen=True, slots=True)
-class Pace:
-    """What one item of a family's work costs on this machine: the mean, and how far it moves."""
-
-    items: int
-    """How many items the sample covers. Under `FEWEST_ITEMS` there is no pace at all."""
-    quick: float
-    """Seconds per item over the cheapest stretch of the sample (the cheapest run, from runs)."""
-    middle: float
-    """Seconds per item over the whole sample: the mean, weighted by items."""
-    slow: float
-    """Seconds per item over the dearest stretch of the sample (the dearest run, from runs)."""
-    from_items: bool
-    """True when every item was timed on its own, False when the sample is runs' own means. A
-    sample of runs has a spread only where there is more than one run, so a single run answers
-    with three equal figures and the screen draws one number rather than a range."""
-
-
-@dataclass(frozen=True, slots=True)
-class Estimate:
-    """How long a family's remaining work will take, between two honest bounds."""
-
-    quick_seconds: int
-    slow_seconds: int
-    items: int
-    """The size of the sample it was priced from, so a screen can say how much it rests on."""
-    at_once: int
-    """The number of workers this family can occupy, which the estimate divides by. The same
-    library on the same machine with this halved takes about twice as long, so it travels with
-    the figure rather than being assumed by whoever reads it."""
-    floor: bool = False
-    """The least it takes: the benchmark's price, which counts only the models and the frames."""
-
-
-@dataclass(frozen=True, slots=True)
-class KindPrices:
-    """What one file of each kind costs this family, and how many workers its runs kept busy."""
-
-    paces: dict[str, Pace]
-    """Worker seconds per item, by media kind (`video`, `image`, `gif`). A kind is absent when the
-    runs looked at hold fewer than `FEWEST_ITEMS` of it."""
-    busy: float | None
-    """Worker seconds per wall second over the runs big enough to fill the pool: how many workers
-    the work really kept going, which is fewer than the pool when one kind of work is capped or a
-    file is read by one process. None where no run was that big."""
-
-
-def priced(sample: Sequence[tuple[float, int]]) -> Pace | None:
-    """A pace from `(seconds per item, items)` pairs, newest first, or None under `FEWEST_ITEMS`.
-
-    The spread is the cheapest and the dearest stretch of `STRETCH_ITEMS`, so a run of three files
-    is not one end of a range on its own, and never narrower than the mean: the oldest few items,
-    too few for a stretch of their own, still move the mean, and a range that leaves out its own
-    middle is not a range.
-    """
-    items = sum(weight for _cost, weight in sample)
-    if items < FEWEST_ITEMS:
-        return None
-    stretches = _stretches(sample, STRETCH_ITEMS)
-    middle = _mean(sample)
-    return Pace(
-        items=items,
-        quick=min(*stretches, middle),
-        middle=middle,
-        slow=max(*stretches, middle),
-        from_items=False,
-    )
-
-
-def _shares(kinds: Mapping[str, float] | None) -> dict[str, float]:
-    """What is left by kind, as fractions of the whole. Empty when nothing says."""
-    wanted = {kind: float(n) for kind, n in (kinds or {}).items() if n > 0}
-    total = sum(wanted.values())
-    return {kind: n / total for kind, n in wanted.items()} if total > 0 else {}
-
-
-def _quantile(sample: Sequence[tuple[float, int]], at: float) -> float:
-    """One quantile of `(cost, weight)` pairs, the weights counting items.
-
-    Weighted rather than plain, because one row is not one item: a scan's walk carries thousands
-    of files at one cost, and counting it as a single observation would let a handful of walks
-    outvote every file they found. The pairs need not be sorted; nearest-rank, so the answer is
-    always a cost that was actually measured rather than an average of two that were not.
-    """
-    ordered = sorted(sample)
-    total = sum(weight for _cost, weight in ordered)
-    wanted = at * total
-    seen = 0
-    # Every cost but the dearest is asked whether the rank falls on it; the dearest is where the
-    # rank lands when none of them holds it, which for `at` up to 1 is always so by then.
-    for cost, weight in ordered[:-1]:
-        seen += weight
-        if seen >= wanted:
-            return cost
-    return ordered[-1][0]
-
-
-def _mean(sample: Sequence[tuple[float, int]]) -> float:
-    """The mean cost of `(cost, weight)` pairs, the weights counting items."""
-    total = sum(weight for _cost, weight in sample)
-    return sum(cost * weight for cost, weight in sample) / total if total else 0.0
-
-
-def _stretches(sample: Sequence[tuple[float, int]], size: int) -> list[float]:
-    """The mean cost of each run of `size` items, in the order the sample is in (newest first).
-
-    A last run shorter than `size` is the oldest end of the sample and is left out of the spread;
-    a sample too small for one whole run is one stretch.
-    """
-    means: list[float] = []
-    held: list[tuple[float, int]] = []
-    count = 0
-    for cost, weight in sample:
-        held.append((cost, weight))
-        count += weight
-        if count >= size:
-            means.append(_mean(held))
-            held, count = [], 0
-    return means or [_mean(sample)]
 
 
 class Ledger(RunReads):
@@ -758,11 +726,15 @@ class Ledger(RunReads):
         # A settings change invalidates the pace, so the moment is noted here: this is the one
         # place the live settings arrive, on the pool's own timer. Not on the first tick, which is
         # this process learning what the settings are rather than somebody changing them.
-        if self._settings and dict(settings) != self._settings:
+        changed = not self._settings or dict(settings) != self._settings
+        if self._settings and changed:
             self._settings_changed_at = now
             self._priced.clear()
             log.info("ledger.settings_changed", at=now)
         self._settings = dict(settings)
+        # This process's first tick and a settings change move every price; a run's close, its own.
+        for family in LONG_PASSES if changed else ():
+            await self._keep_prices(family)
         busy = {self.family_of(job_type) for job_type, count in unfinished.items() if count > 0}
         for family, run in list(self._open.items()):
             run.settings = dict(settings)
@@ -787,6 +759,7 @@ class Ledger(RunReads):
             # truth; every pass drains through here, and `OTHER` moves no table's counts.
             if family in LONG_PASSES:
                 await self._db.refresh_statistics(reason=f"pass:{family.value}")
+                await self._keep_prices(family)
 
     def _count_stepped(self, now: int, stepped: bool) -> None:
         """Add the stretch since the last tick to each open run, if it was stepped back."""
@@ -972,25 +945,34 @@ class Ledger(RunReads):
             _LAST_RUNS_OF_FAMILY,
             (family.value, self._profile, STEPPED_BACK_PRICED, PACE_OVER_RUNS),
         )
-        sample: list[tuple[float, int]] = []
-        for row in rows:
-            run = run_record(row)
-            if self._settings_changed_at is not None and run.started_at < self._settings_changed_at:
-                continue
-            files = run.files_total
-            if files <= 0 or run.worker_ms <= 0:
-                continue
-            sample.append((run.worker_ms / 1000 / files, files))
-        items = sum(weight for _cost, weight in sample)
-        if items < FEWEST_ITEMS:
+        return _pace_of_runs(map(run_record, rows), self._settings_changed_at or 0)
+
+    async def _keep_prices(self, family: Family) -> None:
+        """Write this long pass's prices from its runs and its timed items, for `_kept` to read."""
+        since = self._settings_changed_at or 0
+        rows = await _prices_from_runs(self._db.fetch_all, family.value, self._profile, since)
+        types = sorted(one for one, whose in self._families.items() if whose is family)
+        sample = await self._item_costs(types) if types else []
+        if sum(weight for _cost, weight in sample) >= FEWEST_ITEMS and _quantile(sample, 0.5) >= 1:
+            stretches = _stretches(sample, STRETCH_ITEMS)
+            items = Pace(
+                sum(weight for _cost, weight in sample),
+                min(stretches),
+                _mean(sample),
+                max(stretches),
+                from_items=True,
+            )
+            rows.append(_price_row(family.value, self._profile, "*", items))
+        async with self._db.write() as connection:
+            await connection.execute(_FORGET_PRICES, (family.value, self._profile))
+            await connection.executemany(_KEEP_PRICE, rows)
+
+    async def _kept(self, family: Family) -> dict[str, Row] | None:
+        """A long pass's kept prices by kind, or None where none were kept: then the runs are read."""
+        if family not in LONG_PASSES:
             return None
-        return Pace(
-            items=items,
-            quick=min(cost for cost, _weight in sample),
-            middle=_mean(sample),
-            slow=max(cost for cost, _weight in sample),
-            from_items=False,
-        )
+        rows = await self._db.fetch_all(_PRICES_OF, (family.value, self._profile))
+        return {str(row["kind"]): row for row in rows} or None
 
     async def kind_prices(
         self, family: Family, *, at_once: int, kinds: Iterable[str] | None = None
@@ -1062,12 +1044,17 @@ class Ledger(RunReads):
             return None
         workers = max(1, at_once)
         shares = _shares(kinds)
+        kept = await self._kept(family)
         if shares:
-            by_kind = await self._estimate_by_kind(family, left, shares, workers)
+            by_kind = await self._estimate_by_kind(family, left, shares, workers, kept)
             return by_kind or await self._first_price(
                 family, left * shares.get("video", 0.0), workers
             )
-        found = await self.pace(family, job_types)
+        found = (
+            await self.pace(family, job_types)
+            if kept is None
+            else _kept_pace(kept.get("*")) or _kept_pace(kept.get(""))
+        )
         if found is None or found.slow <= 0:
             return await self._first_price(family, left, workers)
         quick = left * found.quick / workers
@@ -1080,14 +1067,23 @@ class Ledger(RunReads):
         )
 
     async def _estimate_by_kind(
-        self, family: Family, left: float, shares: Mapping[str, float], workers: int
+        self,
+        family: Family,
+        left: float,
+        shares: Mapping[str, float],
+        workers: int,
+        stored: Mapping[str, Row] | None = None,
     ) -> Estimate | None:
         """What is left priced kind by kind from the history, or None when a kind has no price.
 
         The quick end divides by every worker the family can occupy; the slow end by the workers
         its big runs actually kept busy, where that is fewer.
         """
-        prices = await self.kind_prices(family, at_once=workers, kinds=shares)
+        prices = (
+            await self.kind_prices(family, at_once=workers, kinds=shares)
+            if stored is None
+            else _kept_kind_prices(stored, workers)
+        )
         quick = 0.0
         slow = 0.0
         items = 0

@@ -38,7 +38,9 @@ a function for each, exactly as it does for the counters on `WorkAhead`, and thi
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
 
 from sift.kernel.jobs.families import Family
@@ -111,6 +113,38 @@ NOTHING_HELD = QuietHold()
 AskQuiet = Callable[[], Awaitable[QuietHold]]
 
 
+@dataclass(slots=True)
+class OneReading:
+    """The app settings one question read, read once and held for that question alone."""
+
+    values: dict[str, str] | None = None
+
+
+_READING: ContextVar[OneReading | None] = ContextVar("switchboard_reading", default=None)
+
+
+def one_reading_now() -> OneReading | None:
+    """The reading of the question in progress, or None outside one."""
+    return _READING.get()
+
+
+@asynccontextmanager
+async def one_reading() -> AsyncIterator[None]:
+    """Every setting a question asks, answered from one read taken when it is first needed.
+
+    Live per question, never kept past it: a switch moved is read by the next question. A question
+    inside another shares the outer one's reading.
+    """
+    if _READING.get() is not None:
+        yield
+        return
+    token = _READING.set(OneReading())
+    try:
+        yield
+    finally:
+        _READING.reset(token)
+
+
 class Switchboard:
     """What the application knows about each kind of background work that the queue cannot.
 
@@ -165,7 +199,8 @@ class Switchboard:
         if switch is None or pressed:
             return None
         try:
-            on = await switch.on()
+            async with one_reading():
+                on = await switch.on()
         except Exception as exc:
             log.warning("switchboard.unreadable", job_type=job_type, key=switch.key, error=str(exc))
             return None
@@ -197,11 +232,12 @@ class Switchboard:
 
     async def _ask_every_family(self) -> dict[Family, Readiness]:
         answers: dict[Family, Readiness] = {}
-        for family, ask in self._asks.items():
-            try:
-                answers[family] = await ask()
-            except Exception as exc:
-                log.warning("switchboard.readiness_failed", family=family.value, error=str(exc))
+        async with one_reading():
+            for family, ask in self._asks.items():
+                try:
+                    answers[family] = await ask()
+                except Exception as exc:
+                    log.warning("switchboard.readiness_failed", family=family.value, error=str(exc))
         return answers
 
     # --- when it is allowed to run -------------------------------------------------------
@@ -236,7 +272,8 @@ class Switchboard:
         if self._quiet is None:
             return NOTHING_HELD
         try:
-            return await self._quiet()
+            async with one_reading():
+                return await self._quiet()
         except Exception as exc:
             log.warning("switchboard.quiet_unreadable", error=str(exc))
             return NOTHING_HELD
@@ -252,7 +289,8 @@ class Switchboard:
         if opens is None:
             return None
         try:
-            answer = await opens()
+            async with one_reading():
+                answer = await opens()
         except Exception as exc:
             log.warning("switchboard.window_unreadable", family=family.value, error=str(exc))
             return None

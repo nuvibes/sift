@@ -17,6 +17,7 @@ from pydantic import ConfigDict, Field
 from sift.kernel.access import Viewer
 from sift.kernel.jobs import unlisted_job_types
 from sift.kernel.jobs.schedules import get_schedule
+from sift.kernel.jobs.switchboard import one_reading
 from sift.kernel.settings_registry import get_registered
 from sift.kernel.wire import Wire
 from sift.kernel.wiring import part_of
@@ -272,6 +273,12 @@ async def read_tasks(
     A task declared unshown (the prunes, the update check) runs and is recorded like any other and
     is left out here, so no pane can draw a When for it.
     """
+    # Every setting the screen asks, read once for it.
+    async with one_reading():
+        return await _tasks(viewer, service)
+
+
+async def _tasks(viewer: Viewer, service: TasksService) -> Tasks:
     quiet = await service.quiet_hours()
     states = await service.states(viewer)
     return Tasks(

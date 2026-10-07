@@ -136,7 +136,6 @@ async def test_a_visible_subject_s_tab_strip_reads_the_stored_counts(
         kind,
         str(world.object_id(kind)),
         cast(Repository, asked),
-        temp_db,
         actors.admin,
         cast(DisagreementSeam, _NoWaiting()),
     )

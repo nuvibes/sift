@@ -122,6 +122,24 @@ export class EntitySubject<T> {
 	}
 }
 
+/* One answer per kind, asked before the part that draws it is mounted; that part's first read takes
+   it rather than asking again, so the part draws its answer on its first frame. */
+const primed = new Map<string, { id: string; answer: Promise<unknown> }>();
+
+/** Ask now, for a reading a part not yet drawn will want. See `primedOr`. */
+export function prime<T>(kind: string, id: string, answer: Promise<T>): Promise<T> {
+	primed.set(kind, { id, answer });
+	return answer;
+}
+
+/** The answer primed for this subject, taken once, or else a fresh ask. */
+export function primedOr<T>(kind: string, id: string, ask: () => Promise<T>): Promise<T> {
+	const held = primed.get(kind);
+	if (held?.id !== id) return ask();
+	primed.delete(kind);
+	return held.answer as Promise<T>;
+}
+
 /**
  * One READING about a subject (a count, a score) kept on screen while it is re-read.
  *

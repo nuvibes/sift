@@ -121,10 +121,9 @@ class Readiness:
     family: str
     device: str
     problem: str | None = None
-    #: Files whose description is a previous model's. In the index, out of every search, and
-    #: counted among what is still to do: the screen says so rather than letting results be
-    #: quietly partial.
-    described_by_another_model: int = 0
+    #: Whether any file's description is a previous model's: in the index, out of every search.
+    #: Asked, not counted; the screen that says how many asks `described_by_others`.
+    by_another_model: bool = False
 
 
 class SemanticService:
@@ -218,7 +217,7 @@ class SemanticService:
 
         problem: str | None = None
         ready = False
-        described_by_another_model = 0
+        by_another_model = False
         if not supported:
             try:
                 self._store.require()
@@ -228,7 +227,7 @@ class SemanticService:
             problem = None
         else:
             embedder = await self.embedder()
-            described_by_another_model = await self._records.described_by_others(embedder.revision)
+            by_another_model = await self._records.any_described_by_others(embedder.revision)
             if not embedder.installed():
                 problem = (
                     "The models have not been obtained yet. Sift does not include them; they are "
@@ -255,7 +254,7 @@ class SemanticService:
             family=configured.family,
             device=configured.device,
             problem=problem,
-            described_by_another_model=described_by_another_model,
+            by_another_model=by_another_model,
         )
 
     async def _check_device(self, device: str) -> None:
@@ -576,6 +575,11 @@ class SemanticService:
         not count: their numbers are not comparable with anything being searched now."""
         embedder = await self.embedder()
         return await self._records.described_count(embedder.revision)
+
+    async def described_by_others(self) -> int:
+        """How many files a previous model described: counted among what is still to do."""
+        embedder = await self.embedder()
+        return await self._records.described_by_others(embedder.revision)
 
     async def prune_index(self) -> int:
         """Drop the vectors of files that have left the library. Returns how many files.

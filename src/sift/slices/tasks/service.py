@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from sift.kernel.access import Viewer
-from sift.kernel.access.history_events import events_of_entity
+from sift.kernel.access.history_events import LedgerEvent, latest_events_of_entities
 from sift.kernel.db import Database
 from sift.kernel.jobs import (
     CANCELABLE_STATES,
@@ -160,6 +160,23 @@ def _last_job_of(run: TaskRun | None) -> LastRun | None:
         return None
     return LastRun(
         ended_at=run.finished_at, outcome=run.state.value, seconds=run.seconds, said=run.note
+    )
+
+
+def _last_line(event: LedgerEvent | None) -> LastRun | None:
+    """How a task that writes its own History line last ended, from that line."""
+    if event is None:
+        return None
+    try:
+        said = json.loads(event.payload or "{}")
+    except json.JSONDecodeError:
+        said = {}
+    seconds = said.get("seconds")
+    return LastRun(
+        ended_at=event.at,
+        outcome=str(said.get("outcome") or "done"),
+        seconds=int(seconds) if isinstance(seconds, int) else None,
+        said=str(said["said"]) if said.get("said") else None,
     )
 
 
@@ -561,10 +578,16 @@ class TasksService:
         by_products: list[tuple[ScheduledTask, Sequence[str], Family]] = []
         one_job: list[ScheduledTask] = []
         lasts: dict[str, LastRun | None] = {}
+        # The tasks that write their own line, every one's newest in one read.
+        lines = await latest_events_of_entities(
+            self._db, viewer, "run", [task.id for task in tasks if task.records_runs]
+        )
         for task in tasks:
             products = self._products.get(task.id)
             family = None if task.job_type is None else family_of(task.job_type)
-            if task.records_runs or family is None:
+            if task.records_runs:
+                lasts[task.id] = _last_line(lines.get(task.id))
+            elif family is None:
                 lasts[task.id] = await self._last(task, viewer)
             elif products and self._ledger is not None:
                 by_products.append((task, products, family))
@@ -587,21 +610,8 @@ class TasksService:
         """How the last run ended. From the history for a task that writes its own line there, and
         from the work ledger's record of its family for a long pass: both kept, neither pruned."""
         if task.records_runs:
-            events = await events_of_entity(self._db, viewer, "run", task.id, limit=1)
-            if not events:
-                return None
-            event = events[0]
-            try:
-                said = json.loads(event.payload or "{}")
-            except json.JSONDecodeError:
-                said = {}
-            seconds = said.get("seconds")
-            return LastRun(
-                ended_at=event.at,
-                outcome=str(said.get("outcome") or "done"),
-                seconds=int(seconds) if isinstance(seconds, int) else None,
-                said=str(said["said"]) if said.get("said") else None,
-            )
+            lines = await latest_events_of_entities(self._db, viewer, "run", [task.id])
+            return _last_line(lines.get(task.id))
         # `register_schedule` refuses a task with no job type, so every declared task has one.
         assert task.job_type is not None  # noqa: S101 (refused at registration)
         family = family_of(task.job_type)

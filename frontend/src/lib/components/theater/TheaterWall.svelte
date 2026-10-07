@@ -29,6 +29,8 @@
 	import { screenChanges } from '$lib/components/player/motion';
 	import { bezier, durationToken, easingToken, motion } from '$lib/shell/motion.svelte';
 	import { matches } from '$lib/shell/shortcuts';
+	import { api, isMissing } from '$lib/api/client';
+	import { arrivals, libraryChanges, whenChanged } from '$lib/library/changes.svelte';
 
 	interface Props {
 		wall: Wall;
@@ -44,6 +46,21 @@
 	let { wall, onfullscreen, echoes = {} }: Props = $props();
 
 	const grid = $derived(template(wall.shape));
+
+	/* A file deleted elsewhere leaves every cell showing it at once, not at its next turn. */
+	whenChanged(libraryChanges, () => {
+		for (const cell of wall.cells) {
+			const id = cell.playing?.id;
+			if (id === undefined) continue;
+			void api.get(`/assets/${id}`).catch((error) => {
+				if (isMissing(error) && cell.playing?.id === id) void cell.advance();
+			});
+		}
+	});
+	/* And a cell that found nothing to play looks again when files arrive. */
+	whenChanged(arrivals, () => {
+		for (const cell of wall.cells) if (cell.state === 'nothing_here') void cell.restart();
+	});
 
 	/*
 	 * Whether the wall's chrome is up, answered once for the bar and the cell numbers. It answers the
@@ -151,12 +168,15 @@
 	function focusMoved(event: FocusEvent) {
 		const at = event.type === 'focusin' ? event.target : event.relatedTarget;
 		const into = at instanceof Element ? at : null;
-		if (into?.closest(BARS)) focusHeld = true;
-		else if (focusHeld && into?.closest(OPENED) && !frame?.contains(into)) return;
-		else if (focusHeld && (event.type === 'focusin' || into === null)) {
-			focusHeld = false;
-			runDown();
-		}
+		// After the update: a focused control taken out of the page fires `focusout` inside one.
+		queueMicrotask(() => {
+			if (into?.closest(BARS)) focusHeld = true;
+			else if (focusHeld && into?.closest(OPENED) && !frame?.contains(into)) return;
+			else if (focusHeld && (event.type === 'focusin' || into === null)) {
+				focusHeld = false;
+				runDown();
+			}
+		});
 	}
 
 	$effect(() => {
@@ -370,6 +390,10 @@
 		};
 	});
 
+	/* Unseen while the opening draw has cells with no file yet, so none is drawn at a stand-in shape
+	   and then moves its neighbours when its file arrives. */
+	const settling = $derived(wall.opening && wall.inFocus.some((cell) => cell.shape === null));
+
 	/* Every cell's shape comes from the CELL (`Cell.shape`), which this arithmetic and the cell's own
 	   `aspect-ratio` must share exactly. */
 	const tall = $derived(
@@ -419,6 +443,7 @@
 		<div
 			class="grid"
 			class:held
+			class:settling
 			bind:this={pictures}
 			bind:clientWidth={boxWide}
 			bind:clientHeight={boxTall}
@@ -511,6 +536,10 @@
 		   places holding one gap is how they come to disagree by four pixels. */
 		gap: 8px;
 		transition: margin-block-end var(--dur-slow) var(--ease-in);
+	}
+
+	.grid.settling {
+		visibility: hidden;
 	}
 
 	/* The pictures give the bar its band while it is up, on the bars' curves: in eased out, away eased in. */

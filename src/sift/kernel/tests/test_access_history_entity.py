@@ -16,7 +16,6 @@ import sift.slices.stash_boxes.schema
 import sift.slices.workbench.schema  # noqa: F401
 from sift.kernel.access.history import Actor
 from sift.kernel.access.history_entity import (
-    history_count_of_entity,
     history_of_collection,
     history_of_photo_set,
     history_of_site,
@@ -116,9 +115,6 @@ async def test_a_sites_usernames_say_who_added_them_and_a_box_made_site_names_it
     assert "Another user added the username rowanp to it" in said
     assert "The username nadiav was added to it before Sift recorded how" in said
     assert any(line.startswith("Sift added the username quillmoss to it") for line in said)
-    assert await history_count_of_entity(temp_db, actors.admin, "site", SITE) == len(events)
-    with pytest.raises(KeyError, match="nothing knows the history"):
-        await history_count_of_entity(temp_db, actors.admin, "shoot", SITE)
 
 
 async def test_every_thread_draws_without_the_tables_a_feature_never_made(

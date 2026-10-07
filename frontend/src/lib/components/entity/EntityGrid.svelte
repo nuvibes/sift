@@ -78,6 +78,8 @@
 		beside?: Snippet;
 		/** Let `beside` name the section instead of the title. See `PageHeader.titleHidden`. */
 		titleHidden?: boolean;
+		/** What the wall is doing, after the count. See `PageHeader.status`. */
+		status?: Snippet;
 		/**
 		 * A band between the frame's top and the title, for a wall EMBEDDED in a page about something.
 		 *
@@ -132,6 +134,7 @@
 		icon,
 		beside,
 		titleHidden = false,
+		status,
 		above,
 		crumbs,
 		empty,
@@ -239,7 +242,16 @@
 			{#if above}
 				<PageAbove>{@render above()}</PageAbove>
 			{/if}
-			<PageHeader {title} {icon} count={counted} {beside} {titleHidden} {controls} {lede} />
+			<PageHeader
+				{title}
+				{icon}
+				count={counted}
+				{beside}
+				{titleHidden}
+				{status}
+				{controls}
+				{lede}
+			/>
 		{/snippet}
 
 		{@render wall()}

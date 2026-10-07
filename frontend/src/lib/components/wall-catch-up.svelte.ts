@@ -143,8 +143,8 @@ export class WallCatchUp {
 		return Math.max(1, this.wall.grid.rows[0]?.tiles.length ?? 1);
 	}
 
-	/* Arrivals come in by themselves at the top of the page, a row's worth at a time or once they
-	   stop coming: re-rowing a justified wall is a strobe only by its rate. */
+	/* A row's worth comes in by itself at the top of the page, fewer once a scan stops pouring them
+	   in, and otherwise waits behind its line: re-rowing a justified wall is a strobe by its rate. */
 	letThemIn(): void {
 		const grid = this.wall.grid;
 		clearTimeout(this.settling);
@@ -155,6 +155,7 @@ export class WallCatchUp {
 			this.takeTheNewOnes();
 			return;
 		}
+		if (imports.busy === 0) return;
 		this.settling = setTimeout(() => {
 			this.settling = undefined;
 			// Asked again: a page can be turned or scrolled in the wait.

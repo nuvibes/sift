@@ -500,12 +500,6 @@ COUNTS: tuple[Drawn, ...] = (
         ),
     ),
     Drawn(
-        what="History, on a person's tab strip",
-        where="history_count_of_person (kernel/access/history_person.py)",
-        number=lambda client: _json(client, f"/api/related/person/{SUBJECT}")["history"] or 0,
-        listing=lambda client: len(_json(client, f"/api/people/{SUBJECT}/history")),
-    ),
-    Drawn(
         what="a facet row under the grid's People dimension",
         where="facet_query (repository/assets.py)",
         # A row on this dimension carries the person's ID as its value and the name as its label,

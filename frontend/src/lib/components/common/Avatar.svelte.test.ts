@@ -321,3 +321,8 @@ it('draws the letter once every address has failed', async () => {
 	const root = host.querySelector<HTMLElement>('.avatar');
 	expect(root?.querySelector('.monogram')?.classList.contains('waiting')).toBe(false);
 });
+
+it('draws no letter for a name not known yet, never a stand-in', () => {
+	const root = draw({ name: '' });
+	expect(root.querySelector('.monogram')?.textContent?.trim()).toBe('');
+});

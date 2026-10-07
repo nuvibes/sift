@@ -111,7 +111,9 @@ async def read_status(
         # tasks count: its Meaning row describes files through this feature's own per-file work.
         running_jobs=await queue.outstanding(SEMANTIC_DESCRIBE) + await _building(queue),
         problem=readiness.problem,
-        described_by_another_model=readiness.described_by_another_model,
+        described_by_another_model=(
+            await service.described_by_others() if readiness.by_another_model else 0
+        ),
         installed=sorted(
             weight_id for weight_id, weight in weights.CATALOG.items() if store.installed(weight)
         ),

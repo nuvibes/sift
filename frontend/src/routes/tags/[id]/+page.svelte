@@ -164,7 +164,7 @@
 			narrowedFiles = null;
 			return;
 		}
-		void narrowedFilesTotal(url, { tags: tag.name }).then((total) => {
+		void narrowedFilesTotal(url, { tags: tag.id }).then((total) => {
 			if (ask === narrowedAsk) narrowedFiles = total;
 		});
 	});
@@ -180,8 +180,8 @@
 					}),
 					/* And it wears its number: the strip is a MAP of what this page can show,
 					   and one bare word on a row of numbered ones reads as a tab nobody has
-					   looked at yet. It is the count of the very thread the pane draws, at the
-					   same cap. See `history_count_of_entity`. */
+					   looked at yet. It is the length of the very thread the pane draws, read
+					   beside the strip (`readThread`). */
 					{
 						id: HISTORY,
 						label: 'History',
@@ -536,7 +536,7 @@
 				     `tags=` is the same parameter the filter panel sends and the same one `tags:` parses to. -->
 					<AssetGrid
 						oncount={arrived}
-						query={{ tags: tag.name }}
+						query={{ tags: tag.id }}
 						title="Files"
 						titleLevel={2}
 						beside={tabStrip}
@@ -609,7 +609,7 @@
 	<PickPicture
 		bind:open={pickingPicture}
 		name={tag.name}
-		query={{ tags: tag.name }}
+		query={{ tags: tag.id }}
 		current={tag.cover_asset_id}
 		onpick={makeCover}
 		onupload={uploadCover}

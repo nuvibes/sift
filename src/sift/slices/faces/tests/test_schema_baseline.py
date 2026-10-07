@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import pytest
 
+from sift.kernel.content import backlog
 from sift.kernel.db import Connection, Database
 from sift.slices.faces import schema as faces_schema
 
@@ -21,7 +22,9 @@ _INDEXES = "SELECT name FROM sqlite_master WHERE type = 'index'"
 
 
 async def _parents(connection: Connection) -> None:
-    """The two tables from other components the face tables name, as narrow as they can be."""
+    """The tables from other components the face tables name or mark into, as narrow as can be."""
+    for statement in backlog.TABLES:
+        await connection.execute(statement)
     await connection.execute("CREATE TABLE people (id TEXT PRIMARY KEY)")
     await connection.execute("CREATE TABLE assets (id TEXT PRIMARY KEY)")
 

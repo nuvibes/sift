@@ -39,7 +39,7 @@
 	 */
 	import type { components } from '$lib/api/schema';
 	import { identifiedForPerson } from '$lib/people/faces.svelte';
-	import { readingAbout } from '$lib/entity/subject.svelte';
+	import { primedOr, readingAbout } from '$lib/entity/subject.svelte';
 	import { Tooltip } from '$lib/components/common';
 
 	interface Props {
@@ -89,7 +89,7 @@
 			// Unfiltered, because the three counts are of the whole of what this viewer may see and
 			// come back whatever was asked for. `total` is the filtering's own number and is not one
 			// of the three: reading it here is how this would quietly become a fourth count.
-			const answer = await identifiedForPerson(id, ONE);
+			const answer = await primedOr('identified', id, () => identifiedForPerson(id, ONE));
 			return {
 				confirmed: answer.confirmed,
 				matched: answer.matched,

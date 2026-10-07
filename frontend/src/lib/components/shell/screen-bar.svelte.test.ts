@@ -664,7 +664,35 @@ describe('the room on the top bar', () => {
 		expect(screenBar.roomOnTopBar, 'Browse inherited what Theater needed').toBe(true);
 	});
 
-	it('puts a screen met again in its home at once, decided on the width the bar has now', () => {
+	it('lays every screen out for the widest met, decided on the width the bar has now', () => {
+		const { bar, parts } = barWithEnds(100, 204);
+		screenBar.watchRoom(bar);
+		const onto = (id: string) => {
+			Object.assign(page, { route: { id } });
+			screenBar.publish(Symbol(id), {});
+		};
+
+		onto('/theater-wide');
+		parts[1].getBoundingClientRect = () => ({ width: 292 }) as DOMRect;
+		barIs(1000);
+		expect(screenBar.roomOnTopBar).toBe(false);
+		expect(screenBar.barEnd).toBe(392);
+
+		parts[1].getBoundingClientRect = () => ({ width: 204 }) as DOMRect;
+		onto('/browse-narrow');
+		expect(screenBar.roomOnTopBar, 'the menus came up between two screens').toBe(false);
+		expect(screenBar.barEnd, 'the centre widened between two screens').toBe(392);
+		barIs(1000);
+		expect(screenBar.barEnd, 'the narrower screen measured its own end over the widest').toBe(392);
+		expect(screenBar.roomOnTopBar, 'the narrower screen put the menus back up').toBe(false);
+
+		// The window widened while another screen was on.
+		barIs(2000);
+		onto('/theater-wide');
+		expect(screenBar.roomOnTopBar, 'an old width kept the menus down').toBe(true);
+	});
+
+	it('keeps the menus down on every screen once one needed more room at this width', () => {
 		const bar = document.createElement('header');
 		const field = document.createElement('form');
 		field.className = 'search';
@@ -677,23 +705,37 @@ describe('the room on the top bar', () => {
 			screenBar.publish(Symbol(id), {});
 		};
 
-		onto('/theater');
+		onto('/squeezed');
 		barIs(864);
 		expect(screenBar.roomOnTopBar).toBe(false);
 		fieldWidth = 400;
-		onto('/browse');
-		expect(screenBar.roomOnTopBar).toBe(true);
-
-		onto('/theater');
-		expect(screenBar.roomOnTopBar, 'the menus stood on the top bar until measured again').toBe(
-			false
-		);
-
-		// The window widened while another screen was on.
-		onto('/browse');
+		onto('/roomy');
+		barIs(864);
+		expect(screenBar.roomOnTopBar, 'the menus came up on a screen that needs less').toBe(false);
 		barIs(2000);
-		onto('/theater');
-		expect(screenBar.roomOnTopBar, 'an old width kept the menus down').toBe(true);
+		expect(screenBar.roomOnTopBar).toBe(true);
+	});
+
+	it('remembers what each screen needed across sittings, in this browser', async () => {
+		localStorage.setItem(
+			'sift.screen-bar.needs',
+			JSON.stringify({ '/kept': { room: 0, end: 500, barEnd: 480 }, '/broken': { room: 'x' } })
+		);
+		vi.resetModules();
+		const fresh = (await import('./screen-bar.svelte')).screenBar;
+		fresh.watchRoom(barWithEnds(100, 204).bar);
+		const onto = (id: string) => {
+			Object.assign(page, { route: { id } });
+			fresh.publish(Symbol(id), {});
+		};
+		onto('/kept');
+		expect(fresh.barEnd, 'the centre waited for a measurement').toBe(480);
+
+		onto('/other');
+		barIs(1200);
+		onto('/kept');
+		expect(fresh.roomOnTopBar, 'the menus stood up beside an end of 500').toBe(false);
+		localStorage.removeItem('sift.screen-bar.needs');
 	});
 
 	it("decides the tile size on a screen met again by that screen's own end group", () => {

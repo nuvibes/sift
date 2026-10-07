@@ -35,6 +35,7 @@ from sift.kernel.access.repository.views import (
     _site_from_row,
     _username_from_row,
 )
+from sift.kernel.access.repository.walls import plain_order
 from sift.kernel.access.viewer import Viewer
 from sift.kernel.paging import MAX_PAGE_SIZE
 
@@ -106,23 +107,26 @@ class SiteReads(RepositoryCore):
             raise ValueError("a page cannot start before the first row")
 
         where, bound = asset_filter.predicate()
+        params = self._username_params(
+            viewer,
+            username_id=None,
+            site_id=site_id,
+            person_id=person_id,
+            unattached=unattached,
+            prefix=prefix,
+            anywhere=anywhere,
+            limit=limit,
+            offset=offset,
+            sort=sort,
+            asset_filter=asset_filter,
+            name_candidates=name_candidates,
+        )
         rows = await self._db.fetch_all(
-            usernames_query(where),
-            bound
-            | self._username_params(
-                viewer,
-                username_id=None,
-                site_id=site_id,
-                person_id=person_id,
-                unattached=unattached,
-                prefix=prefix,
-                anywhere=anywhere,
-                limit=limit,
-                offset=offset,
-                sort=sort,
-                asset_filter=asset_filter,
-                name_candidates=name_candidates,
+            usernames_query(
+                where,
+                plain=plain_order(params, "username_id", "site_id", "person_id", "unattached"),
             ),
+            bound | params,
         )
         total = int(rows[0]["total_count"]) if rows else 0
         return UsernamePage(items=[_username_from_row(row) for row in rows], total=total)
@@ -304,22 +308,21 @@ class SiteReads(RepositoryCore):
         # ...and the wall's OWN rows, filtered by what the thing is rather than by its files. A
         # second seam beside the file filter rather than part of it; see `_row_narrowed`.
         narrowed, picked = narrowing.predicate()
+        params = self._site_params(
+            viewer,
+            site_id=None,
+            prefix=prefix,
+            anywhere=anywhere,
+            limit=limit,
+            offset=offset,
+            sort=sort,
+            asset_filter=asset_filter,
+            parent=parent,
+            count_narrowed=count_narrowed,
+        )
         rows = await self._db.fetch_all(
-            sites_query(where, narrowed),
-            bound
-            | picked
-            | self._site_params(
-                viewer,
-                site_id=None,
-                prefix=prefix,
-                anywhere=anywhere,
-                limit=limit,
-                offset=offset,
-                sort=sort,
-                asset_filter=asset_filter,
-                parent=parent,
-                count_narrowed=count_narrowed,
-            ),
+            sites_query(where, narrowed, plain=plain_order(params, "site_id", "parent_id")),
+            bound | picked | params,
         )
         total = int(rows[0]["total_count"]) if rows else 0
         return SitePage(items=[_site_from_row(row) for row in rows], total=total)

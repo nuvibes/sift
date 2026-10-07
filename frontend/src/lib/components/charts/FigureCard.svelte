@@ -2,9 +2,9 @@
 	/*
 	 * ONE LARGE FIGURE ON A CARD: its label, the number, and at most one sentence under it.
 	 *
-	 * The number counts up from zero when it arrives and again whenever it changes (a new period
-	 * on Insights), over the ambient duration, eased; with reduced motion it is drawn at once
-	 * (`countUp`). A figure that is not a quantity, such as a time of day, is always drawn at once.
+	 * The number counts up from zero when the card arrives (a period's answer, a recap card turned
+	 * to), over the ambient duration, eased; a later change is drawn at once, and with reduced
+	 * motion it is drawn at once (`countUp`). A figure that is not a quantity, such as a time of day, is always drawn at once.
 	 * The final figure sits unseen in the same cell as the counting one, so the card is as wide as
 	 * its answer from the first frame and nothing beside it moves while it counts.
 	 *
@@ -61,13 +61,15 @@
 
 	/* What the figure shows while it counts. Absent at rest, so a figure at rest draws its own value. */
 	let shown = $state<number | undefined>(undefined);
+	let arrived = false;
 
 	$effect(() => {
 		const to = value;
 		const moving = counts;
 		return untrack(() => {
 			shown = undefined;
-			if (!moving) return () => {};
+			if (!moving || arrived) return () => {};
+			arrived = true;
 			return countUp(to, (at) => {
 				shown = at === to ? undefined : at;
 			});

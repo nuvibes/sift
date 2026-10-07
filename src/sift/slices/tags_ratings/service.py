@@ -68,13 +68,6 @@ def _and_the_actor(told: Audience, actor: Actor) -> Audience:
     return told
 
 
-async def _whoever_may_see(database: Database) -> Audience:
-    """Every admin and every user given anything. Read before the write, so `telling` still says
-    nothing when no row moved."""
-    async with database.read() as connection:
-        return await who_may_see_a_file(connection)
-
-
 class TagLoop(Exception):
     """The parent asked for is the tag itself, or a tag already filed somewhere under it.
 
@@ -403,7 +396,7 @@ class TagService:
         built by the route: a second one for the user would be two arguments for one fact, free
         to disagree.
         """
-        async with telling(self._db, await _whoever_may_see(self._db), About.LIBRARY) as connection:
+        async with telling(self._db, who_may_see_a_file, About.LIBRARY) as connection:
             rows = list(
                 await connection.execute_fetchall(
                     _INSERT_TAG,
@@ -425,7 +418,7 @@ class TagService:
     async def update(self, viewer: Viewer, tag_id: str, name: str) -> Tag | None:
         """Rename. None when there is no such tag, `DuplicateTag` when it is taken."""
         was = await self.get(viewer, tag_id)
-        async with telling(self._db, await _whoever_may_see(self._db), About.LIBRARY) as connection:
+        async with telling(self._db, who_may_see_a_file, About.LIBRARY) as connection:
             rows = list(
                 await connection.execute_fetchall(_UPDATE_TAG, (name, sort_key(name), tag_id))
             )
@@ -512,7 +505,7 @@ class TagService:
         wanted = (parent or "").strip()
         parent_id = await self._parent_named(tag_id, wanted, actor=actor) if wanted else None
         held = await self._alias_moments(tag_id)
-        async with telling(self._db, await _whoever_may_see(self._db), About.LIBRARY) as connection:
+        async with telling(self._db, who_may_see_a_file, About.LIBRARY) as connection:
             await self._write_record(
                 connection, tag_id, description, category, aliases, held=held, now=self._now()
             )
@@ -592,7 +585,7 @@ class TagService:
         aliases"). The person writer's `merge_person_record` writes no event for the same reason.
         """
         held = await self._alias_moments(tag_id)
-        async with telling(self._db, await _whoever_may_see(self._db), About.LIBRARY) as connection:
+        async with telling(self._db, who_may_see_a_file, About.LIBRARY) as connection:
             await self._write_record(
                 connection, tag_id, description, category, aliases, held=held, now=self._now()
             )
@@ -667,7 +660,7 @@ class TagService:
         concealed comes out as no cover rather than as a leak. The same division People and
         Sites use.
         """
-        async with telling(self._db, await _whoever_may_see(self._db), About.LIBRARY) as connection:
+        async with telling(self._db, who_may_see_a_file, About.LIBRARY) as connection:
             # The cover as it WAS, in the write's own transaction: the same picture with a new
             # window is a reframe and says so. See `kernel/covers.py cover_change`.
             was = list(await connection.execute_fetchall(_CHOSEN_COVER, (tag_id,)))

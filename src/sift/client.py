@@ -64,6 +64,11 @@ FOREVER = "public, max-age=31536000, immutable"
 #: application rebuilt, restarted and verified, and still showing yesterday's screens.
 REVALIDATE = "no-cache"
 
+#: The icons under `brand/`: unhashed names, so not forever, but kept a week without asking. Asked
+#: every time, a tab icon is a request on every step through files.
+BRAND_PREFIX = "brand/"
+BRAND = "public, max-age=604800"
+
 #: The page shell: never kept at all, so every load of the app fetches it from the server.
 #:
 #: `no-cache` is not enough for this one file. A browser answers a HISTORY load (a tab brought back
@@ -235,6 +240,8 @@ def cache_control_for(path: str, asset: Path) -> str:
     """
     if path.startswith(IMMUTABLE_PREFIX):
         return FOREVER
+    if path.startswith(BRAND_PREFIX):
+        return BRAND
     return PAGE if asset == INDEX or path == "index.html" else REVALIDATE
 
 

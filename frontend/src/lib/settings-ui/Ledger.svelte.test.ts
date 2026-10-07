@@ -25,7 +25,10 @@ vi.mock('$lib/library/ledger', async (importOriginal) => ({
 
 import { toasts } from '$lib/shell/toasts.svelte';
 
-vi.mock('$lib/api/history', () => ({ undoDecision: mocks.undoDecision }));
+vi.mock('$lib/api/history', async (importOriginal) => ({
+	...(await importOriginal<typeof import('$lib/api/history')>()),
+	undoDecision: mocks.undoDecision
+}));
 
 import { beforeNavigate } from '$app/navigation';
 

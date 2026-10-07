@@ -931,21 +931,19 @@ class LibraryWatcher:
             await self._scan(root_id, rel_dir, pending.paths)
 
     async def _look_at(self, root_id: str, rel_dir: str, pending: _Pending) -> _Look | None:
-        """Ask the disk about a NAMED burst, off the loop. None when there is nothing to ask.
+        """Ask the disk about a burst, off the loop: its named files, and whether its folder is there.
 
-        Only for a named burst, and that is a decision rather than an oversight. A folder scan has
-        no path list to compare, and the walk it runs already checks every file against what was
-        recorded, so there is nothing here it could add and a whole directory of `stat` calls it
-        would cost. It has no use for the folder question either: a walk of a directory that is not
-        there finds nothing and concludes nothing, which is the right thing to do.
+        A walk names no files but still asks about the folder: the source end of a move between
+        folders is a walk of a directory that has gone, and scanning it would record a folder row
+        for a path nothing is at. Gone, it is the folder above that is walked (`_folder_went`).
 
         On a thread, because it is up to `MOST_NAMED_PATHS` `stat` calls plus one, and a library
         sits on a share as often as on a disk.
         """
         base = self._bases.get(root_id)
-        if base is None or not pending.paths:
+        if base is None:
             return None
-        return await asyncio.to_thread(_measure, base, rel_dir, sorted(pending.paths))
+        return await asyncio.to_thread(_measure, base, rel_dir, sorted(pending.paths or ()))
 
     def _folder_went(self, key: tuple[str, str], now: float) -> None:
         """The folder these files were in is gone, so what really changed is the folder ABOVE it.

@@ -31,7 +31,7 @@
 		type Strength
 	} from '$lib/people/faces.svelte';
 	import { untrack } from 'svelte';
-	import { readingAbout } from '$lib/entity/subject.svelte';
+	import { primedOr, readingAbout } from '$lib/entity/subject.svelte';
 	import { Meter } from '$lib/components/common';
 	import Icon from '$lib/components/Icon.svelte';
 
@@ -75,7 +75,7 @@
 	   block out of the page and put it back on every library write. */
 	const reading = readingAbout<Strength | null>(
 		() => personId,
-		async (id) => (handed ? null : await recognitionOf(id)),
+		async (id) => (handed ? null : await primedOr('recognition', id, () => recognitionOf(id))),
 		null,
 		() => refresh
 	);

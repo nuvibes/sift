@@ -52,13 +52,6 @@ def _and_the_actor(told: Audience, actor: Actor) -> Audience:
     return told
 
 
-async def _whoever_may_see(database: Database) -> Audience:
-    """Every admin and every user given anything. Read before the write, so `telling` still says
-    nothing when no row moved."""
-    async with database.read() as connection:
-        return await who_may_see_a_file(connection)
-
-
 # The same `tags` table every other kind of thing uses. A tag called "archive" means the same thing
 # wherever it is put, and two tag vocabularies that cannot see each other is what one table exists
 # to prevent.
@@ -245,7 +238,7 @@ class CollectionService:
         starts out of the vault: concealing one is a separate, deliberate act rather than
         something a create can do on the way past.
         """
-        async with telling(self._db, await _whoever_may_see(self._db), About.LIBRARY) as connection:
+        async with telling(self._db, who_may_see_a_file, About.LIBRARY) as connection:
             rows = list(
                 await connection.execute_fetchall(
                     _INSERT_COLLECTION,
@@ -267,7 +260,7 @@ class CollectionService:
         overwritten in place: without it, "renamed" is a line that cannot say what from.
         """
         was_called = await self._name_of(collection_id)
-        async with telling(self._db, await _whoever_may_see(self._db), About.LIBRARY) as connection:
+        async with telling(self._db, who_may_see_a_file, About.LIBRARY) as connection:
             rows = list(
                 await connection.execute_fetchall(
                     _RENAME_COLLECTION, (name, sort_key(name), collection_id)
@@ -402,7 +395,7 @@ class CollectionService:
         return await self._db.fetch_all(_TAGS_OF_COLLECTION, (collection_id,))
 
     async def tag(self, collection_id: str, tag_id: str, *, add: bool = True) -> None:
-        async with telling(self._db, await _whoever_may_see(self._db), About.LIBRARY) as connection:
+        async with telling(self._db, who_may_see_a_file, About.LIBRARY) as connection:
             if add:
                 await connection.execute(_TAG, (collection_id, tag_id, int(time.time())))
             else:
@@ -438,7 +431,7 @@ class CollectionService:
         The caller checks that the asset is one of the items and that the viewer may see it. This
         writes what it is given.
         """
-        async with telling(self._db, await _whoever_may_see(self._db), About.LIBRARY) as connection:
+        async with telling(self._db, who_may_see_a_file, About.LIBRARY) as connection:
             # The cover as it WAS, in the write's own transaction: the same picture with a new
             # window is a reframe and says so. See `kernel/covers.py cover_change`.
             was = list(await connection.execute_fetchall(_CHOSEN_COVER, (collection_id,)))

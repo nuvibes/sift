@@ -12,8 +12,11 @@ from sift.kernel.access.repository.walls import (
     _row_narrowed,
     _wall,
     _with_stored_counts,
+    hidden_by,
     locked_tile,
     one_row,
+    ordered,
+    plain_total,
     shown,
 )
 from sift.kernel.sql_splice import splice
@@ -231,17 +234,31 @@ _SONGS = _wall(_VISIBLE_SONGS, "_VISIBLE_SONGS")
 SONGS_POSITION = _position(_SONGS)
 _SONGS_HEAD, _SONGS_ACCESS = _cut(_VISIBLE_SONGS, "_VISIBLE_SONGS")
 _SONGS_STORED = _with_stored_counts(_VISIBLE_SONGS, "_VISIBLE_SONGS")
+#: The plain wall: its total off the stored totals (`plain_total`).
+_SONGS_PLAIN = ordered(
+    plain_total(
+        _SONGS_STORED,
+        "_SONGS_STORED",
+        "song",
+        "songs",
+        hidden_by("song_user_state", "song_id"),
+        "song_user_state",
+    ),
+    "_SONGS_PLAIN",
+)
 
 #: One song by id, as the unfiltered wall reads it: what a cover or a page asks before it
 #: answers, at one row's cost (`one_row`).
 SONG_BY_ID = one_row(_SONGS_STORED, "_SONGS_STORED", "song", "sg", "song_id")
 
 
-def songs_query(where: str, rows: str = _NOTHING) -> str:
+def songs_query(where: str, rows: str = _NOTHING, *, plain: str | None = None) -> str:
     """Songs this viewer may know about, counted over only the files a filter reaches. The Photo
     Sets wall's two seams, the same way round: `rows` filters the songs themselves."""
     if not _narrowed(where):
-        return _row_narrowed(_SONGS_STORED, rows)
+        return _row_narrowed(
+            _SONGS_PLAIN[plain] if plain and not _narrowed(rows) else _SONGS_STORED, rows
+        )
     return _row_narrowed(_filtered(_SONGS_HEAD, _SONGS_ACCESS, where), rows)
 
 

@@ -10,13 +10,18 @@ from __future__ import annotations
 import dataclasses
 import json
 import time
+from collections.abc import Iterator
+from contextlib import contextmanager
+from typing import Any
 
 import pytest
 
 # The `ran` event lands in the workbench's table, which the workbench slice registers.
 import sift.slices.workbench.schema  # noqa: F401
+from sift.kernel import db as db_module
 from sift.kernel.db import Database
 from sift.kernel.jobs import ledger as ledger_module
+from sift.kernel.jobs import pacing
 from sift.kernel.jobs.families import LONG_PASSES, Family
 from sift.kernel.jobs.ledger import CURRENT_FAMILY, Ledger, priced, report_text
 
@@ -796,6 +801,61 @@ async def test_a_run_over_videos_is_not_priced_from_a_run_over_photos(
     assert (await priced({"video": 10, "image": 30}))[0] == int(40 * (0.25 * 6 + 0.75 * 0.05) / 4)
 
 
+async def _page_of_estimates(ledger: Ledger) -> list[object]:
+    return [
+        await ledger.estimate(
+            Family.GENERATE, ["thumbnail"], left=40, at_once=4, kinds={"video": 10, "image": 30}
+        ),
+        await ledger.estimate(Family.GENERATE, ["thumbnail"], left=40, at_once=4),
+        await ledger.estimate(Family.IDENTIFY, ["face_scan"], left=40, at_once=4),
+    ]
+
+
+async def test_a_page_reads_the_kept_prices_and_they_say_what_the_runs_said(
+    ledger: Ledger, temp_db: Database, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Prices are kept on the first tick and when a run closes; a page then reads one row set per
+    family, never the runs, and says what reading the runs said."""
+    await _run_row(temp_db, files={"video": (30, 180_000)}, seconds=20, started=1_000, stopped=True)
+    await _run_row(temp_db, files={"image": (200, 10_000)}, seconds=2, started=2_000)
+    await _job_rows(temp_db, "face_scan", costs=[3] * 30)
+    walked = await _page_of_estimates(ledger)
+
+    await ledger.settle({}, settings={})
+    heard: list[str] = []
+    judged = db_module._judged
+
+    @contextmanager
+    def counted(stage: str, statement: Any, *rest: Any, **options: Any) -> Iterator[Any]:
+        heard.append(db_module.statement_name(statement))
+        with judged(stage, statement, *rest, **options) as timing:
+            yield timing
+
+    monkeypatch.setattr(db_module, "_judged", counted)
+    kept = await _page_of_estimates(ledger)
+
+    assert kept == walked
+    assert walked[0] is not None and walked[2] is not None
+    assert len(heard) == 3 and not [one for one in heard if "work_runs" in one], heard
+
+
+async def test_a_library_from_before_kept_prices_prices_from_its_runs_at_the_step(
+    temp_db: Database,
+) -> None:
+    await temp_db.initialize_schema()
+    await temp_db.execute("DROP TABLE work_prices")
+    await _run_row(temp_db, files={"image": (200, 10_000)}, seconds=2, started=2_000)
+    async with temp_db.write() as connection:
+        await ledger_module.initialize(connection, on_disk=7)
+        await ledger_module.initialize(connection, on_disk=8)
+
+    rows = await temp_db.fetch_all("SELECT family, profile, kind, items FROM work_prices")
+    assert sorted(tuple(row) for row in rows) == [
+        ("generate", "abc123", "", 200),
+        ("generate", "abc123", "image", 200),
+    ]
+
+
 def test_a_priced_range_always_holds_its_own_mean() -> None:
     """Twenty cheap items make the one whole stretch; the seven dear ones behind them are too few
     for a stretch of their own and still carry the mean to eight and a half. A range of one second
@@ -1036,7 +1096,7 @@ async def test_a_run_of_a_family_since_retired_is_reported_under_the_name_it_was
 def test_a_quantile_is_a_cost_that_was_measured_weighted_by_items(
     sample: list[tuple[float, int]], at: float, cost: float
 ) -> None:
-    assert ledger_module._quantile(sample, at) == cost
+    assert pacing._quantile(sample, at) == cost
 
 
 async def test_a_run_mostly_stepped_back_is_kept_with_its_seconds_and_not_priced_from(

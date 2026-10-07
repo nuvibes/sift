@@ -156,8 +156,7 @@
 		}),
 		/* And it wears its number: the strip is a MAP of what this page can show, and one bare
 		   word on a row of numbered ones reads as a tab nobody has looked at yet. It is the
-		   count of the very thread the pane draws, at the same cap. See
-		   `history_count_of_entity`. */
+		   length of the very thread the pane draws, read beside the strip (`readThread`). */
 		{
 			id: HISTORY,
 			label: 'History',
@@ -553,11 +552,16 @@
 	   (scoped to this viewer the same way), and what is on the wall otherwise, which is the same
 	   number and follows an add or a removal the moment it lands. */
 	const wholeCount = $derived(
-		narrowed || searched ? (collection?.item_count ?? grid.total) : grid.total
+		narrowed || searched || (grid.loaded === 0 && grid.loading)
+			? (collection?.item_count ?? grid.total)
+			: grid.total
 	);
 	/* How big those files are, off the record, and only while the line's number IS the record's:
 	   an add or a removal moves the wall's count before the record is read again, and a size of the
 	   files before it beside a count of the files after it would describe neither. */
+	/* Nothing is said until the row or the wall has answered: a stand-in "0 files" would be drawn
+	   and then replaced. */
+	const countKnown = $derived(collection !== null || grid.loaded > 0 || !grid.loading);
 	const wholeBytes = $derived(
 		collection && wholeCount === collection.item_count ? sizeOf(collection) : null
 	);
@@ -568,7 +572,7 @@
 	/* The trail, drawn by the frame's band above the identity band. */
 	const crumbs = $derived<Crumb[]>([
 		{ label: 'Collections', href: '/collections' },
-		{ label: collection?.name ?? 'Collection' }
+		{ label: collection?.name ?? '' }
 	]);
 </script>
 
@@ -608,7 +612,7 @@
 		mayEdit={session.isAdmin}
 		deleteWord="collection"
 		ondelete={session.isAdmin ? removeCollection : undefined}
-		name={collection?.name ?? 'Collection'}
+		name={collection?.name ?? ''}
 		onpicture={() => (pickingPicture = true)}
 		oncover={async (assetId, atMs, more) => {
 			collection = await collections.setCover(id, assetId, atMs, more);
@@ -619,7 +623,7 @@
 		coverAtMs={collection?.cover_at_ms ?? null}
 		coverFrame={collection?.cover_frame ?? null}
 		art={collection?.art ?? null}
-		counts={withSize(filesSaid(wholeCount), wholeCount, wholeBytes)}
+		counts={countKnown ? withSize(filesSaid(wholeCount), wholeCount, wholeBytes) : undefined}
 		oCount={collection?.o_count}
 		favorite={collection?.favorite ?? false}
 		rating={collection?.rating ?? null}

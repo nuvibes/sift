@@ -7,6 +7,8 @@
  */
 
 import Hls from 'hls.js';
+// Its own file, so the stream is unpacked off the page's thread; a `blob:` worker the policy refuses.
+import hlsWorker from 'hls.js/dist/hls.worker.js?url';
 import { api } from '$lib/api/client';
 import {
 	capabilities,
@@ -110,8 +112,8 @@ export interface Attachment {
  *
  * Three cases, and the ordering matters:
  *
- * 1. **Direct play**: the file's own address goes straight into `src`. No player library is
- *    involved and none is loaded.
+ * 1. **The file itself** (direct, or a remux whose repackaged copy `/stream` serves): its address
+ *    goes straight into `src`. No player library is involved and none is loaded.
  * 2. **Native HLS**: Safari, which plays a playlist from `src` by itself. This is checked
  *    *before* reaching for hls.js, because on iPhone there is no alternative: Media Source
  *    Extensions do not exist there, so hls.js cannot work at all.
@@ -123,7 +125,8 @@ export function attach(
 	plan: PlaybackPlan,
 	onfail?: (message: string) => void
 ): Attachment {
-	if (plan.route === 'direct' || playsHlsNatively()) {
+	// Every route but a transcode names the file itself (`/stream`): only a playlist needs hls.js.
+	if (plan.route !== 'transcode' || playsHlsNatively()) {
 		/* The element's own `error` is the only word a direct failure gives, so it is heard: a
 		   10-bit file on a decoder that takes Main only, a truncated MP4, a ProRes `.mov`:
 		   each would otherwise be a black stage with no sentence, while a streaming failure two
@@ -159,6 +162,7 @@ export function attach(
 		 */
 		maxBufferLength: 30,
 		maxMaxBufferLength: 60,
+		workerPath: hlsWorker,
 		// A segment that is still being made is a slow response, not a failed one.
 		fragLoadingTimeOut: 30_000,
 		manifestLoadingTimeOut: 20_000,

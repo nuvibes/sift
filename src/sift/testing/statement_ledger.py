@@ -51,8 +51,16 @@ RISE_SLACK = 200
 HELD_GROWTH = 1.5
 
 #: What a statement may be priced by, and the growth each allows: a page holds; the rest grow
-#: with the library, which is four times bigger at the second size.
-SUBJECTS = {"page": HELD_GROWTH, "file": 4.4, "person": 4.4, "folder": 4.4, "library": 4.4}
+#: with the library, which is four times bigger at the second size, and the largest Photo Set
+#: 6.2 times.
+SUBJECTS = {
+    "page": HELD_GROWTH,
+    "file": 4.4,
+    "person": 4.4,
+    "folder": 4.4,
+    "photo_set": 6.8,
+    "library": 4.4,
+}
 
 RECORD = Path(__file__).resolve().parents[3] / "tests" / "gates" / "data" / "statement_ledger.json"
 

@@ -244,6 +244,15 @@ describe('files arriving while the wall is being watched', () => {
 
 		expect(tileFor('new0'), 'one file moved the wall by itself').toBeNull();
 		expect(host.textContent?.replace(/\s+/g, ' '), 'the file was not offered').toContain('1 new');
+
+		await vi.advanceTimersByTimeAsync(2000);
+		await settle();
+		await settle();
+		expect(tileFor('new0'), 'the offered file came in by itself after the hold').toBeNull();
+		expect(
+			host.textContent?.replace(/\s+/g, ' '),
+			'the line it was offered in went away'
+		).toContain('1 new');
 	});
 
 	it('takes what was waiting when somebody scrolls back to the top', async () => {

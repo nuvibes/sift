@@ -27,6 +27,12 @@ from sift.kernel.log import Timing, timing_hook
 #: A run of bound values: `IN (?,?,?)` and `IN (?,?)` are one statement.
 _PLACEHOLDER_RUN = re.compile(r"\?(?:\s*,\s*\?)+")
 
+#: The table a write writes, so `insert:assets` names the write and not the table it selects from.
+_WRITTEN_TABLE = re.compile(
+    r"\b(?:INTO|UPDATE)\s+(?:OR\s+\w+\s+)?(?:[A-Za-z_][A-Za-z0-9_]*\.)?([A-Za-z_][A-Za-z0-9_]*)",
+    re.IGNORECASE,
+)
+
 #: What may appear in the readable half of a name; the rest is dropped, since logs stay ASCII.
 _NAME_SAFE = re.compile(r"[^a-z0-9_]")
 
@@ -53,7 +59,7 @@ def statement_name(statement: str | PointRead) -> str:
     digest = hashlib.blake2s(shape.encode("utf-8", "replace"), digest_size=4).hexdigest()
     head = shape.lstrip("(").split(None, 1)
     verb = _readable(head[0]) if head else "sql"
-    tables = _TABLE_AFTER.findall(shape)
+    tables = _WRITTEN_TABLE.findall(shape) or _TABLE_AFTER.findall(shape)
     name = f"{verb}:{_readable(tables[0]) if tables else '-'}#{digest}"
     if len(_NAMES) >= NAMES_KEPT:
         _NAMES.clear()

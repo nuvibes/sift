@@ -26,6 +26,7 @@ import {
 	toggleShuffle
 } from './asset-view';
 import { run } from './run.svelte';
+import { libraryChanges } from '$lib/library/changes.svelte';
 
 const CLIP = (id: string) => ({ id, runs: true });
 const PHOTO = (id: string) => ({ id, runs: false });
@@ -37,9 +38,40 @@ async function settle(): Promise<void> {
 
 beforeEach(() => {
 	get.mockClear();
-	planFor.mockClear();
 	run.shuffle = false;
 	openAsset('a', [CLIP('a'), PHOTO('bp'), CLIP('c')]);
+	// The press asks its own plan (`planBeside`); what follows counts the look ahead's.
+	planFor.mockClear();
+});
+
+describe('a record found ahead', () => {
+	it('is fresh while no bell has rung since it was asked for, and stale after one', async () => {
+		lookAhead('a', { pictures: false });
+		await settle();
+		expect(takeRecord('c')?.stale).toBe(false);
+
+		dropAhead();
+		lookAhead('a', { pictures: false });
+		await settle();
+		libraryChanges.changed();
+		expect(takeRecord('c')?.stale).toBe(true);
+	});
+});
+
+describe('a file pressed', () => {
+	it('has its plan asked beside its record, taken once', async () => {
+		openAsset('c', [CLIP('a'), PHOTO('bp'), CLIP('c')]);
+		expect(planFor).toHaveBeenCalledWith('c');
+		expect((await takePlan('c'))?.url).toBe('/api/assets/c/stream');
+		expect(takePlan('c')).toBeNull();
+	});
+
+	it('asks nothing for a still, which has no plan', () => {
+		planFor.mockClear();
+		openAsset('bp', [CLIP('a'), PHOTO('bp'), CLIP('c')]);
+		expect(planFor).not.toHaveBeenCalled();
+		expect(takePlan('bp')).toBeNull();
+	});
 });
 
 describe('looking ahead from a clip that is playing', () => {
@@ -49,9 +81,9 @@ describe('looking ahead from a clip that is playing', () => {
 
 		expect(get).toHaveBeenCalledWith('/assets/c');
 		expect(await playOn('a', { pictures: false })).toBe('c');
-		expect(takeRecord('c')?.id).toBe('c');
+		expect(takeRecord('c')?.record.id).toBe('c');
 		expect(takeRecord('c')).toBeNull();
-		expect(takePlan('c')?.url).toBe('/api/assets/c/stream');
+		expect((await takePlan('c'))?.url).toBe('/api/assets/c/stream');
 		expect(takePlan('c')).toBeNull();
 		expect(takeRecord('a')).toBeNull();
 	});
@@ -69,7 +101,7 @@ describe('looking ahead from a clip that is playing', () => {
 		lookAhead('a', { pictures: true });
 		await settle();
 		expect(await playOn('a', { pictures: true })).toBe('bp');
-		expect(takeRecord('bp')?.id).toBe('bp');
+		expect(takeRecord('bp')?.record.id).toBe('bp');
 		expect(planFor).not.toHaveBeenCalled();
 	});
 
@@ -111,8 +143,8 @@ describe('looking ahead under Shuffle', () => {
 
 		expect(await playOn('a', { pictures: false })).toBe('c');
 		expect(run.walk?.current).toBe('c');
-		expect(takeRecord('c')?.id).toBe('c');
-		expect(takePlan('c')?.url).toBe('/api/assets/c/stream');
+		expect(takeRecord('c')?.record.id).toBe('c');
+		expect((await takePlan('c'))?.url).toBe('/api/assets/c/stream');
 	});
 
 	it('finds what the end will find at every step, round the wrap and back again', async () => {
@@ -125,7 +157,7 @@ describe('looking ahead under Shuffle', () => {
 			const cursor = run.walk?.cursor;
 			const to = await playOn(on, { pictures: false });
 			expect(to).not.toBe(on);
-			expect(takeRecord(to!)?.id).toBe(to);
+			expect(takeRecord(to!)?.record.id).toBe(to);
 			expect(run.walk?.cursor).not.toBe(cursor);
 			on = to!;
 		}

@@ -37,6 +37,7 @@ from sift.kernel.access import (
     Viewer,
 )
 from sift.kernel.access.repository.read_files import WordMatches, words_of
+from sift.kernel.access.repository.read_one_file import FileRecord
 from sift.kernel.audience import Audience
 from sift.kernel.changes import About, announce, current_mark, telling, who_may_see_a_file
 from sift.kernel.content import (
@@ -398,6 +399,16 @@ class BrowseService:
         """
         if await self._access.open_asset(viewer, asset_id) is None:
             return None
+        return await self._newest_sheet(asset_id)
+
+    async def sprite_of(self, viewer: Viewer, record: FileRecord) -> Derivative | None:
+        """`sprite_sheet` for a file whose record this viewer was just given: its check is the
+        record's, and the bytes are theirs exactly when the record is not a shut vault's."""
+        if record.view.concealed and not viewer.show_hidden:
+            return None
+        return await self._newest_sheet(record.view.asset.id)
+
+    async def _newest_sheet(self, asset_id: str) -> Derivative | None:
         sheets = [
             derivative
             for derivative in await self._content.derivatives(asset_id)

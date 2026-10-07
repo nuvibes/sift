@@ -37,13 +37,14 @@ why. The file-name reader follows the same rule.
 
 from __future__ import annotations
 
+from sift.kernel.content.backlog import marks
 from sift.kernel.db import Connection, register_schema_initializer
 from sift.kernel.log import get_logger
 
 log = get_logger(__name__)
 
 COMPONENT = "watermarks"
-VERSION = 7
+VERSION = 8
 
 _CREATE_SCANS = """
 CREATE TABLE IF NOT EXISTS watermark_scans (
@@ -131,6 +132,15 @@ RETURNING id
 """
 
 
+#: Version 8: a read, a refusal or a scan marks its file for the passes' kept counts. A Site's
+#: rename moves no count.
+_MARKS = (
+    *marks("watermark_scans"),
+    *marks("watermark_reads", watched=("asset_id", "matcher_version")),
+    *marks("watermark_refusals"),
+)
+
+
 async def initialize(connection: Connection, on_disk: int) -> None:
     if on_disk < 1:
         await connection.execute(_CREATE_SCANS)
@@ -144,6 +154,9 @@ async def initialize(connection: Connection, on_disk: int) -> None:
     if 0 < on_disk < 7 and list(await connection.execute_fetchall(_HAS_SITES)):
         given = list(await connection.execute_fetchall(_OBJECT_ON_OLD_RECEIPTS))
         log.info("watermarks.receipts_given_their_object", receipts=len(given))
+    if on_disk < 8:
+        for statement in _MARKS:
+            await connection.execute(statement)
 
 
 async def _fill_site_ids(connection: Connection) -> None:
@@ -157,7 +170,5 @@ async def _fill_site_ids(connection: Connection) -> None:
     )
 
 
-# It names `assets` in a foreign key without declaring a dependency on the component that creates
-# that table: SQLite resolves a foreign key's parent by name when a row is written rather than when
-# the table is made, so the reference holds whichever order the two were created in.
-register_schema_initializer(COMPONENT, VERSION, initialize, baseline=5)
+# On the content component for the tables its marks write into.
+register_schema_initializer(COMPONENT, VERSION, initialize, depends_on=["content"], baseline=5)

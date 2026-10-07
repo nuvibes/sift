@@ -47,6 +47,11 @@ from sift.kernel.access.catalog import (
     by_sift,
     site_home,
 )
+from sift.kernel.access.constraints import NO_FILTER
+from sift.kernel.access.repository.wall_collections import COLLECTION_BY_ID
+from sift.kernel.access.repository.wall_photo_sets import PHOTO_SET_BY_ID
+from sift.kernel.access.repository.wall_songs import SONG_BY_ID
+from sift.kernel.access.repository.walls import ENTITY_SORT_SEEN
 from sift.kernel.access.schema import (
     ACCESS_COMPONENT,
     CATALOG_COMPONENT,
@@ -832,6 +837,31 @@ async def test_an_entity_id_that_binds_as_null_matches_nothing(
         access.visible_collection,
     ):
         assert await read(actors.admin, None) is None, read.__name__  # type: ignore[arg-type]
+
+
+async def test_a_by_id_statement_bound_null_answers_no_row(
+    temp_db: Database, access: Repository, actors: Actors
+) -> None:
+    """The statements behind the by-id reads, each given NULL: the wall's "no filter" seam must be
+    cut out of every one, or a read handed NULL would answer with the first row it may see."""
+    _where, bound = NO_FILTER.predicate()
+    asked = (
+        (COLLECTION_BY_ID, access._collection_params(actors.admin, collection_id=None, limit=1)),
+        (
+            PHOTO_SET_BY_ID,
+            access._photo_set_params(
+                actors.admin, photo_set_id=None, limit=1, offset=0, sort=ENTITY_SORT_SEEN
+            ),
+        ),
+        (
+            SONG_BY_ID,
+            access._song_params(
+                actors.admin, song_id=None, limit=1, offset=0, sort=ENTITY_SORT_SEEN
+            ),
+        ),
+    )
+    for statement, params in asked:
+        assert await temp_db.fetch_all(statement, {**bound, **params}) == [], statement.name
 
 
 async def test_every_entity_by_id_read_answers_the_same_as_its_wall(

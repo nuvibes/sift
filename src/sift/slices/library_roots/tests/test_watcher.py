@@ -807,6 +807,31 @@ async def test_a_folder_renamed_underneath_is_walked_and_not_named(
     )
 
 
+async def test_the_folder_a_move_left_gets_no_row(
+    watcher: LibraryWatcher,
+    root: Root,
+    root_path: Path,
+    job_queue: JobQueue,
+    library_store: LibraryStore,
+) -> None:
+    """The source end of a folder renamed on the disk is a directory that has gone: its parent is
+    walked, and no folder row is recorded for a path nothing is at."""
+    (root_path / "before").mkdir()
+    draw(root_path / "before" / "one.mp4", "testsrc2=size=32x32:rate=5", VIDEO_SECONDS)
+    await watcher.start()
+    await watcher.watching()
+    try:
+        (root_path / "before").rename(root_path / "after")
+        await settle()
+    finally:
+        await watcher.stop()
+
+    assert await library_store.folder_at(root.id, "before") is None, (
+        "a walk of the folder the move left would record a row for a path that is not there"
+    )
+    assert await scans_of(job_queue), "the rename must still be walked"
+
+
 async def test_a_deleted_file_is_named_and_not_walked(
     watcher: LibraryWatcher, root: Root, root_path: Path, job_queue: JobQueue
 ) -> None:

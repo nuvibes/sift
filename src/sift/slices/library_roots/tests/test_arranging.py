@@ -18,9 +18,11 @@ from sift.kernel.access import Effect, ObjectType, Repository
 from sift.kernel.changes import About, ChangeBus
 from sift.kernel.config import Settings
 from sift.kernel.content import LibraryStore, Root
+from sift.kernel.db import IntegrityError
 from sift.kernel.ledger import Actor
 from sift.kernel.library_write import LibraryWriteRefused, create_directory, move_directory
 from sift.slices.library_roots import jobs
+from sift.slices.library_roots import service as service_module
 from sift.slices.library_roots.service import LibraryService
 from sift.testing.fixtures import Actors
 
@@ -182,6 +184,37 @@ async def test_moving_a_folder_takes_its_files_and_its_children(
     assert (Path(managed_root.abs_path) / "Archive" / "shoot" / "inner" / "a.png").is_file()
     located = await library_store.locations_in_folder(inner.id)
     assert [one.rel_path for one in located] == ["Archive/shoot/inner/a.png"]
+
+
+async def test_a_folder_row_forgotten_and_made_again_takes_back_its_files(
+    managed_root: Root,
+    service: LibraryService,
+    library_store: LibraryStore,
+    context_for: Context,
+    settings: Settings,
+    reindexer: RecordingReindexer,
+) -> None:
+    """A rescan that records a folder row again gives it back the unchanged files lying in it,
+    whose locations lost their folder when the old row went and are never rewritten."""
+    draw(Path(managed_root.abs_path) / "shoot" / "a.png", "testsrc2=size=64x48:rate=1")
+    draw(Path(managed_root.abs_path) / "shoot" / "deeper" / "b.png", "testsrc2=size=64x48:rate=1")
+    await _scan(context_for, managed_root, settings, service, reindexer)
+    await service.remove_folder(root_id=managed_root.id, rel_path="shoot")
+    assert await library_store.folder_at(managed_root.id, "shoot") is None
+
+    await _scan(context_for, managed_root, settings, service, reindexer)
+
+    again = await library_store.folder_at(managed_root.id, "shoot")
+    assert again is not None
+    located = await library_store.locations_in_folder(again.id)
+    assert [one.rel_path for one in located] == ["shoot/a.png"], (
+        "a file whose folder row was made again must be found in it, or no folder lists it"
+    )
+    deeper = await library_store.folder_at(managed_root.id, "shoot/deeper")
+    assert deeper is not None
+    assert [one.rel_path for one in await library_store.locations_in_folder(deeper.id)] == [
+        "shoot/deeper/b.png"
+    ], "a file in a folder below is that folder's, never the one above"
 
 
 async def test_a_folder_cannot_be_moved_inside_itself(
@@ -515,19 +548,14 @@ async def test_renaming_a_folder_to_the_name_it_already_has_does_nothing_and_is_
     assert (Path(managed_root.abs_path) / "Holidays").is_dir()
 
 
-async def test_a_folder_moved_on_the_disk_but_not_in_the_rows_says_so(
+async def test_a_move_the_rows_refuse_is_put_back_on_the_disk(
     managed_root: Root,
     service: LibraryService,
     library_store: LibraryStore,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The half-done case, which is the one worth a sentence of its own.
-
-    The disk is changed first, so a failure to record it leaves a folder that really has moved and a
-    library that still says otherwise, which a rescan fixes and nothing else will. Saying "could
-    not move it" there would be false, and saying nothing would leave somebody looking at a tree
-    that is wrong with no reason to doubt it.
-    """
+    """The disk is changed first, so a move the rows cannot record is undone there: the disk and
+    the tree go on agreeing, and the sentence says so."""
     top = await library_store.root_folder(managed_root.id)
     assert top is not None
     made = await service.create_folder(parent_id=top.id, name="Holidays")
@@ -537,10 +565,69 @@ async def test_a_folder_moved_on_the_disk_but_not_in_the_rows_says_so(
 
     monkeypatch.setattr(library_store, "move_folder", records_nothing)
 
-    with pytest.raises(LibraryWriteRefused, match="Rescan this library"):
+    with pytest.raises(LibraryWriteRefused, match="back where it was"):
         await service.move_folder(
             folder_id=made.id, parent_id=None, name="Trips", actor=Actor.sift("folder")
         )
+    assert (Path(managed_root.abs_path) / "Holidays").is_dir()
+    assert not (Path(managed_root.abs_path) / "Trips").exists()
+
+
+async def test_a_file_already_recorded_at_the_new_path_puts_the_move_back(
+    managed_root: Root,
+    service: LibraryService,
+    library_store: LibraryStore,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A location an earlier walk left at the new path fails the rows' unique key: a refusal in
+    words with the folder where it was, never a server error over a disk the tree disagrees with."""
+    top = await library_store.root_folder(managed_root.id)
+    assert top is not None
+    made = await service.create_folder(parent_id=top.id, name="Holidays")
+
+    async def collides(*_args: object, **_kwargs: object) -> None:
+        raise IntegrityError("UNIQUE constraint failed: asset_locations.root_id")
+
+    monkeypatch.setattr(library_store, "move_folder", collides)
+
+    with pytest.raises(LibraryWriteRefused, match="back where it was"):
+        await service.move_folder(
+            folder_id=made.id, parent_id=None, name="Trips", actor=Actor.sift("folder")
+        )
+    assert (Path(managed_root.abs_path) / "Holidays").is_dir()
+
+
+async def test_a_move_that_cannot_be_put_back_says_to_rescan(
+    managed_root: Root,
+    service: LibraryService,
+    library_store: LibraryStore,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Half done is said as half done: the folder really moved and the library still says otherwise."""
+    top = await library_store.root_folder(managed_root.id)
+    assert top is not None
+    made = await service.create_folder(parent_id=top.id, name="Holidays")
+
+    async def records_nothing(*_args: object, **_kwargs: object) -> None:
+        return None
+
+    monkeypatch.setattr(library_store, "move_folder", records_nothing)
+    real = move_directory
+    moves: list[Path] = []
+
+    async def once(source: Path, destination: Path) -> None:
+        moves.append(destination)
+        if len(moves) > 1:
+            raise LibraryWriteRefused("held open")
+        await real(source, destination)
+
+    monkeypatch.setattr(service_module, "move_directory", once)
+
+    with pytest.raises(LibraryWriteRefused, match="moved the folder but couldn't record"):
+        await service.move_folder(
+            folder_id=made.id, parent_id=None, name="Trips", actor=Actor.sift("folder")
+        )
+    assert (Path(managed_root.abs_path) / "Trips").is_dir()
 
 
 async def test_removing_a_folder_that_is_already_gone_is_not_a_failure(

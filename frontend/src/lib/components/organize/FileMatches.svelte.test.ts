@@ -44,7 +44,10 @@ vi.mock('$lib/entity/tagger.svelte', async (importOriginal) => ({
 
 vi.mock('$lib/entity/enrich-many.svelte', () => ({ enrichFiles: mocks.enrichFiles }));
 vi.mock('$lib/shell/toasts.svelte', () => ({ toasts: { show: mocks.shown } }));
-vi.mock('$lib/api/history', () => ({ undoDecision: mocks.undoDecision }));
+vi.mock('$lib/api/history', async (importOriginal) => ({
+	...(await importOriginal<typeof import('$lib/api/history')>()),
+	undoDecision: mocks.undoDecision
+}));
 
 /* The store, stood in for by one holding reactive state a test can assign to. Reactive and not a
    plain array on purpose: `blocked` is a derivation over `items`, and a derivation whose source

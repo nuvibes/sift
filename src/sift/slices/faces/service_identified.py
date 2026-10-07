@@ -15,6 +15,9 @@ from sift.slices.faces.models import Attribution, StartersShow
 from sift.slices.faces.service_visibility import Sighting, VisibilityMixin
 from sift.slices.faces.store import StoredTrack
 
+#: A card's best percentage is read a page of its surest matched faces at a time.
+_SUREST_STEP = 48
+
 
 def _attention_first(entry: tuple[str | None, list[Sighting]]) -> tuple[int, int, str]:
     """How the people Sift knows are ordered: the ones who need an answer, then the rest, by name.
@@ -220,6 +223,7 @@ class IdentifiedMixin(VisibilityMixin):
         faces = await self._card_faces(
             viewer, page, attribution=attribution, each=faces_per_card, names=names, marked=marked
         )
+        surest = await self._surest_of(viewer, page)
         out: list[IdentifiedView] = []
         for card in page:
             matched = card.counts.get(Attribution.MATCHED, 0)
@@ -235,11 +239,7 @@ class IdentifiedMixin(VisibilityMixin):
                     # `IdentifiedView.surest`. A face whose confidence was never recorded counts
                     # towards `matched` and contributes no number, which is why the default is
                     # None rather than zero: zero is a confidence, and an absent one is not.
-                    surest=(
-                        await self._surest(viewer, card.person_id)
-                        if matched and card.person_id is not None
-                        else None
-                    ),
+                    surest=surest.get(card.person_id or "") if matched else None,
                     faces=faces.get(card.person_id, []),
                 )
             )
@@ -501,7 +501,7 @@ class IdentifiedMixin(VisibilityMixin):
         for track in heads:
             by_member.setdefault(str(track.person_id), []).append(track)
         shown = await self._shown_of(viewer, [track.asset_id for track in heads])
-        out: dict[str | None, list[Sighting]] = {}
+        chosen: dict[str | None, list[StoredTrack]] = {}
         for card in cards:
             # In the order the one statement read them, which is newest decision first across
             # every member, so the nameless card's faces interleave as one list, not per person.
@@ -513,13 +513,13 @@ class IdentifiedMixin(VisibilityMixin):
                 picked, shown = await self._read_on(
                     viewer, card, attribution=attribution, each=each, shown=shown
                 )
-            references = (
-                await self._store.reference_tracks([track.id for track in picked])
-                if marked
-                else set()
-            )
-            moments = await self._store.picture_moments([track.id for track in picked])
-            out[card.person_id] = [
+            chosen[card.person_id] = picked
+        # Every card's marks and moments in one read each, not one per card.
+        every = [track.id for picked in chosen.values() for track in picked]
+        references = await self._store.reference_tracks(every) if marked else set()
+        moments = await self._store.picture_moments(every)
+        return {
+            person_id: [
                 await self._sighting(
                     viewer,
                     track,
@@ -530,7 +530,8 @@ class IdentifiedMixin(VisibilityMixin):
                 )
                 for track in picked
             ]
-        return out
+            for person_id, picked in chosen.items()
+        }
 
     async def _read_on(
         self,
@@ -557,10 +558,36 @@ class IdentifiedMixin(VisibilityMixin):
             offset += step
         return picked[:each], seen
 
+    async def _surest_of(
+        self, viewer: Viewer, cards: Sequence[_KnownCard]
+    ) -> dict[str, float | None]:
+        """`_surest` for a page of cards with matched faces: every card's first page in one read,
+        read on only for a card whose first page is all on files this viewer may not see."""
+        person_ids = [
+            card.person_id
+            for card in cards
+            if card.person_id is not None and card.counts.get(Attribution.MATCHED, 0)
+        ]
+        heads = await self._store.surest_matched_heads(person_ids, each=_SUREST_STEP)
+        shown = await self._shown_of(
+            viewer, [track.asset_id for tracks in heads.values() for track in tracks]
+        )
+        found: dict[str, float | None] = {}
+        for person_id in person_ids:
+            tracks = heads.get(person_id, [])
+            first = next((track for track in tracks if track.asset_id in shown), None)
+            if first is not None:
+                found[person_id] = first.confidence
+            elif len(tracks) < _SUREST_STEP:
+                found[person_id] = None
+            else:
+                found[person_id] = await self._surest(viewer, person_id)
+        return found
+
     async def _surest(self, viewer: Viewer, person_id: str) -> float | None:
         """The best confidence among one person's matched faces that this viewer may see."""
         offset = 0
-        step = 48
+        step = _SUREST_STEP
         while True:
             page = await self._store.surest_matched(person_id, limit=step, offset=offset)
             if not page:

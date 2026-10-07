@@ -28,6 +28,18 @@ pytestmark = pytest.mark.usefixtures("clean_registry")
 
 _CREATE = "CREATE TABLE notes (id INTEGER PRIMARY KEY, body TEXT)"
 _INSERT = "INSERT INTO notes (body) VALUES (?)"
+
+
+def test_a_write_is_named_by_the_table_it_writes() -> None:
+    """The log says what a write wrote, not what it read to write it."""
+    assert statement_name(_INSERT).startswith("insert:notes#")
+    assert statement_name("UPDATE notes SET body = ? WHERE id = ?").startswith("update:notes#")
+    assert statement_name("INSERT OR IGNORE INTO notes (body) SELECT body FROM drafts").startswith(
+        "insert:notes#"
+    )
+    assert statement_name("DELETE FROM notes WHERE id = ?").startswith("delete:notes#")
+
+
 _READ = "SELECT body FROM notes WHERE id = ?"
 
 

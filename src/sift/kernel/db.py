@@ -468,6 +468,8 @@ class Database:
         self._writer: aiosqlite.Connection | None = None
         self._write_lock = asyncio.Lock()
         self._read_pool: asyncio.Queue[aiosqlite.Connection] = asyncio.Queue()
+        # Read connections open; up to `_readers`, those past the first few opened on first need.
+        self._opened = 0
         # The sweep lane: one connection of its own, never drawn from the pool above. See `sweep`.
         self._sweeper: aiosqlite.Connection | None = None
         self._sweep_lock = asyncio.Lock()
@@ -496,8 +498,9 @@ class Database:
         await asyncio.to_thread(self.path.parent.mkdir, parents=True, exist_ok=True)
         self._writer = await self._open(writer=True)
         self._sweeper = await self._open()
-        for _ in range(self._readers):
+        for _ in range(min(self._readers, DEFAULT_READERS)):
             self._read_pool.put_nowait(await self._open())
+            self._opened += 1
         await self._decide_where_point_reads_run()
 
         log.info(
@@ -574,15 +577,16 @@ class Database:
 
     @property
     def readers(self) -> int:
-        """How many read connections the pool currently holds."""
+        """How many read connections the pool may hold; past the first few, opened on need."""
         return self._readers
 
     async def resize_readers(self, wanted: int) -> bool:
         """Make the read pool the right size for the worker count. True when it actually changed.
 
         The worker count is a setting raised while the process runs, and a pool no bigger than the
-        workers leaves the browser nothing to borrow (`readers_for`). Growing is immediate;
-        shrinking waits for a connection to be given back, so nothing in flight is closed.
+        workers leaves the browser nothing to borrow (`readers_for`). Growing raises the ceiling
+        `read` opens up to when every open one is out; shrinking waits for a connection to be
+        given back, so nothing in flight is closed.
         """
         if self._writer is None:
             raise DatabaseError("the database is not open: call connect() first")
@@ -591,17 +595,13 @@ class Database:
         if wanted == self._readers:
             return False
 
-        if wanted > self._readers:
-            for _ in range(wanted - self._readers):
-                self._read_pool.put_nowait(await self._open())
-        else:
-            for _ in range(self._readers - wanted):
-                connection = await self._read_pool.get()
-                self._open_connections.remove(connection)
-                _STEP_CELLS.pop(id(connection), None)
-                await connection.close()
-
         self._readers = wanted
+        while self._opened > wanted:
+            connection = await self._read_pool.get()
+            self._opened -= 1
+            self._open_connections.remove(connection)
+            _STEP_CELLS.pop(id(connection), None)
+            await connection.close()
         return True
 
     @property
@@ -726,6 +726,7 @@ class Database:
         self._writer = None
         self._sweeper = None
         self._read_pool = asyncio.Queue()
+        self._opened = 0
         log.info("db.close", path=str(self.path))
 
     def _require_writer(self) -> aiosqlite.Connection:
@@ -776,7 +777,16 @@ class Database:
         """Borrow a read connection. Not serialized: WAL readers run concurrently."""
         if self._writer is None:
             raise DatabaseError("the database is not open: call connect() first")
-        connection = await self._read_pool.get()
+        if self._read_pool.empty() and self._opened < self._readers:
+            # Counted before the await, so two borrowers at once cannot both pass the ceiling.
+            self._opened += 1
+            try:
+                connection = await self._open()
+            except BaseException:
+                self._opened -= 1
+                raise
+        else:
+            connection = await self._read_pool.get()
         try:
             yield connection
         finally:

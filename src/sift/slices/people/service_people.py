@@ -17,12 +17,11 @@ from sift.kernel.access import (
     PeoplePage,
     Viewer,
 )
-from sift.kernel.audience import Audience
 from sift.kernel.changes import About, telling, who_may_see_a_file
 from sift.kernel.content.user_state import OpinionKind
 from sift.kernel.cover_frame import CoverFrame
 from sift.kernel.covers import ChosenCover, chosen_from_row
-from sift.kernel.db import Database, Row
+from sift.kernel.db import Row
 from sift.kernel.ids import new_id
 from sift.kernel.ledger import Actor, Object, record_event
 from sift.kernel.log import get_logger
@@ -68,13 +67,6 @@ from sift.slices.people.service_statements import (
 log = get_logger(__name__)
 
 
-async def _whoever_may_see(database: Database) -> Audience:
-    """Every admin and every user given anything. Read before the write, so `telling` still says
-    nothing when no row moved."""
-    async with database.read() as connection:
-        return await who_may_see_a_file(connection)
-
-
 class PersonRecordMixin(PeopleBase):
     """Writes and reads one person's own record."""
 
@@ -110,7 +102,7 @@ class PersonRecordMixin(PeopleBase):
         self, viewer: Viewer, name: str, *, vault: bool = False, notes: str | None
     ) -> Person:
         """Add somebody, optionally straight out of sight."""
-        async with telling(self._db, await _whoever_may_see(self._db), About.LIBRARY) as connection:
+        async with telling(self._db, who_may_see_a_file, About.LIBRARY) as connection:
             rows = list(
                 await connection.execute_fetchall(
                     _INSERT_PERSON,
@@ -150,7 +142,7 @@ class PersonRecordMixin(PeopleBase):
         # What this user had already decided about hiding them. The form sends the checkbox on
         # every save, so re-asserting it is most of what reaches here (see the vault write below).
         was_vaulted = before is not None and bool(before["vault"])
-        async with telling(self._db, await _whoever_may_see(self._db), About.LIBRARY) as connection:
+        async with telling(self._db, who_may_see_a_file, About.LIBRARY) as connection:
             rows = list(
                 await connection.execute_fetchall(
                     _UPDATE_PERSON, (name, sort_key(name), notes, person_id)
@@ -215,7 +207,7 @@ class PersonRecordMixin(PeopleBase):
         # Read BEFORE the row goes. A name looked up afterwards is nothing at all, and the one
         # question somebody brings to a record of deletions is who it was.
         existing = await self._db.fetch_one(_PERSON_BY_ID, (viewer.id, person_id))
-        async with telling(self._db, await _whoever_may_see(self._db), About.LIBRARY) as connection:
+        async with telling(self._db, who_may_see_a_file, About.LIBRARY) as connection:
             rows = list(await connection.execute_fetchall(_DELETE_PERSON, (person_id,)))
             if rows:
                 await record_event(
@@ -243,7 +235,7 @@ class PersonRecordMixin(PeopleBase):
 
     async def add_alias(self, person_id: str, alias: str) -> Alias:
         """Add an explicit "also known as"."""
-        async with telling(self._db, await _whoever_may_see(self._db), About.LIBRARY) as connection:
+        async with telling(self._db, who_may_see_a_file, About.LIBRARY) as connection:
             rows = list(
                 await connection.execute_fetchall(
                     _INSERT_ALIAS, (new_id(), person_id, alias, sort_key(alias), self._now())
@@ -256,13 +248,13 @@ class PersonRecordMixin(PeopleBase):
 
     async def ensure_alias(self, person_id: str, alias: str) -> Alias | None:
         """Make sure this person answers to that spelling. None if they already did."""
-        async with telling(self._db, await _whoever_may_see(self._db), About.LIBRARY) as connection:
+        async with telling(self._db, who_may_see_a_file, About.LIBRARY) as connection:
             return await self._ensure_alias_on(connection, person_id, alias)
 
     async def remove_alias(self, person_id: str, alias_id: str, *, actor: Actor) -> bool:
         """Both ids, so an alias can only be removed through the person it belongs to."""
         name = await self._person_name(person_id)
-        async with telling(self._db, await _whoever_may_see(self._db), About.LIBRARY) as connection:
+        async with telling(self._db, who_may_see_a_file, About.LIBRARY) as connection:
             return await self._remove_alias_on(connection, person_id, alias_id, name, actor=actor)
 
     # --- links ---------------------------------------------------------------------------
@@ -271,7 +263,7 @@ class PersonRecordMixin(PeopleBase):
         self, person_id: str, url: str, *, site_id: str | None = None, label: str | None = None
     ) -> Link | None:
         """Record somewhere this person can be found. None if they already hold that address."""
-        async with telling(self._db, await _whoever_may_see(self._db), About.LIBRARY) as connection:
+        async with telling(self._db, who_may_see_a_file, About.LIBRARY) as connection:
             rows = list(
                 await connection.execute_fetchall(
                     _INSERT_LINK,
@@ -285,7 +277,7 @@ class PersonRecordMixin(PeopleBase):
     async def remove_link(self, person_id: str, link_id: str, *, actor: Actor) -> bool:
         """Both ids, so a link can only be removed through the person it belongs to."""
         name = await self._person_name(person_id)
-        async with telling(self._db, await _whoever_may_see(self._db), About.LIBRARY) as connection:
+        async with telling(self._db, who_may_see_a_file, About.LIBRARY) as connection:
             rows = list(await connection.execute_fetchall(_DELETE_LINK, (link_id, person_id)))
             if rows:
                 await record_event(

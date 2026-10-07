@@ -8,11 +8,12 @@ recorded per file because two models' numbers mix without error and return wrong
 
 from __future__ import annotations
 
+from sift.kernel.content.backlog import marks
 from sift.kernel.db import Connection, register_schema_initializer
 from sift.slices.semantic.store import index_files
 
 COMPONENT = "semantic"
-VERSION = 3
+VERSION = 4
 
 _CREATE_INDEXED = """
 CREATE TABLE IF NOT EXISTS semantic_indexed (
@@ -76,8 +77,11 @@ async def initialize(connection: Connection, on_disk: int) -> None:
         for statement in _CREATE_KEYS:
             await connection.execute(statement)
         await index_files(connection)
+    # Version 4: a description written or forgotten marks its file for the passes' kept counts.
+    if on_disk < 4:
+        for statement in marks("semantic_indexed"):
+            await connection.execute(statement)
 
 
-# SQLite resolves a foreign key's parent by name when a row is written, so `assets` needs no
-# declared dependency here.
-register_schema_initializer(COMPONENT, VERSION, initialize, baseline=2)
+# On the content component for the tables its marks write into.
+register_schema_initializer(COMPONENT, VERSION, initialize, depends_on=["content"], baseline=2)

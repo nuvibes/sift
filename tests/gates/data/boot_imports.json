@@ -1,5 +1,5 @@
 {
-  "sift_modules": 853,
+  "sift_modules": 857,
   "never_at_start": [
     "onnxruntime",
     "sentencepiece",
@@ -7,5 +7,5 @@
     "pillow_heif",
     "sqlite_vec"
   ],
-  "why": "853 since 2026-10: four modules split out of ones already imported at start (db_judged, visibility_panel, run_records, waking); none is new work"
+  "why": "857: four modules split out of ones already imported at start (backlog from the content schema, pacing from the ledger, visibility_walls and visibility_settled from visibility); none is new work"
 }

@@ -94,10 +94,11 @@ from sift.kernel.access import waiting
 from sift.kernel.access.visibility import Counted, register_counted
 from sift.kernel.access.waiting import Waiting, register_waiting
 from sift.kernel.content import songs
+from sift.kernel.content.backlog import marks
 from sift.kernel.db import Connection, register_schema_initializer
 
 COMPONENT = "music"
-VERSION = 5
+VERSION = 6
 
 _CREATE_FINGERPRINTS = """
 CREATE TABLE IF NOT EXISTS audio_fingerprints (
@@ -236,6 +237,13 @@ SELECT recording_id, artists FROM music_lookups
 """
 
 
+#: Version 6: a fingerprint kept or a file starting to wait marks it for the passes' kept counts.
+_MARKS = (
+    *marks("audio_fingerprints", watched=("asset_id", "algorithm", "indexed_scheme")),
+    *marks("music_waiting"),
+)
+
+
 async def initialize(connection: Connection, on_disk: int) -> None:
     if on_disk < 1:
         for statement in (
@@ -263,6 +271,9 @@ async def initialize(connection: Connection, on_disk: int) -> None:
         await songs.credit_kept_answers(
             connection, [(str(row["recording_id"]), row["artists"]) for row in rows]
         )
+    if on_disk < 6:
+        for statement in _MARKS:
+            await connection.execute(statement)
 
 
 # It names the asset table in a foreign key and the kernel watches that table with triggers for it,

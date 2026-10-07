@@ -12,8 +12,11 @@ from sift.kernel.access.repository.walls import (
     _row_narrowed,
     _wall,
     _with_stored_counts,
+    hidden_by,
     locked_tile,
     one_row,
+    ordered,
+    plain_total,
     shown,
 )
 from sift.kernel.sql_splice import splice
@@ -200,6 +203,18 @@ _COLLECTIONS_HEAD, _COLLECTIONS_ACCESS = _cut(_VISIBLE_COLLECTIONS, "_VISIBLE_CO
 _COLLECTIONS = _wall(_VISIBLE_COLLECTIONS, "_VISIBLE_COLLECTIONS")
 COLLECTIONS_POSITION = _position(_COLLECTIONS)
 _COLLECTIONS_STORED = _with_stored_counts(_VISIBLE_COLLECTIONS, "_VISIBLE_COLLECTIONS")
+#: The plain wall: its total off the stored totals (`plain_total`).
+_COLLECTIONS_PLAIN = ordered(
+    plain_total(
+        _COLLECTIONS_STORED,
+        "_COLLECTIONS_STORED",
+        "collection",
+        "collections",
+        hidden_by("collection_user_state", "collection_id"),
+        "collection_user_state",
+    ),
+    "_COLLECTIONS_PLAIN",
+)
 
 #: One collection by id, as the unfiltered wall reads it: what a cover or a page asks before it
 #: answers, at one row's cost (`one_row`).
@@ -208,13 +223,16 @@ COLLECTION_BY_ID = one_row(
 )
 
 
-def collections_query(where: str, rows: str = _NOTHING) -> str:
+def collections_query(where: str, rows: str = _NOTHING, *, plain: str | None = None) -> str:
     """Collections this viewer may know about, counted over only the files a filter reaches.
 
     `rows` filters the collections themselves: whose they are, what has been shared.
     """
     if not _narrowed(where):
-        return _row_narrowed(_COLLECTIONS_STORED, rows)
+        return _row_narrowed(
+            _COLLECTIONS_PLAIN[plain] if plain and not _narrowed(rows) else _COLLECTIONS_STORED,
+            rows,
+        )
     return _row_narrowed(_filtered(_COLLECTIONS_HEAD, _COLLECTIONS_ACCESS, where), rows)
 
 

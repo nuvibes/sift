@@ -46,6 +46,28 @@ What's new lists what each release of Sift changes for you, newest first. To see
 - **A face scan whose models go missing mid-way waits for them**, as when the models are being
   downloaded again, instead of failing three times with "the detector model has not been
   installed yet."
+- **Every player is held to one bar.** The popout shows a frame 32% sooner after a press
+  (154 ms to 104 ms, median) and the gap between clips is 22% shorter in order and 69% under
+  Shuffle; nothing under the picture is asked for before its first frame (19 requests in a gap to
+  2); the Theater wall opens with nothing moving; a file deleted elsewhere leaves the Mini player
+  and a Theater cell at once; hls.js runs on a worker and remuxed files play like direct ones.
+- **A page of a wall is read once.** Browse, Next, a Filter tick and a person's page made 11
+  reads and now make 4 (64% fewer); the pager shows only a page that has landed whole.
+- **Sharing and hiding settle faster.** A share's permission check costs 83% less per file,
+  taking back a grant 74% less, and only the files whose answer moved are counted again; the
+  People wall reads 55% fewer steps and every other wall 24 to 34% fewer.
+- **The passes' "still to do" numbers are exact at every announcement**, kept by the database
+  itself (99.99% fewer steps while nothing moves), and the Tasks screen's time estimates are read
+  from stored prices (99.5% fewer steps; the jobs page makes 52% fewer statements).
+- **A person's, a Site's or a tag's page draws its numbers once.** The History tab's number
+  comes from the thread itself, beside the strip (a Site's strip costs 99% fewer steps); a
+  collection's and a person's header never show a stand-in name, letter or count; a page's wall
+  no longer takes in a namesake's files.
+- **Renaming a folder inside Sift no longer leaves a ghost folder behind** that refused the
+  rename back; a move the database refuses is put back on disk; a folder row made again takes
+  back its files.
+- **Activity names a re-index of some files for what it does** ("Updating the search index").
+  Other minor UI improvements.
 - **The desktop app connected to a library on another computer now says when its own copy is
   behind.** It compared the library's computer with the newest release and said "This is the newest
   version" while the copy in front of you was older. The line now reads "Sift 0.2.1 is available for

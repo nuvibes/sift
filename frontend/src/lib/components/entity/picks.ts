@@ -21,9 +21,9 @@
  * typed; it is carried untouched, and no card wears it as picked, since a card cannot say "every
  * file without her" by being washed in the accent.
  *
- * Names, not ids: the query language resolves names (the search slice's `_lookup`), as do the
- * page's own Files query (`people: person.name`) and a card's link (`relatedHref`). Two things
- * sharing a name filter to both, the wider and visible direction, since the chip says the name.
+ * Names, not ids: the query language resolves names (the search slice's `_lookup`), as does a
+ * card's link (`relatedHref`). Two things sharing a name filter to both, the wider and visible
+ * direction, since the chip says the name. The page's own Files query names its subject by id.
  *
  * Every named parameter combines with AND on the server (`parse_modal`), and a repeated parameter
  * demands every value, so `people=Jane+Else&people=Grace+Hopper&tags=beach` beside the page's own
