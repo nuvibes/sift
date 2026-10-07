@@ -230,6 +230,17 @@ async function dragGrip(page: Page, grip: string, to: { x: number; y: number }):
 	}
 }
 
+/** The asks once the dialog has an answer about the rectangle as drawn. The dialog asks again
+    after a pause in the dragging, so a slow drag asks mid-way too; the button is dead from the
+    moment the rectangle changes until the answer about its last shape has landed. */
+async function askedAboutTheDrawnRectangle(
+	page: Page,
+	traffic: { asked: Record<string, unknown>[] }
+): Promise<Step[]> {
+	await expect(page.getByRole('button', { name: 'Save a copy' })).toBeEnabled();
+	return lastSteps(traffic.asked);
+}
+
 test.beforeEach(async ({ page }) => {
 	await signInAsAdmin(page);
 	await page.setViewportSize({ width: 1400, height: 900 });
@@ -339,8 +350,9 @@ test('a handle dragged over the picture is sent in the picture own pixels', asyn
 	// The bottom-right handle, dragged to the middle. On a 1600 by 1200 picture that is 800 by 600.
 	await dragGrip(page, 'se', { x: 0.5, y: 0.5 });
 
-	await expect.poll(() => lastSteps(traffic.asked).length).toBeGreaterThan(0);
-	const crop = lastSteps(traffic.asked).find((step) => step.operation === 'crop')!;
+	const crop = (await askedAboutTheDrawnRectangle(page, traffic)).find(
+		(step) => step.operation === 'crop'
+	)!;
 
 	// A pointer lands on whole device pixels, so the fractions are not exact. Anything within one
 	// per cent is the rectangle that was drawn; the fault this catches is out by fifty times that.
@@ -356,12 +368,12 @@ test('a rectangle follows the picture when it is turned', async ({ page }) => {
 	const traffic = await serve(page, 'image');
 	await openTheEditor(page);
 	await dragGrip(page, 'se', { x: 0.5, y: 0.5 });
-	await expect.poll(() => lastSteps(traffic.asked).length).toBeGreaterThan(0);
+	await askedAboutTheDrawnRectangle(page, traffic);
 
 	await page.getByRole('button', { name: 'Turn right' }).click();
 
 	await expect.poll(() => lastSteps(traffic.asked).length).toBe(2);
-	const steps = lastSteps(traffic.asked);
+	const steps = await askedAboutTheDrawnRectangle(page, traffic);
 	// The turn first, then the rectangle in the frame the turn made: a rectangle that was across
 	// the top left is now down the top right, and its sides have swapped.
 	expect(steps[0]).toMatchObject({ operation: 'rotate', turn: 'right' });

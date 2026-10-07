@@ -879,7 +879,7 @@
 			"frontend/e2e/dimensions.spec.ts": 96,
 			"frontend/e2e/downloads.spec.ts": 105,
 			"frontend/e2e/drag.spec.ts": 47,
-			"frontend/e2e/edit.spec.ts": 143,
+			"frontend/e2e/edit.spec.ts": 146,
 			"frontend/e2e/entities.spec.ts": 89,
 			"frontend/e2e/faces.spec.ts": 100,
 			"frontend/e2e/facet-exclude.spec.ts": 53,
