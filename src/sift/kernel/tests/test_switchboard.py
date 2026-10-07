@@ -295,3 +295,17 @@ async def test_each_question_reads_its_settings_once_and_a_nested_one_shares_it(
     assert seen[2] is not seen[0], "the next question reads again"
     assert seen[3] is seen[4] is outer, "a question inside another shares its reading"
     assert one_reading_now() is None
+
+
+@pytest.mark.unit
+async def test_an_answer_to_an_earlier_ask_does_not_clear_the_one_out_now() -> None:
+    """A stale ask's answer (a loop since replaced) arrives after a new ask was put out."""
+    board = Switchboard()
+    assert await board.readiness() == {}
+    stale: asyncio.Future[dict[Family, Readiness]] = asyncio.get_running_loop().create_future()
+    stale.set_result({})
+    current = asyncio.ensure_future(board._ask_every_family())
+    board._asking = current
+    board._asked(stale)
+    assert board._asking is current, "the answer out now is still shared"
+    await current

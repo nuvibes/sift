@@ -1406,3 +1406,10 @@ def test_the_database_drivers_lines_never_reach_the_file(
     output = capsys.readouterr().out
     assert "canary-x9" not in output
     assert "timing" in output, "Sift's own debug line is what the detail switch is for"
+
+
+def test_the_shells_word_goes_to_stdout_whole(capsys: pytest.CaptureFixture[str]) -> None:
+    from sift.kernel.log import tell_the_shell
+
+    tell_the_shell("sift.listening")
+    assert capsys.readouterr().out == "sift.listening\n"

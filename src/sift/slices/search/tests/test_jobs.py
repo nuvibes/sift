@@ -17,7 +17,9 @@ from sift.kernel.jobs import JobContext, JobQueue, JobState, registered_handlers
 from sift.kernel.version import app_version
 from sift.slices.search import jobs as jobs_module
 from sift.slices.search.jobs import (
+    ASSET_IDS,
     FTS_REINDEX,
+    FTS_REINDEX_FILES,
     _what_it_is_doing,
     catch_up_if_behind,
     ensure_scheduled,
@@ -100,6 +102,23 @@ async def test_the_registered_handler_is_the_one_that_does_the_indexing(
     )
 
     assert await _indexed(database) == set(ids)
+
+
+async def test_the_registered_files_handler_indexes_exactly_the_files_it_names(
+    database: Database, job_queue: JobQueue
+) -> None:
+    ids = await _seed(database, 3)
+    register_handlers(database=database)
+
+    await job_queue.enqueue(FTS_REINDEX_FILES, {ASSET_IDS: ids[:2]})
+    job = await job_queue.claim("a-worker")
+    assert job is not None
+
+    await registered_handlers()[FTS_REINDEX_FILES](
+        JobContext(job=job, worker_id="a-worker", queue=job_queue)
+    )
+
+    assert await _indexed(database) == set(ids[:2])
 
 
 # --- saying what it is doing, and why -----------------------------------------------------------

@@ -203,7 +203,7 @@
 		"src/sift/wiring/stash_doors.py::StashDoorsFromApp.opinion": 11
 	},
 	"test_file_lines": {
-		"src/sift/kernel/tests/test_db.py": 2066,
+		"src/sift/kernel/tests/test_db.py": 2064,
 		"src/sift/kernel/tests/test_history.py": 3031,
 		"src/sift/kernel/tests/test_sentences.py": 2226,
 		"src/sift/slices/faces/tests/test_store.py": 2341,

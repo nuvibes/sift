@@ -584,17 +584,20 @@ class TasksService:
         )
         for task in tasks:
             products = self._products.get(task.id)
-            family = None if task.job_type is None else family_of(task.job_type)
             if task.records_runs:
                 lasts[task.id] = _last_line(lines.get(task.id))
-            elif family is None:
-                lasts[task.id] = await self._last(task, viewer)
-            elif products and self._ledger is not None:
+                continue
+            # `register_schedule` refuses a task with no job type, so every other task has one.
+            assert task.job_type is not None  # noqa: S101 (refused at registration)
+            family = family_of(task.job_type)
+            if products and self._ledger is not None:
                 by_products.append((task, products, family))
             elif family not in LONG_PASSES:
                 one_job.append(task)
+            elif self._ledger is not None:
+                lasts[task.id] = _last_of(await self._ledger.last_run(family))
             else:
-                lasts[task.id] = await self._last(task, viewer)
+                lasts[task.id] = None
         if by_products and self._ledger is not None:
             runs = await self._ledger.last_runs_for([(p, f) for _t, p, f in by_products])
             for (task, _products, _family), run in zip(by_products, runs, strict=True):
@@ -605,43 +608,6 @@ class TasksService:
         for task in one_job:
             lasts[task.id] = _last_job_of(finished.get(task.job_type or ""))
         return lasts
-
-    async def _last(self, task: ScheduledTask, viewer: Viewer) -> LastRun | None:
-        """How the last run ended. From the history for a task that writes its own line there, and
-        from the work ledger's record of its family for a long pass: both kept, neither pruned."""
-        if task.records_runs:
-            lines = await latest_events_of_entities(self._db, viewer, "run", [task.id])
-            return _last_line(lines.get(task.id))
-        # `register_schedule` refuses a task with no job type, so every declared task has one.
-        assert task.job_type is not None  # noqa: S101 (refused at registration)
-        family = family_of(task.job_type)
-        products = self._products.get(task.id)
-        if products and self._ledger is not None:
-            # THE TASK'S OWN PRODUCTS FIRST. A family is not a task: Music's Run now is a Generate
-            # run of the music product, and Faces and Watermarks are both Identify. Read by
-            # family, Music's row would never move after its own press and a watermark-only run
-            # would read as Faces'. Runs recorded without products answer by family.
-            return _last_of(await self._ledger.last_run_for(products, family))
-        if family not in LONG_PASSES:
-            # One job and no line of its own (Find duplicate files, Find shoots, the stash-box
-            # lookups, Suggest People): the queue's record of its runs, where Activity reads too.
-            return await self._last_job(task.job_type)
-        if self._ledger is None:
-            return None
-        return _last_of(await self._ledger.last_run(family))
-
-    async def _last_job(self, job_type: str) -> LastRun | None:
-        """The last FINISHED run of a task whose work is one job and writes no line of its own.
-
-        From the job rows, through `JobQueue.task_runs`, the one place a task's own run is
-        answered, and the one Activity's housekeeping rows read. The work ledger cannot say it: it
-        records per family, and every one of these is in the `other` family with every download
-        and transcode. Read from there, Find duplicate files, Find shoots, Look up new files on
-        stash-boxes and Suggest People from your folders would read "never" here while Activity
-        showed each one's run. A run still going is not the last one that ran; the one before it is.
-        """
-        # The one answer, which Activity's housekeeping row reads too: see `last_finished_runs`.
-        return _last_job_of((await self._queue.last_finished_runs([job_type])).get(job_type))
 
     # --- running one -------------------------------------------------------------------------
 

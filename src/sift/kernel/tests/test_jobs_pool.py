@@ -1628,3 +1628,14 @@ async def test_a_job_whose_family_was_cleared_while_it_ran_is_nobodys_press(
 
     assert await pool._pressed_by(orphan) is None
     assert await pool._pressed_by(dataclasses.replace(orphan, requested_by="u1")) == "u1"
+
+
+async def test_work_arriving_wakes_the_supervisor_immediately(job_queue: JobQueue) -> None:
+    pool = WorkerPool(job_queue, concurrency=1, poll_interval=0.01)
+    waited_on = pool._waking.arrived
+    pool.work_arrived()
+    assert waited_on.is_set(), "every idle worker claims now"
+    assert pool._waking.arrived is not waited_on, "the next wait is a fresh event"
+    assert not pool._waking.reconfigure.is_set()
+    pool._waking.wake()
+    assert pool._waking.reconfigure.is_set(), "a press for turbo or eco is taken within a moment"

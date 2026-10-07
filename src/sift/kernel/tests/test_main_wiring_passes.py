@@ -842,3 +842,23 @@ async def test_the_self_test_reads_the_machine_only_when_it_runs(
     assert (measured.label, measured.roots) == ("Films", (tmp_path,))
     assert measured.storage == storage_of(tmp_path).key
     assert await first_folder._storage("gone") is None  # type: ignore[attr-defined]
+
+
+async def test_a_start_on_kept_answers_asks_the_programs_again_for_the_next(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from types import SimpleNamespace
+
+    from sift.wiring import machine
+
+    asked: list[Path] = []
+
+    async def reprobe(settings: object, hardware: object, *, kept: Path) -> None:
+        asked.append(kept)
+
+    monkeypatch.setattr(machine, "reprobe", reprobe)
+    settings = SimpleNamespace(cache_dir=tmp_path)
+    await machine.probe_again(settings, SimpleNamespace(answers_kept=True))  # type: ignore[arg-type]
+    assert asked == [tmp_path / "hardware-probe.json"]
+    await machine.probe_again(settings, SimpleNamespace(answers_kept=False))  # type: ignore[arg-type]
+    assert len(asked) == 1, "a start that asked the programs itself asks nothing more"

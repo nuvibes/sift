@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import pytest
 
+from sift.kernel.content import tree as tree_module
 from sift.kernel.content.tree import FolderTotals, TreeReads
 from sift.kernel.db import Database
 
@@ -103,6 +104,20 @@ async def test_everything_under_a_folder_includes_what_is_below_it(tree: TreeRea
     assert sorted(await tree.assets_under("f-shoot")) == ["a1", "a2", "a3"]
     assert sorted(await tree.assets_under("f-cuts")) == ["a3"]
     assert await tree.assets_under("f-nowhere") == [], "a folder that is not there holds nothing"
+
+
+async def test_many_folders_read_together_answer_as_each_read_alone(
+    tree: TreeReads, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Every folder asked is a key, a repeated one once, one not there with nothing; in batches too."""
+    monkeypatch.setattr(tree_module, "_FOLDERS_AT_ONCE", 2)
+    asked = ["f-shoot", "f-cuts", "f-shoot", "f-nowhere"]
+    under = await tree.assets_under_many(asked)
+    assert {key: sorted(found) for key, found in under.items()} == {
+        "f-shoot": ["a1", "a2", "a3"],
+        "f-cuts": ["a3"],
+        "f-nowhere": [],
+    }
 
 
 async def test_the_filenames_in_one_folder_are_the_ones_sitting_in_it(tree: TreeReads) -> None:

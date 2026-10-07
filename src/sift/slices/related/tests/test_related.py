@@ -16,6 +16,7 @@ from fastapi.testclient import TestClient
 
 from sift.kernel import db as db_module
 from sift.kernel.records import FoundRecord, Subject
+from sift.slices.related.router import _files_of
 from sift.slices.related.tests.conftest import World, db_path, sign_in, write
 from sift.slices.stash_boxes.adapter import as_json
 
@@ -176,6 +177,14 @@ def test_an_id_naming_nothing_is_every_count_at_nought(client: TestClient, world
     assert seen["files"] == 0
     assert seen["tags"] == 0
     assert seen["people"] == 0
+    # Every kind of page: a tag's People tab is counted off the people wall, not "seen with".
+    assert counts(client, "tag", "01JQZZZZZZZZZZZZZZZZZZZZZZ")["people"] == 0
+
+
+def test_a_subject_with_no_files_count_is_refused() -> None:
+    """A kind added to the strip without its Files number fails loudly, never as a nought."""
+    with pytest.raises(TypeError, match="no files count"):
+        _files_of(object())
 
 
 def test_a_guest_shown_nothing_sees_nothing(client: TestClient, world: World) -> None:

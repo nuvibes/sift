@@ -28,7 +28,7 @@ from sift.kernel.content.identity import (
     songs_of,
     unseed_music_on,
 )
-from sift.kernel.content.identity_fields import MUSIC_FROM_SITE
+from sift.kernel.content.identity_fields import MUSIC_FROM_SITE, songs_and_lengths
 from sift.kernel.db import Database
 from sift.kernel.ledger import Object, Reversal
 
@@ -164,6 +164,11 @@ async def test_the_songs_a_group_carries_and_one_files_song_and_length(tmp_path:
         cleared = await song_and_length(database, "b")
         assert cleared is not None and cleared.music is None
         assert await song_and_length(database, "gone") is None
+        # A page's worth together answers as each alone; a file not there is absent.
+        page = await songs_and_lengths(database, ["a", "b", "gone", "a"])
+        assert sorted(page) == ["a", "b"]
+        assert page["a"] == own and page["b"] == cleared
+        assert await songs_and_lengths(database, []) == {}
     finally:
         await database.close()
 

@@ -109,3 +109,48 @@ async def test_a_starts_questions_and_the_awaiting_count_seek_rather_than_walk(
         )
         walks = [row["detail"] for row in plan if str(row["detail"]) in ("SCAN a", "SCAN assets")]
         assert not walks, statement
+
+
+@pytest.mark.usefixtures("bus")
+async def test_a_count_taken_while_the_library_moved_is_not_held(
+    temp_db: Database, content_store: ContentStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    taken = content_store._count_within
+
+    async def moved_meanwhile(*args: object) -> int:
+        counted = await taken(*args)  # type: ignore[arg-type]
+        changes.announce_now(EVERY_ADMIN, About.ARRIVALS)
+        return counted
+
+    monkeypatch.setattr(content_store, "_count_within", moved_meanwhile)
+    monkeypatch.setattr(content_store, "_kept_counts", _Walks(), raising=False)
+    assert await content_store.asset_count() == 0
+    assert not content_store._held_counts
+
+
+@pytest.mark.usefixtures("bus")
+async def test_the_held_counts_are_let_go_past_how_many_are_kept(
+    temp_db: Database, content_store: ContentStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(identity_counts, "_HELD_KEPT", 1)
+    await content_store.unread_count()
+    await content_store.asset_count()
+    assert list(content_store._held_counts) == [("asset_count", None)]
+
+
+async def test_a_start_asks_whether_any_file_is_unread_or_typed_by_an_older_classifier(
+    temp_db: Database, content_store: ContentStore
+) -> None:
+    assert not await content_store.any_unread()
+    assert not await content_store.any_unclassified()
+    await _unread(temp_db)
+    assert await content_store.any_unread()
+    await temp_db.execute("UPDATE assets SET classified_version = 0")
+    assert await content_store.any_unclassified()
+
+
+class _Walks:
+    """Kept counts that are never there, so a count walks."""
+
+    async def totals(self, terms: object) -> None:
+        return None

@@ -21,8 +21,12 @@ from sift.kernel.access.history_entity import (
     history_of_site,
     history_of_tag,
 )
+from sift.kernel.access.history_events import latest_events_of_entities
 from sift.kernel.db import Database
+from sift.kernel.ledger import Actor as LedgerActor
+from sift.kernel.ledger import record_event
 from sift.kernel.sorting import sort_key
+from sift.kernel.vocabulary import Subject
 from sift.testing.fixtures import Actors, World
 
 pytestmark = pytest.mark.anyio
@@ -203,3 +207,31 @@ async def test_a_run_s_usernames_removed_since_are_counted_not_named_bare(
     said = text_of(filled_field(fields[0]))
     assert said == "3 usernames (quillmoss on Quillhouse and 2 since removed)"
     assert "wrenna" not in said
+
+
+async def test_the_newest_line_of_each_thing_is_read_together_from_both_sides(
+    temp_db: Database, actors: Actors
+) -> None:
+    """Each run's newest line, whether it names the run as its subject or as its object; a run
+    with no line is absent, and asking about nothing reads nothing."""
+    first, second, quiet = "01HX0000000000000000000R01", "01HX0000000000000000000R02", "R3"
+    async with temp_db.write() as connection:
+        for at, (said, subject) in enumerate([("1", first), ("2", second), ("3", first)], start=1):
+            event = await record_event(
+                connection,
+                actor=LedgerActor.sift(),
+                verb="ran",
+                payload=said,
+                subject=Subject(kind="run", id=subject),
+            )
+            await connection.execute(
+                "UPDATE workbench_decisions SET decided_at = ? WHERE id = ?", (at, event)
+            )
+
+    latest = await latest_events_of_entities(temp_db, actors.admin, "run", [first, second, quiet])
+
+    assert {one: event.payload for one, event in latest.items()} == {
+        first: "3",
+        second: "2",
+    }
+    assert await latest_events_of_entities(temp_db, actors.admin, "run", []) == {}

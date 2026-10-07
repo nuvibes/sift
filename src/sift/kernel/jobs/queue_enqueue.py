@@ -244,8 +244,7 @@ class Enqueuing(QueueCore):
         for job_id, _row, _serialized in rows:
             if job_id in inserted:
                 log.info("job.enqueued", job_id=job_id, job_type=job_type, parent_id=None)
-        if placed:
-            self._work_arrived()
+        self._work_arrived()
         return placed
 
     async def _admit(

@@ -21,7 +21,7 @@ from sift.kernel.access import sentences as say
 from sift.kernel.access.history_sources import _NAMING_FOLDER
 from sift.kernel.db import Database
 from sift.kernel.ids import new_id
-from sift.slices.faces import recognize
+from sift.slices.faces import recognize, service_identified
 from sift.slices.faces.models import Attribution, StartersShow, ToCheckKind
 from sift.slices.faces.queue import DisagreementsQueue, IdentifiedRecords
 from sift.slices.faces.receipts import DISAGREEMENTS_QUEUE, IDENTIFIED_QUEUE
@@ -40,7 +40,7 @@ from sift.slices.faces.tests.test_routes import (
 from sift.slices.faces.tests.test_routes_answers import _a_file_filed_under
 from sift.slices.faces.weights import pairing
 from sift.slices.workbench.store import Store as WorkbenchStore
-from sift.testing.fixtures import create_user
+from sift.testing.fixtures import create_user, hide
 
 pytestmark = pytest.mark.integration
 
@@ -695,6 +695,31 @@ async def test_a_page_of_cards_reads_its_faces_marks_and_best_once_for_the_page(
     assert total == 2
     assert [card.surest for card in cards] == [0.9, 0.9]
     assert asked == {"picture_moments": 1, "reference_tracks": 1}
+
+
+async def test_a_cards_best_reads_on_past_a_first_page_kept_from_this_viewer(
+    library: Database,
+    service: FaceService,
+    store: Store,
+    admin: Viewer,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A card whose surest faces are all on files kept from this viewer reads on to the first it
+    may see, and says nothing where it may see none."""
+    monkeypatch.setattr(service_identified, "_SUREST_STEP", 1)
+    hidden, track = await _filed(library, service, WREN, None)
+    await store.attribute(track, WREN, confidence=0.9, attribution=Attribution.MATCHED)
+    _shown, track = await _filed(library, service, WREN, None)
+    await store.attribute(track, WREN, confidence=0.7, attribution=Attribution.MATCHED)
+    lone, track = await _filed(library, service, RASHA, None)
+    await store.attribute(track, RASHA, confidence=0.8, attribution=Attribution.MATCHED)
+    for asset in (hidden, lone):
+        await hide(library, "asset", asset, admin.id)
+
+    cards, _total = await service.identified_people(admin)
+
+    assert [card.surest for card in cards if card.person_id == WREN] == [0.7]
+    assert await service._surest(admin, RASHA) is None
 
 
 # --- the routes ----------------------------------------------------------------------------------

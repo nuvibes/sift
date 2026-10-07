@@ -338,6 +338,26 @@ def test_a_file_that_carries_its_own_hash_is_kept_forever(http: TestClient) -> N
     assert response.headers["cache-control"] == client.FOREVER
 
 
+def test_the_brand_icons_are_kept_a_week_and_nothing_else_is() -> None:
+    """The icons asked for on every step through files are kept without asking; an unhashed file
+    anywhere else is still checked, and the page shell never kept."""
+    icon = client.CLIENT_DIR / "brand" / "favicon.svg"
+    assert client.cache_control_for("brand/favicon.svg", icon) == client.BRAND
+    assert "max-age=604800" in client.BRAND
+    other = client.CLIENT_DIR / "fonts" / "brand.woff2"
+    assert client.cache_control_for("fonts/brand.woff2", other) == client.REVALIDATE
+    assert client.cache_control_for("brand", client.INDEX) == "no-store"
+
+
+@built
+def test_a_brand_icon_is_served_with_its_week(http: TestClient) -> None:
+    """Served, the icon carries the week; the page shell beside it does not."""
+    response = http.get("/brand/favicon.svg")
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == client.BRAND
+    assert http.get("/").headers["cache-control"] == "no-store"
+
+
 # --- the API is not the client --------------------------------------------------------------
 
 

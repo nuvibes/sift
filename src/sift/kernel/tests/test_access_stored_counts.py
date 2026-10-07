@@ -276,3 +276,45 @@ async def test_the_term_with_fewest_files_is_asked_first(
     counted = [sql for sql in await _sent(temp_db, actors.admin, asked) if "paged(paged_id)" in sql]
     assert counted
     assert counted[0].index("ci.collection_id IN") < counted[0].index("ap.person_id IN")
+
+
+async def test_the_oldest_kept_total_goes_when_the_keep_is_full(
+    actors: Actors, world: World, temp_db: Database, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Totals are kept for the most recent questions only: past the keep, the oldest is counted
+    afresh when its next page is asked."""
+    monkeypatch.setattr(read_files, "current_mark", lambda: "still")
+    monkeypatch.setattr(read_files, "_TOTALS_KEPT", 1)
+    heard = _Heard(temp_db.path)
+    try:
+        reads = FileReads(cast(Any, heard), cast(Any, None))
+        asked, other = _counted_way(), _counted_way(Where("media_type", ("video",)))
+        first = await reads.visible_assets(actors.admin, limit=1, asset_filter=asked)
+        await reads.visible_assets(actors.admin, limit=1, asset_filter=other)
+        after = first.items[0].asset.id
+        again = await reads.visible_assets(actors.admin, limit=1, asset_filter=asked, after=after)
+    finally:
+        heard.connection.close()
+    counts = [sql for sql in heard.sent if "COUNT(*) AS total_count" in sql]
+    assert len(counts) == 3, "a total pushed out of the keep was read back"
+    assert again.total == first.total
+
+
+async def test_a_tag_or_collection_wall_reads_its_total_off_the_stored_count(
+    access: Repository, actors: Actors, world: World, temp_db: Database
+) -> None:
+    for key, thing in (("tags", world.tag), ("collections", world.collection)):
+        for viewer in _ways(actors):
+            asked = _counted_way(Where(key, (thing,)))
+            counted = await access.visible_assets(viewer, asset_filter=asked)
+            heard = _Heard(temp_db.path)
+            try:
+                reads = FileReads(cast(Any, heard), cast(Any, None))
+                if key == "tags":
+                    page = await reads.visible_assets(viewer, tag_id=thing)
+                else:
+                    page = await reads.visible_assets(viewer, collection_id=thing)
+            finally:
+                heard.connection.close()
+            assert page.total == counted.total, (key, viewer.role, viewer.show_hidden)
+            assert not [sql for sql in heard.sent if "COUNT(*) AS total_count" in sql], key

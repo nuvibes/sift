@@ -1673,3 +1673,7 @@ class TestANoOnAWholeUsername:
         assert (again.files, again.decision_id) == (0, None)
         assert (nobody.files, nobody.decision_id) == (0, None)
         assert len(await temp_db.fetch_all(_RECEIPTS)) == before
+
+
+async def test_a_folder_nobody_filed_has_no_filenames_to_suggest_from(store: Store) -> None:
+    assert await store.filenames_in("01HNOSUCHFOLDER00000000000") == []

@@ -1210,6 +1210,9 @@ async def test_a_page_leaving_out_the_upkeep_leaves_it_out_of_the_total_too(
     assert [job.id for job in page.jobs] == [shown]
     assert page.total == 1
     assert (await job_queue.list()).total == 3
+    # A page among named types counts its rows rather than reading the tallies: the same answer.
+    among = await job_queue.list(leaving_out=[prune], among=[probe, prune])
+    assert [job.id for job in among.jobs] == [shown] and among.total == 1
 
 
 async def test_the_top_of_a_job_that_is_gone_is_nothing(job_queue: JobQueue) -> None:

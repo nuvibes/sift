@@ -10,6 +10,7 @@ from __future__ import annotations
 
 # The NAME only: `sqlite3.Error` is what the settings converger catches, raised below to prove that
 # arm; nothing here opens a database.
+import os
 import sys
 from collections.abc import Mapping
 from pathlib import Path
@@ -1640,3 +1641,53 @@ async def test_where_a_dropped_file_lands_is_read_at_the_moment_of_the_drop(
 
     setattr(app.state, download.SITE_OPTIONS.name, _Options("moved-since"))
     assert await destination() == "moved-since"
+
+
+def test_the_processs_age_is_read_from_proc_off_windows(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _Proc:
+        """The kernel's two files, as a Path reads them."""
+
+        def __init__(self, path: object) -> None:
+            self.path = str(path)
+
+        def read_text(self, encoding: str = "ascii") -> str:
+            if self.path.endswith("stat"):
+                return "1 (py thon) S " + " ".join(["0"] * 18) + " 100 0 0"
+            return "250.0 100.0"
+
+    monkeypatch.setattr(main, "_WINDOWS", False)
+    monkeypatch.setattr(main, "Path", _Proc)
+    monkeypatch.setattr(os, "sysconf", lambda _name: 100, raising=False)
+    assert main.since_the_process_began_ms() == 249_000
+
+    class _Gone(_Proc):
+        def read_text(self, encoding: str = "ascii") -> str:
+            raise OSError("no proc here")
+
+    monkeypatch.setattr(main, "Path", _Gone)
+    assert main.since_the_process_began_ms() is None
+
+
+async def test_the_listening_word_is_said_once_the_socket_is_up() -> None:
+    said: list[str] = []
+
+    class _Server:
+        started = False
+
+        async def startup(self, sockets: object = None) -> None:
+            self.started = True
+
+    server = _Server()
+    main.say_when_listening(server, said.append)
+    await server.startup()
+    assert said == [main.READY_LINE]
+
+    class _Never(_Server):
+        async def startup(self, sockets: object = None) -> None:
+            return None
+
+    quiet = _Never()
+    said.clear()
+    main.say_when_listening(quiet, said.append)
+    await quiet.startup()
+    assert said == []

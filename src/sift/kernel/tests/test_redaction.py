@@ -107,3 +107,24 @@ def test_the_address_of_the_device_that_opened_sift_is_taken_out(line: str, kept
 )
 def test_a_host_sift_talks_to_is_kept(line: str) -> None:
     assert redacted_line(line) == line
+
+
+def test_the_machines_name_is_taken_out_and_compiled_again_when_it_changes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from sift.kernel import redaction
+
+    monkeypatch.setattr(redaction, "_HOSTNAME", "quillbox")
+    monkeypatch.setattr(redaction, "_hostname_pattern", None)
+    assert "quillbox" not in str(redaction.redact("seen on quillbox today", personal=True))
+    # A test may set another name: the matcher follows it rather than the first one compiled.
+    monkeypatch.setattr(redaction, "_HOSTNAME", "inkmoth")
+    out = str(redaction.redact("inkmoth and quillbox", personal=True))
+    assert "inkmoth" not in out and "quillbox" in out
+    compiled = redaction._hostname_pattern
+    assert "INKMOTH" not in str(redaction.redact("INKMOTH again", personal=True))
+    assert redaction._hostname_pattern is compiled, "the same name is not compiled twice"
+    assert (
+        str(redaction.redact("nothing of the machine here", personal=True))
+        == "nothing of the machine here"
+    )

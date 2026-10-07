@@ -906,6 +906,23 @@ async def test_a_root_that_went_away_asks_for_nothing(
     assert await scans_of(job_queue) == [], "an unreachable root is not evidence about its files"
 
 
+async def test_a_burst_for_a_root_taken_out_of_the_library_asks_nothing(
+    watcher: LibraryWatcher, root_path: Path, job_queue: JobQueue
+) -> None:
+    """A root removed while a burst of its settles: a refresh drops its base, and the burst then
+    asks the disk nothing and queues nothing."""
+    gone = "a-root-no-longer-in-the-library"
+    watcher._bases[gone] = root_path
+    watcher._notice(gone, root_path / "one.mp4")
+    del watcher._bases[gone]
+    await asyncio.sleep(QUIET * 2)
+
+    await watcher._sweep_pending()
+
+    assert watcher._pending == {}, "the burst stayed armed for a root nobody watches"
+    assert await scans_of(job_queue) == []
+
+
 async def test_more_arrivals_than_the_cap_give_the_folder_back(
     watcher: LibraryWatcher, root: Root, root_path: Path, job_queue: JobQueue
 ) -> None:

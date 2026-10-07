@@ -225,13 +225,11 @@ _HOSTNAME = _own_hostname()
 _hostname_pattern: tuple[str, re.Pattern[str]] | None = None
 
 
-def _hostname_matcher() -> re.Pattern[str] | None:
+def _hostname_matcher(name: str) -> re.Pattern[str]:
     """The machine's name as a word, compiled once per name (a test may set another)."""
     global _hostname_pattern
-    if not _HOSTNAME:
-        return None
-    if _hostname_pattern is None or _hostname_pattern[0] != _HOSTNAME:
-        _hostname_pattern = (_HOSTNAME, re.compile(rf"(?i)\b{re.escape(_HOSTNAME)}\b"))
+    if _hostname_pattern is None or _hostname_pattern[0] != name:
+        _hostname_pattern = (name, re.compile(rf"(?i)\b{re.escape(name)}\b"))
     return _hostname_pattern[1]
 
 
@@ -246,9 +244,7 @@ def _hide_own_names(text: str) -> str:
                 result = result[: -len(_OS_USERNAME)] + REDACTED
 
     if _HOSTNAME and _HOSTNAME.lower() in result.lower():
-        matcher = _hostname_matcher()
-        if matcher is not None:
-            result = matcher.sub(REDACTED, result)
+        result = _hostname_matcher(_HOSTNAME).sub(REDACTED, result)
 
     return result
 

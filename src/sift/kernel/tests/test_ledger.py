@@ -697,6 +697,14 @@ async def test_a_run_before_products_were_kept_answers_by_family_and_is_not_migr
     assert faces is not None and faces.made_for == ("faces",)
     assert watermarks is not None and watermarks.id == "01OLDRUN", "the old run, by family"
     assert watermarks.made_for is None, "not migrated"
+    # The same asks in one statement answer in their order; a family never run is None.
+    asked = [(["faces"], Family.IDENTIFY), (["watermarks"], Family.IDENTIFY), (["x"], Family.SCAN)]
+    assert [run and run.id for run in await book.last_runs_for(asked)] == [
+        faces.id,
+        "01OLDRUN",
+        None,
+    ]
+    assert await book.last_runs_for([]) == []
 
 
 async def test_a_runs_line_is_named_after_the_task_it_was_for(temp_db: Database) -> None:
@@ -837,6 +845,9 @@ async def test_a_page_reads_the_kept_prices_and_they_say_what_the_runs_said(
     assert kept == walked
     assert walked[0] is not None and walked[2] is not None
     assert len(heard) == 3 and not [one for one in heard if "work_runs" in one], heard
+    # Work that is no long pass keeps no price: its estimate reads the runs, as before.
+    assert await ledger.estimate(Family.OTHER, ["backup_run"], left=5, at_once=1) is None
+    assert "work_prices" not in " ".join(heard[3:])
 
 
 async def test_a_library_from_before_kept_prices_prices_from_its_runs_at_the_step(
@@ -845,6 +856,11 @@ async def test_a_library_from_before_kept_prices_prices_from_its_runs_at_the_ste
     await temp_db.initialize_schema()
     await temp_db.execute("DROP TABLE work_prices")
     await _run_row(temp_db, files={"image": (200, 10_000)}, seconds=2, started=2_000)
+    # Work that is no long pass (a download, a backup) is priced from its runs when asked.
+    await temp_db.execute(
+        "INSERT INTO work_runs (id, family, started_at, updated_at, finished_at, jobs_done,"
+        " profile) VALUES ('other-run', 'other', 1, 2, 2, 1, 'abc123')"
+    )
     async with temp_db.write() as connection:
         await ledger_module.initialize(connection, on_disk=7)
         await ledger_module.initialize(connection, on_disk=8)

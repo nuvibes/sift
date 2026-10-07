@@ -4,7 +4,7 @@ and a read after a write evaluates the files that moved, not the library."""
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import replace
 
 import pytest
@@ -325,3 +325,55 @@ async def test_a_term_given_up_meanwhile_is_not_folded(
 ) -> None:
     async with temp_db.write() as connection:
         assert not await content_store._kept._fold(connection, [Term("1")])
+
+
+async def test_a_build_over_several_pages_counts_every_file(
+    temp_db: Database,
+    content_store: ContentStore,
+    walker: ContentStore,
+    library_root: LibraryRoot,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(backlog, "_BUILD_AT_ONCE", 2)
+    for _ in range(5):
+        await _file(temp_db, library_root)
+    await _agree(content_store, walker, library_root)
+    assert await content_store.asset_count() == 5
+
+
+async def test_a_term_given_up_to_another_reader_before_its_fold_is_walked(
+    temp_db: Database, content_store: ContentStore, library_root: LibraryRoot
+) -> None:
+    await _file(temp_db, library_root)
+    kept = content_store._kept
+    term = Term("1")
+    await kept.totals([term])
+    await kept.settled()
+    ensured = kept._ensure
+
+    async def taken_meanwhile(terms: Sequence[Term]) -> dict[str, int] | None:
+        bits = await ensured(terms)
+        async with temp_db.write() as connection:
+            await backlog._forget(connection, bits[term.signature] if bits else 0)
+        return bits
+
+    kept._ensure = taken_meanwhile  # type: ignore[method-assign]
+    assert await kept.totals([term]) is None
+
+
+async def test_a_term_still_asked_keeps_its_bit_when_an_older_one_gives_way(
+    temp_db: Database, content_store: ContentStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(backlog, "TERMS_KEPT", 2)
+    kept = content_store._kept
+    first, second, third = Term("1 = 1"), Term("2 = 2"), Term("3 = 3")
+    for term in (first, second):
+        await kept.totals([term])
+        await kept.settled()
+    await kept.totals([first, third])
+    await kept.settled()
+    assert await kept.totals([first, third]) == [{}, {}]
+    signatures = {
+        str(row[0]) for row in await temp_db.fetch_all("SELECT signature FROM backlog_terms")
+    }
+    assert signatures == {first.signature, third.signature}

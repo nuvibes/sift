@@ -692,8 +692,7 @@ class FileReads(RepositoryCore):
         wanted: list[tuple[str, str]] = []
         if asked.tag_id is not None:
             wanted.append(("tag", asked.tag_id))
-        if asked.collection_id is not None:
-            wanted.append(("collection", asked.collection_id))
+        # A collection's wall arrives as a `collections` term (`visible_assets`), counted below.
         rows = [
             await self._db.fetch_one(_ENTITY_COUNT, (viewer.id, kind, object_id))
             for kind, object_id in wanted

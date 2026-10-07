@@ -692,9 +692,10 @@ async def test_an_index_made_before_the_keys_is_brought_forward(
 
 
 async def test_the_add_ons_storage_is_read_whole_and_agrees_with_the_table(
-    temp_db: Database, store: VectorStore
+    temp_db: Database, store: VectorStore, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Read by chunk only on the layout this was written against; a new layout reads row by row."""
+    from sift.slices.semantic import store as module
     from sift.slices.semantic.store import _Frames
 
     await store.put("clip", [(0, unit(1.0)), (10, unit(0.0, 1.0))], revision=REVISION)
@@ -712,6 +713,15 @@ async def test_the_add_ons_storage_is_read_whole_and_agrees_with_the_table(
 
     assert frames._chunked
     assert by_chunk == [_pack(unit(1.0)), _pack(unit(0.0, 1.0))]
+
+    # A layout this was not written against: nothing is looked up, every frame read by row.
+    monkeypatch.setattr(module, "_LAYOUT", "SELECT 0")
+    async with temp_db.write() as connection:
+        by_row = _Frames(connection)
+        await by_row.settle(keys[0])
+        await by_row.between(keys[0], keys[-1])
+        assert not by_row._chunked and not by_row._slots
+        assert await by_row.read(keys) == by_chunk
 
 
 async def test_an_index_this_machine_cannot_read_is_described_again(
@@ -735,3 +745,44 @@ async def test_an_index_this_machine_cannot_read_is_described_again(
         await module.index_files(connection)
 
     assert await temp_db.fetch_all("SELECT asset_id FROM semantic_indexed") == []
+
+
+async def test_a_file_of_consecutive_frames_is_pooled_once_and_an_empty_one_not_at_all(
+    temp_db: Database, store: VectorStore
+) -> None:
+    """Two frames in a run are one file; a file whose frames pool to nothing has no index row."""
+    from sift.slices.semantic.store import index_files
+
+    await store.put("clip", [(0, unit(1.0)), (10, unit(0.0, 1.0))], revision=REVISION)
+    await store.put("still", [(0, unit(0.0, 1.0))], revision=REVISION)
+    await _as_before_the_keys(temp_db)
+    async with temp_db.write() as connection:
+        await connection.execute("DELETE FROM semantic_pooled")
+        await connection.execute(
+            "INSERT INTO semantic_frames(revision, asset_id, at_ms, embedding) VALUES (?, ?, ?, ?)",
+            (REVISION, "blank", 0, _pack([0.0] * DIMENSION)),
+        )
+
+    async with temp_db.write() as connection:
+        await index_files(connection)
+
+    assert await _pooled_rows(temp_db) == [("clip", REVISION), ("still", REVISION)]
+    assert await _keys(temp_db) == (["clip", "clip", "still", "blank"], ["clip", "still"])
+
+
+async def test_a_file_whose_frames_go_on_in_the_next_batch_is_one_file(
+    temp_db: Database, store: VectorStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from sift.slices.semantic import store as module
+
+    await store.put(
+        "clip", [(0, unit(1.0)), (10, unit(1.0)), (20, unit(0.0, 1.0))], revision=REVISION
+    )
+    await _as_before_the_keys(temp_db)
+    monkeypatch.setattr(module, "INDEX_BATCH", 2)
+
+    async with temp_db.write() as connection:
+        await module.index_files(connection)
+
+    assert await _keys(temp_db) == (["clip", "clip", "clip"], ["clip"])
+    assert await _files_held(temp_db) == 1

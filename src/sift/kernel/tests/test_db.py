@@ -1038,16 +1038,13 @@ async def test_a_write_through_the_lane_is_refused(tmp_path: Path) -> None:
         await database.close()
 
 
-# --- the pool tracks the worker count ------------------------------------------------------------
-#
-# The half that turns "slow" into "nothing answers at all". The pool is sized at boot from the
-# worker count, and the worker count is a setting that can be raised while the process runs, so
-# the sizing is run again: twelve workers against twelve connections would leave the browser with
-# nothing to borrow.
+# --- the pool tracks the worker count, a setting raised while the process runs -------------------
 
 
-async def test_raising_the_worker_count_raises_the_pool(tmp_path: Path) -> None:
-    """The pool follows the worker count, in the terms the setting is written in."""
+async def test_raising_the_worker_count_raises_the_pool(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The pool follows the worker count; a reader that cannot be opened is not counted."""
     database = Database(tmp_path / "grow.sqlite3", readers=readers_for(4))
     await database.connect()
     try:
@@ -1061,13 +1058,20 @@ async def test_raising_the_worker_count_raises_the_pool(tmp_path: Path) -> None:
             take = [held.enter_async_context(database.read()) for _ in range(database.readers)]
             borrowed = await asyncio.wait_for(asyncio.gather(*take), timeout=5)
             assert len({id(one) for one in borrowed}) == readers_for(12), "each one held at once"
+        idle = [database._read_pool.get_nowait() for _ in range(readers_for(12))]
+        database._readers += 1
+        monkeypatch.setattr(database, "_open", lambda: asyncio.wait_for(asyncio.Event().wait(), 0))
+        with pytest.raises(TimeoutError):
+            await database.fetch_all("SELECT 1")
+        assert database._opened == readers_for(12)
+        for one in idle:
+            database._read_pool.put_nowait(one)
     finally:
         await database.close()
 
 
 async def test_a_resize_to_the_size_it_already_is_does_nothing(tmp_path: Path) -> None:
-    """It runs on a timer, so the ordinary case is that nothing has changed, and the ordinary case
-    must not open and close connections every few seconds."""
+    """On a timer, the ordinary case changes nothing, and must not open and close connections."""
     database = Database(tmp_path / "same.sqlite3", readers=6)
     await database.connect()
     try:
@@ -1095,12 +1099,7 @@ async def test_lowering_it_gives_the_connections_back(tmp_path: Path) -> None:
 async def test_a_shrink_waits_for_a_borrowed_connection_rather_than_closing_it(
     tmp_path: Path,
 ) -> None:
-    """Never cancel what is in flight.
-
-    A connection part-way through somebody's query belongs to a real request. Closed under them the
-    settings change becomes an error on screen, which is a worse answer than a pool that finishes
-    resizing a moment later.
-    """
+    """Never cancel what is in flight: a connection closed under a query is an error on screen."""
     database = Database(tmp_path / "inflight.sqlite3", readers=2)
     await database.connect()
     try:
@@ -1115,8 +1114,7 @@ async def test_a_shrink_waits_for_a_borrowed_connection_rather_than_closing_it(
 
 
 async def test_the_pool_never_goes_to_nothing(tmp_path: Path) -> None:
-    """A pool of zero is a Sift that cannot read at all, and it would be reached by arithmetic
-    rather than by anybody deciding it."""
+    """A pool of zero is a Sift that cannot read at all, reached by arithmetic, not a decision."""
     database = Database(tmp_path / "floor.sqlite3", readers=4)
     await database.connect()
     try:

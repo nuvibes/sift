@@ -771,6 +771,7 @@ async def test_a_queued_job_is_told_to_whoever_listens_for_work(job_queue: JobQu
     await job_queue.enqueue("download", require_handler=False)
     await job_queue.enqueue_many("download", [{}, {}], require_handler=False)
     unlisten()
+    unlisten()  # stopping twice is nothing more
     await job_queue.enqueue("download", require_handler=False)
 
     assert heard == [1, 1], "once per enqueue call, and nothing once it stopped listening"
@@ -1139,6 +1140,8 @@ async def test_quiet_hours_work_waiting_is_counted_apart_from_work_already_runni
     asked = frozenset({"quiet_work"})
     assert await job_queue.held_by_type(asked) == {"quiet_work": 2}
     assert await job_queue.held_by_type(asked, waiting_only=True) == {"quiet_work": 1}
+    # Both readings from one statement, as the Tasks screen asks them.
+    assert await job_queue.held_and_waiting_by_type(asked) == ({"quiet_work": 2}, {"quiet_work": 1})
 
 
 @pytest.mark.integration
@@ -1226,6 +1229,10 @@ async def test_the_next_scheduled_run_is_the_earliest_waiting_and_none_without_o
     await job_queue.enqueue("tidy_up", {}, run_after=1_900_000_000)
 
     assert await job_queue.next_scheduled("tidy_up") == 1_900_000_000
+    # Several types in one read: a type with nothing waiting is absent, an empty ask reads nothing.
+    noop_handler("sweep_up")
+    assert await job_queue.next_scheduled_of(["tidy_up", "sweep_up"]) == {"tidy_up": 1_900_000_000}
+    assert await job_queue.next_scheduled_of([]) == {}
 
 
 @pytest.mark.integration

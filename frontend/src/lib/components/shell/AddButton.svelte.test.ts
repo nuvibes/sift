@@ -108,10 +108,12 @@ describe('the panel while it is being used', () => {
 		render();
 
 		trigger().dispatchEvent(new MouseEvent('pointerleave', { bubbles: false }));
-		await new Promise((resolve) => setTimeout(resolve, 200));
-		flushSync();
 
-		expect(panel()).toBeNull();
+		// The library closes after its short delay out, which a loaded runner stretches.
+		await vi.waitFor(() => {
+			flushSync();
+			expect(panel()).toBeNull();
+		});
 	});
 });
 
@@ -350,10 +352,11 @@ describe("the panel's words and its last row", () => {
 		expect(addSource).toMatch(/\.last-row \{[^}]*justify-content: space-between;/);
 
 		buttons.at(-1)?.click();
-		await new Promise((resolve) => setTimeout(resolve, 200));
-		flushSync();
-		expect(swapMode.on).toBe(true);
-		expect(panel(), 'the panel stayed over the drawer').toBeNull();
+		await vi.waitFor(() => {
+			flushSync();
+			expect(swapMode.on).toBe(true);
+			expect(panel(), 'the panel stayed over the drawer').toBeNull();
+		});
 	});
 
 	it('is no longer on the top bar', () => {

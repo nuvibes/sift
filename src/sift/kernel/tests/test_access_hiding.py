@@ -768,3 +768,20 @@ def test_no_comment_in_the_access_package_numbers_the_resolver() -> None:
         and any(re.search(rf"\b{word}\b", sentence, re.IGNORECASE) for word in _ORDINALS)
     ]
     assert not offenders, "a comment numbered the resolver again:\n" + "\n".join(offenders)
+
+
+async def test_a_files_record_says_where_it_is_only_to_a_viewer_who_may_have_its_bytes(
+    access: Repository, actors: Actors, world: World, temp_db: Database
+) -> None:
+    """The record behind one check: a locked tile carries no place and no name on disk, the opened
+    vault both, and a file this viewer may not know of no record at all."""
+    await hide(temp_db, "asset", world.solo, actors.admin.id)
+    peeking = replace(actors.admin, concealment=Concealment.PLACEHOLDER)
+
+    locked = await access.file_record(peeking, world.solo)
+    opened = await access.file_record(replace(peeking, show_hidden=True), world.solo)
+
+    assert locked is not None and locked.view.concealed is True
+    assert (locked.locations, locked.name_on_disk) == ((), None)
+    assert opened is not None and opened.locations and opened.name_on_disk is not None
+    assert await access.file_record(actors.admin, world.solo) is None
