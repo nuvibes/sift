@@ -6,6 +6,8 @@ from __future__ import annotations
 import ctypes
 import subprocess
 import sys
+import threading
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -332,3 +334,25 @@ def test_off_windows_an_ended_child_adds_nothing(monkeypatch: pytest.MonkeyPatch
     device_load.child_ended(child)
     assert device_load._children_ended == before
     assert child not in device_load._CHILDREN
+
+
+async def test_a_reading_is_taken_off_the_loop(no_tools: None) -> None:
+    """The system's calls block for up to a second while every core is busy: a reading on the
+    loop held it for 1,027 ms under a Generate, and every request waited with it."""
+    api = _Api()
+    threads: list[int] = []
+
+    def system_times() -> tuple[int, int]:
+        threads.append(threading.get_ident())
+        return api.busy, api.total
+
+    api.system_times = system_times  # type: ignore[method-assign]
+    reader = DeviceLoad(lambda: api)
+    await reader.read_off_loop()
+    api.advance(busy=700, own=400)
+    assert await reader.tick_off_loop(acting=False) is False
+    assert threads and all(one != threading.get_ident() for one in threads)
+    # The pool's supervisor takes the reading this way; `tick` on the loop is for a test's clock.
+    from sift.wiring import workers
+
+    assert "READER.tick_off_loop(" in Path(workers.__file__).read_text(encoding="utf-8")

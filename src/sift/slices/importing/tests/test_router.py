@@ -50,6 +50,7 @@ from sift.slices.importing.products import PRODUCTS, ProductRegistry, Reading
 # NOT `from sift.slices.importing import router`: the package's `__init__` binds that name to
 # the APIRouter OBJECT, so the import succeeds and every attribute read off it is missing.
 from sift.slices.importing.router import (
+    JOBS_AT_ONCE,
     _runs_that_made,
     _switch_label,
     _wall_seconds_per_file,
@@ -343,7 +344,7 @@ async def test_the_sheet_prices_a_row_from_the_last_build_on_this_machine(
         "INSERT INTO work_runs (id, family, started_at, updated_at, finished_at, jobs_done,"
         " profile, products, settings) VALUES ('r1', 'generate', 1000, 1100, 1100, 25, 'abc',"
         " ?, ?)",
-        ('{"pictures": {"n": 25, "ms": 460000}}', '{"jobs at once": 6}'),
+        ('{"pictures": {"n": 25, "ms": 460000}}', json.dumps({JOBS_AT_ONCE: 6})),
     )
 
     sheet = await build_sheet(
@@ -468,7 +469,7 @@ async def test_a_row_is_a_window_between_the_cheapest_and_dearest_runs_that_made
                 began + took,
                 began + took,
                 made,
-                json.dumps({"jobs at once": at_once}),
+                json.dumps({JOBS_AT_ONCE: at_once}),
             ),
         )
 

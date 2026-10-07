@@ -103,7 +103,6 @@
 		"src/sift/kernel/access/sentences_means.py": 1,
 		"src/sift/kernel/db.py": 1,
 		"src/sift/slices/download/sources/argv.py": 2,
-		"src/sift/slices/importing/router.py": 1,
 		"src/sift/slices/watermarks/service.py": 1,
 		"src/sift/slices/workbench/models.py": 1
 	},

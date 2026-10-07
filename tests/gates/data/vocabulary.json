@@ -200,6 +200,7 @@
 		{ "word": "platform", "instead": "Site", "why": "the object's old name" },
 		{ "word": "full amount", "instead": "turbo mode", "why": "the press out of eco mode has one name on every screen" },
 		{ "word": "making", "instead": "creating", "why": "Sift creates a file, a backup or a Loop; it never makes one" },
+		{ "word": "at once", "instead": "immediately", "why": "the screen says immediately; where it meant at the same time, together or in one go" },
 		{ "word": "platforms", "instead": "Sites", "why": "the same" },
 		{ "word": "performer", "instead": "person", "why": "a stash-box's word for a Person" },
 		{ "word": "performers", "instead": "People", "why": "the same" },
@@ -588,7 +589,6 @@
 
 	"_phrasing_why": "The shapes of a sentence that read as stiff rather than said by a person: a verb nobody says for the act, a stand-in for the plain word, a sentence with its subject left out, a rule said as a slogan, one pronoun standing for two things, a sentence too long to take in at once. Ratcheted per file like the lists above: a count may only fall. Each entry says what to write instead and carries a sentence of that shape as its example.",
 	"phrasing": [
-		{ "pattern": "\\bat once\\b", "instead": "at the same time, also, now, or leave it out", "example": "Made inside the folder you are in, on your disk and in your library at once." },
 		{ "pattern": "\\btak(?:e|es|en|ing) (?:it |them |this |that )?out\\b", "instead": "the act's own verb: Remove, Send, Export, Share", "example": "Press one again to take it out." },
 		{ "pattern": "\\b(?:go|goes|going|went|gone) out\\b", "instead": "the act's own verb: Send, Export, Share, Swap", "example": "How it goes out" },
 		{ "pattern": "(?:^|[.!?]\\s+)(?:Made|Ticked|Kept|Filed|Taken) (?:inside|in|on|by|for|from|with|when|as|at|under)\\b", "case": true, "instead": "a subject and an active verb: Sift creates, Sift ticks this for you, You can keep", "example": "Ticked on its own for anyone a stash-box that files its creators as people knows." },

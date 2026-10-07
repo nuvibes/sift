@@ -28,11 +28,11 @@ version's section, dated, when that version is published.
   installer ships compiled code (40% less load time); background work starts after the first
   screen has drawn.
 - **Turbo mode** is the name of the press out of eco mode, on every screen and in the API, and the
-  press takes effect on the workers at once instead of at their next three-second tick.
-- **Renaming a person, a tag or a collection answers at once**; the search index catches up as a
+  press takes effect on the workers immediately instead of at their next three-second tick.
+- **Renaming a person, a tag or a collection answers immediately**; the search index catches up as a
   job, so a person with thousands of files no longer holds the app for a minute.
 - **Presses answer on the press.** Remove from Sift, Modify, Cancel and a tag added show their
-  effect at once and come back only if the server refuses.
+  effect immediately and come back only if the server refuses.
 - **Download log is three times as fast and says why when it fails.** The archive of a 38 MB
   log took 11 seconds and takes about 3.5 now. When the file can't be created, the message says
   the reason instead of "Try again," the button reads "Creating the log file..." while it works,
@@ -48,7 +48,7 @@ version's section, dated, when that version is published.
   (154 ms to 104 ms, median) and the gap between clips is 40% shorter in order (94 ms to 57) and
   69% under Shuffle; nothing under the picture is asked for before its first frame (the panel's
   15 reads moved after it); the Theater wall opens with nothing moving; a file deleted elsewhere
-  leaves the Mini player and a Theater cell at once; hls.js runs on a worker and remuxed files
+  leaves the Mini player and a Theater cell immediately; hls.js runs on a worker and remuxed files
   play like direct ones.
 - **A page of a wall is read once.** Browse, Next, a Filter tick and a person's page made 11
   reads and now make 4 (64% fewer); the pager shows only a page that has landed whole.
@@ -201,7 +201,7 @@ version's section, dated, when that version is published.
   until you turn it on and works on Windows only. The leaf is then dimmed and says what is busy.
   A video playing in Sift on any device, or Theater open, is a reason too, and in the desktop
   app's client mode the leaf says it's the device running Sift.
-- **A press for the full amount shows at once.** During a big import the leaf went gray and could
+- **A press for the full amount shows immediately.** During a big import the leaf went gray and could
   take seconds to change.
 - **Activity's totals leave out files whose folder you removed.** On 101,619 files, that makes the
   library's count take 9.3 ms where it took 1.8 ms.
@@ -223,9 +223,9 @@ version's section, dated, when that version is published.
 
 **Privacy and guests**
 
-- **Locking Hidden stops a Hidden clip everywhere at once.** The Audio player and the Mini player
+- **Locking Hidden stops a Hidden clip everywhere immediately.** The Audio player and the Mini player
   went on showing and playing one after Hide hidden items, and so did a Theater wall in the corner.
-  Each now lets go at once, in every tab, and comes back when you unlock.
+  Each now lets go immediately, in every tab, and comes back when you unlock.
 - **A Site set to go through a tunnel now gets everything for a download through that tunnel.** The
   link's first check went out from your own connection, once per download, and so did the lookup
   of the Site's name. The reads for the creator, the picture and the music now keep the same route.

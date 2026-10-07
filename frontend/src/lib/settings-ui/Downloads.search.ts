@@ -41,6 +41,6 @@ export const SEARCHABLE: Searchable[] = [
 		section: 'downloads',
 		help: COPY.more.help,
 		keywords:
-			'at once speed limit bandwidth pace wait between requests timeout connection timeout stopped responding stalled retries rate limit back off advanced expert'
+			'at the same time speed limit bandwidth pace wait between requests timeout connection timeout stopped responding stalled retries rate limit back off advanced expert'
 	}
 ];

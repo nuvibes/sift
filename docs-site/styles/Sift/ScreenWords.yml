@@ -44,7 +44,7 @@ swap:
   '\banimation\b': 'GIF'
   '\banimations\b': 'GIFs'
   '\bartefacts?\b': 'artifact'
-  '\bat once\b': 'at the same time, also, now, or leave it out'
+  '\bat\ once\b': 'immediately'
   '\bbehaviour': 'behavior'
   '\bcancell(?:ed|ing)\b': 'canceled'
   '\bcatalogue': 'catalog, or stash-box'

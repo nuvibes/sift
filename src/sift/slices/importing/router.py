@@ -81,10 +81,10 @@ def _products(request: Request) -> ProductRegistry:
     return part_of(request, PRODUCTS)
 
 
-#: The name the ledger files the worker count under, and the name the Performance screen shows it
-#: by. `sift/wiring/workers.py` puts it into every run's settings under exactly this key when it
-#: reconfigures the pool.
-JOBS_AT_ONCE = "jobs at once"
+#: The name the ledger files the worker count under. `sift/wiring/workers.py` puts it into every
+#: run's settings under exactly this key when it reconfigures the pool; a run from before the key
+#: was renamed prices without it.
+JOBS_AT_ONCE = "jobs together"
 
 
 def _wall_seconds_per_file(
@@ -162,7 +162,7 @@ def _window(
 
 
 def _jobs_at_once(run: RunRecord | None) -> int | None:
-    """How many jobs were running at once during the run an estimate is priced from.
+    """How many jobs were running together during the run an estimate is priced from.
 
     It travels with the estimate because the estimate ASSUMES IT: the same library on the same
     machine with that number halved takes about twice as long. The sentence on screen says it, so

@@ -247,16 +247,16 @@ export const SEARCHABLE: Searchable[] = [
 		section: 'performance',
 		help: COPY.much.help,
 		keywords:
-			'concurrency how much at once tasks workers previews scans network share reads faces budget share threads gentler faster'
+			'concurrency how much at the same time tasks workers previews scans network share reads faces budget share threads gentler faster'
 	},
 	{
 		name: COPY.much.atOnce,
 		section: 'performance',
-		keywords: 'background work at once workers threads cpu'
+		keywords: 'background work at the same time workers threads cpu'
 	},
 	{
 		name: COPY.much.faces,
 		section: 'performance',
-		keywords: 'recognizing faces at once workers speed'
+		keywords: 'recognizing faces at the same time workers speed'
 	}
 ];

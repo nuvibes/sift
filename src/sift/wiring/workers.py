@@ -106,7 +106,7 @@ class _PoolConfig:
         busy_on = bool(await get_app(performance.BUSY_STEP_BACK_KEY))
         measuring = self._measuring()
         # Read whatever the setting says, so its log shows what it would have done.
-        others = device_load.READER.tick(acting=busy_on and not measuring)
+        others = await device_load.READER.tick_off_loop(acting=busy_on and not measuring)
         concurrency = attention.ATTENTION.workers(
             full,
             step_back=step_back,

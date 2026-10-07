@@ -6,6 +6,7 @@ Read on Windows on the worker pool's reconfigure; off elsewhere, as `kernel.atte
 
 from __future__ import annotations
 
+import asyncio
 import os
 import re
 import subprocess
@@ -355,12 +356,20 @@ class DeviceLoad:
 
     def read(self) -> Load | None:
         """The load since the last reading, or None on the first one and off Windows."""
+        return self._read(list(_CHILDREN))
+
+    async def read_off_loop(self) -> Load | None:
+        """The same reading on a thread: the system's calls block for up to a second while every
+        core is busy, and the loop answers requests meanwhile."""
+        children = list(_CHILDREN)
+        return await asyncio.to_thread(self._read, children)
+
+    def _read(self, children: list[subprocess.Popen[bytes]]) -> Load | None:
         api = self._api()
         if api is None:
             return None
         began = time.perf_counter()
         own_tools, tool_ids = tools.tools_time()
-        children = list(_CHILDREN)
         own = (
             api.own_time()
             + own_tools
@@ -402,7 +411,13 @@ class DeviceLoad:
 
     def tick(self, *, acting: bool) -> bool:
         """Read once and judge: True while other programs keep the device busy."""
-        load = self.read()
+        return self._judged(self.read(), acting=acting)
+
+    async def tick_off_loop(self, *, acting: bool) -> bool:
+        """`tick`, with the reading taken off the loop."""
+        return self._judged(await self.read_off_loop(), acting=acting)
+
+    def _judged(self, load: Load | None, *, acting: bool) -> bool:
         if load is not None:
             self.judge(load, acting=acting)
         return self.busy
