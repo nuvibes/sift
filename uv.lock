@@ -2306,7 +2306,7 @@ wheels = [
 
 [[package]]
 name = "sift"
-version = "0.2.2"
+version = "0.2.3"
 source = { editable = "." }
 dependencies = [
     { name = "aiohttp" },
@@ -2314,6 +2314,7 @@ dependencies = [
     { name = "argon2-cffi" },
     { name = "beautifulsoup4" },
     { name = "blake3" },
+    { name = "certifi" },
     { name = "click" },
     { name = "cryptography" },
     { name = "curl-cffi" },
@@ -2356,6 +2357,7 @@ requires-dist = [
     { name = "argon2-cffi", specifier = ">=23.1" },
     { name = "beautifulsoup4", specifier = "~=4.12" },
     { name = "blake3", specifier = "~=1.0" },
+    { name = "certifi", specifier = ">=2026.6.17" },
     { name = "click", specifier = ">=8.5.0" },
     { name = "cryptography", specifier = ">=44,<51" },
     { name = "curl-cffi", specifier = "~=0.7" },

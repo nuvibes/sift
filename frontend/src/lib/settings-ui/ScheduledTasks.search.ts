@@ -36,6 +36,10 @@ export const COPY = {
 		name: 'Other tasks',
 		help: 'Work Sift does for the library as a whole, such as finding duplicates and creating backups.'
 	},
+	activity: {
+		heading: 'Activity',
+		help: 'What Sift is working on now, what is waiting, and how each task ended.'
+	},
 	other: {
 		name: 'Other settings',
 		help: 'Settings filed with the tasks that belong to no task above.'
@@ -100,6 +104,12 @@ export const SEARCHABLE: Searchable[] = [
 		key: 'tasks.stages',
 		section: 'tasks',
 		keywords: 'import tasks scan generate identify stages'
+	},
+	{
+		name: COPY.activity.heading,
+		key: 'tasks.activity',
+		section: 'tasks',
+		keywords: 'activity task queue running waiting queued failed canceled done jobs progress'
 	},
 	{
 		name: COPY.other.name,

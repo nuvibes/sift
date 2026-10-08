@@ -40,20 +40,20 @@ test('Smart Search is a pane of its own, and says the models are not included', 
 	 * assertion here that does not depend on the machine: a box with no support for it says so
 	 * instead, and that branch draws neither.
 	 *
-	 * The switch itself stands with the other recognition switches under `Settings > Importing`;
+	 * The switch itself stands with the other recognition switches under Import tasks;
 	 * this pane names it and its press goes there.
 	 */
 	const unsupported = await page.locator('.unavailable').count();
 	if (unsupported === 0) {
-		await expect(page.getByRole('link', { name: 'Change in Importing' })).toBeVisible();
-		await expect(page.getByRole('link', { name: 'Change in Importing' })).toHaveAttribute(
+		await expect(page.getByRole('link', { name: 'Change in Identify settings' })).toBeVisible();
+		await expect(page.getByRole('link', { name: 'Change in Identify settings' })).toHaveAttribute(
 			'href',
-			/\/settings\/importing#semantic\./
+			/\/settings\/tasks#semantic\./
 		);
 	}
 });
 
-test('the Importing pane asks what a Build would do, on open, before anything is pressed', async ({
+test('Import tasks asks what a Build would do, on open, before anything is pressed', async ({
 	page
 }) => {
 	/*
@@ -71,11 +71,10 @@ test('the Importing pane asks what a Build would do, on open, before anything is
 		await route.fulfill({ json: { products: [], folders: [], quiet_hours: null } });
 	});
 
-	await page.goto('/settings/importing');
-	/* Named by one of its own groups rather than by the section's label: the pane draws the four
-	   stages of an import as headed blocks and the label above them belongs to the settings shell,
-	   so waiting on the label would say the shell had drawn and nothing about this pane. */
-	await expect(page.getByRole('heading', { name: 'Scan' }).first()).toBeVisible();
+	await page.goto('/settings/tasks');
+	/* Named by its own group rather than by the section's label, which belongs to the settings
+	   shell: waiting on the label would say the shell had drawn and nothing about this pane. */
+	await expect(page.getByRole('heading', { name: 'Import tasks' }).first()).toBeVisible();
 
 	await expect.poll(() => asked.length, { timeout: 10_000 }).toBeGreaterThan(0);
 });

@@ -319,9 +319,9 @@ export class LiveFeed {
 		 * different versions. A subject this version does not know about would otherwise be looked
 		 * up and called, here, inside the handler, taking the whole live connection down with it,
 		 * silently, because there is nothing on screen to say so and the reconnect would do it
-		 * again. */
+		 * again. An inherited name (`__proto__`) is no subject either. */
 		for (const about of state.about ?? []) {
-			HANDLED[about]?.(state);
+			if (Object.hasOwn(HANDLED, about)) HANDLED[about](state);
 		}
 	}
 

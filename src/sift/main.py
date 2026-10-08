@@ -58,6 +58,7 @@ from sift.kernel.http import is_https
 from sift.kernel.ids import new_id
 from sift.kernel.jobs import JobSwitchedOff
 from sift.kernel.log import LOG_FILENAME, configure_logging, get_logger, tell_the_shell
+from sift.kernel.version import app_version
 from sift.kernel.wire import Refused
 
 # Imported for its side effect: it declares the look-and-feel preferences, gone without it.
@@ -518,8 +519,10 @@ def main() -> None:
         max_bytes=settings.log_max_bytes,
         backups=settings.log_backups,
     )
+    # Which release wrote every line after this one.
     log.info(
         "boot.imported",
+        version=app_version(),
         since_process_ms=since_the_process_began_ms(),
         modules=len(sys.modules),
     )

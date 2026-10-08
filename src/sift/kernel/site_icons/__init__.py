@@ -422,12 +422,12 @@ def path_of(slug: str) -> Path | None:
     **The manifest is the allowlist, and that is what makes this safe to call with a slug off the
     wire.** The route that serves an icon takes the slug from the address, so the alternative
     (composing a path and then checking where it landed) would put a confinement check between a
-    stranger's string and the filesystem. Here the string is compared against a fixed list first and
-    never becomes part of a path unless it is in that list.
+    stranger's string and the filesystem. Here the string is compared against a fixed list first,
+    and the path is built from the manifest's own slug, never from the string that asked.
     """
     if slug not in _slugs():
         return None
-    candidate = ICONS_DIR / f"{slug}.png"
+    candidate = ICONS_DIR / f"{_by_slug()[slug].slug}.png"
     return candidate if candidate.is_file() else None
 
 

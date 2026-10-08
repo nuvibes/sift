@@ -56,6 +56,23 @@ it('stands the transport first on a row with nothing to lead with', () => {
 	expect(row.firstElementChild?.classList.contains('middle')).toBe(true);
 });
 
+/* Theater's numbers follow the transport, in the tab order as on screen; a player's lead leads. */
+it("stands a lead after the transport on Theater's bar, and before it elsewhere", () => {
+	const lead = createRawSnippet(() => ({ render: () => '<span class="numbers"></span>' }));
+	draw({ lead, variant: 'theater', shuffle: undefined, repeat: undefined });
+	const parts = () => [...host.querySelector('.row')!.children].map((one) => one.classList[0]);
+	expect(parts()).toEqual(['middle', 'side', 'side']);
+	expect(host.querySelector('.row .side.start .numbers')).not.toBeNull();
+	expect(host.querySelector('.row')!.classList.contains('follows')).toBe(true);
+	expect(button('Shuffle'), 'Theater keeps Shuffle in its drawer').toBeNull();
+
+	unmount(mounted!);
+	host.remove();
+	draw({ lead });
+	expect(host.querySelector('.row')!.firstElementChild?.classList.contains('start')).toBe(true);
+	expect(button('Shuffle')).not.toBeNull();
+});
+
 it('stands the step pair down only where a finger on a phone swipes instead', () => {
 	draw();
 	expect(button('Nothing before this')?.disabled).toBe(true);

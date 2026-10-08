@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import weakref
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from typing import Any
@@ -280,6 +281,17 @@ async def _apply(
     await fold.write(connection)
 
 
+#: Every kept count of this process, so a shutdown can stop their builds before the database closes.
+_EVERY: weakref.WeakSet[StoredCounts] = weakref.WeakSet()
+
+
+async def stop_builds() -> None:
+    """Stop every build under way and start none after: a build left running past the close
+    fails on a closed database. One stopped half way is started again on the next start."""
+    for kept in list(_EVERY):
+        await kept.stop()
+
+
 class StoredCounts:
     """The terms' counts, read from their rows. One per database."""
 
@@ -289,17 +301,31 @@ class StoredCounts:
         #: The terms this process is building: a reader asking one meanwhile walks instead.
         self._building: set[str] = set()
         self._builds: set[asyncio.Task[None]] = set()
+        self._stopped = False
+        _EVERY.add(self)
 
     async def settled(self) -> None:
         """Wait for the builds under way to end."""
         while self._builds:
             await asyncio.gather(*self._builds)
 
+    async def stop(self) -> None:
+        """Cancel the builds under way and refuse new ones: every count walks from here on."""
+        self._stopped = True
+        builds = list(self._builds)
+        for task in builds:
+            task.cancel()
+        await asyncio.gather(*builds, return_exceptions=True)
+
     async def totals(self, terms: Sequence[Term]) -> list[Totals] | None:
         """Each term's count per media kind, in order; None where the caller must walk: a term
         not built yet, which is then built in the background, or one a check found wrong."""
         unique = list(dict.fromkeys(terms))
-        if len(unique) > TERMS_KEPT or any(one.signature in self._building for one in unique):
+        if (
+            self._stopped
+            or len(unique) > TERMS_KEPT
+            or any(one.signature in self._building for one in unique)
+        ):
             return None
         bits = await self._ensure(unique)
         if bits is None:

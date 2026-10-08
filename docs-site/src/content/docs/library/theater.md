@@ -32,7 +32,7 @@ Click **Layouts** and choose a shape. Each shape is named rows by columns, excep
 - **1x2 (L)**: two cells, one above the other, for landscape files.
 - **1x3**: three cells side by side.
 - **2x2**: four cells in two rows.
-- **Center stage 1x1**, **1x2**, **1x3** and **2x2**: the same shapes, with a strip of up to five previews under them.
+- **Stage View 1x1**, **1x2**, **1x3** and **2x2**: the same shapes, with a strip of up to five previews under them.
 
 Point at a layout's name to see what its letter stands for.
 
@@ -42,7 +42,7 @@ A preview in the strip comes up onto the wall when you double-click it. To have 
 
 Point at the foot of the wall to bring up its bar. The scrub line of the cell you're controlling runs along its top. The time so far is at the line's start, and the file's length at its end. Under it, from left to right:
 
-- The cell numbers: choose which cell the bar controls. **All** (**Every cell**) points the bar at every cell together.
+- The cell numbers: choose which cell the bar controls. **All** (**All cells**) points the bar at all cells together.
 - **Play through**, **Repeat this** or **Stop at the end**: what the cell does when a file ends.
 - **Previous**, **Play** or **Pause**, and **Next**.
 - **Shuffle**: plays the cell's files in a shuffled order.
@@ -60,7 +60,7 @@ To change what a cell plays, use **Filter** on the bar above the wall, or **What
 - **Hear only this**: mutes every other cell.
 - **Video and GIF** or **Everything**: whether the cell plays pictures too.
 - **Move on after**: how many seconds a cell holds a file before it plays the next.
-- The preview mode, on a Center stage wall: whether a preview comes up when you double-click it or as soon as it starts something new.
+- The preview mode, on a Stage View wall: whether a preview comes up when you double-click it or as soon as it starts something new.
 
 ## What a cell's menu does
 
@@ -97,7 +97,7 @@ Press **H** in Theater to see this list on screen:
 | Key | What it does |
 |---|---|
 | 1 to 9 | Controls that cell. Press twice for its next file, three times for the one before. Hold for slow motion, hold the second press for faster, the third for backwards. |
-| Backtick | Controls every cell together, with the same keys. |
+| Backtick | Controls all cells together, with the same keys. |
 | Space | Stops or starts the cell you're on. |
 | Ctrl + Space | Stops everything, every timer included. |
 | M | Mutes or unmutes the cell you're on. Hold it and use the arrows for its volume. |

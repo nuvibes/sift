@@ -1,5 +1,4 @@
-/* The pane that says what happens to a file as it arrives, and what is missing from the files
- * here.
+/* Import tasks: what happens to a file as it arrives, and what is missing from the files here.
  *
  * ## What is worth pinning here
  *
@@ -14,11 +13,10 @@
  * the row beside the button names each product on its own and never totals them, and the sentence
  * after the press repeats the count the SERVER worked out, which is the union.
  *
- * ## And what is NOT here
+ * ## And the row it is drawn on
  *
- * No presses and no When. Each stage's row is its Edit and its facts; when it runs is chosen on
- * Tasks beside the press, and the row says the answer as a link there. What this file holds about
- * it is that no button on this pane starts work and no control on it chooses when work runs.
+ * Each stage is its task's row on Tasks: its Edit before Run now, and what is missing after the
+ * task's own facts on the foot line.
  */
 
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
@@ -75,7 +73,6 @@ vi.mock('./RecognitionSection.svelte', () => ({ default: () => {} }));
 import Importing from './Importing.svelte';
 import DrilldownPage from './DrilldownPage.svelte';
 import { drilldown } from './drilldown.svelte';
-import { labelFor } from './sections';
 
 function row(key: string, label: string, over: Partial<BuildRow> = {}): BuildRow {
 	return {
@@ -203,17 +200,19 @@ async function draw(): Promise<void> {
 	flushSync();
 }
 
-/* Found by the id the pane gives each stage's row rather than by its words, so a change of
-   wording is not a change of what is being tested. */
+/* Found by the id each stage's row carries (its task's When) rather than by its words, so a change
+   of wording is not a change of what is being tested. */
 function rowOf(id: string): HTMLElement {
 	const row = host.querySelector<HTMLElement>(`[id="${id}"]`);
 	if (row === null) throw new Error(`no row called ${id}`);
 	return row;
 }
 
+const stageRow = (stage: string): HTMLElement => rowOf(`tasks.${stage}.when`);
+
 /** What one stage says is still missing, on its row's foot line. Empty when it says nothing. */
 async function noteOf(stage: string): Promise<string> {
-	await vi.waitFor(() => rowOf(`importing.${stage}-settings`).querySelector('[data-fact="when"]'));
+	await vi.waitFor(() => stageRow(stage).querySelector('[data-fact="when"]'));
 	return host.querySelector(`[data-count="${stage}"]`)?.textContent ?? '';
 }
 
@@ -253,7 +252,7 @@ it("says what could not be generated on the stage row's own foot line, never loo
 	// And the count says nothing: "Nothing missing" beside two files that could not be made
 	// would contradict the line after it.
 	expect(await noteOf(GENERATE)).toBe('');
-	const foot = rowOf('importing.generate-settings').querySelector('.foot');
+	const foot = stageRow('generate').querySelector('.foot');
 	expect(foot?.textContent).toContain('2');
 	expect(foot?.textContent).toContain('thumbnails');
 	expect(document.querySelector('.gave-up')).toBeNull();
@@ -373,9 +372,7 @@ it('says it cannot tell the time yet while one of its rows has no window', async
 
 it("names each stage's Edit by its stage, so they are not all just Edit", async () => {
 	await draw();
-	await vi.waitFor(() =>
-		expect(host.querySelector('[id="importing.identify-settings"] .facts')).not.toBeNull()
-	);
+	await vi.waitFor(() => expect(stageRow('identify').querySelector('.facts')).not.toBeNull());
 
 	const names = [...host.querySelectorAll('button')]
 		.filter((one) => wordsOn(one) === 'Edit')
@@ -393,34 +390,24 @@ it('says so plainly when a stage has nothing left to do', async () => {
 	expect(await noteOf(IDENTIFY)).toContain('Nothing missing');
 });
 
-it('draws the three stages as the same row, with no press and no When anywhere on the pane', async () => {
-	/* Presses and Whens live on Tasks, so when work runs and starting it are one place. Each stage
-	   here is its Edit and its facts, the first of them its When as a link to the row on Tasks. */
+it("draws each stage as its task's row, its Edit before Run now and the When said on the foot", async () => {
+	/* One place for a stage: what it does behind Edit, starting it and when it runs beside. */
 	await draw();
 	for (const stage of ['scan', 'generate', 'identify']) {
 		const when = await vi.waitFor(() => {
-			const found = rowOf(`importing.${stage}-settings`).querySelector('[data-fact="when"]');
+			const found = stageRow(stage).querySelector('[data-fact="when"]');
 			expect(found, stage).not.toBeNull();
 			return found!;
 		});
-		expect(when.textContent?.replace(/\s+/g, ' ').trim()).toBe(
-			`In quiet hours (11 PM to 7 AM), chosen on ${labelFor('tasks')}`
+		expect(when.textContent?.trim()).toBe('In quiet hours (11 PM to 7 AM)');
+		const presses = [...stageRow(stage).querySelectorAll('.when button')].map((one) =>
+			wordsOn(one)
 		);
-		expect(when.querySelector('a')?.getAttribute('href')).toMatch(
-			new RegExp(`#tasks\\.${stage}\\.when$`)
-		);
+		expect(presses.slice(0, 2), stage).toEqual(['Edit', 'Run now']);
+		expect(stageRow(stage).querySelector(`[id="importing.${stage}-settings"]`)).not.toBeNull();
 	}
-
-	expect(host.querySelector('[id^="tasks."]'), 'a task row is drawn here').toBeNull();
-	expect(
-		host.querySelector('[role="combobox"], select'),
-		'a When chooser is drawn here'
-	).toBeNull();
-	expect(host.textContent).not.toContain('Run now');
-	expect(host.textContent).not.toContain('Run during quiet hours');
-	for (const gone of ['importing.scan-now', 'importing.generate-now', 'importing.identify-now']) {
-		expect(host.querySelector(`[id="${gone}"]`), gone).toBeNull();
-	}
+	expect(host.querySelector('[id="tasks.stages"]')).not.toBeNull();
+	expect(host.textContent).not.toContain('chosen on');
 	expect(host.textContent).not.toMatch(/tonight|overnight|nightly/i);
 });
 
@@ -435,16 +422,14 @@ it("says Identify's When as Mixed while its three tasks disagree", async () => {
 	await taskList.load();
 	await draw();
 	await vi.waitFor(() =>
-		expect(
-			rowOf('importing.identify-settings').querySelector('[data-fact="when"]')?.textContent
-		).toContain('Mixed, chosen on')
+		expect(stageRow('identify').querySelector('[data-fact="when"]')?.textContent).toBe('Mixed')
 	);
 });
 
 it('leaves quiet hours to Tasks and how much at the same time to Performance', async () => {
 	await draw();
 	await vi.waitFor(() =>
-		expect(host.querySelector('[id="importing.scan-settings"] [data-fact="when"]')).not.toBeNull()
+		expect(stageRow('scan').querySelector('[data-fact="when"]')).not.toBeNull()
 	);
 
 	for (const gone of ['importing.quiet-hours', 'importing.at-once', 'importing.limits']) {
@@ -528,11 +513,7 @@ it("gives each stage its task's own line, the one Tasks draws under the same tas
 	/* One task, one sentence: the stage on Importing and the row on Tasks are two doors to it. */
 	await draw();
 	for (const stage of ['scan', 'generate', 'identify']) {
-		await vi.waitFor(() =>
-			expect(rowOf(`importing.${stage}-stage`).closest('section.group')?.textContent).toContain(
-				`What ${stage} does.`
-			)
-		);
+		await vi.waitFor(() => expect(stageRow(stage).textContent).toContain(`What ${stage} does.`));
 	}
 });
 
@@ -540,17 +521,17 @@ it('lets a sentence about files left out wrap, where the facts beside it keep to
 	/* On a phone a sentence kept to one line would run under the Edit button and off the pane,
 	   and its Try again could not be reached. */
 	const { applyStyles, removeStyles } = await import('$lib/design/testing-styles');
-	const { default: importing } = await import('./Importing.svelte?raw');
+	const { default: taskWhen } = await import('./TaskWhen.svelte?raw');
 	mocks.fetchBuildSheet.mockResolvedValue(
 		sheet({ files: 40, rows: [row('thumbnails', 'Thumbnails', { files: 0, cannot: 22 })] })
 	);
 	await draw();
 	const facts = await vi.waitFor(() => {
-		const found = rowOf('importing.generate-settings').querySelector<HTMLElement>('.facts');
+		const found = stageRow('generate').querySelector<HTMLElement>('.facts');
 		expect(found?.textContent).toContain('left out');
 		return found!;
 	});
-	applyStyles(importing, facts);
+	applyStyles(taskWhen, facts);
 	const sentence = [...facts.children].find((one) => one.textContent?.includes('left out'));
 	expect(sentence?.classList.contains('sentence')).toBe(true);
 	expect(getComputedStyle(sentence!).whiteSpace).not.toBe('nowrap');
@@ -567,9 +548,9 @@ it('keeps Try again on the line with the last word of its sentence', async () =>
 	);
 	await draw();
 	const sentence = await vi.waitFor(() => {
-		const found = [
-			...rowOf('importing.generate-settings').querySelectorAll<HTMLElement>('.sentence')
-		].find((one) => one.textContent?.includes('left out'));
+		const found = [...stageRow('generate').querySelectorAll<HTMLElement>('.sentence')].find((one) =>
+			one.textContent?.includes('left out')
+		);
 		expect(found?.textContent).toContain('left out');
 		return found!;
 	});
@@ -598,9 +579,7 @@ it('makes the count of files a product left out a link to them, beside Try again
 	);
 	await draw();
 	const link = await vi.waitFor(() => {
-		const found = rowOf('importing.generate-settings').querySelector<HTMLAnchorElement>(
-			'a[data-left-out]'
-		);
+		const found = stageRow('generate').querySelector<HTMLAnchorElement>('a[data-left-out]');
 		expect(found).not.toBeNull();
 		return found!;
 	});
@@ -611,9 +590,7 @@ it('makes the count of files a product left out a link to them, beside Try again
 		"24 files couldn't have thumbnails generated and are left out. Try again"
 	);
 	/* One file agrees with its number, on the other stage's row, with its own product's link. */
-	const one = rowOf('importing.identify-settings').querySelector<HTMLAnchorElement>(
-		'a[data-left-out]'
-	)!;
+	const one = stageRow('identify').querySelector<HTMLAnchorElement>('a[data-left-out]')!;
 	expect(one.getAttribute('href')).toBe('/browse?left_out=faces');
 	expect(one.closest('.sentence')?.textContent?.replace(/\s+/g, ' ').trim()).toBe(
 		"1 file couldn't be checked for faces and is left out. Try again"

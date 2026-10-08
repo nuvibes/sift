@@ -1,29 +1,14 @@
 <script lang="ts">
-	/* What Sift does with a file as it arrives: Scan, Generate and Identify.
+	/* Import tasks, on the Tasks tab of Tasks and Activity: Scan, Generate and Identify.
 	 *
-	 * Three stages over one moment. A file lands, and Sift SCANS it to find out what it is and
-	 * give it a picture, then GENERATES the rest (the pictures, the fingerprints) and IDENTIFIES
-	 * what is in it (the faces, the meaning, the watermarks). This pane decides WHAT each stage
-	 * does; WHEN it does it is each stage's task.
-	 *
-	 * ## Three identical stage rows, and nothing here starts work or times it
-	 *
-	 * Each stage is one row: the stage's Edit, and a foot line of facts (when it runs, as a link to
-	 * the row on Tasks where that is chosen, and what is still missing). Every When is chosen on
-	 * Tasks and nowhere else, beside the press, so when work runs and starting it live in one
-	 * place. A stage's on/off is that When ("off" is "only when I press it"), and the server keeps
-	 * the stage switch answering through it for every folder's own answer and every caller.
-	 *
-	 * Identify is three tasks (faces, Smart Search, watermarks). Its When is a reading of theirs,
-	 * the shared answer or Mixed. Its Edit page holds the three switches.
-	 *
-	 * ## What stays here
-	 *
-	 * What each stage makes (the Edit pages) and what is missing: the per-product counts, priced
-	 * in wall time, and the files a product gave up on with Try again. Those are about the stage,
-	 * not about when it runs. How much Sift does at the same time is Concurrency, on Performance.
+	 * A file lands, and Sift SCANS it to find out what it is, GENERATES the rest (the pictures, the
+	 * fingerprints) and IDENTIFIES what is in it (the faces, the meaning, the watermarks). Each stage
+	 * is its task's row (`TaskWhen`): the stage's Edit before Run now, and after the task's own facts
+	 * what the stage still has to do, priced in wall time, with the files a product gave up on.
+	 * Identify is three tasks; its Edit page holds their three switches. Folder-specific import
+	 * settings follow the stages. How much Sift does at the same time is Concurrency, on Performance.
 	 */
-	import { onMount } from 'svelte';
+	import { onMount, type Snippet } from 'svelte';
 	import { counted } from '$lib/entity/entity-counts';
 	import {
 		fetchSettings,
@@ -32,7 +17,6 @@
 		type SettingEntry
 	} from '$lib/settings-ui/settings';
 	import { settingChanges, whenChanged } from '$lib/library/changes.svelte';
-	import LabelledRow from '$lib/components/common/LabelledRow.svelte';
 	import RecognitionSection from './RecognitionSection.svelte';
 	import { RECOGNITION_SWITCHES } from './recognition-switches';
 	import SettingGroup from './SettingGroup.svelte';
@@ -51,9 +35,9 @@
 	} from '$lib/library/importing';
 	import { Button, Note, SettingLink } from '$lib/components/common';
 	import { NOT_ENOUGH_TO_SAY, sayWindow } from '$lib/shell/when';
-	import { taskList } from '$lib/jobs/tasks.svelte';
-	import { labelFor } from './sections';
+	import { STAGES, taskList, type TaskView } from '$lib/jobs/tasks.svelte';
 	import { COPY as TASKS } from './ScheduledTasks.search';
+	import TaskWhen from './TaskWhen.svelte';
 	import { leftOutWall } from '$lib/library/left-out';
 	import { toasts } from '$lib/shell/toasts.svelte';
 	import { COPY } from './Importing.search';
@@ -66,17 +50,17 @@
 	   Scan's page, beside the other things a scan files on its own. */
 	const SHOOTS_KEY = 'shoots.auto_file';
 
-	/* The three stages, by the id of the task that is each one. */
-	type Stage = 'scan' | 'generate' | 'identify';
-
-	/** When a stage runs, in the words its row on Tasks ticks: "During quiet hours (11 PM to 7 AM)",
-	 * or Mixed while Identify's three tasks disagree. Null until the list has come back. */
-	function whenOf(stage: Stage): string | null {
-		const row = taskList.row(stage);
-		if (!row) return null;
-		const chosen = row.whens.find((one) => one.value === row.when);
-		return chosen ? taskList.whenLabel(chosen.value, chosen.label) : TASKS.when.mixed;
+	interface Props {
+		/** The settings a task's When leaves meaningful, drawn under its row by the Tasks pane. */
+		rows?: Snippet<[TaskView]>;
 	}
+
+	let { rows }: Props = $props();
+
+	/* The stages in the order work happens to a file, as the server lists them. */
+	const stages = $derived(
+		STAGES.map((id) => taskList.row(id)).filter((one): one is TaskView => one !== undefined)
+	);
 
 	let entries = $state<Map<string, SettingEntry>>(new Map());
 	/* The counts under each stage. Re-read after every switch, because what is missing changes with
@@ -272,58 +256,47 @@
 	<RecognitionSection />
 {/snippet}
 
+<!-- Each stage's Edit, before its Run now. -->
 {#snippet scanEdit()}
-	<Button icon="edit" onclick={openScan} aria-label={COPY.editStage(COPY.scan.heading)}
-		>{COPY.edit}</Button
+	<Button
+		id="importing.scan-settings"
+		icon="edit"
+		onclick={openScan}
+		aria-label={COPY.editStage(COPY.scan.heading)}>{COPY.edit}</Button
 	>
 {/snippet}
 {#snippet generateEdit()}
-	<Button icon="edit" onclick={openGenerate} aria-label={COPY.editStage(COPY.generate.heading)}
-		>{COPY.edit}</Button
+	<Button
+		id="importing.generate-settings"
+		icon="edit"
+		onclick={openGenerate}
+		aria-label={COPY.editStage(COPY.generate.heading)}>{COPY.edit}</Button
 	>
 {/snippet}
 {#snippet identifyEdit()}
-	<Button icon="edit" onclick={openIdentify} aria-label={COPY.editStage(COPY.identify.heading)}
-		>{COPY.edit}</Button
+	<Button
+		id="importing.identify-settings"
+		icon="edit"
+		onclick={openIdentify}
+		aria-label={COPY.editStage(COPY.identify.heading)}>{COPY.edit}</Button
 	>
 {/snippet}
 
-<!-- When a stage runs, said as the answer chosen on Tasks and a link to the row it is chosen on. -->
-{#snippet whenFact(stage: Stage)}
-	{@const said = whenOf(stage)}
-	{#if said}
-		<span class="sentence" data-fact="when"
-			>{COPY.chosenOn(said)}
-			<SettingLink section="tasks" setting="tasks.{stage}.when">{labelFor('tasks')}</SettingLink
-			></span
-		>
-	{/if}
-{/snippet}
-
-<!-- What each stage still has to do, as facts on its row's foot line, after when it runs. -->
+<!-- What each stage still has to do, on its row's foot line after the task's own facts. -->
 {#snippet scanFacts()}
-	<p class="facts">
-		{@render whenFact('scan')}
-		{#if scanNote}<span class="count sentence" data-count="scan">{scanNote}</span>{/if}
-	</p>
+	{#if scanNote}<span class="count sentence" data-count="scan">{scanNote}</span>{/if}
 {/snippet}
 {#snippet generateFacts()}
-	<p class="facts">
-		{@render whenFact('generate')}
-		{#if countNote(GENERATE_PRODUCTS)}
-			<span class="count sentence" data-count="generate">{countNote(GENERATE_PRODUCTS)}</span>
-		{/if}
-		{@render gaveUp(GENERATE_PRODUCTS, COPY.generate.cannot)}
-	</p>
+	{#if countNote(GENERATE_PRODUCTS)}
+		<span class="count sentence" data-count="generate">{countNote(GENERATE_PRODUCTS)}</span>
+	{/if}
+	{@render gaveUp(GENERATE_PRODUCTS, COPY.generate.cannot)}
 {/snippet}
 {#snippet identifyFacts()}
-	<p class="facts">
-		{@render whenFact('identify')}
-		{#if countNote(IDENTIFY_PRODUCTS)}
-			<span class="count sentence" data-count="identify">{countNote(IDENTIFY_PRODUCTS)}</span>
-		{/if}
-		{@render gaveUp(IDENTIFY_PRODUCTS, COPY.identify.cannot)}
-	</p>
+	{#if countNote(IDENTIFY_PRODUCTS)}
+		<span class="count sentence" data-count="identify">{countNote(IDENTIFY_PRODUCTS)}</span>
+	{/if}
+	{@render gaveUp(IDENTIFY_PRODUCTS, COPY.identify.cannot)}
 {/snippet}
 
 <!-- The files a product gave up on (one that will not decode, one with no frame to cut) are
@@ -373,46 +346,27 @@
 	</div>
 {/if}
 
-<!-- Each stage's sentence is its task's own line, the one Tasks draws under the same task, so the
-     two doors say one thing. -->
-<SettingGroup
-	id="importing.scan-stage"
-	heading={COPY.scan.heading}
-	help={taskList.row('scan')?.explain}
->
-	<LabelledRow id="importing.scan-settings" label={COPY.scan.pageTitle} wide foot={scanFacts}>
-		{@render scanEdit()}
-	</LabelledRow>
-</SettingGroup>
-
-<SettingGroup
-	id="importing.generate-stage"
-	heading={COPY.generate.heading}
-	help={taskList.row('generate')?.explain}
->
-	<LabelledRow
-		id="importing.generate-settings"
-		label={COPY.generate.pageTitle}
-		wide
-		foot={generateFacts}
-	>
-		{@render generateEdit()}
-	</LabelledRow>
-</SettingGroup>
-
-<SettingGroup
-	id="importing.identify-stage"
-	heading={COPY.identify.heading}
-	help={taskList.row('identify')?.explain}
->
-	<LabelledRow
-		id="importing.identify-settings"
-		label={COPY.identify.pageTitle}
-		wide
-		foot={identifyFacts}
-	>
-		{@render identifyEdit()}
-	</LabelledRow>
+<SettingGroup id="tasks.stages" heading={TASKS.stages.heading} help={TASKS.stages.help}>
+	{#each stages as task (task.id)}
+		{#if task.id === 'scan'}
+			<TaskWhen id="tasks.scan.when" task="scan" beside={scanEdit} more={scanFacts} />
+		{:else if task.id === 'generate'}
+			<TaskWhen
+				id="tasks.generate.when"
+				task="generate"
+				beside={generateEdit}
+				more={generateFacts}
+			/>
+		{:else if task.id === 'identify'}
+			<TaskWhen
+				id="tasks.identify.when"
+				task="identify"
+				beside={identifyEdit}
+				more={identifyFacts}
+			/>
+		{/if}
+		{@render rows?.(task)}
+	{/each}
 </SettingGroup>
 
 <ImportingFolders />
@@ -431,19 +385,5 @@
 	/* The note over the stages stands a group apart from the heading under it. */
 	.note-block {
 		margin-block-end: var(--space-6);
-	}
-
-	/* The facts, read left to right under the label: each one a phrase, the line wrapping between
-	   them and never inside one, except a fact that is a sentence (a count with its wait is one). */
-	.facts {
-		display: flex;
-		flex-wrap: wrap;
-		column-gap: var(--space-4);
-		row-gap: var(--space-1);
-		margin: 0;
-	}
-
-	.facts > :global(*:not(.sentence)) {
-		white-space: nowrap;
 	}
 </style>

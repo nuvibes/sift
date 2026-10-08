@@ -621,7 +621,7 @@ class SwapSessions:
     ) -> None:
         """They match / They don't match. On the host, a match releases the offer. On the guest
         of a swap that sends and receives, it releases the guest's own offer too: what `chosen`
-        names, read as `viewer` with the vault shut."""
+        names, read as `viewer` with Hidden open (`offer.swap_reader`)."""
         live = self._live.get(session_id)
         if live is None or live.code is None:
             raise SwapRefused("There's no code to compare yet.")

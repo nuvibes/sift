@@ -38,8 +38,8 @@ import asyncio
 import ipaddress
 import json
 import time
-from collections.abc import Awaitable, Callable
-from contextlib import AbstractAsyncContextManager
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass
 from typing import Any, Protocol
 from urllib.parse import urlsplit
@@ -49,6 +49,7 @@ import aiohttp
 from sift.kernel.access import Viewer
 from sift.kernel.audience import EVERY_ADMIN
 from sift.kernel.changes import About, announce_now
+from sift.kernel.fetch import outbound_session
 from sift.kernel.http import read_capped
 from sift.kernel.log import get_logger
 from sift.kernel.version import app_version
@@ -235,9 +236,11 @@ class UpdateService:
         )
 
 
-def _direct_session() -> AbstractAsyncContextManager[aiohttp.ClientSession]:
+@asynccontextmanager
+async def _direct_session() -> AsyncIterator[aiohttp.ClientSession]:
     """A plain session, for a feed given as a literal address. See `fetch_release`."""
-    return aiohttp.ClientSession()
+    async with await outbound_session() as session:
+        yield session
 
 
 def _given_as_an_address(feed_url: str) -> bool:

@@ -4,6 +4,47 @@ What each release of Sift changes, newest first. A version's section is its rele
 release page and the Updates screen both show it. Changes land under Unreleased and move into a
 version's section, dated, when that version is published.
 
+## Unreleased
+
+### What changed for you
+
+- **The Task Queue lists what you pressed, not Sift's own housekeeping.** Counting a folder,
+  keeping file details and the other work Sift starts on its own show only as their family's
+  progress, unless a step of theirs failed; a press over many files is one row with its steps;
+  the list pages twenty at a time; a Done row's time sits under Done.
+- **A failed row says why.** It is named for its job, its words wrap, and one line under it names
+  the step, the file it was on, the tries and the reason.
+- **Activity's Run now is the task's own press**, and a pass or a sub-task can be paused, resumed
+  and canceled on its row; the whole queue pauses from Options. A sub-task you have switched off
+  no longer counts in its family's status.
+- **Importing is folded into Tasks and Activity.** Scan, Generate and Identify are rows under
+  Import tasks with their Edit before Run now and what each still has to do on its foot line;
+  Folder-specific import settings sit under Identify; Activity and the Task Queue follow Other
+  tasks on the same tab. An old Importing address opens the right place.
+- **A folder's answer no longer reaches a file whose copy there is gone** while its real copy sits
+  elsewhere.
+- **A restarted facial fingerprints import passes over the people it already read.**
+- **Hidden no longer keeps a person out of a facial fingerprints file or a swap**: Kept local
+  keeps a person out of enrichment and the fingerprints file, Do not swap out of a swap.
+- **Theater's bar leads with Previous, Play and Next, then All 1 2 3**; Repeat and Shuffle are in
+  the drawer beside Randomize. Layouts are named Grid 1x1 to Grid 2x2 and Stage View 1x1 to 2x2,
+  with pictures twice their size, and a saved filter chosen with All cells selected lands on every
+  cell immediately.
+- **The Audio player plays past a picture** instead of turning into the mini player.
+- **Opening a chooser no longer shakes the screen** for a frame.
+- **Downloading the models works on a Windows that lacks GitHub's root certificate.** Sift
+  checks a secure connection against its own bundled roots as well as the computer's, reads the
+  computer's roots afresh for every download instead of once at its start, and a failed download
+  names the host that failed and what the certificate check said, with the connection's own words
+  under it; a refused certificate fails once instead of three times in a second. Every start logs
+  which version of Sift it is, and the Download log carries the desktop app's logs too.
+- **App History's first page in half the time** (51.5 to 26.0 ms on a copy of a 94,000-file
+  library), each act carrying its press; a folder's files for an admin cost 95% fewer database
+  steps; sharing a large folder costs a third fewer steps and holds the writer a quarter less.
+- **A face in a file whose folder you answered as someone else is asked about, never named on its
+  own**, and a person's page says what their picture count means.
+- Other minor UI improvements.
+
 ## 0.2.2 - 2026-10-07
 
 ### What changed for you

@@ -116,11 +116,11 @@ test('with nothing found, the sections say what they are for rather than looking
 });
 
 /**
- * The page the recognition switches stand on: `Settings > Importing > Identify`, beside the other
+ * The page the recognition switches stand on: `Settings > Tasks and Activity > Import tasks > Identify`, beside the other
  * recognition switches. The Faces pane names it and links there rather than drawing a second one.
  */
 async function theIdentifyPage(page: Page): Promise<void> {
-	await page.goto('/settings/importing');
+	await page.goto('/settings/tasks');
 	await page.getByRole('button', { name: 'Edit Identify' }).click();
 }
 
@@ -172,7 +172,7 @@ test('the way to delete everything is separate from the switch, and says so', as
 	await expect(page.getByRole('switch', { name: /Recognize faces in your library/i })).toHaveCount(
 		0
 	);
-	await expect(page.getByRole('link', { name: 'Change in Importing' })).toBeVisible();
+	await expect(page.getByRole('link', { name: 'Change in Identify settings' })).toBeVisible();
 
 	// Turning it off leaves what was collected (deliberately), which is exactly why this control
 	// exists and why it must not be reachable by accident. The switch's own note says so.

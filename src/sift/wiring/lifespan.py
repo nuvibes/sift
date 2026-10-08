@@ -49,6 +49,7 @@ from sift.kernel.config import (
     get_settings,
     retired_variables_in_use,
 )
+from sift.kernel.content.backlog import stop_builds
 from sift.kernel.db import DatabaseError, keep_the_log_folded, keep_the_statistics_current
 from sift.kernel.diagnostics import boot_set_aside
 from sift.kernel.hardware import HardwareReport
@@ -315,6 +316,8 @@ async def _ground(
     accelerator = media.Accelerator(hardware)
     provide(app, wiring.ACCELERATOR, accelerator)
     store = await build_storage(app, settings, hardware, teardown)
+    # After everything built below has stopped and before the database closes.
+    teardown.push_async_callback(stop_builds)
     return settings, hardware, accelerator, store
 
 

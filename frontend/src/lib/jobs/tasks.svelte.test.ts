@@ -10,12 +10,13 @@ import { wordsOf, type ToastWords } from '$lib/components/common/toast-pieces';
 const mocks = vi.hoisted(() => ({
 	answer: {} as Record<string, unknown>,
 	quiet: {} as Record<string, unknown>,
+	byPath: {} as Record<string, Record<string, unknown>>,
 	shown: [] as ToastWords[]
 }));
 
 vi.mock('$lib/api/client', () => ({
 	api: {
-		post: vi.fn(async () => mocks.answer),
+		post: vi.fn(async (path: string) => mocks.byPath[path] ?? mocks.answer),
 		get: vi.fn(async () => ({ quiet_hours: mocks.quiet, tasks: [], folders: [] }))
 	},
 	ApiError: class extends Error {}
@@ -25,7 +26,7 @@ vi.mock('$lib/shell/toasts.svelte', () => ({
 	toasts: { show: vi.fn((said: ToastWords) => mocks.shown.push(said)) }
 }));
 
-import { pressTask } from './tasks.svelte';
+import { pressTask, pressTasks } from './tasks.svelte';
 import { COPY } from '$lib/settings-ui/ScheduledTasks.search';
 
 function answered(onActivity: boolean): Record<string, unknown> {
@@ -40,6 +41,7 @@ function answered(onActivity: boolean): Record<string, unknown> {
 
 beforeEach(() => {
 	mocks.shown = [];
+	mocks.byPath = {};
 });
 
 describe('the toast after Run now', () => {
@@ -57,6 +59,21 @@ describe('the toast after Run now', () => {
 		mocks.answer = answered(false);
 		await pressTask('backup', 'now');
 		expect(mocks.shown).toEqual([COPY.when.startedHere]);
+	});
+});
+
+describe('a press of several tasks', () => {
+	it('says one sentence: the one that started, not the one that found nothing', async () => {
+		mocks.answer = answered(true);
+		mocks.byPath['/tasks/generate/run'] = { ...answered(true), job_ids: [] };
+		await pressTasks([{ task: 'generate', parts: ['fingerprints'] }, { task: 'music' }], 'now');
+		expect(mocks.shown.map(wordsOf)).toEqual(['Started. Follow it in Activity.']);
+	});
+
+	it('says nothing was to run once when none of them found any', async () => {
+		mocks.answer = { ...answered(true), job_ids: [] };
+		await pressTasks([{ task: 'generate' }, { task: 'music' }], 'now');
+		expect(mocks.shown).toEqual([COPY.when.nothingToDo]);
 	});
 });
 

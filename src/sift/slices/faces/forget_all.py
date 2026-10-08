@@ -57,6 +57,7 @@ TABLES = (
     "DELETE FROM face_references WHERE rowid IN (SELECT rowid FROM face_references LIMIT ?)",
     "DELETE FROM face_folder_left_out"
     " WHERE rowid IN (SELECT rowid FROM face_folder_left_out LIMIT ?)",
+    "DELETE FROM face_folder_read WHERE rowid IN (SELECT rowid FROM face_folder_read LIMIT ?)",
     "DELETE FROM face_packs WHERE rowid IN (SELECT rowid FROM face_packs LIMIT ?)",
     "DELETE FROM face_scans WHERE rowid IN (SELECT rowid FROM face_scans LIMIT ?)",
 )

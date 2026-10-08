@@ -1940,3 +1940,39 @@ async def test_a_chore_whose_work_waits_for_the_password_says_so() -> None:
     assert reason_of(going) is None
     other = await _housekeeping(Queue(), scan(), None, None, {}, {})  # type: ignore[arg-type]
     assert reason_of(other) is None, "a wait for something else was said to be the password"
+
+
+def test_work_sift_started_by_itself_is_left_off_unless_something_in_it_failed(
+    client: TestClient,
+) -> None:
+    """A folder counted, a folder checked for changes: rows nobody pressed, left off the list. A
+    family a failure is folded into stays, and says what failed and why in one line."""
+    for job_id, kind in (
+        ("01HX00000000000000000000B1", "scan_count"),
+        ("01HX00000000000000000000B2", "library_reconcile"),
+    ):
+        seed(client, job_id, state="done", job_type=kind)
+    seed(client, "01HX00000000000000000000B3", state="done", job_type="scan")
+    seed_job(
+        client.app.state.database.path,  # type: ignore[attr-defined]
+        "01HX00000000000000000000B4",
+        state="failed",
+        job_type="probe",
+        error="ffmpeg said\nexit code 69",
+        parent_id="01HX00000000000000000000B3",
+    )
+    sign_in(client, "admin")
+
+    page = client.get("/api/jobs", params={"fold": "true", "limit": 100}).json()
+    listed = {one["id"]: one for one in page["jobs"]}
+    assert "01HX00000000000000000000B1" not in listed
+    assert "01HX00000000000000000000B2" not in listed
+    failure = listed["01HX00000000000000000000B3"]["steps"]["failure"]
+    assert failure == {
+        "name": job_name("probe"),
+        "reason": "exit code 69",
+        "subject": None,
+        "attempts": 0,
+    }
+    step = client.get("/api/jobs/01HX00000000000000000000B3/steps").json()["jobs"][0]
+    assert step["reason"] == "exit code 69"

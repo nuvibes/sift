@@ -52,7 +52,7 @@ SECTIONS_TS = PANES / "sections.ts"
 SETTINGS_PANE = PANES / "SettingsPane.svelte"
 
 #: `{#if showing === 'library'}` ... `<LibraryScreen />`: a section and the component it draws.
-BRANCH = re.compile(r"showing === '([\w-]+)'\}\s*(?:<!--.*?-->\s*)*<([A-Z]\w*)", re.S)
+BRANCH = re.compile(r"showing === '([\w-]+)'\}\s*(?:<!--(?:(?!-->).)*-->\s*)*<([A-Z]\w*)", re.S)
 #: `import Name from './Name.svelte';` or from `$lib/...svelte`.
 SVELTE_IMPORT = re.compile(r"import\s+(\w+)\s+from\s+'([^']+\.svelte)'")
 #: `theater: { section: 'playback' },`

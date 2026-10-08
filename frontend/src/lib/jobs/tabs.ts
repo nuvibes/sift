@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 /*
- * THE FOUR TABS OF TASKS AND ACTIVITY, and which one an address opens.
+ * THE THREE TABS OF TASKS AND ACTIVITY, and which one an address opens.
  *
- * Tasks (when each task runs), Activity (the queue), App History (what happened) and Logs (what the
- * program wrote down) answer "what does Sift do, and when", read from four different stores, so
- * four tabs side by side rather than one merged list.
+ * Tasks (when each task runs, and under it Activity, the queue), App History (what happened) and
+ * Logs (what the program wrote down) answer "what does Sift do, and when", read from different
+ * stores, so tabs side by side rather than one merged list.
  *
  * ## An address, not only a press
  *
  * A tab is carried in the address as `?show=`, the settings frame's one shape for a tab
  * (`settingsPath` in `settings-ui/sections.ts`, the entity pages' `?show=` before it): Tasks is
- * `/settings/tasks`, Activity `?show=now`, App History `?show=history`, Logs `?show=log`: the
- * words an address had before the tabs were renamed, since an address never changes.
+ * `/settings/tasks`, App History `?show=history`, Logs `?show=log`; `?show=now`, Activity's old
+ * address, opens Tasks, where Activity is now.
  *
  * A KEY lands too. Every row drawn on a tab is OWNED by that tab through the frame's mechanism for
  * "this key lives somewhere not yet on screen" (`drilldown.own`): a deep link asks the key's owner
@@ -23,9 +23,9 @@
  */
 import { settingsPath } from '$lib/settings-ui/sections';
 
-export type ActivityTab = 'tasks' | 'now' | 'history' | 'log';
+export type ActivityTab = 'tasks' | 'history' | 'log';
 
-const TABS: readonly ActivityTab[] = ['tasks', 'now', 'history', 'log'];
+const TABS: readonly ActivityTab[] = ['tasks', 'history', 'log'];
 
 /** Where a door lands: the tab, and for History the act it opens filtered to, or the decisions. */
 interface Landing {

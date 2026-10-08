@@ -220,6 +220,14 @@
    },
    "count": 1
   },
+  "create:-#d2555e96": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1
+  },
   "create:undo_rows#c3247bda": {
    "stage": "db.write",
    "steps": {
@@ -570,7 +578,7 @@
     "20000": 96,
     "80000": 96
    },
-   "count": 960
+   "count": 891
   },
   "insert:backlog_files#d9fa6ccb": {
    "stage": "db.write",
@@ -578,7 +586,7 @@
     "20000": 15504,
     "80000": 15504
    },
-   "count": 960
+   "count": 891
   },
   "insert:backlog_terms#d29c6586": {
    "stage": "db.write",
@@ -632,7 +640,7 @@
   "insert:visibility_step_fold_page#56236f66": {
    "stage": "db.write",
    "steps": {
-    "80000": 2120000
+    "80000": 1358816
    },
    "count": 2,
    "why": "the fold that moves a write's counts once costs by the files that write touched; a large share's owed counts are folded after its press a page of 2,000 files at a time, so a page costs by its own size (the walk's share owes only at the larger size: at 20,000 files it moves fewer than 1,000 pairs and is counted in its own write)"
@@ -859,7 +867,7 @@
     "20000": 33440,
     "80000": 33440
    },
-   "count": 161
+   "count": 139
   },
   "select:asset_locations#89742260": {
    "stage": "db.write",
@@ -883,7 +891,7 @@
     "20000": 8512,
     "80000": 8512
    },
-   "count": 161
+   "count": 135
   },
   "select:asset_locations#c4bbfcbb": {
    "stage": "db.write",
@@ -899,7 +907,7 @@
     "20000": 35840,
     "80000": 35856
    },
-   "count": 161
+   "count": 160
   },
   "select:asset_locations#da2aa158": {
    "stage": "db.read",
@@ -912,10 +920,11 @@
   "select:asset_locations#db4c60df": {
    "stage": "db.read",
    "steps": {
-    "20000": 1408,
-    "80000": 1392
+    "20000": 2000,
+    "80000": 2048
    },
-   "count": 1
+   "count": 1,
+   "why": "The queue page names the file each failed family failed on and keeps a quiet family listed while a step of it failed: one seek per family on ix_jobs_family."
   },
   "select:asset_locations#e5b7f6b6": {
    "stage": "db.write",
@@ -923,7 +932,7 @@
     "20000": 39168,
     "80000": 39184
    },
-   "count": 161
+   "count": 152
   },
   "select:asset_locations#fb05fab9": {
    "stage": "db.write",
@@ -931,7 +940,7 @@
     "20000": 29520,
     "80000": 29520
    },
-   "count": 322
+   "count": 306
   },
   "select:asset_people#620fb24b": {
    "stage": "db.read",
@@ -1261,7 +1270,7 @@
     "20000": 6528,
     "80000": 6528
    },
-   "count": 1771
+   "count": 1697
   },
   "select:backlog_terms#401e5329": {
    "stage": "db.write",
@@ -1636,6 +1645,15 @@
    "count": 1,
    "why": "the Smart Search pane asks the queue whether describing is running"
   },
+  "select:jobs#17ae2517": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 7024,
+    "80000": 7424
+   },
+   "count": 1,
+   "why": "The queue page names the file each failed family failed on and keeps a quiet family listed while a step of it failed: one seek per family on ix_jobs_family."
+  },
   "select:jobs#266fb86a": {
    "stage": "db.read",
    "steps": {
@@ -1665,14 +1683,6 @@
    "steps": {
     "20000": 192,
     "80000": 192
-   },
-   "count": 1
-  },
-  "select:jobs#44bbdc96": {
-   "stage": "db.read",
-   "steps": {
-    "20000": 4112,
-    "80000": 3920
    },
    "count": 1
   },
@@ -1847,21 +1857,23 @@
    },
    "count": 1
   },
-  "select:json_each#2a3fb357": {
+  "select:json_each#9e206df0": {
    "stage": "db.read",
    "steps": {
-    "20000": 224,
-    "80000": 224
+    "20000": 944,
+    "80000": 944
    },
-   "count": 1
+   "count": 1,
+   "why": "The queue page names the file each failed family failed on and keeps a quiet family listed while a step of it failed: one seek per family on ix_jobs_family."
   },
-  "select:json_each#c56f50e3": {
+  "select:json_each#ae150b20": {
    "stage": "db.read",
    "steps": {
-    "20000": 208,
-    "80000": 208
+    "20000": 1152,
+    "80000": 1152
    },
-   "count": 1
+   "count": 1,
+   "why": "The queue page names the file each failed family failed on and keeps a quiet family listed while a step of it failed: one seek per family on ix_jobs_family."
   },
   "select:json_each#deae33bc": {
    "stage": "db.read",
@@ -1876,14 +1888,6 @@
    "steps": {
     "20000": 0,
     "80000": 0
-   },
-   "count": 1
-  },
-  "select:library_roots#a1220660": {
-   "stage": "db.read",
-   "steps": {
-    "20000": 192,
-    "80000": 192
    },
    "count": 1
   },
@@ -2581,7 +2585,7 @@
     "20000": 16,
     "80000": 16
    },
-   "count": 1793,
+   "count": 1714,
    "why": "an act marks itself and its two neighbours of the same press, three index seeks a row, flat with the library, so the History feed reads a page and not the record; a file's counts move once per write: a change records what the file held and one fold moves the counts before the write commits, so a file costs a read of its members where a thousand cost one fold; the hook asks once per connection whether the tables exist and once per write whether anything was touched"
   },
   "select:visibility_owed#c9f07d5a": {
@@ -3114,11 +3118,12 @@
   "update:workbench_decisions#79e6a7aa": {
    "stage": "db.write",
    "steps": {
-    "20000": 240,
-    "80000": 240
+    "20000": 768,
+    "80000": 768
    },
    "count": 1,
-   "why": "an act marks itself and its two neighbours of the same press, three index seeks a row, flat with the library, so the History feed reads a page and not the record; a file's counts move once per write: a change records what the file held and one fold moves the counts before the write commits, so a file costs a read of its members where a thousand cost one fold; the hook asks once per connection whether the tables exist and once per write whether anything was touched"
+   "why": "History reads each press by its label: a folded line is counted and named on one walk of the acts of its press that the vault leaves this viewer, seeked by the label (the walk folds every verb-less decision of the library into one press); an act that moves is labelled again with its press, the press it left parted and the one it joined merged, a few index seeks, flat with the library",
+   "per": "library"
   },
   "with:downloads#0b33ebfc": {
    "stage": "db.read",
@@ -3147,8 +3152,8 @@
   "with:jobs#2952c2b5": {
    "stage": "db.read",
    "steps": {
-    "20000": 2656,
-    "80000": 2656
+    "20000": 528,
+    "80000": 528
    },
    "count": 1
   },
@@ -3160,16 +3165,6 @@
    },
    "count": 1
   },
-  "with:json_each#010a9366": {
-   "stage": "db.read",
-   "steps": {
-    "20000": 2371664,
-    "80000": 9462928
-   },
-   "count": 1,
-   "why": "a folded line counts and names the acts of its press that the vault leaves this viewer, one vault check per act, so a page costs the presses it draws; the walk folds every verb-less decision of the library into one press, a second apart, so here that press is the library",
-   "per": "library"
-  },
   "with:json_each#05f9a628": {
    "stage": "db.read",
    "steps": {
@@ -3177,16 +3172,6 @@
     "80000": 12592
    },
    "count": 1
-  },
-  "with:json_each#06d74dfd": {
-   "stage": "db.read",
-   "steps": {
-    "20000": 2112512,
-    "80000": 8434160
-   },
-   "count": 1,
-   "why": "a folded line counts and names the acts of its press that the vault leaves this viewer, one vault check per act, so a page costs the presses it draws; the walk folds every verb-less decision of the library into one press, a second apart, so here that press is the library",
-   "per": "library"
   },
   "with:json_each#08186d72": {
    "stage": "db.read",
@@ -3230,20 +3215,6 @@
     "80000": 2416
    },
    "count": 1
-  },
-  "with:json_each#10ec55ba": {
-   "stage": "db.read",
-   "steps": {
-    "20000": 269536,
-    "80000": 891264
-   },
-   "count": 1,
-   "scans": [
-    "asset_locations",
-    "viewer_assets"
-   ],
-   "per": "library",
-   "why": "costs this before the ledger: a debt on the record, not a decision"
   },
   "with:json_each#1460ac01": {
    "stage": "db.read",
@@ -3335,6 +3306,16 @@
     "80000": 9936
    },
    "count": 1
+  },
+  "with:json_each#3ee33ba5": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 1950304,
+    "80000": 7779296
+   },
+   "count": 1,
+   "why": "History reads each press by its label: a folded line is counted and named on one walk of the acts of its press that the vault leaves this viewer, seeked by the label (the walk folds every verb-less decision of the library into one press); an act that moves is labelled again with its press, the press it left parted and the one it joined merged, a few index seeks, flat with the library",
+   "per": "library"
   },
   "with:json_each#40f14311": {
    "stage": "db.read",
@@ -3551,19 +3532,31 @@
    "per": "library",
    "why": "costs this before the ledger: a debt on the record, not a decision"
   },
-  "with:json_each#9a5072d1": {
+  "with:json_each#9c7b3e15": {
    "stage": "db.read",
    "steps": {
-    "20000": 272816,
-    "80000": 896272
+    "20000": 263120,
+    "80000": 331280
    },
    "count": 1,
    "scans": [
-    "asset_locations",
     "viewer_assets"
    ],
-   "per": "library",
-   "why": "costs this before the ledger: a debt on the record, not a decision"
+   "why": "a folded History line is counted and named on one walk of the acts of its press that the vault leaves this viewer, so a page costs the presses it draws (the walk folds every verb-less decision of the library into one press); a folder's files: the admin's read starts from the folder's own copies, a guest's walks their own files so a folder of files kept from them costs what an empty one does",
+   "per": "library"
+  },
+  "with:json_each#a4a25ad2": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 266400,
+    "80000": 331392
+   },
+   "count": 1,
+   "scans": [
+    "viewer_assets"
+   ],
+   "why": "a folded History line is counted and named on one walk of the acts of its press that the vault leaves this viewer, so a page costs the presses it draws (the walk folds every verb-less decision of the library into one press); a folder's files: the admin's read starts from the folder's own copies, a guest's walks their own files so a folder of files kept from them costs what an empty one does",
+   "per": "library"
   },
   "with:json_each#b48d1ea9": {
    "stage": "db.read",
@@ -3711,14 +3704,14 @@
    },
    "count": 1
   },
-  "with:workbench_decisions#89efa7ce": {
+  "with:workbench_decisions#a11c1b03": {
    "stage": "db.read",
    "steps": {
-    "20000": 988352,
-    "80000": 3923760
+    "20000": 1376,
+    "80000": 1344
    },
    "count": 1,
-   "why": "a folded line counts and names the acts of its press that the vault leaves this viewer, one vault check per act, so a page costs the presses it draws; the walk folds every verb-less decision of the library into one press, a second apart, so here that press is the library",
+   "why": "History reads each press by its label: a folded line is counted and named on one walk of the acts of its press that the vault leaves this viewer, seeked by the label (the walk folds every verb-less decision of the library into one press); an act that moves is labelled again with its press, the press it left parted and the one it joined merged, a few index seeks, flat with the library",
    "per": "library"
   }
  }

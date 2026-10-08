@@ -16,9 +16,8 @@ from sift.kernel.access.history_events import first_presses
 from sift.kernel.access.history_feed import (
     _FOLDED_KIND_PAGE,
     _FOLDED_MEMBERS,
-    _FOLDED_OBJECTS,
     _FOLDED_PAGE,
-    _FOLDED_SUBJECTS,
+    _FOLDED_THINGS,
     _FOLDED_TOTAL,
     press_of,
     presses_recent,
@@ -177,13 +176,13 @@ async def test_what_a_folded_line_holds_is_a_seek_on_its_moments(
         "ledger": "ledger",
         "lines": "[]",
     }
-    for statement in (_FOLDED_OBJECTS, _FOLDED_SUBJECTS):
+    for statement in (_FOLDED_THINGS,):
         plan = await temp_db.fetch_all(
             "EXPLAIN QUERY PLAN " + statement,  # nosemgrep: sift-no-string-built-sql
             values,
         )
         steps = [str(row["detail"]) for row in plan]
-        assert any("USING INDEX ix_workbench_fold" in step for step in steps), steps
+        assert any("USING INDEX ix_workbench_press" in step for step in steps), steps
         assert not any(step.startswith("SCAN d") for step in steps), steps
 
 

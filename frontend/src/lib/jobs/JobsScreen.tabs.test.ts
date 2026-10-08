@@ -1,6 +1,6 @@
 /*
  * Settings > Tasks and Activity opens on Tasks: the section's first tab is the one a person sets,
- * and the queue is not read until its own tab is shown.
+ * with Activity, the queue, drawn under the tasks and read there.
  *
  * A link to a task's row is followed from any tab: the row is one per task, from the server, so no
  * table can list it ahead of time, and the section's own claim (`drilldown.ownSection`) turns the
@@ -49,23 +49,23 @@ const tabs = () =>
 	);
 
 describe('the tabs of Tasks and Activity', () => {
-	it('opens on Tasks, drawing when each task runs, and reads no queue', async () => {
+	it('opens on Tasks, drawing when each task runs and Activity under them', async () => {
 		open();
 		expect(tabs()).toEqual([
 			['Tasks', 'true'],
-			['Activity', 'false'],
 			['App History', 'false'],
 			['Logs', 'false']
 		]);
 		expect(host.querySelector('#activity-tab')?.textContent).toContain(TASKS.lede);
-		await new Promise((done) => setTimeout(done, 20));
-		expect(asked.filter((one) => one.includes('/api/jobs'))).toEqual([]);
+		await vi.waitFor(() =>
+			expect(asked.filter((one) => one.includes('/api/jobs')).length).toBeGreaterThan(0)
+		);
 	});
 
 	it('turns back to Tasks for a link to a task row followed from another tab', () => {
 		history.replaceState(null, '', '/settings/tasks?show=history');
 		open();
-		expect(tabs()[2]).toEqual(['App History', 'true']);
+		expect(tabs()[1]).toEqual(['App History', 'true']);
 		expect(host.querySelector('#activity-tab')?.textContent).not.toContain(TASKS.lede);
 
 		expect(drilldown.reveal('tasks.scan.when', 'tasks')).toBe(true);
@@ -79,7 +79,7 @@ describe('the tabs of Tasks and Activity', () => {
 		open();
 		expect(drilldown.reveal('activity.saved', 'tasks')).toBe(true);
 		flushSync();
-		expect(tabs()[2]).toEqual(['App History', 'true']);
+		expect(tabs()[1]).toEqual(['App History', 'true']);
 		// The claim is the section's: a key looked for on another section is not this screen's.
 		expect(drilldown.reveal('faces.unclaimed', 'faces')).toBe(false);
 	});

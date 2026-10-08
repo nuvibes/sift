@@ -6,7 +6,7 @@
 A session can carry files both ways: the host presses Start under Send and receive (`two_way`),
 and each side then offers, answers and receives. One token, one code, and each side's own They match
 releases its own offer, as the host's does in a swap that only sends. The guest's offer is chosen
-with the same pickers and built by the same read as the host's (`make_offer`: the vault shut, Do not
+with the same pickers and built by the same read as the host's (`make_offer`: Hidden open, Do not
 swap and kept local honoured), its files made ready by the same look and strip (`prepare`), and the
 host answers it on the same offer screen (`assess`, the dedup rule) and lands what it takes through
 the same landing a guest's files go through (`land`).

@@ -15,6 +15,7 @@ from sift.kernel.jobs.failure_words import (
     KINDS,
     OTHERWISE,
     VERDICT_WORDS,
+    in_one_line,
     in_plain_words,
     kind_of,
     why_left_out,
@@ -88,6 +89,30 @@ async def test_a_download_that_failed_is_said_by_its_kind(
     found = kind_of(f"WeightError: {failed.value} Or copy the file to this device yourself.")
     assert found is not None
     assert found.name == _DOWNLOADS[why]
+
+
+@pytest.mark.parametrize(
+    "words",
+    [
+        "ClientOSError: [Errno 13] Permission denied",
+        "ClientConnectorError: [Errno 2] No such file or directory",
+        "ClientOSError: [Errno 28] No space left on device",
+    ],
+)
+def test_the_clients_words_after_a_download_sentence_never_change_its_kind(words: str) -> None:
+    sentence = "The detector model couldn't be downloaded: the connection to files.test dropped."
+    assert (kind_of(f"WeightError: {sentence} {words}") or KINDS[0]).name == "dropped"
+
+
+def test_a_certificate_out_of_date_says_the_clock_and_no_other_refusal_does() -> None:
+    def said(because: str) -> str:
+        why = fetch.UNTRUSTED.format(host="files.test", because=because)
+        return in_plain_words(f"The detector model couldn't be downloaded: {why}")
+
+    assert "clock" in said(fetch.OUT_OF_DATE)
+    for because in (fetch.UNKNOWN_ISSUER, fetch.WRONG_NAME, fetch.SAYS_NO_MORE):
+        assert "clock" not in said(because)
+        assert "security software" not in said(because)
 
 
 async def test_a_refused_download_and_one_that_arrived_damaged_are_said_by_their_kinds(
@@ -169,3 +194,11 @@ def test_a_left_out_file_is_said_by_its_code_and_never_by_the_tools_text() -> No
         assert words[0].isupper()
         for token in ("ffmpeg", "Error", "[", "0x", "@", "_"):
             assert token not in words
+
+
+def test_a_rows_one_line_is_the_kinds_words_or_the_tools_last_line() -> None:
+    assert in_one_line("FileNotFoundError: gone") == in_plain_words("FileNotFoundError: gone")
+    assert in_one_line("ffmpeg said\n  frame 12 \n\nexit code 69\n") == "exit code 69"
+    assert in_one_line("") == OTHERWISE
+    long = in_one_line("x" * 1000)
+    assert len(long) == 240 and long.endswith("...")

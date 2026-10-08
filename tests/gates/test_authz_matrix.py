@@ -296,20 +296,20 @@ MATRIX: dict[tuple[str, str], Case] = {
     ("POST", "/api/ledger/{event_id}/undo-all"): Case(
         Policy.ADMIN, params={"event_id": A_DECISION}
     ),
-    # Every user's acts in one list; a guest's own record is a file's history, scoped by the file.
     ("GET", "/api/ledger"): Case(Policy.ADMIN),
     # The jobs dashboard, admin throughout: what Sift does with the files is a picture of them.
     ("GET", "/api/jobs"): Case(Policy.ADMIN),
     ("GET", "/api/jobs/{job_id}/steps"): Case(Policy.ADMIN, params={"job_id": FAILED_JOB}),
     ("POST", "/api/jobs/{job_id}/retry"): Case(Policy.ADMIN, params={"job_id": FAILED_JOB}),
     ("POST", "/api/jobs/{job_id}/cancel"): Case(Policy.ADMIN, params={"job_id": CANCELABLE_JOB}),
-    # The bulk queue acts below are destructive: they move or delete the rows per-job cases name.
     ("POST", "/api/jobs/retry-failed"): Case(Policy.ADMIN, destructive=True),
     ("POST", "/api/jobs/clear-failed"): Case(Policy.ADMIN, destructive=True),
+    ("POST", "/api/jobs/pause"): Case(Policy.ADMIN, body={}),
+    ("POST", "/api/jobs/resume"): Case(Policy.ADMIN, body={}),
+    ("POST", "/api/jobs/cancel-work"): Case(Policy.ADMIN, destructive=True, body={"type": "scan"}),
     ("POST", "/api/jobs/cancel-all"): Case(Policy.ADMIN, destructive=True),
     ("POST", "/api/jobs/retry-canceled"): Case(Policy.ADMIN, destructive=True),
     ("POST", "/api/jobs/clear-canceled"): Case(Policy.ADMIN, destructive=True),
-    # The whole installation's pool.
     ("POST", "/api/jobs/turbo-mode"): Case(Policy.ADMIN, body={"on": False}),
     # A guest's screen goes stale as an admin's does; a message names a kind, never carries a row.
     ("GET", "/api/live"): Case(Policy.AUTHENTICATED),

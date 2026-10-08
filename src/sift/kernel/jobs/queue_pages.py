@@ -13,6 +13,7 @@ from sift.kernel.jobs.queue_rows import (
     _FOLDED,
     DEFAULT_PAGE_SIZE,
     MAX_PAGE_SIZE,
+    FamilyFailure,
     Job,
     JobPage,
     JobState,
@@ -42,11 +43,14 @@ _FILTERS: tuple[tuple[str, str], ...] = (
     # Only the types named (a JSON list), for "Older tasks"; an empty list matches no row.
     ("among", "type IN (SELECT value FROM json_each(:among))"),
     # Every row but the quiet ones: by-itself work heading its own family, unpressed, waiting,
-    # running or done. Failed and canceled rows stay, since the bulk actions act on all of them.
+    # running or done, with no step failed. Failed and canceled rows stay, since the bulk actions
+    # act on all of them, and so does a family a failure is folded into.
     (
         "quiet",
         "NOT (root_id = id AND requested_by IS NULL AND state IN ('queued', 'running', 'done')"
-        " AND type IN (SELECT value FROM json_each(:quiet)))",
+        " AND type IN (SELECT value FROM json_each(:quiet))"
+        " AND NOT EXISTS (SELECT 1 FROM jobs AS step WHERE step.root_id = jobs.id"
+        " AND step.state = 'failed'))",
     ),
     # The tops whose folded row shows this state: a state's tab, in the page's statement only.
     ("folded", "(" + _FOLDED + ") = :folded"),
@@ -112,13 +116,17 @@ _QUIET_COUNT_HEAD = (
     "SELECT COUNT(*) AS total FROM (SELECT jobs.* FROM json_each(:quiet_types) AS hushed"
     " CROSS JOIN jobs ON jobs.type = hushed.value"
     " WHERE jobs.root_id = jobs.id AND jobs.requested_by IS NULL"
-    " AND jobs.state IN ('queued', 'running', 'done'))"
+    " AND jobs.state IN ('queued', 'running', 'done')"
+    " AND NOT EXISTS (SELECT 1 FROM jobs AS step WHERE step.root_id = jobs.id"
+    " AND step.state = 'failed'))"
 )
 _QUIET_BY_STATE = (
     "SELECT jobs.state AS state, COUNT(*) AS total FROM json_each(:quiet_types) AS hushed"
     " CROSS JOIN jobs ON jobs.type = hushed.value"
     " WHERE jobs.root_id = jobs.id AND jobs.requested_by IS NULL"
     " AND jobs.state IN ('queued', 'running', 'done')"
+    " AND NOT EXISTS (SELECT 1 FROM jobs AS step WHERE step.root_id = jobs.id"
+    " AND step.state = 'failed')"
     " GROUP BY jobs.state"
 )
 _LIST_ORDER = "\n ORDER BY id DESC"
@@ -194,6 +202,16 @@ SELECT tops.value AS root,
            WHERE json_extract(step.payload, '$.asset_id') IS NOT NULL
            LIMIT 2)) AS assets
   FROM json_each(:roots) AS tops
+"""
+
+# The newest failure in each family, the top's own included: what failed, why, and on which file.
+_FAMILY_FAILURES = """
+SELECT tops.value AS root, step.type AS type, step.error AS error, step.attempts AS attempts,
+       json_extract(step.payload, '$.asset_id') AS asset
+  FROM json_each(:roots) AS tops
+  JOIN jobs AS step ON step.id = (
+       SELECT id FROM jobs WHERE root_id = tops.value AND state = 'failed'
+        ORDER BY updated_at DESC, id DESC LIMIT 1)
 """
 
 # A page of one family's steps in the order they were handed out, and how many there are, stopped
@@ -275,6 +293,22 @@ class Pages(QueueCore):
             if len(assets) == 1 and isinstance(assets[0], str):
                 found[str(row["root"])] = assets[0]
         return found
+
+    async def family_failures(self, root_ids: Sequence[str]) -> dict[str, FamilyFailure]:
+        """The newest failed row in each of these families, where one failed."""
+        wanted = list(dict.fromkeys(one for one in root_ids if one))
+        if not wanted:
+            return {}
+        rows = await self._db.fetch_all(_FAMILY_FAILURES, {"roots": json.dumps(wanted)})
+        return {
+            str(row["root"]): FamilyFailure(
+                type=str(row["type"]),
+                error=row["error"],
+                attempts=int(row["attempts"]),
+                asset_id=row["asset"] if isinstance(row["asset"], str) else None,
+            )
+            for row in rows
+        }
 
     async def steps(
         self, root_id: str, *, limit: int = DEFAULT_PAGE_SIZE, offset: int = 0

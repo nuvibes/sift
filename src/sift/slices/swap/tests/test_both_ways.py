@@ -352,14 +352,14 @@ async def test_both_ways_each_side_lands_what_it_took_and_no_place_leaves_either
 
 
 @_needs_psk
-async def test_both_ways_do_not_swap_and_hidden_hold_on_the_guests_offer(
+async def test_both_ways_do_not_swap_and_kept_local_hold_on_the_guests_offer(
     tmp_path: Path,
     library: Library,  # noqa: F811
     access: Repository,
 ) -> None:
-    """The guest's offer is read as the host's is (`offer_for`, the vault shut): a file marked
-    Do not swap, a file in Hidden and a file kept local are never offered, and only the file
-    beside them crosses, so an empty answer is not the proof."""
+    """The guest's offer is read as the host's is (`offer_for`): a file marked Do not swap and a
+    file kept local are never offered, and only the file beside them crosses, so an empty answer
+    is not the proof."""
     ids = library.ids
     await library.db.execute("UPDATE assets SET keep_from_swaps = 1 WHERE id = ?", (ids["p2"],))
     files = tmp_path / "guest-library"
@@ -395,7 +395,7 @@ async def test_both_ways_do_not_swap_and_hidden_hold_on_the_guests_offer(
         sending = guest_live.sending_half()
         assert sending is not None and sending.offer is not None
         offered = {one.key for one in sending.offer.files}
-        assert offered == {ids["p1"]}, "Do not swap, Hidden and kept local stay home"
+        assert offered == {ids["p1"]}, "Do not swap and kept local stay home"
         await rig.host.sessions.take(rig.host.id, Taken())
         await rig.guest.sessions.take(rig.guest.id, Taken())
         await rig.finished()

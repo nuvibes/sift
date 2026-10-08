@@ -57,6 +57,7 @@ import aiohttp
 
 from sift.kernel import ports
 from sift.kernel.config import vendored_tool
+from sift.kernel.fetch import outbound_session
 from sift.kernel.ids import new_id
 from sift.kernel.log import get_logger
 from sift.kernel.subprocess import LongLivedChild, SubprocessError, start_long_lived
@@ -867,7 +868,7 @@ class TunnelProcess:
         timeout = aiohttp.ClientTimeout(total=_EXIT_TIMEOUT)
         try:
             async with (
-                aiohttp.ClientSession(timeout=timeout) as session,
+                await outbound_session(timeout=timeout) as session,
                 session.get(EXIT_ECHO_URL, proxy=self.proxy_url) as response,
             ):
                 if response.status != 200:

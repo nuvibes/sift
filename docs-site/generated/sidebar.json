@@ -21,7 +21,6 @@
       "label": "Library",
       "items": [
         "settings/library",
-        "settings/importing",
         "settings/tasks",
         "settings/sites",
         "settings/downloads",

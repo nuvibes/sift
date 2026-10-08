@@ -4,6 +4,7 @@ regrouping, packs, and forgetting everything."""
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Annotated
 
 from fastapi import (
@@ -374,9 +375,11 @@ async def _carried(
     """The People and waiting entries a facial fingerprints file carries for this viewer (none
     named is everybody), and how many entries go as people of their own.
 
-    Held to the People wall and to what a swap refuses (kept local, Do not swap); an entry named as
-    somebody refused stays too, since it would carry their name out.
+    Held to the People wall read with Hidden open and to Kept local alone: Hidden is not what keeps
+    somebody out of the file, and "Do not swap" governs swaps. An entry named as somebody refused
+    stays too, since it would carry their name out.
     """
+    opened = replace(viewer, show_hidden=True)
     everyone = not person_ids and not entry_ids
     asked = await service.shareable_people() if everyone else list(dict.fromkeys(person_ids))
     held = await service.held_for_export()
@@ -385,15 +388,15 @@ async def _carried(
         held = [one for one in held if one.entry_id in wanted]
     named = await service.people_named([one.name for one in held])
     namesakes = [person for ids in named.values() for person in ids]
-    shown = await access.visible_people(viewer, [*asked, *namesakes])
-    refused = {one for one in shown if await refused_over(database, "swap", "person", one)}
+    shown = await access.visible_people(opened, [*asked, *namesakes])
+    refused = {one for one in shown if await refused_over(database, "enrich", "person", one)}
     people = [one for one in asked if one in shown and one not in refused]
     going = {shown[one].name.casefold() for one in people}
     entries: list[str] = []
     alone = 0
     for one in held:
         same = named.get(one.name.casefold(), [])
-        if any(person not in shown or person in refused for person in same):
+        if any(person in refused for person in same):
             continue
         entries.append(one.entry_id)
         alone += one.name.casefold() not in going
@@ -409,8 +412,8 @@ async def export_pack(
     viewer: Annotated[Viewer, Depends(require_admin)],
 ) -> Response:
     """Build a facial fingerprints file from People here and the people waiting for a matching
-    face, and hand it back. Loads no model: the numbers are stored. Held to the People wall and to
-    what a swap refuses (`_carried`); nobody to carry is refused in words.
+    face, and hand it back. Loads no model: the numbers are stored. Held to the People wall with
+    Hidden open and to Kept local (`_carried`); nobody to carry is refused in words.
     """
     if not await service.enabled():
         raise _off()

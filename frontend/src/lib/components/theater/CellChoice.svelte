@@ -56,7 +56,7 @@
 			{...aims(wall, 'every')}
 			onclick={() => wall.focusEvery()}
 		>
-			Every cell
+			All cells
 		</Button>
 		{#each wall.cells as one, at (one.key)}
 			<!--

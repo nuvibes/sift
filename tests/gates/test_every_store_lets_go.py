@@ -86,6 +86,10 @@ SCRATCH: dict[str, str] = {
         "by each of its steps, and emptied on the way out (`_CLEAR_PENDING` in "
         "kernel/access/visibility.py). Sift has one writer, so nothing sees it in between."
     ),
+    "visibility_moved": (
+        "The pairs a fold moved, with each file's size and time, staged for the fold's sides and "
+        "emptied by every fold (`visibility_settled.py`): the next fold starts from nothing."
+    ),
 }
 
 _CREATES = "CREATE TABLE IF NOT EXISTS {table}"

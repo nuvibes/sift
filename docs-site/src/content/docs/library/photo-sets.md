@@ -11,11 +11,11 @@ A Photo Set is a grouping only. Deleting one leaves every picture in it in its p
 
 ## Where Photo Sets come from
 
-Sift makes a Photo Set in three ways, each with its own switch in Importing:
+Sift makes a Photo Set in three ways, each with its own switch in Generate settings, under Import tasks:
 
-- **From a folder**: a folder with 10 or more photos and no videos becomes a Photo Set named after the folder. See [Settings > Importing > Create Photo Sets from folders](/settings/importing#photo_sets.from_folders).
-- **From a ZIP file**: a ZIP file with 10 or more photos inside becomes a Photo Set named after the file. See [Settings > Importing > Create Photo Sets from ZIP files](/settings/importing#photo_sets.from_archives). Sift doesn't change a ZIP file, so a picture inside one can't be deleted from disk. Choose [Remove](/library/browse/#a-files-menu) and then **Remove from Sift**, and later scans leave it out.
-- **From a shoot**: a run of one creator's photos taken together, in the same place, light and outfit. See [Settings > Importing > Create Photo Sets from shoots](/settings/importing#shoots.auto_file).
+- **From a folder**: a folder with 10 or more photos and no videos becomes a Photo Set named after the folder. See [Settings > Tasks and Activity > Import tasks > Create Photo Sets from folders](/settings/tasks#photo_sets.from_folders).
+- **From a ZIP file**: a ZIP file with 10 or more photos inside becomes a Photo Set named after the file. See [Settings > Tasks and Activity > Import tasks > Create Photo Sets from ZIP files](/settings/tasks#photo_sets.from_archives). Sift doesn't change a ZIP file, so a picture inside one can't be deleted from disk. Choose [Remove](/library/browse/#a-files-menu) and then **Remove from Sift**, and later scans leave it out.
+- **From a shoot**: a run of one creator's photos taken together, in the same place, light and outfit. See [Settings > Tasks and Activity > Import tasks > Create Photo Sets from shoots](/settings/tasks#shoots.auto_file).
 
 With shoots turned off, each shoot Sift finds waits in [Organize](/organize/shoots) under **Shoots** until you choose **Create Photo Set**. You can also make a Photo Set yourself with **Add Photo Set**, and fill it by choosing **Add to** > **Photo Set** on any pictures.
 

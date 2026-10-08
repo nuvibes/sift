@@ -105,15 +105,15 @@ Sift converts a video only when your browser can't play the original, and keeps 
 You can choose another from the wall itself.
 
 - **Path**: [Settings > Playback > Default layout when Theater opens](/settings/playback#theater.layout)
-- **Default**: 1x3
-- **Choices**: 1x1, 1x2 (P), 1x2 (L), 1x3, 2x2, Center stage 1x1, Center stage 1x2, Center stage 1x3, Center stage 2x2
+- **Default**: Grid 1x3
+- **Choices**: Grid 1x1, Grid 1x2 (P), Grid 1x3, Grid 1x2 (L), Grid 2x2, Stage View 1x1, Stage View 1x2, Stage View 1x3, Stage View 2x2
 - **Who sets it**: each User, for themselves
 
 <a id="theater.center_stage"></a>
 
 ### When a preview comes up
 
-Center stage shows up to four videos in focus with previews under them. Double-clicking a preview always brings it into focus.
+Stage View shows up to four videos in focus with previews under them. Double-clicking a preview always brings it into focus.
 
 Something new means the next file in that preview's queue. Resuming after a pause, a seek or a stall isn't a new file, so it doesn't bring a preview into focus.
 

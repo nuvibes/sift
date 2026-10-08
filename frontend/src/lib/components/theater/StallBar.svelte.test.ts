@@ -62,7 +62,7 @@ it('draws a number for every cell of the biggest wall there is', () => {
 
 	expect(wall.cells, 'nine is the wall').toHaveLength(9);
 	expect(pickers()).toEqual([
-		'Controls for every cell',
+		'Controls for all cells',
 		...Array.from({ length: 9 }, (_, at) => `Controls for cell ${at + 1}`)
 	]);
 });
@@ -79,7 +79,7 @@ it('follows the wall changing shape while it is up', () => {
 	flushSync();
 
 	expect(pickers(), 'the row still offered four cells over a wall of one').toEqual([
-		'Controls for every cell',
+		'Controls for all cells',
 		'Controls for cell 1'
 	]);
 });
@@ -96,7 +96,7 @@ it('is drawn for a cell with nothing playing at all', () => {
 		host.querySelector('.stage-bar'),
 		'the bar drew nothing over an empty wall'
 	).not.toBeNull();
-	expect(pickers()).toEqual(['Controls for every cell', 'Controls for cell 1']);
+	expect(pickers()).toEqual(['Controls for all cells', 'Controls for cell 1']);
 });
 
 it('is not drawn at all while there is no wall to control', () => {
@@ -192,7 +192,7 @@ it('folds the numbers into one press naming the cell, which opens the same choic
 	rows()[0].click();
 	flushSync();
 	expect(wall.everyCell).toBe(true);
-	expect(fold()?.getAttribute('aria-label')).toBe('Choose which cell to control, now every cell');
+	expect(fold()?.getAttribute('aria-label')).toBe('Choose which cell to control, now all cells');
 });
 
 it('keeps the numbers standing wherever the row fits', () => {

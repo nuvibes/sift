@@ -10,11 +10,10 @@ by the search feature's own parse of the query it keeps, then every one of them 
 `Repository.visible_assets`, paged to the end. Nothing here decides who may see a file: the read
 that draws the walls decides, so a swap cannot offer a file its host could not open on screen.
 
-Three of the kernel's rules on top, applied inside that same read, and one of the swap's own:
+The read is made as the host with Hidden OPEN (`swap_reader`), whatever the session that asked had
+unlocked: Hidden governs what a screen shows, never what a swap sends. Two of the kernel's rules on
+top, applied inside that same read, and one of the swap's own:
 
-- **Never a concealed file.** The read is made as the host with the vault SHUT
-  (`Repository.load_viewer` with its closed defaults), whatever the session that asked had
-  unlocked. A swap sends files to somebody else; the vault conceals from exactly that.
 - **Never a kept-local file.** "Kept local" means nothing about the file leaves this device, and
   that rule (the file's own switch, or a Site, person or tag above it kept local) is
   `constraints.KEPT_LOCAL_HERE`. It is read through the `enrichment` leaf, whose `local` value is
@@ -28,6 +27,8 @@ Three of the kernel's rules on top, applied inside that same read, and one of th
   marked is never named either: every file carrying them is left out, and a person with no file in
   the offer is not offered (below).
 
+So a person or a file somebody hid goes in a swap unless "Do not swap" (or Kept local) keeps it.
+
 The chosen things are a UNION: a person and a Site offer the person's files and the Site's files,
 not only the files that are both. A saved filter is one more member of that union. The union is
 read as two statements rather than one (the entities in one, the saved filter in its own)
@@ -39,7 +40,7 @@ the other would be a filter nobody wrote.
 The one kind that is not turned into files. A person chosen for their facial fingerprints is
 offered with their names and their fingerprints and nothing else: the people the host's Sift can
 recognize, for a guest that wants to recognize them too. They pass the same doors a person does:
-the scoped read of people with the vault shut, and never a person marked "Do not swap" or "Do not
+the scoped read of people with Hidden open, and never a person marked "Do not swap" or "Do not
 enrich" (nothing about them leaves this device). A person with no fingerprints to send (the faces
 feature off, or nobody confirmed a face of theirs) is not offered, for the same reason a person
 with no files is not: nothing of them would arrive.
@@ -64,11 +65,11 @@ of them would carry. For each Site: the name. The field list is closed in `model
 A file's song travels with it: its name, the artists kept apart from the name where the host keeps
 them, and the AcoustID recording it is where one said, so the guest can put the file on the song it
 already has (`ingest`). Read through the same scoped door the Music page draws a song by
-(`Repository.visible_song`), as the host with the vault shut: a song that read would not show is
+(`Repository.visible_song`), as the host with Hidden open: a song that read would not show is
 not sent. Only a guest whose hello said it takes songs is sent them (`Offer.as_sent`).
 
-A person the host chose who has no file in the offer (everything of theirs concealed or kept
-local) is not offered at all: nothing of them would arrive, so their name has no reason to go.
+A person the host chose who has no file in the offer (everything of theirs kept local or kept
+from swaps) is not offered at all: nothing of them would arrive, so their name has no reason to go.
 
 ## One call for the host
 
@@ -119,8 +120,7 @@ LEAF_OF_KIND: Mapping[str, str] = {
     "tag": "tags",
     "collection": "collections",
     "photo_set": "photo_sets",
-    # A song: the files that carry it. A song the sender hid conceals those files from them with
-    # the vault shut (the verdict's own arm), so the offer, read shut, holds none of them.
+    # A song: the files that carry it.
     "song": "songs",
     # One file, picked on a wall in swap mode: the file itself, through the same walls.
     "asset": "assets",
@@ -173,7 +173,7 @@ class Offered:
     username: str | None = None
     #: What the file is called on disk now, else the name it arrived under: the leaf alone.
     name: str | None = None
-    #: The file's song, as the scoped read of songs shows it to the host with the vault shut.
+    #: The file's song, as the scoped read of songs shows it to the host with Hidden open.
     song: OfferedSong | None = None
 
 
@@ -214,20 +214,20 @@ async def files_of(
     viewer: Viewer,
     chosen: Sequence[Chosen],
 ) -> Selection:
-    """The files `chosen` stands for, as this viewer with the vault shut may see them, kept-local
-    files left out, oldest first. See the module docstring for every rule applied."""
-    shut = await access.load_viewer(viewer.id)
-    if shut is None:
+    """The files `chosen` stands for, as this viewer reads them for a swap (`swap_reader`),
+    kept-local files left out, oldest first. See the module docstring for every rule applied."""
+    reader = await swap_reader(access, viewer)
+    if reader is None:
         # Nobody to read as (the user is gone or disabled), and so nothing to offer.
         return Selection()
-    seen = await _offered_assets(access, search, shut, chosen)
+    seen = await _offered_assets(access, search, reader, chosen)
     assets = sorted(seen.values(), key=lambda asset: (asset.added_at, asset.id))
 
     chosen_people = list(dict.fromkeys(one.id for one in chosen if one.kind == "person"))
-    visible = await access.visible_people(shut, chosen_people) if chosen_people else {}
+    visible = await access.visible_people(reader, chosen_people) if chosen_people else {}
     attributed = await attribution_of_files(database, [asset.id for asset in assets])
-    on_disk = await _names_on_disk(access, shut, [asset.id for asset in assets])
-    songs = await _songs_of(access, database, shut, [asset.id for asset in assets])
+    on_disk = await _names_on_disk(access, reader, [asset.id for asset in assets])
+    songs = await _songs_of(access, database, reader, [asset.id for asset in assets])
 
     order = [person_id for person_id in chosen_people if person_id in visible]
     files: list[Offered] = []
@@ -258,20 +258,26 @@ async def files_of(
         files=tuple(files),
         people=offered,
         fingerprints=await _fingerprints_of(
-            access, database, shut, chosen, {one.id for one in offered}
+            access, database, reader, chosen, {one.id for one in offered}
         ),
     )
 
 
+async def swap_reader(access: Repository, viewer: Viewer) -> Viewer | None:
+    """The host as every swap read sees the library: read from the database, with Hidden open.
+    None for a user gone or disabled."""
+    return await access.load_viewer(viewer.id, show_hidden=True)
+
+
 async def _offered_assets(
-    access: Repository, search: SavedFilterSeam, shut: Viewer, chosen: Sequence[Chosen]
+    access: Repository, search: SavedFilterSeam, reader: Viewer, chosen: Sequence[Chosen]
 ) -> dict[str, Asset]:
-    """Every file `chosen` stands for, each once, read as `shut` (the vault shut) with every rule
+    """Every file `chosen` stands for, each once, read as `reader` (`swap_reader`) with every rule
     of the module docstring applied: the one read the offer and its weight both make."""
     seen: dict[str, Asset] = {}
-    for narrowing in await chosen_filters(search, shut, chosen):
+    for narrowing in await chosen_filters(search, reader, chosen):
         refusing = narrowing.also(NOT_KEPT_LOCAL).also(NOT_KEPT_FROM_SWAPS)
-        async for asset in _every(access, shut, refusing):
+        async for asset in _every(access, reader, refusing):
             if asset.mime in NEVER_SENT_MIMES:
                 continue
             seen.setdefault(asset.id, asset)
@@ -279,7 +285,7 @@ async def _offered_assets(
 
 
 async def chosen_filters(
-    search: SavedFilterSeam, shut: Viewer, chosen: Sequence[Chosen]
+    search: SavedFilterSeam, reader: Viewer, chosen: Sequence[Chosen]
 ) -> list[AssetFilter]:
     """What `chosen` stands for, as filters over the files, before any refusal: the entities as one
     union, and each saved filter as its own. The offer narrows each by the refusals; what a swap
@@ -298,7 +304,7 @@ async def chosen_filters(
             AssetFilter(where=AnyOf(tuple(Where(key, tuple(ids)) for key, ids in groups.items())))
         )
     for saved_id in saved:
-        found = await search.saved_filter(shut, saved_id)
+        found = await search.saved_filter(reader, saved_id)
         if found is not None:
             filters.append(found)
     return filters
@@ -308,24 +314,24 @@ async def weigh(
     access: Repository, search: SavedFilterSeam, viewer: Viewer, chosen: Sequence[Chosen]
 ) -> tuple[int, int]:
     """How many files the picks would offer and what they add up to, in bytes: the same scoped
-    read as the offer itself (`_offered_assets`), as this viewer with the vault SHUT, so what the
-    sender is told it will send is what the offer will hold, and a file in Hidden adds nothing."""
-    shut = await access.load_viewer(viewer.id)
-    if shut is None:
+    read as the offer itself (`_offered_assets`), so what the sender is told it will send is what
+    the offer will hold."""
+    reader = await swap_reader(access, viewer)
+    if reader is None:
         return 0, 0
-    seen = await _offered_assets(access, search, shut, chosen)
+    seen = await _offered_assets(access, search, reader, chosen)
     return len(seen), sum(max(0, asset.size_bytes or 0) for asset in seen.values())
 
 
 async def _fingerprints_of(
     access: Repository,
     database: Database,
-    shut: Viewer,
+    opened: Viewer,
     chosen: Sequence[Chosen],
     offered: set[str],
 ) -> tuple[OfferedName, ...]:
     """The people chosen for their facial fingerprints, as the offer may name them: seen through
-    the scoped read with the vault shut, never one kept from swaps or kept local, and never one
+    the scoped read with Hidden open, never one kept from swaps or kept local, and never one
     already offered through a file (they carry their fingerprints there)."""
     wanted = list(
         dict.fromkeys(one.id for one in chosen if one.kind == FINGERPRINTS_ONLY and one.id)
@@ -333,7 +339,7 @@ async def _fingerprints_of(
     wanted = [person_id for person_id in wanted if person_id not in offered]
     if not wanted:
         return ()
-    visible = await access.visible_people(shut, wanted)
+    visible = await access.visible_people(opened, wanted)
     named: list[OfferedName] = []
     for person_id in wanted:
         seen = visible.get(person_id)
@@ -358,9 +364,6 @@ async def _every(access: Repository, viewer: Viewer, narrowed: AssetFilter) -> A
             sort=OFFER_ORDER,
             after=after,
         )
-        # Nothing concealed comes back: the read is made with the vault shut (`files_of`). That is
-        # the one guard, on purpose: a second check of `item.concealed` here could never fail
-        # while the first holds, and a guard that cannot fail proves nothing.
         for item in page.items:
             yield item.asset
         if len(page.items) < MAX_PAGE_SIZE:
@@ -475,8 +478,7 @@ async def _songs_of(
     access: Repository, database: Database, viewer: Viewer, ids: Sequence[str]
 ) -> dict[str, OfferedSong]:
     """Each offered file's song as the offer carries it, keyed by file. A file on no song, or on
-    one the scoped read does not show this viewer whole (a locked tile names nothing, and a song
-    this viewer hid is no row while Hidden is shut), is absent. The artists are the ones the song
+    one the scoped read does not show this viewer whole (a locked tile names nothing), is absent. The artists are the ones the song
     credits, in order; the name says them too."""
     on: dict[str, str] = {}
     for start in range(0, len(ids), _NAMES_PER_READ):

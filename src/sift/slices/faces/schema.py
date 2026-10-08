@@ -38,7 +38,7 @@ from sift.kernel.db import Connection, register_schema_initializer
 from sift.kernel.migrations import check_allows, column_exists, widen_a_check
 
 COMPONENT = "faces"
-VERSION = 42
+VERSION = 43
 
 # Where a scan got to, per asset. The fifth status (never scanned) is the absence of a row,
 # so it cannot drift out of step with reality by being written down somewhere and not updated.
@@ -697,6 +697,18 @@ CREATE TABLE IF NOT EXISTS face_folder_left_out (
 )
 """
 
+# Each picture a folder import read, by person folder and model: a restarted import passes over a
+# folder whose every picture is here without reading one.
+_CREATE_FOLDER_READ = """
+CREATE TABLE IF NOT EXISTS face_folder_read (
+  pack_id    TEXT NOT NULL REFERENCES face_packs(id) ON DELETE CASCADE,
+  recognizer TEXT NOT NULL,
+  folder     TEXT NOT NULL COLLATE NOCASE,
+  digest     TEXT NOT NULL,
+  PRIMARY KEY (pack_id, recognizer, folder, digest)
+)
+"""
+
 _PACK_ENTRY_INDEXES = (
     # "Who has this pack not placed yet": the list an import reports and a new person is matched
     # against. Partial, because once a library is settled most entries are claimed.
@@ -729,6 +741,7 @@ _TABLES = (
     _CREATE_STARTER_REFUSALS,
     _CREATE_FOLDER_LEFT_OUT,
     _CREATE_OWN_LIBRARY,
+    _CREATE_FOLDER_READ,
 )
 
 # The indexes kept beside the tables they serve.
@@ -831,6 +844,9 @@ async def _steps_from_40(connection: Connection, on_disk: int) -> None:
     if on_disk < 42:
         for statement in _MARKS:
             await connection.execute(statement)
+    # Version 43: the pictures a folder import read. Empty until the next import.
+    if 0 < on_disk < 43:
+        await connection.execute(_CREATE_FOLDER_READ)
 
 
 #: What a scan's settledness is read from; its status and counts move no kept count.

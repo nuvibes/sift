@@ -131,17 +131,24 @@ CREATE TABLE IF NOT EXISTS visibility_members (
 """
 
 #: Scratch: each pair of the files being folded whose answer moved, and how far (`_ANSWER_MOVED`),
-#: worked out once for every statement of the fold and emptied by it.
+#: worked out once for every statement of the fold and emptied by it. The file's size and running
+#: time are kept beside it, so no statement of the fold reads the file's row again. No foreign keys:
+#: nothing outlives the fold, and without them a row is written unchecked and the table emptied whole.
 CREATE_MOVED = """
 CREATE TABLE IF NOT EXISTS visibility_moved (
-  asset_id TEXT NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
-  user_id  TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  asset_id TEXT NOT NULL,
+  user_id  TEXT NOT NULL,
   dn       INTEGER NOT NULL,
   dc       INTEGER NOT NULL,
   read     INTEGER NOT NULL,
-  PRIMARY KEY (asset_id, user_id)
+  size     INTEGER NOT NULL,
+  time     INTEGER NOT NULL,
+  PRIMARY KEY (read, asset_id, user_id)
 ) WITHOUT ROWID
 """
+
+#: The version 18 shape of `visibility_moved`, scratch emptied by every fold: dropped for the new.
+DROP_MOVED = "DROP TABLE IF EXISTS visibility_moved"
 
 TABLES = (CREATE_OWED, CREATE_OWED_INDEX, CREATE_MEMBERS, CREATE_MOVED)
 
@@ -175,38 +182,49 @@ _STALE_MEMBERS = (
 )
 
 # Each pair of the named files whose answer is not the one the counts hold, and how far it moved:
-# present (`dn`) and held back (`dc`), each -1, 0 or 1.
+# present (`dn`) and held back (`dc`), each -1, 0 or 1, and the size and time each moves.
 _FILL_MOVED = (
-    "INSERT INTO visibility_moved (asset_id, user_id, dn, dc, read)"
+    "INSERT INTO visibility_moved (asset_id, user_id, dn, dc, read, size, time)"
     " SELECT o.asset_id, o.user_id,"
     " (v.asset_id IS NOT NULL) - (o.concealed IS NOT NULL),"
     " COALESCE(v.concealed, 0) - COALESCE(o.concealed, 0),"
-    " EXISTS (SELECT 1 FROM visibility_members r WHERE r.asset_id = o.asset_id AND r.side = 0)"
+    " EXISTS (SELECT 1 FROM visibility_members r WHERE r.asset_id = o.asset_id AND r.side = 0),"
+    " COALESCE(a.size_bytes, 0), COALESCE(a.duration_ms, 0)"
     " FROM visibility_owed o"
     " LEFT JOIN viewer_assets v ON v.user_id = o.user_id AND v.asset_id = o.asset_id"
+    " LEFT JOIN assets a ON a.id = o.asset_id"
     " WHERE o.asset_id IN (<<ASSETS>>) AND o.concealed IS NOT v.concealed"
 )
 _ANSWER_MOVED = "visibility_moved"
 CLEAR_MOVED = "DELETE FROM visibility_moved"
+# The moved files a touch read members of (a seek on the key's first column), and letting them go
+# once the sides have moved them.
+_MOVED_READ = "SELECT asset_id FROM visibility_moved WHERE read = 1"
+_MOVED_READ_GO = "DELETE FROM visibility_moved WHERE read = 1"
 
 # The named files a touch read members of: the only ones whose members are read again. Driven from
 # the few files read (the unary + keeps it off the key), not from every file being folded.
 _READ_BEFORE = (
     "SELECT DISTINCT asset_id FROM visibility_members WHERE side = 0 AND +asset_id IN (<<ASSETS>>)"
 )
-_SUMS_MOVED = (
-    "SUM(d.dn) != 0 OR SUM(d.dc) != 0 OR SUM(d.dn * d.b) != 0 OR SUM(d.dc * d.b) != 0"
-    " OR SUM(d.dn * d.ms) != 0 OR SUM(d.dc * d.ms) != 0"
-)
+_COUNTS_MOVED_ONLY = "SUM(d.dn) != 0 OR SUM(d.dc) != 0"
+_BYTES_MOVED = _COUNTS_MOVED_ONLY + " OR SUM(d.dn * d.size) != 0 OR SUM(d.dc * d.size) != 0"
+_SUMS_MOVED = _BYTES_MOVED + " OR SUM(d.dn * d.time) != 0 OR SUM(d.dc * d.time) != 0"
+# A kind that sums no size moves by its counts alone.
+_COUNTS_ONLY = {"B": "0", "CB": "0", "MS": "0", "CMS": "0"}
+_SIZES = {
+    "B": "SUM(d.dn * d.size)",
+    "CB": "SUM(d.dc * d.size)",
+    "MS": "SUM(d.dn * d.time)",
+    "CMS": "SUM(d.dc * d.time)",
+}
 _KIND_MOVED = (
     "INSERT INTO viewer_entity_counts (user_id, kind, object_id, permitted, concealed,"
     " permitted_bytes, concealed_bytes, permitted_ms, concealed_ms)"
-    " SELECT d.user_id, '<<KIND>>', d.object_id, SUM(d.dn), SUM(d.dc), SUM(d.dn * d.b),"
-    " SUM(d.dc * d.b), SUM(d.dn * d.ms), SUM(d.dc * d.ms)"
-    " FROM (SELECT <<DISTINCT>>d.user_id, d.asset_id, d.dn, d.dc, m.<<COLUMN>> AS object_id,"
-    " <<BYTES>> AS b, <<MS>> AS ms"
-    " FROM <<ANSWER_MOVED>> d CROSS JOIN <<SOURCE>> m ON m.asset_id = d.asset_id<<SIZED>>"
-    " WHERE d.read = 0 OR NOT <<MARKED>>) d WHERE 1 = 1"
+    " SELECT d.user_id, '<<KIND>>', d.object_id, SUM(d.dn), SUM(d.dc), <<B>>, <<CB>>, <<MS>>,"
+    " <<CMS>> FROM (SELECT <<DISTINCT>>d.user_id, d.asset_id, d.dn, d.dc, d.size, d.time,"
+    " m.<<COLUMN>> AS object_id FROM <<ANSWER_MOVED>> d CROSS JOIN <<SOURCE>> m"
+    " ON m.asset_id = d.asset_id) d WHERE 1 = 1"
     " GROUP BY d.user_id, d.object_id HAVING <<SUMS_MOVED>>"
     " ON CONFLICT (user_id, kind, object_id) DO UPDATE"
     " SET permitted = permitted + excluded.permitted, concealed = concealed + excluded.concealed,"
@@ -221,17 +239,15 @@ _PAIR_MOVED = (
     " SUM(d.dn), SUM(d.dc)"
     " FROM <<ANSWER_MOVED>> d CROSS JOIN <<TABLE_A>> ma ON ma.asset_id = d.asset_id"
     " CROSS JOIN <<TABLE_B>> mb ON mb.asset_id = d.asset_id"
-    " WHERE d.read = 0 OR NOT <<MARKED>> GROUP BY d.user_id, ma.<<COLUMN_A>>, mb.<<COLUMN_B>>"
+    " WHERE 1 = 1 GROUP BY d.user_id, ma.<<COLUMN_A>>, mb.<<COLUMN_B>>"
     " HAVING SUM(d.dn) != 0 OR SUM(d.dc) != 0"
     " ON CONFLICT (user_id, kind_a, id_a, kind_b, id_b) DO UPDATE"
     " SET permitted = permitted + excluded.permitted, concealed = concealed + excluded.concealed"
 )
 _FILE_MOVED = (
     "INSERT INTO viewer_stats (user_id, permitted, concealed, permitted_bytes, concealed_bytes)"
-    " SELECT d.user_id, SUM(d.dn), SUM(d.dc), SUM(d.dn * d.b), SUM(d.dc * d.b)"
-    " FROM (SELECT d.user_id, d.dn, d.dc, COALESCE(a.size_bytes, 0) AS b, 0 AS ms"
-    " FROM <<ANSWER_MOVED>> d CROSS JOIN assets a ON a.id = d.asset_id"
-    " WHERE d.read = 0 OR NOT <<MARKED>>) d WHERE 1 = 1"
+    " SELECT d.user_id, SUM(d.dn), SUM(d.dc), SUM(d.dn * d.size), SUM(d.dc * d.size)"
+    " FROM <<ANSWER_MOVED>> d WHERE 1 = 1"
     " GROUP BY d.user_id HAVING <<SUMS_MOVED>>"
     " ON CONFLICT (user_id) DO UPDATE"
     " SET permitted = permitted + excluded.permitted, concealed = concealed + excluded.concealed,"
@@ -273,7 +289,8 @@ RUN_FOLD_PAGE = "INSERT INTO visibility_step_fold_page (user_id) VALUES (NULL)"
 ANY_OWED = "SELECT 1 FROM visibility_owed WHERE owed = 1 LIMIT 1"
 
 _PAID = "DELETE FROM visibility_owed WHERE asset_id IN (<<ASSETS>>)"
-_MEMBERS_PAID = "DELETE FROM visibility_members WHERE asset_id IN (<<ASSETS>>)"
+# Driven from the members, which a fold of answers alone has none of (the + keeps it off the key).
+_MEMBERS_PAID = "DELETE FROM visibility_members WHERE +asset_id IN (<<ASSETS>>)"
 CLEAR_OWED = "DELETE FROM visibility_owed"
 CLEAR_MEMBERS = "DELETE FROM visibility_members"
 
@@ -321,19 +338,24 @@ _READ_MEMBERS = (
 # The difference, per user and thing: the members as the counts hold them taken away, under the
 # answer the counts hold, and the members as they now stand given, under the answer each pair now
 # has. A pair with no answer either side moves nothing on that side.
+# The member sides start from one row when any file's members were read, and from none for a
+# fold of answers alone, which then reads nothing more.
+_ANY_MEMBERS = "(SELECT 1 FROM visibility_members LIMIT 1) g"
+
 _SIDES = (
     "SELECT o.user_id, m.kind, m.object_id, -m.n AS n, -m.n * o.concealed AS c,"
     " -m.bytes AS b, -m.bytes * o.concealed AS cb, -m.ms AS ms, -m.ms * o.concealed AS cms"
-    " FROM visibility_owed o JOIN visibility_members m ON m.asset_id = o.asset_id AND m.side = 0"
+    " FROM <<ANY_MEMBERS>> CROSS JOIN visibility_owed o"
+    " JOIN visibility_members m ON m.asset_id = o.asset_id AND m.side = 0"
     " WHERE o.asset_id IN (<<ASSETS>>) AND o.concealed IS NOT NULL AND m.n != 0 AND <<WHICH>>"
     " UNION ALL"
     " SELECT o.user_id, m.kind, m.object_id, m.n, m.n * v.concealed,"
     " m.bytes, m.bytes * v.concealed, m.ms, m.ms * v.concealed"
-    " FROM visibility_owed o"
-    " JOIN viewer_assets v ON v.user_id = o.user_id AND v.asset_id = o.asset_id"
+    " FROM <<ANY_MEMBERS>> CROSS JOIN visibility_owed o"
+    " CROSS JOIN viewer_assets v ON v.user_id = o.user_id AND v.asset_id = o.asset_id"
     " JOIN visibility_members m ON m.asset_id = o.asset_id AND m.side = 1"
     " WHERE o.asset_id IN (<<ASSETS>>) AND m.n != 0 AND <<WHICH>>"
-)
+).replace("<<ANY_MEMBERS>>", _ANY_MEMBERS)
 _MOVED = "SUM(d.n) != 0 OR SUM(d.c) != 0 OR SUM(d.b) != 0 OR SUM(d.cb) != 0"
 
 _COUNTS_MOVED = (
@@ -365,7 +387,7 @@ _STATS_MOVED = (
 _PAIR_SIDES = (
     "SELECT o.user_id, a.kind AS kind_a, a.object_id AS id_a, b.kind AS kind_b,"
     " b.object_id AS id_b, -a.n * b.n AS n, -a.n * b.n * o.concealed AS c"
-    " FROM visibility_owed o"
+    " FROM <<ANY_MEMBERS>> CROSS JOIN visibility_owed o"
     " JOIN visibility_members a ON a.asset_id = o.asset_id AND a.side = 0"
     " JOIN visibility_members b ON b.asset_id = o.asset_id AND b.side = 0"
     " WHERE o.asset_id IN (<<ASSETS>>) AND o.concealed IS NOT NULL"
@@ -373,12 +395,12 @@ _PAIR_SIDES = (
     " UNION ALL"
     " SELECT o.user_id, a.kind, a.object_id, b.kind, b.object_id, a.n * b.n,"
     " a.n * b.n * v.concealed"
-    " FROM visibility_owed o"
-    " JOIN viewer_assets v ON v.user_id = o.user_id AND v.asset_id = o.asset_id"
+    " FROM <<ANY_MEMBERS>> CROSS JOIN visibility_owed o"
+    " CROSS JOIN viewer_assets v ON v.user_id = o.user_id AND v.asset_id = o.asset_id"
     " JOIN visibility_members a ON a.asset_id = o.asset_id AND a.side = 1"
     " JOIN visibility_members b ON b.asset_id = o.asset_id AND b.side = 1"
     " WHERE o.asset_id IN (<<ASSETS>>) AND (a.kind, b.kind) IN (<<PAIRED>>)"
-)
+).replace("<<ANY_MEMBERS>>", _ANY_MEMBERS)
 _PAIRS_MOVED = (
     "INSERT INTO viewer_pair_counts (user_id, kind_a, id_a, kind_b, id_b, permitted, concealed)"
     " SELECT d.user_id, d.kind_a, d.id_a, d.kind_b, d.id_b, SUM(d.n), SUM(d.c)"
@@ -443,16 +465,21 @@ def fold(
     things, files = "m.kind != ''", "m.kind = ''"
     own = _own(kinds, pairs)
     made = [
+        _FILL_MOVED,
+        # A file some of whose kinds a touch read, and whose answer moved: the rest read now, as
+        # the counts hold them (unchanged in this write, or a touch would have read them), so the
+        # sides below move it whole and the statements after them read no marks.
+        _read_members(kinds, 0, _MOVED_READ, own),
         # The kinds a touch read before its change: by what each file held against what it holds
         # (nothing, for a file going, whose rows are already gone).
         *([_read_members(kinds, 1, _READ_BEFORE, own)] if staying else []),
         v._filled(_COUNTS_MOVED, SIDES=v._filled(_SIDES, WHICH=things), MOVED=_MOVED),
         v._filled(_PAIRS_MOVED, PAIR_SIDES=v._filled(_PAIR_SIDES, PAIRED=paired)),
         v._filled(_STATS_MOVED, SIDES=v._filled(_SIDES, WHICH=files), MOVED=_MOVED),
+        _MOVED_READ_GO,
         # The rest, where only an answer moved: their members are what the counts hold, since a
         # change to a member is read before it lands, so each moves by the answer's difference.
-        _FILL_MOVED,
-        *_answers_moved(kinds, pairs, own),
+        *_answers_moved(kinds, pairs),
         CLEAR_MOVED,
         _MEMBERS_PAID,
         _PAID,
@@ -460,15 +487,10 @@ def fold(
     return [one.replace(ASSETS, assets) for one in made]
 
 
-def _answers_moved(
-    kinds: Sequence[Counted], pairs: Sequence[tuple[Counted, Counted]], own: frozenset[str]
-) -> list[str]:
+def _answers_moved(kinds: Sequence[Counted], pairs: Sequence[tuple[Counted, Counted]]) -> list[str]:
     """Per kind, pair and the totals: the counts moved by each pair's answer, for the files whose
-    members of that kind no touch read."""
+    members no touch read."""
     from sift.kernel.access import visibility as v
-
-    def marked(kind: str) -> str:
-        return v._filled(_MARKED, ID="d.asset_id", KIND=kind if kind in own else "")
 
     made = []
     for one in kinds:
@@ -476,15 +498,12 @@ def _answers_moved(
             v._filled(
                 _KIND_MOVED,
                 ANSWER_MOVED=_ANSWER_MOVED,
-                SUMS_MOVED=_SUMS_MOVED,
+                SUMS_MOVED=_SUMS_MOVED if one.sized else _COUNTS_MOVED_ONLY,
                 DISTINCT="DISTINCT " if one.distinct else "",
                 KIND=one.kind,
                 COLUMN=one.column,
                 SOURCE=one.source,
-                BYTES="COALESCE(a.size_bytes, 0)" if one.sized else "0",
-                MS="COALESCE(a.duration_ms, 0)" if one.sized else "0",
-                SIZED=" CROSS JOIN assets a ON a.id = m.asset_id" if one.sized else "",
-                MARKED=marked(one.kind),
+                **(_SIZES if one.sized else _COUNTS_ONLY),
             )
         )
     for a, b in pairs:
@@ -498,14 +517,9 @@ def _answers_moved(
                 KIND_B=b.kind,
                 COLUMN_B=b.column,
                 TABLE_B=b.source,
-                MARKED=marked(a.kind),
             )
         )
-    made.append(
-        v._filled(
-            _FILE_MOVED, ANSWER_MOVED=_ANSWER_MOVED, SUMS_MOVED=_SUMS_MOVED, MARKED=marked("")
-        )
-    )
+    made.append(v._filled(_FILE_MOVED, ANSWER_MOVED=_ANSWER_MOVED, SUMS_MOVED=_BYTES_MOVED))
     return made
 
 
@@ -637,12 +651,13 @@ async def fold_owed(connection: Connection, limit: int) -> Audience:
 
 
 async def later_steps(connection: Connection, on_disk: int) -> None:
-    """Versions 17 (the walls' totals, from the stored counts) and 18 (the counts moved once per
-    write, a large share's owed past its press)."""
+    """Versions 17 (the walls' totals, from the stored counts), 18 (the counts moved once per
+    write, a large share's owed past its press) and 19 (a moved pair's size kept beside it)."""
     from sift.kernel.access import visibility_walls
 
     if on_disk < 17:
         await visibility_walls.total_the_walls(connection)
+    await connection.execute(DROP_MOVED)
     await owe_large_shares(connection)
 
 

@@ -605,7 +605,7 @@ async def test_a_thread_count_for_recognition_is_a_limit_on_both_of_its_runs(
 async def test_the_typed_worker_count_is_how_many_workers_run(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """`Jobs at the same time` on Settings > Importing is the pool's size, not a hint to it."""
+    """`Jobs at the same time` under Import tasks is the pool's size, not a hint to it."""
     monkeypatch.setattr(attention.ATTENTION, "_since_input", lambda: None)
     three, _ = await _pool_config(monkeypatch, _Hub(**{performance.WORKER_COUNT_KEY: 3}))
     five, _ = await _pool_config(monkeypatch, _Hub(**{performance.WORKER_COUNT_KEY: 5}))

@@ -73,7 +73,7 @@ function at(row: number, col: number, rowSpan = 1, colSpan = 1): Slot {
 }
 
 /**
- * How many previews a Center stage layout OPENS with, and the most feeds that may be in focus.
+ * How many previews a Stage View layout OPENS with, and the most feeds that may be in focus.
  *
  * Five is a starting point rather than a ceiling: a strip capped at five would keep a wall of three
  * in focus from growing past eight while a wall of four sat at nine, the same nine cells with only
@@ -90,31 +90,31 @@ const MOST_PREVIEWS = 5;
 export const MOST_IN_FOCUS = 4;
 
 /* Named rows by columns, except the two pairs, whose letter names the files each suits: (P) side
-   by side for portrait, (L) stacked for landscape. */
+   by side for portrait, (L) stacked for landscape. Chooser order: the rows of one, then the rest. */
 export const LAYOUTS: readonly Layout[] = [
 	/* One feed, which is a player with a wall's controls, and worth having for exactly that: a
 	   cell is a RUN, so a wall of one is a channel playing whatever a filter matches, forever. */
-	{ id: 'single', label: '1x1', shape: { rows: 1, cols: 1, slots: [at(0, 0)] } },
+	{ id: 'single', label: 'Grid 1x1', shape: { rows: 1, cols: 1, slots: [at(0, 0)] } },
 	{
 		id: 'side_by_side',
-		label: '1x2 (P)',
+		label: 'Grid 1x2 (P)',
 		tooltip: 'Portrait',
 		shape: { rows: 1, cols: 2, slots: [at(0, 0), at(0, 1)] }
 	},
 	{
+		id: 'side_by_side_by_side',
+		label: 'Grid 1x3',
+		shape: { rows: 1, cols: 3, slots: [at(0, 0), at(0, 1), at(0, 2)] }
+	},
+	{
 		id: 'stacked',
-		label: '1x2 (L)',
+		label: 'Grid 1x2 (L)',
 		tooltip: 'Landscape',
 		shape: { rows: 2, cols: 1, slots: [at(0, 0), at(1, 0)] }
 	},
 	{
-		id: 'side_by_side_by_side',
-		label: '1x3',
-		shape: { rows: 1, cols: 3, slots: [at(0, 0), at(0, 1), at(0, 2)] }
-	},
-	{
 		id: 'grid',
-		label: '2x2',
+		label: 'Grid 2x2',
 		shape: { rows: 2, cols: 2, slots: [at(0, 0), at(0, 1), at(1, 0), at(1, 1)] }
 	},
 	/*
@@ -126,33 +126,33 @@ export const LAYOUTS: readonly Layout[] = [
 	 */
 	{
 		id: 'center_stage',
-		label: 'Center stage 1x1',
+		label: 'Stage View 1x1',
 		shape: { rows: 1, cols: 1, slots: [at(0, 0)] },
 		strip: MOST_PREVIEWS
 	},
 	/*
 	 * THE SAME STRIP, OVER EACH OF THE THREE WALLS.
 	 *
-	 * The focus half of Center stage is an ordinary wall and can be any shape, so these are the
+	 * The focus half of Stage View is an ordinary wall and can be any shape, so these are the
 	 * three the picker already offers with the strip kept underneath. They are here rather than
-	 * left to somebody picking Center stage and then a shape, because that is two presses and a
+	 * left to somebody picking Stage View and then a shape, because that is two presses and a
 	 * thing to know, and the four together are what 'nine together' looks like as a choice.
 	 */
 	{
 		id: 'center_stage_two',
-		label: 'Center stage 1x2',
+		label: 'Stage View 1x2',
 		shape: { rows: 1, cols: 2, slots: [at(0, 0), at(0, 1)] },
 		strip: MOST_PREVIEWS
 	},
 	{
 		id: 'center_stage_three',
-		label: 'Center stage 1x3',
+		label: 'Stage View 1x3',
 		shape: { rows: 1, cols: 3, slots: [at(0, 0), at(0, 1), at(0, 2)] },
 		strip: MOST_PREVIEWS
 	},
 	{
 		id: 'center_stage_grid',
-		label: 'Center stage 2x2',
+		label: 'Stage View 2x2',
 		shape: { rows: 2, cols: 2, slots: [at(0, 0), at(0, 1), at(1, 0), at(1, 1)] },
 		strip: MOST_PREVIEWS
 	}

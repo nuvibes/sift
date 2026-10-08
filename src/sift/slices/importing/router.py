@@ -665,8 +665,7 @@ async def _press_one(
             left = [asset_id for asset_id in left if asset_id in lacking]
 
     # ONE WRITE FOR THE WHOLE PRESS (`enqueue_many`), each file still collapsing onto an identical
-    # task already waiting exactly as `enqueue(dedupe=True)` would, rather than one trip through the
-    # single writer per file, each waiting its turn behind the workers. See `JobQueue.enqueue_many`.
+    # task already waiting, rather than one trip through the single writer per file.
     tasks: list[dict[str, object]] = []
     for asset_id in left:
         task: dict[str, object] = {"asset_id": asset_id}
@@ -681,6 +680,7 @@ async def _press_one(
         priority=WAITED_ON_PRIORITY,
         dedupe=True,
         requested_by=presser,
+        title=f"{chosen.doing or chosen.label} {_files(len(tasks))}",
     )
     return _Pressed(
         chosen=chosen,

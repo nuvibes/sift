@@ -115,34 +115,33 @@ describe("a download's row", () => {
 	});
 });
 
-/* Every piece of work has ONE row on Tasks, where when it runs is chosen and Run now lives. A
-   bar here that started the work itself would be one more door to the same thing. */
+/* Run now on a pass is the task's OWN Run now (`pressTask`): one press and one sentence after it,
+   wherever it is drawn, so a bar here and the task's row on Tasks cannot come to do two things. */
 describe("a pass's row", () => {
 	/** The one list over the passes and the housekeeping. */
 	const summary = markup.slice(
 		markup.indexOf('items={lines}'),
 		markup.indexOf('</DataRows>', markup.indexOf('items={lines}'))
 	);
-	// The row's own snippet: Run in Tasks, at the row's end on a desktop and the card's end on a phone.
+	// The row's own snippet: at the row's end on a desktop and the card's end on a phone.
 	const acts = summary.slice(
-		summary.indexOf('{#snippet runInTasks()}'),
-		summary.indexOf('{/snippet}', summary.indexOf('{#snippet runInTasks()}'))
+		summary.indexOf('{#snippet lineActions()}'),
+		summary.indexOf('{/snippet}', summary.indexOf('{#snippet lineActions()}'))
 	);
 
-	it("links to its task's row on Tasks instead of starting the work", () => {
+	it("presses its task's own Run now, and pauses and cancels the pass", () => {
 		expect(summary, 'the list was not found').toContain('<DataRow');
-		expect(acts, 'a row lost its way to Tasks').toContain(
-			'<SettingLink section="tasks" setting={taskRow(one)}'
-		);
+		expect(acts).toContain('{COPY.runNow}');
+		expect(acts).toContain('runNow(one)');
+		expect(acts).toContain('holdAndCancel(');
+		expect(source).toContain("await pressTasks(pressesOf(one), 'now')");
 		// The known positive's other half: nothing in the rows presses a route of its own.
-		expect(summary).not.toMatch(/api\.post|runPass|runChore/);
+		expect(summary).not.toMatch(/api\.post/);
 	});
 
-	/* A pass that is more than one task (Identify, Fingerprint) has no row of its own and still has
-	   the link, to the top of Tasks. A chore has one only when it is a task. */
-	it('draws every pass its link, and a chore its link when the chore is a task', () => {
-		expect(acts).toContain("{#if line.kind === 'pass' || one.task}");
-		expect(source, 'a start address came back').not.toMatch(/runNow|runsFromSettings|run_now/);
+	it('offers Run now only where there is a task to press, and a sub-task its own pause', () => {
+		expect(acts).toContain('{#if pressesOf(one).length > 0}');
+		expect(summary).toContain('holdAndCancel({ type: line.part.type }');
 	});
 });
 

@@ -454,7 +454,7 @@ export const SHORTCUTS: readonly Shortcut[] = [
 		id: 'theater.everyCell',
 		keys: ['`'],
 		shown: 'Backtick',
-		does: 'Control every cell together, with the same keys',
+		does: 'Control all cells together, with the same keys',
 		area: 'Theater'
 	},
 	{

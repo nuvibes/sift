@@ -44,8 +44,11 @@ async function write(page: Page, method: 'post' | 'put' | 'delete', path: string
 	return answer.status() === 204 ? {} : ((await answer.json()) as Record<string, unknown>);
 }
 
-/** Watch `page` for `shown` (a function body run in the page) and for anything moving meanwhile. */
-async function arm(page: Page, shown: string): Promise<void> {
+/** What `arm` waits to see: a text on the page, a tile by its id, or an attribute's value. */
+type Shown = { text: string } | { tile: string } | { id: string; attribute: string; value: string };
+
+/** Watch `page` for `shown` and for anything moving meanwhile. */
+async function arm(page: Page, shown: Shown): Promise<void> {
 	await page.evaluate((condition) => {
 		const seen = { at: 0, shift: 0, removed: 0, biggest: 0, loading: 0 };
 		(window as unknown as { __flash: typeof seen }).__flash = seen;
@@ -72,7 +75,15 @@ async function arm(page: Page, shown: string): Promise<void> {
 						seen.loading += 1;
 			}
 		}).observe(document.body, { childList: true, subtree: true });
-		const check = new Function(condition) as () => boolean;
+		const check = () =>
+			'text' in condition
+				? document.body.innerText.includes(condition.text)
+				: 'tile' in condition
+					? [...document.querySelectorAll('[data-tile-id]')].some(
+							(tile) => tile.getAttribute('data-tile-id') === condition.tile
+						)
+					: document.getElementById(condition.id)?.getAttribute(condition.attribute) ===
+						condition.value;
 		const poll = setInterval(() => {
 			if (!seen.at && check()) {
 				seen.at = Date.now();
@@ -121,10 +132,7 @@ test('a setting changed elsewhere moves its switch and the pane stays where it i
 	await watcher.goto('/settings/playback');
 	const control = watcher.locator(`[id="${key}-control"]`);
 	await expect(control).toBeVisible();
-	await arm(
-		watcher,
-		`return document.getElementById('${key}-control')?.getAttribute('aria-checked') === '${String(!was)}'`
-	);
+	await arm(watcher, { id: `${key}-control`, attribute: 'aria-checked', value: String(!was) });
 
 	await write(writer, 'put', '/api/settings', { values: { [key]: !was } });
 	const seen = await figures(watcher, Date.now());
@@ -159,7 +167,7 @@ for (const [list, path] of [
 		await expect(watcher.getByText(`Zzz below ${list}`, { exact: false })).toBeVisible();
 		await watcher.evaluate(() => document.fonts.ready);
 		const name = `Aaa flash ${list} ${Date.now()}`;
-		await arm(watcher, `return document.body.innerText.includes(${JSON.stringify(name)})`);
+		await arm(watcher, { text: name });
 
 		const made = await write(writer, 'post', path, { name });
 		const seen = await figures(watcher, Date.now());
@@ -176,10 +184,7 @@ test('a file hearted elsewhere joins Favorites without a reload', async ({ brows
 	const file = seeded.assetIds[0];
 	await watcher.goto('/favorites');
 	await expect(watcher.getByRole('status', { name: 'Loading' })).toHaveCount(0);
-	await arm(
-		watcher,
-		`return [...document.querySelectorAll('[data-tile-id]')].some((tile) => tile.getAttribute('data-tile-id') === ${JSON.stringify(file)})`
-	);
+	await arm(watcher, { tile: file });
 
 	await write(writer, 'put', `/api/assets/${file}/favorite`, { favorite: true });
 	const seen = await figures(watcher, Date.now());
@@ -195,7 +200,7 @@ test("a file's page says the file is gone when it is deleted elsewhere", async (
 	const file = seeded.assetIds[0];
 	await watcher.goto(`/asset/${file}`);
 	await expect(watcher.locator('.acts')).toBeVisible();
-	await arm(watcher, `return document.body.innerText.includes('Not found.')`);
+	await arm(watcher, { text: 'Not found.' });
 
 	await write(writer, 'post', '/api/assets/delete', { asset_ids: [file], mode: 'sift' });
 	await figures(watcher, Date.now());

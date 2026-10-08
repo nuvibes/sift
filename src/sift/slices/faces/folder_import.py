@@ -125,8 +125,13 @@ class Tally:
     left_out: Counter[Finding] = field(default_factory=Counter)
     near_copies: int = 0
     to_check: list[str] = field(default_factory=list)
+    #: Folders an earlier import read whole, passed over without a picture read.
+    already: int = 0
 
     def add(self, report: PersonReport) -> None:
+        if report.already:
+            self.already += 1
+            return
         self.people += 1
         self.added += report.added
         self.left_out.update(report.left_out)
@@ -149,6 +154,9 @@ class Tally:
         if self.near_copies:
             photos = "1 photo" if self.near_copies == 1 else f"{self.near_copies:,} photos"
             parts.append(f"{photos} kept though almost the same as another.")
+        if self.already:
+            folders = "1 folder" if self.already == 1 else f"{self.already:,} folders"
+            parts.append(f"{folders} imported before, not read again.")
         if self.to_check:
             named = self.to_check[:NAMED_FOLDERS]
             more = len(self.to_check) - len(named)

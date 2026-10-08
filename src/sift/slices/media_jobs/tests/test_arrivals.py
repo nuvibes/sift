@@ -12,6 +12,7 @@ import pytest
 from sift.kernel.db import Database
 from sift.kernel.jobs import register_handler
 from sift.kernel.jobs.families import Family
+from sift.kernel.jobs.holding import Holding
 from sift.kernel.jobs.ledger import Ledger
 from sift.kernel.jobs.queue_rows import LiveWork
 from sift.kernel.jobs.switchboard import Switchboard
@@ -30,6 +31,7 @@ STANDING = 2691
 class _Pool:
     concurrency: int = 1
     limits: dict[str, int] = field(default_factory=dict)
+    holding: Holding = field(default_factory=Holding)
 
 
 async def _nothing(_context: object) -> None:

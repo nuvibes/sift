@@ -38,7 +38,6 @@ from sift.slices.faces.tests.test_routes import (
     queued_types,
     sign_in,
     turn_on,
-    unlock,
     write,
 )
 from sift.testing.library import seed_face, seed_grant
@@ -679,14 +678,11 @@ def test_an_exported_pack_comes_back_as_a_file_to_save(
     assert 'filename="My-People-faces.zip"' in built.headers["content-disposition"]
 
 
-def test_share_everyone_leaves_out_whoever_a_shut_hidden_holds_back(
+def test_share_everyone_carries_a_person_in_hidden_with_hidden_shut(
     client: TestClient, scene: Scene, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """**The file must say what the pane says.** The pane lists the people Sift can recognize held
-    to the People wall, so a person Hidden holds back is not on it while Hidden is shut, and "Share
-    everyone" must not carry her name, other names and facial fingerprints in a file meant for
-    somebody else. Held back while shut, named once it is open, and an empty list refused in words
-    rather than read as everybody."""
+    """Hidden is not what keeps somebody out of a facial fingerprints file: Kept local is. A person
+    in Hidden goes in with Hidden shut, picked or as one of everybody."""
     turn_on(client)
     admin = sign_in(client, "admin")
     scene.attribute(client)
@@ -707,14 +703,9 @@ def test_share_everyone_leaves_out_whoever_a_shut_hidden_holds_back(
 
     scene.hide(client, "person", scene.person, admin)
     for sent in ([], [scene.person]):
-        refused = client.post("/api/faces/packs/export", json={"name": "x", "person_ids": sent})
-        assert refused.status_code == 409
-        assert "nobody here" in refused.json()["detail"]
-    assert asked == [[scene.person]], "a shut Hidden's person reached the file"
-
-    assert unlock(client) == 200
-    assert client.post("/api/faces/packs/export", json={"name": "x"}).status_code == 200
-    assert asked == [[scene.person], [scene.person]]
+        carried = client.post("/api/faces/packs/export", json={"name": "x", "person_ids": sent})
+        assert carried.status_code == 200
+    assert asked == [[scene.person]] * 3, "Hidden held a person out of the file"
 
 
 def queued_import(client: TestClient) -> dict[str, object] | None:

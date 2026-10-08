@@ -5,10 +5,11 @@
 	 * ## What is on it
 	 *
 	 * Quiet hours at the top: one row saying the range, the install's one clock, with its two
-	 * times and the keep-awake switch on its own page behind Edit. Then the three stages a file goes
-	 * through (Scan, Generate, Identify), and every other task folded under Other tasks. Each is one
-	 * row: its When (as files arrive or on a schedule, during quiet hours, or only when pressed),
-	 * its press, how its last run ended, when the next one is and how much is waiting.
+	 * times and the keep-awake switch on its own page behind Edit. Then Import tasks (`Importing`:
+	 * Scan, Generate and Identify, each with its Edit, then Folder-specific import settings), every
+	 * other task folded under Other tasks, and Activity, the queue, which the screen hands in. Each
+	 * task is one row: its When (as files arrive or on a schedule, during quiet hours, or only when
+	 * pressed), its press, how its last run ended, when the next one is and how much is waiting.
 	 *
 	 * Presses live here and nowhere else in Settings: the panes that own a task draw its row
 	 * without one. Upkeep nobody times (the prunes, the update check) is not on the list at all.
@@ -16,7 +17,7 @@
 	 * ## One row, two doors
 	 *
 	 * The row is `TaskWhen`, and the section that OWNS the task draws the very same component
-	 * beside the thing it does: Importing beside each stage, Faces beside recognition. The owning
+	 * beside the thing it does: Faces beside recognition, Music beside its lookup. The owning
 	 * section decides WHAT the task does; this is the overview of WHEN every task runs. One
 	 * setting, one component, two doors, so the two cannot disagree, because there is only one of
 	 * each.
@@ -37,9 +38,10 @@
 	 * task's runs for longer than a job row's week. The row keeps the one fact that belongs beside
 	 * the choice: how the LAST run ended.
 	 */
-	import { onMount } from 'svelte';
+	import { onMount, type Snippet } from 'svelte';
 	import { Button, LabelledRow, Problem, Skeleton } from '$lib/components/common';
 	import { STAGES, quietRange, quietTime, taskList, type TaskView } from '$lib/jobs/tasks.svelte';
+	import Importing from './Importing.svelte';
 	import SettingGroup from './SettingGroup.svelte';
 	import SettingRow from './SettingRow.svelte';
 	import TaskWhen from './TaskWhen.svelte';
@@ -48,6 +50,13 @@
 	import { COPY } from './ScheduledTasks.search';
 	import Fold from '$lib/components/common/Fold.svelte';
 	import { explainAbsentRows, hiddenWhile } from '$lib/settings-ui/settings-anchor.svelte';
+
+	interface Props {
+		/** The queue, Activity, drawn under Other tasks. Tasks and Activity hands it in. */
+		activity?: Snippet;
+	}
+
+	let { activity }: Props = $props();
 
 	const panel = new SettingsPanel();
 
@@ -78,11 +87,8 @@
 			: declared.filter((entry) => !claimed.has(entry.key) && !WHEN_KEY.test(entry.key))
 	);
 
-	/* The three stages first, in the order work happens to a file; everything else folded under
-	   them. Read from the list the server sends, so a task it leaves out is on neither. */
-	const stages = $derived(
-		STAGES.map((id) => taskList.row(id)).filter((one): one is TaskView => one !== undefined)
-	);
+	/* The three stages are Import tasks; everything else is folded under them. Read from the list
+	   the server sends, so a task it leaves out is on neither. */
 	const others = $derived(
 		taskList.tasks.filter((one) => !(STAGES as readonly string[]).includes(one.id))
 	);
@@ -161,6 +167,9 @@
      this way is still claimed above, so it never falls through to "Other settings". -->
 {#snippet taskRows(task: TaskView)}
 	<TaskWhen task={task.id} />
+	{@render settingRows(task)}
+{/snippet}
+{#snippet settingRows(task: TaskView)}
 	{#each panel.pick(...task.drawn_keys) as entry (entry.key)}
 		<SettingRow
 			{entry}
@@ -196,11 +205,7 @@
 		     runs, and the reassuring reading of silence here is the wrong one. -->
 		<Problem message={COPY.cannotLoad} />
 	{:else}
-		<SettingGroup id="tasks.stages" heading={COPY.stages.heading} help={COPY.stages.help}>
-			{#each stages as task (task.id)}
-				{@render taskRows(task)}
-			{/each}
-		</SettingGroup>
+		<Importing rows={settingRows} />
 
 		{#if others.length > 0}
 			<!-- Folded: the stages are what most people come here for. A deep link to a row in here
@@ -213,6 +218,13 @@
 				</SettingGroup>
 			</Fold>
 		{/if}
+	{/if}
+
+	{#if activity}
+		<div class="activity">
+			<SettingGroup id="tasks.activity" heading={COPY.activity.heading} help={COPY.activity.help} />
+			{@render activity()}
+		</div>
 	{/if}
 
 	{#if unclaimed.length > 0}
@@ -229,6 +241,10 @@
 </section>
 
 <style>
+	.activity {
+		margin-block-start: var(--space-8);
+	}
+
 	.lede {
 		margin: 0 0 var(--space-4);
 		color: var(--sift-ink-2);

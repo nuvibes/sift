@@ -33,7 +33,8 @@ function job(id: string, state: Job['state'], name: string): Job {
 		subject: name,
 		subject_id: null,
 		steps: null,
-		waits_for_password: false
+		waits_for_password: false,
+		reason: null
 	};
 }
 
@@ -56,7 +57,8 @@ function page(jobs: Job[], total = 9): JobsPage {
 		step_back_for: null,
 		step_back_over: [],
 		turbo_mode: false,
-		password_wanted: 0
+		password_wanted: 0,
+		paused: false
 	};
 }
 
@@ -77,8 +79,8 @@ let host: HTMLElement;
 let screen: Record<string, unknown> | null = null;
 
 beforeEach(() => {
-	// The queue is the Activity tab; Tasks is where the section opens without one.
-	history.replaceState(null, '', '/settings/tasks?show=now');
+	// Activity is drawn under the tasks on the Tasks tab, where the section opens.
+	history.replaceState(null, '', '/settings/tasks');
 	asked = [];
 	imports.page = null;
 	imports.problem = null;
@@ -89,6 +91,9 @@ beforeEach(() => {
 		vi.fn(async (url: URL) => {
 			const address = url.toString();
 			asked.push(address);
+			// The Tasks tab's own reads, around Activity, refused: these tests are about the queue.
+			if (!address.includes('/api/jobs'))
+				return { ok: false, status: 503, json: async () => ({}) } as Response;
 			const answer = address.includes('state=failed') ? FAILED : EVERYTHING;
 			return { ok: true, status: 200, json: async () => answer } as Response;
 		})
@@ -110,7 +115,7 @@ async function open() {
 		expect(host.querySelector('.filters [role="tablist"]')?.textContent).toContain('9')
 	);
 	flushSync();
-	/* The state row, which filters the queue, under the screen's own four tabs, which are a
+	/* The state row, which filters the queue, under the screen's own tabs, which are a
 	   row of the same kind and are not what these tests are about. */
 	const tabs = () => [...host.querySelectorAll('.filters [role="tab"]')] as HTMLButtonElement[];
 	return {
@@ -125,23 +130,13 @@ async function open() {
 }
 
 describe("the Activity pane's own tabs", () => {
-	it('are Tasks, Activity, App History and Logs, with Activity showing at its address', async () => {
+	it('are Tasks, App History and Logs, with Activity drawn under the tasks', async () => {
 		await open();
-		// The first row on the screen; the state row is further down, inside the Activity tab.
+		// The first row on the screen; the state row is further down, under the tasks.
 		const top = [...host.querySelector('[role="tablist"]')!.querySelectorAll('[role="tab"]')];
 
-		expect(top.map((one) => one.textContent?.trim())).toEqual([
-			'Tasks',
-			'Activity',
-			'App History',
-			'Logs'
-		]);
-		expect(top.map((one) => one.getAttribute('aria-selected'))).toEqual([
-			'false',
-			'true',
-			'false',
-			'false'
-		]);
+		expect(top.map((one) => one.textContent?.trim())).toEqual(['Tasks', 'App History', 'Logs']);
+		expect(top.map((one) => one.getAttribute('aria-selected'))).toEqual(['true', 'false', 'false']);
 	});
 });
 

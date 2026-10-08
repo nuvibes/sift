@@ -317,7 +317,7 @@ describe('the keyboard and the wall\u2019s chrome', () => {
 	it('holds them while the keyboard is in the bar, and lets them go once it is back on the wall', async () => {
 		draw();
 		press('Tab');
-		bar().querySelector('button')!.focus();
+		bar().querySelector<HTMLButtonElement>('button:not(:disabled)')!.focus();
 		// Focus is heard after the update it may land in (`focusMoved`).
 		await Promise.resolve();
 		flushSync();

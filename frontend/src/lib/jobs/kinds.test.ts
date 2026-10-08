@@ -24,6 +24,7 @@ function page(over: Partial<JobsPage>): JobsPage {
 		step_back_over: [],
 		turbo_mode: false,
 		password_wanted: 0,
+		paused: false,
 		...over
 	};
 }

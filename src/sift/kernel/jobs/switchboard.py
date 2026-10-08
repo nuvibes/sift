@@ -156,6 +156,7 @@ class Switchboard:
 
     def __init__(self) -> None:
         self._switches: dict[str, Switch] = {}
+        self._shown: dict[str, Callable[[], Awaitable[bool]]] = {}
         self._asks: dict[Family, Ask] = {}
         self._windows: dict[Family, Opens] = {}
         self._quiet: AskQuiet | None = None
@@ -173,6 +174,27 @@ class Switchboard:
         """
         for job_type in job_types:
             self._switches[job_type] = switch
+
+    def declare_shown(self, on: Callable[[], Awaitable[bool]], *job_types: str) -> None:
+        """Say how Activity reads whether work of these types starts on its own, for work whose
+        off is not a refusal (a claim-only follow-on still runs while it is off)."""
+        for job_type in job_types:
+            self._shown[job_type] = on
+
+    async def shown_off(self, job_type: str) -> bool:
+        """Whether Activity reads this type as switched off: its switch refuses, or what was
+        declared for it says it does not start on its own. Unreadable reads as on."""
+        if await self.refusal(job_type) is not None:
+            return True
+        ask = self._shown.get(job_type)
+        if ask is None:
+            return False
+        try:
+            async with one_reading():
+                return not await ask()
+        except Exception as exc:
+            log.warning("switchboard.unreadable", job_type=job_type, error=str(exc))
+            return False
 
     def switch_of(self, job_type: str) -> Switch | None:
         """This type's switch, or None for work nobody can turn off."""

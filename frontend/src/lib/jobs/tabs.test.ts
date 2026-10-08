@@ -10,12 +10,15 @@ function split(address: string): [string, string] {
 
 describe('The tabs of Tasks and Activity by address', () => {
 	it('opens each tab at its own address, so a refresh or a copied link lands where it was', () => {
-		for (const tab of ['tasks', 'now', 'history', 'log'] as ActivityTab[]) {
+		for (const tab of ['tasks', 'history', 'log'] as ActivityTab[]) {
 			expect(landingFor(...split(addressOf(tab))).tab).toBe(tab);
 		}
 		expect(addressOf('tasks')).toBe('/settings/tasks');
-		expect(addressOf('now')).toBe('/settings/tasks?show=now');
 		expect(addressOf('history')).toBe('/settings/tasks?show=history');
+	});
+
+	it("opens Tasks at Activity's old address, where Activity is drawn now", () => {
+		expect(landingFor('?show=now', '')).toEqual({ tab: 'tasks' });
 	});
 
 	it('lands a setting drawn on the Log tab on the Log tab, whatever the tab in the address', () => {

@@ -17,8 +17,8 @@
 	 * any screen to say why they are never recognized. After importing people from folders, the
 	 * ones with two usable photos look exactly like the ones with fifty.
 	 *
-	 * The target comes from the server with the count. A bar drawn against a number this file held
-	 * its own copy of would go on saying "good" after the number behind it moved.
+	 * The bar is full at `strong`, where matching becomes dependable, and that number comes from the
+	 * server with the count: a copy held here would go on saying "good" after the curve moved.
 	 *
 	 * Absent entirely when recognition is off or nobody has ever been recognized here, for the
 	 * reason the appearances strip is: most installs never turn faces on, and a bar reading zero
@@ -33,6 +33,7 @@
 	import { untrack } from 'svelte';
 	import { primedOr, readingAbout } from '$lib/entity/subject.svelte';
 	import { Meter } from '$lib/components/common';
+	import { counted } from '$lib/entity/entity-counts';
 	import Icon from '$lib/components/Icon.svelte';
 
 	interface Props {
@@ -96,8 +97,8 @@
 					floor: strengths.floor,
 					strong: strengths.strong,
 					fraction:
-						strengths.target > 0
-							? Math.min(1, (strengths.people[personId] ?? 0) / strengths.target)
+						strengths.strong > 0
+							? Math.min(1, (strengths.people[personId] ?? 0) / strengths.strong)
 							: 0,
 					verdict: referenceVerdict(personId, strengths)
 				}
@@ -112,35 +113,18 @@
 	});
 
 	/*
-	 * No advice sentence here: the band shows the two facts and nothing else.
+	 * Under the bar: the verdict in words, then one short line of what the numbers mean for this
+	 * person. No advice: the band sits above a wall of files and does not scroll.
 	 *
-	 * What to do about a reading is a fair thing for a screen to say, but this band is furniture
-	 * above a wall of files. It does not scroll, so every line of it is taken off the wall for
-	 * good, on the one screen somebody opens in order to browse. So it is one row of a person's
-	 * page rather than a paragraph under it.
-	 *
-	 * The colour of the fill still carries the verdict, which is what the bar was built to say
-	 * without words: see `.spectrum`.
-	 */
-
-	/*
-	 * The one line under the bar is the verdict in words, not a count: "13 references of about 20"
-	 * only means something to somebody who knows what a reference is, and the page above already
-	 * says how many faces were confirmed.
-	 *
-	 * The words are the server's bands, never thresholds held here. `verdict` is one token computed
-	 * beside the numbers that decide it (five, ten, twenty); copying that arithmetic here would go
-	 * on saying "well" after the curve moved. This file maps a token to a sentence and holds no
-	 * opinion about the number.
-	 *
-	 * "Them" throughout: Sift is not told anybody's pronouns and has no business guessing at one.
+	 * The verdict is the server's token and every number is the server's, so nothing here can drift
+	 * from the curve behind them. "Them" throughout: Sift is not told anybody's pronouns.
 	 */
 	function wordsFor(first: string): Record<string, string> {
 		return {
 			none: `Sift can't identify ${first} yet`,
 			weak: `Sift can't identify ${first} yet`,
 			fair: `Sift can now identify ${first} reasonably well`,
-			good: `Sift now identifies ${first} effectively`,
+			good: `Sift identifies ${first} reliably`,
 			strong: `Sift identifies ${first} reliably`
 		};
 	}
@@ -148,15 +132,21 @@
 	   where it does not. */
 	const first = $derived(name?.trim().split(/\s+/)[0] || 'them');
 	const WORDS = $derived(wordsFor(first));
+
+	/** What the bar rests on, in the server's numbers. */
+	function basisOf(now: Strength): string {
+		const pictures = `${counted(now.references)} ${now.references === 1 ? 'picture' : 'pictures'}`;
+		return `Recognized from ${pictures}. Matching is weak under ${now.floor} and dependable from ${now.strong}.`;
+	}
 </script>
 
-{#if strength && strength.target > 0 && !(strength.verdict === 'none' && strength.references === 0)}
+{#if strength && strength.strong > 0 && !(strength.verdict === 'none' && strength.references === 0)}
 	<div class="block">
 		<!-- The shared meter (a reading, not a task: it goes down when a reference is taken away).
 		     The primitive emits the role and the range, and this draws only the fill. -->
 		<Meter
-			value={strength.references}
-			max={strength.target}
+			value={Math.min(strength.references, strength.strong)}
+			max={strength.strong}
 			label="How reliably Sift can recognize this person"
 		>
 			{#snippet fill(fraction)}
@@ -167,12 +157,10 @@
 					to recognize anybody, orange into yellow through the fair band, yellow into
 					green through the good one, and green once it is strong. A single gradient
 					across the track would be a scale of its own, colouring a position along the
-					target rather than the verdict; per band, the colour and the sentence under the
+					track rather than the verdict; per band, the colour and the sentence under the
 					bar are one fact, and movement inside a band still reads as movement.
 
-					The band comes down as `verdict`, the server's token computed beside the numbers
-					that decide it. Nothing here bands a count, so the five, the ten and the twenty
-					cannot drift from the curve behind them.
+					The band comes down as `verdict`, the server's token; nothing here bands a count.
 
 					The length is the fraction, clipped rather than scaled: a gradient scaled into
 					the filled width would reach its far end at every value, so every bar would
@@ -185,34 +173,36 @@
 				></div>
 			{/snippet}
 		</Meter>
-		<!--
-			What the bar means, in the four words the bands come to. What somebody wants off this
-			bar is whether Sift can find this person, and that is a sentence rather than a fraction;
-			the count of confirmed faces is said plainly one line above.
-		-->
 		<!-- The verdict wears the person-check glyph in the band's colour, green where Sift identifies
-		     them. -->
-		<p class="count" data-band={strength.verdict}>
-			<Icon name="person_check" size={16} /><span class="words"
-				>{WORDS[strength.verdict] ?? WORDS.none}</span
-			>
-		</p>
+		     them; its basis sits tight beneath it. -->
+		<div class="said">
+			<p class="count" data-band={strength.verdict}>
+				<Icon name="person_check" size={16} /><span class="words"
+					>{WORDS[strength.verdict] ?? WORDS.none}</span
+				>
+			</p>
+			<p class="basis">{basisOf(strength)}</p>
+		</div>
 	</div>
 {/if}
 
 <style>
 	/*
-	 * A bar and a line, and deliberately nothing more. Why the number does not move when files are
-	 * identified, why agreeing to two faces can add one reference, and what a poor crop is are
-	 * explained in Settings beside the face recognition switch, where somebody reads them once
-	 * while deciding about the feature. This band does not scroll and sits above the wall somebody
-	 * came to look at.
+	 * A bar and two short lines, and deliberately nothing more: the why of the numbers is in
+	 * Settings beside the face recognition switch. This band does not scroll.
 	 */
 	.block {
 		display: flex;
 		flex-direction: column;
 		gap: var(--space-2);
 		max-inline-size: 32rem;
+	}
+
+	/* The verdict and what it rests on, one unit under the bar. */
+	.said {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-1);
 	}
 
 	/*
@@ -294,8 +284,15 @@
 		min-inline-size: 0;
 	}
 
-	/* The glyph climbs the bar's own colours with the verdict: the band's orange for "reasonably
-	   well", Sift's yellow for "effectively", the green for "reliably"; quiet ink below that. */
+	/* The numbers behind the verdict, as a caption tight under it. */
+	.basis {
+		margin: 0;
+		font: var(--text-body-sm);
+		color: var(--sift-ink-3);
+	}
+
+	/* The glyph climbs the bar's own colours with the verdict: the band's orange for fair, Sift's
+	   yellow for good, the green for strong; quiet ink below that. */
 	.count {
 		--band-orange: color-mix(in oklch, var(--sift-bad-text), var(--sift-warn));
 	}

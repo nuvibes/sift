@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 
 from sift.kernel.db import Connection, Row, in_clause
 from sift.kernel.jobs.queue_rows import Job, _fetch, _to_job
@@ -43,6 +43,10 @@ UPDATE jobs
           AND (? OR NOT (root_id IN (SELECT value FROM json_each(?))
                          AND COALESCE(timing, '') <> 'now'
                          AND type NOT IN (SELECT value FROM json_each(?))))
+          AND (? IS NULL
+               OR NOT EXISTS (SELECT 1 FROM json_each(jobs.payload, '$.products'))
+               OR EXISTS (SELECT 1 FROM json_each(jobs.payload, '$.products') AS made
+                           WHERE made.value NOT IN (SELECT value FROM json_each(?))))
         ORDER BY priority, id
         LIMIT 1
  )
@@ -71,6 +75,10 @@ UPDATE jobs
           AND (? OR NOT (root_id IN (SELECT value FROM json_each(?))
                          AND COALESCE(timing, '') <> 'now'
                          AND type NOT IN (SELECT value FROM json_each(?))))
+          AND (? IS NULL
+               OR NOT EXISTS (SELECT 1 FROM json_each(jobs.payload, '$.products'))
+               OR EXISTS (SELECT 1 FROM json_each(jobs.payload, '$.products') AS made
+                           WHERE made.value NOT IN (SELECT value FROM json_each(?))))
         ORDER BY priority, id
         LIMIT 1
  )
@@ -171,8 +179,15 @@ class Claiming(SwitchboardReads):
         row = await self._db.fetch_one(_SOMEBODY_WAITING, (WAITED_ON_PRIORITY, int(self._now())))
         return bool(row is not None and row["waiting"])
 
-    async def claim(self, worker_id: str, *, limits: Mapping[str, int] | None = None) -> Job | None:
-        """Take the next job, atomically. Returns None when there is nothing to take.
+    async def claim(
+        self,
+        worker_id: str,
+        *,
+        limits: Mapping[str, int] | None = None,
+        held_products: Collection[str] = (),
+    ) -> Job | None:
+        """Take the next job, atomically. Returns None when there is nothing to take. A job whose
+        payload names products, every one of them in `held_products`, is passed over: paused.
 
         The count and the claim share one short `write()` block, so no other writer starts a capped
         type between them; readiness, quiet hours and a family's hold are asked BEFORE the lock.
@@ -183,6 +198,7 @@ class Claiming(SwitchboardReads):
         quiet = await self._held()
         hold = (quiet.open, json.dumps(sorted(quiet.types)))
         families = self._family_holds()
+        products = json.dumps(sorted(held_products)) if held_products else None
 
         from sift.kernel.jobs.worker_pool import exclusive_job_types
 
@@ -212,11 +228,15 @@ class Claiming(SwitchboardReads):
             if at_capacity:
                 sql, params = in_clause(_CLAIM_EXCLUDING, sorted(at_capacity))
                 rows = await _fetch(
-                    connection, sql, (worker_id, now, now, now, now, *params, *hold, *families)
+                    connection,
+                    sql,
+                    (worker_id, now, now, now, now, *params, *hold, *families, products, products),
                 )
             else:
                 rows = await _fetch(
-                    connection, _CLAIM, (worker_id, now, now, now, now, *hold, *families)
+                    connection,
+                    _CLAIM,
+                    (worker_id, now, now, now, now, *hold, *families, products, products),
                 )
 
         return _claimed(rows, worker_id)

@@ -19,7 +19,7 @@ from types import SimpleNamespace
 import pytest
 
 from sift.kernel.config import Settings
-from sift.kernel.fetch import FetchFailed
+from sift.kernel.fetch import FetchFailed, Untrusted
 from sift.kernel.ml import accel
 from sift.kernel.ml import child as ml_child
 from sift.kernel.ml.accel import AccelError, Wheel
@@ -683,3 +683,13 @@ def test_a_folder_with_no_libraries_in_it_is_not_offered(tmp_path: Path) -> None
     (tmp_path / "nvidia" / "cu13" / "bin" / "x86_64").mkdir(parents=True)
 
     assert accel.library_directories(tmp_path) == []
+
+
+def test_a_refused_certificate_fails_the_download_for_good() -> None:
+    """The same answer on the next ask, so the worker spends no retries on it; any other failure
+    keeps its three tries."""
+    from sift.kernel.jobs.queue_rows import JobFailedPermanently
+
+    refused = accel.refused_for_good(Untrusted("refused"))
+    assert issubclass(refused, AccelError) and issubclass(refused, JobFailedPermanently)
+    assert accel.refused_for_good(FetchFailed("dropped")) is AccelError

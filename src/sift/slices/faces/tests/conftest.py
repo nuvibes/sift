@@ -27,6 +27,7 @@ from typing import Any
 import numpy as np
 import pytest
 
+import sift.slices.suggestions.schema  # matching reads the folders' answers
 import sift.slices.workbench.schema  # noqa: F401  (a scan records a ledger event; the table must exist)
 from sift.kernel.access import Repository
 from sift.kernel.config import Settings
@@ -47,8 +48,7 @@ from sift.slices.faces.recognize import recognisability
 from sift.slices.faces.service import FaceService
 from sift.slices.faces.store import Store
 
-#: How many numbers a stand-in recognizer produces. Small on purpose: the arithmetic is identical
-#: at any width and a test that has to read one is easier at eight.
+#: How many numbers a stand-in recognizer produces: eight, so a test can read one.
 DIMENSION = 8
 
 

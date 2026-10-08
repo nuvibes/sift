@@ -35,6 +35,20 @@ _INSERT = (
     "(SELECT COALESCE(parent.root_id, parent.id) FROM jobs parent WHERE parent.id = ?), ?))"
 )
 
+
+#: The type of a press's head: a row that runs nothing, its files its steps.
+PRESS = "press"
+#: A press's head, written done in the transaction that writes its steps: it is never claimed.
+_SETTLE_HEAD = "UPDATE jobs SET state = 'done', progress = 0 WHERE id = ?"
+#: A head whose every file collapsed onto work already waiting heads nothing.
+_FORGET_HEAD = "DELETE FROM jobs WHERE id = ?"
+
+
+def _under(row: tuple[Any, ...], head: str) -> tuple[Any, ...]:
+    """An `_INSERT` row made a step of `head`: its parent, and the parent its family is read from."""
+    return (row[0], head, *row[2:11], head, row[12])
+
+
 # An identical job already WAITING, for `enqueue(dedupe=True)`. Never one running: it may have
 # walked past the change that prompted the new request, and collapsing onto it would lose that.
 _PENDING_LIKE = (
@@ -186,15 +200,11 @@ class Enqueuing(QueueCore):
         dedupe: bool = False,
         requested_by: str | None = None,
         at: str | None = None,
+        title: str | None = None,
     ) -> list[str]:
-        """Add one job of one type per payload, in ONE write transaction. Returns the ids in order.
-
-        One transaction waits its turn behind the workers once, where an `enqueue` per file waits
-        once per file. Everything `enqueue` decides is decided by the same code: the ceiling, the
-        handler check and the switch once for the batch, every payload checked before anything is
-        written, and `dedupe` per row. No parent and no `run_after`: the callers are presses on a
-        selection, bounded by what one press can select (`MOST_SELECTED`).
-        """
+        """Add one job of one type per payload, in ONE write transaction (`enqueue`'s checks once
+        for the batch, `dedupe` per row). Returns the ids in order. A press (`requested_by`) is one
+        family: a head row named `title` with every new file a step under it."""
         if not payloads:
             return []
         priority, timing = await self._admit(
@@ -220,11 +230,11 @@ class Enqueuing(QueueCore):
             for payload in payloads
         ]
         placed: list[str] = []
-        # `_writing` whether or not the rows collapse: an insert is a new row on the dashboard just
-        # as surely as a collapse changes one, and the announcement is coalesced, so a batch of a
-        # thousand is one message.
+        # `_writing` either way: a collapse moves the dashboard as an insert does.
         async with self._writing() as connection:
-            for job_id, row, serialized in rows:
+            head = None if requested_by is None else await self._press_head(connection, rows, title)
+            for job_id, written, serialized in rows:
+                row = written if head is None else _under(written, head)
                 if dedupe:
                     placed.append(
                         await self._collapse_or_insert(
@@ -240,12 +250,31 @@ class Enqueuing(QueueCore):
                 else:
                     await connection.execute(_INSERT, row)
                     placed.append(job_id)
-        inserted = set(placed)
-        for job_id, _row, _serialized in rows:
-            if job_id in inserted:
-                log.info("job.enqueued", job_id=job_id, job_type=job_type, parent_id=None)
+            new = sorted(set(placed) & {one[0] for one in rows})
+            if head is not None and not new:
+                await connection.execute(_FORGET_HEAD, (head,))
+        for job_id in new:
+            log.info("job.enqueued", job_id=job_id, job_type=job_type, parent_id=head)
         self._work_arrived()
         return placed
+
+    async def _press_head(
+        self,
+        connection: Connection,
+        rows: Sequence[tuple[str, tuple[Any, ...], str]],
+        title: str | None,
+    ) -> str:
+        """The row a press's files are steps of, settled done so only its steps run; its payload
+        carries the press's words."""
+        head = new_id()
+        first = rows[0][1]
+        # The first file's payload, so the press is read as one over some files making its products.
+        body = json.dumps({**json.loads(rows[0][2]), **({"title": title} if title else {})})
+        await connection.execute(
+            _INSERT, (head, None, PRESS, first[3], body, *first[5:11], None, head)
+        )
+        await connection.execute(_SETTLE_HEAD, (head,))
+        return head
 
     async def _admit(
         self,

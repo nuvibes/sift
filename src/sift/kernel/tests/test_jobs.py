@@ -1039,3 +1039,51 @@ async def test_a_hold_ends_with_its_job_however_the_handler_ends(job_queue: JobQ
     assert not context.lift_own_hold()
     after = await job_queue.claim(OTHER_WORKER)
     assert after is not None and after.id == per_file
+
+
+@pytest.mark.integration
+async def test_a_press_over_several_files_is_one_family(job_queue: JobQueue) -> None:
+    """A press heads ONE row on the queue, every new file a step under it. A row it collapsed
+    onto keeps its own family, and work nobody pressed stays a row a file."""
+    kind = noop_handler()
+    waiting = await job_queue.enqueue(kind, {"asset_id": "A0"}, dedupe=True)
+    placed = await job_queue.enqueue_many(
+        kind,
+        [{"asset_id": "A0"}, {"asset_id": "A1"}, {"asset_id": "A2"}, {"asset_id": "A3"}],
+        dedupe=True,
+        requested_by="acct-1",
+    )
+
+    assert placed[0] == waiting
+    steps = [await job_queue.get(one) for one in placed[1:]]
+    tops = await job_queue.list(tops_only=True)
+    (head,) = [job for job in tops.jobs if job.id != waiting]
+    assert [one.parent_id for one in steps if one is not None] == [head.id] * 3
+    assert (await job_queue.step_counts([head.id]))[head.id].by_state == {"queued": 3}
+
+    plain = await job_queue.enqueue_many(kind, [{"asset_id": "B1"}, {"asset_id": "B2"}])
+    for one in plain:
+        job = await job_queue.get(one)
+        assert job is not None and job.parent_id is None
+
+
+@pytest.mark.integration
+async def test_a_press_is_headed_by_a_row_in_its_own_words_over_every_file(
+    job_queue: JobQueue,
+) -> None:
+    kind = noop_handler()
+    placed = await job_queue.enqueue_many(
+        kind,
+        [{"asset_id": f"A{n}"} for n in range(4)],
+        requested_by="acct-1",
+        title="Creating hover previews for 4 files",
+    )
+    (top,) = (await job_queue.list(tops_only=True)).jobs
+    assert top.payload == {"asset_id": "A0", "title": "Creating hover previews for 4 files"}
+    assert top.state is JobState.DONE and top.type == "press" and top.id not in placed
+    assert (await job_queue.step_counts([top.id]))[top.id].by_state == {"queued": 4}
+    collapsed = await job_queue.enqueue_many(
+        kind, [{"asset_id": "A0"}], requested_by="acct-1", dedupe=True, title="Again"
+    )
+    assert collapsed == [placed[0]]
+    assert len((await job_queue.list(tops_only=True)).jobs) == 1, "a head that heads nothing"

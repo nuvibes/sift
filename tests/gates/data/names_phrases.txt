@@ -516,3 +516,5 @@ Local Storage
 Open Activity
 Raw Cuts
 One Exif
+Stage View
+Whether Activity

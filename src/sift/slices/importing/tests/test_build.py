@@ -355,7 +355,7 @@ async def test_a_library_wider_than_a_page_asks_for_the_next_page(
     job = await job_queue.get(context.job.id)
     assert job is not None
     assert job.units == 1, "the page weighs nothing beyond itself; the counter carries the files"
-    assert job.note == "2 of 3 files handed out so far, still going through the library\u2026"
+    assert job.note == "Handed out 2 of 3 files."
 
     # The next page is the rest of the library, by key: exactly the file not yet handed out.
     following = await context_for(GENERATE, {**pages[0].payload, "after": after})
@@ -482,10 +482,7 @@ async def test_what_is_lacking_is_split_by_kind_once_per_file_or_once_per_produc
 def test_what_a_page_says_it_did() -> None:
     assert _handed_out(queued=0, files=0, done=True) == "Nothing was missing."
     assert _handed_out(queued=1200, files=1200, done=True) == "Handed out 1,200 files to build."
-    assert (
-        _handed_out(queued=2, files=3, done=False)
-        == "2 of 3 files handed out so far, still going through the library\u2026"
-    )
+    assert _handed_out(queued=2, files=3, done=False) == "Handed out 2 of 3 files."
 
 
 async def test_the_task_reads_the_file_once_for_every_product(

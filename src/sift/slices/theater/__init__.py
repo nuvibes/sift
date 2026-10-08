@@ -44,8 +44,8 @@ RESUME_KEY = "theater.resume"
 _OFFERED: tuple[str, ...] = (
     "single",
     "side_by_side",
-    "stacked",
     "side_by_side_by_side",
+    "stacked",
     "grid",
     "center_stage",
     "center_stage_two",
@@ -54,15 +54,15 @@ _OFFERED: tuple[str, ...] = (
 )
 
 _LAYOUT_LABELS: tuple[str, ...] = (
-    "1x1",
-    "1x2 (P)",
-    "1x2 (L)",
-    "1x3",
-    "2x2",
-    "Center stage 1x1",
-    "Center stage 1x2",
-    "Center stage 1x3",
-    "Center stage 2x2",
+    "Grid 1x1",
+    "Grid 1x2 (P)",
+    "Grid 1x3",
+    "Grid 1x2 (L)",
+    "Grid 2x2",
+    "Stage View 1x1",
+    "Stage View 1x2",
+    "Stage View 1x3",
+    "Stage View 2x2",
 )
 
 register_setting(
@@ -92,7 +92,7 @@ register_setting(
     section="Theater",
     label="When a preview comes up",
     help=(
-        "Center stage shows up to four videos in focus with previews under them. "
+        "Stage View shows up to four videos in focus with previews under them. "
         "Double-clicking a preview always brings it into focus."
     ),
     disclosure=(

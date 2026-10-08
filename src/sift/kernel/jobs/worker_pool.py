@@ -26,6 +26,7 @@ from typing import Any, Protocol, runtime_checkable
 from sift.kernel.content import ContentStore, LibraryStore
 from sift.kernel.ids import new_id
 from sift.kernel.jobs.families import Family
+from sift.kernel.jobs.holding import Holding
 from sift.kernel.jobs.ledger import CURRENT_FAMILY, Ledger
 from sift.kernel.jobs.queue import (
     STOP_TO_CANCEL,
@@ -518,31 +519,18 @@ _TRAILS: set[str] = set()
 #: captioned with its `name`.
 _COUNTS: dict[str, str] = {}
 
-#: THE WORK SIFT DOES IN THE BACKGROUND, left off the list of what is happening now on Activity.
-#:
-#: Checking for a new version and the backup are the machine's own upkeep: nobody waits on them and
-#: nobody opens Activity to watch one. Drawn there, a check that takes a second and a backup that
-#: comes round once a night would sit among the work somebody is watching, and each one's next run
-#: would wait on the list as a queued row for the whole of the day. Each still keeps its row on the
-#: Tasks screen (its schedule, its last run, its Run now), which reads the job row directly, and
-#: History records what it did. Declared where the handler is, so the feature that knows its work is
-#: upkeep says so, and the listing reads the one set (`unlisted_job_types`).
+#: THE MACHINE'S OWN UPKEEP (the update check, the backup), left off Activity's list: nobody waits
+#: on it, and its next run would sit there queued all day. Its row on Tasks and History say what it
+#: did. Declared where the handler is; read through `unlisted_job_types`.
 _UNLISTED: set[str] = set()
 
-#: THE WORK THAT RUNS BY ITSELF AS FILES ARRIVE, left off Activity's Now unless a run holds it.
+#: THE WORK THAT RUNS BY ITSELF AS FILES ARRIVE, left off Activity's list unless a run holds it.
 #:
-#: A file landing hands out its own chain (the read, the thumbnail, the hover clip, the scrub
-#: strip, the fingerprints, the face scan, the description), and the fingerprint pass fills in
-#: what a scan left behind a page at a time. Nobody pressed any of it and no task started it as a
-#: run, yet each piece that heads its own row would sit on Now as one: a library taking in files
-#: would draw "Fingerprinting for duplicates, Done" every minute, and the rows somebody is watching
-#: would scroll away under it. So a row of one of these types that heads its own family and was
-#: pressed by nobody is left off Now while it is waiting, running or done. A step of a download, a
-#: scan or a Build stays folded in that run's row; a failed or canceled one stays listed, because
-#: the bulk actions act on every failed and every canceled row and a count that left some out
-#: would name a pile they do not clear. The type is still offered in the list's Type choice and a
-#: caller naming it reads every row; the family's bar and History's run line say what it did.
-#: Declared where the handler is, like `_UNLISTED`, and read through `by_itself_job_types`.
+#: A file landing hands out its own chain (the read, the pictures, the fingerprints, the faces, the
+#: description), nobody pressed and no task ran. A row of one of these that heads its own family
+#: and nobody pressed is left off the list while waiting, running or done; a failed or canceled
+#: one stays, for the bulk actions act on every one. Named by its type, every row is read; the
+#: family's bar and History say what it did. Read through `by_itself_job_types`.
 _BY_ITSELF: set[str] = set()
 
 
@@ -909,6 +897,8 @@ class WorkerPool:
         self._wake: dict[str, asyncio.Event] = {}
         #: How this pool stops hearing the queue's stop requests. None while it is not running.
         self._unlisten: Callable[[], None] | None = None
+        #: What somebody paused (`holding`).
+        self.holding = Holding(self._waking.work_arrived)
 
     @property
     def concurrency(self) -> int:
@@ -1154,7 +1144,14 @@ class WorkerPool:
         """
         while not self._stop.is_set() and not own_stop.is_set():
             try:
-                job = await self._queue.claim(worker_id, limits=self._limits)
+                if self.holding.held_all:
+                    await self._idle(own_stop)
+                    continue
+                job = await self._queue.claim(
+                    worker_id,
+                    limits=self.holding.caps(self._limits),
+                    held_products=self.holding.products,
+                )
                 if job is None:
                     await self._idle(own_stop)
                     continue

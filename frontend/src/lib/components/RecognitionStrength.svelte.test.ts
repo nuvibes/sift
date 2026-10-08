@@ -4,7 +4,7 @@ import { resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushSync, mount } from 'svelte';
 
-import type { Strength } from '$lib/people/faces.svelte';
+import type { ReferenceStrengths, Strength } from '$lib/people/faces.svelte';
 
 import RecognitionStrength, { startersSay } from './RecognitionStrength.svelte';
 
@@ -36,7 +36,7 @@ function strength(over: Partial<Strength> = {}): Strength {
 		fraction: 0.5,
 		references: 6,
 		strong: 12,
-		target: 12,
+		target: 24,
 		verdict: 'fair',
 		...over
 	} as Strength;
@@ -82,15 +82,30 @@ describe('how reliably one person can be recognized', () => {
 		expect(host.querySelector('[role="meter"]')).toBeNull();
 	});
 
-	it('draws a meter against the target the SERVER sent, not a number of its own', async () => {
-		/* A bar drawn against a copy held here would go on saying "good" after the number behind it
-		   moved. */
-		await draw(strength({ references: 6, target: 12 }));
+	it('draws a meter full at the dependable number the SERVER sent, never the target', async () => {
+		/* Full where matching becomes dependable. The target only steers learning and group naming,
+		   so it reaches neither the bar nor anything a screen reader says. */
+		await draw(strength({ references: 6, floor: 4, strong: 12, target: 31 }));
 
 		const meter = host.querySelector('[role="meter"]');
 		expect(meter?.getAttribute('aria-valuenow')).toBe('6');
 		expect(meter?.getAttribute('aria-valuemax')).toBe('12');
 		expect(meter?.getAttribute('aria-valuemin')).toBe('0');
+		expect(host.textContent).not.toContain('31');
+		for (const { value } of meter?.attributes ?? []) expect(value).not.toBe('31');
+	});
+
+	it("says what the server's numbers mean for this person, one picture in the singular", async () => {
+		await draw(strength({ verdict: 'weak', references: 2, floor: 5, strong: 10, target: 20 }));
+		expect(host.querySelector('.basis')?.textContent?.trim()).toBe(
+			'Recognized from 2 pictures. Matching is weak under 5 and dependable from 10.'
+		);
+
+		host.remove();
+		await draw(strength({ verdict: 'weak', references: 1, floor: 3, strong: 7, target: 20 }));
+		expect(host.querySelector('.basis')?.textContent?.trim()).toBe(
+			'Recognized from 1 picture. Matching is weak under 3 and dependable from 7.'
+		);
 	});
 
 	it('says the verdict in words, at every boundary the server bands on', async () => {
@@ -107,21 +122,22 @@ describe('how reliably one person can be recognized', () => {
 			['weak', 4, "Sift can't identify Ada yet"],
 			['fair', 5, 'Sift can now identify Ada reasonably well'],
 			['fair', 9, 'Sift can now identify Ada reasonably well'],
-			['good', 10, 'Sift now identifies Ada effectively'],
-			['good', 19, 'Sift now identifies Ada effectively'],
+			['good', 10, 'Sift identifies Ada reliably'],
+			['good', 19, 'Sift identifies Ada reliably'],
 			['strong', 20, 'Sift identifies Ada reliably']
 		] as const) {
 			host?.remove();
 			await draw(strength({ verdict, references, target: 20, floor: 5, strong: 10 }));
 			const meter = host.querySelector('[role="meter"]');
-			expect(meter?.getAttribute('aria-valuenow')).toBe(String(references));
+			// Full at dependable: past it the meter holds at its top.
+			expect(meter?.getAttribute('aria-valuenow')).toBe(String(Math.min(references, 10)));
 			expect(host.querySelector('.count .words')?.textContent?.trim()).toBe(words);
 		}
 	});
 
 	it('says nothing about references, and no advice sentence', async () => {
-		/* The band is furniture above a wall of files, so it is the bar and one sentence, with no
-		   advice line and no count of references. */
+		/* The band is furniture above a wall of files: the bar, the verdict and its numbers, with
+		   no advice line and no word a person outside this feature would not know. */
 		await draw(strength({ verdict: 'good', references: 13, target: 20, floor: 5, strong: 10 }));
 
 		expect(host.textContent).not.toMatch(/reference/i);
@@ -194,6 +210,36 @@ describe('how reliably one person can be recognized', () => {
 
 		expect(host.querySelector('.count .words')?.textContent?.trim()).toBe(
 			"Sift can't identify Ada yet"
+		);
+	});
+});
+
+describe('a wall of people', () => {
+	it("draws each card against the wall's dependable number, never its target", () => {
+		/* The wall hands every count over in one reading, so the card makes no request of its own. */
+		const strengths: ReferenceStrengths = {
+			floor: 5,
+			strong: 10,
+			target: 20,
+			people: { p1: 5 },
+			verdicts: { p1: 'fair' }
+		};
+		host = document.createElement('div');
+		document.body.append(host);
+		mount(RecognitionStrength, {
+			target: host,
+			props: { personId: 'p1', name: 'Ada Byron', strengths }
+		});
+		flushSync();
+
+		expect(asked).not.toHaveBeenCalled();
+		const meter = host.querySelector('[role="meter"]');
+		expect(meter?.getAttribute('aria-valuenow')).toBe('5');
+		expect(meter?.getAttribute('aria-valuemax')).toBe('10');
+		// Half of ten, where half of the target would leave three quarters of the track empty.
+		expect(host.querySelector<HTMLElement>('.spectrum')?.style.clipPath).toBe('inset(0 50% 0 0)');
+		expect(host.querySelector('.basis')?.textContent?.trim()).toBe(
+			'Recognized from 5 pictures. Matching is weak under 5 and dependable from 10.'
 		);
 	});
 });

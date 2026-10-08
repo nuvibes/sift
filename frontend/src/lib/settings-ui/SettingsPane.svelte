@@ -36,7 +36,6 @@
 	import GetToKnow from './GetToKnow.svelte';
 	import Maintenance from './Maintenance.svelte';
 	import Performance from './Performance.svelte';
-	import Importing from './Importing.svelte';
 	import Playback from './Playback.svelte';
 	import StashBoxesPane from './StashBoxesPane.svelte';
 	import Privacy from './Privacy.svelte';
@@ -120,7 +119,7 @@
 	{:else}
 		<SettingsTitle label={here?.label ?? labelFor(section)} icon={here?.icon} />
 		{#if held}<div class="held-note"><Note>{READ_ONLY_NOTE}</Note></div>{/if}
-		<!-- No `schedule`, `jobs`, `logs`, `ledger`, `theater` or `about` branch: those addresses are retired, `showing` is
+		<!-- No `schedule`, `jobs`, `importing`, `logs`, `ledger`, `theater` or `about` branch: those addresses are retired, `showing` is
 		     already the section that inherited each (see `MOVED_TO`), and a branch for one could
 		     never run. -->
 		{#if showing === 'library'}
@@ -128,8 +127,6 @@
 			     one says where the files are kept, the other says what the machine is busy
 			     with. -->
 			<LibraryScreen />
-		{:else if showing === 'importing'}
-			<Importing />
 		{:else if showing === 'tasks'}
 			<JobsScreen />
 		{:else if showing === 'downloads'}

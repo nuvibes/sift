@@ -414,16 +414,16 @@ it('offers to remove the index once something has been described', async () => {
 	expect(button('Delete index')).toBeDefined();
 });
 
-it('draws no switch of its own: it says whether it is on and links to the one under Importing', async () => {
-	/* One setting, one door. The switch is under Importing with the other recognition switches;
+it('draws no switch of its own: it says whether it is on and links to the one under Import tasks', async () => {
+	/* One setting, one door. The switch is under Import tasks with the other recognition switches;
 	   a second one here would be two controls for one answer. */
 	await render(status({ enabled: true, ready: true, indexed_frames: 40 }), true);
 
 	expect(toggle()).toBeNull();
 	expect(stateOf(pointer())).toBe('On');
 	const link = pointer()?.querySelector('a');
-	expect(link?.textContent?.trim()).toBe('Change in Importing');
-	expect(link?.getAttribute('href')).toContain('importing');
+	expect(link?.textContent?.trim()).toBe('Change in Identify settings');
+	expect(link?.getAttribute('href')).toContain('tasks');
 	expect(saveSettings).not.toHaveBeenCalled();
 });
 

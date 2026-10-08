@@ -222,7 +222,7 @@ describe('what a verb lands on while every cell is selected', () => {
 		const named = [...host.querySelectorAll('button[aria-label]')].map((one) =>
 			one.getAttribute('aria-label')
 		);
-		for (const said of ['Previous in every cell', 'Next in every cell']) {
+		for (const said of ['Previous in all cells', 'Next in all cells']) {
 			expect(named, `${said} was not on the bar`).toContain(said);
 		}
 	});
@@ -235,7 +235,7 @@ describe('what a verb lands on while every cell is selected', () => {
 		);
 		expect(named).toContain('Previous in cell 1');
 		expect(named, 'a verb claimed the whole wall over one chosen cell').not.toContain(
-			'Previous in every cell'
+			'Previous in all cells'
 		);
 	});
 
@@ -364,10 +364,35 @@ describe('the drawer keeps one shape', () => {
 		) as HTMLButtonElement[];
 	}
 
-	it('draws all twelve, Clip then Screenshot first, the four that do not apply dimmed with the reason', () => {
+	/* Repeat and Shuffle are the drawer's on a wall; the row keeps Previous, Play and Next. */
+	it('holds Repeat and Shuffle in the drawer, beside Randomize, and not on the row', () => {
+		const wall = draw(0, true);
+		const row = [...host.querySelectorAll('.row .middle button')].map((one) =>
+			one.getAttribute('aria-label')
+		);
+		expect(row).toEqual(['Previous in all cells', 'Play', 'Next in all cells']);
+
+		const all = drawer().map((one) => one.getAttribute('aria-label'));
+		expect(all.slice(4, 7)).toEqual([
+			'Randomize in all cells',
+			'Play through',
+			'Shuffle in all cells'
+		]);
+
+		const was = wall.cells[0].ordering;
+		control('Shuffle in all cells').click();
+		control('Play through').click();
+		flushSync();
+		const flipped = was === 'shuffle' ? 'in_order' : 'shuffle';
+		expect(wall.cells.map((one) => one.ordering)).toEqual(wall.cells.map(() => flipped));
+		expect(new Set(wall.cells.map((one) => one.endBehaviour)).size).toBe(1);
+		expect(wall.cells[0].endBehaviour).not.toBe('loop_all');
+	});
+
+	it('draws all fourteen, Clip then Screenshot first, the four that do not apply dimmed with the reason', () => {
 		draw();
 		const all = drawer();
-		expect(all).toHaveLength(12);
+		expect(all).toHaveLength(14);
 		// Where the player's drawer keeps them, and through the same two controls. Nothing is
 		// playing in this cell, so Clip says so rather than going.
 		expect(all[0].getAttribute('aria-label')).toBe('Nothing is playing to clip');
@@ -378,11 +403,11 @@ describe('the drawer keeps one shape', () => {
 			'Nothing is playing to clip',
 			'Mark both ends of a loop to save it',
 			'This file has one size',
-			'Previews come with a Center stage layout'
+			'Previews come with a Stage View layout'
 		]);
 	});
 
-	it('is the same twelve once a clip has sizes, and once the wall has a strip', () => {
+	it('is the same fourteen once a clip has sizes, and once the wall has a strip', () => {
 		const wall = draw();
 		const cell = wall.all[0];
 		cell.plan = {
@@ -393,13 +418,13 @@ describe('the drawer keeps one shape', () => {
 			]
 		} as unknown as NonNullable<typeof cell.plan>;
 		flushSync();
-		expect(drawer()).toHaveLength(12);
+		expect(drawer()).toHaveLength(14);
 		expect(control('Quality').hasAttribute('disabled')).toBe(false);
 
 		// A strip starts its previews, which moves every cell's plan on; the mode is what is asked.
 		wall.addPreview();
 		flushSync();
-		expect(host.querySelectorAll('.tray .panel button')).toHaveLength(12);
+		expect(host.querySelectorAll('.tray .panel button')).toHaveLength(14);
 		expect(control('A preview comes up when you double-click it').hasAttribute('disabled')).toBe(
 			false
 		);

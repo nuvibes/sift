@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """A place in Sift is named by its breadcrumb, in the documents as on the screen.
 
-The screen's name, then each step, joined by `" > "`: `Settings > Importing > Folders`. It is what
+The screen's name, then each step, joined by `" > "`: `Settings > Tasks and Activity > Import tasks`. It is what
 the copy button beside a settings name puts on the clipboard and what the settings search takes
 pasted, so a reader can follow a path from the documents straight to the place. "Under Importing's
 Folders row", "in Settings, under Tasks" and `Settings -> Folders` each name the same place in a
@@ -142,7 +142,7 @@ def test_the_documents_name_every_place_by_its_breadcrumb() -> None:
     ]
     assert not wrong, (
         f"\n{len(wrong)} places named another way than their breadcrumb in code ticks, for example"
-        " `Settings > Importing > Folders`:\n\n" + "\n".join(wrong) + "\n"
+        " `Settings > Tasks and Activity > Import tasks`:\n\n" + "\n".join(wrong) + "\n"
     )
 
 
@@ -159,7 +159,7 @@ def test_the_documents_are_read() -> None:
         "Open Settings > Folders and add a folder.",
         "- **Settings > Privacy** can hide your profile folder.",
         "It is in Settings, under Tasks.",
-        "Turn it on under Importing's Folders row.",
+        "Turn it on under Playback's Repeat row.",
         "Add the folder under Folders in Settings first.",
     ],
 )

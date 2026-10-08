@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { checkColumns } from '$lib/components/common/DataRows.svelte';
 import {
 	ACTIVITY_ACTIONS,
@@ -7,10 +8,12 @@ import {
 	NOT_ENOUGH,
 	NOTHING_WAITING,
 	nowState,
+	pile,
 	passes,
 	shownState,
 	stepsLeft,
 	stepsLine,
+	SUB_TASK_OFF,
 	WAITING_FOR_RUNTIME,
 	type Job,
 	type JobsPage,
@@ -43,6 +46,7 @@ function job(over: Partial<Job> = {}): Job {
 		updated_at: sequence,
 		steps: null,
 		waits_for_password: false,
+		reason: null,
 		...over
 	};
 }
@@ -56,6 +60,7 @@ function steps(over: Partial<Steps> = {}): Steps {
 		state: 'running',
 		subject: 'clip.mp4',
 		subject_id: 'a1',
+		failure: null,
 		...over
 	};
 }
@@ -190,6 +195,7 @@ function page(
 		step_back_over: [],
 		turbo_mode: false,
 		password_wanted: 0,
+		paused: false,
 		families: Object.fromEntries(
 			Object.entries(families).map(([key, one]) => {
 				// The server attributes these itself; a test that does not say them gets the same
@@ -209,6 +215,8 @@ function page(
 					{
 						label: key,
 						types: [],
+						paused: false,
+						runs: [],
 						eta_seconds: null,
 						on: true,
 						ready: true,
@@ -295,12 +303,16 @@ describe('the bar, which is done over what wants doing', () => {
 							{
 								type: 'face_scan',
 								caption: 'files looked at for faces',
+								on: true,
+								paused: false,
 								done: 9000,
 								total: 100000
 							},
 							{
 								type: 'watermark_read',
 								caption: 'files read for watermarks',
+								on: true,
+								paused: false,
 								done: 0,
 								total: 100000
 							}
@@ -319,6 +331,94 @@ describe('the bar, which is done over what wants doing', () => {
 		expect(Math.round(one.parts[0].progress)).toBe(9);
 	});
 
+	it('says a sub-task switched off is off, and carries what Run now presses and a pause', () => {
+		/* Fingerprint with music fingerprints off: drawn, counted in nothing the pass says. */
+		const [one] = passes(
+			page({
+				fingerprint: {
+					label: 'Fingerprint',
+					types: ['fingerprint_file', 'audio_fingerprint'],
+					done: 94242,
+					total: 94242,
+					paused: true,
+					runs: [{ task: 'generate', parts: ['fingerprints'] }],
+					parts: [
+						{
+							type: 'fingerprint_file',
+							caption: 'files fingerprinted',
+							on: true,
+							paused: true,
+							done: 94242,
+							total: 94242
+						},
+						{
+							type: 'audio_fingerprint',
+							caption: 'files with a music fingerprint',
+							on: false,
+							paused: false,
+							done: 0,
+							total: 15533
+						}
+					]
+				}
+			})
+		);
+
+		expect(one.parts.map((part) => [part.count, part.off, part.paused])).toEqual([
+			['94,242 of 94,242', false, true],
+			[`0 of 15,533 \u00b7 ${SUB_TASK_OFF}`, true, false]
+		]);
+		expect(one.runs).toEqual([{ task: 'generate', parts: ['fingerprints'] }]);
+		expect(one.paused).toBe(true);
+	});
+
+	it('draws its own bar and count beside its time left while it is in progress', () => {
+		/* Identify of two kinds, running: the row itself shows motion, over the total its time
+		   left is counted on, not only the sub-rows under the arrow. */
+		const two = (outstanding: number) =>
+			passes(
+				page(
+					{
+						identify: {
+							label: 'Identify',
+							types: ['face_scan', 'watermark_read'],
+							done: 9000,
+							total: 9270,
+							parts: [
+								{
+									type: 'face_scan',
+									caption: 'faces',
+									on: true,
+									paused: false,
+									done: 4500,
+									total: 4635
+								},
+								{
+									type: 'watermark_read',
+									caption: 'marks',
+									on: true,
+									paused: false,
+									done: 4500,
+									total: 4635
+								}
+							]
+						}
+					},
+					{ face_scan: kind({ waiting: 270, outstanding, total: 4635 }) }
+				)
+			)[0];
+		expect([two(23).moving, two(23).done, two(23).parts.length]).toEqual([
+			true,
+			'9,000 of 9,270',
+			2
+		]);
+		expect(two(0).moving).toBe(false);
+		const markup = readFileSync('src/lib/jobs/JobsScreen.svelte', 'utf8');
+		expect(markup.match(/line\.pass\.parts\.length === 0 \|\| line\.pass\.moving/g)).toHaveLength(
+			2
+		);
+	});
+
 	it('draws one line for a pass of one counted kind, as before', () => {
 		const [one] = passes(
 			page(
@@ -329,7 +429,14 @@ describe('the bar, which is done over what wants doing', () => {
 						done: 9000,
 						total: 100000,
 						parts: [
-							{ type: 'face_scan', caption: 'files looked at for faces', done: 9000, total: 100000 }
+							{
+								type: 'face_scan',
+								caption: 'files looked at for faces',
+								on: true,
+								paused: false,
+								done: 9000,
+								total: 100000
+							}
 						]
 					}
 				},
@@ -561,7 +668,7 @@ describe('a pass whose work cannot run', () => {
 		);
 
 		expect(identify.now).toBe('Turned off');
-		expect(identify.when).toBe('Turn on in Importing');
+		expect(identify.when).toBe('Turn on in Import tasks');
 		expect(identify.settingLink, 'the way back on is a pointer, not a sentence').toBe(true);
 		expect(identify.allowed).toBe(false);
 	});
@@ -774,5 +881,14 @@ describe('the housekeeping', () => {
 
 		expect(drawn[0].last).toBe('Never');
 		expect(drawn[0].when).toBe(NOTHING_WAITING);
+	});
+});
+
+describe('a pile on Options', () => {
+	it('names the tasks the list shows and the rows it acts on, where they differ', () => {
+		expect(pile(101, 77, 'failed')).toBe('77 failed, 101 with their steps');
+		expect(pile(12, 12, 'failed')).toBe('12 failed');
+		expect(pile(40, 5)).toBe('5, 40 with their steps');
+		expect(pile(3, undefined, 'canceled')).toBe('3 canceled');
 	});
 });

@@ -286,6 +286,9 @@ class Store:
     async def assets_under(self, folder_id: str) -> list[str]:
         return await self._tree.assets_under(folder_id)
 
+    async def assets_present_under(self, folder_id: str) -> list[str]:
+        return await self._tree.assets_present_under(folder_id)
+
     async def filenames_in(self, folder_id: str) -> list[str]:
         return await self._tree.filenames_in(folder_id)
 

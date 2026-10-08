@@ -20,11 +20,12 @@ export const COPY = {
 	intro:
 		"Any folder can have its own settings. For example, a scratch folder that never needs previews, or one library where faces are recognized and another where they aren't.",
 	pageHelp:
-		'A setting left on Follow the default uses the setting under Importing, and changes when that does.',
+		'A setting left on Follow the default uses the setting under Import tasks, and changes when that does.',
 	follow: 'Follow the default',
 	on: 'On',
 	off: 'Off',
 	follows: 'Follows the default',
+	none: "No library folders yet. Add one on Folders, and it's listed here with its own settings.",
 	own: (n: number) => `${counted(n)} ${n === 1 ? 'setting' : 'settings'} of its own`,
 	/** The fold the folders wait behind, so the pane reads as its own rows first: how many, as
 	 *  every fold on a pane says ("Show all 26 Sites"). */
@@ -38,7 +39,8 @@ export const COPY = {
 export const SEARCHABLE: Searchable[] = [
 	{
 		name: COPY.name,
-		section: 'importing',
+		key: 'importing.folders',
+		section: 'tasks',
 		help: COPY.help,
 		keywords:
 			'folder root per-folder override exclude skip only this library scratch different answer'

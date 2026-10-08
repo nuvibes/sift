@@ -182,6 +182,50 @@ class TestThePass:
         for one in added:
             assert await people_of(temp_db, one.asset.id) == {SOMEBODY_KNOWN}
 
+    async def test_a_copy_that_is_gone_from_the_folder_does_not_take_its_name(
+        self,
+        service: SuggestionService,
+        temp_db: Database,
+        library: Library,
+        add_file: Callable[..., Any],
+        faces: FakeFaces,
+        name_folders: Callable[[], Any],
+        admin: Viewer,
+    ) -> None:
+        """A file that once sat in the folder and now sits elsewhere is not the folder's to name:
+        the record of where it was is not the folder's word on it."""
+        added = [await add_file(library, f"Nadia Vance/clip{i}.mp4") for i in range(5)]
+        moved = await add_file(library, "Elsewhere/clip9.mp4")
+        home = await temp_db.fetch_one(
+            "SELECT folder_id, root_id FROM asset_locations WHERE asset_id = ?",
+            (added[0].asset.id,),
+        )
+        assert home is not None
+        await temp_db.execute(
+            "INSERT INTO asset_locations (id, asset_id, root_id, folder_id, rel_path, filename,"
+            " status, first_seen_at, last_seen_at) VALUES (?, ?, ?, ?, ?, ?, 'missing', 0, 0)",
+            (
+                "gone-copy",
+                moved.asset.id,
+                home["root_id"],
+                home["folder_id"],
+                "Nadia Vance/clip9.mp4",
+                "clip9.mp4",
+            ),
+        )
+        await temp_db.execute(
+            "INSERT INTO people (id, name, created_at) VALUES (?, ?, 0)",
+            (SOMEBODY_KNOWN, "Someone"),
+        )
+        await name_folders()
+        faces.looked = {"Nadia Vance": (5, 5)}
+        faces.named_here = {"Nadia Vance": {SOMEBODY_KNOWN: 5}}
+
+        await service.rebuild()
+        for one in added:
+            assert await people_of(temp_db, one.asset.id) == {SOMEBODY_KNOWN}
+        assert await people_of(temp_db, moved.asset.id) == set()
+
     async def test_a_silent_attribution_leaves_out_somebody_elses_files(
         self,
         service: SuggestionService,

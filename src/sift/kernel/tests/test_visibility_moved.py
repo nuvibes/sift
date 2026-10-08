@@ -187,3 +187,40 @@ async def test_a_library_at_version_seventeen_moves_its_counts_once_per_write(
         "INSERT INTO asset_tags (asset_id, tag_id) VALUES (?, ?)", (world.twin, world.tag)
     )
     assert await _differences(temp_db) == []
+
+
+async def test_a_library_at_version_eighteen_keeps_a_moved_pairs_size_beside_it(
+    temp_db: Database, world: World, actors: Actors
+) -> None:
+    """The version 19 step: the scratch of moved pairs made again with the size and time each
+    moves, and the triggers rewritten to read them, so a hide's counts still follow exactly."""
+    async with temp_db.write() as connection:
+        await connection.execute("DROP TABLE visibility_moved")
+        await connection.execute(
+            "CREATE TABLE visibility_moved (asset_id TEXT NOT NULL REFERENCES assets(id),"
+            " user_id TEXT NOT NULL REFERENCES users(id), dn INTEGER NOT NULL,"
+            " dc INTEGER NOT NULL, read INTEGER NOT NULL, PRIMARY KEY (asset_id, user_id))"
+            " WITHOUT ROWID"
+        )
+        await visibility.initialize(connection, 18)
+        await visibility.keep_true(connection)
+    columns = await temp_db.fetch_all("SELECT name FROM pragma_table_info('visibility_moved')")
+    assert {"size", "time"} <= {str(row["name"]) for row in columns}
+    await temp_db.execute(*hidden_row("asset", world.twin, actors.admin.id))
+    assert await _differences(temp_db) == []
+
+
+async def test_a_file_one_touch_read_in_part_moves_whole_when_its_answer_moves(
+    temp_db: Database, world: World, actors: Actors
+) -> None:
+    """A Loop cut and its file hidden in one write: the Loop's touch reads only the kinds over
+    `loops`, so the rest of the file is read when the answer moves, and every count follows."""
+    async with temp_db.write() as connection:
+        await connection.execute(
+            "INSERT INTO loops (id, asset_id, start_ms, end_ms, name, created_by, created_at)"
+            " VALUES (?, ?, 0, 1000, 'dusk', ?, 0)",
+            (new_id(), world.solo, actors.admin.id),
+        )
+        await connection.execute(*hidden_row("asset", world.solo, actors.admin.id))
+    assert await _owed(temp_db) == 0
+    assert await _differences(temp_db) == []

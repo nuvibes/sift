@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import importlib
 import io
 import json
 import zipfile
@@ -182,6 +183,45 @@ def test_a_downloaded_archive_is_the_whole_log_redacted_whatever_the_setting(
     assert "someone" not in text
     assert "hunter22" not in text
     assert "clip.mp4" in text
+
+
+def test_the_archive_carries_the_desktop_apps_logs_where_that_app_runs(
+    client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The module, not the router the package names alike.
+    routes = importlib.import_module("sift.slices.logs.router")
+    sign_in(client, "admin")
+    app = tmp_path / "app"
+    app.mkdir()
+    (app / "shell.log").write_text("shell.started\n", encoding="utf-8")
+    (app / "backend.log").write_text("exit code 0\n", encoding="utf-8")
+    monkeypatch.setattr(routes, "app_logs", lambda _settings: app)
+
+    answer = client.get("/api/logs/archive")
+
+    with zipfile.ZipFile(io.BytesIO(answer.content)) as archive:
+        names = archive.namelist()
+    assert {"app/shell.log", "app/backend.log"} <= set(names)
+
+
+@pytest.mark.parametrize("folder", ["sift-desktop", "Sift"])
+def test_the_apps_logs_are_found_only_where_the_desktop_app_started_this_backend(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, folder: str
+) -> None:
+    from sift.kernel.config import Settings
+    from sift.slices.logs.router import app_logs
+
+    roaming = tmp_path / "Roaming"
+    (roaming / folder).mkdir(parents=True)
+    (roaming / folder / "shell.log").write_text("", encoding="utf-8")
+    monkeypatch.setenv("APPDATA", str(roaming))
+    by_hand = Settings(data_dir=tmp_path / "data", cache_dir=tmp_path / "cache")
+    by_the_app = by_hand.model_copy(update={"shell_url": "http://127.0.0.1:1"})
+
+    assert app_logs(by_the_app) == roaming / folder
+    assert app_logs(by_hand) is None, "a backend run by hand has no app beside it"
+    monkeypatch.delenv("APPDATA")
+    assert app_logs(by_the_app) is None
 
 
 def test_a_guest_cannot_download_the_log(client: TestClient) -> None:

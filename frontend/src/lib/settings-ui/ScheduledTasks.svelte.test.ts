@@ -1,5 +1,5 @@
-/* The Tasks pane: quiet hours as one row at the top, the three stages, every other task folded
- * under them, and every setting filed here drawn.
+/* The Tasks pane: quiet hours as one row at the top, Import tasks, every other task folded under
+ * them, Activity under that, and every setting filed here drawn.
  *
  * ## What is worth pinning here
  *
@@ -26,6 +26,13 @@ const mocks = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), fetchSettings: vi
 vi.mock('$lib/api/client', async (importOriginal) => ({
 	...(await importOriginal<typeof import('$lib/api/client')>()),
 	api: { get: mocks.get, post: mocks.post }
+}));
+
+/* Import tasks' counts and folders are proved beside `Importing`; here they answer nothing. */
+vi.mock('$lib/library/importing', async (importOriginal) => ({
+	...(await importOriginal<typeof import('$lib/library/importing')>()),
+	fetchBuildSheet: vi.fn(() => new Promise(() => {})),
+	fetchFolderAnswers: vi.fn(() => new Promise(() => {}))
 }));
 
 vi.mock('$lib/settings-ui/settings', async (importOriginal) => ({
@@ -118,11 +125,15 @@ afterEach(() => {
 	vi.useRealTimers();
 });
 
-async function draw(answer: TasksView, sections: SettingSection[]): Promise<void> {
+async function draw(
+	answer: TasksView,
+	sections: SettingSection[],
+	props: Record<string, unknown> = {}
+): Promise<void> {
 	mocks.get.mockResolvedValue(answer);
 	mocks.fetchSettings.mockResolvedValue(sections);
 	const { default: ScheduledTasks } = await import('./ScheduledTasks.svelte');
-	drawn = svelte.mount(ScheduledTasks, { target: host }) as Record<string, unknown>;
+	drawn = svelte.mount(ScheduledTasks, { target: host, props }) as Record<string, unknown>;
 	svelte.flushSync();
 	await svelte.tick();
 	await svelte.tick();
@@ -179,8 +190,9 @@ it('puts the three stages first and folds every other task under them', async ()
 
 	const stages = host.querySelector('[id="tasks.stages"]')?.closest('section.group');
 	const fold = host.querySelector<HTMLDetailsElement>('details[id="tasks.others"]');
+	expect(stages, 'no Import tasks group').toBeTruthy();
 	for (const id of ['scan', 'generate', 'identify']) {
-		expect(stages?.querySelector(`[id="tasks.${id}.when"]`), id).not.toBeNull();
+		expect(stages?.querySelector(`[id="tasks.${id}.when"]`), id).toBeTruthy();
 	}
 	for (const id of ['faces', 'backup']) {
 		expect(fold?.querySelector(`[id="tasks.${id}.when"]`), id).not.toBeNull();
@@ -189,6 +201,35 @@ it('puts the three stages first and folds every other task under them', async ()
 	expect(fold?.querySelector('summary')?.textContent).toBe('Other tasks');
 	// The one fold, not a disclosure drawn by hand.
 	expect(fold?.classList.contains('fold')).toBe(true);
+});
+
+it('draws Activity right under Other tasks, when the screen hands it in', async () => {
+	const activity = svelte.createRawSnippet(() => ({
+		render: () => '<div data-probe="queue">the queue</div>'
+	}));
+	await draw(
+		tasks(task('scan'), task('faces')),
+		[{ name: SECTION, settings: [entry('x.loose')] }],
+		{
+			activity
+		}
+	);
+
+	const heading = host.querySelector('[id="tasks.activity"]');
+	expect(heading?.textContent).toBe('Activity');
+	const fold = host.querySelector('details[id="tasks.others"]')!;
+	const queue = host.querySelector('[data-probe="queue"]')!;
+	const loose = host.querySelector('[id="x.loose"]')!;
+	const after = (a: Node, b: Node) => Boolean(a.compareDocumentPosition(b) & 4);
+	expect(after(fold, heading!)).toBe(true);
+	expect(after(heading!, queue)).toBe(true);
+	/* Other settings stays last, under the queue. */
+	expect(after(queue, loose)).toBe(true);
+});
+
+it('draws no Activity heading when nothing is handed in', async () => {
+	await draw(tasks(task('scan')), [{ name: SECTION, settings: [] }]);
+	expect(host.querySelector('[id="tasks.activity"]')).toBeNull();
 });
 
 it('gives every task its row, addressed by its own When key', async () => {

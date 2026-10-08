@@ -113,9 +113,9 @@ async def library(temp_db: Database, access: Repository) -> Library:
     """Nine files: one reached by each kind of chosen thing, and four the rules must leave out.
 
     `person` is on `p1` and `p2`, `site` reaches `s1`, `tag` is on `t1`, `collection` holds `c1`,
-    `photo_set` holds `ps1`. `stray` is reached by nothing. `vaulted` is under the person and in the
-    host's vault; `local` is under the person and kept local by its own switch; `local_tag` is under
-    the person and under a tag that is kept local.
+    `photo_set` holds `ps1`. `stray` is reached by nothing. `vaulted` is in the host's Hidden and
+    reached by nothing; `local` is under the person and kept local by its own switch; `local_tag` is
+    under the person and under a tag that is kept local.
     """
     admin = await create_user(temp_db, Role.ADMIN)
     db = temp_db
@@ -159,7 +159,7 @@ async def library(temp_db: Database, access: Repository) -> Library:
         "INSERT INTO people (id, name, name_sort, created_at) VALUES (?, 'Juno Pellerin', 'juno', ?)",
         (ids["person"], _EPOCH),
     )
-    for name in ("p1", "p2", "vaulted", "local", "local_tag"):
+    for name in ("p1", "p2", "local", "local_tag"):
         await db.execute(
             "INSERT INTO asset_people (asset_id, person_id) VALUES (?, ?)",
             (ids[name], ids["person"]),
@@ -236,22 +236,24 @@ async def test_each_kind_reaches_its_files_and_the_union_reaches_them_all(librar
     assert await _names(library, everything) == {"p1", "p2", "s1", "t1", "c1", "ps1"}
 
 
-async def test_a_concealed_file_is_left_out_even_with_the_vault_open(library: Library) -> None:
-    """The host's vault is shut for the read whatever the session had unlocked."""
+async def test_a_file_in_hidden_is_offered_whatever_the_session_unlocked(library: Library) -> None:
+    """Hidden governs what a screen shows, never what a swap sends: "Do not swap" does."""
     ids = library.ids
-    unlocked = Viewer(id=library.admin.id, role=Role.ADMIN, show_hidden=True)
-    # The vault really is the reason: the unlocked viewer sees the file on the ordinary wall.
-    seen = await library.access.assets_of(unlocked, [ids["vaulted"]])
-    assert ids["vaulted"] in seen
-    chosen = [Chosen(kind="person", id=ids["person"])]
-    assert await _names(library, chosen, unlocked) == {"p1", "p2"}
+    # Hidden really is shut for this session: the wall does not show the file.
+    assert ids["vaulted"] not in await library.access.assets_of(library.admin, [ids["vaulted"]])
+    picked = [Chosen(kind="asset", id=ids["vaulted"])]
+    assert await _names(library, picked) == {"vaulted"}
+    await library.db.execute(
+        "UPDATE assets SET keep_from_swaps = 1 WHERE id = ?", (ids["vaulted"],)
+    )
+    assert await _names(library, picked) == set()
 
 
-async def test_the_weight_of_the_picks_is_the_offers_own_read_and_hidden_adds_nothing(
+async def test_the_weight_of_the_picks_is_the_offers_own_read_and_hidden_adds_too(
     library: Library,
 ) -> None:
     """What the sender is told it will send is what the offer would hold: the same files, each
-    once, with the vault shut whatever the session unlocked, so a file in Hidden adds nothing."""
+    once, a file in Hidden among them whatever the session unlocked."""
     ids = library.ids
     await library.db.execute("UPDATE assets SET size_bytes = 1500000000 WHERE id = ?", (ids["p1"],))
     await library.db.execute(
@@ -265,6 +267,8 @@ async def test_the_weight_of_the_picks_is_the_offers_own_read_and_hidden_adds_no
     # `p1` is under the person and the Site: counted once.
     assert await weigh(library.access, _NoFilters(), unlocked, [person, site]) == (3, 1_500_000_200)
     assert await weigh(library.access, _NoFilters(), unlocked, []) == (0, 0)
+    vaulted = Chosen(kind="asset", id=ids["vaulted"])
+    assert await weigh(library.access, _NoFilters(), library.admin, [vaulted]) == (1, 900_000_000)
     gone = Viewer(id="nobody", role=Role.ADMIN)
     assert await weigh(library.access, _NoFilters(), gone, [person]) == (0, 0)
 
@@ -319,8 +323,8 @@ async def test_a_person_marked_do_not_swap_is_neither_offered_nor_named(library:
 async def test_one_file_picked_in_swap_mode_offers_that_file(library: Library) -> None:
     ids = library.ids
     assert await _names(library, [Chosen(kind="asset", id=ids["stray"])]) == {"stray"}
-    # And through the same walls: a file in the vault is not offered by being picked.
-    assert await _names(library, [Chosen(kind="asset", id=ids["vaulted"])]) == set()
+    # And a file in Hidden by being picked, Hidden being no door of a swap.
+    assert await _names(library, [Chosen(kind="asset", id=ids["vaulted"])]) == {"vaulted"}
 
 
 async def test_a_heic_or_avif_is_offered_like_any_other_picture(library: Library) -> None:
@@ -433,9 +437,9 @@ async def test_a_files_song_travels_with_it_and_only_to_a_side_that_takes_songs(
     assert models.Offer.model_validate(older).files[0].song is None
 
 
-async def test_a_songs_artists_travel_and_a_hidden_song_never_does(library: Library) -> None:
-    """The artists a song credits ride with it, in order; and a song the admin hid is no song of
-    the offer while Hidden is shut (`Repository.visible_song`, the offer's only read of songs)."""
+async def test_a_songs_artists_travel_and_a_hidden_song_does_too(library: Library) -> None:
+    """The artists a song credits ride with it, in order; and a song the admin hid travels with
+    Hidden shut (`Repository.visible_song`, read with Hidden open)."""
     ids = library.ids
     async with library.db.write() as connection:
         song_id = await songs.name_song_on(
@@ -458,7 +462,7 @@ async def test_a_songs_artists_travel_and_a_hidden_song_never_does(library: Libr
     )
     assert await library.access.visible_song(library.admin, song_id) is None
     hidden = await offer_for(library.access, library.db, _NoFilters(), library.admin, chosen)
-    assert all(one.song is None for one in hidden.files)
+    assert {library.name_of(one.key): one for one in hidden.files}["p1"].song == by_key["p1"].song
 
 
 async def test_a_chosen_person_with_nothing_offered_is_not_named(library: Library) -> None:
@@ -794,8 +798,8 @@ async def test_facial_fingerprints_offer_the_person_with_no_files(library: Libra
 
 
 async def test_facial_fingerprints_pass_the_same_doors_a_person_does(library: Library) -> None:
-    """Never somebody kept from swaps, kept local or in the vault, never one with nothing to send,
-    and a person offered through a file is named once."""
+    """Never somebody kept from swaps or kept local, never one with nothing to send, and a person
+    offered through a file is named once. Hidden is not one of the doors."""
     ids, db = library.ids, library.db
     kept = await _somebody(library, "Bea Sample")
     local = await _somebody(library, "Ava Example")
@@ -820,7 +824,23 @@ async def test_facial_fingerprints_pass_the_same_doors_a_person_does(library: Li
         chosen,
         faces=_Described(nobody=frozenset({empty})),
     )
-    assert [one.name for one in offer.people] == ["Juno Pellerin", "Eve Fixture"]
+    assert [one.name for one in offer.people] == ["Juno Pellerin", "Cy Fixture", "Eve Fixture"]
+
+
+async def test_a_person_in_hidden_is_offered_and_do_not_swap_keeps_them_home(
+    library: Library,
+) -> None:
+    """Hidden is not what keeps a person out of a swap: "Do not swap" is."""
+    ids, db = library.ids, library.db
+    await hide(db, "person", ids["person"], library.admin.id)
+    chosen = [Chosen(kind="person", id=ids["person"])]
+
+    offer = await offer_for(library.access, db, _NoFilters(), library.admin, chosen)
+    assert [one.name for one in offer.people] == ["Juno Pellerin"]
+
+    await db.execute("UPDATE people SET keep_from_swaps = 1 WHERE id = ?", (ids["person"],))
+    kept = await offer_for(library.access, db, _NoFilters(), library.admin, chosen)
+    assert kept.people == []
 
 
 async def test_the_pictures_go_only_when_the_guest_uses_the_other_model(library: Library) -> None:
@@ -874,12 +894,12 @@ def test_pictures_past_the_offers_budget_go_as_numbers_alone(
     assert [one.vector for one in kept.faces] == [one.vector for one in faces.faces]
 
 
-async def test_a_chosen_song_offers_the_files_that_carry_it_and_a_hidden_one_offers_none(
+async def test_a_chosen_song_offers_the_files_that_carry_it_hidden_or_not(
     library: Library,
 ) -> None:
     """A song is a thing a swap can pick, through the grammar's own `songs:` leaf: its files,
-    weighed as the offer reads them. A song the sender hid conceals its files from them with the
-    vault shut, so it offers nothing and weighs nothing, whatever the session unlocked."""
+    weighed as the offer reads them. A song the sender hid offers the same, Hidden being no door
+    of a swap."""
     ids = library.ids
     async with library.db.write() as connection:
         song_id = await songs.name_song_on(
@@ -894,5 +914,5 @@ async def test_a_chosen_song_offers_the_files_that_carry_it_and_a_hidden_one_off
     unlocked = Viewer(id=library.admin.id, role=Role.ADMIN, show_hidden=True)
     assert await weigh(library.access, _NoFilters(), unlocked, chosen) == (2, 200)
     await hide(library.db, "song", song_id, library.admin.id)
-    assert await _names(library, chosen, unlocked) == set()
-    assert await weigh(library.access, _NoFilters(), unlocked, chosen) == (0, 0)
+    assert await _names(library, chosen) == {"t1", "c1"}
+    assert await weigh(library.access, _NoFilters(), library.admin, chosen) == (2, 200)

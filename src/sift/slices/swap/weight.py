@@ -3,8 +3,8 @@
 
 ## The figure is the offer's own read
 
-`offer.weigh` counts the files the offer would hold: the same scoped read, as the sender with the
-vault SHUT, so a file in Hidden adds nothing and the figure is what the offer will carry.
+`offer.weigh` counts the files the offer would hold: the same scoped read, as the sender with
+Hidden open (`offer.swap_reader`), so the figure is what the offer will carry.
 
 ## What is left out, by name where one thing explains it
 
@@ -17,8 +17,8 @@ Example is kept local: 1,200 files aren't offered."
 So the answer names every PICK that carries a mark on its own row, with how many of its files the
 mark keeps back, and then counts the rest: the files the picks reach that a mark ON SOMETHING ELSE
 keeps out (a tag above them, a Site, the file's own switch). Both are read through the same filters
-the offer reads (`offer.chosen_filters`) and the same scoped read, with the vault shut, so nothing in
-Hidden is counted or named, and a pick this viewer could not open is never named.
+the offer reads (`offer.chosen_filters`) and the same scoped read, with Hidden open, so what a swap
+leaves out is told on the read that makes the offer, and a pick this viewer could not open is never named.
 
 A file whose format this device cannot strip (`transfer.NEVER_SENT_MIMES`, empty today) is neither
 offered nor counted here: no mark explains it.
@@ -80,18 +80,18 @@ async def _own_mark(database: Database, kind: str, local_id: str) -> Mark | None
     return None
 
 
-async def _count(access: Repository, shut: Viewer, narrowed: AssetFilter) -> int:
+async def _count(access: Repository, reader: Viewer, narrowed: AssetFilter) -> int:
     """How many files this filter reaches for this viewer: the wall's own total, one row read."""
-    return (await access.visible_assets(shut, limit=1, asset_filter=narrowed)).total
+    return (await access.visible_assets(reader, limit=1, asset_filter=narrowed)).total
 
 
-async def _ids(access: Repository, shut: Viewer, narrowed: AssetFilter) -> set[str]:
+async def _ids(access: Repository, reader: Viewer, narrowed: AssetFilter) -> set[str]:
     """Every file this filter reaches for this viewer, a page at a time, by seeking past the last."""
     found: set[str] = set()
     after: str | None = None
     while True:
         page = await access.visible_assets(
-            shut, limit=MAX_PAGE_SIZE, asset_filter=narrowed, sort=offer.OFFER_ORDER, after=after
+            reader, limit=MAX_PAGE_SIZE, asset_filter=narrowed, sort=offer.OFFER_ORDER, after=after
         )
         found.update(item.asset.id for item in page.items)
         if len(page.items) < MAX_PAGE_SIZE:
@@ -108,8 +108,8 @@ async def left_out(
 ) -> tuple[tuple[LeftOutBy, ...], int]:
     """The picks that carry a mark, each with the files it keeps back, and how many more files the
     picks reach that a mark on something else keeps out. See the module docstring."""
-    shut = await access.load_viewer(viewer.id)
-    if shut is None:
+    reader = await offer.swap_reader(access, viewer)
+    if reader is None:
         return (), 0
     named: list[LeftOutBy] = []
     seen: set[tuple[str, str]] = set()
@@ -121,23 +121,23 @@ async def left_out(
         if mark is None:
             continue
         kind = cast(refusal.Kind, one.kind)
-        name = await refusal.name_for(access, shut, kind, one.id)
+        name = await refusal.name_for(access, reader, kind, one.id)
         if name is None:
-            # Not this viewer's to see with the vault shut: never named, and its files never counted.
+            # Not this viewer's to see: never named, and its files never counted.
             continue
         reached = AssetFilter(where=Where(offer.LEAF_OF_KIND[one.kind], (one.id,)))
-        files = await _count(access, shut, reached)
+        files = await _count(access, reader, reached)
         if files:
             named.append(LeftOutBy(kind=kind, id=one.id, name=name, mark=mark, files=files))
 
     # The rest: what a mark on something else keeps back, less what a named pick already explains.
     explained = tuple(Where(offer.LEAF_OF_KIND[one.kind], (one.id,)) for one in named)
     others: set[str] = set()
-    for narrowing in await offer.chosen_filters(search, shut, chosen):
+    for narrowing in await offer.chosen_filters(search, reader, chosen):
         refused = narrowing.also(REFUSED)
         if explained:
             refused = refused.also(Not(AnyOf(explained)))
-        others |= await _ids(access, shut, refused)
+        others |= await _ids(access, reader, refused)
     return tuple(named), len(others)
 
 

@@ -16,4 +16,7 @@ def test_theater_opens_three_across() -> None:
     assert setting is not None
     assert setting.default == "side_by_side_by_side"
     assert setting.choice_labels is not None and setting.choices is not None
-    assert dict(zip(setting.choices, setting.choice_labels, strict=True))[setting.default] == "1x3"
+    assert (
+        dict(zip(setting.choices, setting.choice_labels, strict=True))[setting.default]
+        == "Grid 1x3"
+    )

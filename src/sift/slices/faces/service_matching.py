@@ -77,16 +77,19 @@ def _attach_bar(
     gallery: matching.Gallery,
     counts: Mapping[str, int],
     setting: float,
+    answered: Collection[str] = (),
 ) -> float:
     """How sure a match to this person has to be before Sift names the face without asking.
 
     `tuning.bar_for` over her own references at the install's setting, but `ALWAYS_ASK` for
-    somebody known by STARTER pictures alone (`Gallery.starters_only`, linked on a name). A face
+    somebody known by STARTER pictures alone (`Gallery.starters_only`, linked on a name), and for
+    a face in a file whose folders were answered as other people (`answered`): a likeness does not
+    overrule the folder's standing answer on its own, so the face is asked about. A face
     turned past the quality bar's angle (`quality.asked_only`) meets the same bar as any other: the
     bar is a likeness to her pictures, and a turned face that clears it is as much her as a
     square-on one. One function for the three places a match is judged.
     """
-    if person_id in gallery.starters_only:
+    if person_id in gallery.starters_only or (answered and person_id not in answered):
         return tuning.bar_for(counts.get(person_id, 0), bar=tuning.ALWAYS_ASK)
     return tuning.bar_for(counts.get(person_id, 0), bar=setting)
 
@@ -150,6 +153,28 @@ class _Rematched:
         self.changed = len(self.was_asked) + sum(len(faces) for faces in self.stopped.values())
 
 
+def _may_be_named(question: Asked, named_from_groups: Collection[str]) -> bool:
+    """Whether a re-match may name this question: one the arithmetic asked, or one a group asked
+    about somebody in `named_from_groups` (`names_groups`)."""
+    if question.asked_by is AskedBy.GROUP:
+        return question.person_id in named_from_groups
+    return question.asked_by is AskedBy.MATCH
+
+
+def _ruling(question: Asked, now: Attribution | None, own: float) -> Ruling:
+    """A question's new state, with the earlier one for the receipt; who asked is said again,
+    which pins the word on a question from before it was written down."""
+    return Ruling(
+        track_id=question.track_id,
+        was_person=question.person_id,
+        was=Attribution.SUGGESTED,
+        person_id=question.person_id if now is not None else None,
+        attribution=now,
+        confidence=own if now is not None else None,
+        asked_by=question.asked_by,
+    )
+
+
 def _judge_questions(
     questions: Iterable[Asked],
     *,
@@ -159,20 +184,14 @@ def _judge_questions(
     counts: Mapping[str, int],
     named_from_groups: Collection[str],
     configured: Configured,
+    answered: Mapping[str, frozenset[str]],
 ) -> list[Ruling]:
     """Step 1 of a re-match: each standing question judged again by the bar a face arriving
     today meets, so a change of either line re-judges it.
 
-    What a question may become, and nothing more:
-      * RECOGNIZED BY SIFT: one the ARITHMETIC asked (`AskedBy.MATCH`), or one a GROUP asked about
-        somebody in `named_from_groups` (`names_groups`), only when the closest person is still the
-        one proposed and the match clears her bar. Never moved to somebody else.
-      * GONE from Needs your input: any question now under the line for asking; step 2 then
-        compares it with everybody.
-      * RE-SCORED and kept: everything else: a question an Undo or a stash-box put, and a group's
-        question about somebody known from fewer confirmed faces, which only an answer settles.
-    Each ruling carries the earlier state for the receipt, and who asked stays on the face
-    (`schema._ADD_ASKED_BY`), the stored word deciding rather than whether a face has a score yet.
+    A question may become RECOGNIZED BY SIFT (`_may_be_named`, only while the closest person is
+    still the one proposed and the match clears her bar; never moved to somebody else), GONE (now
+    under the line for asking; step 2 compares it with everybody), or RE-SCORED and kept.
     """
     rows = matching.rows_by_person(gallery)
     rulings: list[Ruling] = []
@@ -198,17 +217,16 @@ def _judge_questions(
         now: Attribution | None = Attribution.SUGGESTED
         if own < configured.suggest_above:
             now = None
-        elif (
-            closest
-            and match is not None
-            and (
-                question.asked_by is AskedBy.MATCH
-                or (question.asked_by is AskedBy.GROUP and question.person_id in named_from_groups)
-            )
-        ):
+        elif closest and match is not None and _may_be_named(question, named_from_groups):
             now = matching.verdict(
                 match,
-                attach_above=_attach_bar(match.person_id, gallery, counts, configured.attach_above),
+                attach_above=_attach_bar(
+                    match.person_id,
+                    gallery,
+                    counts,
+                    configured.attach_above,
+                    answered.get(question.asset_id, ()),
+                ),
             )
         if (
             now is Attribution.SUGGESTED
@@ -216,19 +234,7 @@ def _judge_questions(
             and abs(own - question.confidence) < _SAME_SCORE
         ):
             continue
-        rulings.append(
-            Ruling(
-                track_id=question.track_id,
-                was_person=question.person_id,
-                was=Attribution.SUGGESTED,
-                person_id=question.person_id if now is not None else None,
-                attribution=now,
-                confidence=own if now is not None else None,
-                # Said again on a re-score, which pins the word on a question from before it was
-                # written down.
-                asked_by=question.asked_by,
-            )
-        )
+        rulings.append(_ruling(question, now, own))
     return rulings
 
 
@@ -301,7 +307,7 @@ class MatchingMixin(LearningMixin):
     """Comparing faces with everybody, and recording and taking back what a pass attached."""
 
     async def _attribute(
-        self, track_ids: Sequence[str], configured: Configured
+        self, track_ids: Sequence[str], configured: Configured, *, asset_id: str | None = None
     ) -> dict[str, list[tuple[str, float]]]:
         """Compare each new appearance against everybody, act on the answer, and say what it did.
 
@@ -317,6 +323,11 @@ class MatchingMixin(LearningMixin):
         # How well Sift knows each person decides the bar (`tuning.bar_for`): once per file, over
         # the pictures THIS model measured, the ones the gallery was built from.
         counts = await self._store.reference_counts(recognizer=configured.recognizer)
+        answered = (
+            (await self._store.answered_by_folders([asset_id])).get(asset_id, frozenset())
+            if asset_id is not None
+            else frozenset()
+        )
         # Every appearance's faces in ONE read: all belong to the one file being scanned.
         faces_by_track = await self._store.faces_of_many(track_ids)
         for track_id in track_ids:
@@ -339,7 +350,9 @@ class MatchingMixin(LearningMixin):
             # the best match, and what moves is only whether Sift acts on it alone.
             outcome = matching.verdict(
                 match,
-                attach_above=_attach_bar(match.person_id, gallery, counts, configured.attach_above),
+                attach_above=_attach_bar(
+                    match.person_id, gallery, counts, configured.attach_above, answered
+                ),
             )
             await self._store.attribute(
                 track_id,
@@ -384,6 +397,7 @@ class MatchingMixin(LearningMixin):
 
         # 1. The questions standing, judged again.
         questions = {one.track_id: one for one in await self._store.asked(configured.recognizer)}
+        answered = await self._store.answered_by_folders(one.asset_id for one in questions.values())
         rulings = _judge_questions(
             questions.values(),
             ignored=ignored,
@@ -392,6 +406,7 @@ class MatchingMixin(LearningMixin):
             counts=counts,
             named_from_groups=names_groups(confirmed, gallery),
             configured=configured,
+            answered=answered,
         )
         tally.questions_landed(rulings, questions, await self._store.restate(rulings))
         # 2. EVERY FACE NOBODY IS ON, including the questions step 1 stopped asking.
@@ -444,7 +459,9 @@ class MatchingMixin(LearningMixin):
         """Step 2 of a re-match: every face nobody is on compared with everybody, into `tally`."""
         fresh: dict[str, tuple[str, float]] = {}
         rulings: list[Ruling] = []
-        for track_id, asset_id, vector in await self._store.unattributed(configured.recognizer):
+        unnamed = await self._store.unattributed(configured.recognizer)
+        answered = await self._store.answered_by_folders(asset_id for _, asset_id, _ in unnamed)
+        for track_id, asset_id, vector in unnamed:
             if track_id in ignored:
                 continue
             match = matching.best_match(
@@ -458,7 +475,13 @@ class MatchingMixin(LearningMixin):
             # After the match, by the same function `_attribute` asks: the bar is the person's.
             outcome = matching.verdict(
                 match,
-                attach_above=_attach_bar(match.person_id, gallery, counts, configured.attach_above),
+                attach_above=_attach_bar(
+                    match.person_id,
+                    gallery,
+                    counts,
+                    configured.attach_above,
+                    answered.get(asset_id, ()),
+                ),
             )
             fresh[track_id] = (asset_id, match.confidence)
             rulings.append(

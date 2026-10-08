@@ -106,7 +106,7 @@ export const COPY = {
 		applying: 'Applying\u2026',
 		apply: (n: number) => (n === 1 ? 'Apply this number' : `Apply these ${n} numbers`),
 		nothingYet:
-			'Nothing is changed until you press that. You can change any of them later under Importing.',
+			'Nothing is changed until you press that. You can change any of them later under Import tasks.',
 		agrees: 'Your settings already match what this device can do. Nothing to change.',
 		notEnough: 'The benchmark finished without enough results. Running it again usually helps.',
 		decode: (fps: number, ms: number, share: boolean) =>

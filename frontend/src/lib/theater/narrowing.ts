@@ -20,12 +20,15 @@ export function editingCell(wall: Wall): number {
 }
 
 /** The panel's two halves, for the wall it is drawn over. See this file's own note for the shape. */
-export function narrowingFor(wall: Wall): Narrowing {
+export function narrowingFor(wall: Wall): Narrowing & { choose: (next: URLSearchParams) => void } {
 	return {
 		read: () => wall.cells[editingCell(wall)]?.narrowing ?? new URLSearchParams(),
 		/* The wall's hold travels with the filter, which a cell cannot see (`Cell.narrowTo`). */
 		write: (next) =>
 			wall.addressed.forEach((cell) => cell.narrowTo(next, { playing: !wall.paused })),
+		/* A saved filter is a finished choice: it lands now on every addressed cell, where a tick
+		   waits for each file's end. */
+		choose: (next) => wall.addressed.forEach((cell) => cell.narrowTo(next, { playing: false })),
 		/*
 		 * WHAT POINTING AT A FACET LIGHTS: the cells the write above lands on, by the bar's own
 		 * `aimsAtChosen`, so the wash and the write cannot name different cells. Built once, since
@@ -47,5 +50,5 @@ function withinOf(query: Record<string, string>): URLSearchParams {
 
 /** What the chips above the wall are about: one cell by number, or all of them. */
 export function narrowingName(wall: Wall): string {
-	return wall.everyCell ? 'Every cell' : `Cell ${editingCell(wall) + 1}`;
+	return wall.everyCell ? 'All cells' : `Cell ${editingCell(wall) + 1}`;
 }

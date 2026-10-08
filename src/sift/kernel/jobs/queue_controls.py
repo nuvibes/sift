@@ -3,7 +3,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+import json
+from collections.abc import Callable, Collection
 
 from sift.kernel.db import in_clause
 from sift.kernel.jobs.queue_handoffs import HandOffs
@@ -155,6 +156,21 @@ RETURNING id, root_id
 
 # The heads of the families that stop took work from, where the head itself had already finished:
 # called off with their families, for the reason `_CALL_OFF_THE_HEAD` gives.
+_CANCEL_TYPES = """
+UPDATE jobs
+   SET state = 'canceled',
+       claimed_by = NULL,
+       heartbeat_at = NULL,
+       stop_wanted = NULL,
+       updated_at = ?
+ WHERE state IN ('queued', 'running', 'blocked', 'paused')
+   AND (type IN (SELECT value FROM json_each(?))
+        OR (EXISTS (SELECT 1 FROM json_each(jobs.payload, '$.products'))
+            AND NOT EXISTS (SELECT 1 FROM json_each(jobs.payload, '$.products') AS made
+                             WHERE made.value NOT IN (SELECT value FROM json_each(?)))))
+RETURNING id
+"""
+
 _CALL_OFF_THE_HEADS = (
     "UPDATE jobs SET state = 'canceled', updated_at = ? WHERE id IN (?*) AND state = 'done'"
 )
@@ -256,6 +272,21 @@ class Controls(HandOffs):
                 await connection.execute(sql, (now, *params))
 
         log.info("job.canceled_everything", job_count=len(rows))
+        self._stop_asked([str(row["id"]) for row in rows])
+        return len(rows)
+
+    async def cancel_types(self, job_types: Collection[str], products: Collection[str] = ()) -> int:
+        """Stop every unfinished job of these types, and every step making only these products:
+        a family's or a sub-task's Cancel. How many."""
+        if not job_types and not products:
+            return 0
+        now = self._now()
+        named = (now, json.dumps(sorted(job_types)), json.dumps(sorted(products)))
+        async with self._writing() as connection:
+            rows = await _fetch(connection, _CANCEL_TYPES, named)
+            if rows:
+                await connection.execute(_ROLL_UP_CANCELED, (now, now))
+        log.info("job.canceled_types", job_types=sorted(job_types), job_count=len(rows))
         self._stop_asked([str(row["id"]) for row in rows])
         return len(rows)
 

@@ -4163,8 +4163,8 @@ export interface paths {
         /**
          * Export Pack
          * @description Build a facial fingerprints file from People here and the people waiting for a matching
-         *     face, and hand it back. Loads no model: the numbers are stored. Held to the People wall and to
-         *     what a swap refuses (`_carried`); nobody to carry is refused in words.
+         *     face, and hand it back. Loads no model: the numbers are stored. Held to the People wall with
+         *     Hidden open and to Kept local (`_carried`); nobody to carry is refused in words.
          */
         post: operations["export_pack_api_faces_packs_export_post"];
         delete?: never;
@@ -5074,6 +5074,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/jobs/cancel-work": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel Work
+         * @description Cancel every unfinished task of a pass or one of its sub-tasks; the whole queue is
+         *     `cancel-all`, so a press naming neither is refused.
+         */
+        post: operations["cancel_work_api_jobs_cancel_work_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/jobs/clear-canceled": {
         parameters: {
             query?: never;
@@ -5112,6 +5133,27 @@ export interface paths {
          *     Canceled and finished work is left alone. Nothing to clear is a success with a zero.
          */
         post: operations["clear_failed_jobs_api_jobs_clear_failed_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/pause": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Pause Work
+         * @description Pause a pass, a sub-task or the whole queue: nothing new of it starts, and what is running
+         *     finishes the step in its hand. Held until Resume, or until Sift starts again.
+         */
+        post: operations["pause_work_api_jobs_pause_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -5171,6 +5213,26 @@ export interface paths {
          *     One sweep job that hands out the per-file rows, asked for once an import stops arriving.
          */
         post: operations["rebuild_thumbnails_api_jobs_rebuild_thumbnails_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resume Work
+         * @description Start again what a pause held, for the same pass, sub-task or whole queue.
+         */
+        post: operations["resume_work_api_jobs_resume_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -10909,8 +10971,8 @@ export interface paths {
         put?: never;
         /**
          * Weigh Picks
-         * @description What the picks would offer, as files and bytes, before Start: read as this admin with the
-         *     vault shut, through the same read the offer makes, so a file in Hidden adds nothing. A POST
+         * @description What the picks would offer, as files and bytes, before Start: read as this admin with
+         *     Hidden open, through the same read the offer makes, so the figure is the offer's. A POST
          *     because the picks are a body (up to `MAX_CHOSEN` of them); it changes nothing.
          */
         post: operations["weigh_picks_api_swap_weigh_post"];
@@ -14886,6 +14948,37 @@ export interface components {
             value: string;
         };
         /**
+         * FailureLine
+         * @description Why a family failed, in one line: the newest failed row's name, reason, file and tries.
+         */
+        FailureLine: {
+            /**
+             * Attempts
+             * @description How many times it was tried.
+             */
+            attempts: number;
+            /**
+             * Name
+             * @description What the failed row was doing, in its handler's words.
+             */
+            name: string;
+            /**
+             * Reason
+             * @description Why, in plain words where the failure is a kind Sift knows, else the last line of the tool's own words.
+             */
+            reason: string;
+            /**
+             * Subject
+             * @description The file it was on, or null for work about no one file.
+             */
+            subject: string | null;
+        };
+        /**
+         * Family
+         * @enum {string}
+         */
+        Family: "scan" | "generate" | "fingerprint" | "identify" | "semantic" | "other";
+        /**
          * FamilyOfWork
          * @description One of the long passes as a whole: which job types it is, and how it is going.
          *
@@ -14954,6 +15047,12 @@ export interface components {
              */
             parts: components["schemas"]["PartOfWork"][];
             /**
+             * Paused
+             * @description Whether somebody paused this pass: no new task of it starts.
+             * @default false
+             */
+            paused: boolean;
+            /**
              * Problem
              * @description Why it cannot run, in the feature's own words, or null. A family whose answer could not be read is `ready` with no problem: not known is not the same as broken.
              */
@@ -14980,6 +15079,12 @@ export interface components {
              * @default 0
              */
             running: number;
+            /**
+             * Runs
+             * @description What Run now on this pass presses: each task, or the part of it that is this pass's, leaving out a sub-task switched off.
+             * @default []
+             */
+            runs: components["schemas"]["RunPress"][];
             /**
              * Sample
              * @description How many finished items the estimate was priced from. Nought is no estimate, and it is the honest answer rather than a whole library priced from one file.
@@ -16271,6 +16376,16 @@ export interface components {
             worker_concurrency: number;
         };
         /**
+         * Held
+         * @description What is paused after a press: the whole queue, and the job types paused one by one.
+         */
+        Held: {
+            /** Paused */
+            paused: boolean;
+            /** Types */
+            types: string[];
+        };
+        /**
          * HeldFaces
          * @description The face descriptions swaps brought for somebody this library already had.
          *
@@ -16672,6 +16787,8 @@ export interface components {
             position: number | null;
             /** Progress */
             progress: number;
+            /** Reason */
+            reason: string | null;
             /** Run After */
             run_after: number | null;
             state: components["schemas"]["JobState"];
@@ -16734,6 +16851,12 @@ export interface components {
              * @default 0
              */
             password_wanted: number;
+            /**
+             * Paused
+             * @description Whether somebody paused the whole queue: no new task starts until Resume.
+             * @default false
+             */
+            paused: boolean;
             /**
              * Step Back For
              * @description Why Sift is in eco mode while `stepping_back` or `turbo_mode` is true: somebody at this device (input), a video playing in Sift on any device or a Theater wall open (playing), or other programs busy (others).
@@ -18958,6 +19081,18 @@ export interface components {
              */
             done: number;
             /**
+             * On
+             * @description False for a sub-task switched off with none of its work queued: drawn, and left out of its family's status, count and time left.
+             * @default true
+             */
+            on: boolean;
+            /**
+             * Paused
+             * @description Whether somebody paused this sub-task.
+             * @default false
+             */
+            paused: boolean;
+            /**
              * Total
              * @description Files that want this work at all, done or not.
              */
@@ -21033,6 +21168,16 @@ export interface components {
             waiting: number;
         };
         /**
+         * RunPress
+         * @description One task Run now presses for a pass: its id on Tasks, and the parts of it, or all of it.
+         */
+        RunPress: {
+            /** Parts */
+            parts: string[] | null;
+            /** Task */
+            task: string;
+        };
+        /**
          * RunReportView
          * @description One run as the block of plain text a person copies and passes on.
          */
@@ -22751,6 +22896,8 @@ export interface components {
              * @description How many steps the top started, however deep: a download's probe and the seven steps under it are 8. The top itself is not one. A floor when `at_least` is true.
              */
             count: number;
+            /** @description The family's newest failure, or null when nothing in it failed. */
+            failure: components["schemas"]["FailureLine"] | null;
             /** @description The ONE state the folded row shows, from its own state and every step's: failed if anything in the family failed (folding never hides a failure), else running, paused, blocked, queued in that order, else canceled if the top itself was, else done. */
             state: components["schemas"]["JobState"];
             /**
@@ -23269,9 +23416,9 @@ export interface components {
         };
         /**
          * SwapWeight
-         * @description How many files and how many bytes: what the picks would offer (the sender's side, read
-         *     through the access layer with the vault shut, so a file the sender may not open adds nothing),
-         *     or what an answer to an offer would bring (the receiver's side).
+         * @description How many files and how many bytes: what the picks would offer (the sender's side, read as
+         *     the offer reads them, Hidden open), or what an answer to an offer would bring (the receiver's
+         *     side).
          *
          *     Ahead of the press that starts it, what the picks leave out and why (`weight.left_out`): every pick that wears a
          *     mark, by name, and how many more files a mark on something they are filed under keeps back.
@@ -24577,6 +24724,19 @@ export interface components {
              * @description work, quiet or press: what is stored.
              */
             value: string;
+        };
+        /**
+         * WhichWork
+         * @description A family, one of its sub-tasks by job type, or with neither the whole queue.
+         */
+        WhichWork: {
+            /** @description A pass on Activity, by its key. */
+            family?: components["schemas"]["Family"] | null;
+            /**
+             * Type
+             * @description One sub-task of a pass, by its job type.
+             */
+            type?: string | null;
         };
         /**
          * WorkLeft
@@ -31297,6 +31457,39 @@ export interface operations {
             };
         };
     };
+    cancel_work_api_jobs_cancel_work_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WhichWork"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Stopped"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     clear_canceled_jobs_api_jobs_clear_canceled_post: {
         parameters: {
             query?: never;
@@ -31333,6 +31526,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Cleared"];
+                };
+            };
+        };
+    };
+    pause_work_api_jobs_pause_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WhichWork"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Held"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -31413,6 +31639,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Rebuilding"];
+                };
+            };
+        };
+    };
+    resume_work_api_jobs_resume_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WhichWork"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Held"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

@@ -199,6 +199,7 @@
     "ix_workbench_fold": "create index ix_workbench_fold on workbench_decisions ( fold_key , decided_at , id )",
     "ix_workbench_object": "create index ix_workbench_object on workbench_decisions ( object_kind , object_id , decided_at desc )",
     "ix_workbench_openings": "create index ix_workbench_openings on workbench_decisions ( fold_key , decided_at , id ) where opens = 1",
+    "ix_workbench_press": "create index ix_workbench_press on workbench_decisions ( press_id , decided_at , id )",
     "ix_workbench_subject": "create index ix_workbench_subject on workbench_decision_subjects ( kind , subject_id )",
     "ux_acl_global": "create unique index ux_acl_global on acl_grants ( object_type , subject_user_id , effect ) where object_id is null",
     "ux_artists_name": "create unique index ux_artists_name on artists ( name collate nocase )",
@@ -224,7 +225,7 @@
     "version_booted": [
       {
         "id": 1,
-        "version": "0.2.2"
+        "version": "0.2.3"
       }
     ]
   },
@@ -830,6 +831,18 @@
       },
       "constraints": [
         "primary key ( job_id , file )"
+      ],
+      "options": ""
+    },
+    "face_folder_read": {
+      "columns": {
+        "digest": "text not null",
+        "folder": "text not null collate nocase",
+        "pack_id": "text not null references face_packs ( id ) on delete cascade",
+        "recognizer": "text not null"
+      },
+      "constraints": [
+        "primary key ( pack_id , recognizer , folder , digest )"
       ],
       "options": ""
     },
@@ -2718,14 +2731,16 @@
     },
     "visibility_moved": {
       "columns": {
-        "asset_id": "text not null references assets ( id ) on delete cascade",
+        "asset_id": "text not null",
         "dc": "integer not null",
         "dn": "integer not null",
         "read": "integer not null",
-        "user_id": "text not null references users ( id ) on delete cascade"
+        "size": "integer not null",
+        "time": "integer not null",
+        "user_id": "text not null"
       },
       "constraints": [
-        "primary key ( asset_id , user_id )"
+        "primary key ( read , asset_id , user_id )"
       ],
       "options": "without rowid"
     },
@@ -2874,6 +2889,7 @@
         "object_name": "text",
         "opens": "integer not null default 1",
         "payload": "text not null",
+        "press_id": "text",
         "queue": "text not null",
         "reversed_at": "integer",
         "title": "text not null",
@@ -3189,7 +3205,7 @@
     "content": 31,
     "dedup": 4,
     "download": 38,
-    "faces": 42,
+    "faces": 43,
     "file_moves": 4,
     "identity": 4,
     "importing": 1,
@@ -3217,9 +3233,9 @@
     "tidy": 1,
     "tunnels": 1,
     "user_state": 6,
-    "visibility": 18,
+    "visibility": 19,
     "watermarks": 8,
-    "workbench": 17
+    "workbench": 18
   },
   "views": {
     "visibility_step_answers": "create view visibility_step_answers ( user_id ) as select null where 0",

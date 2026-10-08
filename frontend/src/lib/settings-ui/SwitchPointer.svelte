@@ -4,10 +4,10 @@
 
 	/** The words this row writes itself. The switch's own name is its registered label. */
 	export const COPY = {
-		help: 'Turned on and off under Importing, with the other recognition switches.',
+		help: "Turned on and off on Identify's page under Import tasks, with the other recognition switches.",
 		on: 'On',
 		off: 'Off',
-		go: 'Change in Importing'
+		go: 'Change in Identify settings'
 	} as const;
 
 	/** Rows drawn only while on, by key, under a setting's label or the search entry's name. */

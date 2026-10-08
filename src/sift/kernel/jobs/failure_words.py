@@ -58,6 +58,56 @@ KINDS: tuple[FailureKind, ...] = (
         r"the library folder did\snot answer",
         "The library folder didn't answer, so nothing was changed. Scan it again once it's back.",
     ),
+    # A download's failures, in the words `kernel.fetch` and the model store write. Ahead of the
+    # tools' words, because the HTTP client's own text follows each sentence.
+    _kind(
+        "server-refused",
+        r"couldn't be downloaded: \S+ answered \d+",
+        "The download was refused at its source. Try again later.",
+    ),
+    _kind(
+        "connection-refused",
+        r"the connection to \S+ was refused",
+        "The connection was refused. A firewall, a proxy or the network may be blocking it.",
+    ),
+    _kind(
+        "name-not-found",
+        r"couldn't be downloaded: \S+ couldn't be found",
+        "The download's address couldn't be found. Check the internet connection, and whether the "
+        "network blocks it.",
+    ),
+    _kind(
+        "no-answer",
+        r"couldn't be downloaded: \S+ didn't answer in time",
+        "The download didn't answer in time. Check the internet connection, then run it again.",
+    ),
+    _kind(
+        "untrusted-date",
+        r"a secure connection to \S+ couldn't be made, because its certificate isn't valid at",
+        "A secure connection couldn't be made, because the certificate isn't valid at this "
+        "device's date and time. Check the device's clock.",
+    ),
+    _kind(
+        "untrusted",
+        r"a secure connection to \S+ couldn't be made",
+        "A secure connection for the download couldn't be made. The Failed list shows why.",
+    ),
+    _kind(
+        "proxy",
+        r"the proxy didn't let the connection through",
+        "The proxy didn't let the connection through. Check the system's proxy settings.",
+    ),
+    _kind(
+        "unreached",
+        r"sift couldn't connect to",
+        "Sift couldn't connect for the download. Check the internet connection, and whether a "
+        "firewall blocks it.",
+    ),
+    _kind(
+        "dropped",
+        r"the connection to \S+ dropped",
+        "The connection dropped partway. Check the internet connection, then run it again.",
+    ),
     _kind(
         "disk-full",
         r"no space left on device|not enough space on the disk|\[errno 28\]|\[winerror 112\]",
@@ -82,50 +132,6 @@ KINDS: tuple[FailureKind, ...] = (
         r"it couldn't start: a file it needs",
         "A tool Sift runs couldn't start, because a file it needs was in use or missing. Run it "
         "again; if it keeps happening, another program may be holding Sift's files.",
-    ),
-    # A download's failures, in the words `kernel.fetch` and the model store write.
-    _kind(
-        "server-refused",
-        r"couldn't be downloaded: \S+ answered \d+",
-        "The download was refused at its source. Try again later.",
-    ),
-    _kind(
-        "connection-refused",
-        r"the connection to \S+ was refused",
-        "The connection was refused. A firewall, a proxy or the network may be blocking it.",
-    ),
-    _kind(
-        "name-not-found",
-        r"couldn't be downloaded: \S+ couldn't be found",
-        "The download's address couldn't be found. Check the internet connection, and whether the "
-        "network blocks it.",
-    ),
-    _kind(
-        "no-answer",
-        r"couldn't be downloaded: \S+ didn't answer in time",
-        "The download didn't answer in time. Check the internet connection, then run it again.",
-    ),
-    _kind(
-        "untrusted",
-        r"a secure connection to \S+ couldn't be made",
-        "A secure connection couldn't be made. Check the computer's date and time, and whether "
-        "security software inspects secure connections.",
-    ),
-    _kind(
-        "proxy",
-        r"the proxy didn't let the connection through",
-        "The proxy didn't let the connection through. Check the system's proxy settings.",
-    ),
-    _kind(
-        "unreached",
-        r"sift couldn't connect to",
-        "Sift couldn't connect for the download. Check the internet connection, and whether a "
-        "firewall blocks it.",
-    ),
-    _kind(
-        "dropped",
-        r"the connection to \S+ dropped",
-        "The connection dropped partway. Check the internet connection, then run it again.",
     ),
     _kind(
         "arrived-damaged",
@@ -153,6 +159,21 @@ def in_plain_words(error: str) -> str:
     """What a person reads about this stored error, in place of the error itself."""
     found = kind_of(error)
     return OTHERWISE if found is None else found.words
+
+
+#: The longest a row's one line of failure runs before it is cut, in characters.
+ONE_LINE = 240
+
+
+def in_one_line(error: str) -> str:
+    """Why a row failed, in one line: the kind's words where Sift knows the kind, else the tool's
+    own last line, where tools put the reason."""
+    found = kind_of(error)
+    if found is not None:
+        return found.words
+    lines = [line.strip() for line in error.splitlines() if line.strip()]
+    last = lines[-1] if lines else OTHERWISE
+    return last if len(last) <= ONE_LINE else last[: ONE_LINE - 3] + "..."
 
 
 #: WHY A PRODUCT GAVE UP ON ONE FILE, by the code its standing verdict carries (`file_verdicts`).

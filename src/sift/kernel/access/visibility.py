@@ -72,7 +72,7 @@ def _filled(template: str, **names: str) -> str:
 
 
 COMPONENT = "visibility"
-VERSION = 18
+VERSION = 19
 
 # --- the tables ----------------------------------------------------------------------------
 
@@ -2357,8 +2357,8 @@ async def initialize(connection: Connection, on_disk: int) -> None:
     # Version 16: the Filter panel's kinds counted (every step above counted them already).
     if on_disk == 15:
         await visibility_panel.count_the_panel(connection)
-    # Versions 17 and 18: the walls' totals, and the counts moved once per write.
-    if 0 < on_disk < 18:
+    # Versions 17 to 19: the walls' totals, the counts moved once per write, sizes beside them.
+    if 0 < on_disk < 19:
         await visibility_settled.later_steps(connection, on_disk)
 
 

@@ -25,6 +25,7 @@ export type Job = components['schemas']['JobView'];
 export type JobsPage = components['schemas']['JobsPage'];
 export type Steps = components['schemas']['StepSummary'];
 export type StepsPage = components['schemas']['StepsOfJob'];
+export type RunPress = components['schemas']['RunPress'];
 
 /**
  * THE NOW TAB'S COLUMNS, declared once and read by both of its lists: the passes and housekeeping
@@ -48,13 +49,13 @@ export const ACTIVITY_COLUMNS: readonly Column[] = [
 ];
 
 /**
- * How wide a row's actions are ("Run in Tasks", or two glyph buttons and the arrow): their track
+ * How wide a row's actions are ("Run now" and two glyph buttons, or two glyph buttons and the arrow): their track
  * on a touch screen. With a pointer they are laid over the row's end and take none.
  *
  * Both lists also declare `folds`: the queue's rows fold, and the summary keeps the same small
  * arrow track so its columns stand over the queue's.
  */
-export const ACTIVITY_ACTIONS = '8rem';
+export const ACTIVITY_ACTIONS = '11rem';
 
 /**
  * THE SAME LISTS ON A PHONE, as cards: one column, and each row draws its cells inside it, one under
@@ -73,6 +74,16 @@ export const ACTIVITY_CARD: readonly Column[] = [{ id: 'card', width: 'minmax(0,
  */
 export const ACTIVITY_CARD_ACTIONS =
 	'calc(2 * var(--control-height) + var(--control-height-sm) + 2 * var(--space-1))';
+
+/**
+ * A pile an Options action names: the rows it acts on, and where the list shows fewer (its steps are
+ * folded under their tasks), the tasks the list shows first: "77 failed, 101 with their steps".
+ */
+export function pile(rows: number, listed: number | undefined, word = ''): string {
+	const said = `${rows.toLocaleString()}${word ? ` ${word}` : ''}`;
+	if (listed === undefined || listed === rows) return said;
+	return `${listed.toLocaleString()}${word ? ` ${word}` : ''}, ${rows.toLocaleString()} with their steps`;
+}
 
 /** The order a family's steps are counted out in: what is finished first, as it is read. */
 const STEP_ORDER = ['done', 'failed', 'running', 'paused', 'blocked', 'queued', 'canceled'];
@@ -153,8 +164,12 @@ type PassTone = 'good' | 'warn' | 'accent' | 'plain';
 
 /** One kind of work inside a pass, counted on its own: a sub-row under the pass. */
 export interface PassPart {
-	/** The kind's job type on the wire, which keys the row. */
+	/** The kind's job type on the wire, which keys the row and names it to a pause or a cancel. */
 	type: string;
+	/** Switched off with nothing of it queued: drawn, and counted in none of the pass's figures. */
+	off: boolean;
+	/** Whether somebody paused this sub-task. */
+	paused: boolean;
 	/** The name cell: what one file of the work is, in the words its handler declared:
 	 *  "Files looked at for faces". */
 	label: string;
@@ -194,6 +209,12 @@ export interface Pass {
 	parts: PassPart[];
 	/** The task this pass IS on Tasks, whose row is where it is run and scheduled, or null. */
 	task: string | null;
+	/** What Run now presses: each task, or the part of it that is this pass's. */
+	runs: RunPress[];
+	/** Whether somebody paused this pass: nothing new of it starts until Resume. */
+	paused: boolean;
+	/** Whether work of it is under way: its own row then draws its bar and count, sub-rows or not. */
+	moving: boolean;
 	/** Whether this pass is allowed to do anything: switched on, and able to run here. */
 	allowed: boolean;
 	/** Why its last run failed, while that failure stands and nothing runs, or null. */
@@ -221,8 +242,11 @@ function standsAlone(window: string): string {
 	return window.charAt(0).toUpperCase() + window.slice(1);
 }
 
+/** What a sub-task switched off says beside its count: why its files are not in the pass's. */
+export const SUB_TASK_OFF = 'Turned off';
+
 /** Where a switched-off pass is switched back on. */
-const CHANGE_IN_IMPORTING = 'Turn on in Importing';
+const CHANGE_IN_IMPORTING = 'Turn on in Import tasks';
 
 /**
  * The passes the server declared, each with its state, its range, its bar and its press.
@@ -287,6 +311,9 @@ export function passes(page: JobsPage | null): Pass[] {
 					total > 0 ? `${finished.toLocaleString()} of ${total.toLocaleString()}` : NOTHING_WAITING,
 				parts: partsOf(declared),
 				task: taskOf(declared),
+				runs: declared.runs ?? [],
+				paused: declared.paused ?? false,
+				moving: outstanding > 0,
 				allowed: on && ready,
 				why
 			}
@@ -322,11 +349,15 @@ function partsOf(declared: NonNullable<JobsPage['families']>[string]): PassPart[
 	if (counted.length < 2) return [];
 	return counted.map((part) => {
 		const finished = Math.min(part.done, part.total);
+		const off = part.on === false;
+		const count = `${finished.toLocaleString()} of ${part.total.toLocaleString()}`;
 		return {
 			type: part.type,
+			off,
+			paused: part.paused ?? false,
 			label: part.caption.charAt(0).toUpperCase() + part.caption.slice(1),
 			progress: (finished / part.total) * 100,
-			count: `${finished.toLocaleString()} of ${part.total.toLocaleString()}`
+			count: off ? `${count} \u00b7 ${SUB_TASK_OFF}` : count
 		};
 	});
 }

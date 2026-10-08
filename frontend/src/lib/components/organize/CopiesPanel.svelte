@@ -510,6 +510,6 @@
 		min-block-size: var(--control-height);
 		gap: var(--space-1);
 		font: var(--text-label);
-		color: var(--sift-accent);
+		color: var(--sift-accent-text);
 	}
 </style>

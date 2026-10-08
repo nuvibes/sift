@@ -2780,8 +2780,14 @@ details[open] > summary::before {
 @keyframes rise {
 	from {
 		opacity: 0;
-		translate: 0 var(--rise);
+		translate: 0 calc(var(--rise) * var(--rise-sign, 1));
 	}
+}
+
+/* A surface hanging below its trigger rises from the trigger's side, so its first frames never
+   pass the window's foot (a scroll bar for a frame, and the page shaking). */
+[data-side='bottom'] {
+	--rise-sign: -1;
 }
 
 /* A highlight crossing a surface: a placeholder's shimmer, an amount not yet known. It travels

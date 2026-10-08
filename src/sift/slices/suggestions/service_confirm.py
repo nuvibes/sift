@@ -191,7 +191,7 @@ class ConfirmMixin(FolderRuleMixin):
         unticked = set(skip)
         assets = [
             asset_id
-            for asset_id in await self._store.assets_under(claim.folder_id)
+            for asset_id in await self._store.assets_present_under(claim.folder_id)
             if asset_id not in unticked
         ]
 

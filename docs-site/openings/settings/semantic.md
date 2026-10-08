@@ -6,7 +6,7 @@ Come here to see how many files Sift has described, or to choose the models and 
 
 ## On this pane
 
-The first rows have no heading: the switch, how many files are described, when it runs, and **More settings**. The switch is turned on and off in [Settings > Importing](/settings/importing#importing.recognition). Then the pane draws one group:
+The first rows have no heading: the switch, how many files are described, when it runs, and **More settings**. The switch is turned on and off in [Settings > Tasks and Activity > Import tasks > Identify settings](/settings/tasks#importing.recognition). Then the pane draws one group:
 
 - **Start over**: delete every description Sift made.
 

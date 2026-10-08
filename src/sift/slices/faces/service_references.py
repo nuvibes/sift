@@ -5,6 +5,7 @@ from a folder of folders, and handing on what an import held for a name.
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -16,7 +17,7 @@ from sift.kernel.log import get_logger
 from sift.slices.faces import crop as cropping
 from sift.slices.faces import recognize, tuning
 from sift.slices.faces.models import Origin, Vector
-from sift.slices.faces.references import Auditor, PersonReport
+from sift.slices.faces.references import Auditor, PersonReport, picture_digests
 from sift.slices.faces.service_grouping import GroupingMixin
 from sift.slices.faces.service_weights import WeightsMixin
 
@@ -67,8 +68,8 @@ class Strength:
 
     @property
     def fraction(self) -> float:
-        """How far along the target this person is, capped at one."""
-        return min(1.0, self.references / self.target) if self.target else 0.0
+        """How far toward dependable this person is, capped at one: the page's bar."""
+        return min(1.0, self.references / self.strong) if self.strong else 0.0
 
     @property
     def verdict(self) -> str:
@@ -217,6 +218,13 @@ class ReferencesMixin(WeightsMixin, GroupingMixin):
         """
         await self._require_enabled()
         configured = await self.configuration()
+        pack_id = await self._store.folder_import_pack(configured.recognizer)
+        digests = await asyncio.to_thread(picture_digests, folder)
+        if digests and await self._store.folder_read_before(
+            pack_id, configured.recognizer, folder.name, digests
+        ):
+            # A stopped import read it whole: what it held is held.
+            return PersonReport(name=folder.name, already=True)
         detector, recognizer = await self._models(configured)
         report = await Auditor(self._settings, detector, recognizer).person(folder)
         usable = [
@@ -227,6 +235,7 @@ class ReferencesMixin(WeightsMixin, GroupingMixin):
         report.added = await self._hold_folder_faces(
             report.name, usable, recognizer.revision, source=source
         )
+        await self._store.keep_folder_read(pack_id, configured.recognizer, folder.name, digests)
         return report
 
     async def _hold_folder_faces(

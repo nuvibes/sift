@@ -353,9 +353,8 @@ def _swept(*, queued: int, done: bool) -> str:
     """
     files = "file" if queued == 1 else "files"
     if not done:
-        # Provisional, and it says so. The count is the run's, not the page's: every page carries
-        # the total so far forward, so this only ever grows.
-        return f"{queued:,} {files} queued so far, still going through the library\u2026"
+        # The count is the run's so far, true at any moment, on a row that ends before the last page.
+        return f"{queued:,} {files} queued to scan so far."
     if queued == 0:
         return "Everything has already been scanned under these settings."
     return f"{queued:,} {files} queued to scan."

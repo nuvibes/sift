@@ -1639,3 +1639,47 @@ async def test_work_arriving_wakes_the_supervisor_immediately(job_queue: JobQueu
     assert not pool._waking.reconfigure.is_set()
     pool._waking.wake()
     assert pool._waking.reconfigure.is_set(), "a press for turbo or eco is taken within a moment"
+
+
+@pytest.mark.integration
+async def test_a_paused_type_waits_and_a_paused_queue_claims_nothing_until_resumed(
+    job_queue: JobQueue,
+) -> None:
+    """A pause holds the claim, never the queue: the rows stay as they were, the work running
+    finishes its step, and Resume starts exactly what was held."""
+    held, free = Recorder(), Recorder()
+    register_handler("held_kind", held.handler, name="Test job")
+    register_handler("free_kind", free.handler, name="Test job")
+    pool = WorkerPool(job_queue, concurrency=2, poll_interval=0.01)
+    pool.holding.hold(["held_kind"])
+    assert pool.holding.held == {"held_kind"} and not pool.holding.held_all
+    waiting = await job_queue.enqueue("held_kind", {})
+    await job_queue.enqueue("free_kind", {})
+    await pool.start()
+    try:
+        await wait_until(lambda: len(free.seen) == 1)
+        assert held.seen == []
+        assert (await job_queue.get(waiting)).state is JobState.QUEUED  # type: ignore[union-attr]
+
+        pool.holding.hold()
+        pool.holding.release(["held_kind"])
+        await job_queue.enqueue("free_kind", {"n": 2})
+        await asyncio.sleep(0.1)
+        assert held.seen == [] and len(free.seen) == 1, "the whole queue is paused"
+
+        pool.holding.release()
+        await drain(job_queue)
+        assert held.seen == [waiting] and len(free.seen) == 2
+    finally:
+        await pool.stop()
+
+
+async def test_a_step_making_only_held_products_is_passed_over(job_queue: JobQueue) -> None:
+    kind = noop_handler("carrying")
+    music = await job_queue.enqueue(kind, {"asset_id": "A1", "products": ["music"]})
+    both = await job_queue.enqueue(kind, {"asset_id": "A2", "products": ["thumbnails", "music"]})
+    taken = await job_queue.claim(WORKER, held_products={"music"})
+    assert taken is not None and taken.id == both
+    assert await job_queue.claim(WORKER, held_products={"music"}) is None
+    taken = await job_queue.claim(WORKER)
+    assert taken is not None and taken.id == music

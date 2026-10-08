@@ -309,7 +309,7 @@ async def resolve_reddit(
             items = [_media_item(index, media) for index, media in enumerate(images)]
         else:
             host = source_host(url)
-            video_host = "v.redd.it" in host or "redgifs.com" in host
+            video_host = host_matches(host, ("v.redd.it", "redgifs.com"))
             items = [
                 ResolvedItem.subprocess(
                     source_url=url,

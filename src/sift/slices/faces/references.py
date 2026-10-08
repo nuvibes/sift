@@ -124,6 +124,8 @@ class PersonReport:
     added: int = 0
     #: Whether the import created this person. An audit never does, so it is always false there.
     created: bool = False
+    #: Whether an earlier import read every picture here, so this one read none of them.
+    already: bool = False
 
     @property
     def usable(self) -> list[Candidate]:
@@ -270,6 +272,11 @@ def images_in(folder: Path) -> list[Path]:
         for image in sorted(folder.iterdir())
         if image.suffix.lower() in REFERENCE_SUFFIXES and image.is_file()
     ]
+
+
+def picture_digests(folder: Path) -> list[str]:
+    """The identity of each picture `images_in` lists. Reads the disk: call it off the loop."""
+    return [cropping.digest(image.read_bytes()) for image in images_in(folder)]
 
 
 def folders_in(root: Path) -> list[Path]:

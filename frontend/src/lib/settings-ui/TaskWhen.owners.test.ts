@@ -78,10 +78,13 @@ it('draws no row for upkeep nobody times, on any pane', () => {
 /* Presses live on Tasks. Every other pane that draws a task's row draws it without the press, so a
  * task is started from one place and the owning pane keeps the choice and the facts. Read from the
  * source, every `<TaskWhen>` a pane writes, because a press drawn on a pane nobody opened in a test
- * is a press all the same. */
+ * is a press all the same. Import tasks (`Importing`) is part of Tasks, mounted by it. */
+const ON_TASKS = ['ScheduledTasks.svelte', 'Importing.svelte'];
+
 it('draws a press on no pane but Tasks', () => {
+	expect(markupOf('ScheduledTasks')).toMatch(/<Importing\b/);
 	const panes = readdirSync('src/lib/settings-ui').filter(
-		(name) => name.endsWith('.svelte') && name !== 'ScheduledTasks.svelte'
+		(name) => name.endsWith('.svelte') && !ON_TASKS.includes(name)
 	);
 	const rows = panes.flatMap((pane) =>
 		(markupOf(pane.replace(/\.svelte$/, '')).match(/<TaskWhen\b[\s\S]*?\/>/g) ?? []).map((tag) => ({

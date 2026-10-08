@@ -397,7 +397,7 @@ class _BackSending(_Sending):
         self.code_matched: asyncio.Future[None] = asyncio.get_running_loop().create_future()
 
     def choose(self, viewer: Viewer, chosen: Sequence[Chosen], share_boxes: bool) -> None:
-        """What this side offers, read as `viewer` with the vault shut, and its release."""
+        """What this side offers, read as `viewer` with Hidden open, and its release."""
         if self.code_matched.done():
             return
         self.viewer = viewer

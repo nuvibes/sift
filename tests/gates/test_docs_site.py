@@ -135,9 +135,9 @@ def test_every_menu_source_still_yields_its_labels() -> None:
     wanted = docs_menus.declared()
     assert {"Don't swap", "Newest first", "Media", "Save as Loop"} <= set(wanted["library/browse"])
     assert "Merge" in wanted["library/people"] and "Merge" not in wanted["library/tags"]
-    assert "Every cell" in wanted["library/theater"] and "Artist A-Z" in wanted["library/music"]
+    assert "All cells" in wanted["library/theater"] and "Artist A-Z" in wanted["library/music"]
     missing = docs_menus.missing(
-        {"library/theater": "Every cell"}, {"library/theater": ["Every cell", "Shuffle"]}
+        {"library/theater": "All cells"}, {"library/theater": ["All cells", "Shuffle"]}
     )
     assert missing == {"library/theater": ["Shuffle"]}
 

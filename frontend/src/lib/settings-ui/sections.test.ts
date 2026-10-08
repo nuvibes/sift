@@ -3,7 +3,6 @@ import { flushSync, mount, unmount } from 'svelte';
 import { describe, expect, it } from 'vitest';
 
 import SettingsTitle from './SettingsTitle.svelte';
-import { actGlyph } from '$lib/design/button-glyphs';
 import {
 	DEFAULT_SECTION,
 	REGISTRY_HOME,
@@ -135,6 +134,24 @@ describe('the resolver behind every settings address', () => {
 		expect(labelFor('jobs')).toBe('Tasks and Activity');
 	});
 
+	it('lands Importing, and every row and stage it drew, on Tasks', () => {
+		expect(resolveAddress('importing')).toEqual({ section: 'tasks' });
+		expect(labelFor('importing')).toBe('Tasks and Activity');
+		expect(resolveAddress('importing', 'shoots.auto_file')).toEqual({
+			section: 'tasks',
+			key: 'shoots.auto_file'
+		});
+		for (const stage of ['scan', 'generate', 'identify']) {
+			for (const old of [`importing.${stage}-stage`, `importing.${stage}-now`]) {
+				expect(resolveAddress('importing', old), old).toEqual({
+					section: 'tasks',
+					key: `tasks.${stage}.when`
+				});
+			}
+		}
+		expect(settledSection(REGISTRY_HOME.Importing)).toBe('tasks');
+	});
+
 	it('lands the device id, which left Privacy, on Updates and Info', () => {
 		expect(resolveAddress('privacy', 'privacy.swaps')).toEqual({
 			section: 'updates',
@@ -148,9 +165,9 @@ describe('the resolver behind every settings address', () => {
 			section: 'general',
 			key: 'general.closing_the_window'
 		});
-		// Drawn on Importing (its Generate page) since that section was made; linked to as Performance's.
+		// Drawn on Generate's page under Import tasks; linked to as Performance's.
 		expect(resolveAddress('performance', 'performance.repair_playback')).toEqual({
-			section: 'importing',
+			section: 'tasks',
 			key: 'performance.repair_playback'
 		});
 		expect(resolveAddress('appearance', 'appearance.links_open_in')).toEqual({
@@ -178,15 +195,7 @@ describe('the sections and their groups', () => {
 		).toEqual([
 			[
 				'Library',
-				[
-					'Folders',
-					'Importing',
-					'Tasks and Activity',
-					'Sites and Tunnels',
-					'Downloads',
-					'Editing',
-					'Playback'
-				]
+				['Folders', 'Tasks and Activity', 'Sites and Tunnels', 'Downloads', 'Editing', 'Playback']
 			],
 			[
 				'Personal',
@@ -224,11 +233,6 @@ describe('the sections and their groups', () => {
 		});
 	});
 
-	it('gives Importing the glyph every Import press wears', () => {
-		const importing = SETTINGS_SECTIONS.find((one) => one.id === 'importing');
-		expect(importing?.icon).toBe(actGlyph('Import'));
-	});
-
 	it('draws Music for an admin and Get to know Sift for everybody', () => {
 		const music = SETTINGS_SECTIONS.find((one) => one.id === 'music');
 		const learn = SETTINGS_SECTIONS.find((one) => one.id === 'get-to-know');
@@ -250,7 +254,7 @@ describe('the sections and their groups', () => {
 
 	it('draws General, and draws none of Theater, History, Logs, Tasks or Activity as a section', () => {
 		expect(drawn.has('general')).toBe(true);
-		for (const gone of ['theater', 'ledger', 'logs', 'schedule', 'jobs'])
+		for (const gone of ['theater', 'ledger', 'logs', 'schedule', 'jobs', 'importing'])
 			expect(drawn.has(gone), gone).toBe(false);
 		expect(labelFor('faces')).toBe('Faces');
 		expect(SETTINGS_SECTIONS.find((one) => one.id === 'tasks')?.icon).toBe('calendar_clock');

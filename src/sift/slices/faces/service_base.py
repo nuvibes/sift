@@ -205,12 +205,12 @@ class Configured:
         )
 
 
-#: What stands in the tuning fingerprint in the model family's slot. See `Configured.shape`: it
-#: keeps every scan recorded comparable, and it is deliberately not a setting anybody can change.
+#: The model family's slot in the tuning fingerprint (`Configured.shape`): fixed, so every scan
+#: recorded stays comparable.
 _SLOT_THE_FAMILY_HELD = "accurate"
 
-#: What stands in the slot the size floor held, for the family's reason: every scan recorded
-#: stays comparable. **A floor that moves is not a reason to look at the whole library again.** A
+#: The size floor's slot, for the family's reason. A floor that moves is no reason to look at the
+#: whole library again: a
 #: scan writes down the biggest face it refused for size (`face_scans.refused_largest`), so the
 #: files a lower floor can change are known exactly, and the floor pass looks at those again and
 #: nothing else (`FaceService.under_an_earlier_floor`). The presets still differ in the slots after
@@ -244,9 +244,7 @@ def status_of(tracks: int, identified: int) -> ScanStatus:
 
 
 #: The one sentence every refusal under the switch says, wherever it is said.
-FACES_SWITCHED_OFF = (
-    "Recognizing faces is switched off. Turn it on in Settings > Importing to use this."
-)
+FACES_SWITCHED_OFF = "Recognizing faces is switched off. Turn it on under Import tasks to use this."
 
 
 class FaceServiceBase:

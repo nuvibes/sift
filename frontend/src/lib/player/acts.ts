@@ -59,7 +59,7 @@ export const ACTS = {
 	stats: 'Stats for nerds',
 	saveLoop: 'Save as Loop',
 	/* Theater's chip that points the bar's controls at the whole wall. */
-	everyCell: 'Every cell'
+	everyCell: 'All cells'
 } as const;
 
 export type Act = keyof typeof ACTS;

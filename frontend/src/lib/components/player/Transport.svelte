@@ -10,6 +10,7 @@
 	 *
 	 * What each press does is the caller's; this file draws the five. Every press is always drawn:
 	 * one with nothing to act on is dimmed with its reason as its words, so a bar keeps one shape.
+	 * Theater's bar passes no Repeat or Shuffle: they stand in its drawer.
 	 */
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
 	import { Button } from '$lib/components/common';
@@ -45,8 +46,9 @@
 		/** Why Previous or Next cannot act, where there is no handler. */
 		backWhy?: string;
 		forwardWhy?: string;
-		shuffle: ShuffleControl;
-		repeat: RepeatControl;
+		/** Absent where the caller keeps it in its drawer (Theater's). */
+		shuffle?: ShuffleControl;
+		repeat?: RepeatControl;
 		/** Play alone, for the docked phone strip: a thumb's strip has room for one press. */
 		playOnly?: boolean;
 		/** False where a swipe steps instead (a phone in the hand), so the step pair stands down. */
@@ -82,8 +84,8 @@
 	const playWords = $derived(
 		playable ? (playing ? ACTS.pause : ACTS.play) : (playWhy ?? NOTHING_AFTER)
 	);
-	const repeatWords = $derived(repeat.why ?? loopModeLabel(repeat.mode));
-	const shuffleWords = $derived(shuffle.why ?? ACTS.shuffle);
+	const repeatWords = $derived(repeat ? (repeat.why ?? loopModeLabel(repeat.mode)) : '');
+	const shuffleWords = $derived(shuffle?.why ?? ACTS.shuffle);
 	const backWords = $derived(onback ? (backLabel ?? ACTS.previous) : (backWhy ?? NOTHING_BEFORE));
 	const forwardWords = $derived(
 		onforward ? (forwardLabel ?? ACTS.next) : (forwardWhy ?? NOTHING_AFTER)
@@ -91,7 +93,7 @@
 </script>
 
 <div class="transport">
-	{#if !playOnly}
+	{#if !playOnly && repeat}
 		<!-- `{...aims}` FIRST on every one of these, so anything written after it wins. -->
 		<!-- No key on the tooltip: R answers it, and the act table names no key for it. -->
 		<Tooltip label={repeatWords} {placement}>
@@ -158,7 +160,7 @@
 		</Tooltip>
 	{/if}
 
-	{#if !playOnly}
+	{#if !playOnly && shuffle}
 		<Tooltip
 			label={shuffleWords}
 			{placement}

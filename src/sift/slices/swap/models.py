@@ -511,9 +511,9 @@ class LeftOut(Wire):
 
 
 class SwapWeight(Wire):
-    """How many files and how many bytes: what the picks would offer (the sender's side, read
-    through the access layer with the vault shut, so a file the sender may not open adds nothing),
-    or what an answer to an offer would bring (the receiver's side).
+    """How many files and how many bytes: what the picks would offer (the sender's side, read as
+    the offer reads them, Hidden open), or what an answer to an offer would bring (the receiver's
+    side).
 
     Ahead of the press that starts it, what the picks leave out and why (`weight.left_out`): every pick that wears a
     mark, by name, and how many more files a mark on something they are filed under keeps back.

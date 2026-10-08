@@ -226,6 +226,16 @@ class StepCounts:
 
 
 @dataclass(frozen=True, slots=True)
+class FamilyFailure:
+    """A family's newest failed row: its type, its stored error, its tries and the file it was on."""
+
+    type: str
+    error: str | None
+    attempts: int
+    asset_id: str | None
+
+
+@dataclass(frozen=True, slots=True)
 class StepsPage:
     """A page of one family's steps in the order handed out; `total` stops at the cap."""
 

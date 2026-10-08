@@ -252,6 +252,9 @@ PRESS_COLUMNS: Final = (
     ),
     ("opens", "ALTER TABLE workbench_decisions ADD COLUMN opens INTEGER NOT NULL DEFAULT 1"),
     ("closes", "ALTER TABLE workbench_decisions ADD COLUMN closes INTEGER NOT NULL DEFAULT 1"),
+    # Which press the act is in: one label for every act of a press and no other, kept when the
+    # press's opening goes, so what is stored per press can be grouped by it.
+    ("press_id", "ALTER TABLE workbench_decisions ADD COLUMN press_id TEXT"),
 )
 
 #: The seeks the marks and the feed make: an act's neighbours of its key, a press's opening, the
@@ -264,6 +267,7 @@ PRESS_INDEXES: Final = (
     " ON workbench_decisions(decided_at DESC, id DESC) WHERE closes = 1",
     "CREATE INDEX IF NOT EXISTS ix_workbench_closing_keys"
     " ON workbench_decisions(fold_key, decided_at, id) WHERE closes = 1",
+    "CREATE INDEX IF NOT EXISTS ix_workbench_press ON workbench_decisions(press_id, decided_at, id)",
 )
 
 #: An act's two marks read again from its neighbours of the same key: a press opens on it when no
@@ -292,22 +296,84 @@ _AFTER = """(SELECT n.id FROM workbench_decisions n
             AND (n.decided_at, n.id) > ({{ROW}}.decided_at, {{ROW}}.id)
           ORDER BY n.decided_at, n.id LIMIT 1)"""
 
+# The press label of the act `{{ACT}}` names, whether it opens, and its place.
+_LABEL_OF = "(SELECT q.press_id FROM workbench_decisions q WHERE q.id = {{ACT}})"
+_OPENS_OF = "(SELECT q.opens FROM workbench_decisions q WHERE q.id = {{ACT}})"
+_PLACE_OF = "(SELECT q.decided_at, q.id FROM workbench_decisions q WHERE q.id = {{ACT}})"
+
+#: A label no press has: read once per statement, so every act it is written to gets the same one.
+_FRESH = "(SELECT lower(hex(randomblob(16))))"
+
+# The label of an act once its marks are read: its press's below it, else the press it now opens
+# into above it (an opening taken over keeps its label), else a new press's.
+_JOINED = """UPDATE workbench_decisions
+   SET press_id = CASE WHEN opens = 0 THEN {{LABEL_BEFORE}}
+                       WHEN {{OPENS_AFTER}} = 0 THEN {{LABEL_AFTER}}
+                       ELSE {{FRESH}} END
+ WHERE id = {{SELF}}"""
+
+# Two presses one act joined: the smaller takes the larger's label. The side relabelled is chosen
+# once, and is no label at all where nothing joined, so an ordinary arrival reads no press.
+_LARGER = """(SELECT COUNT(*) FROM workbench_decisions c WHERE c.press_id = {{A}})
+         >= (SELECT COUNT(*) FROM workbench_decisions c WHERE c.press_id = {{B}})"""
+_MERGED = """UPDATE workbench_decisions
+   SET press_id = CASE WHEN {{LARGER}} THEN {{A}} ELSE {{B}} END
+ WHERE press_id = (SELECT CASE WHEN {{A}} IS NOT {{B}} AND {{OPENS_AFTER}} = 0
+                               THEN CASE WHEN {{LARGER}} THEN {{B}} ELSE {{A}} END END)""".replace(
+    "{{LARGER}}", _LARGER
+)
+
+# A press an act left in two: the later part takes a new label.
+_SPLIT = """UPDATE workbench_decisions SET press_id = {{FRESH}}
+ WHERE press_id = {{LABEL_AFTER}} AND (decided_at, id) >= {{PLACE_AFTER}}
+   AND {{OPENS_AFTER}} = 1 AND {{LABEL_BEFORE}} = {{LABEL_AFTER}}"""
+
+
+def _labelled(template: str, before: str, after: str, own: str = "NULL") -> str:
+    """A labelling statement over an act's neighbours `before` and `after` (and the act `own`)."""
+    pieces = {
+        "LABEL_BEFORE": splice(_LABEL_OF, ACT=before),
+        "LABEL_AFTER": splice(_LABEL_OF, ACT=after),
+        "OPENS_AFTER": splice(_OPENS_OF, ACT=after),
+        "PLACE_AFTER": splice(_PLACE_OF, ACT=after),
+        "A": splice(_LABEL_OF, ACT=own),
+        "B": splice(_LABEL_OF, ACT=after),
+        "FRESH": _FRESH,
+        "SELF": own,
+    }
+    return splice(template, **{k: v for k, v in pieces.items() if "{{" + k + "}}" in template})
+
+
 #: The columns an act's key, gap and place in the record are read from.
 _PLACED_BY = (
     "id, queue, title, payload, decided_at, verb, actor_kind, actor_id, object_kind, object_id"
 )
 
 #: The marks kept wherever an act arrives, moves (its key or its moment changes) or goes: the act
-#: and the neighbours it had and has.
+#: and the neighbours it had and has, then its press label. An arrival can only join presses and a
+#: going can only part one, so a label moves at those two places and nowhere else.
+_NEW_BEFORE = splice(_BEFORE, ROW="NEW", SELF="NEW")
+_NEW_AFTER = splice(_AFTER, ROW="NEW", SELF="NEW")
+_WAS_BEFORE = splice(_BEFORE, ROW="OLD", SELF="NEW")
+_WAS_AFTER = splice(_AFTER, ROW="OLD", SELF="NEW")
+_OLD_BEFORE = splice(_BEFORE, ROW="OLD", SELF="OLD")
+_OLD_AFTER = splice(_AFTER, ROW="OLD", SELF="OLD")
+_JOINS = (
+    _labelled(_JOINED, _NEW_BEFORE, _NEW_AFTER, "NEW.id")
+    + "; "
+    + _labelled(_MERGED, _NEW_BEFORE, _NEW_AFTER, "NEW.id")
+)
+
 PRESS_TRIGGERS: Final = (
     (
         "workbench_press_arrives",
         splice(
             "CREATE TRIGGER IF NOT EXISTS workbench_press_arrives AFTER INSERT ON workbench_decisions"
-            " BEGIN {{MARKED}} WHERE id = NEW.id OR id = {{BEFORE}} OR id = {{AFTER}}; END",
+            " BEGIN {{MARKED}} WHERE id = NEW.id OR id = {{BEFORE}} OR id = {{AFTER}}; {{JOINS}}; END",
             MARKED=_MARKED,
-            BEFORE=splice(_BEFORE, ROW="NEW", SELF="NEW"),
-            AFTER=splice(_AFTER, ROW="NEW", SELF="NEW"),
+            BEFORE=_NEW_BEFORE,
+            AFTER=_NEW_AFTER,
+            JOINS=_JOINS,
         ),
     ),
     (
@@ -318,22 +384,25 @@ PRESS_TRIGGERS: Final = (
             " WHEN OLD.fold_key IS NOT NEW.fold_key OR OLD.decided_at IS NOT NEW.decided_at"
             " OR OLD.id IS NOT NEW.id"
             " BEGIN {{MARKED}} WHERE id = NEW.id OR id = {{BEFORE}} OR id = {{AFTER}}"
-            " OR id = {{WAS_BEFORE}} OR id = {{WAS_AFTER}}; END",
+            " OR id = {{WAS_BEFORE}} OR id = {{WAS_AFTER}}; {{SPLIT}}; {{JOINS}}; END",
             MARKED=_MARKED,
-            BEFORE=splice(_BEFORE, ROW="NEW", SELF="NEW"),
-            AFTER=splice(_AFTER, ROW="NEW", SELF="NEW"),
-            WAS_BEFORE=splice(_BEFORE, ROW="OLD", SELF="NEW"),
-            WAS_AFTER=splice(_AFTER, ROW="OLD", SELF="NEW"),
+            BEFORE=_NEW_BEFORE,
+            AFTER=_NEW_AFTER,
+            WAS_BEFORE=_WAS_BEFORE,
+            WAS_AFTER=_WAS_AFTER,
+            SPLIT=_labelled(_SPLIT, _WAS_BEFORE, _WAS_AFTER),
+            JOINS=_JOINS,
         ),
     ),
     (
         "workbench_press_goes",
         splice(
             "CREATE TRIGGER IF NOT EXISTS workbench_press_goes AFTER DELETE ON workbench_decisions"
-            " BEGIN {{MARKED}} WHERE id = {{BEFORE}} OR id = {{AFTER}}; END",
+            " BEGIN {{MARKED}} WHERE id = {{BEFORE}} OR id = {{AFTER}}; {{SPLIT}}; END",
             MARKED=_MARKED,
-            BEFORE=splice(_BEFORE, ROW="OLD", SELF="OLD"),
-            AFTER=splice(_AFTER, ROW="OLD", SELF="OLD"),
+            BEFORE=_OLD_BEFORE,
+            AFTER=_OLD_AFTER,
+            SPLIT=_labelled(_SPLIT, _OLD_BEFORE, _OLD_AFTER),
         ),
     ),
 )
@@ -348,6 +417,28 @@ UPDATE workbench_decisions SET opens = e.opens, closes = e.closes
         WINDOW w AS (PARTITION BY fold_key ORDER BY decided_at, id)) AS e
  WHERE workbench_decisions.id = e.id
    AND (workbench_decisions.opens <> e.opens OR workbench_decisions.closes <> e.closes)
+"""
+
+#: Every act labelled with its press in one walk, after the marks: a press is numbered within its
+#: key by the openings up to it, and takes its opening's id as its label.
+_LABEL_ALL = """
+UPDATE workbench_decisions SET press_id = e.label
+  FROM (SELECT id, FIRST_VALUE(id) OVER (PARTITION BY fold_key, n ORDER BY decided_at, id) AS label
+          FROM (SELECT id, fold_key, decided_at,
+                       SUM(opens) OVER (PARTITION BY fold_key ORDER BY decided_at, id) AS n
+                  FROM workbench_decisions)) AS e
+ WHERE workbench_decisions.id = e.id AND workbench_decisions.press_id IS NOT e.label
+"""
+
+#: Acts whose label does not say their press: one inside a press labelled unlike the act before
+#: it, an act with none, and a label two presses share. Empty is the only right answer.
+PRESS_DIFFERENCES = """
+SELECT id FROM (SELECT id, opens, press_id,
+                       LAG(press_id) OVER (PARTITION BY fold_key ORDER BY decided_at, id) AS was
+                  FROM workbench_decisions)
+ WHERE press_id IS NULL OR (opens = 0 AND press_id IS NOT was)
+UNION ALL
+SELECT press_id FROM workbench_decisions WHERE opens = 1 GROUP BY press_id HAVING COUNT(*) > 1
 """
 
 #: Each press trigger dropped by name, for one whose text this build no longer writes.
@@ -423,3 +514,4 @@ async def keep_presses(connection: Connection) -> None:
             added = True
     if added:
         await connection.execute(_MARK_ALL)
+        await connection.execute(_LABEL_ALL)

@@ -219,7 +219,7 @@ export function menuFaultsIn(code, where = {}) {
 		listOf(match[1], lineOf(code, match.index)).verbs.push(...elements(inside));
 	}
 	for (const [name, list] of lists) {
-		const push = new RegExp(String.raw`\b${name.replace('$', '\\$')}\.push\(`, 'g');
+		const push = new RegExp(String.raw`\b${name.replaceAll('$', '\\$')}\.push\(`, 'g');
 		for (const match of code.matchAll(push)) {
 			const argument = balanced(code, match.index + match[0].length - 1);
 			if (argument !== null) list.verbs.push(...elements(argument));

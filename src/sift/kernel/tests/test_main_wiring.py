@@ -1058,6 +1058,26 @@ def test_the_server_is_handed_the_host_and_port_that_were_configured(
     assert uvicorn.started == 1
 
 
+def test_every_start_says_which_version_of_sift_it_is(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from sift.kernel.version import app_version
+
+    said: list[tuple[str, dict[str, Any]]] = []
+
+    class _Log:
+        def __getattr__(self, _level: str) -> Any:
+            return lambda event, **fields: said.append((event, fields))
+
+    _stub_start(monkeypatch, Settings(data_dir=tmp_path / "data", cache_dir=tmp_path / "cache"))
+    monkeypatch.setattr(main, "log", _Log())
+    main.main()
+
+    started = [fields for event, fields in said if event == "boot.imported"]
+    assert [one["version"] for one in started] == [app_version()]
+    assert app_version()
+
+
 def test_the_servers_own_access_log_is_off_and_its_logging_left_alone(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

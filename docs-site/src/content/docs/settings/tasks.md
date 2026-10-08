@@ -7,22 +7,26 @@ description: What each setting in Tasks and Activity does.
 
 Tasks and Activity is where you choose when each task runs and see what Sift has done. To open it, go to [Settings > Tasks and Activity](/settings/tasks).
 
-Come here to run a task now, change when it runs, or find out what happened to a file. The pane has four tabs.
+Come here to run a task now, change when it runs, choose what each import stage makes, or find out what happened to a file. The pane has three tabs.
 
 ![The Tasks and Activity pane in Settings](../../../assets/screens/settings-tasks.jpg)
 
 ## The tabs
 
-- **Tasks**: every task, its **Run now** press and its When. A When is **As files arrive**, **On a schedule**, **During quiet hours** or **Only when I press it**, as each task offers.
-- **Activity**: what is running and what ran, under **Library tasks** and **Other tasks**, with each task's status, time left and progress. While a scan is still counting folders, the Scan row and every task after it show **Not known until every folder is counted.** A task that waits for a scan to read its files says **Waiting for the scan to finish.** When a network share holds the reading back, the Scan row names the library folders on that share. **All tasks** lists them, and **Type** shows one type of task. **Run in Tasks** on a bar opens that task's row.
+- **Tasks**: every task, its **Edit** and its **Run now** press and its When. A When is **As files arrive**, **On a schedule**, **During quiet hours** or **Only when I press it**, as each task offers. Under the tasks, **Activity**: what is running and what ran, with each task's status, time left and progress, and the **Task Queue**. While a scan is still counting folders, the Scan row and every task after it show **Not known until every folder is counted.** A task that waits for a scan to read its files says **Waiting for the scan to finish.** When a network share holds the reading back, the Scan row names the library folders on that share. **Run now** on a bar opens that task's row.
 - <a id="activity.history"></a>**App History**: everything Sift and you have done in your library, newest first. Select a name to open what it happened to.
 - <a id="activity.log"></a>**Logs**: a record of what Sift did. Read it first when something goes wrong.
 
 ## On the Tasks tab
 
 - <a id="tasks.quiet-hours"></a>**Quiet hours**: a stretch of each day when your computer is usually free. A task set to run during quiet hours waits for it to begin and pauses when it ends. **Edit** changes the hours.
-- <a id="tasks.stages"></a>**Import tasks**: Scan, Generate and Identify, the three things Sift does with each file as it arrives.
+- <a id="tasks.stages"></a>**Import tasks**: Scan, Generate and Identify, the three things Sift does with each file as it arrives, in the order Sift runs them. Each row says when it runs and what is still waiting for it; **Edit** opens the stage's own settings.
+- <a id="importing.scan-stage"></a>**Scan**: finds new, changed and removed files in your library folders.
+- <a id="importing.generate-stage"></a>**Generate**: creates thumbnails, hover previews, scrubber strips and fingerprints for new files.
+- <a id="importing.identify-stage"></a>**Identify**: recognizes faces, describes files for Smart Search and reads watermarks. Its settings hold the three recognition switches.
+- <a id="importing.folders"></a>**Folder-specific import settings**: gives one library folder its own settings, or lets it follow the default. **Edit** beside a folder opens them.
 - **Other tasks**: work Sift does for the library as a whole, such as finding duplicates and creating backups.
+- <a id="tasks.activity"></a>**Activity**: what is running and what ran, under **Library tasks** and **Other tasks**. Under it the **Task Queue**, twenty a page, with **Options** and **Type** to show one type of task.
 - **Other settings**: settings filed with the tasks that belong to no task above.
 
 ## On the App History tab
@@ -68,7 +72,6 @@ Generates thumbnails, hover previews, scrubber strips and fingerprints for new f
 - **Path**: [Settings > Tasks and Activity > Generate](/settings/tasks#tasks.generate.when)
 - **When it runs**: As files arrive
 - **Choices**: As files arrive, During quiet hours, Only when I press it
-- **More in**: [Settings > Importing](/settings/importing)
 - **Who sets it**: an admin, for everyone on this Sift
 
 <a id="tasks.identify.when"></a>
@@ -78,7 +81,6 @@ Generates thumbnails, hover previews, scrubber strips and fingerprints for new f
 Recognizes faces, describes files for Smart Search and reads watermarks.
 
 - **Path**: [Settings > Tasks and Activity > Identify](/settings/tasks#tasks.identify.when)
-- **More in**: [Settings > Importing](/settings/importing)
 - **Who sets it**: an admin, for everyone on this Sift
 
 <a id="tasks.smart-search.when"></a>
@@ -126,7 +128,6 @@ Finds new, changed and removed files in your library folders.
 - **Path**: [Settings > Tasks and Activity > Scan](/settings/tasks#tasks.scan.when)
 - **When it runs**: As files arrive
 - **Choices**: As files arrive, During quiet hours, Only when I press it
-- **More in**: [Settings > Importing](/settings/importing)
 - **Who sets it**: an admin, for everyone on this Sift
 
 <a id="tasks.enrichment.when"></a>
@@ -150,7 +151,6 @@ Compares the fingerprints of your files to find exact and near duplicates.
 - **Path**: [Settings > Tasks and Activity > Find duplicate files](/settings/tasks#tasks.duplicates.when)
 - **When it runs**: As files arrive
 - **Choices**: As files arrive, During quiet hours, Only when I press it
-- **More in**: [Settings > Importing](/settings/importing)
 - **Who sets it**: an admin, for everyone on this Sift
 
 <a id="tasks.music.when"></a>
@@ -186,7 +186,6 @@ Finds runs of one creator's photos taken together, to suggest as Photo Sets.
 - **Path**: [Settings > Tasks and Activity > Find shoots](/settings/tasks#tasks.shoots.when)
 - **When it runs**: As files arrive
 - **Choices**: As files arrive, During quiet hours, Only when I press it
-- **More in**: [Settings > Importing](/settings/importing)
 - **Who sets it**: an admin, for everyone on this Sift
 
 <a id="tasks.suggestions.when"></a>
@@ -198,7 +197,6 @@ Suggests a person for a folder that holds one person's files, for you to confirm
 - **Path**: [Settings > Tasks and Activity > Suggest People from your folders](/settings/tasks#tasks.suggestions.when)
 - **When it runs**: As files arrive
 - **Choices**: As files arrive, During quiet hours, Only when I press it
-- **More in**: [Settings > Importing](/settings/importing)
 - **Who sets it**: an admin, for everyone on this Sift
 
 ## Settings
@@ -258,6 +256,87 @@ The default holds about two weeks at normal detail, counting the current file an
 - **Range**: 16 to 10000 MB
 - **Who sets it**: an admin, for everyone on this Sift
 
+<a id="performance.generate_fingerprints"></a>
+
+### Generate fingerprints
+
+Generates the fingerprint that finds duplicates and matches a file on the stash-boxes.
+
+When off, new files aren't fingerprinted, so they can't be matched on the stash-boxes or found as duplicates. To catch up, turn this on and choose Generate now.
+
+- **Path**: [Settings > Tasks and Activity > Generate fingerprints](/settings/tasks#performance.generate_fingerprints)
+- **Default**: On
+- **Who sets it**: an admin, for everyone on this Sift
+
+<a id="performance.generate_previews"></a>
+
+### Generate hover previews
+
+Generates the short clip that plays when you hover over a video.
+
+Hover previews use the most CPU, so turning them off saves the most on a busy scan. Videos still play in full when you open them.
+
+- **Path**: [Settings > Tasks and Activity > Generate hover previews](/settings/tasks#performance.generate_previews)
+- **Default**: On
+- **Who sets it**: an admin, for everyone on this Sift
+
+<a id="performance.preview_shape"></a>
+
+### Hover preview length
+
+A long video is sampled across its whole length. A short one plays from the beginning.
+
+Both cut to a new moment every 1.5 seconds. Changing this generates every preview again in the background.
+
+- **Path**: [Settings > Tasks and Activity > Hover preview length](/settings/tasks#performance.preview_shape)
+- **Default**: 12 seconds
+- **Choices**: 6 seconds, 12 seconds
+- **Who sets it**: an admin, for everyone on this Sift
+
+<a id="performance.generate_sprites"></a>
+
+### Generate scrubber strips
+
+Generates the row of frames you see while dragging along a video.
+
+When off, the scrubber still works but can't show where you are dragging to.
+
+- **Path**: [Settings > Tasks and Activity > Generate scrubber strips](/settings/tasks#performance.generate_sprites)
+- **Default**: On
+- **Who sets it**: an admin, for everyone on this Sift
+
+<a id="performance.repair_playback"></a>
+
+### Repair videos that stutter when skipping
+
+Some files store their sound far from their picture, which makes skipping around stutter.
+
+Sift keeps a corrected copy and plays that instead. Your own file is never changed. Each copy is a whole second file, so turning this off stops new ones and keeps the ones already made. To free that space, delete them in [Settings > Maintenance](/settings/maintenance).
+
+- **Path**: [Settings > Tasks and Activity > Repair videos that stutter when skipping](/settings/tasks#performance.repair_playback)
+- **Default**: On
+- **Who sets it**: an admin, for everyone on this Sift
+
+<a id="photo_sets.from_folders"></a>
+
+### Create Photo Sets from folders
+
+A folder with 10 or more photos and no videos becomes a Photo Set named after the folder.
+
+- **Path**: [Settings > Tasks and Activity > Create Photo Sets from folders](/settings/tasks#photo_sets.from_folders)
+- **Default**: On
+- **Who sets it**: an admin, for everyone on this Sift
+
+<a id="photo_sets.from_archives"></a>
+
+### Create Photo Sets from ZIP files
+
+A ZIP file with 10 or more photos inside becomes a Photo Set named after the file.
+
+- **Path**: [Settings > Tasks and Activity > Create Photo Sets from ZIP files](/settings/tasks#photo_sets.from_archives)
+- **Default**: On
+- **Who sets it**: an admin, for everyone on this Sift
+
 <a id="tasks.quiet_from"></a>
 
 ### Quiet hours start
@@ -298,4 +377,40 @@ Records every step of each download in the log.
 
 - **Path**: [Settings > Tasks and Activity > Detailed download log](/settings/tasks#download.verbose)
 - **Default**: Off
+- **Who sets it**: an admin, for everyone on this Sift
+
+<a id="shoots.auto_file"></a>
+
+### Create Photo Sets from shoots
+
+A shoot is a run of one creator's photos taken together: the same place, light and outfit. When on, each one Sift finds becomes a Photo Set.
+
+When off, each suggested shoot waits in Organize under Shoots until you choose Create Photo Set. When on, every shoot becomes a Photo Set as soon as Sift finds it. Each one is recorded in History, where you can undo it.
+
+- **Path**: [Settings > Tasks and Activity > Create Photo Sets from shoots](/settings/tasks#shoots.auto_file)
+- **Default**: Off
+- **Who sets it**: an admin, for everyone on this Sift
+
+<a id="suggestions.read_metadata"></a>
+
+### Find usernames in photo details
+
+When a file is named with a Site's ID for a username, Sift looks in the photo's details for the name.
+
+Sift checks only two fields, Artist and ImageDescription, in a few of that username's photos. It checks them only when no username in your library matches the ID. It never reads a location or anything else in the file. When off, those files wait until you add the ID to a username yourself, and nothing already added is undone.
+
+- **Path**: [Settings > Tasks and Activity > Find usernames in photo details](/settings/tasks#suggestions.read_metadata)
+- **Default**: On
+- **Who sets it**: an admin, for everyone on this Sift
+
+<a id="suggestions.file_from_filenames"></a>
+
+### Add usernames from filenames
+
+When a filename shows the Site and username a file came from, as downloaders name them, Sift adds that Site and username to the file.
+
+When off, Sift ignores filenames, and Sites and usernames already added stay. It uses only the name, so it adds almost no time to a scan, and it never adds People.
+
+- **Path**: [Settings > Tasks and Activity > Add usernames from filenames](/settings/tasks#suggestions.file_from_filenames)
+- **Default**: On
 - **Who sets it**: an admin, for everyone on this Sift

@@ -61,7 +61,10 @@ const MOST_PER_READ = 200;
  * How many rows a page of the list holds. Fixed, so a page is the same rows on every screen and
  * the pager under the list can name its pages by number.
  */
-export const QUEUE_PAGE = 50;
+export const QUEUE_PAGE = 20;
+
+/** What a pause or a cancel names: a pass by its key, a sub-task by its job type, or neither. */
+export type Which = components['schemas']['WhichWork'];
 
 /**
  * The Type choice's one entry for every kind this version of Sift has no handler for (the page's
@@ -318,6 +321,27 @@ export class Queue {
 		const { stopped } = await api.post<components['schemas']['Stopped']>('/jobs/cancel-all');
 		await this.refresh();
 		return stopped;
+	}
+
+	/* A pass, one of its sub-tasks, or with neither the whole queue: what a pause, a resume or a
+	   cancel acts on. A pause holds what starts next; what runs finishes the step in its hand. */
+	async pause(which: Which, paused: boolean): Promise<void> {
+		await api.post(paused ? '/jobs/pause' : '/jobs/resume', { body: which });
+		await this.refresh();
+	}
+
+	/* Every unfinished task of a pass or of one sub-task, called off. Answers how many. */
+	async cancelWork(which: Which): Promise<number> {
+		const { stopped } = await api.post<components['schemas']['Stopped']>('/jobs/cancel-work', {
+			body: which
+		});
+		await this.refresh();
+		return stopped;
+	}
+
+	/** Whether somebody paused the whole queue. */
+	get paused(): boolean {
+		return this.#page?.paused ?? false;
 	}
 
 	/**

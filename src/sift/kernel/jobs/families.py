@@ -123,6 +123,39 @@ HOUSEKEEPING: tuple[Chore, ...] = (
 )
 
 
+#: THE WORK SIFT STARTS BY ITSELF, which the queue's list leaves off unless somebody pressed it.
+#:
+#: A folder counted before its scan, the file details kept after a read, a folder checked for
+#: changes, a per-file step a pass hands out: each is a row nobody asked for, and a boot over a
+#: library of hundreds of folders draws hundreds of identical Done rows over the work somebody is
+#: watching. The family's bar and History's run line say what it did. A pressed one, a failed one
+#: and a canceled one stay listed, as `by_itself` rows do. A test holds every name to the registry.
+BACKGROUND: frozenset[str] = frozenset(
+    {
+        "scan",
+        "scan_count",
+        "library_reconcile",
+        "keep_probes",
+        "identify_file",
+        "generate_file",
+        "reidentify",
+        "face_regroup",
+        "face_rematch",
+        "face_starters",
+        "face_people_from_files",
+        "face_box_questions",
+        "face_floor",
+        "face_whole_picture",
+        "semantic_whole_picture",
+        "stash_arrived",
+        "stash_box_creator_picture",
+        "stash_box_link_invented",
+        "music_lookup",
+        "loop_thumbnail",
+    }
+)
+
+
 #: Which family each PRODUCT's work belongs to, by the key the composition root registers it
 #: under. A Build's task is typed by its coordinator (`identify_file`, `generate_file`) whatever it
 #: makes, so a run filtered to Smart Search would otherwise count as Identify's work on the
@@ -139,6 +172,14 @@ PRODUCT_FAMILIES: dict[str, Family] = {
     "watermarks": Family.IDENTIFY,
     "meaning": Family.SEMANTIC,
 }
+
+
+def products_of(family: Family | None = None, job_type: str | None = None) -> list[str]:
+    """The products a pass makes, or the one a sub-task's type is the work of."""
+    if job_type is not None:
+        return [key for key, made in PRODUCT_TYPES.items() if made == job_type]
+    return sorted(key for key, whose in PRODUCT_FAMILIES.items() if whose is family)
+
 
 #: The job type each PRODUCT's own work is counted under in its family, by the same keys: the kind
 #: whose bar on Activity says how many files have it (`thumbnails` is the `thumbnail` row). A task

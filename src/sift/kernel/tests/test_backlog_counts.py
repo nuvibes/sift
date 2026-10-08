@@ -4,6 +4,7 @@ and a read after a write evaluates the files that moved, not the library."""
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import replace
 
@@ -377,3 +378,42 @@ async def test_a_term_still_asked_keeps_its_bit_when_an_older_one_gives_way(
         str(row[0]) for row in await temp_db.fetch_all("SELECT signature FROM backlog_terms")
     }
     assert signatures == {first.signature, third.signature}
+
+
+async def test_a_shutdown_stops_the_builds_before_the_database_closes(
+    temp_db: Database,
+    content_store: ContentStore,
+    library_root: LibraryRoot,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    await _file(temp_db, library_root)
+    started = asyncio.Event()
+    never = asyncio.Event()
+
+    async def held(*args: object) -> None:
+        started.set()
+        await never.wait()
+
+    monkeypatch.setattr(backlog, "_apply", held)
+    kept = content_store._kept
+    assert await kept.totals([Term("1")]) is None
+    await started.wait()
+
+    await backlog.stop_builds()
+
+    assert not kept._builds and not kept._building
+    assert await kept.totals([Term("2")]) is None, "a stopped store walks and builds nothing"
+    assert not kept._builds
+
+
+def test_the_lifespan_stops_the_builds_after_the_work_and_before_the_database_closes() -> None:
+    """Handed to the teardown right after the database: undone in reverse, so after everything
+    built later (the workers, the screens' reads) and before the close the database handed first."""
+    import inspect
+
+    from sift.wiring import lifespan
+
+    ground = inspect.getsource(lifespan._ground)
+    built = ground.index("store = await build_storage(")
+    assert ground.index("teardown.push_async_callback(stop_builds)") > built
+    assert "from sift.kernel.content.backlog import stop_builds" in inspect.getsource(lifespan)

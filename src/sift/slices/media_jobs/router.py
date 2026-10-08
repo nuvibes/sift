@@ -26,26 +26,24 @@ from sift.kernel.jobs import (
     CANCELABLE_STATES,
     DEFAULT_PAGE_SIZE,
     MAX_PAGE_SIZE,
-    STEP_COUNT_CAP,
     Job,
     JobQueue,
     JobState,
-    StepCounts,
     WorkAhead,
     WorkerPool,
     WorkKind,
     WorkSummary,
     by_itself_job_types,
     counted_as,
-    folded_state,
     registered_families,
     registered_job_names,
     registered_product_carriers,
     unlisted_job_types,
     waits_for_password,
 )
-from sift.kernel.jobs.failure_words import in_plain_words, kind_of
+from sift.kernel.jobs.failure_words import in_one_line, in_plain_words, kind_of
 from sift.kernel.jobs.families import (
+    BACKGROUND,
     FAMILY_LABELS,
     HOUSEKEEPING,
     LONG_PASSES,
@@ -57,6 +55,7 @@ from sift.kernel.jobs.families import (
 from sift.kernel.jobs.families import Chore as HousekeepingChore
 from sift.kernel.jobs.ledger import Estimate, Ledger
 from sift.kernel.jobs.queue import LiveProducts, LiveWork
+from sift.kernel.jobs.queue_enqueue import PRESS
 from sift.kernel.jobs.queue_rows import FilesToRead
 from sift.kernel.jobs.schedules import get_schedule
 from sift.kernel.jobs.switchboard import Readiness, Switch, Switchboard, one_reading
@@ -68,6 +67,7 @@ from sift.kernel.wire import Wire
 from sift.kernel.wiring import ACCESS, DATABASE, LEDGER, LIBRARY, part_or_none
 from sift.slices.auth import csrf_protect, require_admin
 from sift.slices.media_jobs.activity_wire import Chore as Chore
+from sift.slices.media_jobs.activity_wire import FailureLine as FailureLine
 from sift.slices.media_jobs.activity_wire import FamilyOfWork as FamilyOfWork
 from sift.slices.media_jobs.activity_wire import JobsPage as JobsPage
 from sift.slices.media_jobs.activity_wire import JobView as JobView
@@ -75,6 +75,8 @@ from sift.slices.media_jobs.activity_wire import KindOfWork as KindOfWork
 from sift.slices.media_jobs.activity_wire import PartOfWork as PartOfWork
 from sift.slices.media_jobs.activity_wire import StepsOfJob as StepsOfJob
 from sift.slices.media_jobs.activity_wire import StepSummary as StepSummary
+from sift.slices.media_jobs.activity_wire import Stopped as Stopped
+from sift.slices.media_jobs.folds import fold_tops
 from sift.slices.media_jobs.jobs import (
     PROBE,
     REBUILD_PREVIEWS,
@@ -85,6 +87,15 @@ from sift.slices.media_jobs.pooled import WAITING_FOR_THE_SCAN as WAITING_FOR_TH
 from sift.slices.media_jobs.pooled import priced_together
 from sift.slices.media_jobs.presses import Presses, read_presses
 from sift.slices.media_jobs.read_first import after_the_read_first
+from sift.slices.media_jobs.router_controls import (
+    PAUSED,
+    controls,
+    held_views,
+    parts_off,
+    paused_parts,
+    runs,
+    switched_off,
+)
 
 log = get_logger(__name__)
 
@@ -153,7 +164,8 @@ def _view(
         id=job.id,
         parent_id=job.parent_id,
         type=job.type,
-        name=_named(job.type),
+        # A press over some files is named in the press's own words (`enqueue_many`'s title).
+        name=str(job.payload.get("title") or _named(job.type)),
         subject=subject,
         subject_id=subject_id,
         state=job.state,
@@ -170,6 +182,7 @@ def _view(
         updated_at=job.updated_at,
         steps=steps,
         waits_for_password=job.state is JobState.BLOCKED and waits_for_password(job.error),
+        reason=in_one_line(job.error) if job.state is JobState.FAILED and job.error else None,
     )
 
 
@@ -183,7 +196,7 @@ def _subject_assets(jobs: Sequence[Job]) -> dict[str, str]:
     return {
         job.id: (job.payload or {})[_ASSET_KEY]
         for job in jobs
-        if isinstance((job.payload or {}).get(_ASSET_KEY), str)
+        if isinstance((job.payload or {}).get(_ASSET_KEY), str) and job.type != PRESS
     }
 
 
@@ -317,7 +330,9 @@ async def _about_the_rows(
     assets = {
         job_id: asset_id for job_id, asset_id in _subject_assets(jobs).items() if job_id in subjects
     }
-    folded = await _folded(queue, database, jobs, subjects, assets, shown) if fold else {}
+    folded = (
+        await fold_tops(queue, database, jobs, subjects, assets, shown.of, _named) if fold else {}
+    )
     return subjects, assets, folded
 
 
@@ -410,16 +425,15 @@ async def _page(
     shown: _Shown,
     library: LibraryStore | None = None,
 ) -> JobsPage:
-    # Background upkeep is not listed (`unlisted_job_types`), unless a caller names its type.
+    # Upkeep is never listed unless named; work Sift started by itself only where it failed.
     upkeep = unlisted_job_types()
-    # Nor the work that runs by itself as files arrive, where it heads its own row; its failures stay.
     unnamed = job_type is None and parent_id is None
-    quiet = sorted(by_itself_job_types()) if unnamed else []
-    # The whole queue's shape, not the page's: the tallies above the table count everything. Read
-    # before the page, because the page's "Older tasks" are the kinds of it no handler claims.
+    quiet = sorted((by_itself_job_types() | BACKGROUND) - upkeep) if unnamed else []
+    # The whole queue's shape, read first: "Older tasks" are its kinds no handler claims (a
+    # press's head is no kind of work).
     summary = await queue.work_summary()
     claimed = registered_job_names()
-    gone = sorted(kind for kind in summary.states if kind not in claimed and kind not in upkeep)
+    gone = sorted(kind for kind in summary.states if kind not in {*claimed, *upkeep, PRESS})
     # On a page of families a state is the one a family's row shows (`folded`), never a row's own.
     page = await queue.list(
         state=None if fold else state,
@@ -453,7 +467,7 @@ async def _page(
         queue, work, ledger, pool, listed, counted, library, unread
     )
     return JobsPage(
-        jobs=_views(page.jobs, subjects, assets, places, folded),
+        jobs=held_views(_views(page.jobs, subjects, assets, places, folded), page.jobs, pool),
         total=page.total,
         counts=counts,
         tallies=tallies,
@@ -469,6 +483,7 @@ async def _page(
         step_back_for=attention.ATTENTION.cause,
         step_back_over=device_load.READER.over if attention.ATTENTION.cause == "others" else [],
         password_wanted=sum(sealed.values()),
+        paused=pool is not None and pool.holding.held_all,
     )
 
 
@@ -498,50 +513,6 @@ def _tallies(
         tally = dict(rows)
     shown = {named: how_many for named, how_many in tally.items() if how_many > 0}
     return {**shown, "all": sum(shown.values())}
-
-
-async def _folded(
-    queue: JobQueue,
-    database: Database | None,
-    tops: Sequence[Job],
-    subjects: Mapping[str, str],
-    assets: Mapping[str, str],
-    shown: _Shown,
-) -> dict[str, StepSummary]:
-    """Each top row's family folded (steps counted, one state, its file named once), in three
-    statements for the page."""
-    counts = await queue.step_counts([job.id for job in tops])
-    # Named from the steps only where the top has no subject and its family was counted whole.
-    unnamed = [
-        job.id
-        for job in tops
-        if job.id not in subjects and not counts.get(job.id, _NO_STEPS).at_least
-    ]
-    files = await queue.family_files(unnamed)
-    # `names_for_assets` answers an empty list with nothing and asks no question.
-    wanted = sorted(await shown.of(sorted(set(files.values()))))
-    names = await names_for_assets(database, wanted) if database is not None else {}
-    folded: dict[str, StepSummary] = {}
-    for job in tops:
-        counted = counts.get(job.id, _NO_STEPS)
-        subject, subject_id = subjects.get(job.id), assets.get(job.id)
-        if subject is None and files.get(job.id) in names:
-            subject_id = files[job.id]
-            subject = names[subject_id]
-        folded[job.id] = StepSummary(
-            count=counted.steps,
-            by_state=counted.by_state,
-            at_least=counted.at_least,
-            cap=STEP_COUNT_CAP,
-            state=folded_state(job.state, counted.by_state),
-            subject=subject,
-            subject_id=subject_id,
-        )
-    return folded
-
-
-#: A top that started nothing. The same answer `step_counts` gives one, for a top it was not asked.
-_NO_STEPS = StepCounts(by_state={}, at_least=False)
 
 
 #: What a pass that is not running says, in one sentence each: only the server can tell them apart.
@@ -742,22 +713,37 @@ class _Reads:
     arriving: Mapping[str, Mapping[str, float]] = field(default_factory=dict)
 
 
-async def _family(family: Family, types: list[str], reads: _Reads) -> tuple[FamilyOfWork, bool]:
-    """One long pass's row, and whether the presses alone describe it."""
+async def _own_work(
+    family: Family, types: list[str], reads: _Reads
+) -> tuple[list[str], list[str], tuple[float, float, int, int, list[PartOfWork], int]]:
+    """The family's sub-tasks switched off, the kinds it is priced by, and its work counted
+    without the ones off, whose lines are drawn and counted in nothing."""
     carried_left, carried_outstanding, carried_by = reads.carried
-    by_presses_alone = False
-    left, counted_left, done, total, parts, outstanding = _counted(
-        types,
+    off = await switched_off(reads.board, types, reads.work)
+    counted_types = [one for one in types if one not in off]
+    counted = _counted(
+        counted_types,
         reads.work,
         reads.carriers,
         left=carried_left.get(family, 0.0),
         outstanding=carried_outstanding.get(family, 0),
     )
-    at_once = _running_together(reads.pool, types)
+    counted[4].extend(parts_off(off, reads.work))
     # Its own kinds' items, plus a carrier's whose every live task is this family's.
-    priced = [one for one in types if one not in reads.carriers] + [
+    priced = [one for one in counted_types if one not in reads.carriers] + [
         one for one, whose in carried_by.items() if whose is family
     ]
+    return off, priced, counted
+
+
+async def _family(family: Family, types: list[str], reads: _Reads) -> tuple[FamilyOfWork, bool]:
+    """One long pass's row, and whether the presses alone describe it."""
+    _left, carried_outstanding, _by = reads.carried
+    by_presses_alone = False
+    off, priced, (left, counted_left, done, total, parts, outstanding) = await _own_work(
+        family, types, reads
+    )
+    at_once = _running_together(reads.pool, types)
     press = None if reads.presses is None else reads.presses.get(family)
     priced_mix = priced
     if press is not None:
@@ -785,6 +771,7 @@ async def _family(family: Family, types: list[str], reads: _Reads) -> tuple[Fami
         carried=carried_outstanding.get(family, 0),
         states=reads.states,
     )
+    paused, parts = paused_parts(reads.pool, types, parts)
     row = FamilyOfWork(
         label=FAMILY_LABELS[family],
         types=sorted(types),
@@ -803,7 +790,10 @@ async def _family(family: Family, types: list[str], reads: _Reads) -> tuple[Fami
         parts=parts,
         time_unknown=_for_task(standing, more=False) if standing >= left else None,
         for_task=_for_task(standing, more=True) if 0 < standing < left else None,
-        reason=_reason(
+        paused=paused,
+        reason=PAUSED
+        if paused
+        else _reason(
             left=left,
             outstanding=outstanding,
             on=on,
@@ -816,6 +806,7 @@ async def _family(family: Family, types: list[str], reads: _Reads) -> tuple[Fami
             by_benchmark=reads.benchmark and outstanding > 0 and not running,
         ),
         task=FAMILY_TASKS.get(family),
+        runs=runs(family, off),
         running=running,
     )
     return row, by_presses_alone
@@ -1389,12 +1380,6 @@ async def clear_canceled_jobs(
     return Cleared(cleared=await queue.clear_canceled())
 
 
-class Stopped(Wire):
-    """How many jobs were stopped."""
-
-    stopped: int
-
-
 @router.post("/cancel-all", dependencies=[Depends(csrf_protect)])
 async def cancel_everything(
     queue: Annotated[JobQueue, Depends(wiring.queue)],
@@ -1550,3 +1535,6 @@ async def cancel_job(
 
 
 # What runs on a clock is `/api/tasks` (`slices/tasks/router.py`), not here.
+
+
+router.include_router(controls)

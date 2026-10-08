@@ -11,6 +11,7 @@ from sift.kernel.access import (
 )
 from sift.kernel.audience import EVERY_ADMIN
 from sift.kernel.changes import About, announce, telling
+from sift.kernel.content.tree import people_answered_for
 from sift.kernel.db import Connection, in_clause
 from sift.kernel.ids import new_id
 from sift.kernel.sorting import sort_key
@@ -264,3 +265,8 @@ class PeopleStore(PicturesStore):
             if len(people) == 1:
                 found[alias] = next(iter(people))
         return found
+
+    async def answered_by_folders(self, asset_ids: Iterable[str]) -> dict[str, frozenset[str]]:
+        """Who the folders each file sits in were answered as, by file; a file under none is
+        absent."""
+        return await people_answered_for(self._db, asset_ids)

@@ -282,7 +282,7 @@ it('tells an admin Smart Search is off, with the switch linked', async () => {
 	await vi.waitFor(() => expect(host.textContent).toContain('Smart Search is off'));
 	const link = host.querySelector('a.setting-link');
 	expect(link?.textContent?.trim()).toBe('Turn it on');
-	expect(link?.getAttribute('href')).toBe('/settings/importing#semantic.enabled');
+	expect(link?.getAttribute('href')).toBe('/settings/tasks#semantic.enabled');
 });
 
 it('says nothing of the switch while Smart Search is on', async () => {

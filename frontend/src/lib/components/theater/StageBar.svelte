@@ -199,6 +199,11 @@
 		column-gap: var(--space-8);
 	}
 
+	/* The numbers after the transport: they fold, so they give way and the transport does not. */
+	.stage-bar :global(.player-bar > .row.follows:not(.phone)) {
+		grid-template-columns: auto minmax(0, max-content) minmax(0, max-content);
+	}
+
 	.stage-bar.led {
 		grid-template-columns: auto minmax(0, 1fr);
 	}

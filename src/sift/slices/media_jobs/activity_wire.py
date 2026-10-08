@@ -14,6 +14,26 @@ from sift.kernel.jobs import (
 from sift.kernel.wire import Wire
 
 
+class Stopped(Wire):
+    """How many jobs were stopped."""
+
+    stopped: int
+
+
+class FailureLine(Wire):
+    """Why a family failed, in one line: the newest failed row's name, reason, file and tries."""
+
+    name: str = Field(description="What the failed row was doing, in its handler's words.")
+    reason: str = Field(
+        description="Why, in plain words where the failure is a kind Sift knows, else the last "
+        "line of the tool's own words."
+    )
+    subject: str | None = Field(
+        default=None, description="The file it was on, or null for work about no one file."
+    )
+    attempts: int = Field(description="How many times it was tried.")
+
+
 class StepSummary(Wire):
     """A top row's family, folded: what it started, counted, and the one state the row shows.
 
@@ -48,6 +68,9 @@ class StepSummary(Wire):
     )
     subject_id: str | None = Field(
         default=None, description="That file's id, for the link on the name. Null as `subject` is."
+    )
+    failure: FailureLine | None = Field(
+        default=None, description="The family's newest failure, or null when nothing in it failed."
     )
 
 
@@ -100,6 +123,8 @@ class JobView(Wire):
     #: says what is sealed, and the row offers the password field beside it. False for every other
     #: wait, which keeps its own words and its own door.
     waits_for_password: bool = False
+    #: Why it failed, in one line (see `FailureLine.reason`); null for a row that did not fail.
+    reason: str | None = None
 
 
 class StepsOfJob(Wire):
@@ -159,6 +184,19 @@ class PartOfWork(Wire):
     )
     done: int = Field(description="Files that have this work, counted from the library.")
     total: int = Field(description="Files that want this work at all, done or not.")
+    on: bool = Field(
+        default=True,
+        description="False for a sub-task switched off with none of its work queued: drawn, and "
+        "left out of its family's status, count and time left.",
+    )
+    paused: bool = Field(default=False, description="Whether somebody paused this sub-task.")
+
+
+class RunPress(Wire):
+    """One task Run now presses for a pass: its id on Tasks, and the parts of it, or all of it."""
+
+    task: str
+    parts: list[str] | None = None
 
 
 class FamilyOfWork(Wire):
@@ -280,6 +318,14 @@ class FamilyOfWork(Wire):
         description="Why the newest of them failed, in plain words, or null while none stands.",
     )
     running: int = Field(default=0, description="How many of this pass's tasks are running now.")
+    paused: bool = Field(
+        default=False, description="Whether somebody paused this pass: no new task of it starts."
+    )
+    runs: list[RunPress] = Field(
+        default=[],
+        description="What Run now on this pass presses: each task, or the part of it that is this "
+        "pass's, leaving out a sub-task switched off.",
+    )
 
 
 class Chore(Wire):
@@ -410,4 +456,8 @@ class JobsPage(Wire):
         description="How many tasks, over the whole queue, are parked until somebody gives the "
         "password: a saved key sealed since Sift started. What the unlock bar at the top of every "
         "screen follows, so a window told Not now asks again when work stops for the key.",
+    )
+    paused: bool = Field(
+        default=False,
+        description="Whether somebody paused the whole queue: no new task starts until Resume.",
     )

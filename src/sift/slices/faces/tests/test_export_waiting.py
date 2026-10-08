@@ -19,7 +19,6 @@ from sift.slices.faces.tests.test_routes import (
     db_path,
     sign_in,
     turn_on,
-    unlock,
     write,
 )
 from sift.testing.library import hidden_row
@@ -198,18 +197,11 @@ def test_the_request_takes_exactly_the_people_and_the_entries_it_names(
     assert set(_rows(_export(client))) == {"Imre Vasquez", "Neve Arbor", "Wren Halloway"}
 
 
-@pytest.mark.parametrize(
-    "mark",
-    [
-        "UPDATE people SET keep_local = 1 WHERE id = ?",
-        "UPDATE people SET keep_from_swaps = 1 WHERE id = ?",
-    ],
-)
-def test_a_person_a_swap_refuses_never_leaves_in_a_file_nor_does_their_name(
-    client: TestClient, mark: str
+def test_a_person_kept_local_never_leaves_in_a_file_nor_does_their_name(
+    client: TestClient,
 ) -> None:
-    """Kept local or Do not swap: refused from everyone and from a pick, and an entry waiting
-    under the same name is refused with them, since it would carry the name out."""
+    """Kept local: refused from everyone and from a pick, and an entry waiting under the same name
+    is refused with them, since it would carry the name out."""
     turn_on(client)
     sign_in(client, "admin")
     write(
@@ -220,7 +212,7 @@ def test_a_person_a_swap_refuses_never_leaves_in_a_file_nor_does_their_name(
             *_person("p2", "Esme Wrenfield", ("b",)),
             *_entry("e1", "imre vasquez", ("c",)),
             *_entry("e2", "Neve Arbor", ("d",)),
-            (mark, ("p1",)),
+            ("UPDATE people SET keep_local = 1 WHERE id = ?", ("p1",)),
         ],
     )
 
@@ -237,7 +229,23 @@ def test_a_person_a_swap_refuses_never_leaves_in_a_file_nor_does_their_name(
     }
 
 
-def test_an_entry_named_as_somebody_a_shut_hidden_holds_back_waits_out_of_the_file(
+def test_do_not_swap_keeps_nobody_out_of_a_file(client: TestClient) -> None:
+    """A person marked Do not swap still goes in a file: that file is Kept local's door alone."""
+    turn_on(client)
+    sign_in(client, "admin")
+    write(
+        db_path(client),
+        [
+            _pack("folders", "Folders you imported"),
+            *_person("p1", "Imre Vasquez", ("a",)),
+            ("UPDATE people SET keep_from_swaps = 1 WHERE id = ?", ("p1",)),
+        ],
+    )
+
+    assert set(_rows(_export(client))) == {"Imre Vasquez"}
+
+
+def test_an_entry_named_as_somebody_in_hidden_goes_in_the_file_with_hidden_shut(
     client: TestClient,
 ) -> None:
     turn_on(client)
@@ -253,8 +261,6 @@ def test_an_entry_named_as_somebody_a_shut_hidden_holds_back_waits_out_of_the_fi
         ],
     )
 
-    assert set(_rows(_export(client))) == {"Neve Arbor"}
-    assert unlock(client) == 200
     assert set(_rows(_export(client))) == {"Imre Vasquez", "Neve Arbor"}
 
 

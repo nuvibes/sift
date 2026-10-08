@@ -525,6 +525,9 @@ def test_a_person_past_dependable_is_said_to_be_dependable() -> None:
     """
     assert strength(tuning.STRONG_REFERENCES).verdict == "good"
     assert strength(tuning.GOOD_REFERENCES - 1).verdict == "good"
+    # The page's bar is full at dependable, never drawn against the target.
+    assert strength(tuning.STRONG_REFERENCES - 1).fraction < 1.0
+    assert strength(tuning.STRONG_REFERENCES).fraction == 1.0
 
 
 def test_a_person_at_the_target_is_as_good_as_it_gets() -> None:

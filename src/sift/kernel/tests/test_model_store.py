@@ -8,6 +8,7 @@ runtime are read from `Settings.models_dir`, once per device, whichever library 
 
 from __future__ import annotations
 
+import ssl
 import zipfile
 from collections.abc import AsyncIterator
 from pathlib import Path
@@ -19,6 +20,7 @@ from blake3 import blake3
 
 from sift.kernel import fetch
 from sift.kernel.config import Settings
+from sift.kernel.jobs import JobFailedPermanently
 from sift.kernel.ml import accel, store
 from sift.kernel.ml.weights import Weight, WeightError, WeightStore
 
@@ -158,8 +160,30 @@ async def test_a_connection_that_fails_offers_the_file_by_hand(probe: WeightStor
     with pytest.raises(WeightError) as failed:
         await probe.fetch(weight, session_factory=lambda: Server(refused))
 
+    # The client's own words last, after everything a person reads.
     assert str(failed.value) == (
         "The reader model couldn't be downloaded: "
         + fetch.REFUSED.format(host="models.example.test")
-        + " Or copy the file to this device yourself."
+        + " Or copy the file to this device yourself. "
+        + f"ClientConnectorError: {refused}"
+    )
+    assert not isinstance(failed.value, JobFailedPermanently), "a refused connection is retried"
+
+
+async def test_a_refused_certificate_fails_its_task_without_a_retry(probe: WeightStore) -> None:
+    """The same certificate is refused on the next ask a second later, so no attempt is spent on it."""
+    check = ssl.SSLCertVerificationError(1, "unable to get local issuer certificate")
+    check.verify_code = 20
+    refused = aiohttp.ClientConnectorCertificateError(
+        ConnectionKey("models.example.test", 443, True, True, None, None, None), check
+    )
+
+    with pytest.raises(WeightError) as failed:
+        await probe.fetch(_weight(b"never arrives"), session_factory=lambda: Server(refused))
+
+    assert isinstance(failed.value, JobFailedPermanently)
+    assert str(failed.value).startswith(
+        "The reader model couldn't be downloaded: a secure connection to models.example.test"
+        " couldn't be made, because its certificate was issued by an authority Sift doesn't trust."
+        " Or copy the file to this device yourself. ClientConnectorCertificateError: "
     )

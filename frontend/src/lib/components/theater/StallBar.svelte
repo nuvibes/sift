@@ -43,7 +43,7 @@
 	 *
 	 * ## The picker
 	 *
-	 * A row of numbers at the start of the controls' row, `All` first. Pointing at one marks the cell
+	 * A row of numbers after the transport on the controls' row, `All` first. Pointing at one marks the cell
 	 * it belongs to on the wall behind, with the accent wash the application draws over anything a
 	 * drag is aimed at.
 	 *
@@ -113,7 +113,7 @@
 	const folds = (beside: number) =>
 		room > 0 && numbersWide + beside > room && (foldWide === 0 || foldWide < numbersWide);
 	const onCell = $derived(wall.everyCell ? 'All' : `${chosen + 1} of ${wall.cells.length}`);
-	const foldNames = $derived(wall.everyCell ? 'every cell' : `cell ${onCell}`);
+	const foldNames = $derived(wall.everyCell ? 'all cells' : `cell ${onCell}`);
 </script>
 
 <!-- Quiet when the rest of the chrome is. `stage.barHidden` is the one clock a filled screen runs;
@@ -149,12 +149,11 @@
 {/snippet}
 
 <!--
-	The cell picker, at the start of the controls' row, under the start of the timeline.
+	The cell picker, on the controls' row after the transport, under the timeline.
 
 	The scrubber is what somebody reaches for constantly and the numbers are pressed once in a
 	while, so the timeline runs the width of the bar over them: beside it, on a wall of nine, they
-	would push the timeline's start a third of the way across the bar. The transport keeps the
-	middle of the row, so the numbers take its start.
+	would push the timeline's start a third of the way across the bar.
 -->
 {#snippet picker(beside: number)}
 	{@const folded = folds(beside)}
@@ -199,7 +198,7 @@
 					tone="ghost"
 					class="pick every {wall.everyCell ? 'on' : ''}"
 					pressed={wall.everyCell}
-					aria-label="Controls for every cell"
+					aria-label="Controls for all cells"
 					{...aims(wall, 'every')}
 					onclick={() => wall.focusEvery()}
 				>
@@ -305,12 +304,10 @@
 		color: var(--sift-accent-text);
 	}
 
-	/* A word, wider than the squares, drawn from its start so the time above stands over it. */
+	/* A word, wider than the squares, and fixed, so pressing it moves nothing. */
 	.numbers :global(.pick.every) {
 		min-inline-size: 44px;
 		inline-size: 44px;
-		justify-content: flex-start;
-		padding-inline-start: var(--space-2);
 	}
 
 	/*

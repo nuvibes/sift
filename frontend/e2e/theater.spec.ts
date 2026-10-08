@@ -424,11 +424,11 @@ test('a layout is chosen from the menu and applies immediately', async ({ page }
 	await page.goto('/theater');
 	await expect(cells(page)).toHaveCount(2);
 
-	await chooseLayout(page, '2x2');
+	await chooseLayout(page, 'Grid 2x2');
 
 	await expect(cells(page)).toHaveCount(4);
 	// And it goes back, which is what a list you pick one of has to be able to do.
-	await chooseLayout(page, '1x2 (P)');
+	await chooseLayout(page, 'Grid 1x2 (P)');
 	await expect(cells(page)).toHaveCount(2);
 
 	/* The retired shapes are still ACCEPTED by the server, because saved walls are filed under
@@ -437,8 +437,8 @@ test('a layout is chosen from the menu and applies immediately', async ({ page }
 	for (const gone of ['One', 'Stacked', 'Stacked three', 'One above two', 'Two above one']) {
 		await expect(page.getByRole('option', { name: gone, exact: true })).toHaveCount(0);
 	}
-	await expect(page.getByRole('option', { name: '2x2', exact: true })).toBeVisible();
-	await expect(page.getByRole('option', { name: '1x2 (L)', exact: true })).toBeVisible();
+	await expect(page.getByRole('option', { name: 'Grid 2x2', exact: true })).toBeVisible();
+	await expect(page.getByRole('option', { name: 'Grid 1x2 (L)', exact: true })).toBeVisible();
 });
 
 test('the whole wall goes to the corner, not one cell of it', async ({ page }) => {
@@ -545,7 +545,7 @@ test('nothing on the wall wears the scrollbar of a box that should not scroll', 
 	 * drawn larger than the space it was given.
 	 */
 	await page.goto('/theater');
-	await chooseLayout(page, '1x3');
+	await chooseLayout(page, 'Grid 1x3');
 	await expect(cells(page)).toHaveCount(3);
 	await cells(page).first().hover();
 	await settled(page);
@@ -666,7 +666,7 @@ test('portrait feeds reach the foot of a filled wall, and stop 8px above the bar
 	await page.setViewportSize({ width: 1800, height: 900 });
 	await page.goto('/theater');
 	await expect(cells(page)).toHaveCount(2);
-	await chooseLayout(page, '1x3');
+	await chooseLayout(page, 'Grid 1x3');
 	await expect(cells(page)).toHaveCount(3);
 
 	await page.keyboard.press('f');
@@ -759,7 +759,7 @@ test('a bar on a narrow cell stays on that cell', async ({ page }) => {
 	 * on the wrong picture, and half of one clipped away while the other half worked.
 	 */
 	await page.goto('/theater');
-	await chooseLayout(page, '1x3');
+	await chooseLayout(page, 'Grid 1x3');
 	await expect(cells(page)).toHaveCount(3);
 	await cells(page).first().hover();
 	await settled(page);
@@ -872,7 +872,7 @@ test('every preview stays inside the strip, at any picture width', async ({ page
 
 	await page.goto('/theater');
 	await expect(cells(page)).toHaveCount(2);
-	await chooseLayout(page, 'Center stage 1x1');
+	await chooseLayout(page, 'Stage View 1x1');
 	// One in focus and five underneath.
 	await expect(cells(page)).toHaveCount(6);
 	await settled(page);
@@ -927,7 +927,7 @@ test('the strip grows into the foot while the chrome is hidden, and the feeds ab
 	await page.setViewportSize({ width: 1800, height: 1000 });
 	await page.goto('/theater');
 	await expect(cells(page)).toHaveCount(2);
-	await chooseLayout(page, 'Center stage 1x3');
+	await chooseLayout(page, 'Stage View 1x3');
 	// Three in focus and five underneath.
 	await expect(cells(page)).toHaveCount(8);
 
@@ -1061,12 +1061,27 @@ test('the keyboard is told Portrait and Landscape, as the pointer is', async ({ 
 	await page.keyboard.press('Home');
 	const highlighted = page.locator('[role=option][data-highlighted]');
 	await page.keyboard.press('ArrowDown');
-	await expect(highlighted).toContainText('1x2 (P)');
+	await expect(highlighted).toContainText('Grid 1x2 (P)');
 	await expect(page.getByRole('tooltip').filter({ hasText: 'Portrait' })).toBeVisible();
 
 	await page.keyboard.press('ArrowDown');
-	await expect(highlighted).toContainText('1x2 (L)');
+	await expect(highlighted).toContainText('Grid 1x3');
+	await page.keyboard.press('ArrowDown');
+	await expect(highlighted).toContainText('Grid 1x2 (L)');
 	await expect(page.getByRole('tooltip').filter({ hasText: 'Landscape' })).toBeVisible();
+});
+
+test('the bar leads with the transport and keeps Shuffle in its drawer', async ({ page }) => {
+	await page.goto('/theater');
+	await expect(cells(page)).toHaveCount(2);
+	await reachFor(page, 'bottom', page.locator('.stage-bar'));
+	const labels = await page
+		.locator('.stage-bar .row button')
+		.evaluateAll((buttons) =>
+			buttons.map((one) => one.getAttribute('aria-label') ?? one.textContent?.trim() ?? '')
+		);
+	expect(labels.slice(0, 2)).toEqual(['Nothing before this', 'Play']);
+	expect(labels).not.toContain('Shuffle');
 });
 
 test('a filled 1x1 Portrait cell rises as the bars leave and never dips first', async ({
@@ -1074,7 +1089,7 @@ test('a filled 1x1 Portrait cell rises as the bars leave and never dips first', 
 }) => {
 	await page.goto('/theater');
 	await expect(cells(page)).toHaveCount(2);
-	await chooseLayout(page, '1x1');
+	await chooseLayout(page, 'Grid 1x1');
 	await expect(cells(page)).toHaveCount(1);
 	await cells(page).first().click({ button: 'right' });
 	await page.getByRole('menuitem', { name: 'Shape' }).hover();

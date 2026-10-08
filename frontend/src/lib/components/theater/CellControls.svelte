@@ -31,7 +31,7 @@
 	import { spriteUrl } from '$lib/entity/art';
 	import { usable } from '$lib/player/trickplay';
 	import { aims as marks, aimsAtChosen } from '$lib/theater/aim';
-	import { nextLoopMode } from '$lib/player/loop-modes';
+	import { loopModeIcon, loopModeLabel, loopRepeats, nextLoopMode } from '$lib/player/loop-modes';
 	import { clipTheStretch } from '$lib/edit/edit.svelte';
 	import { SKIP_SECONDS } from '$lib/player/skip';
 	import { toasts } from '$lib/shell/toasts.svelte';
@@ -117,7 +117,7 @@
 	 * pointer marks the right thing.
 	 *
 	 * NOT on the controls that are about the WALL rather than about a cell: the two ways out, and
-	 * Center stage's mode. Washing every cell for a control that changes none of them is the mark
+	 * Stage View's mode. Washing every cell for a control that changes none of them is the mark
 	 * meaning nothing, which is how a mark stops being read.
 	 */
 	/* One object, spread on each control that answers this question. Written out per control it is
@@ -177,7 +177,7 @@
 	 * looking at the screen.
 	 */
 	function verb(what: string): string {
-		return wall.everyCell ? `${what} in every cell` : `${what} in cell ${number}`;
+		return wall.everyCell ? `${what} in all cells` : `${what} in cell ${number}`;
 	}
 
 	const strip = $derived(usable(cell.sheet) ? cell.sheet : null);
@@ -232,6 +232,12 @@
 		acting.forEach((one) =>
 			one.seek?.(Math.min(one.duration || Number.POSITIVE_INFINITY, one.position + SKIP_SECONDS))
 		);
+	}
+
+	/* The cell on the bar decides the next mode, so every addressed cell lands on the same one. */
+	function repeatNext() {
+		const next = nextLoopMode(cell.endBehaviour);
+		acting.forEach((one) => (one.endBehaviour = next));
 	}
 
 	function markNext() {
@@ -303,7 +309,7 @@
 	}
 
 	/*
-	 * CENTER STAGE'S TWO MODES, on the drawer of the bar the wall is being driven from.
+	 * STAGE VIEW'S TWO MODES, on the drawer of the bar the wall is being driven from.
 	 *
 	 * Here because it is a decision somebody makes WHILE watching ('stop changing under me' is
 	 * thought at the wall, not on the settings screen) and the drawer is where this bar keeps the
@@ -319,7 +325,7 @@
 
 	const modeLabel = $derived(
 		!wall.centerStage
-			? 'Previews come with a Center stage layout'
+			? 'Previews come with a Stage View layout'
 			: wall.newestTakesFocus
 				? 'A preview comes up as soon as it starts something new'
 				: 'A preview comes up when you double-click it'
@@ -361,17 +367,6 @@
 	onforward={() => acting.forEach((one) => void one.advance())}
 	backLabel={verb(ACTS.previous)}
 	forwardLabel={verb(ACTS.next)}
-	shuffle={{
-		on: cell.ordering === 'shuffle',
-		onpress: () => pressShuffle(acting, cell.ordering === 'shuffle')
-	}}
-	repeat={{
-		mode: cell.endBehaviour,
-		onpress: () => {
-			const next = nextLoopMode(cell.endBehaviour);
-			acting.forEach((one) => (one.endBehaviour = next));
-		}
-	}}
 	keyboard="theater"
 	variant="theater"
 	muted={silent}
@@ -438,10 +433,10 @@
 		cell's drawer holding a different set of controls for the same questions is the drift the
 		one bar exists to stop.
 
-		Twelve, always all twelve, so the drawer is one shape for a video, a GIF, any selection and
-		any layout (Shuffle and what happens at the end stand on the bar beside the step pair): a control that does not apply to what is playing is dimmed with the reason
-		as its label rather than left out. No divider: it would span the three columns and leave
-		empty places beside it.
+		Fourteen, always all fourteen, so the drawer is one shape for a video, a GIF, any selection
+		and any layout: a control that does not apply to what is playing is dimmed with the reason
+		as its label rather than left out. No divider: it would span the columns and leave empty
+		places beside it.
 	-->
 	<!-- Clip, then Screenshot, first, where the player's drawer keeps them: the same two controls
 	     and the same doors (`keepTheLast`, `takeShot`), on this cell's file at this cell's moment.
@@ -498,6 +493,29 @@
 			icon="casino"
 			aria-label={verb(ACTS.randomize)}
 			onclick={() => acting.forEach((one) => void one.somethingElse())}
+		/>
+	</Tooltip>
+
+	<!-- What happens at the end of a file, and the order: here rather than on the row, beside
+	     Randomize, the other control about what comes next. -->
+	<Tooltip label={loopModeLabel(cell.endBehaviour)} placement="top">
+		<Button
+			{...aims}
+			tone="ghost"
+			icon={loopModeIcon(cell.endBehaviour)}
+			aria-label={loopModeLabel(cell.endBehaviour)}
+			pressed={loopRepeats(cell.endBehaviour)}
+			onclick={repeatNext}
+		/>
+	</Tooltip>
+	<Tooltip label={ACTS.shuffle} shortcut={keyOf('shuffle', 'theater')} placement="top">
+		<Button
+			{...aims}
+			tone="ghost"
+			icon="shuffle"
+			aria-label={verb(ACTS.shuffle)}
+			pressed={cell.ordering === 'shuffle'}
+			onclick={() => pressShuffle(acting, cell.ordering === 'shuffle')}
 		/>
 	</Tooltip>
 

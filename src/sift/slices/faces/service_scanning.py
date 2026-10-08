@@ -234,7 +234,7 @@ class ScanningMixin(WeightsMixin, MatchingMixin, BoxQuestionsMixin):
         # another, so `_attribute` reads the refusal and passes that person over.
         await self._reject_again(asset_id, track_ids)
         matched = await self._attribute(
-            [one for one in track_ids if one not in decided], configured
+            [one for one in track_ids if one not in decided], configured, asset_id=asset_id
         )
         # A confirmation the description could not pair is put back by the person where that is
         # unambiguous (`_confirm_by_name`), first, so the face it takes is nobody else's to pair.

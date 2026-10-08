@@ -12,6 +12,7 @@ import {
 	fill,
 	grown,
 	layout,
+	LAYOUTS,
 	MOST_CELLS,
 	named,
 	readShape,
@@ -67,6 +68,23 @@ const SEVEN_IN_A_ROW: Shape = {
 	cols: 7,
 	slots: [0, 1, 2, 3, 4, 5, 6].map((col) => ({ row: 0, col, rowSpan: 1, colSpan: 1 }))
 };
+
+/* The chooser's words and order: the grids by rows of one first, then Stage View with its strip. */
+describe('the Layouts chooser', () => {
+	it('names every grid Grid and every strip Stage View, 1x3 before 1x2 (L)', () => {
+		expect(LAYOUTS.map((one) => one.label)).toEqual([
+			'Grid 1x1',
+			'Grid 1x2 (P)',
+			'Grid 1x3',
+			'Grid 1x2 (L)',
+			'Grid 2x2',
+			'Stage View 1x1',
+			'Stage View 1x2',
+			'Stage View 1x3',
+			'Stage View 2x2'
+		]);
+	});
+});
 
 describe('adding a feed', () => {
 	/*

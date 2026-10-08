@@ -340,15 +340,13 @@ export const LIVE_MATRIX: MatrixRow[] = [
 		shows: ['folders', 'settings']
 	},
 	{
-		screen: 'settings/importing',
-		file: 'lib/settings-ui/Importing.svelte',
-		via: ['lib/jobs/tasks.svelte.ts'],
-		shows: ['settings', 'jobs']
-	},
-	{
 		screen: 'settings/tasks',
 		file: 'lib/jobs/JobsScreen.svelte',
-		via: ['lib/settings-ui/ScheduledTasks.svelte'],
+		via: [
+			'lib/settings-ui/ScheduledTasks.svelte',
+			'lib/settings-ui/Importing.svelte',
+			'lib/settings-ui/ImportingFolders.svelte'
+		],
 		shows: ['jobs', 'settings']
 	},
 	{

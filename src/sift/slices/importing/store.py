@@ -90,7 +90,7 @@ class RootPreferences:
         the moment somebody changes the setting the folder was meant to be following.
         """
         now = int(time.time())
-        # A folder's answers are settings, drawn on `Settings > Importing` for every admin.
+        # A folder's answers are settings, drawn under Import tasks for every admin.
         async with telling(self._db, EVERY_ADMIN, About.SETTINGS) as connection:
             for key, value in values.items():
                 if value is None:

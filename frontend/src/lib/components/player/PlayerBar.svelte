@@ -75,9 +75,10 @@
 		onforward?: () => void;
 		backLabel?: string;
 		forwardLabel?: string;
-		/** Repeat and Shuffle, either side of the step pair, because they decide what the steps do. */
-		shuffle: ShuffleControl;
-		repeat: RepeatControl;
+		/** Repeat and Shuffle, either side of the step pair, because they decide what the steps do.
+		 *  Absent on Theater's bar, whose drawer holds them. */
+		shuffle?: ShuffleControl;
+		repeat?: RepeatControl;
 		/** Whose keys this bar's player answers, so every tooltip on it shows the key the act table
 		 *  gives that keyboard (`keyOf`), and none where it has none. */
 		keyboard?: Keyboard;
@@ -442,8 +443,13 @@
 
 	<!-- What the caller leads with, the transport, and at the end the sound, the drawer and the ways
 	     out. At a phone's width the transport takes a centred row of its own above the two ends. -->
-	<div class="row" class:phone={phoneWidth.yes} class:led={lead !== undefined}>
-		{#if lead}
+	<div
+		class="row"
+		class:phone={phoneWidth.yes}
+		class:led={lead !== undefined}
+		class:follows={lead !== undefined && variant === 'theater'}
+	>
+		{#if lead && variant !== 'theater'}
 			<div class="side start">
 				{@render lead(beside)}
 			</div>
@@ -470,6 +476,13 @@
 				{aims}
 			/>
 		</div>
+
+		<!-- Theater's numbers stand after the transport, in the tab order as on screen. -->
+		{#if lead && variant === 'theater'}
+			<div class="side start">
+				{@render lead(beside)}
+			</div>
+		{/if}
 
 		<div class="side end">
 			<!--
@@ -558,7 +571,7 @@
 					{#if trayOpen}
 						<!-- The bridge is the outer box: transparent, and reaching down to the button so the
 					     pointer travelling between the two is never over neither. -->
-						<div class="bridge">
+						<div class="bridge" class:wide={variant === 'theater'}>
 							<!-- The box is `Panel`'s: a raised ground, a hairline, a corner and an inset,
 							     decided once for every panel in the app rather than restated here. What
 							     stays this file's is the three columns the drawer's icons stand in. -->
@@ -637,6 +650,10 @@
 	.row.led {
 		grid-template-columns: auto auto minmax(0, 1fr);
 		grid-template-areas: 'start middle end';
+	}
+
+	.row.led.follows {
+		grid-template-areas: 'middle start end';
 	}
 
 	/* After `.led`, so a phone's rows win: the transport alone and centred, the two ends under it. */
@@ -764,9 +781,8 @@
 
 	/*
 	 * The drawer's contents, in four columns: a player's seven stand four and three with the three
-	 * that open a menu in the top row, and a Theater cell's twelve stand three rows of four. Shuffle
-	 * and Repeat stand on the bar, not in the drawer, and three columns would leave the
-	 * player's seventh alone on a row. The ground, edge, corner, inset and shadow are
+	 * that open a menu in the top row, and three columns would leave the player's seventh alone on
+	 * a row. A Theater cell's fourteen stand two rows of seven. The ground, edge, corner, inset and shadow are
 	 * `Panel`'s. A direct child, so a caller whose drawer holds its own panel is not laid out by
 	 * this rule too; anchored on `.bridge`, this file's own element, so it reaches nothing but the
 	 * drawer it draws.
@@ -776,6 +792,10 @@
 	.bridge > :global(.panel) {
 		grid-template-columns: repeat(4, auto);
 		gap: var(--space-1);
+	}
+
+	.bridge.wide > :global(.panel) {
+		grid-template-columns: repeat(7, auto);
 	}
 
 	/* The line between groups of controls, in the drawer and on the row alike. Its own element rather

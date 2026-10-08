@@ -44,17 +44,18 @@
 </span>
 
 <style>
-	/* The wall, and under it the strip: one picture of what choosing this produces. */
+	/* The wall, and under it the strip, at twice the first size so a shape reads at a glance. */
 	.picture {
+		--glyph-scale: 2;
 		display: flex;
 		flex-direction: column;
-		gap: 2px;
+		gap: calc(2px * var(--glyph-scale));
 	}
 
 	.strip {
 		display: flex;
-		gap: 1px;
-		block-size: 4px;
+		gap: calc(1px * var(--glyph-scale));
+		block-size: calc(4px * var(--glyph-scale));
 	}
 
 	.strip .block {
@@ -67,13 +68,13 @@
 		   two blocks side by side rather than one column: a chosen degradation, and the same one
 		   the wall itself takes. */
 		grid-template: var(--shape, '. .' 1fr / 1fr 1fr);
-		gap: 2px;
-		inline-size: 22px;
-		block-size: 16px;
+		gap: calc(2px * var(--glyph-scale));
+		inline-size: calc(22px * var(--glyph-scale));
+		block-size: calc(16px * var(--glyph-scale));
 	}
 
 	.block {
-		border-radius: 1px;
+		border-radius: calc(1px * var(--glyph-scale));
 		background: currentColor;
 	}
 </style>

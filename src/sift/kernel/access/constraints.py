@@ -126,16 +126,18 @@ def _words_in(admin_arm: str, asked: str, *tests: tuple[str, str]) -> str:
     )
 
 
-def _seen(link: str, test: str, *joins: str) -> str:
+def _seen(link: str, test: str, *joins: str, admin_from: str = "") -> str:
     """Files whose `link` row passes `test`: any for an admin, else only the viewer's own, the test
-    tied to each row so no list is built from it over hidden files."""
+    tied to each row so no list is built from it over hidden files. `admin_from` is the admin's
+    walk where it reads cheaper from the other end; nothing is kept from an admin."""
     alias = link.split()[-1]
     numbers = iter(range(test.count("{}")))
     test = re.sub(r"\{\}", lambda _: f"{{{next(numbers)}}}", test)
     plain = "".join(f" JOIN {join}" for join in joins)
     pinned = "".join(f" CROSS JOIN {join}" for join in joins)
+    admin = admin_from or link + plain
     return (
-        f"a.id IN (SELECT {alias}.asset_id FROM users u CROSS JOIN {link}{plain}"  # noqa: S608
+        f"a.id IN (SELECT {alias}.asset_id FROM users u CROSS JOIN {admin}"  # noqa: S608
         f" WHERE {SEES_EVERY_FILE} AND {test} UNION ALL SELECT sv.asset_id FROM users u"
         f" CROSS JOIN viewer_assets sv CROSS JOIN {link} ON {alias}.asset_id = sv.asset_id{pinned}"
         f" WHERE u.id = :viewer AND NOT ({SEES_EVERY_FILE}) AND sv.user_id = :viewer"
@@ -217,8 +219,14 @@ PREDICATES: dict[str, str] = {
     "tagged_with_box": _seen("asset_tags link", "link.tag_id = {}" + _BY_BOX),
     "named_as": _seen("asset_people link", "link.person_id = {}" + _ON_DAY),
     "named_as_box": _seen("asset_people link", "link.person_id = {}" + _BY_BOX),
-    # Matched against the expanded subtree (`in_scope`); any copy inside matches.
-    "folder": _seen("asset_locations l", "s.grp = {}", "in_scope s ON s.folder_id = l.folder_id"),
+    # Matched against the expanded subtree (`in_scope`); any copy inside matches. The admin's walk
+    # starts from the folders, so a folder costs its own copies and not the library.
+    "folder": _seen(
+        "asset_locations l",
+        "s.grp = {}",
+        "in_scope s ON s.folder_id = l.folder_id",
+        admin_from="in_scope s CROSS JOIN asset_locations l ON l.folder_id = s.folder_id",
+    ),
     # Not a bare IN, which is NULL over a NULL column and stops applying under a NOT.
     "media_type": "EXISTS (SELECT 1 FROM json_each({}) kind WHERE kind.value = a.media_type)",
     # Per user. An unrated file is in no rating range.

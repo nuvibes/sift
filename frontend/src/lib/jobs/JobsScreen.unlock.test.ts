@@ -5,6 +5,12 @@ import { session, type Viewer } from '$lib/shell/session.svelte';
 import type { Job, JobsPage } from './family';
 import JobsScreen from './JobsScreen.svelte';
 
+/* The queue's reads answered; the Tasks tab's own reads, around Activity, refused. */
+const DOWN = { ok: false, status: 503, json: async () => ({}) } as Response;
+function answer(page: JobsPage): Response {
+	return { ok: true, status: 200, json: async () => page } as Response;
+}
+
 /* A task parked for the password says which key in its own sentence and offers the field on its
  * row, so a run of starter pictures does not sit on this screen saying only that it is blocked; a
  * wait for anything else (the face models, say) keeps its own words and is offered no password.
@@ -31,7 +37,8 @@ function job(id: string, error: string, waits: boolean): Job {
 		subject: null,
 		subject_id: null,
 		steps: null,
-		waits_for_password: waits
+		waits_for_password: waits,
+		reason: null
 	};
 }
 
@@ -51,7 +58,8 @@ const PAGE: JobsPage = {
 	step_back_for: null,
 	step_back_over: [],
 	turbo_mode: false,
-	password_wanted: 1
+	password_wanted: 1,
+	paused: false
 };
 
 const VIEWER: Viewer = {
@@ -71,8 +79,8 @@ let host: HTMLElement;
 let screen: Record<string, unknown> | null = null;
 
 beforeEach(() => {
-	// The queue is the Activity tab; Tasks is where the section opens without one.
-	history.replaceState(null, '', '/settings/tasks?show=now');
+	// Activity is drawn under the tasks on the Tasks tab, where the section opens.
+	history.replaceState(null, '', '/settings/tasks');
 	imports.page = null;
 	imports.problem = null;
 	imports.live = false;
@@ -80,7 +88,7 @@ beforeEach(() => {
 	session.viewer = { ...VIEWER };
 	vi.stubGlobal(
 		'fetch',
-		vi.fn(async () => ({ ok: true, status: 200, json: async () => PAGE }) as Response)
+		vi.fn(async (url: URL) => (String(url).includes('/api/jobs') ? answer(PAGE) : DOWN))
 	);
 });
 
@@ -148,7 +156,7 @@ describe('a benchmark Sift stopped for other work', () => {
 		const page = { ...PAGE, jobs: [canceled('b1', STOPPED), canceled('b2', null)], total: 2 };
 		vi.stubGlobal(
 			'fetch',
-			vi.fn(async () => ({ ok: true, status: 200, json: async () => page }) as Response)
+			vi.fn(async (url: URL) => (String(url).includes('/api/jobs') ? answer(page) : DOWN))
 		);
 		host = document.createElement('div');
 		document.body.append(host);
@@ -158,7 +166,6 @@ describe('a benchmark Sift stopped for other work', () => {
 
 		const why = [...host.querySelectorAll('.why')];
 		expect(why.map((one) => one.textContent)).toEqual([STOPPED]);
-		expect(why[0].classList.contains('whole')).toBe(true);
 		expect(host.textContent).not.toContain(RUNNING);
 	});
 });

@@ -25,10 +25,11 @@ describe('the first read', () => {
 	});
 
 	it('links the switch where it is turned on, not the Faces pane that only points there', () => {
-		/* The Faces pane draws a pointer row for the switch ("Change in Importing"); a link to that
-		   row would leave the reader one press short. Importing claims the key and opens Identify's page. */
+		/* The Faces pane draws a pointer row for the switch ("Change in Identify settings"); a link to
+		   that row would leave the reader one press short. Import tasks claims the key and opens
+		   Identify's page. */
 		expect(scanNow).toMatch(
-			/<SettingLink section="importing" setting=\{FACES_KEY\}>Settings > Importing<\/SettingLink>/
+			/<SettingLink section="tasks" setting=\{FACES_KEY\}\s*>Settings > Tasks and Activity > Import tasks<\/SettingLink/
 		);
 		expect(scanNow).not.toMatch(/<SettingLink section="faces" setting=\{FACES_KEY\}/);
 	});
@@ -46,7 +47,7 @@ describe('the first read', () => {
 	});
 
 	it('says it only while faces are off', () => {
-		const at = scanNow.indexOf('<SettingLink section="importing"');
+		const at = scanNow.indexOf('<SettingLink section="tasks" setting={FACES_KEY}');
 		const guard = scanNow.lastIndexOf('{#if', at);
 		expect(scanNow.slice(guard, at)).toMatch(/^\{#if facesOn === false\}/);
 	});

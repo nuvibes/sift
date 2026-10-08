@@ -12,14 +12,18 @@ is the seam the module documents and the only one either caller uses in a test.
 
 from __future__ import annotations
 
+import re
 import socket
 import ssl
 from collections.abc import AsyncIterator
 from pathlib import Path
+from typing import Any
 
 import aiohttp
 import pytest
-from aiohttp.client_reqrep import ConnectionKey
+from aiohttp.client_reqrep import ConnectionKey, RequestInfo
+from multidict import CIMultiDict, CIMultiDictProxy
+from yarl import URL
 
 from sift.kernel import fetch
 
@@ -321,11 +325,13 @@ async def test_it_makes_its_own_session_when_none_is_given(
 
     made: list[object] = []
     trusted: list[object] = []
+    connectors: list[aiohttp.TCPConnector] = []
     session = FakeSession(FakeResponse(200, b"from a session of its own"))
 
-    def _client_session(**kwargs: object) -> FakeSession:
+    def _client_session(**kwargs: Any) -> FakeSession:
         made.append(kwargs.get("timeout"))
         trusted.append(kwargs.get("trust_env"))
+        connectors.append(kwargs["connector"])
         return session
 
     monkeypatch.setattr(aiohttp, "ClientSession", _client_session)
@@ -338,6 +344,11 @@ async def test_it_makes_its_own_session_when_none_is_given(
     assert getattr(timeout, "sock_read", None) == fetch.READ_TIMEOUT
     # The environment's and the system's proxy settings, which the client ignores by default.
     assert trusted == [True]
+    # Checked against roots read for this download, never the client's own import-time context.
+    context = connectors[0]._ssl
+    assert isinstance(context, ssl.SSLContext)
+    assert context is not aiohttp.connector._SSL_CONTEXT_VERIFIED
+    await connectors[0].close()
 
 
 # --- a connection that fails, in words -----------------------------------------------------------
@@ -362,6 +373,9 @@ class Unreached:
         return None
 
 
+_URL = URL(f"https://{_HOST}/m.onnx")
+_ASKED = RequestInfo(_URL, "GET", CIMultiDictProxy(CIMultiDict()), _URL)
+
 FAILURES = [
     (aiohttp.ClientConnectorError(_KEY, ConnectionRefusedError(61, "refused")), fetch.REFUSED),
     (aiohttp.ClientConnectorError(_KEY, OSError(101, "Network is unreachable")), fetch.UNREACHED),
@@ -375,7 +389,7 @@ FAILURES = [
     (aiohttp.ClientConnectorSSLError(_KEY, ssl.SSLError(1, "handshake")), fetch.UNTRUSTED),
     (aiohttp.ServerFingerprintMismatch(b"a", b"b", _HOST, 443), fetch.UNTRUSTED),
     (aiohttp.ClientProxyConnectionError(_KEY, OSError(111, "proxy down")), fetch.PROXY),
-    (aiohttp.ClientHttpProxyError(None, (), status=407), fetch.PROXY),  # type: ignore[arg-type]
+    (aiohttp.ClientHttpProxyError(_ASKED, (), status=407), fetch.PROXY),
     (aiohttp.ServerDisconnectedError(), fetch.DROPPED),
 ]
 
@@ -392,9 +406,15 @@ async def test_a_connection_that_fails_is_a_sentence_that_says_what_to_check(
             session_factory=lambda: Unreached(error),
         )
 
-    said = f"The detector model couldn't be downloaded: {why.format(host=_HOST)}"
-    assert str(failed.value) == said, "and nothing claims that anything arrived"
+    said = f"The detector model couldn't be downloaded: {_said(why)}"
+    assert failed.value.sentence == said, "and nothing claims that anything arrived"
+    # The client's own words follow the sentence, where whoever chases the fault reads them.
+    assert str(failed.value) == f"{said} {type(error).__name__}: {error}"
     assert failed.value.__cause__ is error
+
+
+def _said(why: str) -> str:
+    return why.format(host=_HOST, because=fetch.SAYS_NO_MORE)
 
 
 async def test_what_arrived_is_said_to_be_kept_only_when_something_did(tmp_path: Path) -> None:
@@ -407,7 +427,7 @@ async def test_what_arrived_is_said_to_be_kept_only_when_something_did(tmp_path:
             f"https://{_HOST}/m", partial, session_factory=lambda: Unreached(refused)
         )
 
-    assert str(failed.value).endswith(fetch.KEPT)
+    assert failed.value.sentence.endswith(fetch.KEPT)
     assert partial.read_bytes() == b"half"
 
 
@@ -429,7 +449,7 @@ async def test_a_connection_that_drops_partway_keeps_what_arrived_and_says_so(
         await fetch.fetch_resumable(f"https://{_HOST}/m", partial, session_factory=lambda: session)
 
     assert fetch.DROPPED.format(host=_HOST) in str(failed.value)
-    assert str(failed.value).endswith(fetch.KEPT)
+    assert failed.value.sentence.endswith(fetch.KEPT)
     assert partial.read_bytes() == b"first"
 
 
@@ -440,3 +460,271 @@ async def test_an_address_with_no_host_is_named_whole(tmp_path: Path) -> None:
         await fetch.fetch_resumable(
             "models", tmp_path / "file.part", session_factory=lambda: Unreached(error)
         )
+
+
+# --- what a certificate refusal says, and where it goes ------------------------------------------
+
+
+def _refused_by(code: int) -> aiohttp.ClientConnectorCertificateError:
+    check = ssl.SSLCertVerificationError(1, "certificate verify failed")
+    check.verify_code = code
+    return aiohttp.ClientConnectorCertificateError(_KEY, check)
+
+
+@pytest.mark.parametrize(
+    ("code", "because"),
+    [
+        (20, fetch.UNKNOWN_ISSUER),
+        (19, fetch.UNKNOWN_ISSUER),
+        (10, fetch.OUT_OF_DATE),
+        (62, fetch.WRONG_NAME),
+        (23, fetch.WITHDRAWN),
+        (99, fetch.SAYS_NO_MORE),
+    ],
+)
+async def test_a_refused_certificate_says_what_the_check_said(
+    tmp_path: Path, code: int, because: str
+) -> None:
+    with pytest.raises(fetch.Untrusted) as failed:
+        await fetch.fetch_resumable(
+            f"https://{_HOST}/m",
+            tmp_path / "m.part",
+            session_factory=lambda: Unreached(_refused_by(code)),
+        )
+
+    assert failed.value.sentence.endswith(fetch.UNTRUSTED.format(host=_HOST, because=because))
+
+
+def test_only_a_wrong_clock_is_told_to_check_the_clock() -> None:
+    """The advice that sent a person looking at the clock and at security software is said only
+    where the check named the date."""
+    for said in (fetch.UNKNOWN_ISSUER, fetch.WRONG_NAME, fetch.WITHDRAWN, fetch.SAYS_NO_MORE):
+        assert "clock" not in said and "date" not in said and "security software" not in said
+    assert "clock" in fetch.OUT_OF_DATE
+
+
+async def test_a_failure_is_logged_once_with_the_clients_words_and_the_host_that_failed(
+    tmp_path: Path,
+) -> None:
+    from structlog.testing import capture_logs
+
+    refused = _refused_by(20)
+    with capture_logs() as logs, pytest.raises(fetch.FetchFailed):
+        await fetch.fetch_resumable(
+            "https://asked.example.test/m",
+            tmp_path / "m.part",
+            session_factory=lambda: Unreached(refused),
+        )
+
+    failed = [one for one in logs if one["event"] == "fetch.failed"]
+    assert failed == [
+        {
+            "event": "fetch.failed",
+            "log_level": "warning",
+            "host": _HOST,
+            "asked": "asked.example.test",
+            "error": repr(refused),
+        }
+    ]
+
+
+# --- against stand-in servers: the roots Sift trusts, and a redirect ---------------------------
+
+
+def _authority(folder: Path) -> tuple[Path, ssl.SSLContext]:
+    """A root no machine trusts, and a server context for `localhost` signed by it."""
+    import datetime
+
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from cryptography.x509.oid import NameOID
+
+    now = datetime.datetime.now(datetime.UTC)
+    root_key = ec.generate_private_key(ec.SECP256R1())
+    root_name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "stand-in root")])
+    root = (
+        x509.CertificateBuilder()
+        .subject_name(root_name)
+        .issuer_name(root_name)
+        .public_key(root_key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(now - datetime.timedelta(days=1))
+        .not_valid_after(now + datetime.timedelta(days=1))
+        .add_extension(x509.BasicConstraints(ca=True, path_length=None), critical=True)
+        .add_extension(
+            x509.KeyUsage(False, False, False, False, False, True, True, False, False),
+            critical=True,
+        )
+        .add_extension(
+            x509.SubjectKeyIdentifier.from_public_key(root_key.public_key()), critical=False
+        )
+        .sign(root_key, hashes.SHA256())
+    )
+    key = ec.generate_private_key(ec.SECP256R1())
+    leaf = (
+        x509.CertificateBuilder()
+        .subject_name(x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "localhost")]))
+        .issuer_name(root_name)
+        .public_key(key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(now - datetime.timedelta(days=1))
+        .not_valid_after(now + datetime.timedelta(days=1))
+        .add_extension(x509.SubjectAlternativeName([x509.DNSName("localhost")]), critical=False)
+        .add_extension(
+            x509.AuthorityKeyIdentifier.from_issuer_public_key(root_key.public_key()),
+            critical=False,
+        )
+        .sign(root_key, hashes.SHA256())
+    )
+    pem = serialization.Encoding.PEM
+    bundle, chain, private = folder / "roots.pem", folder / "leaf.pem", folder / "leaf.key"
+    bundle.write_bytes(root.public_bytes(pem))
+    chain.write_bytes(leaf.public_bytes(pem))
+    private.write_bytes(
+        key.private_bytes(pem, serialization.PrivateFormat.PKCS8, serialization.NoEncryption())
+    )
+    server = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+    server.load_cert_chain(chain, private)
+    return bundle, server
+
+
+async def _serve(app: Any, context: ssl.SSLContext | None = None) -> tuple[Any, int]:
+    from aiohttp import web
+
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, "127.0.0.1", 0, ssl_context=context)
+    await site.start()
+    port = site._server.sockets[0].getsockname()[1]  # type: ignore[union-attr]
+    return runner, port
+
+
+@pytest.fixture
+def stand_in(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, ssl.SSLContext]:
+    # Straight to the stand-ins, whatever proxy this machine names.
+    monkeypatch.setenv("NO_PROXY", "*")
+    return _authority(tmp_path)
+
+
+async def test_a_root_only_the_bundled_set_holds_is_trusted_and_read_afresh_each_download(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, stand_in: tuple[Path, ssl.SSLContext]
+) -> None:
+    """The machine's own store refuses the stand-in's root; the bundled set holds it. The first
+    download runs before the bundle has it, the second after, in one process: a context kept from
+    the first (the client's own is made once, at import) would refuse the second too."""
+    import certifi
+    from aiohttp import web
+
+    bundle, server = stand_in
+    app = web.Application()
+
+    async def model(_request: web.Request) -> web.Response:
+        return web.Response(body=b"the model")
+
+    app.router.add_get("/m", model)
+    runner, port = await _serve(app, server)
+    url = f"https://localhost:{port}/m"
+    try:
+        with pytest.raises(fetch.Untrusted):
+            await fetch.fetch_resumable(url, tmp_path / "first.part")
+        monkeypatch.setattr(certifi, "where", lambda: str(bundle))
+        assert await fetch.fetch_resumable(url, tmp_path / "second.part") is True
+    finally:
+        await runner.cleanup()
+
+    assert (tmp_path / "second.part").read_bytes() == b"the model"
+
+
+async def test_a_redirect_to_a_host_that_fails_names_that_host_and_the_one_asked(
+    tmp_path: Path, stand_in: tuple[Path, ssl.SSLContext]
+) -> None:
+    from aiohttp import web
+
+    _bundle, server = stand_in
+    files = web.Application()
+
+    async def never(_request: web.Request) -> web.Response:
+        return web.Response(body=b"never reached")
+
+    files.router.add_get("/m", never)
+    file_runner, file_port = await _serve(files, server)
+
+    async def onward(_request: web.Request) -> web.Response:
+        raise web.HTTPFound(f"https://localhost:{file_port}/m")
+
+    asked = web.Application()
+    asked.router.add_get("/m", onward)
+    asked_runner, asked_port = await _serve(asked)
+    try:
+        with pytest.raises(fetch.Untrusted) as failed:
+            await fetch.fetch_resumable(
+                f"http://127.0.0.1:{asked_port}/m", tmp_path / "m.part", what="detector model"
+            )
+    finally:
+        await asked_runner.cleanup()
+        await file_runner.cleanup()
+
+    assert failed.value.sentence == (
+        "The detector model couldn't be downloaded: a secure connection to localhost couldn't be"
+        " made, because its certificate was issued by an authority Sift doesn't trust. 127.0.0.1"
+        " sent the download on to localhost."
+    )
+    assert "CERTIFICATE_VERIFY_FAILED" in failed.value.words
+
+
+async def test_a_refused_answer_names_the_host_the_redirect_led_to(tmp_path: Path) -> None:
+    class Moved(FakeResponse):
+        url = type("Url", (), {"host": "files.example.test"})()
+
+    session = FakeSession(Moved(503, b""))
+    with pytest.raises(fetch.FetchFailed) as failed:
+        await fetch.fetch_resumable(
+            f"https://{_HOST}/m", tmp_path / "m.part", session_factory=lambda: session
+        )
+
+    assert failed.value.sentence.endswith(
+        f"files.example.test answered 503. Try again later. {_HOST} sent the download on to"
+        " files.example.test."
+    )
+
+
+# --- every outbound session is opened by the one factory -----------------------------------------
+
+#: The sessions that never leave this machine, and so check no certificate: the desktop app's own
+#: door and a tunnel's status page, both plain HTTP on loopback.
+_LOOPBACK = {"slices/desktop/shell.py", "kernel/tunnels/process.py"}
+
+
+def test_no_session_reaches_out_but_through_the_factory() -> None:
+    source = Path(fetch.__file__).resolve().parents[1]
+    builds = re.compile(r"aiohttp\.(?:ClientSession|TCPConnector)\(")
+    found = sorted(
+        path.relative_to(source).as_posix()
+        for path in source.rglob("*.py")
+        if "tests" not in path.parts
+        and path != Path(fetch.__file__).resolve()
+        and builds.search(path.read_text(encoding="utf-8"))
+    )
+    assert set(found) <= _LOOPBACK, found
+
+
+async def test_the_guarded_session_and_the_update_check_carry_the_trust_of_the_factory(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from sift.slices.download.sources import net
+    from sift.slices.update_notify import service
+
+    built: list[ssl.SSLContext] = []
+    real = fetch.trust
+
+    def counted() -> ssl.SSLContext:
+        built.append(real())
+        return built[-1]
+
+    monkeypatch.setattr(fetch, "trust", counted)
+    async with net.guarded_session() as guarded:
+        assert guarded.connector._ssl is built[-1]  # type: ignore[union-attr]
+    async with service._direct_session() as direct:
+        assert direct.connector._ssl is built[-1]  # type: ignore[union-attr]
+    assert len(built) == 2

@@ -26,7 +26,7 @@
 	 */
 	import { onMount } from 'svelte';
 	import { settingChanges, whenChanged } from '$lib/library/changes.svelte';
-	import { Fold, Select } from '$lib/components/common';
+	import { Fold, Note, Select } from '$lib/components/common';
 	import LabelledRow from '$lib/components/common/LabelledRow.svelte';
 	import ActionRow from './ActionRow.svelte';
 	import SettingGroup from './SettingGroup.svelte';
@@ -132,10 +132,12 @@
 	{/if}
 {/snippet}
 
-{#if folders.length > 0}
-	<!-- The folders fold under the heading, so Importing reads as its own rows first and a list of
-	     every library folder is opened on purpose; the same fold as the Sites under a tunnel. -->
-	<SettingGroup heading={COPY.heading} help={COPY.intro}>
+<!-- Always drawn, so its address lands on a library with no folders yet; the folders fold under
+     the heading, so Import tasks reads as its own rows first, as the Sites under a tunnel do. -->
+<SettingGroup id="importing.folders" heading={COPY.heading} help={COPY.intro}>
+	{#if folders.length === 0}
+		<Note>{COPY.none}</Note>
+	{:else}
 		<Fold summary={COPY.fold(folders.length)} id="importing-folders">
 			{#each folders as folder (folder.root_id)}
 				<ActionRow
@@ -147,5 +149,5 @@
 				/>
 			{/each}
 		</Fold>
-	</SettingGroup>
-{/if}
+	{/if}
+</SettingGroup>

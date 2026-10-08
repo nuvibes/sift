@@ -96,7 +96,7 @@
 					tone="ghost"
 					shape="circle"
 					size="small"
-					icon="browser_updated"
+					icon="upgrade"
 					aria-label="Open Updates and Info: Sift {updates.state?.latest_version} is available"
 					onclick={() => openSettings('updates', 'updates.version')}
 				/>
@@ -220,6 +220,6 @@
 
 	:global(:root[data-window='overlaid']) .update :global(.btn.ghost),
 	:global(:root[data-window='overlaid']) .update :global(.btn.ghost:hover:not(:disabled)) {
-		color: var(--sift-accent);
+		color: var(--sift-accent-text);
 	}
 </style>

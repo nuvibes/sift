@@ -444,8 +444,8 @@ async def weigh_picks(
     sessions: Annotated[SwapSessions, Depends(_sessions)],
     viewer: Annotated[Viewer, Depends(require_admin)],
 ) -> SwapWeight:
-    """What the picks would offer, as files and bytes, before Start: read as this admin with the
-    vault shut, through the same read the offer makes, so a file in Hidden adds nothing. A POST
+    """What the picks would offer, as files and bytes, before Start: read as this admin with
+    Hidden open, through the same read the offer makes, so the figure is the offer's. A POST
     because the picks are a body (up to `MAX_CHOSEN` of them); it changes nothing."""
     try:
         chosen = chosen_list([one.model_dump() for one in body.chosen])

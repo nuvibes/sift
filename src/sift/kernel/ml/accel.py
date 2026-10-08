@@ -50,7 +50,14 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from sift.kernel.config import Settings
-from sift.kernel.fetch import CHUNK, FetchFailed, Progress, SessionFactory, fetch_resumable
+from sift.kernel.fetch import (
+    CHUNK,
+    FetchFailed,
+    Progress,
+    SessionFactory,
+    Untrusted,
+    fetch_resumable,
+)
 from sift.kernel.log import get_logger
 from sift.kernel.ml.child import devices_here, forget_devices
 from sift.kernel.ml.runtime import DeviceUnavailable, why_unusable
@@ -63,6 +70,16 @@ log = get_logger(__name__)
 
 class AccelError(Exception):
     """The graphics-card runtime could not be installed. The message is for a person to read."""
+
+
+def refused_for_good(exc: FetchFailed) -> type[AccelError]:
+    """A refused certificate fails the download once, with no retries; built on first use because
+    the inference child imports this module and must not import the job package."""
+    if not isinstance(exc, Untrusted):
+        return AccelError
+    from sift.kernel.jobs.queue_rows import JobFailedPermanently
+
+    return type("AccelRefused", (AccelError, JobFailedPermanently), {"__module__": __name__})
 
 
 @dataclass(frozen=True, slots=True)
@@ -350,7 +367,7 @@ async def install(
                     session_factory=session_factory,
                 )
             except FetchFailed as exc:
-                raise AccelError(str(exc)) from exc
+                raise refused_for_good(exc)(str(exc)) from exc
             if not finished:
                 return False
             if not await asyncio.to_thread(_matches, target, wheel.digest):

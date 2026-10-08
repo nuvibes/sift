@@ -13,7 +13,7 @@ Come here to check who Sift can recognize, or to move facial fingerprints betwee
 
 ## On this pane
 
-The first rows have no heading: the switch, how thorough Sift is, when it runs, and **More settings**. The switch is turned on and off in [Settings > Importing](/settings/importing#importing.recognition). Then the pane draws these groups, in this order:
+The first rows have no heading: the switch, how thorough Sift is, when it runs, and **More settings**. The switch is turned on and off in [Settings > Tasks and Activity > Import tasks > Identify settings](/settings/tasks#importing.recognition). Then the pane draws these groups, in this order:
 
 - <a id="faces.people"></a>**People Sift can recognize**: everyone with confirmed faces or starter pictures, so you can check before adding someone. Type in the box over the list to find someone by name.
 - <a id="faces.waiting"></a>**Waiting for a matching face**: people from a facial fingerprints file or a folder that no face in your library matches yet. Type in the box over the list to find someone by name. The list scrolls in place, as the one above does. Each line says how many faces it holds and how many were confirmed. It also names the file or folder it came from.

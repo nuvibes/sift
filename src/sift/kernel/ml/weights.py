@@ -34,6 +34,7 @@ that loads a model needs and none of them should write twice.
 from __future__ import annotations
 
 import asyncio
+import functools
 import shutil
 import zipfile
 import zlib
@@ -43,7 +44,14 @@ from pathlib import Path
 from blake3 import blake3
 
 from sift.kernel.config import Settings
-from sift.kernel.fetch import CHUNK, FetchFailed, Progress, SessionFactory, fetch_resumable
+from sift.kernel.fetch import (
+    CHUNK,
+    FetchFailed,
+    Progress,
+    SessionFactory,
+    Untrusted,
+    fetch_resumable,
+)
 from sift.kernel.log import get_logger
 
 log = get_logger(__name__)
@@ -56,6 +64,16 @@ _CHUNK = CHUNK
 class WeightError(Exception):
     """A model could not be obtained, or is not the one it claims to be. The message is for a
     person to read."""
+
+
+@functools.cache
+def refused_for_good() -> type[WeightError]:
+    """A certificate refusal, which asking again within the second never changes: a job failure no
+    retry is spent on. Made on first use because the inference process imports this module and
+    never the job queue."""
+    from sift.kernel.jobs.queue_rows import JobFailedPermanently
+
+    return type("WeightRefused", (WeightError, JobFailedPermanently), {"__module__": __name__})
 
 
 @dataclass(frozen=True, slots=True)
@@ -223,7 +241,10 @@ class WeightStore:
                 session_factory=session_factory,
             )
         except FetchFailed as exc:
-            raise WeightError(f"{exc} Or copy the file to this device yourself.") from exc
+            # The client's own words after the sentence, where whoever chases the fault reads them.
+            said = f"{exc.sentence} Or copy the file to this device yourself."
+            kind = refused_for_good() if isinstance(exc, Untrusted) else WeightError
+            raise kind(f"{said} {exc.words}" if exc.words else said) from exc
         if not finished:
             # Stopped on purpose. What has arrived stays where it is, and the next attempt asks for
             # the remainder rather than starting again.

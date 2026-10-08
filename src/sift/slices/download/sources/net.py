@@ -45,6 +45,7 @@ import aiohttp
 from aiohttp.abc import AbstractResolver
 from aiohttp.client import DEFAULT_TIMEOUT
 
+from sift.kernel.fetch import outbound_session
 from sift.kernel.log import get_logger, hashed, security_event
 from sift.kernel.public_net import address_is_public, literal_address
 from sift.slices.download.sources.ratelimit import Pacer
@@ -228,11 +229,10 @@ async def guarded_session(
     Without it the session is unpaced: a cover image or a stash-box answer is not a download and is
     not paced like one.
     """
-    connector = aiohttp.TCPConnector(resolver=GuardedResolver(), use_dns_cache=False)
     paced = (_pace_trace(Pacer.for_policy(policy)),) if policy is not None else ()
-    session = aiohttp.ClientSession(
+    session = await outbound_session(
+        resolver=GuardedResolver(),
         headers={"User-Agent": user_agent or DEFAULT_USER_AGENT},
-        connector=connector,
         trace_configs=[_guard_trace(), *paced, *observe],
         proxy=proxy,
         timeout=policy_timeout(policy) if policy is not None else DEFAULT_TIMEOUT,

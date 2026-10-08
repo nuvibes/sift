@@ -29,7 +29,8 @@ const EMPTY: JobsPage = {
 	step_back_for: null,
 	step_back_over: [],
 	turbo_mode: false,
-	password_wanted: 0
+	password_wanted: 0,
+	paused: false
 };
 
 function page(over: Partial<JobsPage> = {}): JobsPage {
@@ -313,7 +314,7 @@ describe('the pages of the list', () => {
 	});
 
 	it('reads the last page there is when the one it was on has emptied', async () => {
-		serveFetch(page({ total: 60 }));
+		serveFetch(page({ total: QUEUE_PAGE + 10 }));
 		const queue = new Queue();
 
 		await queue.goTo(QUEUE_PAGE * 3);

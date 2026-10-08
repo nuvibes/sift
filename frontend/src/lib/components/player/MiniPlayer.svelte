@@ -39,6 +39,7 @@
 	import { pressed, stepAsked } from '$lib/shell/shortcuts';
 	import { panelKeys } from './mini-keys';
 	import { api, isMissing } from '$lib/api/client';
+	import { firstClip, type Onward } from './audio-run';
 	import { libraryChanges, whenChanged } from '$lib/library/changes.svelte';
 	import { saveToDevice } from '$lib/capture/copy-out';
 	import type { components } from '$lib/api/schema';
@@ -56,11 +57,7 @@
 		asset !== null && asset.mediaType !== undefined && asset.mediaType !== 'video'
 	);
 
-	/**
-	 * Whether what is in the panel is hidden: the server's answer on the record, read before the
-	 * media type, because a concealed placeholder arrives with an empty type and would otherwise be
-	 * drawn as a picture Sift cannot reach.
-	 */
+	/* Hidden, read before the media type: a concealed placeholder arrives with an empty type. */
 	const concealed = $derived(asset?.concealed === true);
 
 	/* A file deleted elsewhere leaves the panel, whichever shape it is drawn in. */
@@ -262,19 +259,21 @@
 	/** Next or Back, through the run, and the panel steps to wherever it answers. */
 	async function walk(forward: boolean) {
 		if (!asset) return;
-		await step(forward ? await stepForward(asset.id) : stepBack(asset.id));
+		const onward = forward ? stepForward : stepBack;
+		await step(await onward(asset.id), onward);
 	}
 
-	/* The end of a clip moves the run on here as it does in the popout (`AssetModal`). */
-	const goesOn = $derived(asset !== null && runGoesOn(asset.id, { pictures: dwell.pictures }));
+	/* The end of a clip moves the run on as in the popout; the Audio player's run holds no photograph. */
+	const pictures = $derived(dwell.pictures && !mini.bar);
+	const goesOn = $derived(asset !== null && runGoesOn(asset.id, { pictures }));
 
-	const endRule = () => ({ pictures: dwell.pictures, wraps: !dwell.stopsAtTheEnd });
+	const endRule = () => ({ pictures, wraps: !dwell.stopsAtTheEnd });
 
 	async function playedThrough() {
 		const from = asset?.id;
 		if (!from) return;
 		const next = await playOn(from, endRule());
-		if (next !== from && asset?.id === from) await step(next);
+		if (next !== from && asset?.id === from) await step(next, (at) => playOn(at, endRule()));
 	}
 
 	/* The next file is found while this one plays, so its end waits only on the media. */
@@ -282,13 +281,16 @@
 		if (asset && goesOn && run.movesOnAfter(dwell.mode)) lookAhead(asset.id, endRule());
 	}
 
-	/** Step the panel to a neighbour, from the beginning; its record found ahead when it was. */
-	async function step(id: string | null) {
+	const recordOf = async (id: string) =>
+		takeRecord(id)?.record ??
+		(await api.get<components['schemas']['AssetDetail']>(`/assets/${id}`));
+
+	/** Step the panel to a neighbour, from the beginning; on the Audio player, past every picture. */
+	async function step(id: string | null, onward: Onward = () => null) {
 		if (!id) return;
 		try {
-			const file =
-				takeRecord(id)?.record ??
-				(await api.get<components['schemas']['AssetDetail']>(`/assets/${id}`));
+			const file = mini.bar ? await firstClip(id, onward, recordOf) : await recordOf(id);
+			if (!file) return;
 			mini.open(heldOf(file), { width: window.innerWidth, height: window.innerHeight });
 		} catch {
 			toasts.show("Sift couldn't open that. The file isn't where it was.", { tone: 'error' });
@@ -344,11 +346,9 @@
 	let playing = $state(false);
 
 	/*
-	 * Docked: at a phone's width the corner player is the Audio player's strip pinned the width of
-	 * the screen above the tabs, the strip every phone's players draw; a hand-placed panel would sit
-	 * over the tab bar with no pointer to drag it clear. The place given on a wide window comes back
-	 * with the window. A Theater wall is never docked: Theater is not offered on a phone. The strip's
-	 * height is published (`--mini-docked`) so the selection bar rises above it.
+	 * Docked: at a phone's width the corner player is the Audio player's strip across the screen
+	 * above the tabs; a hand-placed panel would sit over the tab bar. A Theater wall is never docked
+	 * (no Theater on a phone). Its height is published (`--mini-docked`) for the selection bar.
 	 */
 	const docked = $derived(phoneWidth.yes && !mini.wall);
 

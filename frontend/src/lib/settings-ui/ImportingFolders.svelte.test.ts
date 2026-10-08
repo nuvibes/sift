@@ -131,3 +131,17 @@ it('folds the folders under words that count them, so the pane reads as its own 
 	expect(fold.querySelector('summary')?.textContent).toContain('Show all 2 library folders');
 	expect(fold.textContent).toContain('Holiday');
 });
+
+it('draws its heading on a library with no folders yet, so its address still lands', async () => {
+	mocks.fetchFolderAnswers.mockResolvedValue({ folders: [], keys: [], labels: {} });
+	drawn = mount(ImportingFolders, { target: host }) as Record<string, unknown>;
+	await vi.waitFor(() => expect(host.textContent).toContain('No library folders yet'), {
+		interval: 1
+	});
+
+	expect(
+		host.querySelector('[id="importing.folders"]'),
+		'the group keeps its address'
+	).not.toBeNull();
+	expect(host.querySelector('details'), 'nothing to fold').toBeNull();
+});

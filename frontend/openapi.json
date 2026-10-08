@@ -6334,6 +6334,58 @@
         "title": "FacetValue",
         "type": "object"
       },
+      "FailureLine": {
+        "description": "Why a family failed, in one line: the newest failed row's name, reason, file and tries.",
+        "properties": {
+          "attempts": {
+            "description": "How many times it was tried.",
+            "title": "Attempts",
+            "type": "integer"
+          },
+          "name": {
+            "description": "What the failed row was doing, in its handler's words.",
+            "title": "Name",
+            "type": "string"
+          },
+          "reason": {
+            "description": "Why, in plain words where the failure is a kind Sift knows, else the last line of the tool's own words.",
+            "title": "Reason",
+            "type": "string"
+          },
+          "subject": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The file it was on, or null for work about no one file.",
+            "title": "Subject"
+          }
+        },
+        "required": [
+          "name",
+          "reason",
+          "subject",
+          "attempts"
+        ],
+        "title": "FailureLine",
+        "type": "object"
+      },
+      "Family": {
+        "enum": [
+          "scan",
+          "generate",
+          "fingerprint",
+          "identify",
+          "semantic",
+          "other"
+        ],
+        "title": "Family",
+        "type": "string"
+      },
       "FamilyOfWork": {
         "description": "One of the long passes as a whole: which job types it is, and how it is going.\n\nThe families are declared where each handler is registered, so the screen draws whatever the\nserver says the families are rather than keeping a list of its own: a list kept on the screen\ncan leave a stage in no family, and a stage that takes a worker continuously is then invisible\non the screen that answers \"what is Sift doing\".",
         "properties": {
@@ -6421,6 +6473,12 @@
             "title": "Parts",
             "type": "array"
           },
+          "paused": {
+            "default": false,
+            "description": "Whether somebody paused this pass: no new task of it starts.",
+            "title": "Paused",
+            "type": "boolean"
+          },
           "problem": {
             "anyOf": [
               {
@@ -6468,6 +6526,15 @@
             "description": "How many of this pass's tasks are running now.",
             "title": "Running",
             "type": "integer"
+          },
+          "runs": {
+            "default": [],
+            "description": "What Run now on this pass presses: each task, or the part of it that is this pass's, leaving out a sub-task switched off.",
+            "items": {
+              "$ref": "#/components/schemas/RunPress"
+            },
+            "title": "Runs",
+            "type": "array"
           },
           "sample": {
             "default": 0,
@@ -6554,7 +6621,9 @@
           "for_task",
           "failed",
           "last_error",
-          "running"
+          "running",
+          "paused",
+          "runs"
         ],
         "title": "FamilyOfWork",
         "type": "object"
@@ -9199,6 +9268,28 @@
         "title": "HardwareView",
         "type": "object"
       },
+      "Held": {
+        "description": "What is paused after a press: the whole queue, and the job types paused one by one.",
+        "properties": {
+          "paused": {
+            "title": "Paused",
+            "type": "boolean"
+          },
+          "types": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Types",
+            "type": "array"
+          }
+        },
+        "required": [
+          "paused",
+          "types"
+        ],
+        "title": "Held",
+        "type": "object"
+      },
       "HeldFaces": {
         "description": "The face descriptions swaps brought for somebody this library already had.\n\nHeld, never used to name anybody, until an admin adds them from the person's page. `waiting` is\nhow many adding them would give that person now; `added` is how many the press just gave.",
         "properties": {
@@ -10022,6 +10113,17 @@
             "title": "Progress",
             "type": "number"
           },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
           "run_after": {
             "anyOf": [
               {
@@ -10100,7 +10202,8 @@
           "created_at",
           "updated_at",
           "steps",
-          "waits_for_password"
+          "waits_for_password",
+          "reason"
         ],
         "title": "JobView",
         "type": "object"
@@ -10168,6 +10271,12 @@
             "description": "How many tasks, over the whole queue, are parked until somebody gives the password: a saved key sealed since Sift started. What the unlock bar at the top of every screen follows, so a window told Not now asks again when work stops for the key.",
             "title": "Password Wanted",
             "type": "integer"
+          },
+          "paused": {
+            "default": false,
+            "description": "Whether somebody paused the whole queue: no new task starts until Resume.",
+            "title": "Paused",
+            "type": "boolean"
           },
           "step_back_for": {
             "anyOf": [
@@ -10254,7 +10363,8 @@
           "step_back_share",
           "step_back_for",
           "step_back_over",
-          "password_wanted"
+          "password_wanted",
+          "paused"
         ],
         "title": "JobsPage",
         "type": "object"
@@ -14365,6 +14475,18 @@
             "title": "Done",
             "type": "integer"
           },
+          "on": {
+            "default": true,
+            "description": "False for a sub-task switched off with none of its work queued: drawn, and left out of its family's status, count and time left.",
+            "title": "On",
+            "type": "boolean"
+          },
+          "paused": {
+            "default": false,
+            "description": "Whether somebody paused this sub-task.",
+            "title": "Paused",
+            "type": "boolean"
+          },
           "total": {
             "description": "Files that want this work at all, done or not.",
             "title": "Total",
@@ -14379,7 +14501,9 @@
           "type",
           "caption",
           "done",
-          "total"
+          "total",
+          "on",
+          "paused"
         ],
         "title": "PartOfWork",
         "type": "object"
@@ -18830,6 +18954,35 @@
         "title": "RunNowStarted",
         "type": "object"
       },
+      "RunPress": {
+        "description": "One task Run now presses for a pass: its id on Tasks, and the parts of it, or all of it.",
+        "properties": {
+          "parts": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parts"
+          },
+          "task": {
+            "title": "Task",
+            "type": "string"
+          }
+        },
+        "required": [
+          "task",
+          "parts"
+        ],
+        "title": "RunPress",
+        "type": "object"
+      },
       "RunReportView": {
         "description": "One run as the block of plain text a person copies and passes on.",
         "properties": {
@@ -22618,6 +22771,17 @@
             "title": "Count",
             "type": "integer"
           },
+          "failure": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FailureLine"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The family's newest failure, or null when nothing in it failed."
+          },
           "state": {
             "$ref": "#/components/schemas/JobState",
             "description": "The ONE state the folded row shows, from its own state and every step's: failed if anything in the family failed (folding never hides a failure), else running, paused, blocked, queued in that order, else canceled if the top itself was, else done."
@@ -22654,7 +22818,8 @@
           "cap",
           "state",
           "subject",
-          "subject_id"
+          "subject_id",
+          "failure"
         ],
         "title": "StepSummary",
         "type": "object"
@@ -23881,7 +24046,7 @@
         "type": "object"
       },
       "SwapWeight": {
-        "description": "How many files and how many bytes: what the picks would offer (the sender's side, read\nthrough the access layer with the vault shut, so a file the sender may not open adds nothing),\nor what an answer to an offer would bring (the receiver's side).\n\nAhead of the press that starts it, what the picks leave out and why (`weight.left_out`): every pick that wears a\nmark, by name, and how many more files a mark on something they are filed under keeps back.\nEmpty for an answer to an offer.",
+        "description": "How many files and how many bytes: what the picks would offer (the sender's side, read as\nthe offer reads them, Hidden open), or what an answer to an offer would bring (the receiver's\nside).\n\nAhead of the press that starts it, what the picks leave out and why (`weight.left_out`): every pick that wears a\nmark, by name, and how many more files a mark on something they are filed under keeps back.\nEmpty for an answer to an offer.",
         "properties": {
           "bytes": {
             "default": 0,
@@ -26512,6 +26677,38 @@
           "label"
         ],
         "title": "WhenChoice",
+        "type": "object"
+      },
+      "WhichWork": {
+        "additionalProperties": false,
+        "description": "A family, one of its sub-tasks by job type, or with neither the whole queue.",
+        "properties": {
+          "family": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Family"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A pass on Activity, by its key."
+          },
+          "type": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "One sub-task of a pass, by its job type.",
+            "title": "Type"
+          }
+        },
+        "title": "WhichWork",
         "type": "object"
       },
       "WorkLeft": {
@@ -35857,7 +36054,7 @@
     },
     "/api/faces/packs/export": {
       "post": {
-        "description": "Build a facial fingerprints file from People here and the people waiting for a matching\nface, and hand it back. Loads no model: the numbers are stored. Held to the People wall and to\nwhat a swap refuses (`_carried`); nobody to carry is refused in words.",
+        "description": "Build a facial fingerprints file from People here and the people waiting for a matching\nface, and hand it back. Loads no model: the numbers are stored. Held to the People wall with\nHidden open and to Kept local (`_carried`); nobody to carry is refused in words.",
         "operationId": "export_pack_api_faces_packs_export_post",
         "requestBody": {
           "content": {
@@ -37490,6 +37687,48 @@
         ]
       }
     },
+    "/api/jobs/cancel-work": {
+      "post": {
+        "description": "Cancel every unfinished task of a pass or one of its sub-tasks; the whole queue is\n`cancel-all`, so a press naming neither is refused.",
+        "operationId": "cancel_work_api_jobs_cancel_work_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WhichWork"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Stopped"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Cancel Work",
+        "tags": [
+          "jobs"
+        ]
+      }
+    },
     "/api/jobs/clear-canceled": {
       "post": {
         "description": "Throw away everything that was stopped, the pile a stopped import leaves behind.\n\nFinished work is left alone. Nothing to clear is a success with a zero.",
@@ -37529,6 +37768,48 @@
           }
         },
         "summary": "Clear Failed Jobs",
+        "tags": [
+          "jobs"
+        ]
+      }
+    },
+    "/api/jobs/pause": {
+      "post": {
+        "description": "Pause a pass, a sub-task or the whole queue: nothing new of it starts, and what is running\nfinishes the step in its hand. Held until Resume, or until Sift starts again.",
+        "operationId": "pause_work_api_jobs_pause_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WhichWork"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Held"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Pause Work",
         "tags": [
           "jobs"
         ]
@@ -37613,6 +37894,48 @@
           }
         },
         "summary": "Rebuild Thumbnails",
+        "tags": [
+          "jobs"
+        ]
+      }
+    },
+    "/api/jobs/resume": {
+      "post": {
+        "description": "Start again what a pause held, for the same pass, sub-task or whole queue.",
+        "operationId": "resume_work_api_jobs_resume_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WhichWork"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Held"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Resume Work",
         "tags": [
           "jobs"
         ]
@@ -52491,7 +52814,7 @@
     },
     "/api/swap/weigh": {
       "post": {
-        "description": "What the picks would offer, as files and bytes, before Start: read as this admin with the\nvault shut, through the same read the offer makes, so a file in Hidden adds nothing. A POST\nbecause the picks are a body (up to `MAX_CHOSEN` of them); it changes nothing.",
+        "description": "What the picks would offer, as files and bytes, before Start: read as this admin with\nHidden open, through the same read the offer makes, so the figure is the offer's. A POST\nbecause the picks are a body (up to `MAX_CHOSEN` of them); it changes nothing.",
         "operationId": "weigh_picks_api_swap_weigh_post",
         "requestBody": {
           "content": {

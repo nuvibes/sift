@@ -18,8 +18,8 @@
  *   `library`   is labelled Folders: a section cannot share its group's name
  *   `faces`     is labelled Faces: its older label was Identify, and the address never moved
  *   `semantic`  is labelled Smart Search: "semantic" is a word for the technique, not the thing
- *   `tasks`     is labelled Tasks and Activity: the Tasks, Activity, App History and Logs tabs;
- *               the two sections it joined, `schedule` and `jobs`, land on its tabs
+ *   `tasks`     is labelled Tasks and Activity: the Tasks, App History and Logs tabs; the
+ *               sections it joined, `schedule`, `jobs` and `importing`, land on its tabs
  *   `updates`   is labelled Updates and Info and holds what `about` held: that id lands here
  *
  * When a section genuinely stops existing, its id does not become a dead address: it goes in
@@ -67,11 +67,8 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
 			/* Admin-only: every route behind it (the folders, the grants, the quarantine) is an
 			   admin's, and a guest's folders are the ones shared with them, which Browse shows. */
 			{ id: 'library', label: 'Folders', icon: 'folder', admin: true },
-			/* Beside Folders because the pair is the whole of this group's own sentence: where
-			   the files are, and what is done to them on the way in. */
-			{ id: 'importing', label: 'Importing', icon: 'upload', admin: true },
-			/* WHEN work runs and what it has done, as four tabs: one door for "what does Sift do
-			   with my library, and when", beside the import it mostly runs. See `MOVED_TO`. */
+			/* WHEN work runs, what each import stage does and what Sift has done: one door for
+			   "what does Sift do with my library, and when", beside Folders. See `MOVED_TO`. */
 			{ id: 'tasks', label: 'Tasks and Activity', icon: 'calendar_clock', admin: true },
 			/* Sift's own noun for the thing, and the vocabulary gate insists on it:
 			   `test_one_word_per_thing.py` maps `platform` to Site and records why.
@@ -128,7 +125,7 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
 		heading: 'Recognition',
 		sections: [
 			/* Faces, as the Organize tab calls the same feature: one name for one thing. "Identify"
-			   stays the name of the STAGE on Importing, which is the work rather than the feature. */
+			   stays the name of the import STAGE, which is the work rather than the feature. */
 			{ id: 'faces', label: 'Faces', icon: 'person', admin: true },
 			{ id: 'semantic', label: 'Smart Search', icon: 'auto_awesome', admin: true },
 			/* `language` is what a stash-box is already drawn as: the look-up button on a tag
@@ -158,7 +155,7 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
 			{ id: 'maintenance', label: 'Maintenance', icon: 'mop', admin: true },
 			{ id: 'backup', label: 'Backup and restore', icon: 'settings_backup_restore', admin: true },
 			/* Everybody's: the AGPL keeps the licence and notices at its foot reachable. */
-			{ id: 'updates', label: 'Updates and Info', icon: 'download' },
+			{ id: 'updates', label: 'Updates and Info', icon: 'upgrade' },
 			{ id: 'documentation', label: 'Documentation', icon: 'menu_book' }
 		]
 	}
@@ -213,6 +210,8 @@ const MOVED_TO: Readonly<Record<string, Omit<SettingsAddress, 'key'>>> = {
 	   address asked. `jobs` always opened on the queue. */
 	schedule: { section: 'tasks' },
 	jobs: { section: 'tasks', show: 'now' },
+	/* Importing's stages are Import tasks on the Tasks tab, each beside its Run now. */
+	importing: { section: 'tasks' },
 	/* The two record-keeping sections are tabs of it too: App History and Logs. */
 	ledger: { section: 'tasks', show: 'history' },
 	logs: { section: 'tasks', show: 'log' },
@@ -265,8 +264,8 @@ const KEY_MOVED_TO: Readonly<Record<string, SettingsAddress & { key: string }>> 
 	/* The update check is upkeep nobody times: its When is drawn nowhere, and its one switch on
 	   Updates reads and writes it, so a link to the When lands on the switch. */
 	'tasks.update-check.when': { section: 'updates', key: 'updates.check_for_new_versions' },
-	/* Rows that moved onto Importing's sub-pages, and the quarantine rows onto Maintenance. */
-	'shoots.auto_file': { section: 'importing', key: 'shoots.auto_file' },
+	/* Rows that moved onto an import stage's page, and the quarantine rows onto Maintenance. */
+	'shoots.auto_file': { section: 'tasks', key: 'shoots.auto_file' },
 	/* How much Sift does at the same time is Concurrency's page on Performance. */
 	'performance.generation_limit': { section: 'performance', key: 'performance.generation_limit' },
 	'performance.scan_limit': { section: 'performance', key: 'performance.scan_limit' },
@@ -279,21 +278,24 @@ const KEY_MOVED_TO: Readonly<Record<string, SettingsAddress & { key: string }>> 
 	/* Quiet hours and every When are chosen on Tasks alone. */
 	'importing.quiet-hours': { section: 'schedule', key: 'tasks.quiet-hours' },
 	'performance.generate_fingerprints': {
-		section: 'importing',
+		section: 'tasks',
 		key: 'performance.generate_fingerprints'
 	},
 	'quarantine.keep_days': { section: 'maintenance', key: 'quarantine.keep_days' },
 	'tasks.quarantine-prune.when': { section: 'maintenance', key: 'maintenance.quarantine' },
 	'tasks.search-records-prune.when': { section: 'privacy', key: 'privacy.search_history' },
 	'importing.identify': { section: 'schedule', key: 'tasks.identify.when' },
-	/* Importing's stages each draw their task's own row. */
-	'importing.scan-now': { section: 'importing', key: 'importing.scan-stage' },
-	'importing.generate-now': { section: 'importing', key: 'importing.generate-stage' },
-	'importing.identify-now': { section: 'importing', key: 'importing.identify-stage' },
+	/* Each import stage is its task's row on Tasks. */
+	'importing.scan-now': { section: 'tasks', key: 'tasks.scan.when' },
+	'importing.generate-now': { section: 'tasks', key: 'tasks.generate.when' },
+	'importing.identify-now': { section: 'tasks', key: 'tasks.identify.when' },
+	'importing.scan-stage': { section: 'tasks', key: 'tasks.scan.when' },
+	'importing.generate-stage': { section: 'tasks', key: 'tasks.generate.when' },
+	'importing.identify-stage': { section: 'tasks', key: 'tasks.identify.when' },
 	/* Registered into Importing and linked to as a Performance row: the "Turn it on" under a
 	   file that stutters would open Performance and ring nothing. Every old link and bookmark
 	   follows it here; the resolution gate holds that. */
-	'performance.repair_playback': { section: 'importing', key: 'performance.repair_playback' },
+	'performance.repair_playback': { section: 'tasks', key: 'performance.repair_playback' },
 	/* How much of this device face recognition may use: drawn on Concurrency's page on Performance,
 	   so an old link naming Faces or Importing lands on the row. */
 	'faces.machine_budget': { section: 'performance', key: 'faces.machine_budget' },
@@ -372,6 +374,8 @@ export function settingsPath(address: SettingsAddress): string {
  */
 export const REGISTRY_HOME: Readonly<Record<string, string>> = {
 	Library: 'library',
+	/* An address, as `Logs` is: the import stages' pages are on the Tasks tab, and `MOVED_TO`
+	   knows that. */
 	Importing: 'importing',
 	Editing: 'editing',
 	Downloads: 'downloads',

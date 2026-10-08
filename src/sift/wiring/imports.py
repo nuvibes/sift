@@ -290,7 +290,7 @@ def _declare_switches(queue: JobQueue, hub: settings_hub.SettingsService) -> Non
         Switch(
             key=importing.SCAN_KEY,
             refusal=(
-                "Scanning is switched off, so nothing was read. Turn it back on under Importing."
+                "Scanning is switched off, so nothing was read. Turn it back on under Import tasks."
             ),
             on=partial(hub.get_app, importing.SCAN_KEY),
         ),
@@ -304,7 +304,7 @@ def _declare_switches(queue: JobQueue, hub: settings_hub.SettingsService) -> Non
             key=dedup.SCAN_KEY,
             refusal=(
                 "Looking for duplicates is switched off, so nothing was compared. Turn it back on "
-                "under Importing."
+                "under Import tasks."
             ),
             on=partial(hub.get_app, dedup.SCAN_KEY),
         ),
@@ -370,6 +370,9 @@ def build_imports(
     _register_media(settings, hardware, hub, policy, accelerator)
     _register_library(app, settings, store, library_service, hub, queue)
     _declare_switches(queue, hub)
+    # Off on Activity by the gate's answer, never refused: a claim-only follow-on runs while off.
+    for kind in (media_jobs.FINGERPRINT_FILE, music.AUDIO_FINGERPRINT):
+        queue.switchboard.declare_shown(partial(policy.allows, kind, None), kind)
     # The import pipeline that takes a staged upload or paste in. The download feature is handed
     # `capture.import_file` bound with these same settings so its fetched files go through the one
     # gate too: capture owns the pipeline, and there is no second copy of it.

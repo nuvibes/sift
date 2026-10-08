@@ -12,6 +12,12 @@ import { phoneWidth } from '$lib/components/common/phone-width.svelte';
 import type { Job, JobsPage } from './family';
 import JobsScreen from './JobsScreen.svelte';
 
+/* The queue's reads answered; the Tasks tab's own reads, around Activity, refused. */
+const DOWN = { ok: false, status: 503, json: async () => ({}) } as Response;
+function answer(page: JobsPage): Response {
+	return { ok: true, status: 200, json: async () => page } as Response;
+}
+
 function job(id: string, state: Job['state'], name: string, attempts = 0): Job {
 	return {
 		id,
@@ -31,7 +37,8 @@ function job(id: string, state: Job['state'], name: string, attempts = 0): Job {
 		subject: name,
 		subject_id: null,
 		steps: null,
-		waits_for_password: false
+		waits_for_password: false,
+		reason: null
 	};
 }
 
@@ -54,22 +61,23 @@ const PAGE: JobsPage = {
 	step_back_for: null,
 	step_back_over: [],
 	turbo_mode: false,
-	password_wanted: 0
+	password_wanted: 0,
+	paused: false
 };
 
 let host: HTMLElement;
 let screen: Record<string, unknown> | null = null;
 
 beforeEach(() => {
-	// The queue is the Activity tab; Tasks is where the section opens without one.
-	history.replaceState(null, '', '/settings/tasks?show=now');
+	// Activity is drawn under the tasks on the Tasks tab, where the section opens.
+	history.replaceState(null, '', '/settings/tasks');
 	imports.page = null;
 	imports.problem = null;
 	imports.live = false;
 	imports.forgetRefusal();
 	vi.stubGlobal(
 		'fetch',
-		vi.fn(async () => ({ ok: true, status: 200, json: async () => PAGE }) as Response)
+		vi.fn(async (url: URL) => (String(url).includes('/api/jobs') ? answer(PAGE) : DOWN))
 	);
 });
 
@@ -91,7 +99,7 @@ async function open(): Promise<HTMLElement> {
 }
 
 describe('the Activity list on a phone', () => {
-	it('draws each job as one card holding its name, its state, when, its tries and its bar', async () => {
+	it('draws each job as one card holding its name, its state, when it finished, its tries and its bar', async () => {
 		phoneWidth.yes = true;
 		const list = await open();
 
@@ -99,9 +107,11 @@ describe('the Activity list on a phone', () => {
 		expect(cards).toHaveLength(2);
 		const running = cards.find((one) => one.textContent?.includes('wren-halloway-one.mp4'))!;
 		expect(running.querySelector('.card-facts .badge')).not.toBeNull();
-		expect(running.querySelector('.when')).not.toBeNull();
+		// A row still going has no time to say: when it finished is a finished row's.
+		expect(running.querySelector('.when')).toBeNull();
 		expect(running.querySelector('.track')).not.toBeNull();
 		const failed = cards.find((one) => one.textContent?.includes('odile-fenwick.mp4'))!;
+		expect(failed.querySelector('.when')).not.toBeNull();
 		expect(failed.querySelector('.attempts')?.textContent).toBe('try 2/3');
 	});
 

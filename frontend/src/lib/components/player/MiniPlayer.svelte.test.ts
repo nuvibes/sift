@@ -688,6 +688,27 @@ describe('Ctrl and an arrow in the corner panel', () => {
 	});
 });
 
+/* The Audio player has no picture to show: Next passes a picture by and stays the Audio player. */
+describe('the Audio player walking onto a picture', () => {
+	it('passes it by to the next clip, and stays the Audio player', async () => {
+		openAsset('asset-1', ['asset-0', 'asset-1', 'asset-2', 'asset-3'].map(CLIP));
+		const kinds: Record<string, string> = { 'asset-2': 'image', 'asset-3': 'video' };
+		vi.mocked(api.get).mockImplementation(async (path: string) => {
+			const id = path.split('/').pop() ?? '';
+			return { id, media_type: kinds[id] ?? 'video', concealed: false, added_at: 0 };
+		});
+		await show({ id: 'asset-1', mediaType: 'video' });
+		mini.toBar();
+		flushSync();
+
+		window.dispatchEvent(
+			new KeyboardEvent('keydown', { key: 'ArrowRight', ctrlKey: true, cancelable: true })
+		);
+		await vi.waitFor(() => expect(mini.asset?.id).toBe('asset-3'));
+		expect(mini.bar, 'the picture turned it back into the panel').toBe(true);
+	});
+});
+
 describe('Hidden shut on the file in the Audio player', () => {
 	const position = () =>
 		host.querySelector('.bar-timeline input[type="range"]') as HTMLInputElement | null;

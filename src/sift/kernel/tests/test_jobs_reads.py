@@ -1338,3 +1338,29 @@ async def test_a_queue_from_before_the_walks_kinds_gets_the_column_and_keeps_its
     assert [(row["id"], row["units"], row["to_read"]) for row in rows] == [("J1", 40, None)]
     columns = await temp_db.fetch_all("SELECT name FROM pragma_table_info('jobs')")
     assert [row["name"] for row in columns].count("to_read") == 1
+
+
+async def test_a_quiet_top_with_a_failed_step_stays_listed_with_its_failure(
+    job_queue: JobQueue,
+) -> None:
+    """Folding never hides a failure: a family Sift started by itself is left off the list until
+    a step of it fails, and its newest failure names the step's type, words and file."""
+    quiet = "scan_count"
+    top = await job_queue.enqueue(quiet, {}, require_handler=False)
+    await _state(job_queue, top, "done")
+    step = await job_queue.enqueue(
+        "probe", {"asset_id": "F1"}, parent_id=top, require_handler=False
+    )
+    assert top not in {job.id for job in (await job_queue.list(quiet=[quiet])).jobs}
+
+    await _state(job_queue, step, "failed")
+    async with job_queue._db.write() as connection:
+        await connection.execute("UPDATE jobs SET error = 'it broke' WHERE id = ?", (step,))
+
+    assert top in {job.id for job in (await job_queue.list(quiet=[quiet])).jobs}
+    assert await job_queue.quiet_by_state([quiet]) == {}
+    failures = await job_queue.family_failures([top, "nobody"])
+    assert list(failures) == [top]
+    assert failures[top].type == "probe" and failures[top].error == "it broke"
+    assert failures[top].asset_id == "F1"
+    assert await job_queue.family_failures([]) == {}

@@ -42,7 +42,7 @@
 		{ "word": "token", "means": "the text the person starting a swap sends to the other; it holds the VPN's address and works once; on the swap screens only, never on a History line" },
 		{ "word": "the code", "means": "the six characters both screens of a swap show, compared before anything is offered (They match / They don't match); on the swap screens, and on History only as the codes didn't match" },
 		{ "word": "Saved Layout", "means": "a saved Theater wall: its layout and what each cell was set to, under a name (Saved Layouts on the Theater bar and on Insights); never preset, cell group or saved wall, and never a layout" },
-		{ "word": "layout", "means": "one of the shapes a Theater wall can take (1x2, 2x2, Center stage 1x1 ...), chosen from Layouts on the Theater bar; never preset" }
+		{ "word": "layout", "means": "one of the shapes a Theater wall can take (Grid 1x2, Grid 2x2, Stage View 1x1 ...), chosen from Layouts on the Theater bar; never preset" }
 	],
 
 	"proper_names": {
@@ -83,7 +83,7 @@
 			"GNU",
 			"AGPL-3.0-or-later"
 		],
-		"phrases": ["Photo Sets", "Photo Set", "Smart Search", "Sites and Tunnels", "Tasks and Activity", "App History", "Updates and Info", "Privacy and Security", "User Management", "Space Grotesk", "Geist Mono", "JetBrains Mono", "Instrument Sans", "Public Sans", "DM Sans", "Saved Layouts", "Saved Layout"]
+		"phrases": ["Photo Sets", "Photo Set", "Smart Search", "Sites and Tunnels", "Tasks and Activity", "App History", "Updates and Info", "Privacy and Security", "User Management", "Space Grotesk", "Geist Mono", "JetBrains Mono", "Instrument Sans", "Public Sans", "DM Sans", "Saved Layouts", "Saved Layout", "Task Queue", "Import tasks", "Stage View", "Identify settings", "Scan settings", "Generate settings"]
 	},
 
 	"verbs": {

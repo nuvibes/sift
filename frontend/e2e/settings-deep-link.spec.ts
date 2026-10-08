@@ -71,9 +71,9 @@ test('a SettingLink in a sentence opens the pane and rings the row', async ({ pa
 	await expect(link).toBeAttached({ timeout: 15_000 });
 	await link.dispatchEvent('click');
 
-	/* The link names Performance; the row is drawn on Importing, so the address it opens is
-	   Importing's: the resolver's row map, followed from a link. */
-	await expect(page).toHaveURL(/\/settings\/importing#performance\.repair_playback$/);
+	/* The link names Performance; the row is drawn under Import tasks on Tasks and Activity, so the
+	   address it opens is that pane's: the resolver's row map, followed from a link. */
+	await expect(page).toHaveURL(/\/settings\/tasks#performance\.repair_playback$/);
 	await rung(page, 'performance.repair_playback');
 });
 
@@ -119,7 +119,7 @@ test('a row on a pane still LOADING long past six seconds is rung once it is dra
 	});
 	await page.goto('/settings/performance#performance.repair_playback');
 
-	await expect(page).toHaveURL(/\/settings\/importing#performance\.repair_playback$/);
+	await expect(page).toHaveURL(/\/settings\/tasks#performance\.repair_playback$/);
 	await rung(page, 'performance.repair_playback');
 });
 

@@ -581,7 +581,7 @@
 				>Settings > Tasks and Activity</SettingLink
 			>.
 		</p>
-		<!-- The switch first, linked where it is turned on: Importing, whose Identify page the link
+		<!-- The switch first, linked where it is turned on: Import tasks, whose Identify page the link
 		     opens on the switch, and which the Faces pane only points at. The models come after,
 		     because the Faces pane draws their download only once the switch is on, and the Identify
 		     page then links it itself. -->
@@ -589,8 +589,9 @@
 			<p class="scan-note">
 				To have Sift find the people in your files during a scan, turn on Recognize faces in your
 				library, in
-				<SettingLink section="importing" setting={FACES_KEY}>Settings > Importing</SettingLink>,
-				before you scan. Sift then shows you where to download the face models.
+				<SettingLink section="tasks" setting={FACES_KEY}
+					>Settings > Tasks and Activity > Import tasks</SettingLink
+				>, before you scan. Sift then shows you where to download the face models.
 			</p>
 		{/if}
 	</div>

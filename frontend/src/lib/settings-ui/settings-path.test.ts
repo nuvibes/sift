@@ -52,14 +52,14 @@ describe('writing and reading a path', () => {
 const SECTIONS: SettingsSection[] = [
 	{ id: 'privacy', label: 'Privacy', icon: 'shield_person' },
 	{ id: 'semantic', label: 'Smart Search', icon: 'auto_awesome' },
-	{ id: 'importing', label: 'Importing', icon: 'inbox' }
+	{ id: 'editing', label: 'Editing', icon: 'content_cut' }
 ];
 
 const INDEX: Searchable[] = [
 	{ name: 'Lock Hidden when you switch away', section: 'privacy', key: 'privacy.lock_on_blur' },
 	{ name: 'Download the models again', section: 'semantic', key: 'semantic.models' },
 	{ name: 'More settings', section: 'semantic', key: 'semantic.more' },
-	{ name: 'Folders', section: 'importing', key: 'importing.folders' }
+	{ name: 'Folders', section: 'editing', key: 'editing.folders' }
 ];
 
 describe('the search box reading a path backwards', () => {
@@ -97,8 +97,8 @@ describe('the search box reading a path backwards', () => {
 	});
 
 	it('opens the section where the path names nothing it knows, and nothing for no section', () => {
-		const typed = 'Settings > Importing > Nowhere at all';
-		expect(firstResult(grouped(INDEX, SECTIONS, typed), typed)).toEqual({ section: 'importing' });
+		const typed = 'Settings > Editing > Nowhere at all';
+		expect(firstResult(grouped(INDEX, SECTIONS, typed), typed)).toEqual({ section: 'editing' });
 		expect(grouped(INDEX, SECTIONS, 'Settings > Nowhere > Folders')).toEqual([]);
 	});
 
@@ -137,7 +137,7 @@ describe('the search box reading a path backwards', () => {
 	});
 
 	it('keeps to the named section when two sections share a row name', () => {
-		const typed = 'Settings > Importing > Folders';
+		const typed = 'Settings > Editing > Folders';
 		expect(grouped(INDEX, SECTIONS, typed)).toEqual([
 			{ section: SECTIONS[2], entries: [INDEX[3]] }
 		]);

@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import io
 import json
+import os
 from collections.abc import Callable
 from pathlib import Path
 from typing import Annotated, Any, Literal
@@ -26,6 +27,7 @@ from typing import Annotated, Any, Literal
 from fastapi import APIRouter, Depends, Query, Request, Response
 
 from sift.kernel.access import Viewer
+from sift.kernel.config import Settings
 from sift.kernel.log import LOG_FILENAME
 from sift.kernel.wiring import SETTINGS, part_of
 from sift.logbundle import write_archive
@@ -55,6 +57,10 @@ _NOT_SEARCHED = frozenset({"timestamp", "level"})
 
 #: The longest search text taken. A search box, not a place to paste a log into.
 _MOST_SEARCH = 200
+
+#: The desktop app's own folder in the roaming profile, by the names it has been installed under.
+#: Its `shell.log` and `backend.log` hold the exit codes and the start facts.
+_APP_FOLDERS = ("sift-desktop", "Sift")
 
 
 def _parsed(line: str) -> LogLine:
@@ -207,7 +213,21 @@ async def archive(
 ) -> Response:
     """`Download log`: the library's log whole and unfiltered, redacted whatever the setting says,
     as the zip the desktop app makes of both its places (`sift.logbundle`)."""
-    folder = Path(part_of(request, SETTINGS).data_dir)
+    settings = part_of(request, SETTINGS)
+    places = [("library", Path(settings.data_dir))]
+    # The app's own logs too, where the desktop app started this backend: its window may be a
+    # browser, which has no other way to reach them.
+    if (app := await asyncio.to_thread(app_logs, settings)) is not None:
+        places.append(("app", app))
     made = io.BytesIO()
-    await asyncio.to_thread(write_archive, made, [("library", folder)])
+    await asyncio.to_thread(write_archive, made, places)
     return Response(made.getvalue(), media_type="application/zip")
+
+
+def app_logs(settings: Settings) -> Path | None:
+    """The desktop app's log folder, where that app started this backend; else None."""
+    roaming = os.environ.get("APPDATA")
+    if settings.shell_url is None or not roaming:
+        return None
+    folders = (Path(roaming) / name for name in _APP_FOLDERS)
+    return next((one for one in folders if (one / "shell.log").is_file()), None)

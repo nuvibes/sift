@@ -101,13 +101,15 @@ async def test_a_pick_marked_dont_swap_is_named_and_the_others_still_counted(
     assert other == 2
 
 
-async def test_a_pick_hidden_from_the_reader_is_never_named(library: Library) -> None:  # noqa: F811
+async def test_a_pick_in_hidden_is_named_like_any_other(library: Library) -> None:  # noqa: F811
+    # Hidden decides what a screen shows, not what a swap carries: the mark on the file does.
     ids = library.ids
     await library.db.execute(
         "UPDATE assets SET keep_from_swaps = 1 WHERE id = ?", (ids["vaulted"],)
     )
     named, other = await _left_out(library, [Chosen(kind="asset", id=ids["vaulted"])])
-    assert (named, other) == ((), 0)
+    assert [(one.kind, one.mark, one.files) for one in named] == [("asset", "swap", 1)]
+    assert other == 0
     # Nobody to read as: nothing named, nothing counted.
     gone = Viewer(id="nobody", role=Role.ADMIN)
     person = Chosen(kind="person", id=ids["person"])

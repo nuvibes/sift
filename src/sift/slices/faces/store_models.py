@@ -300,7 +300,33 @@ class ModelsStore(PicturesStore):
         if not rows:
             return None
         await connection.execute("DELETE FROM pack_entries WHERE id = ?", (entry_id,))
+        # So importing that folder again reads it again.
+        await connection.execute(
+            "DELETE FROM face_folder_read WHERE folder = ?", (str(rows[0]["name"]),)
+        )
         return rows[0]
+
+    async def folder_read_before(
+        self, pack_id: str, recognizer: str, folder: str, digests: Sequence[str]
+    ) -> bool:
+        """Whether an earlier import read every one of these pictures of this person's folder."""
+        rows = await self._db.fetch_all(
+            "SELECT digest FROM face_folder_read WHERE pack_id = ? AND recognizer = ?"
+            " AND folder = ?",
+            (pack_id, recognizer, folder),
+        )
+        return set(digests) <= {str(row["digest"]) for row in rows}
+
+    async def keep_folder_read(
+        self, pack_id: str, recognizer: str, folder: str, digests: Sequence[str]
+    ) -> None:
+        """Note that this person's folder was read, picture by picture."""
+        async with self._db.write() as connection:
+            await connection.executemany(
+                "INSERT OR IGNORE INTO face_folder_read (pack_id, recognizer, folder, digest)"
+                " VALUES (?, ?, ?, ?)",
+                [(pack_id, recognizer, folder, digest) for digest in dict.fromkeys(digests)],
+            )
 
     async def remove_entry_pictures(self, crops: Sequence[str]) -> None:
         """Delete the pictures a removed entry held, after the write that forgot them."""

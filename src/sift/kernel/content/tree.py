@@ -16,7 +16,7 @@ one, and the pass that wants it runs every time a batch of imports settles.
 
 from __future__ import annotations
 
-from collections.abc import Collection, Mapping, Sequence
+from collections.abc import Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 
 from sift.kernel.db import Connection, Database, in_clause
@@ -64,6 +64,15 @@ SELECT DISTINCT l.asset_id AS id
  WHERE an.ancestor_id = :folder_id
 """
 
+# Only the files whose PRESENT copy sits under the folder: a record of where a file used to be is
+# not the folder's word on it.
+_ASSETS_PRESENT_UNDER = """
+SELECT DISTINCT l.asset_id AS id
+  FROM folder_ancestry an
+  JOIN asset_locations l ON l.folder_id = an.folder_id
+ WHERE an.ancestor_id = :folder_id AND l.status = 'present'
+"""
+
 # The same for several folders together, each file named with the folder it was asked under.
 _ASSETS_UNDER_MANY = """
 SELECT DISTINCT an.ancestor_id AS folder, l.asset_id AS id
@@ -73,6 +82,31 @@ SELECT DISTINCT an.ancestor_id AS folder, l.asset_id AS id
 """
 
 _FOLDERS_PER_ASK = 500
+
+# Who the folders each file's PRESENT copy sits in were answered as (`folder_people`), up the
+# ancestry; a gone copy's folder is no evidence about the file.
+_PEOPLE_ANSWERED_FOR = """
+SELECT DISTINCT l.asset_id AS asset_id, fp.person_id AS person_id
+  FROM asset_locations AS l
+  JOIN folder_ancestry AS an ON an.folder_id = l.folder_id
+  JOIN folder_people AS fp ON fp.folder_id = an.ancestor_id
+ WHERE l.asset_id IN (?*) AND l.status = 'present'
+"""
+
+_FILES_PER_ASK = 500
+
+
+async def people_answered_for(db: Database, asset_ids: Iterable[str]) -> dict[str, frozenset[str]]:
+    """The people the folders each file sits in were answered as, by file; a file under none is
+    absent. A read for the face feature, kept here because it walks the library's own tables."""
+    wanted = list(dict.fromkeys(asset_ids))
+    found: dict[str, set[str]] = {}
+    for start in range(0, len(wanted), _FILES_PER_ASK):
+        sql, params = in_clause(_PEOPLE_ANSWERED_FOR, wanted[start : start + _FILES_PER_ASK])
+        for row in await db.fetch_all(sql, tuple(params)):
+            found.setdefault(str(row["asset_id"]), set()).add(str(row["person_id"]))
+    return {asset_id: frozenset(people) for asset_id, people in found.items()}
+
 
 # The names of the files sitting DIRECTLY in one folder, which is a different question from the one
 # above: a naming convention shared by a parent and a child is two facts, not one.
@@ -225,6 +259,11 @@ class TreeReads:
     async def assets_under(self, folder_id: str) -> list[str]:
         """Every file in a folder and everything below it."""
         rows = await self._db.fetch_all(_ASSETS_UNDER, {"folder_id": folder_id})
+        return [str(row["id"]) for row in rows]
+
+    async def assets_present_under(self, folder_id: str) -> list[str]:
+        """`assets_under`, counting only the files whose present copy is there."""
+        rows = await self._db.fetch_all(_ASSETS_PRESENT_UNDER, {"folder_id": folder_id})
         return [str(row["id"]) for row in rows]
 
     async def assets_under_many(self, folder_ids: Sequence[str]) -> dict[str, list[str]]:

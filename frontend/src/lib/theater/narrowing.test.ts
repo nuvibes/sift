@@ -19,6 +19,7 @@ vi.mock('$lib/api/client', () => ({
 
 import { editingCell, narrowingFor, narrowingName } from './narrowing';
 import { Wall } from './wall.svelte';
+import type { Cell } from './cell.svelte';
 
 let wall: Wall;
 
@@ -38,7 +39,7 @@ describe('which cell the panel is editing', () => {
 	it('says every cell while the wall is addressed as a whole', () => {
 		wall.focusEvery();
 
-		expect(narrowingName(wall), 'the chips are about all of them').toBe('Every cell');
+		expect(narrowingName(wall), 'the chips are about all of them').toBe('All cells');
 	});
 
 	/* A wall can SHRINK under an open panel (a layout with fewer places, a preview dropped), and
@@ -87,6 +88,27 @@ describe('reading one and writing all', () => {
 			wall.cells.map((cell) => cell.source),
 			'applying landed on every cell the wall is addressing'
 		).toEqual(['all of them', 'all of them', 'all of them', 'all of them']);
+	});
+});
+
+/* A tick waits for each playing file to end; a saved filter is a finished choice and lands now. */
+describe('a saved filter chosen with every cell addressed', () => {
+	it('starts on every cell immediately, where a tick waits for each file', () => {
+		wall.cells.forEach((cell, at) => {
+			cell.playing = { id: `file-${at}`, media_type: 'video' } as Cell['playing'];
+		});
+		wall.togglePause();
+		wall.focusEvery();
+		const panel = narrowingFor(wall);
+
+		panel.write(new URLSearchParams({ q: 'ticked' }));
+		expect(wall.cells.map((cell) => cell.narrowingWaits)).toEqual([true, true, true, true]);
+
+		panel.choose(new URLSearchParams({ q: 'kept' }));
+		expect(
+			wall.cells.map((cell) => [cell.source, cell.narrowingWaits]),
+			'the saved filter reached one cell, or waited'
+		).toEqual(Array(4).fill(['kept', false]));
 	});
 });
 

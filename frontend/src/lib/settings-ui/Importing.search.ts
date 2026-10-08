@@ -1,16 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-/* The Importing pane's words, and what somebody can type to find them.
+/* Import tasks' words, and what somebody can type to find them.
  *
  * ONE COPY MODULE PER PANE. `Importing.svelte` draws every word it adds from `COPY`, and the search
- * entries are built from the same objects, so a stage cannot be called one thing on the screen and
- * another in a search result. The switches on each stage's Edit page are registered settings: the registry is their
- * copy and feeds the search by itself. What is declared here is the three stages themselves, so a
- * search for what a stage DOES ("rescan", "thumbnails", "faces") lands on the stage rather than on
- * one of its rows.
- *
- * Nothing on this pane starts work or chooses when it runs: both are on Tasks, and a stage's row
- * says its When as a link there. A stage's sentence is its task's own line, the one Tasks draws, so
- * it is not written here: a search entry carries only the words it is found by. */
+ * entries are built from the same objects. The switches on each stage's Edit page are registered
+ * settings, which feed the search by themselves. What is declared here is the three stages, so a
+ * search for what a stage DOES ("rescan", "thumbnails", "faces") lands on the stage's row, and each
+ * stage's Edit. */
 import { counted } from '$lib/entity/entity-counts';
 import { COPY as PERFORMANCE, MEASURE_ANCHOR } from './Performance.search';
 import type { Searchable } from './search';
@@ -26,9 +21,6 @@ export const COPY = {
 		setting: MEASURE_ANCHOR
 	},
 	edit: 'Edit',
-	/** When a stage runs, said before the link to Tasks where it is chosen: "As files arrive,
-	 *  chosen on Tasks". */
-	chosenOn: (when: string) => `${when}, chosen on`,
 	/** An Edit button's accessible name: which stage it opens, so the two are not both "Edit". */
 	editStage: (stage: string) => `Edit ${stage}`,
 	scan: {
@@ -68,39 +60,39 @@ export const COPY = {
 export const SEARCHABLE: Searchable[] = [
 	{
 		name: COPY.scan.heading,
-		key: 'importing.scan-stage',
-		section: 'importing',
+		key: 'tasks.scan.when',
+		section: 'tasks',
 		keywords:
 			'scan rescan refresh reindex find new changed removed files size length type missing import again folders'
 	},
 	{
 		name: COPY.generate.heading,
-		key: 'importing.generate-stage',
-		section: 'importing',
+		key: 'tasks.generate.when',
+		section: 'tasks',
 		keywords: 'generate thumbnails previews sprites scrubber fingerprints missing build make'
 	},
 	{
 		name: COPY.identify.heading,
-		key: 'importing.identify-stage',
-		section: 'importing',
+		key: 'tasks.identify.when',
+		section: 'tasks',
 		keywords: 'identify faces recognize describe smart search watermarks look inside'
 	},
 	{
 		name: COPY.scan.pageTitle,
-		key: 'importing.scan-stage',
-		section: 'importing',
+		key: 'importing.scan-settings',
+		section: 'tasks',
 		keywords: 'scan settings edit'
 	},
 	{
 		name: COPY.generate.pageTitle,
-		key: 'importing.generate-stage',
-		section: 'importing',
+		key: 'importing.generate-settings',
+		section: 'tasks',
 		keywords: 'generate settings edit'
 	},
 	{
 		name: COPY.identify.pageTitle,
-		key: 'importing.identify-stage',
-		section: 'importing',
+		key: 'importing.identify-settings',
+		section: 'tasks',
 		keywords: 'identify settings edit'
 	}
 ];

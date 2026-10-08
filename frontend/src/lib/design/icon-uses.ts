@@ -280,7 +280,7 @@ export const ICON_USES: Record<IconName, IconUse> = {
 	bolt: {
 		what: 'It happens automatically',
 		where:
-			'The wall drawer in Theater, on the Center stage mode — lit when a preview comes up the moment it starts something new. The hand beside it is the other half of the same control.'
+			'The wall drawer in Theater, on the Stage View mode — lit when a preview comes up the moment it starts something new. The hand beside it is the other half of the same control.'
 	},
 	bolt_boost: {
 		what: 'Turbo mode',
@@ -295,7 +295,7 @@ export const ICON_USES: Record<IconName, IconUse> = {
 	touch_app: {
 		what: 'It happens when you double-click it',
 		where:
-			'The wall drawer in Theater, on the Center stage mode — the mode where a preview waits to be pressed. The bolt is the other half of the same control.'
+			'The wall drawer in Theater, on the Stage View mode — the mode where a preview waits to be pressed. The bolt is the other half of the same control.'
 	},
 	block: {
 		what: 'Turn off',
@@ -921,7 +921,7 @@ export const ICON_USES: Record<IconName, IconUse> = {
 	upload: {
 		what: 'Upload a file',
 		where:
-			'The file picker on the Add panel, for a cookie export or a tunnel config. Also Settings > Importing, and every Import button: a pack, a folder, a tunnel, a library, a Stash database. And the History line saying a library was created from a database file.'
+			'The file picker on the Add panel, for a cookie export or a tunnel config. Also every Import button: a pack, a folder, a tunnel, a library, a Stash database. And the History line saying a library was created from a database file.'
 	},
 	visibility: {
 		what: 'Show it',
@@ -1037,10 +1037,10 @@ export const ICON_USES: Record<IconName, IconUse> = {
 		where:
 			"Right of the name on a PMV creator's own page, and in the same spot on a preview of them. Also the bottom-right corner of their card on the People wall, and the facet that filters to them. It uses the ordinary ink of a glyph, with no color of its own."
 	},
-	browser_updated: {
-		what: 'A newer Sift is ready',
+	upgrade: {
+		what: 'Updates and Info',
 		where:
-			"The desktop app's title bar, left of minimise, in the accent colour, for an admin while an update is available. It opens Settings > Updates and Info."
+			"Settings > Updates and Info, in the list of sections. And the desktop app's title bar, left of minimise, for an admin while an update is available; it opens that section."
 	},
 	menu_book: {
 		what: 'Documentation',

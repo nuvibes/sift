@@ -271,7 +271,7 @@ def _roots(value: object) -> list[str] | None:
 def _handed_out(*, queued: int, files: int, done: bool) -> str:
     """What this page did, in a sentence, for whoever pressed the button."""
     if not done:
-        return f"{queued:,} of {files:,} files handed out so far, still going through the library\u2026"
+        return f"Handed out {queued:,} of {files:,} files."
     if queued == 0:
         return "Nothing was missing."
     return f"Handed out {queued:,} files to build."

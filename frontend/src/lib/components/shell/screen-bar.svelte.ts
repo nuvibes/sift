@@ -43,6 +43,7 @@ export interface SortChoice {
 export interface Narrowing {
 	read: () => URLSearchParams;
 	write: (next: URLSearchParams) => void;
+	choose?: (next: URLSearchParams) => void;
 	/** What a control that WILL filter the target spreads, so pointing at it says which target that
 	 *  is. Theater's lights the cells `write` lands on; see `$lib/theater/narrowing`. */
 	pointing?: Pointing;

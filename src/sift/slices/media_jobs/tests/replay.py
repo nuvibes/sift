@@ -18,6 +18,7 @@ from sift.kernel.db import Database
 from sift.kernel.jobs import ledger as ledger_module
 from sift.kernel.jobs import register_handler, time_left
 from sift.kernel.jobs.families import Family
+from sift.kernel.jobs.holding import Holding
 from sift.kernel.jobs.ledger import Ledger
 from sift.kernel.jobs.queue_rows import FilesToRead
 from sift.kernel.jobs.switchboard import Switchboard
@@ -97,6 +98,7 @@ class Clock:
 class _Pool:
     concurrency: int
     limits: dict[str, int] = field(default_factory=dict)
+    holding: Holding = field(default_factory=Holding)
 
 
 @dataclass(frozen=True, slots=True)

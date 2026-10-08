@@ -177,7 +177,7 @@ class Describing {
 				// the alternative is a bar that never moves again and no way to tell why.
 				this.outcome =
 					`Stopped with ${state.waiting_files} still to do. ` +
-					'Identify now, on Importing, picks up where it left off.';
+					'Run now on Identify, under Import tasks, picks up where it left off.';
 				return;
 			}
 			if (this.outcome === null && this.done > 0) {

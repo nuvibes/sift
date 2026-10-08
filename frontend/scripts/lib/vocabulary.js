@@ -502,7 +502,7 @@ export function rawCounts(source) {
 		const [, dollar, expression = '', second = ''] = match;
 		if (!couldBeANumber(expression) || UNITS.test(second)) continue;
 		if (!dollar && !second.includes('?')) continue;
-		const asked = new RegExp(`^\\s*${expression.replace(/[.$?[\]]/g, '\\$&')}\\s*[=!<>]`);
+		const asked = new RegExp(`^\\s*${escape(expression)}\\s*[=!<>]`);
 		if (!NUMBER_NAMES.test(lastName(expression)) && !asked.test(second)) continue;
 		out.push({ offset: match.index ?? 0, found: match[0] });
 	}

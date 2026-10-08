@@ -1356,3 +1356,19 @@ async def test_a_benchmark_s_hold_pauses_what_the_claim_would_take_a_chunk_at_a_
     still = await job_queue.get(later)
     assert still is not None and still.state is JobState.QUEUED, "work due later is not held"
     assert sorted(await job_queue.resume_after_benchmark(chunk=2)) == sorted(waiting)
+
+
+async def test_a_cancel_of_a_pass_stops_its_types_and_nothing_else(job_queue: JobQueue) -> None:
+    kept = await job_queue.enqueue("other_kind", {}, require_handler=False)
+    stopped = [
+        await job_queue.enqueue("face_scan", {"n": n}, require_handler=False) for n in range(2)
+    ]
+    finished = await job_queue.enqueue("face_scan", {"n": 9}, require_handler=False)
+    await _state(job_queue, finished, "done")
+
+    assert await job_queue.cancel_types(["face_scan"]) == 2
+    assert await job_queue.cancel_types([]) == 0
+    for one in stopped:
+        assert (await job_queue.get(one)).state is JobState.CANCELED  # type: ignore[union-attr]
+    assert (await job_queue.get(finished)).state is JobState.DONE  # type: ignore[union-attr]
+    assert (await job_queue.get(kept)).state is JobState.QUEUED  # type: ignore[union-attr]

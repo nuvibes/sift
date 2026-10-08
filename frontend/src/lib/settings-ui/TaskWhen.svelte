@@ -59,9 +59,8 @@
 	 *
 	 * ## Where it runs from
 	 *
-	 * Presses live on Tasks. A pane that owns a task draws its row with `press={false}`: the same
-	 * choice and the same facts, and whatever the pane puts `beside` it (a stage's Edit) where the
-	 * press would be.
+	 * Presses live on Tasks. A pane that owns a task draws its row with `press={false}`. What a
+	 * caller puts `beside` it (an import stage's Edit) stands before the press.
 	 *
 	 * ## A stage that is several tasks
 	 *
@@ -115,13 +114,15 @@
 		help?: string;
 		/** Whether the row carries the task's press. Only Tasks draws it; an owning pane says false. */
 		press?: boolean;
-		/** What an owning pane draws where the press would be: a stage's Edit. */
+		/** What stands before the press: an import stage's Edit. */
 		beside?: Snippet;
 		/** Facts the owning pane adds to the foot line, after the task's own. */
 		more?: Snippet;
+		/** Its When's key, written out where a search entry names it (the search gate reads it). */
+		id?: string;
 	}
 
-	let { task, label, help, press = true, beside, more }: Props = $props();
+	let { task, label, help, press = true, beside, more, id }: Props = $props();
 
 	const row = $derived<TaskView | undefined>(taskList.row(task));
 	const pressing = $derived<At | undefined>(taskList.pressing[task]);
@@ -421,7 +422,7 @@
 {/snippet}
 
 <LabelledRow
-	id="tasks.{task}.when"
+	id={id ?? `tasks.${task}.when`}
 	label={label ?? row?.title ?? ''}
 	help={help === undefined ? row?.explain : help || undefined}
 	wide
@@ -430,6 +431,9 @@
 >
 	<div class="when" data-task={task}>
 		{#if row}
+			{#if beside}
+				<div class="press">{@render beside()}</div>
+			{/if}
 			{#if folded}
 				<!-- The press and the choice in one control. See "One line, one control" above. The
 				     menu stays open while the press is out, so the When can still be changed. The
@@ -458,9 +462,6 @@
 						onValueChange={(value) => void choose(value)}
 					/>
 				</div>
-			{/if}
-			{#if beside}
-				<div class="press">{@render beside()}</div>
 			{/if}
 		{/if}
 	</div>

@@ -246,6 +246,47 @@ function inActivity(lead: string): ToastWords {
 	return [`${lead} `, place('Activity', '/settings/tasks?show=now'), '.'];
 }
 
+/** What one press of a task comes to: the sentence after it, and whether anything was queued. */
+interface Said {
+	words: ToastWords;
+	error: boolean;
+	queued: boolean;
+}
+
+async function press(id: string, at: At, only: Only): Promise<Said | null> {
+	if (taskList.pressing[id]) return null;
+	const says = (words: ToastWords, queued: boolean): Said => ({ words, error: false, queued });
+	try {
+		const started = await taskList.run(id, at, only);
+		const queued = started.job_ids.length > 0;
+		if (started.dry) return says(COPY.when.dryStarted, queued);
+		if (!queued) return says(COPY.when.nothingToDo, false);
+		if (started.named) return says(inActivity(COPY.when.startedPart(started.named)), true);
+		/* No hour for Run during quiet hours is the server saying the run it landed on is not waiting
+		   for the range (it was already running, or a Run now had pulled it forward), so it
+		   is the same answer as Run now's, and "Queued for quiet hours" over a walk under way
+		   would be false. */
+		if (at === 'now' || started.starts_at === null)
+			return says(
+				started.on_activity === false ? COPY.when.startedHere : inActivity(COPY.when.started),
+				true
+			);
+		/* Whether it waits is the server's to say: its clock placed the run, and this browser's may
+		   be a minute away from it, and would read a run starting now as one starting "at 5:08:27 AM". */
+		if (started.waits) return says(COPY.when.startsAt(startSaid(started.starts_at)), true);
+		return says(COPY.when.startsNow, true);
+	} catch (error) {
+		/* The server's sentence where it wrote one for a person ("Smart Search is turned off.
+		   Turn it on under Smart Search."), and a plain one where the request never got that far. */
+		const said = error instanceof ApiError && error.detail ? error.detail : COPY.when.cannotRun;
+		return { words: said, error: true, queued: false };
+	}
+}
+
+function show(said: Said): void {
+	toasts.show(said.words, said.error ? { tone: 'error' } : {});
+}
+
 /**
  * Press a task's Run now or Run during quiet hours, and say what happened.
  *
@@ -256,30 +297,27 @@ function inActivity(lead: string): ToastWords {
  * Answers whether anything was queued, for a caller that wants to draw what follows.
  */
 export async function pressTask(id: string, at: At, only: Only = {}): Promise<boolean> {
-	if (taskList.pressing[id]) return false;
-	try {
-		const started = await taskList.run(id, at, only);
-		if (started.dry) toasts.show(COPY.when.dryStarted);
-		else if (started.job_ids.length === 0) toasts.show(COPY.when.nothingToDo);
-		else if (started.named) toasts.show(inActivity(COPY.when.startedPart(started.named)));
-		/* No hour for Run during quiet hours is the server saying the run it landed on is not waiting
-		   for the range (it was already running, or a Run now had pulled it forward), so it
-		   is the same answer as Run now's, and "Queued for quiet hours" over a walk under way
-		   would be false. */
-		else if (at === 'now' || started.starts_at === null)
-			toasts.show(
-				started.on_activity === false ? COPY.when.startedHere : inActivity(COPY.when.started)
-			);
-		/* Whether it waits is the server's to say: its clock placed the run, and this browser's may
-		   be a minute away from it, and would read a run starting now as one starting "at 5:08:27 AM". */
-		else if (started.waits) toasts.show(COPY.when.startsAt(startSaid(started.starts_at)));
-		else toasts.show(COPY.when.startsNow);
-		return started.job_ids.length > 0;
-	} catch (error) {
-		/* The server's sentence where it wrote one for a person ("Smart Search is turned off.
-		   Turn it on under Smart Search."), and a plain one where the request never got that far. */
-		const said = error instanceof ApiError && error.detail ? error.detail : COPY.when.cannotRun;
-		toasts.show(said, { tone: 'error' });
-		return false;
+	const said = await press(id, at, only);
+	if (said === null) return false;
+	show(said);
+	return said.queued;
+}
+
+/**
+ * Several tasks pressed as ONE press (a pass that is a part of two tasks), with one sentence: the
+ * first that queued something, else the first. A refusal is said as well, never hidden behind it.
+ */
+export async function pressTasks(
+	presses: readonly { task: string; parts?: string[] }[],
+	at: At
+): Promise<boolean> {
+	const all: Said[] = [];
+	for (const one of presses) {
+		const said = await press(one.task, at, one.parts ? { parts: one.parts } : {});
+		if (said !== null) all.push(said);
 	}
+	all.filter((one) => one.error).forEach(show);
+	const told = all.find((one) => one.queued) ?? all.find((one) => !one.error);
+	if (told) show(told);
+	return all.some((one) => one.queued);
 }

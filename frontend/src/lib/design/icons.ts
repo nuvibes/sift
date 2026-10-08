@@ -12,8 +12,8 @@ export const ICON_NAMES = [
 	'settings_backup_restore',
 	'video_settings',
 	'menu_book',
-	/* A newer Sift waiting, on the desktop app's title bar. */
-	'browser_updated',
+	/* Updates and Info: its Settings section, and a newer Sift waiting on the desktop title bar. */
+	'upgrade',
 	/* A Theater cell's drawer says what it plays and when it moves on with icons rather than words:
 	   a row of three selectors is most of the drawer, and the words in them are longer than the
 	   controls beside them. */

@@ -143,7 +143,7 @@ class FolderRuleMixin(SuggestionBase):
         **The claim belongs to the folder that MADE it, not to the one holding the files.**
         """
         claim_folder = _claiming_folder(folder, reading, reads.folders_by_place)
-        assets = await self._store.assets_under(claim_folder[0])
+        assets = await self._store.assets_present_under(claim_folder[0])
         if not assets:  # pragma: no cover (the tree read only offers folders that hold files)
             return 0
         # Every question this reading reaches, asked now or already standing, by the folder it is

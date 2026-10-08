@@ -538,7 +538,7 @@
 	function applyKept(query: string) {
 		const asked = new URLSearchParams(asAQuestion(query));
 		if (tools.narrowing !== undefined) {
-			tools.narrowing.write(asked);
+			(tools.narrowing.choose ?? tools.narrowing.write)(asked);
 			return;
 		}
 		describing.write(keptOnThisScreen(describing.read(), asked, keptNames));
