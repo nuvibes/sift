@@ -605,9 +605,9 @@ def moving_steps(
     ]
 
 
-#: How many owed files one fold takes after a large share: a few hundred milliseconds of the
-#: writer at one million files.
-OWED_FOLD_PAGE = 2_000
+#: How many owed files one fold takes after a large share: under a second of the writer on a
+#: library of 100,000 files (a page of 2,000 held it up to 1.3 s there).
+OWED_FOLD_PAGE = 1_000
 
 
 #: The connections already seen holding this component's tables: asked once each, since a
