@@ -775,11 +775,10 @@ describe('filling the screen with it from the keyboard', () => {
 	});
 });
 
-describe('the drawer, in the same seven places as a clip', () => {
+describe('the drawer, in the same nine places as a clip', () => {
 	/* Stepping from a clip to a picture must move nothing in the drawer under the hand, so every
 	   control is drawn in the clip's order, and
-	   what a picture cannot do is dimmed with the reason as its label, as a Theater cell's is.
-	   Shuffle and what happens at the end stand on the bar. */
+	   what a picture cannot do is dimmed with the reason as its label, as a Theater cell's is. */
 	it('draws the clip drawer, dimming what a picture cannot do, with the reason', () => {
 		render('asset-1', { mediaType: 'image' });
 		(host.querySelector('[aria-label="More controls"]') as HTMLElement).click();
@@ -792,6 +791,8 @@ describe('the drawer, in the same seven places as a clip', () => {
 			'Screenshot',
 			'A picture has one size',
 			'Nothing here can open a random file',
+			'Play through',
+			'Shuffle',
 			'A picture has no stretch to loop',
 			'A picture has no stretch to save',
 			'Stats for nerds'
@@ -799,10 +800,10 @@ describe('the drawer, in the same seven places as a clip', () => {
 		const dimmed = buttons.filter((one) => (one as HTMLButtonElement).disabled).map(named);
 		expect(dimmed).toHaveLength(5);
 		expect(dimmed).not.toContain('Screenshot');
-		/* What happens at the end is the run's, and it moves the run off a picture: live, on the bar. */
-		const end = host.querySelector('.middle [aria-label="Play through"]') as HTMLButtonElement;
+		/* What happens at the end is the run's, and it moves the run off a picture: live. */
+		const end = host.querySelector('.panel [aria-label="Play through"]') as HTMLButtonElement;
 		expect(end?.disabled).toBe(false);
-		expect(host.querySelector('.middle [aria-label="Shuffle"]')).not.toBeNull();
+		expect(host.querySelector('.panel [aria-label="Shuffle"]')).not.toBeNull();
 	});
 });
 

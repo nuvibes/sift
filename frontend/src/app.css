@@ -1165,6 +1165,32 @@
 	/* A recap card, stood up the way a phone is held and a story is read: this wide, 9:16. And the
 	 * picture at the head of the first row of a list, the one it leads with. */
 	--story-width: 360px;
+	--story-height: calc(var(--story-width) * 16 / 9);
+	/* One pixel of a story card as drawn 360 wide, in the card's own container units, and the
+	 * sizes its contents read restated in it: inside the card these stand in for the page's own,
+	 * so a card 240, 360 or 1080 wide is one drawing. Each equals its page token at 360. */
+	--story-px: calc(100cqi / 360);
+	--story-space-1: calc(4 * var(--story-px));
+	--story-space-2: calc(8 * var(--story-px));
+	--story-space-3: calc(12 * var(--story-px));
+	--story-space-4: calc(16 * var(--story-px));
+	--story-space-5: calc(20 * var(--story-px));
+	--story-space-6: calc(24 * var(--story-px));
+	--story-space-8: calc(32 * var(--story-px));
+	--story-space-10: calc(40 * var(--story-px));
+	--story-radius-sm: calc(6 * var(--story-px));
+	--story-radius-md: calc(10 * var(--story-px));
+	--story-text-figure: 600 calc(56 * var(--story-px)) / 1.05 var(--font-display);
+	--story-text-display: 600 calc(23 * var(--story-px)) / 1.25 var(--font-display);
+	--story-text-h2: 600 calc(17 * var(--story-px)) / 1.3 var(--font-display);
+	--story-text-h3: 600 calc(13.5 * var(--story-px)) / 1.5 var(--font-display);
+	--story-text-body-sm: 450 calc(12.5 * var(--story-px)) / 1.5 var(--font-sans);
+	--story-text-label: 500 calc(11.5 * var(--story-px)) / 1.35 var(--font-sans);
+	--story-text-micro: 600 calc(10 * var(--story-px)) / 1.3 var(--font-sans);
+	--story-list-cover: calc(32 * var(--story-px));
+	--story-lead-cover: calc(96 * var(--story-px));
+	--story-chart-mark-gap: calc(2 * var(--story-px));
+	--story-page-measure: calc(960 * var(--story-px));
 	--lead-cover: 96px;
 	/* The narrowest column of the Organize board. The board takes the frame's whole width and lays as
 	 * many columns as fit at this width, each stretched to share what is left: three at 1280 wide, four

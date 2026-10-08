@@ -47,7 +47,17 @@ function frameAt(ms: number): void {
 
 /** A figure as the server sends one, with no caption under it. */
 function figure(label: string, value: number, unit: Figure['unit']): Figure {
-	return { label, value, unit, hidden_part: 0, caption: [], said: '', hidden_said: '', trend: [] };
+	return {
+		label,
+		value,
+		unit,
+		hidden_part: 0,
+		caption: [],
+		defines: [],
+		said: '',
+		hidden_said: '',
+		trend: []
+	};
 }
 
 function sessions(value: number): Figure {

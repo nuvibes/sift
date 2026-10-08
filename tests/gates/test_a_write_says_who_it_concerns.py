@@ -313,6 +313,10 @@ SILENT: dict[str, str] = {
         "one finished day's figures, added up once a day by the quiet helper; Insights reads"
         " them when it opens"
     ),
+    "insights.rollup.add_up_again": (
+        "one finished day's figures added up again by the quiet helper after a later write reached"
+        " it; Insights reads them when it opens"
+    ),
     "insights.rollup.split_one_stale_day": (
         "one finished day's vault split worked out again by the quiet helper; Insights reads"
         " it when it opens"

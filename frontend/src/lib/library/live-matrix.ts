@@ -137,6 +137,11 @@ export const LIVE_MATRIX: MatrixRow[] = [
 		shows: ['counts', 'opinions', 'people', 'tags']
 	},
 	{
+		screen: 'routes/insights/stats/+page.svelte',
+		file: 'routes/insights/stats/+page.svelte',
+		shows: ['counts', 'opinions', 'people', 'tags']
+	},
+	{
 		screen: 'routes/insights/recaps/+page.svelte',
 		file: 'routes/insights/recaps/+page.svelte',
 		via: ['lib/library/recaps.svelte.ts'],
@@ -377,6 +382,7 @@ export const LIVE_MATRIX: MatrixRow[] = [
 		why: 'a fixed tour'
 	},
 	{ screen: 'settings/privacy', file: 'lib/settings-ui/Privacy.svelte', shows: ['settings'] },
+	{ screen: 'settings/insights', file: 'lib/settings-ui/Insights.svelte', shows: ['settings'] },
 	{ screen: 'settings/users', file: 'lib/settings-ui/Users.svelte', shows: ['settings'] },
 	{
 		screen: 'settings/shortcuts',

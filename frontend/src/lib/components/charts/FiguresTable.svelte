@@ -1,64 +1,104 @@
 <script lang="ts">
 	/*
-	 * A chart's drawing, said in words: a table, shut until asked for.
-	 *
-	 * Every chart hides its drawing from assistive technology and draws this under it instead, so
-	 * the table is the one reading of the figures for anybody who cannot see the marks, and the
-	 * exact figures for anybody who wants them.
+	 * A chart's figures as a table, drawn open: a row per mark. The Stats view draws one for every
+	 * chart and calendar; on a screen that tells a story the tooltip on each mark is the reading.
 	 */
+	import type { Snippet } from 'svelte';
+
+	import type { TableRow } from '$lib/components/charts/table';
 	import { CHART_WORDS } from '$lib/components/charts/words';
-	import Fold from '$lib/components/common/Fold.svelte';
 
 	interface Props {
-		/** What opens the table. */
-		summary: string;
 		/** What the chart is of: the caption the table carries. */
 		caption: string;
+		/** The heading over the first column, the marks: "When" unless the marks are not times. */
+		head?: string;
 		/** The heading over each column after the first. */
 		columns: readonly string[];
 		/** A row per mark: what it is, and its figure in each column, already in words. */
-		rows: readonly { label: string; cells: readonly string[] }[];
+		rows: readonly TableRow[];
+		/** A first column numbering the rows, for a ranked list. */
+		ranked?: boolean;
+		/** Draws a row's first cell in place of its label: a name as the way to the thing. */
+		named?: Snippet<[number]>;
+		/** A press at the end of the caption's line. */
+		action?: Snippet;
+		/** Draws a cell (its row, its column after the first) in place of its words: a sentence. */
+		cell?: Snippet<[number, number]>;
 	}
 
-	let { summary, caption, columns, rows }: Props = $props();
+	let {
+		caption,
+		head = CHART_WORDS.when,
+		columns,
+		rows,
+		ranked = false,
+		named,
+		action,
+		cell
+	}: Props = $props();
 </script>
 
-<Fold {summary}>
-	<table>
-		<caption>{caption}</caption>
-		<thead>
+<table>
+	<caption
+		><span class="line"
+			><span class="title">{caption}</span>{#if action}{@render action()}{/if}</span
+		></caption
+	>
+	<thead>
+		<tr>
+			{#if ranked}<th scope="col">{CHART_WORDS.rank}</th>{/if}
+			<th scope="col">{head}</th>
+			{#each columns as column, index (index)}
+				<th scope="col">{column}</th>
+			{/each}
+		</tr>
+	</thead>
+	<tbody>
+		{#each rows as row, index (index)}
 			<tr>
-				<th scope="col">{CHART_WORDS.when}</th>
-				{#each columns as column, index (index)}
-					<th scope="col">{column}</th>
+				{#if ranked}<td class="rank">{index + 1}</td>{/if}
+				<th scope="row"
+					>{#if named}{@render named(index)}{:else}{row.label}{/if}</th
+				>
+				{#each row.cells as words, at (at)}
+					<td
+						>{#if cell}{@render cell(index, at)}{:else}{words}{/if}</td
+					>
 				{/each}
 			</tr>
-		</thead>
-		<tbody>
-			{#each rows as row, index (index)}
-				<tr>
-					<th scope="row">{row.label}</th>
-					{#each row.cells as cell, at (at)}
-						<td>{cell}</td>
-					{/each}
-				</tr>
-			{/each}
-		</tbody>
-	</table>
-</Fold>
+		{/each}
+	</tbody>
+</table>
 
 <style>
-	/* The quiet label face History's "Show each" wears. */
-	/* Shut under the page's one fold; the table keeps the chart's own small face. */
+	/* The chart's own small face. */
 	table {
 		border-collapse: collapse;
 		font: var(--text-label);
 		color: var(--sift-ink-2);
 	}
 
+	/* The caption's words at the start and its press at the end, on one line. */
 	caption {
 		text-align: start;
 		color: var(--sift-ink-3);
+	}
+
+	.line {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: var(--space-4);
+	}
+
+	.title {
+		font: var(--text-label);
+		white-space: nowrap;
+	}
+
+	.rank {
+		text-align: start;
 	}
 
 	th,

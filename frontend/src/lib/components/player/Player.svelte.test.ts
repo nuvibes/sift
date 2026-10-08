@@ -786,24 +786,24 @@ describe('the grid of controls behind one button', () => {
 		expect(panel.querySelector('[aria-label="Play something else"]')).toBeNull();
 	});
 
-	it('stands Repeat and Shuffle on the bar either side of the transport, out of the drawer', async () => {
-		/* They decide what Previous and Next do, so they stand beside them: what happens at the end
-		   first, Shuffle last, the step pair and Play between. */
+	it('keeps Repeat and Shuffle in the drawer beside Randomize, off the row', async () => {
+		/* The row is the step pair and Play; the two about what comes next stand with Randomize, the
+		   third, as on Theater's bar. */
 		await render();
 		const transport = [...host.querySelectorAll('.player-bar .middle button')].map((one) =>
 			one.getAttribute('aria-label')
 		);
-		expect(transport[0]).toBe('Play through');
-		expect(transport.at(-1)).toBe('Shuffle');
 		expect(transport).toContain('Play');
+		expect(transport, 'Repeat is still on the row').not.toContain('Play through');
+		expect(transport, 'Shuffle is still on the row').not.toContain('Shuffle');
 
 		openTray();
 		const panel = host.querySelector('.panel') as HTMLElement;
-		expect(
-			panel.querySelector('[aria-label="Shuffle"]'),
-			'Shuffle is still in the drawer'
-		).toBeNull();
-		expect(panel.querySelector('[aria-label="Play through"]')).toBeNull();
+		const drawer = [...panel.querySelectorAll('button')].map((one) =>
+			one.getAttribute('aria-label')
+		);
+		const randomize = drawer.indexOf('Nothing here can open a random file');
+		expect(drawer.slice(randomize + 1, randomize + 3)).toEqual(['Play through', 'Shuffle']);
 	});
 
 	it('leaves the mini player on the row, and the judgement controls off it', async () => {
@@ -843,9 +843,8 @@ describe('the grid of controls behind one button', () => {
 describe('the drawer keeps one shape', () => {
 	/* Every control is drawn, dimmed with its reason where it cannot act, and the three that open a
 	   menu stand in the top row, so each opens above the drawer rather than over its own first row.
-	   Shuffle and Repeat are on the bar, so the seven stand four and three, not three, three and
-	   one alone. */
-	it('draws seven controls, the menus first, the ones that cannot act dimmed', async () => {
+	   Nine controls, three rows of three. */
+	it('draws nine controls, the menus first, the ones that cannot act dimmed', async () => {
 		await render();
 		openTray();
 		const buttons = [...(host.querySelector('.panel') as HTMLElement).querySelectorAll('button')];
@@ -854,7 +853,7 @@ describe('the drawer keeps one shape', () => {
 			one.querySelector('[aria-label]')?.getAttribute('aria-label') ??
 			'';
 
-		expect(buttons).toHaveLength(7);
+		expect(buttons).toHaveLength(9);
 		expect(buttons.slice(0, 3).map(named)).toEqual([
 			'Clip',
 			expect.stringMatching(/frame|picture|screenshot/i),
@@ -1088,8 +1087,8 @@ describe('what happens when the clip ends', () => {
 	/** The control, whatever answer it is currently showing. */
 	const endControl = () =>
 		host.querySelector(
-			'.middle [aria-label^="Stop at"], .middle [aria-label^="Repeat"], ' +
-				'.middle [aria-label^="Play through"]'
+			'.panel [aria-label^="Stop at"], .panel [aria-label^="Repeat"], ' +
+				'.panel [aria-label^="Play through"]'
 		) as HTMLElement | null;
 
 	const press = () => {
@@ -1211,8 +1210,8 @@ describe('repeat this, then Shuffle, then the repeat control', () => {
 	 */
 	const endControl = () =>
 		host.querySelector(
-			'.middle [aria-label^="Stop at"], .middle [aria-label^="Repeat"], ' +
-				'.middle [aria-label^="Play through"]'
+			'.panel [aria-label^="Stop at"], .panel [aria-label^="Repeat"], ' +
+				'.panel [aria-label^="Play through"]'
 		) as HTMLElement | null;
 	const pressRepeat = () => {
 		(endControl()?.closest('button') as HTMLElement).click();

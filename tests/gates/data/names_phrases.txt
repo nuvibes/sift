@@ -520,3 +520,5 @@ Stage View
 Whether Activity
 Task Queue
 Cancel Identify
+Your Tuesday
+The Alongside

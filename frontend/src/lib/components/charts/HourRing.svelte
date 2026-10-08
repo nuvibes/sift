@@ -5,26 +5,29 @@
 	 *
 	 * The shades are the heat-map's (`levels`, against this person's own hours), so the ring and
 	 * the calendar speak one language. The middle holds whatever the caller puts there (the
-	 * favourite hour, said). The ring is hidden from assistive technology and the table under it
-	 * says every hour in words.
+	 * favourite hour, said). An hour's figure is its tooltip, under the pointer or the keyboard: the
+	 * arrows go round the clock.
 	 */
 	import type { Snippet } from 'svelte';
 
-	import FiguresTable from '$lib/components/charts/FiguresTable.svelte';
+	import { Pointing } from '$lib/components/charts/pointing.svelte';
 	import { LEVEL_PAINT, levels } from '$lib/components/charts/series';
-	import { CHART_WORDS, hourMark, hourWords } from '$lib/components/charts/words';
+	import { hourMark, hourWords } from '$lib/components/charts/words';
+	import Tooltip from '$lib/components/common/Tooltip.svelte';
 
 	interface Props {
 		/** The twenty-four hours from midnight, each with its figure. */
 		hours: readonly number[];
 		format: (value: number) => string;
-		/** What the ring is of, for the table's caption. */
+		/** What the ring is of: its name to assistive technology. */
 		label: string;
 		/** What the middle of the ring says. */
 		middle?: Snippet;
+		/** An hour whose tooltip stays up whatever the pointer does: the DESIGN GALLERY's open bubble. */
+		held?: number | null;
 	}
 
-	let { hours, format, label, middle }: Props = $props();
+	let { hours, format, label, middle, held = null }: Props = $props();
 
 	/* Each hour is a fifteen-degree segment with one degree of ground after it, so the hours read
 	   as separate marks the way the bars do. */
@@ -40,26 +43,60 @@
 			})
 			.join(', ')})`
 	);
+
+	const pointing = new Pointing(() => hours.length);
 </script>
 
 <figure class="hour-ring">
-	<div class="dial" aria-hidden="true">
-		<div class="ring" style:background-image={paint}></div>
-		<div class="middle">
+	<!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
+	<div
+		class="dial"
+		role="group"
+		tabindex="0"
+		aria-label={pointing.at === null
+			? label
+			: `${label}: ${hourWords(pointing.at)}, ${format(hours[pointing.at] ?? 0)}`}
+		onkeydown={pointing.keydown}
+		onfocus={pointing.focus}
+		onblur={pointing.blur}
+	>
+		<div class="ring" style:background-image={paint} aria-hidden="true"></div>
+		<div class="middle" aria-hidden="true">
 			{#if middle}{@render middle()}{/if}
 		</div>
+		<!-- Where the pointer finds each hour: a seat on the ring's band, turned to its segment. -->
+		<div class="seats" aria-hidden="true">
+			{#each hours as value, hour (hour)}
+				{#snippet detail()}
+					<span class="figure">{format(value)}</span>
+				{/snippet}
+				<span
+					class="seat"
+					role="presentation"
+					class:pointed={pointing.at === hour || held === hour}
+					style:rotate={`${hour * SEGMENT + (SEGMENT - GAP) / 2}deg`}
+					onpointerenter={() => pointing.point(hour)}
+					onpointerleave={() => pointing.point(null)}
+				>
+					<Tooltip
+						label={hourWords(hour)}
+						{detail}
+						placement="top"
+						stretch
+						shrinks
+						held={pointing.held(hour) || held === hour}
+					>
+						<span class="hit"></span>
+					</Tooltip>
+				</span>
+			{/each}
+		</div>
 		<!-- The quarters of the day, on the reader's clock like the time in the middle. -->
-		<span class="mark top">{hourMark(0)}</span>
-		<span class="mark right">{hourMark(6)}</span>
-		<span class="mark bottom">{hourMark(12)}</span>
-		<span class="mark left">{hourMark(18)}</span>
+		<span class="mark top" aria-hidden="true">{hourMark(0)}</span>
+		<span class="mark right" aria-hidden="true">{hourMark(6)}</span>
+		<span class="mark bottom" aria-hidden="true">{hourMark(12)}</span>
+		<span class="mark left" aria-hidden="true">{hourMark(18)}</span>
 	</div>
-	<FiguresTable
-		summary={CHART_WORDS.hours}
-		caption={label}
-		columns={[label]}
-		rows={hours.map((value, hour) => ({ label: hourWords(hour), cells: [format(value)] }))}
-	/>
 </figure>
 
 <style>
@@ -104,6 +141,41 @@
 			transparent calc(var(--hole) - 0.5%),
 			var(--sift-ink) var(--hole)
 		);
+	}
+
+	/* The seats stand over the ring, the size of it, a container so a seat can reach its middle. */
+	.seats {
+		grid-area: 1 / 1;
+		position: relative;
+		inline-size: 100%;
+		aspect-ratio: 1;
+		container-type: inline-size;
+	}
+
+	/* One hour's seat: the band's depth tall and its arc wide at the middle of the band, turned
+	   about the ring's centre to stand over its segment. */
+	.seat {
+		position: absolute;
+		inset-block-start: 0;
+		inset-inline-start: 50%;
+		display: flex;
+		inline-size: calc((100% + var(--hole)) * 3.1416 / 48);
+		block-size: calc((100% - var(--hole)) / 2);
+		translate: -50% 0;
+		transform-origin: 50% 50cqi;
+		border-radius: var(--radius-sm);
+	}
+
+	.seat.pointed {
+		outline: 1px solid var(--sift-ink-2);
+	}
+
+	.hit {
+		flex: 1;
+	}
+
+	.figure {
+		font-variant-numeric: tabular-nums;
 	}
 
 	/* The middle of the ring, holding the caller's words. */

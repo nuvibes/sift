@@ -134,7 +134,9 @@ def closing(name):
         for one in server_copy.history_copy_in(module, where)
         for word, _instead in history_ratchets.history_words_in(one.text)
     )
-    assert found == ["cancelled", "cancelled", "learnt", "learnt", "taken back", "taken back"]
+    assert found == sorted(
+        ["cancelled", "learnt", "taken back"] * len(server_copy.STATEMENT_MODULES)
+    )
     assert server_copy.history_copy_in(module, "src/sift/slices/insights/router.py") == []
 
 

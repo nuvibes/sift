@@ -134,6 +134,7 @@ SIFT_FROM: Mapping[str, str] = {
     "music_lookup": "Sift, looking up songs",
     "backup": "Sift, from Backup and restore",
     "benchmark": "Sift, from the benchmark of this device",
+    "insights": "Sift, adding up Insights",
 }
 
 

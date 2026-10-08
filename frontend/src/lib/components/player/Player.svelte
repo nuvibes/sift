@@ -852,8 +852,6 @@
 			onforward={onnext}
 			backLabel={ACTS.previous}
 			forwardLabel={ACTS.next}
-			shuffle={{ on: run.shuffle, onpress: () => toggleShuffle(watching) }}
-			repeat={{ mode: loop, onpress: () => setLoop(nextLoopMode(loop)) }}
 			keyboard="player"
 			{muted}
 			volume={loudness.level}
@@ -903,6 +901,8 @@
 		bind:statsOpen
 		onquality={pickQuality}
 		onrandom={() => void randomize()}
+		repeat={{ mode: loop, onpress: () => setLoop(nextLoopMode(loop)) }}
+		shuffle={{ on: run.shuffle, onpress: () => toggleShuffle(watching) }}
 		onmark={markPoint}
 		onsave={() => void saveLoop()}
 		onhold={holdBar}

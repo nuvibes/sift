@@ -203,6 +203,7 @@ describe('the sections and their groups', () => {
 					'Profile',
 					'Appearance',
 					'Get to know Sift',
+					'Insights',
 					'Privacy and Security',
 					'User Management',
 					'Shortcuts'
@@ -241,6 +242,12 @@ describe('the sections and their groups', () => {
 		expect(learn?.admin).toBeUndefined();
 		/* Everybody reads the licence, so the section that holds it is everybody's. */
 		expect(SETTINGS_SECTIONS.find((one) => one.id === 'updates')?.admin).toBeUndefined();
+	});
+
+	it("draws Insights for everybody, where the server's Insights section is filed", () => {
+		const insights = SETTINGS_SECTIONS.find((one) => one.id === 'insights');
+		expect(insights).toEqual({ id: 'insights', label: 'Insights', icon: 'insights' });
+		expect(REGISTRY_HOME.Insights).toBe('insights');
 	});
 
 	it('is the four groups, in order, with Personal second', () => {

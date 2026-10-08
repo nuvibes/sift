@@ -30,9 +30,10 @@ from sift.kernel.ids import new_id
 from sift.kernel.wiring import provide
 from sift.kernel.workbench import Band, Preview, Summary, Workbench
 from sift.slices.auth import csrf_protect, current_viewer
+from sift.slices.insights import definitions, store
 from sift.slices.insights import router as page
+from sift.slices.insights import router_blocks as blocks
 from sift.slices.insights import statements as st
-from sift.slices.insights import store
 from sift.slices.insights.store import local_today
 from sift.slices.theming import CLOCK_KEY as REGISTERED_CLOCK_KEY
 from sift.testing.fixtures import World, build_world, create_user, hide
@@ -357,6 +358,7 @@ async def test_below_the_floor_every_viewing_block_says_not_enough_and_nothing_e
         assert shown["floor_reached"] is False, block_id
         assert [said(line) for line in shown["statements"]] == [st.NOT_ENOUGH], block_id
         assert shown["figures"] == [] and shown["lists"] == [] and shown["chart"] is None
+    assert block(body, "alongside")["floor_reached"] is False
     # Organizing has its own floor, and 6 decisions pass it.
     assert block(body, "organizing")["floor_reached"] is True
 
@@ -621,11 +623,11 @@ async def test_a_period_is_not_compared_with_one_sift_is_still_counting(
     shown = page.Page(
         viewer=admin, period=month, book=book, figures=store.Figures((), (), ()), hours="12"
     )
-    assert await page._compared(temp_db, shown, before.start) is None
+    assert await blocks._compared(temp_db, shown, before.start) is None
     await added_up(
         temp_db, admin.id, before.start, [("sittings", "", 12, 0), ("viewed_ms", "", HOUR, 0)]
     )
-    line = await page._compared(temp_db, shown, before.start)
+    line = await blocks._compared(temp_db, shown, before.start)
     assert text_of(line or ()) == f"That's 2 hours more than {st.named_period(before)}."
 
 
@@ -657,22 +659,22 @@ async def test_a_day_is_compared_only_with_a_usual_day_recorded_whole_and_past_t
         figures=store.Figures((), (), ()),
         hours="12",
     )
-    assert await page._usual(temp_db, still, first) is None
-    assert await page._usual(temp_db, shown(admin), None) is None
+    assert await blocks._usual(temp_db, still, first) is None
+    assert await blocks._usual(temp_db, shown(admin), None) is None
     for back in (15, 2):
         await added_up(temp_db, admin.id, day.start - timedelta(days=back), enough)
     # Three days of record, every one added up and past the floor: not yet a week.
-    assert await page._usual(temp_db, shown(admin), day.start - timedelta(days=3)) is None
+    assert await blocks._usual(temp_db, shown(admin), day.start - timedelta(days=3)) is None
     # A week and more, with the days after the tenth before it not added up yet.
     await temp_db.execute(
         "UPDATE insight_progress SET added_up_to = ? WHERE user_id = ?",
         ((day.start - timedelta(days=10)).isoformat(), admin.id),
     )
-    assert await page._usual(temp_db, shown(admin), first) is None
+    assert await blocks._usual(temp_db, shown(admin), first) is None
     # Every day added up, and the sittings in them under the floor.
     below = [("sittings", "", st.SITTINGS_FLOOR - 1, 0), ("viewed_ms", "", HOUR, 0)]
     await added_up(temp_db, guest.id, day.start - timedelta(days=15), below)
-    assert await page._usual(temp_db, shown(guest), first) is None
+    assert await blocks._usual(temp_db, shown(guest), first) is None
 
 
 async def test_a_month_is_not_compared_with_one_under_the_floor(
@@ -762,7 +764,7 @@ def test_the_clock_is_read_under_the_key_the_appearance_settings_register() -> N
 def test_a_chart_of_nothing_names_no_tallest_bar() -> None:
     """Every bar at nothing: there is no biggest day to say."""
     today = date(2026, 9, 17)
-    chart = page._overview_chart(
+    chart = blocks._overview_chart(
         st.period_of("week", today, today, None), page.Book.of([], locked=True), "12"
     )
     assert chart is not None and len(chart.bars) == 7
@@ -777,7 +779,7 @@ def test_an_open_period_draws_every_bar_it_will_have() -> None:
         [store.DayRow(today.isoformat(), "viewed_ms:kind", "video", HOUR, 0)], locked=True
     )
     for span, count in (("week", 7), ("month", 30), ("year", 12)):
-        chart = page._overview_chart(st.period_of(span, today, today, None), book, "12")
+        chart = blocks._overview_chart(st.period_of(span, today, today, None), book, "12")
         assert chart is not None and chart.today is not None, span
         assert len(chart.bars) == count, span
         after = chart.bars[chart.today + 1 :]
@@ -858,3 +860,50 @@ async def test_a_visit_is_reported_for_whoever_reports_it_and_cleared_by_them_al
 
     rows = await temp_db.fetch_all("SELECT user_id, device_id, client_kind FROM page_visits")
     assert [tuple(row) for row in rows] == [(people["admin"].id, "a-phone-of-sixteen", "phone")]
+
+
+async def test_alongside_says_two_measures_rose_together_with_its_sample(
+    app: FastAPI, client: httpx.AsyncClient, temp_db: Database, people: dict[str, Viewer]
+) -> None:
+    """Ten days of a closed month on which Theater time and starring rose together: one sentence,
+    with its sample; the week inside it is under the floor of eight periods."""
+    month = a_closed_month().replace(day=1)
+    for n in range(1, 11):
+        await added_up(
+            temp_db,
+            people["admin"].id,
+            month + timedelta(days=n),
+            [
+                ("sittings", "", 10 + n % 3, 0),
+                ("viewed_ms", "", n * HOUR, 0),
+                ("viewed_ms:kind", "theater", n * HOUR, 0),
+                ("sittings:kind", "theater", 1, 0),
+                ("starred", "", n, 0),
+            ],
+        )
+    as_(app, people["admin"])
+
+    body = (
+        await client.get("/api/insights", params={"period": "month", "at": month.isoformat()})
+    ).json()
+    alongside = block(body, "alongside")
+    assert alongside["title"] == "Alongside"
+    assert [said(line) for line in alongside["statements"]] == [
+        "Over 10 days, the days you viewed Theater most were the days you starred the most files."
+    ]
+    theater = block(body, "theater")
+    defines = {one["label"]: said(one["defines"]) for one in theater["figures"]}
+    assert defines["Sessions"] == text_of(definitions.definition("Theater sessions") or ())
+    assert defines["In Theater"].startswith("Each hour a Theater wall played counts once")
+
+    week = (
+        await client.get(
+            "/api/insights",
+            params={"period": "week", "at": (month + timedelta(days=3)).isoformat()},
+        )
+    ).json()
+    assert [said(line) for line in block(week, "alongside")["statements"]] == [st.NOT_ENOUGH]
+    at = (month + timedelta(days=3)).isoformat()
+    day = (await client.get("/api/insights", params={"period": "day", "at": at})).json()
+    assert block(day, "overview")["floor_reached"] is True
+    assert "alongside" not in [one["id"] for one in day["blocks"]]

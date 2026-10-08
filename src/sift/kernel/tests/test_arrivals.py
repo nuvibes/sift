@@ -135,3 +135,26 @@ def test_every_statement_joins_the_stored_verdict() -> None:
     user the whole library's arrivals."""
     for name, statement in arrivals.STATEMENTS.items():
         assert "JOIN viewer_assets va ON va.user_id = :user" in statement, name
+
+
+async def test_file_names_say_the_title_first_and_skip_a_file_that_is_gone(
+    database: Database,
+) -> None:
+    await _file(database, "a-titled", 10, hidden=False)
+    await _run(
+        database,
+        "UPDATE assets SET title = ?, original_filename = ? WHERE id = ?",
+        ("A title", "on-disk.mp4", "a-titled"),
+    )
+    await _file(database, "a-plain", 20, hidden=False)
+    await _run(
+        database, "UPDATE assets SET original_filename = ? WHERE id = ?", ("plain.mp4", "a-plain")
+    )
+
+    rows = await arrivals.file_names(database.fetch_all, ["a-titled", "a-plain", "a-gone"])
+
+    assert {str(row["id"]): str(row["name"]) for row in rows} == {
+        "a-titled": "A title",
+        "a-plain": "plain.mp4",
+    }
+    assert await arrivals.file_names(database.fetch_all, []) == []

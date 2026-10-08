@@ -53,11 +53,15 @@ export function placeOf(url: URL): Place {
 	return { period, at: period !== 'all' && at !== null && isDay(at) ? at : null };
 }
 
+/** The two screens a period is read on: Insights, and its Stats view of every figure. */
+export const INSIGHTS_PATH = '/insights';
+export const STATS_PATH = '/insights/stats';
+
 /** The address of a place. "all" has no day in it: it is one period, from the first day to today. */
-export function addressOf(place: Place): string {
+export function addressOf(place: Place, path: string = INSIGHTS_PATH): string {
 	const query = new URLSearchParams({ period: place.period });
 	if (place.at !== null && place.period !== 'all') query.set('at', place.at);
-	return `/insights?${query}`;
+	return `${path}?${query}`;
 }
 
 /**
@@ -74,11 +78,14 @@ export function dayAway(iso: string, days: number): string {
 }
 
 /** The tabs: each span at the same day, so Month then Week shows the week holding that day. */
-export function tabsFor(place: Place): { id: Span; label: string; href: string }[] {
+export function tabsFor(
+	place: Place,
+	path: string = INSIGHTS_PATH
+): { id: Span; label: string; href: string }[] {
 	return SPANS.map((span) => ({
 		id: span,
 		label: PERIOD_WORDS[span],
-		href: addressOf({ period: span, at: place.at })
+		href: addressOf({ period: span, at: place.at }, path)
 	}));
 }
 

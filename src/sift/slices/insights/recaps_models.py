@@ -38,6 +38,14 @@ CardKind = Literal[
     "compared",
     "o",
     "closing",
+    "top_file",
+    "first_last",
+    "new_favourite",
+    "rediscovered",
+    "session",
+    "downloads",
+    "theater_files",
+    "alongside",
     "achievement",
 ]
 
@@ -50,7 +58,8 @@ class RecapCard(Wire):
     statement: list[HistoryPiece]
     figure: Figure | None = None
     cover: str | None = None
-    #: The ranked rows of a card that names several things: the top five people.
+    #: The ranked rows of a card that names several things: the top five people, or the first and
+    #: last file (each row's figure a minute of the day).
     rows: list[NamedRow] = Field(default_factory=list)
     #: The favourite time's 24 hours, drawn as a ring.
     chart: Chart | None = None
@@ -66,11 +75,12 @@ class RecapHead(Wire):
     """A recap as a list names it."""
 
     id: str
-    #: 'week:2026-W39' | 'month:2026-09' | 'year:2026' | 'achievement:<name>'
+    #: 'day:YYYY-MM-DD' | 'week:2026-W39' | 'month:2026-09' | 'year:2026' | 'achievement:<name>'
     period: str
-    #: "Your week", "Your September", "Your 2026".
+    #: "Your Tuesday", "Your week", "Your September", "Your 2026".
     title: str
-    #: The days it covers, in words: "September 21 to 27, 2026", "September 2026", "2026". A list
+    #: The days it covers, in words: "September 22, 2026", "September 21 to 27, 2026",
+    #: "September 2026", "2026". A list
     #: of weeks all titled "Your week" is told apart by this and nothing else.
     span: str = ""
     made_at: int

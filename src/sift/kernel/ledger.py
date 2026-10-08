@@ -184,6 +184,8 @@ VERBS: Final = frozenset(
         "update_started",
         "library_opened",
         "restarted",
+        # A recap made again after a correction (`insights.recaps`); its subject is the recap.
+        "recounted",
     }
 )
 

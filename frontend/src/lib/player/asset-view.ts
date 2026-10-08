@@ -193,6 +193,7 @@ export const OPENED_FROM: Readonly<Record<string, OpenedFrom>> = {
 	'/asset/[id]': 'link',
 	/* A file named on Insights (a list of the files watched most, a recap's) opens over it. */
 	'/insights': 'insights',
+	'/insights/stats': 'insights',
 	'/insights/recaps': 'insights',
 	'/insights/recaps/[id]': 'insights'
 };

@@ -101,6 +101,8 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
 			/* The steps, the quests, the streak and the achievements: learning the app is about
 			   the person doing it, so it sits beside who they are. No `admin`: everybody learns. */
 			{ id: 'get-to-know', label: 'Get to know Sift', icon: 'checklist' },
+			/* Which recaps Sift creates for this person. No `admin`: everybody has Insights. */
+			{ id: 'insights', label: 'Insights', icon: 'insights' },
 			{ id: 'privacy', label: 'Privacy and Security', icon: 'shield_person' },
 			/* The people who may SIGN IN, as `users` and `Users.svelte`: the word "account" is
 			   off the screen entirely, because a name on a site is a "username" and two words
@@ -396,6 +398,7 @@ export const REGISTRY_HOME: Readonly<Record<string, string>> = {
 	   on Tasks. */
 	Logs: 'logs',
 	'Privacy and Security': 'privacy',
+	Insights: 'insights',
 	Appearance: 'appearance',
 	Backup: 'backup',
 	Updates: 'updates',

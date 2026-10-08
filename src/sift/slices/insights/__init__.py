@@ -48,6 +48,25 @@ register_setting(
     disclosure="Turn it off to pause: nothing new is noted until you turn it on again.",
 )
 
+# Whether Sift creates a recap of each closed day, week, month and year. Read by the quiet helper
+# (`recaps.kinds_on`) before it creates one; turning one off keeps the recaps already created.
+_RECAP_HELP = {
+    recaps.PeriodKind.DAY: "The morning after a day with ten or more sessions, Sift creates its recap.",
+    recaps.PeriodKind.WEEK: "On Monday, Sift creates a recap of the week before.",
+    recaps.PeriodKind.MONTH: "On the first of the month, Sift creates a recap of the month before.",
+    recaps.PeriodKind.YEAR: "On the first day of a year, Sift creates a recap of the year before.",
+}
+for _kind in recaps.PeriodKind:
+    register_setting(
+        key=recaps.SETTING_KEYS[_kind],
+        scope="user",
+        default=True,
+        section="Insights",
+        label=f"Create a recap of each {_kind.value}",
+        help=_RECAP_HELP[_kind],
+        disclosure="Recaps already created stay until you clear your history.",
+    )
+
 __all__ = [
     "ADMIN_ONLY",
     "METRICS",

@@ -135,6 +135,7 @@ describe('a figure on a card', () => {
 		unit,
 		hidden_part: 0,
 		caption: [],
+		defines: [],
 		said: '',
 		hidden_said: '',
 		trend: []

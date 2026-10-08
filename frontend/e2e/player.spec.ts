@@ -20,8 +20,8 @@ import { fileURLToPath } from 'node:url';
 
 /* Open the grid of controls that sit behind one button on the bar.
  *
- * Shuffle, the loop, the stats and the mini player are off the row: sixteen controls on one line
- * would squeeze the timeline to a stub. They open on hover, which is how somebody uses them, so that is
+ * Repeat, Shuffle, the loop and the stats are off the row: sixteen controls on one line would
+ * squeeze the timeline to a stub. They open on hover, which is how somebody uses them, so that is
  * how they are opened here. */
 async function openControls(page: Page): Promise<void> {
 	await page.getByRole('button', { name: 'More controls' }).hover();
@@ -365,7 +365,7 @@ test('and it goes away after a control is clicked, not only after something else
 	// Bring it up, then press something on it: the gesture that would pin it open.
 	await page.locator('.stage').hover({ position: { x: 40, y: 40 } });
 	await page.waitForTimeout(400);
-	await bar.getByRole('button').first().click();
+	await bar.getByRole('button', { name: 'Play', exact: true }).click();
 
 	// Away from the picture, without clicking anything else. The bar holds for a second after the
 	// pointer leaves it (deliberately, so a hand that slips off the edge does not lose it), and

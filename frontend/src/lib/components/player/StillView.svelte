@@ -23,6 +23,7 @@
 	import { onDestroy, onMount, untrack } from 'svelte';
 	import { handover } from '$lib/player/mini.svelte';
 	import FullscreenButton from './FullscreenButton.svelte';
+	import RunControls from './RunControls.svelte';
 	import ScreenshotButton from './ScreenshotButton.svelte';
 	import PlayerBar from './PlayerBar.svelte';
 	import Separator from '$lib/components/common/Separator.svelte';
@@ -769,8 +770,6 @@
 		onforward={onnext}
 		backLabel={ACTS.previous}
 		forwardLabel={ACTS.next}
-		shuffle={{ on: run.shuffle, onpress: () => toggleShuffle(id) }}
-		repeat={{ mode: dwell.mode, onpress: () => void dwell.choose(nextLoopMode(dwell.mode)) }}
 		keyboard="picture"
 		muted={true}
 		volume={0}
@@ -785,11 +784,11 @@
 {/if}
 
 <!--
-	The drawer: THE SAME SEVEN a clip's drawer holds, in the same places, so stepping from a clip to
+	The drawer: THE SAME NINE a clip's drawer holds, in the same places, so stepping from a clip to
 	a picture moves nothing under the hand. What a picture cannot do is drawn dimmed with the reason
 	as its label, the rule a Theater cell's drawer follows. Order: Clip, Screenshot, Quality;
-	Randomize, the loop's two marks, Save as Loop; Stats for nerds. What happens at the end and
-	Shuffle are on the bar, live here too: the end's answer is what moves a run off this picture.
+	Randomize, what happens at the end, Shuffle; the loop's two marks, Save as Loop; Stats for nerds.
+	The end's answer is live here too: it is what moves a run off this picture.
 -->
 {#snippet pictureTray()}
 	<Tooltip label="A picture has no seconds to clip" placement="top">
@@ -818,6 +817,11 @@
 			onclick={randomize}
 		/>
 	</Tooltip>
+	<RunControls
+		repeat={{ mode: dwell.mode, onpress: () => void dwell.choose(nextLoopMode(dwell.mode)) }}
+		shuffle={{ on: run.shuffle, onpress: () => toggleShuffle(id) }}
+		keyboard="picture"
+	/>
 	<Tooltip label="A picture has no stretch to loop" placement="top">
 		<Button
 			tone="ghost"

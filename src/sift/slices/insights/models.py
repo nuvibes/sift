@@ -22,7 +22,8 @@ from urllib.parse import quote
 
 from pydantic import Field, computed_field, model_validator
 
-from sift.kernel.wire import HistoryPiece, Wire
+from sift.kernel.wire import HistoryPiece, Wire, pieces_of
+from sift.slices.insights.definitions import definition
 from sift.slices.insights.statements import figure_said
 
 #: What a figure's number counts. `count` is a count of the thing the label names; the plain
@@ -45,6 +46,16 @@ class Figure(Wire):
     #: year's months, a day's hours), for the line of little bars a tile draws under its number;
     #: empty where the period has no such run of it (a day has no hours of sessions).
     trend: list[int] = Field(default_factory=list)
+    #: What the figure counts, in one sentence (`statements.DEFINITIONS`): by its label unless the
+    #: caller names it, as for a label two blocks use for different things.
+    defines: list[HistoryPiece] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _defined(self) -> Figure:
+        if not self.defines:
+            line = definition(self.label)
+            self.defines = pieces_of(line) if line else []
+        return self
 
     @computed_field  # type: ignore[prop-decorator]
     @property

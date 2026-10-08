@@ -97,6 +97,7 @@ SECTIONS: tuple[str, ...] = (
     # for BY NAME on the day something has gone wrong.
     "Logs",
     "Privacy and Security",
+    "Insights",
     "Appearance",
     "Backup",
     "Updates",

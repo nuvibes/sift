@@ -17,10 +17,17 @@
 	 * thing moving. Every card is still in the page for a screen reader, as a slide of a carousel,
 	 * the ones not in view hidden until turned to.
 	 *
+	 * ## One card, one size
+	 *
+	 * Every card of a deck is the story's width by 16/9 of it, whatever it says, so Earlier, Save
+	 * and Later stand still as the cards turn. On a window too short for that the width is taken
+	 * once from the window, so the whole card and its controls are on screen together.
+	 *
 	 * ## A picture of a card
 	 *
-	 * Under the card, Save as picture draws the card as a picture (`share-card.ts`) and hands it to the
-	 * door every screenshot takes. Offered only for a card that may be taken (`shareable`).
+	 * Under the card, Save as picture paints the card in view again at 1080 wide (`share-card.ts`)
+	 * and hands it to the door every screenshot takes. Offered only for a card that may be saved
+	 * (`savable`).
 	 *
 	 * ## What is decided here, and what is not
 	 *
@@ -34,7 +41,7 @@
 	 * server writes that when it draws the recap, and the shared list is told (`readRecap`).
 	 *
 	 * A recap is made to be shown a card at a time, and a card to be kept as a picture; what must
-	 * not leave is kept back by `shareable` (see `RecapCard`).
+	 * not leave is kept back by `savable` (see `RecapCard`).
 	 */
 	import { untrack } from 'svelte';
 
@@ -50,8 +57,9 @@
 		Tooltip
 	} from '$lib/components/common';
 	import type { Crumb } from '$lib/components/common';
-	import RecapCard, { shareable } from '$lib/components/insights/RecapCard.svelte';
-	import { shareCard, shareName, shareOf } from '$lib/components/insights/share-card';
+	import RecapCard, { savable } from '$lib/components/insights/RecapCard.svelte';
+	import { cardPicture, pictureName } from '$lib/components/insights/share-card';
+	import { deliver } from '$lib/player/snapshot';
 	import { INSIGHTS_WORDS } from '$lib/components/insights/words';
 	import { arrive } from '$lib/shell/motion.svelte';
 	import PageFrame from '$lib/components/shell/PageFrame.svelte';
@@ -96,19 +104,39 @@
 
 	const place = (index: number) => (recap ? `${index + 1} of ${recap.cards.length}` : '');
 
+	let list = $state<HTMLElement | null>(null);
+	let controls = $state<HTMLElement | null>(null);
+
 	async function take(): Promise<void> {
 		const card = recap?.cards[at];
-		if (!recap || !card || !shareable(card) || taking) return;
+		const drawn = list?.querySelector<HTMLElement>('li:not([hidden]) .recap-card');
+		if (!recap || !card || !savable(card) || !drawn || taking) return;
 		taking = true;
 		try {
-			await shareCard(
-				shareOf(card, recap.title, place(at), recap.span),
-				shareName(recap.period, at)
-			);
+			const picture = await cardPicture(drawn);
+			if (picture) await deliver(picture, pictureName(recap.period, at));
 		} finally {
 			taking = false;
 		}
 	}
+
+	/* The deck's width where the window is too short for a whole card at the story's width: what
+	   is left under the card's top, less the controls, at 9:16. Measured when a deck opens and
+	   when the window changes, never between two cards. */
+	let fitted = $state<string | undefined>(undefined);
+
+	function fit(): void {
+		if (!list || !controls) return;
+		const card = list.getBoundingClientRect();
+		const room = window.innerHeight - card.top;
+		/* The controls and the gap over them, and as much again under them. */
+		const below = 2 * (controls.getBoundingClientRect().bottom - card.bottom);
+		fitted = `${Math.floor(((room - below) * 9) / 16)}px`;
+	}
+
+	$effect(() => {
+		if (recap && list && controls) untrack(fit);
+	});
 
 	let recap = $state<Recap | null>(null);
 	let missing = $state(false);
@@ -180,6 +208,7 @@
 </script>
 
 <svelte:head><title>{recap?.title ?? 'Recap'}</title></svelte:head>
+<svelte:window onresize={fit} />
 
 <PageFrame {crumbs}>
 	{#snippet header()}
@@ -209,6 +238,7 @@
 				aria-roledescription="carousel"
 				aria-label={recap.heading}
 				tabindex="0"
+				style:--deck-width={fitted}
 				{onkeydown}
 			>
 				<div class="progress" aria-hidden="true">
@@ -216,7 +246,7 @@
 						<span class="segment" class:read={index <= at}></span>
 					{/each}
 				</div>
-				<ol class="cards">
+				<ol class="cards" bind:this={list}>
 					{#each recap.cards as card, index (`${card.id}-${index}`)}
 						<li
 							role="group"
@@ -226,13 +256,13 @@
 						>
 							{#if index === at}
 								<div class="turned" in:arrive={{ x: turned * TURN, pace: 'slow' }}>
-									<RecapCard {card} heading={recap.title} place={place(index)} />
+									<RecapCard {card} heading={recap.title} place={place(index)} foot={recap.span} />
 								</div>
 							{/if}
 						</li>
 					{/each}
 				</ol>
-				<div class="controls">
+				<div class="controls" bind:this={controls}>
 					<Tooltip label={INSIGHTS_WORDS.earlier}>
 						<Button
 							icon="chevron_left"
@@ -246,7 +276,7 @@
 						<Button
 							icon="save"
 							tone="ghost"
-							disabled={!shareable(recap.cards[at]) || taking}
+							disabled={!savable(recap.cards[at]) || taking}
 							onclick={() => void take()}>Save as picture</Button
 						>
 					</Tooltip>
@@ -280,18 +310,22 @@
 		max-inline-size: var(--page-measure);
 	}
 
-	/* The story: its progress, the one card in view, and the controls under it, centred. */
+	/* The story: its progress, the one card in view, and the controls under it, all one width,
+	   so each card is that wide and 9:16 whatever it says. */
 	.story {
 		display: flex;
 		flex-direction: column;
-		align-items: center;
 		gap: var(--space-4);
+		inline-size: min(
+			100%,
+			var(--story-width),
+			max(var(--story-width) * 2 / 3, var(--deck-width, var(--story-width)))
+		);
 	}
 
 	.progress {
 		display: flex;
 		gap: var(--space-1);
-		inline-size: min(100%, var(--story-width));
 	}
 
 	/* A card's segment: faint until it has been read, then the accent's tint, over the fast pace. */
@@ -309,8 +343,7 @@
 
 	.cards {
 		display: grid;
-		justify-items: center;
-		inline-size: 100%;
+		grid-template-columns: minmax(0, 1fr);
 		margin: 0;
 		padding: 0;
 		list-style: none;
@@ -318,13 +351,12 @@
 
 	.turned {
 		display: grid;
-		justify-items: center;
-		inline-size: 100%;
 	}
 
 	.controls {
 		display: flex;
 		align-items: center;
+		justify-content: center;
 		gap: var(--space-2);
 	}
 

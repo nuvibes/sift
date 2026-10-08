@@ -34,6 +34,7 @@
 	import Watermarks from './Watermarks.svelte';
 	import Music from './Music.svelte';
 	import GetToKnow from './GetToKnow.svelte';
+	import Insights from './Insights.svelte';
 	import Maintenance from './Maintenance.svelte';
 	import Performance from './Performance.svelte';
 	import Playback from './Playback.svelte';
@@ -167,6 +168,8 @@
 			<Profile />
 		{:else if showing === 'get-to-know'}
 			<GetToKnow />
+		{:else if showing === 'insights'}
+			<Insights />
 		{:else if showing === 'appearance'}
 			<Appearance />
 		{:else if showing === 'general'}

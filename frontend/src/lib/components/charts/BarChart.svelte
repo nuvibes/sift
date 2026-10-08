@@ -9,16 +9,16 @@
 	 * to `--chart-bar-width`, past which it reads as a block rather than a mark.
 	 *
 	 * The bar that is still counting (today, this month) is hatched: its figure will grow, and the
-	 * hatch says so without a word. Pointing at a bar says its figures in the line above; the table
-	 * under the drawing says every bar in words, and the drawing is hidden from assistive technology
-	 * so the table is its one reading. Heights are shares of the tallest bar, whose figure is
-	 * written at the top of the scale.
+	 * hatch says so without a word. A bar's figures are its tooltip, under the pointer or the
+	 * keyboard (`Pointing`); every figure is also on the Stats view. Heights are shares of the
+	 * tallest bar, whose figure is the quiet mark at the top of the scale.
 	 */
 	import type { Snippet } from 'svelte';
 
-	import FiguresTable from '$lib/components/charts/FiguresTable.svelte';
+	import { Pointing } from '$lib/components/charts/pointing.svelte';
 	import type { ChartBar, Series } from '$lib/components/charts/series';
 	import { CHART_WORDS } from '$lib/components/charts/words';
+	import Tooltip from '$lib/components/common/Tooltip.svelte';
 
 	interface Props {
 		bars: readonly ChartBar[];
@@ -27,13 +27,15 @@
 		/** The bar still counting, drawn hatched. */
 		today?: number | null;
 		format: (value: number) => string;
-		/** What the chart is of, for the table's caption. */
+		/** What the chart is of: its name to assistive technology. */
 		label: string;
 		/** The one sentence under the chart. */
 		caption?: Snippet;
+		/** A bar whose tooltip stays up whatever the pointer does: the DESIGN GALLERY's open bubble. */
+		held?: number | null;
 	}
 
-	let { bars, series, today = null, format, label, caption }: Props = $props();
+	let { bars, series, today = null, format, label, caption, held = null }: Props = $props();
 
 	/* How many labels fit under the bars before they run into each other. A month's thirty-one
 	   days are labelled every other day, the hours every third; every bar is still drawn. */
@@ -57,15 +59,15 @@
 	const whenOf = (index: number) =>
 		index === today ? `${bars[index].label}, ${CHART_WORDS.soFar}` : bars[index].label;
 
-	/** The bar the pointer is over, whose figures the line above the drawing says. */
-	let pointed = $state<number | null>(null);
+	const pointing = new Pointing(() => bars.length);
 
-	const rows = $derived(
-		bars.map((bar, index) => ({
-			label: whenOf(index),
-			cells: series.map((one) => format(bar.parts.find((p) => p.series === one.id)?.value ?? 0))
-		}))
-	);
+	/** A bar said in words: when, then each part, for the plot's name while the bar is pointed. */
+	function saidOf(index: number): string {
+		const parts = partsOf(bars[index]).map(
+			(part) => `${paint.get(part.series)?.label ?? part.series} ${format(part.value)}`
+		);
+		return [whenOf(index), ...(parts.length > 0 ? parts : [format(0)])].join(', ');
+	}
 </script>
 
 <figure class="bar-chart">
@@ -77,49 +79,69 @@
 		</ul>
 	{/if}
 
-	<!-- What the pointer is over, or the top of the scale. Hidden from assistive technology: the
-	     table below says all of it. -->
-	<p class="readout" aria-hidden="true">
-		{#if pointed !== null && bars[pointed]}
-			<span class="when">{whenOf(pointed)}</span>
-			{#each partsOf(bars[pointed]) as part (part.series)}
-				<span class="part-words"
-					><span class="swatch" style:background-color={paint.get(part.series)?.paint}
-					></span>{paint.get(part.series)?.label ?? part.series}
-					{format(part.value)}</span
-				>
-			{/each}
-		{:else if top > 0}
-			<span class="when">{CHART_WORDS.top}</span>
-			{format(top)}
-		{/if}
+	<p class="scale" aria-hidden="true">
+		{#if top > 0}{CHART_WORDS.top} {format(top)}{/if}
 	</p>
 
-	<div class="plot" aria-hidden="true">
+	<!-- One tab stop for the whole chart; the arrows move along the bars (`Pointing`). -->
+	<!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
+	<div
+		class="plot"
+		role="group"
+		tabindex="0"
+		aria-label={pointing.at === null ? label : `${label}: ${saidOf(pointing.at)}`}
+		onkeydown={pointing.keydown}
+		onfocus={pointing.focus}
+		onblur={pointing.blur}
+	>
 		{#each bars as bar, index (index)}
+			{#snippet detail()}
+				<span class="tip">
+					{#each partsOf(bar) as part (part.series)}
+						<span class="part-words"
+							><span class="swatch" style:background-color={paint.get(part.series)?.paint}
+							></span>{paint.get(part.series)?.label ?? part.series}
+							<span class="figure">{format(part.value)}</span></span
+						>
+					{:else}
+						<span class="part-words">{format(0)}</span>
+					{/each}
+				</span>
+			{/snippet}
 			<div
 				class="column"
-				class:pointed={pointed === index}
+				class:pointed={pointing.at === index || held === index}
 				class:today={today === index}
-				role="presentation"
-				onpointerenter={() => (pointed = index)}
-				onpointerleave={() => (pointed = null)}
+				aria-hidden="true"
+				onpointerenter={() => pointing.point(index)}
+				onpointerleave={() => pointing.point(null)}
 			>
-				<div class="room">
-					{#if top > 0 && totals[index] > 0}
-						<div class="stack" style:block-size={`${(totals[index] / top) * 100}%`}>
-							{#each partsOf(bar) as part (part.series)}
-								<span
-									class="part"
-									data-series={part.series}
-									style:flex-grow={part.value}
-									style:background-color={paint.get(part.series)?.paint}
-								></span>
-							{/each}
+				<Tooltip
+					label={whenOf(index)}
+					{detail}
+					placement="top"
+					stretch
+					shrinks
+					held={pointing.held(index) || held === index}
+				>
+					<div class="mark">
+						<div class="room">
+							{#if top > 0 && totals[index] > 0}
+								<div class="stack" style:block-size={`${(totals[index] / top) * 100}%`}>
+									{#each partsOf(bar) as part (part.series)}
+										<span
+											class="part"
+											data-series={part.series}
+											style:flex-grow={part.value}
+											style:background-color={paint.get(part.series)?.paint}
+										></span>
+									{/each}
+								</div>
+							{/if}
 						</div>
-					{/if}
-				</div>
-				<span class="tick">{index % every === 0 ? bar.label : ''}</span>
+						<span class="tick">{index % every === 0 ? bar.label : ''}</span>
+					</div>
+				</Tooltip>
 			</div>
 		{/each}
 	</div>
@@ -127,13 +149,6 @@
 	{#if caption}
 		<figcaption>{@render caption()}</figcaption>
 	{/if}
-
-	<FiguresTable
-		summary={CHART_WORDS.table}
-		caption={label}
-		columns={series.map((one) => one.label)}
-		{rows}
-	/>
 </figure>
 
 <style>
@@ -170,18 +185,24 @@
 		border-radius: var(--radius-sm);
 	}
 
-	.readout {
-		display: flex;
-		flex-wrap: wrap;
-		gap: var(--space-1) var(--space-3);
+	/* The top of the scale: a quiet mark over the plot, one line tall whether or not it says anything. */
+	.scale {
 		min-block-size: 1lh;
 		margin: 0;
-		font: var(--text-label);
+		font: var(--text-micro);
+		color: var(--sift-ink-3);
+	}
+
+	/* A bar's tooltip: a part to a line, its figure in the bubble's full ink. */
+	.tip {
+		display: grid;
+		gap: var(--space-1);
 		color: var(--sift-ink-2);
 	}
 
-	.when {
+	.figure {
 		color: var(--sift-ink);
+		font-variant-numeric: tabular-nums;
 	}
 
 	/* The bars, side by side and equal in width, on one baseline. No gap between the columns, so
@@ -194,8 +215,15 @@
 		block-size: var(--chart-height);
 	}
 
+	/* A column holds its tooltip, which holds the bar and its tick: each box fills the one around it. */
 	.column {
 		display: flex;
+		min-inline-size: 0;
+	}
+
+	.mark {
+		display: flex;
+		flex: 1;
 		flex-direction: column;
 		min-inline-size: 0;
 	}

@@ -47,7 +47,7 @@ from __future__ import annotations
 
 import json
 import time
-from collections.abc import Iterable, Sequence
+from collections.abc import Awaitable, Callable, Iterable, Sequence
 from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import Final
@@ -67,6 +67,7 @@ from sift.slices.insights.metrics import (
     DAY_PLAYS,
     DAY_RAN_ON_FILES,
     METRICS,
+    METRICS_VERSION,
     MINUTES,
     rows_of,
 )
@@ -117,6 +118,9 @@ class RecapRow:
     made_at: int
     seen_at: int | None
     body: str
+    #: The statements' version it was made by (`metrics.METRICS_VERSION`); behind it is a recap
+    #: made before a correction.
+    metrics_version: int = METRICS_VERSION
 
 
 # --- days ------------------------------------------------------------------------------------
@@ -155,7 +159,8 @@ SELECT f.value AS asset_id
         OR NOT EXISTS (SELECT 1 FROM insight_days d
                         WHERE d.user_id = :user AND d.day = :day
                           AND d.metric IN ('sittings:file', 'rated:file', 'o:file',
-                                           'starred:file')
+                                           'starred:file', 'first_file', 'last_file',
+                                           'new_favourites:file', 'rediscovered:file')
                           AND substr(d.key, instr(d.key, ':') + 1) = f.value
                           AND d.hidden = 0))
 """
@@ -215,7 +220,7 @@ async def count_day(
     views, files = await views_of_the_day(fetch, user_id, day)
     for row in await fetch(DAY_OPINION_FILES, base):
         files.add(str(row["asset_id"]))
-    # The evening's run past midnight is this day's too (`metrics._LATEST_FINISH`).
+    # The evening's run past midnight is this day's too (`metrics_visits.LATEST_FINISH`).
     for row in await fetch(DAY_RAN_ON_FILES, base):
         files.add(str(row["asset_id"]))
     hidden = await hidden_files(fetch, user_id, day, files)
@@ -451,6 +456,37 @@ async def write_day(
     await connection.execute(_ADVANCE, (user_id, iso))
 
 
+#: A day added up again (`rollup`): its `dirty_from` moves past it only if no mark landed while it
+#: was counted (`dirty_mark` unchanged), and goes once it is past the last day added up.
+_PAST_DIRTY = (
+    "UPDATE insight_progress"
+    " SET dirty_from = CASE WHEN :next <= added_up_to THEN :next END"
+    " WHERE user_id = :user AND dirty_mark = :mark"
+)
+
+
+async def write_day_again(
+    connection: Connection,
+    user_id: str,
+    day: date,
+    counted: Sequence[DayRow],
+    stamp: int,
+    mark: int,
+) -> None:
+    """File a day added up again over its old rows, without moving the User's progress, and move
+    the day to add up again past it. See `_PAST_DIRTY`."""
+    iso = day.isoformat()
+    await connection.execute(_FORGET_DAY, (user_id, iso))
+    await connection.executemany(
+        _WRITE_ROW,
+        [(user_id, iso, row.metric, row.key, row.whole, row.hidden, stamp) for row in counted],
+    )
+    await connection.execute(
+        _PAST_DIRTY,
+        {"next": (day + timedelta(days=1)).isoformat(), "user": user_id, "mark": mark},
+    )
+
+
 async def start_progress(connection: Connection, user_id: str, day: date) -> None:
     """Say where a User's adding-up starts: the day before the first thing there is to count."""
     await connection.execute(_ADVANCE, (user_id, day.isoformat()))
@@ -472,10 +508,11 @@ async def write_split(
 #
 # The table is this slice's; what goes in a recap is the recap maker's. A recap FREEZES what
 # happened: once written for a period it is never rewritten, so writing one twice keeps the first.
+# The one exception is a recap made by statements later corrected (`remake_recap`).
 
 _WRITE_RECAP = (
-    "INSERT INTO recaps (id, user_id, period, made_at, seen_at, body)"
-    " VALUES (?, ?, ?, ?, NULL, ?)"
+    "INSERT INTO recaps (id, user_id, period, made_at, seen_at, body, metrics_version)"
+    " VALUES (?, ?, ?, ?, NULL, ?, ?)"
     " ON CONFLICT(user_id, period) DO NOTHING"
 )
 _RECAP_OF_PERIOD = "SELECT * FROM recaps WHERE user_id = ? AND period = ?"
@@ -492,6 +529,7 @@ def _recap(row: Row) -> RecapRow:
         made_at=int(row["made_at"]),
         seen_at=None if row["seen_at"] is None else int(row["seen_at"]),
         body=str(row["body"]),
+        metrics_version=int(row["metrics_version"]),
     )
 
 
@@ -507,10 +545,62 @@ async def write_recap(
     async with telling(database, Audience.of_user(user_id), About.MINE) as connection:
         await connection.execute(
             _WRITE_RECAP,
-            (new_id(), user_id, period, int(time.time()) if made_at is None else made_at, body),
+            (
+                new_id(),
+                user_id,
+                period,
+                int(time.time()) if made_at is None else made_at,
+                body,
+                METRICS_VERSION,
+            ),
         )
         (row,) = await connection.execute_fetchall(_RECAP_OF_PERIOD, (user_id, period))
     return _recap(row)
+
+
+_RECAPS_BEHIND = (
+    "SELECT * FROM recaps WHERE user_id = ? AND metrics_version < ? ORDER BY made_at, id"
+)
+_REMAKE_RECAP = (
+    "UPDATE recaps SET body = ?, made_at = ?, metrics_version = ?"
+    " WHERE user_id = ? AND id = ? AND metrics_version < ?"
+)
+
+
+async def recaps_behind(database: Database, user_id: str) -> list[RecapRow]:
+    """This User's recaps made by statements a later version corrected, oldest first."""
+    return [
+        _recap(row) for row in await database.fetch_all(_RECAPS_BEHIND, (user_id, METRICS_VERSION))
+    ]
+
+
+async def remake_recap(
+    database: Database,
+    user_id: str,
+    recap_id: str,
+    body: str,
+    *,
+    made_at: int | None = None,
+    then: Callable[[Connection], Awaitable[object]] | None = None,
+) -> bool:
+    """Replace a recap made before a correction with one made now. The one write that changes a
+    recap's cards: only a recap behind `METRICS_VERSION`, and only once. True when it was. `then`
+    runs on the same write when it was, so the History line lands with the change it records."""
+    async with telling(database, Audience.of_user(user_id), About.MINE) as connection:
+        cursor = await connection.execute(
+            _REMAKE_RECAP,
+            (
+                body,
+                int(time.time()) if made_at is None else made_at,
+                METRICS_VERSION,
+                user_id,
+                recap_id,
+                METRICS_VERSION,
+            ),
+        )
+        if cursor.rowcount > 0 and then is not None:
+            await then(connection)
+        return cursor.rowcount > 0
 
 
 async def recaps_of(database: Database, user_id: str) -> list[RecapRow]:

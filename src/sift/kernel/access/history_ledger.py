@@ -211,6 +211,8 @@ _EVENT_KINDS: Mapping[str, str] = {
     "update_started": "update_started",
     "library_opened": "library_opened",
     "restarted": "restarted",
+    # Sift's own task over the User's figures, drawn as the finished task it is.
+    "recounted": "ran",
 }
 
 #: WHAT A LINK MADE TO ONE KIND OF THING IS, in the kinds a history already had. A link to a person

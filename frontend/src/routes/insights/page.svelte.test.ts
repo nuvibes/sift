@@ -13,6 +13,7 @@ import { flushSync, mount, tick, unmount } from 'svelte';
 import { goto } from '$app/navigation';
 
 import { words } from '$lib/design/testing.svelte';
+import { calendarDay } from '$lib/shell/when';
 import type { InsightsBlock, InsightsPage, Place } from '$lib/components/insights/period';
 import Insights from './+page.svelte';
 
@@ -231,5 +232,32 @@ describe('the Insights screen', () => {
 		expect(later?.disabled).toBe(true);
 		earlier?.click();
 		expect(goto).toHaveBeenCalledWith('/insights?period=month&at=2026-08-31');
+	});
+
+	it('moves the address a period on from a period that has ended', async () => {
+		mocks.insights.mockResolvedValue(page({ today_is_live: false }));
+		const screen = await open({ period: 'month', at: '2026-09-14' });
+		screen.querySelector<HTMLButtonElement>('button[aria-label="Later"]')?.click();
+		expect(goto).toHaveBeenCalledWith('/insights?period=month&at=2026-10-01');
+	});
+
+	it('says the days of All with no arrows, since All is the whole record', async () => {
+		mocks.insights.mockResolvedValue(page({ period: 'all', from: '2026-01-01', to: '2026-09-30' }));
+		const screen = await open({ period: 'all', at: null });
+		expect(screen.querySelector('button[aria-label="Earlier"]')).toBeNull();
+		expect(words(screen.querySelector('.periods .days'))).toBe(
+			`${calendarDay('2026-01-01')} \u2014 ${calendarDay('2026-09-30')}`
+		);
+	});
+
+	it('opens Stats at the same period from the end of the row, after the arrows', async () => {
+		mocks.insights.mockResolvedValue(page());
+		const screen = await open({ period: 'month', at: '2026-09-14' });
+		const row = screen.querySelector('.periods') as HTMLElement;
+		const stats = [...row.querySelectorAll('button')].find((one) => words(one) === 'Stats');
+		expect(stats, 'no Stats press').toBeDefined();
+		expect(row.lastElementChild?.contains(stats as Node), 'Stats is not last').toBe(true);
+		stats?.click();
+		expect(goto).toHaveBeenCalledWith('/insights/stats?period=month&at=2026-09-14');
 	});
 });

@@ -34,6 +34,30 @@ export const INSIGHTS_WORDS = {
 	byKind: 'Time viewed, by kind'
 } as const;
 
+/**
+ * The Stats view's words: the screen's name (and the press on Insights that opens it), its line,
+ * and the headings of its tables. The figures and the names in them are the server's.
+ */
+export const STATS_WORDS = {
+	title: 'Stats',
+	headLine: 'Every figure for this period, as tables. Copy a table to paste it anywhere.',
+	/** The caption over a block's figures, and the heading of each column. */
+	figures: 'Figures',
+	what: 'What',
+	figure: 'Figure',
+	trend: 'Trend',
+	defines: 'What counts',
+	/** The captions over a chart's table and a calendar's. */
+	bars: 'Each bar',
+	days: 'Each day',
+	/** The heading over a list's names. */
+	name: 'Name',
+	copy: 'Copy',
+	copyLabel: 'Copy this table',
+	copied: 'Copied',
+	copyFailed: "That table couldn't be copied"
+} as const;
+
 /** What each period tab says. */
 export const PERIOD_WORDS: Record<Span, string> = {
 	all: 'All',

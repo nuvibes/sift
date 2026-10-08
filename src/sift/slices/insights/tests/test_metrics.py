@@ -32,7 +32,9 @@ CONTRACT = {
     "first_opened:person", "first_opened:kind", "earliest_start", "latest_finish", "rated",
     "rated:file", "starred", "starred:file", "o", "o:file", "decided", "decided:queue", "faces_named", "files_filed",
     "files_added", "files_added:site", "files_removed", "work_ms:family", "faces_found",
-    "fingerprints_made",
+    "fingerprints_made", "theater_files", "first_file", "last_file", "new_favourites:file",
+    "rediscovered:file", "session_ms:session", "session_pages:session", "downloads",
+    "download_bytes",
 }  # fmt: skip
 
 
@@ -51,7 +53,7 @@ def _opening(sql: str, name: str) -> str | None:
     return found.group(1) if found else None
 
 
-@pytest.mark.parametrize("name", ["v", "s", "k"])
+@pytest.mark.parametrize("name", ["v", "c", "i", "w", "s", "k"])
 def test_every_copy_of_a_shared_opening_says_the_same(name: str) -> None:
     copies = {
         metric: body
@@ -63,10 +65,29 @@ def test_every_copy_of_a_shared_opening_says_the_same(name: str) -> None:
     assert {metric for metric, body in copies.items() if body != first} == set()
 
 
+#: The registry and every family module of statements it reads from.
+SOURCES = sorted(Path(metrics.__file__).parent.glob("metrics*.py"))
+
+
+def test_the_registry_reads_every_family_module() -> None:
+    assert [one.name for one in SOURCES] == [
+        "metrics.py",
+        "metrics_record.py",
+        "metrics_sessions.py",
+        "metrics_things.py",
+        "metrics_viewing.py",
+        "metrics_visits.py",
+    ]
+    registry = SOURCES[0].read_text(encoding="utf-8")
+    for one in SOURCES[1:]:
+        assert f"{one.stem} as " in registry, one.name
+
+
 def test_no_statement_is_built_from_pieces() -> None:
-    # Literals only: nothing in the module formats or joins SQL (the rule's reason is injection).
-    source = Path(metrics.__file__).read_text(encoding="utf-8")
-    assert ".format(" not in source and 'f"""' not in source and ".join(" not in source
+    # Literals only: nothing formats or joins SQL (the rule's reason is injection).
+    for one in SOURCES:
+        source = one.read_text(encoding="utf-8")
+        assert ".format(" not in source and 'f"""' not in source and ".join(" not in source, one
 
 
 async def test_every_statement_runs_against_the_real_tables(world: World) -> None:
@@ -86,12 +107,27 @@ def test_no_statement_names_a_permission_carrying_table() -> None:
     """The tables the access layer scopes (files, their copies, folders, roots) are read only
     through it: a sitting carries its file's kind and length, and what arrived is the access
     layer's question. A statement here that named one would count what this User may not see."""
-    source = Path(metrics.__file__).read_text(encoding="utf-8")
-    assert not re.search(
-        r"\b(FROM|JOIN|INTO|UPDATE)\s+(assets|asset_locations|folders|library_roots)\b", source
+    for one in SOURCES:
+        assert not re.search(
+            r"\b(FROM|JOIN|INTO|UPDATE)\s+(assets|asset_locations|folders|library_roots)\b",
+            one.read_text(encoding="utf-8"),
+        ), one
+    for reader in ("files_added", "files_added:site", "downloads", "download_bytes"):
+        assert not isinstance(STATEMENTS[reader], str), reader
+
+
+def test_the_limits_in_the_statements_are_the_modules_own() -> None:
+    """A statement is a literal, so the cap, the loops and the thresholds are written out in it;
+    every place they appear carries the module's figure."""
+    sql = "".join(text for text in STATEMENTS.values() if isinstance(text, str))
+    cap = f"MAX({metrics.SITTING_CAP_MS}, {metrics.VIDEO_LOOPS} * COALESCE("
+    assert sql.count(cap) == sql.count("COALESCE(p.length_ms, 0)") + sql.count(
+        "COALESCE(q.length_ms, 0)"
     )
-    assert not isinstance(STATEMENTS["files_added"], str)
-    assert not isinstance(STATEMENTS["files_added:site"], str)
+    assert sql.count(f"ELSE {metrics.SITTING_CAP_MS} END") == sql.count(cap) > 0
+    assert f"COUNT(*) >= {metrics.NEW_FAVOURITE_VIEWS}" in str(STATEMENTS["new_favourites:file"])
+    assert f"/ 86400 >= {metrics.REDISCOVERED_AFTER_DAYS}" in str(STATEMENTS["rediscovered:file"])
+    assert metrics.PICKUP_GAP_SECONDS == 1800 and "started_at - 1800" in sql
 
 
 def test_the_face_naming_acts_are_the_faces_boards_own_words() -> None:

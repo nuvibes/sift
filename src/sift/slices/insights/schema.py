@@ -66,13 +66,13 @@ from sift.kernel.db import Connection, register_schema_initializer
 from sift.kernel.ids import is_id, timestamp_ms
 from sift.kernel.ledger import Actor, record_event
 from sift.kernel.log import get_logger
-from sift.kernel.migrations import table_exists
+from sift.kernel.migrations import column_exists, table_exists
 from sift.kernel.vocabulary import DEPARTURES_KEPT, VIA_UPDATE, Subject
 
 log = get_logger(__name__)
 
 COMPONENT = "insights"
-VERSION = 6
+VERSION = 7
 
 _CREATE_DAYS = """
 CREATE TABLE IF NOT EXISTS insight_days (
@@ -90,7 +90,9 @@ CREATE TABLE IF NOT EXISTS insight_days (
 _CREATE_PROGRESS = """
 CREATE TABLE IF NOT EXISTS insight_progress (
   user_id     TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
-  added_up_to TEXT NOT NULL
+  added_up_to TEXT NOT NULL,
+  dirty_from  TEXT,
+  dirty_mark  INTEGER NOT NULL DEFAULT 0
 )
 """
 
@@ -102,6 +104,7 @@ CREATE TABLE IF NOT EXISTS recaps (
   made_at  INTEGER NOT NULL,
   seen_at  INTEGER,
   body     TEXT NOT NULL,
+  metrics_version INTEGER NOT NULL DEFAULT 0,
   UNIQUE (user_id, period)
 )
 """
@@ -111,7 +114,7 @@ CREATE TABLE IF NOT EXISTS recaps (
 _STALE_INDEX = "CREATE INDEX IF NOT EXISTS ix_insight_days_split ON insight_days(user_id, split_at)"
 
 
-#: Version 3 keys `sittings:file` as `<kind>:<asset id>` (`metrics._SITTINGS_FILE`), so every day
+#: Version 3 keys `sittings:file` as `<kind>:<asset id>` (`metrics_things.SITTINGS_FILE`), so every day
 #: is added up again: the helper starts over from each User's first day (see "Not a second store").
 #: Version 4 does the same once more for the audited statements: a sitting's time shared between
 #: the clock hours it ran through (`viewed_ms:hour`), and the files rated each day (`rated:file`).
@@ -119,6 +122,7 @@ _STALE_INDEX = "CREATE INDEX IF NOT EXISTS ix_insight_days_split ON insight_days
 #: (`viewed_ms:song`), over the songs the files carry when the day is added up again.
 #: Version 6 once more, for the arrivals and removals of a past day, which are counted from records
 #: that outlive the file (`file_departures`) from then on.
+#: Version 7 once more, for the corrected statements (`metrics.METRICS_VERSION`).
 _FORGET_PROGRESS = "DELETE FROM insight_progress"
 
 # --- version 6: what nothing else keeps ---------------------------------------------------------
@@ -204,6 +208,12 @@ _CAPTURE_INDEXES = (
 #: reached by a cascade runs its triggers under the cascade's ABORT and an OR IGNORE would be
 #: overridden. The viewers are read one User at a time by the verdict's own key, so a file going
 #: costs a probe per User and never a walk of the verdict.
+#:
+#: The verdict's own trigger on the same delete takes the file's verdict rows away, and SQLite runs
+#: the triggers of one event newest first, so this one reads them only while it is the newer. Every
+#: User has a verdict row for a file while it is there (an admin's says it is shown), so finding
+#: none means they went first: `viewers_known` is then 0, and the file counts as an admin's
+#: removal rather than as nobody's. The version 7 step makes this trigger the newer again.
 _FILE_DEPARTS = """
 CREATE TRIGGER IF NOT EXISTS insights_file_departs BEFORE DELETE ON assets
 BEGIN
@@ -214,7 +224,8 @@ BEGIN
          (SELECT json_group_array(DISTINCT u.site_id)
             FROM asset_usernames au JOIN usernames u ON u.id = au.username_id
            WHERE au.asset_id = OLD.id AND u.site_id IS NOT NULL),
-         1
+         EXISTS (SELECT 1 FROM users x JOIN viewer_assets va
+                                         ON va.user_id = x.id AND va.asset_id = OLD.id)
    WHERE NOT EXISTS (SELECT 1 FROM file_departures f WHERE f.asset_id = OLD.id);
   INSERT INTO file_departure_viewers (user_id, asset_id, concealed)
   SELECT va.user_id, OLD.id, va.concealed
@@ -284,6 +295,315 @@ async def keep_what_is_still_known(connection: Connection) -> int:
     return len(rows)
 
 
+# --- version 7: a day added up again when what it counted changes -------------------------------
+#
+# A day is added up once, but some of what it counted is written later: a sitting reported after
+# the cut, a wall closed, a run finished, a file filed under a Username, a person, a Tag, a
+# Collection, a Photo Set or a song. Each such write moves the User's `dirty_from` back to the first
+# day it reaches, and the helper adds those days up again before it moves on (`rollup`).
+# `dirty_mark` counts the marks, so a mark landing while a day is being re-added is not lost.
+
+_DROP_FILE_DEPARTS = "DROP TRIGGER IF EXISTS insights_file_departs"
+
+#: Departures kept while the verdict's trigger ran first: nobody was recorded, so nobody is known.
+_UNKNOWN_VIEWERS = """
+UPDATE file_departures SET viewers_known = 0
+ WHERE viewers_known = 1
+   AND NOT EXISTS (SELECT 1 FROM file_departure_viewers v
+                    WHERE v.asset_id = file_departures.asset_id)
+"""
+
+_ADD_V7 = (
+    ("insight_progress", "dirty_from", "ALTER TABLE insight_progress ADD COLUMN dirty_from TEXT"),
+    (
+        "insight_progress",
+        "dirty_mark",
+        "ALTER TABLE insight_progress ADD COLUMN dirty_mark INTEGER NOT NULL DEFAULT 0",
+    ),
+    (
+        "recaps",
+        "metrics_version",
+        "ALTER TABLE recaps ADD COLUMN metrics_version INTEGER NOT NULL DEFAULT 0",
+    ),
+)
+
+#: The recaps made before this step were made by the statements it replaces.
+_RECAPS_MADE_BEFORE = "UPDATE recaps SET metrics_version = 6 WHERE metrics_version = 0"
+
+#: A User's own sitting or wall, on the day it began.
+_REDO_PLAYS_IN = """
+CREATE TRIGGER IF NOT EXISTS insights_redo_plays_in AFTER INSERT ON plays
+BEGIN
+  UPDATE insight_progress
+     SET dirty_from = MIN(COALESCE(dirty_from, added_up_to),
+                          date(NEW.started_at, 'unixepoch', 'localtime')),
+         dirty_mark = dirty_mark + 1
+   WHERE user_id = NEW.user_id
+     AND added_up_to >= date(NEW.started_at, 'unixepoch', 'localtime');
+END
+"""
+
+_REDO_PLAYS_MOVED = """
+CREATE TRIGGER IF NOT EXISTS insights_redo_plays_moved AFTER UPDATE ON plays
+BEGIN
+  UPDATE insight_progress
+     SET dirty_from = MIN(COALESCE(dirty_from, added_up_to),
+                          date(NEW.started_at, 'unixepoch', 'localtime')),
+         dirty_mark = dirty_mark + 1
+   WHERE user_id = NEW.user_id
+     AND added_up_to >= date(NEW.started_at, 'unixepoch', 'localtime');
+END
+"""
+
+_REDO_WALLS_IN = """
+CREATE TRIGGER IF NOT EXISTS insights_redo_walls_in AFTER INSERT ON theater_sessions
+BEGIN
+  UPDATE insight_progress
+     SET dirty_from = MIN(COALESCE(dirty_from, added_up_to),
+                          date(NEW.started_at, 'unixepoch', 'localtime')),
+         dirty_mark = dirty_mark + 1
+   WHERE user_id = NEW.user_id
+     AND added_up_to >= date(NEW.started_at, 'unixepoch', 'localtime');
+END
+"""
+
+_REDO_WALLS_MOVED = """
+CREATE TRIGGER IF NOT EXISTS insights_redo_walls_moved AFTER UPDATE ON theater_sessions
+BEGIN
+  UPDATE insight_progress
+     SET dirty_from = MIN(COALESCE(dirty_from, added_up_to),
+                          date(NEW.started_at, 'unixepoch', 'localtime')),
+         dirty_mark = dirty_mark + 1
+   WHERE user_id = NEW.user_id
+     AND added_up_to >= date(NEW.started_at, 'unixepoch', 'localtime');
+END
+"""
+
+#: A task's run finishing: every User's day it began on (the machine block).
+_REDO_RUNS = """
+CREATE TRIGGER IF NOT EXISTS insights_redo_runs AFTER UPDATE OF finished_at ON work_runs
+BEGIN
+  UPDATE insight_progress
+     SET dirty_from = MIN(COALESCE(dirty_from, added_up_to),
+                          date(NEW.started_at, 'unixepoch', 'localtime')),
+         dirty_mark = dirty_mark + 1
+   WHERE added_up_to >= date(NEW.started_at, 'unixepoch', 'localtime');
+END
+"""
+
+#: What a file carries changing: each User's first day with a sitting of it, by the file's own
+#: index on `plays`, a probe per User.
+_REDO_ASSET_PEOPLE_IN = """
+CREATE TRIGGER IF NOT EXISTS insights_redo_asset_people_in AFTER INSERT ON asset_people
+BEGIN
+  UPDATE insight_progress
+     SET dirty_from = MIN(COALESCE(dirty_from, added_up_to), (
+           SELECT date(MIN(p.started_at), 'unixepoch', 'localtime') FROM plays p
+            WHERE p.asset_id = NEW.asset_id AND p.user_id = insight_progress.user_id)),
+         dirty_mark = dirty_mark + 1
+   WHERE added_up_to >= (
+           SELECT date(MIN(p.started_at), 'unixepoch', 'localtime') FROM plays p
+            WHERE p.asset_id = NEW.asset_id AND p.user_id = insight_progress.user_id);
+END
+"""
+
+_REDO_ASSET_PEOPLE_OUT = """
+CREATE TRIGGER IF NOT EXISTS insights_redo_asset_people_out AFTER DELETE ON asset_people
+BEGIN
+  UPDATE insight_progress
+     SET dirty_from = MIN(COALESCE(dirty_from, added_up_to), (
+           SELECT date(MIN(p.started_at), 'unixepoch', 'localtime') FROM plays p
+            WHERE p.asset_id = OLD.asset_id AND p.user_id = insight_progress.user_id)),
+         dirty_mark = dirty_mark + 1
+   WHERE added_up_to >= (
+           SELECT date(MIN(p.started_at), 'unixepoch', 'localtime') FROM plays p
+            WHERE p.asset_id = OLD.asset_id AND p.user_id = insight_progress.user_id);
+END
+"""
+
+_REDO_ASSET_TAGS_IN = """
+CREATE TRIGGER IF NOT EXISTS insights_redo_asset_tags_in AFTER INSERT ON asset_tags
+BEGIN
+  UPDATE insight_progress
+     SET dirty_from = MIN(COALESCE(dirty_from, added_up_to), (
+           SELECT date(MIN(p.started_at), 'unixepoch', 'localtime') FROM plays p
+            WHERE p.asset_id = NEW.asset_id AND p.user_id = insight_progress.user_id)),
+         dirty_mark = dirty_mark + 1
+   WHERE added_up_to >= (
+           SELECT date(MIN(p.started_at), 'unixepoch', 'localtime') FROM plays p
+            WHERE p.asset_id = NEW.asset_id AND p.user_id = insight_progress.user_id);
+END
+"""
+
+_REDO_ASSET_TAGS_OUT = """
+CREATE TRIGGER IF NOT EXISTS insights_redo_asset_tags_out AFTER DELETE ON asset_tags
+BEGIN
+  UPDATE insight_progress
+     SET dirty_from = MIN(COALESCE(dirty_from, added_up_to), (
+           SELECT date(MIN(p.started_at), 'unixepoch', 'localtime') FROM plays p
+            WHERE p.asset_id = OLD.asset_id AND p.user_id = insight_progress.user_id)),
+         dirty_mark = dirty_mark + 1
+   WHERE added_up_to >= (
+           SELECT date(MIN(p.started_at), 'unixepoch', 'localtime') FROM plays p
+            WHERE p.asset_id = OLD.asset_id AND p.user_id = insight_progress.user_id);
+END
+"""
+
+_REDO_COLLECTION_ITEMS_IN = """
+CREATE TRIGGER IF NOT EXISTS insights_redo_collection_items_in AFTER INSERT ON collection_items
+BEGIN
+  UPDATE insight_progress
+     SET dirty_from = MIN(COALESCE(dirty_from, added_up_to), (
+           SELECT date(MIN(p.started_at), 'unixepoch', 'localtime') FROM plays p
+            WHERE p.asset_id = NEW.asset_id AND p.user_id = insight_progress.user_id)),
+         dirty_mark = dirty_mark + 1
+   WHERE added_up_to >= (
+           SELECT date(MIN(p.started_at), 'unixepoch', 'localtime') FROM plays p
+            WHERE p.asset_id = NEW.asset_id AND p.user_id = insight_progress.user_id);
+END
+"""
+
+_REDO_COLLECTION_ITEMS_OUT = """
+CREATE TRIGGER IF NOT EXISTS insights_redo_collection_items_out AFTER DELETE ON collection_items
+BEGIN
+  UPDATE insight_progress
+     SET dirty_from = MIN(COALESCE(dirty_from, added_up_to), (
+           SELECT date(MIN(p.started_at), 'unixepoch', 'localtime') FROM plays p
+            WHERE p.asset_id = OLD.asset_id AND p.user_id = insight_progress.user_id)),
+         dirty_mark = dirty_mark + 1
+   WHERE added_up_to >= (
+           SELECT date(MIN(p.started_at), 'unixepoch', 'localtime') FROM plays p
+            WHERE p.asset_id = OLD.asset_id AND p.user_id = insight_progress.user_id);
+END
+"""
+
+_REDO_PHOTO_SET_ITEMS_IN = """
+CREATE TRIGGER IF NOT EXISTS insights_redo_photo_set_items_in AFTER INSERT ON photo_set_items
+BEGIN
+  UPDATE insight_progress
+     SET dirty_from = MIN(COALESCE(dirty_from, added_up_to), (
+           SELECT date(MIN(p.started_at), 'unixepoch', 'localtime') FROM plays p
+            WHERE p.asset_id = NEW.asset_id AND p.user_id = insight_progress.user_id)),
+         dirty_mark = dirty_mark + 1
+   WHERE added_up_to >= (
+           SELECT date(MIN(p.started_at), 'unixepoch', 'localtime') FROM plays p
+            WHERE p.asset_id = NEW.asset_id AND p.user_id = insight_progress.user_id);
+END
+"""
+
+_REDO_PHOTO_SET_ITEMS_OUT = """
+CREATE TRIGGER IF NOT EXISTS insights_redo_photo_set_items_out AFTER DELETE ON photo_set_items
+BEGIN
+  UPDATE insight_progress
+     SET dirty_from = MIN(COALESCE(dirty_from, added_up_to), (
+           SELECT date(MIN(p.started_at), 'unixepoch', 'localtime') FROM plays p
+            WHERE p.asset_id = OLD.asset_id AND p.user_id = insight_progress.user_id)),
+         dirty_mark = dirty_mark + 1
+   WHERE added_up_to >= (
+           SELECT date(MIN(p.started_at), 'unixepoch', 'localtime') FROM plays p
+            WHERE p.asset_id = OLD.asset_id AND p.user_id = insight_progress.user_id);
+END
+"""
+
+_REDO_SONG_FILES_IN = """
+CREATE TRIGGER IF NOT EXISTS insights_redo_song_files_in AFTER INSERT ON song_files
+BEGIN
+  UPDATE insight_progress
+     SET dirty_from = MIN(COALESCE(dirty_from, added_up_to), (
+           SELECT date(MIN(p.started_at), 'unixepoch', 'localtime') FROM plays p
+            WHERE p.asset_id = NEW.asset_id AND p.user_id = insight_progress.user_id)),
+         dirty_mark = dirty_mark + 1
+   WHERE added_up_to >= (
+           SELECT date(MIN(p.started_at), 'unixepoch', 'localtime') FROM plays p
+            WHERE p.asset_id = NEW.asset_id AND p.user_id = insight_progress.user_id);
+END
+"""
+
+_REDO_SONG_FILES_OUT = """
+CREATE TRIGGER IF NOT EXISTS insights_redo_song_files_out AFTER DELETE ON song_files
+BEGIN
+  UPDATE insight_progress
+     SET dirty_from = MIN(COALESCE(dirty_from, added_up_to), (
+           SELECT date(MIN(p.started_at), 'unixepoch', 'localtime') FROM plays p
+            WHERE p.asset_id = OLD.asset_id AND p.user_id = insight_progress.user_id)),
+         dirty_mark = dirty_mark + 1
+   WHERE added_up_to >= (
+           SELECT date(MIN(p.started_at), 'unixepoch', 'localtime') FROM plays p
+            WHERE p.asset_id = OLD.asset_id AND p.user_id = insight_progress.user_id);
+END
+"""
+
+#: A file filed under a Username or taken off one: for every User, also the day it arrived, for
+#: the arrivals by Site. A one-time question about one file's arrival, asked by the schema.
+_REDO_FILED_IN = (
+    "CREATE TRIGGER IF NOT EXISTS insights_redo_asset_usernames_in AFTER INSERT ON asset_usernames"
+    " BEGIN"
+    " UPDATE insight_progress"
+    " SET dirty_from = MIN(COALESCE(dirty_from, added_up_to), ("
+    " SELECT MIN(d) FROM ("
+    " SELECT date(MIN(p.started_at), 'unixepoch', 'localtime') AS d FROM plays p"
+    " WHERE p.asset_id = NEW.asset_id"
+    " UNION ALL"
+    " SELECT date(a.added_at, 'unixepoch', 'localtime') FROM assets a"  # nosemgrep: sift-no-asset-sql-outside-kernel
+    " WHERE a.id = NEW.asset_id"
+    "))),"
+    " dirty_mark = dirty_mark + 1"
+    " WHERE added_up_to >= ("
+    " SELECT MIN(d) FROM ("
+    " SELECT date(MIN(p.started_at), 'unixepoch', 'localtime') AS d FROM plays p"
+    " WHERE p.asset_id = NEW.asset_id"
+    " UNION ALL"
+    " SELECT date(a.added_at, 'unixepoch', 'localtime') FROM assets a"  # nosemgrep: sift-no-asset-sql-outside-kernel
+    " WHERE a.id = NEW.asset_id"
+    "));"
+    " END"
+)
+
+_REDO_FILED_OUT = (
+    "CREATE TRIGGER IF NOT EXISTS insights_redo_asset_usernames_out AFTER DELETE ON asset_usernames"
+    " BEGIN"
+    " UPDATE insight_progress"
+    " SET dirty_from = MIN(COALESCE(dirty_from, added_up_to), ("
+    " SELECT MIN(d) FROM ("
+    " SELECT date(MIN(p.started_at), 'unixepoch', 'localtime') AS d FROM plays p"
+    " WHERE p.asset_id = OLD.asset_id"
+    " UNION ALL"
+    " SELECT date(a.added_at, 'unixepoch', 'localtime') FROM assets a"  # nosemgrep: sift-no-asset-sql-outside-kernel
+    " WHERE a.id = OLD.asset_id"
+    "))),"
+    " dirty_mark = dirty_mark + 1"
+    " WHERE added_up_to >= ("
+    " SELECT MIN(d) FROM ("
+    " SELECT date(MIN(p.started_at), 'unixepoch', 'localtime') AS d FROM plays p"
+    " WHERE p.asset_id = OLD.asset_id"
+    " UNION ALL"
+    " SELECT date(a.added_at, 'unixepoch', 'localtime') FROM assets a"  # nosemgrep: sift-no-asset-sql-outside-kernel
+    " WHERE a.id = OLD.asset_id"
+    "));"
+    " END"
+)
+
+_REDO = (
+    _REDO_PLAYS_IN,
+    _REDO_PLAYS_MOVED,
+    _REDO_WALLS_IN,
+    _REDO_WALLS_MOVED,
+    _REDO_RUNS,
+    _REDO_ASSET_PEOPLE_IN,
+    _REDO_ASSET_PEOPLE_OUT,
+    _REDO_ASSET_TAGS_IN,
+    _REDO_ASSET_TAGS_OUT,
+    _REDO_COLLECTION_ITEMS_IN,
+    _REDO_COLLECTION_ITEMS_OUT,
+    _REDO_PHOTO_SET_ITEMS_IN,
+    _REDO_PHOTO_SET_ITEMS_OUT,
+    _REDO_SONG_FILES_IN,
+    _REDO_SONG_FILES_OUT,
+    _REDO_FILED_IN,
+    _REDO_FILED_OUT,
+)
+
+
 async def initialize(connection: Connection, on_disk: int) -> None:
     if on_disk < 1:
         await connection.execute(_CREATE_DAYS)
@@ -297,7 +617,6 @@ async def initialize(connection: Connection, on_disk: int) -> None:
             _CREATE_FILE_DEPARTURES,
             _CREATE_FILE_DEPARTURE_VIEWERS,
             *_CAPTURE_INDEXES,
-            _FILE_DEPARTS,
         ):
             await connection.execute(statement)
         started = time.monotonic()
@@ -309,6 +628,18 @@ async def initialize(connection: Connection, on_disk: int) -> None:
             seconds=round(time.monotonic() - started, 3),
         )
         await connection.execute(_FORGET_PROGRESS)
+    if on_disk < 7:
+        for table, column, statement in _ADD_V7:
+            if not await column_exists(connection, table, column):
+                await connection.execute(statement)
+        await connection.execute(_RECAPS_MADE_BEFORE)
+        # Made again, so it is the newest trigger on the delete and reads the verdict first.
+        await connection.execute(_DROP_FILE_DEPARTS)
+        await connection.execute(_FILE_DEPARTS)
+        await connection.execute(_UNKNOWN_VIEWERS)
+        for statement in _REDO:
+            await connection.execute(statement)
+        await connection.execute(_FORGET_PROGRESS)
 
 
 # `users` comes from the identity component, so it is built before these keys name it. The trigger
@@ -319,6 +650,6 @@ register_schema_initializer(
     COMPONENT,
     VERSION,
     initialize,
-    depends_on=["identity", "content", "catalog", "visibility"],
+    depends_on=["identity", "content", "catalog", "visibility", "player", "theater", "ledger"],
     baseline=2,
 )

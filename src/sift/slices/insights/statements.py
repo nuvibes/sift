@@ -51,40 +51,55 @@ from urllib.parse import quote
 
 from sift.kernel.access.sentences import Line, Piece, and_then, many, plural, said, thing
 
-# --- the floors ----------------------------------------------------------------------------------
-
 #: THE FEWEST SITTINGS A PERIOD NEEDS before anything is said about the viewing in it. A Theater
 #: session counts as one sitting, whatever its cells played (the rollup counts it that way).
 SITTINGS_FLOOR = 10
 
+
 #: The fewest Organize decisions a period needs before anything is said about the organizing in it.
 DECISIONS_FLOOR = 5
+
 
 #: THE FEWEST THINGS A SHARE MAY BE A SHARE OF. Three of four is "75 percent" and means nothing, so
 #: "12 of those times" and "mostly" are said only over at least this many.
 SHARE_FLOOR = 10
 
+
 #: What a block below its floor says: a true sentence rather than an empty box.
 NOT_ENOUGH = "Not enough yet to say."
+
 
 #: What a User who has viewed nothing yet is told, in place of every figure.
 NOTHING_YET = "Insights start once you have viewed a few things. Sift is keeping count from today."
 
+
 #: What a guest nothing has been shared with is told.
 NOTHING_SHARED = "Nothing is shared with you yet."
+
 
 #: How many sittings of one file make it a file you came back to.
 CAME_BACK = 3
 
+
+#: A single day is compared with the average day over this many days before it.
+USUAL_DAYS = 28
+
+
+#: The fewest recorded days that average has to cover before a day is compared with it.
+USUAL_FLOOR_DAYS = 7
+
+
 #: Past this a count is said to the nearest thousand, with "about".
 ABOUT_OVER = 100_000
 
-# --- the words for the kinds of file -------------------------------------------------------------
 
 #: The kinds a sitting can be, in the order a sentence lists them. Theater is not a kind of FILE:
 #: it is where the files were, and a statement says it as a place ("5 in Theater").
 KINDS = ("video", "image", "gif")
+
+
 THEATER = "theater"
+
 
 #: Each kind as a person counts it: one, and more than one.
 KIND_WORDS: Mapping[str, tuple[str, str]] = {
@@ -93,17 +108,17 @@ KIND_WORDS: Mapping[str, tuple[str, str]] = {
     "gif": ("GIF", "GIFs"),
 }
 
+
 #: The spans a period can be, as the page's tabs name them.
 SPANS = ("day", "week", "month", "year", "all")
+
 
 #: The weekdays as a statement says them, Monday first (`date.weekday()` order).
 WEEKDAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
 
+
 #: The weekdays on a chart's axis.
 WEEKDAYS_SHORT = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
-
-
-# --- a period, on this device's calendar ---------------------------------------------------------
 
 
 @dataclass(frozen=True, slots=True)
@@ -211,9 +226,6 @@ def named_period(period: Period) -> str:
     if period.span == "year":
         return str(period.start.year)
     return "this"
-
-
-# --- rounding like a person ----------------------------------------------------------------------
 
 
 def _nearest(numerator: int, denominator: int) -> int:
@@ -393,9 +405,6 @@ def once(times: int) -> str:
     return {1: "once", 2: "twice"}.get(times, f"{count(times)} times")
 
 
-# --- what a statement names ----------------------------------------------------------------------
-
-
 @dataclass(frozen=True, slots=True)
 class Named:
     """One thing a statement names: its kind, its id and what it is called.
@@ -425,9 +434,6 @@ def named(one: Named) -> Piece:
 def plain(words: str) -> Line:
     """A statement that is only words: the floor's line, the empty library's, the guest's."""
     return said(words)
-
-
-# --- the statements, one builder per kind ---------------------------------------------------------
 
 
 def viewed(period: Period, total_ms: int, parts: Mapping[str, int]) -> Line:
@@ -509,8 +515,7 @@ def biggest(period: Period, day: date, ms: int) -> Line | None:
 
 
 def busiest_hour(hour: int, ms: int, hours: Clock) -> Line | None:
-    """ "Your most-viewed hour began at 10:00 PM: 40 minutes.", on the reader's clock. The hour a
-    sitting began in holds the whole of it, as the rollup files it."""
+    """ "Your most-viewed hour began at 10:00 PM: 40 minutes.", on the reader's clock."""
     if ms <= 0:
         return None
     return said(f"Your most-viewed hour began at {clock(hour * 60, hours)}: {duration(ms)}.")
@@ -565,7 +570,7 @@ def theater(period: Period, total_ms: int, wall: Named | None, wall_ms: int, ses
     """ "You spent 5 hours in Theater, mostly on your Saved Layout 'Nine up'.", or "You spent no
     time in Theater this month.", which is as true, the way "No files arrived this month." is.
 
-    Theater is counted as one hour per hour of the session, whatever its cells played. "Mostly" is
+    Theater counts each hour a wall played once, however many cells played. "Mostly" is
     a claim, so it is made only where that wall really had more than half the time, over at least
     `SHARE_FLOOR` sessions, and otherwise the sentence stops at the hours.
 

@@ -2,79 +2,42 @@
 	/*
 	 * INSIGHTS: what you viewed, organized and added, for a day, a week, a month, a year or all of it.
 	 *
-	 * ## Who says what
+	 * The server says every sentence and figure (`GET /api/insights`): the first sentences, and each
+	 * block in its fixed order, or below its floor "Not enough yet to say." This screen lays the
+	 * answer out and composes nothing; a block the server did not send (What Sift did, to a guest)
+	 * is not drawn.
 	 *
-	 * The server says everything that is a sentence or a figure (`GET /api/insights`,
-	 * `slices/insights/router.py`): the first sentences, and each block in its fixed order with its
-	 * title, figures and their captions, chart, heat-map and lists, or, below its floor, "Not enough
-	 * yet to say." This screen composes no sentence; it lays the answer out. A block the server did
-	 * not send is not drawn: What Sift did is only ever in an admin's answer, so a guest's screen has
-	 * no such heading because nothing here could put one there.
+	 * As a story in the order a person asks it: the Overview (its first sentence as the headline,
+	 * time viewed as the lead figure, the period's chart and heat-map on a card), When and By kind
+	 * side by side, Most viewed with each list's number one large, then the rest as a grid of cards.
+	 * The groups rise in one after another when a period's answer lands. While the viewing is below
+	 * its floor the page opens on the first sentences instead, and no empty block is drawn.
 	 *
-	 * ## How the answer is laid out
-	 *
-	 * As a story told in the order a person asks it, one statement a card, the figure large:
-	 *
-	 * * THE OVERVIEW OPENS IT: the period's first sentence as the page's headline, the time viewed as
-	 *   the one figure the page leads with (the figure size, on the accent's run, its trend along its
-	 *   foot), the other figures beside it with theirs, and the chart of the period on a card under
-	 *   them with its heat-map.
-	 * * WHEN AND BY KIND, side by side as two cards: the hours as the hour ring (a favourite time of
-	 *   day read the way a clock is) and the time by kind as one whole in its shares.
-	 * * MOST VIEWED: each list leads with its number one, its picture large, the rest ranked under
-	 *   it, the way a chart of the week leads with its first place.
-	 * * THE REST AS A GRID OF CARDS (Theater, Visits, Opinions, Organizing, what arrived, What Sift
-	 *   did), each saying its one statement large over its figures.
-	 *
-	 * The groups arrive one after another when a period's answer does, each rising on the page's own
-	 * arrival motion, a step of `--dur-instant` apart: the story told in its order. A block below its
-	 * floor is left out
-	 * rather than drawn as seven identical "Not enough yet to say." lines: while the viewing is
-	 * below its floor, the page opens on the first sentences instead, which say what there is (or,
-	 * for somebody new, that Sift is keeping count), and they are drawn nowhere else, because each
-	 * of them is a figure already on a card.
-	 *
-	 * ## A period is a place
-	 *
-	 * The tabs are links and the arrows move the address (`period`, `at`), so Back goes to the period
-	 * before and a period can be kept as a bookmark. Where the period starts and ends is the server's
-	 * answer (`from`, `to`), never worked out here: the device's calendar decides the days.
-	 *
-	 * ## Nothing waits on anything else
-	 *
-	 * The heading and the tabs draw immediately. The figures arrive into the page; the recap
-	 * announcement and the recaps read their own answers and draw when those arrive. None of them
-	 * waits for another, and a period changing keeps the last figures on screen, dimmed, until the
-	 * next ones are in, so the page does not jump to a skeleton and back.
-	 *
-	 * The recaps are drawn by their own component rather than from the block of that name in this
-	 * answer: it carries more than the answer's summary does (a recap's days and cards), and it is
-	 * the one drawing of a recap wherever one is listed. Your path is under Settings, in Get to know
-	 * Sift, and not drawn here.
+	 * A period is a place: the tabs are links and the arrows move the address (`period`, `at`), and
+	 * where it starts and ends is the server's answer. Nothing waits on anything else: the heading
+	 * and tabs draw immediately, the recaps read their own answers, and a period changing keeps the
+	 * last figures dimmed until the next are in. Your path is under Settings, in Get to know Sift.
 	 */
 	import { goto } from '$app/navigation';
 
-	import { api } from '$lib/api/client';
-	import { Button, Problem, SectionHeading, Skeleton, Tooltip } from '$lib/components/common';
-	import Tabs from '$lib/components/common/Tabs.svelte';
+	import { Button, Problem, SectionHeading, Skeleton } from '$lib/components/common';
+	import { PeriodAnswer } from '$lib/components/insights/answer.svelte';
 	import InsightsBlock from '$lib/components/insights/InsightsBlock.svelte';
+	import PeriodBar from '$lib/components/insights/PeriodBar.svelte';
 	import RecapAnnouncement from '$lib/components/insights/RecapAnnouncement.svelte';
 	import RecapHeads from '$lib/components/insights/RecapHeads.svelte';
 	import Statements from '$lib/components/insights/Statements.svelte';
 	import {
+		INSIGHTS_PATH,
+		STATS_PATH,
 		addressOf,
-		stepsFrom,
-		tabsFor,
 		type InsightsBlock as Block,
-		type InsightsPage,
 		type Place
 	} from '$lib/components/insights/period';
 	import { drawsAnything } from '$lib/components/insights/figures';
-	import { INSIGHTS_WORDS } from '$lib/components/insights/words';
+	import { INSIGHTS_WORDS, STATS_WORDS } from '$lib/components/insights/words';
 	import PageFrame from '$lib/components/shell/PageFrame.svelte';
 	import PageHeader from '$lib/components/shell/PageHeader.svelte';
-	import { calendarDay } from '$lib/shell/when';
-	import { clock } from '$lib/shell/clock.svelte';
 	import { onAssetStateChange, reloadOnLibraryChange } from '$lib/library/changes.svelte';
 
 	let { data }: { data: Place } = $props();
@@ -91,73 +54,14 @@
 	/* How many recaps the Recaps block names; every one is a link away. */
 	const RECAPS_NAMED = 6;
 
-	let answer = $state<InsightsPage | null>(null);
-	/* Bumped when a period's answer lands, never by a re-read: the groups arrive (and count) on it. */
-	let arrival = $state(0);
-	let failed = $state(false);
-	let loading = $state(true);
+	const read = new PeriodAnswer(() => data);
+	reloadOnLibraryChange(() => void read.reread());
+	onAssetStateChange(() => void read.reread());
+	const answer = $derived(read.answer);
+	const arrival = $derived(read.arrival);
+	const failed = $derived(read.failed);
+	const loading = $derived(read.loading);
 
-	$effect(() => {
-		const period = data.period;
-		const at = data.at;
-		/* The server says a time of day on the reader's clock, so a change of clock in Appearance
-		   asks for the page again rather than leaving its sentences on the old one. */
-		void clock.hours;
-		/* An answer to a period somebody has already left is dropped, not drawn over the newer one. */
-		let current = true;
-		loading = true;
-		failed = false;
-		api
-			.get<InsightsPage>('/insights', { query: { period, at: at ?? undefined } })
-			.then((found) => {
-				if (!current) return;
-				answer = found;
-				arrival += 1;
-				loading = false;
-			})
-			.catch(() => {
-				if (!current) return;
-				failed = true;
-				loading = false;
-			});
-		return () => {
-			current = false;
-		};
-	});
-
-	/* A change elsewhere re-reads in place: the page as drawn stays until a different answer lands.
-	   One read at a time, and one more after it if a bell rang meanwhile. */
-	let rereading = false;
-	let rereadOwed = false;
-	async function rereadQuietly(): Promise<void> {
-		if (rereading) {
-			rereadOwed = true;
-			return;
-		}
-		rereading = true;
-		const period = data.period;
-		const at = data.at;
-		try {
-			const found = await api.get<InsightsPage>('/insights', {
-				query: { period, at: at ?? undefined }
-			});
-			if (loading || period !== data.period || at !== data.at) return;
-			if (JSON.stringify(found) !== JSON.stringify(answer)) answer = found;
-		} catch {
-			// The page as drawn stays.
-		} finally {
-			rereading = false;
-			if (rereadOwed) {
-				rereadOwed = false;
-				void rereadQuietly();
-			}
-		}
-	}
-	reloadOnLibraryChange(() => void rereadQuietly());
-	onAssetStateChange(() => void rereadQuietly());
-
-	const tabs = $derived(tabsFor(data));
-	const steps = $derived(answer && !loading ? stepsFrom(answer) : { earlier: null, later: null });
 	/* A block below its floor, or past it with nothing to draw, is left out: a heading over nothing
 	   is an empty box on the page (see `drawsAnything`). */
 	const blocks = $derived(
@@ -201,21 +105,15 @@
 		};
 		return out.sort((a, b) => rank(a) - rank(b));
 	});
-	/* The days the answer covers, as every date on screen is written (`$lib/shell/when`). */
-	const days = $derived(
-		answer === null
-			? ''
-			: answer.from === answer.to
-				? calendarDay(answer.from)
-				: `${calendarDay(answer.from)} \u2014 ${calendarDay(answer.to)}`
-	);
-
-	function go(place: Place | null) {
-		if (place) void goto(addressOf(place));
-	}
 </script>
 
 <svelte:head><title>{INSIGHTS_WORDS.title}</title></svelte:head>
+
+{#snippet stats()}
+	<Button size="small" tone="secondary" onclick={() => void goto(addressOf(data, STATS_PATH))}
+		>{STATS_WORDS.title}</Button
+	>
+{/snippet}
 
 <PageFrame>
 	{#snippet header()}
@@ -224,36 +122,7 @@
 		</PageHeader>
 	{/snippet}
 	{#snippet tools()}
-		<div class="periods">
-			<Tabs {tabs} current={data.period} label={INSIGHTS_WORDS.periods} />
-			{#if data.period !== 'all'}
-				<div class="steps">
-					<Tooltip label={INSIGHTS_WORDS.earlier}>
-						<Button
-							icon="chevron_left"
-							size="small"
-							tone="ghost"
-							aria-label={INSIGHTS_WORDS.earlier}
-							disabled={steps.earlier === null}
-							onclick={() => go(steps.earlier)}
-						/>
-					</Tooltip>
-					<span class="days" class:stale={loading} aria-live="polite">{days}</span>
-					<Tooltip label={INSIGHTS_WORDS.later}>
-						<Button
-							icon="chevron_right"
-							size="small"
-							tone="ghost"
-							aria-label={INSIGHTS_WORDS.later}
-							disabled={steps.later === null}
-							onclick={() => go(steps.later)}
-						/>
-					</Tooltip>
-				</div>
-			{:else if days}
-				<span class="days">{days}</span>
-			{/if}
-		</div>
+		<PeriodBar place={data} {answer} {loading} path={INSIGHTS_PATH} after={stats} />
 	{/snippet}
 
 	<div class="insights">
@@ -304,33 +173,6 @@
 </PageFrame>
 
 <style>
-	.periods {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: center;
-		gap: var(--space-2) var(--space-4);
-	}
-
-	/* On a phone the steps wrap under the periods, and a finger's reach round each needs the two
-	   lines further apart than a desk does, or a press just under "Week" would go to Earlier. */
-	@media (max-width: 767px) {
-		.periods {
-			row-gap: var(--space-4);
-		}
-	}
-
-	.steps {
-		display: flex;
-		align-items: center;
-		gap: var(--space-1);
-	}
-
-	.days {
-		font: var(--text-label);
-		color: var(--sift-ink-2);
-		white-space: nowrap;
-	}
-
 	.insights,
 	.answer {
 		display: flex;

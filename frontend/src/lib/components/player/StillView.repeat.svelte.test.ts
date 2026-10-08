@@ -53,10 +53,14 @@ function picture(onplayedthrough?: () => void, reachedByRun = true) {
 	flushSync();
 }
 
-/** The bar's control for what happens at the end, whichever answer it shows. */
+/** The drawer's control for what happens at the end, whichever answer it shows; opens the drawer. */
 function endControl(): HTMLButtonElement {
+	if (!host.querySelector('.panel')) {
+		(host.querySelector('[aria-label="More controls"]') as HTMLElement).click();
+		flushSync();
+	}
 	const glyph = host.querySelector(
-		'.middle [aria-label^="Stop at"], .middle [aria-label^="Repeat"], .middle [aria-label^="Play through"]'
+		'.panel [aria-label^="Stop at"], .panel [aria-label^="Repeat"], .panel [aria-label^="Play through"]'
 	);
 	return glyph?.closest('button') as HTMLButtonElement;
 }
@@ -146,7 +150,7 @@ describe('the control on a picture', () => {
 
 		expect(dwell.mode).toBe('loop_one');
 		expect(saveSettings).toHaveBeenCalledWith({ 'playback.loop_mode': 'loop_one' });
-		expect(host.querySelector('.middle [aria-label="Repeat this"]')).not.toBeNull();
+		expect(host.querySelector('.panel [aria-label="Repeat this"]')).not.toBeNull();
 		vi.advanceTimersByTime(PICTURE_SECONDS * 1000 * 30);
 		expect(next, 'the press did not reach the run this picture is in').not.toHaveBeenCalled();
 	});

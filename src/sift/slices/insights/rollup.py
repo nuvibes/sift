@@ -41,8 +41,19 @@ that was pressed waits at most that write for the writer, which is the bound the
 
 ## A finished day
 
-A day is finished an hour after its midnight. A sitting that runs past midnight reports its last
-piece when it ends, and a day added up at one minute past would miss the end of the evening.
+A day is finished an hour after its midnight, and then waits while its User is still in the middle
+of something that began on it or since (a sitting reported in the last `PICKUP_GAP_SECONDS`): the
+evening is not over, and a day added up while a sitting is still reporting would be added up
+again. Never longer than a day past its end (`WAIT_AT_MOST_SECONDS`): a wall left cycling all
+night and all day is added up as it stands, and its later pieces mark the day to add up again.
+
+## A day added up again
+
+Some of what a day counted is written later: a sitting reported past the cut, a run finished, a
+file filed under a Username or given a person, a Tag, a Collection, a Photo Set or a song. Each
+such write moves the User's `dirty_from` back to the first day it reaches (the triggers of
+`schema`), and before anything else the helper adds those days up again, one a piece, from there
+up to the last day added up (`store.write_day_again`).
 """
 
 from __future__ import annotations
@@ -58,6 +69,7 @@ from sift.kernel.db import Database
 from sift.kernel.log import get_logger
 from sift.kernel.when import day_of
 from sift.slices.insights import store
+from sift.slices.insights.metrics import PICKUP_GAP_SECONDS
 from sift.slices.insights.store import DayRow, count_day, day_bounds, local_today
 
 log = get_logger(__name__)
@@ -70,6 +82,9 @@ CATCH_UP_PAUSE_SECONDS: Final = 2.0
 
 #: How long after its midnight a day is finished. See the module docstring.
 FINISHED_AFTER_SECONDS: Final = 60 * 60
+
+#: How long past its end a finished day waits for a User still in the middle of something.
+WAIT_AT_MOST_SECONDS: Final = 24 * 60 * 60
 
 #: Whether anything somebody is waiting for is queued. Handed in by the composition root.
 Waiting = Callable[[], Awaitable[bool]]
@@ -115,6 +130,22 @@ SELECT day, metric, key, whole, hidden FROM insight_days WHERE user_id = ? AND d
 
 _STAMP = "SELECT cache_stamp FROM users WHERE id = ?"
 
+#: A User with a day to add up again, and the mark it was asked at.
+_DIRTY = """
+SELECT user_id, dirty_from, dirty_mark, added_up_to
+  FROM insight_progress
+ WHERE dirty_from IS NOT NULL
+ LIMIT 1
+"""
+
+#: Whether this User is still in the middle of something that began on the day or since: a
+#: sitting that reported in the last half hour. Bounded by the User's own sittings since the day.
+_STILL_GOING = """
+SELECT EXISTS (SELECT 1 FROM plays p
+                WHERE p.user_id = :user AND p.started_at >= :since AND p.made_at >= :recent)
+       AS going
+"""
+
 
 def last_finished_day(now: float) -> date:
     """The newest day that is finished at `now`: yesterday, once today is an hour old."""
@@ -134,6 +165,8 @@ async def add_up_one_day(
     adding-up: the day is already filed, and the makers are asked again the next day.
     """
     moment = time.time() if now is None else now
+    if await add_up_again(database):
+        return True
     last = last_finished_day(moment)
     behind = await database.fetch_one(_BEHIND, {"last": last.isoformat()})
     if behind is None:
@@ -149,6 +182,10 @@ async def add_up_one_day(
             await store.start_progress(connection, user_id, min(start - timedelta(days=1), last))
         return True
     day = date.fromisoformat(str(behind["added_up_to"])) + timedelta(days=1)
+    opened, closed = day_bounds(day)
+    waited_out = moment >= closed + WAIT_AT_MOST_SECONDS
+    if not waited_out and await still_going(database, user_id, opened, moment):
+        return False
     started = time.perf_counter()
     # The stamp is read BEFORE the count, so a hide landing in between leaves the rows with an
     # older stamp than the verdict they were split by, and a stale row is split again. Read
@@ -165,6 +202,7 @@ async def add_up_one_day(
         rows=len(counted),
         ms=round((time.perf_counter() - started) * 1000, 1),
         behind_days=(last - day).days,
+        waited_out=waited_out,
     )
     if day == last:
         for make in after_day:
@@ -172,6 +210,39 @@ async def add_up_one_day(
                 await make(user_id, day)
             except Exception:
                 log.exception("insights.after_day_failed", user_id=user_id, day=day.isoformat())
+    return True
+
+
+async def still_going(database: Database, user_id: str, since: int, now: float) -> bool:
+    """Whether this User has a sitting that began at `since` or later and reported recently."""
+    row = await database.fetch_one(
+        _STILL_GOING,
+        {"user": user_id, "since": since, "recent": int(now) - PICKUP_GAP_SECONDS},
+    )
+    return bool(row is not None and row["going"])
+
+
+async def add_up_again(database: Database) -> bool:
+    """Add up again the next day whose raw rows changed after it was added up. False when none."""
+    dirty = await database.fetch_one(_DIRTY)
+    if dirty is None:
+        return False
+    user_id = str(dirty["user_id"])
+    day = date.fromisoformat(str(dirty["dirty_from"]))
+    mark = int(dirty["dirty_mark"])
+    started = time.perf_counter()
+    stamp_row = await database.fetch_one(_STAMP, (user_id,))
+    stamp = int(stamp_row["cache_stamp"]) if stamp_row is not None else 0
+    counted = await count_day(database.fetch_all, user_id, day)
+    async with database.write() as connection:
+        await store.write_day_again(connection, user_id, day, counted, stamp, mark)
+    log.info(
+        "insights.day_added_up_again",
+        user_id=user_id,
+        day=day.isoformat(),
+        rows=len(counted),
+        ms=round((time.perf_counter() - started) * 1000, 1),
+    )
     return True
 
 
@@ -236,6 +307,7 @@ async def keep_the_days_added_up(
 __all__ = [
     "CATCH_UP_PAUSE_SECONDS",
     "ROLLUP_INTERVAL_SECONDS",
+    "add_up_again",
     "add_up_one_day",
     "day_bounds",
     "keep_the_days_added_up",

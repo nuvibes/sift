@@ -3,7 +3,7 @@
  * month's heat-map, its lists ranked with covers, and below its floor, the one line and nothing
  * else. */
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushSync, mount, unmount } from 'svelte';
 
 import { motion } from '$lib/shell/motion.svelte';
@@ -11,6 +11,7 @@ import { words } from '$lib/design/testing.svelte';
 import { applyStyles, removeStyles } from '$lib/design/testing-styles';
 import statementsSource from './Statements.svelte?raw';
 import InsightsBlock from './InsightsBlock.svelte';
+import { timeWords } from './figures';
 import type { InsightsBlock as Block } from './period';
 
 type Piece = Block['statements'][number][number];
@@ -30,7 +31,17 @@ type Chart = NonNullable<Block['chart']>;
 
 /** A figure with no caption under it. */
 function figure(label: string, value: number, unit: Figure['unit']): Figure {
-	return { label, value, unit, hidden_part: 0, caption: [], said: '', hidden_said: '', trend: [] };
+	return {
+		label,
+		value,
+		unit,
+		hidden_part: 0,
+		caption: [],
+		defines: [],
+		said: '',
+		hidden_said: '',
+		trend: []
+	};
 }
 
 /** A chart with no bar still counting and no caption under it. */
@@ -150,10 +161,10 @@ function mostViewed(): Block {
 let host: HTMLElement;
 let drawn: Record<string, unknown> | undefined;
 
-function draw(block: Block): HTMLElement {
+function draw(block: Block, props: Record<string, unknown> = {}): HTMLElement {
 	host = document.createElement('div');
 	document.body.append(host);
-	drawn = mount(InsightsBlock, { target: host, props: { block } });
+	drawn = mount(InsightsBlock, { target: host, props: { block, ...props } });
 	flushSync();
 	return host;
 }
@@ -219,14 +230,20 @@ describe('a block past its floor', () => {
 		]);
 	});
 
-	it('says every bar in words in a table, for anybody who cannot see the drawing', () => {
+	it('says a bar in its tooltip, in the server words, and draws no table under the chart', async () => {
 		const block = draw(overview());
-		expect(block.querySelector('.plot')?.getAttribute('aria-hidden')).toBe('true');
-		const rows = [...block.querySelectorAll('table tbody tr')].map((row) =>
-			[...row.children].map((cell) => words(cell))
-		);
-		expect(rows[0]).toEqual(['1', '2 h', '1 h', '0 min', '0 min']);
-		expect(rows[2]).toEqual(['3', '1 h', '0 min', '30 min', '3 h']);
+		expect(block.querySelector('table')).toBeNull();
+		expect(block.querySelector('details')).toBeNull();
+		const plot = block.querySelector('.plot') as HTMLElement;
+		expect(plot.getAttribute('aria-label')).toBe('Overview');
+		plot.focus();
+		plot.dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true }));
+		await vi.waitFor(() => {
+			flushSync();
+			if (!document.querySelector('[role="tooltip"]')) throw new Error('no tooltip up');
+		});
+		const parts = [...document.querySelectorAll('[role="tooltip"] .part-words')];
+		expect(parts.map((part) => words(part))).toEqual(['Videos 1 h', 'GIFs 30 min', 'Theater 3 h']);
 	});
 
 	it('draws By kind as one bar of shares, with each kind in words', () => {
@@ -265,6 +282,68 @@ describe('a block past its floor', () => {
 			}
 		});
 		expect(block.querySelectorAll('.heat-map .grid .cell')).toHaveLength(2);
+	});
+
+	it('opens the page as the hero: its first statement the headline, its bars and days on one card', () => {
+		const block = draw(
+			{
+				...overview(),
+				calendar: { unit: 'ms', days: [{ day: '2026-08-01', value: HOUR, said: '1 h' }] }
+			},
+			{ hero: true }
+		);
+		expect(words(block.querySelector('.statement.headline'))).toBe(
+			'You viewed 41 hours in August: 29 of videos, 9 of pictures, 3 of GIFs.'
+		);
+		const card = block.querySelector('.drawn') as HTMLElement;
+		expect(card.querySelector('.bar-chart')).not.toBeNull();
+		expect(card.querySelector('.heat-map')).not.toBeNull();
+	});
+
+	it('draws a day of hours on a card as the ring, its favourite hour in the middle and its sentence', () => {
+		const hours = Array.from({ length: 24 }, (_, hour) => ({
+			label: String(hour),
+			parts: [{ kind: 'all', value: hour === 22 ? HOUR : 0 }]
+		}));
+		const block = draw(
+			{
+				...overview(),
+				id: 'when',
+				title: 'When',
+				chart: {
+					...chart('bars', hours),
+					caption: [plain('Your most-viewed hour began at 10 PM.')]
+				}
+			},
+			{ variant: 'card', ring: true }
+		);
+		expect(block.querySelectorAll('.hour-ring .seat')).toHaveLength(24);
+		expect(words(block.querySelector('.favourite'))).toBe(timeWords(22 * 60));
+		expect(words(block.querySelector('.ringed .caption'))).toBe(
+			'Your most-viewed hour began at 10 PM.'
+		);
+	});
+
+	it("draws the server's sentence under the bars", () => {
+		const block = draw({
+			...overview(),
+			chart: { ...overview().chart!, caption: [plain('The 3rd was your biggest day: 5 hours.')] }
+		});
+		expect(words(block.querySelector('.bar-chart figcaption'))).toBe(
+			'The 3rd was your biggest day: 5 hours.'
+		);
+	});
+
+	it('draws a block it has no name for (Alongside) the way it draws any block', () => {
+		const block = draw({
+			...overview(),
+			id: 'alongside',
+			title: 'Alongside',
+			chart: null
+		});
+		expect(block.querySelector('[data-block="alongside"]')).not.toBeNull();
+		expect(words(block.querySelector('h2'))).toBe('Alongside');
+		expect(block.querySelectorAll('.figure')).toHaveLength(3);
 	});
 
 	it('draws each list as a ranked list, the name a link to the thing, its cover where it has one', () => {

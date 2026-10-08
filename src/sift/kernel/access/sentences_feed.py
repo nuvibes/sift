@@ -136,6 +136,8 @@ FEED: Mapping[str, Act] = {
     "update_started": Act("{by} started installing a newer Sift on {subjects}"),
     "library_opened": Act("{by} opened another library on {subjects}"),
     "restarted": Act("{by} restarted Sift on {subjects}"),
+    # A RECAP COUNTED AGAIN after a correction: the subject is the recap, named by its days.
+    "recounted": Act("{by} re-counted your {subjects} after a correction"),
 }
 
 #: The acts on the computer running Sift, which `machine_line` says. See `FEED`.

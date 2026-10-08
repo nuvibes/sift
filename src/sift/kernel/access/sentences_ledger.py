@@ -98,6 +98,7 @@ A_THING: Mapping[str, str] = {
     "database_file": "a database file",
     "computer": "the computer running Sift",
     "saved_filter": "a saved filter",
+    "recap": "a recap",
 }
 
 #: THE SAME, FOR SOMETHING THAT IS NOT THERE ANY MORE and never had its name written down. Only

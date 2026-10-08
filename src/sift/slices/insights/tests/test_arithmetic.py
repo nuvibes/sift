@@ -23,6 +23,7 @@ from typing import Any, cast
 import pytest
 
 from sift.slices.insights import router as page
+from sift.slices.insights import router_blocks as blocks
 from sift.slices.insights import statements as st
 from sift.slices.insights.models import Bar, BarPart, Calendar, Chart, DayValue
 from sift.slices.insights.store import DayRow, count_day, day_bounds
@@ -52,8 +53,8 @@ async def _an_ordinary_day(world: World) -> None:
     * 09:50 video A (ten minutes long), 5 minutes of it: a view (a ten-minute video needs 30 s).
     * 11:00 video B, 20 seconds of it: NOT a view, but somebody sat down.
     * 12:00 picture C, hidden: a view the moment it opens, 0 ms of time.
-    * 21:30 to 23:00 a Theater wall of two videos, D and E, each on screen the whole 90 minutes:
-      one sitting of 90 minutes, whatever its cells played.
+    * 21:30 to 23:00 a Theater wall of two two-hour videos, D and E, each playing the whole 90
+      minutes: one sitting of 90 minutes, the union of what its cells played.
     """
     a = await world.add_file("video")
     b = await world.add_file("video")
@@ -62,7 +63,10 @@ async def _an_ordinary_day(world: World) -> None:
     await world.sit(b, at(11), 20_000)
     await world.sit(c, at(12), 0)
     await world.wall("evening", at(21, 30), at(23), arrangement="wall-one")
-    for cell in (await world.add_file("video"), await world.add_file("video")):
+    for cell in (
+        await world.add_file("video", length_ms=2 * HOUR),
+        await world.add_file("video", length_ms=2 * HOUR),
+    ):
         await world.sit(cell, at(21, 30), 90 * MINUTE, screen="theater", theater_session="evening")
 
 
@@ -70,14 +74,16 @@ async def test_time_viewed_is_the_views_and_the_wall_once(world: World) -> None:
     """Viewed: 5 min (A) + 0 (C) + 90 min (the wall, once) = 95 min = 5,700,000 ms; B is no view.
     By kind: videos 5 min, Theater 90 min; the picture's 0 ms files no row (a zero is not filed).
     Sittings: A, C and the wall = 3, one of them hidden (C); by kind video 1, picture 1, Theater 1.
-    Files viewed: A, C, D and E = 4, one hidden. The wall's preset: 90 min."""
+    Files viewed: A and C = 2, one hidden; the wall's cells are their own figure, D and E = 2.
+    The wall's preset: 90 min."""
     await _an_ordinary_day(world)
     counted = await _count(world)
     assert _by(counted, "viewed_ms") == {"": (95 * MINUTE, 0)}
     assert _by(counted, "viewed_ms:kind") == {"video": (5 * MINUTE, 0), "theater": (90 * MINUTE, 0)}
     assert _by(counted, "sittings") == {"": (3, 1)}
     assert _by(counted, "sittings:kind") == {"video": (1, 0), "image": (1, 1), "theater": (1, 0)}
-    assert _by(counted, "files_viewed") == {"": (4, 1)}
+    assert _by(counted, "files_viewed") == {"": (2, 1)}
+    assert _by(counted, "theater_files") == {"wall-one": (2, 0)}
     assert _by(counted, "theater_ms:wall") == {"wall-one": (90 * MINUTE, 0)}
 
 
@@ -96,29 +102,29 @@ async def test_each_hour_holds_only_the_time_viewed_in_it(world: World) -> None:
 
 
 async def test_an_evening_past_midnight_is_shared_between_its_hours(world: World) -> None:
-    """A sitting of 2 h 30 min from 23:15: 45 min in 23, 60 in 00, 45 in 01, all filed under the day
-    it began on. The parts add up to the whole: 45 + 60 + 45 = 150 minutes."""
+    """A sitting of 2 h 30 min from 23:15: 45 min in 23 on its own day, then 60 in 00 and 45 in 01
+    on the next, because an amount falls on the day it was spent. The parts add up to the whole:
+    45 + 60 + 45 = 150 minutes, and the sitting is counted once, on the day it began."""
     film = await world.add_file("video", length_ms=4 * HOUR)
     await world.sit(film, at(23, 15), 150 * MINUTE)
-    counted = await _count(world)
-    assert _by(counted, "viewed_ms:hour") == {
-        "23": (45 * MINUTE, 0),
-        "00": (60 * MINUTE, 0),
-        "01": (45 * MINUTE, 0),
-    }
-    assert sum(whole for whole, _ in _by(counted, "viewed_ms:hour").values()) == 150 * MINUTE
+    counted, after = await _count(world), await _count(world, NEXT)
+    assert _by(counted, "viewed_ms:hour") == {"23": (45 * MINUTE, 0)}
+    assert _by(after, "viewed_ms:hour") == {"00": (60 * MINUTE, 0), "01": (45 * MINUTE, 0)}
+    assert _by(counted, "viewed_ms") == {"": (45 * MINUTE, 0)}
+    assert _by(after, "viewed_ms") == {"": (105 * MINUTE, 0)}
+    assert _by(counted, "sittings") == {"": (1, 0)} and "sittings" not in {r.metric for r in after}
 
 
 async def test_the_times_somebody_sat_down_and_the_first_and_last(world: World) -> None:
     """Every sitting of any length is somebody there, and a new time is one with nothing ending in
     the half hour before it: 09:50 (A), 11:00 (B, A ended 09:55), 12:00 (C, B ended 11:00:20) and
     21:30 (the wall) = 4, the one at 12:00 hidden. The earliest start 09:50 = 590 minutes; the latest
-    finish the wall's end, 23:00 = 1,380 minutes."""
+    finish the wall's start, 21:30 = 1,290 minutes: a wall playing on is not somebody there."""
     await _an_ordinary_day(world)
     counted = await _count(world)
     assert _by(counted, "pickups") == {"": (4, 1)}
     assert _by(counted, "earliest_start") == {"": (590, 0)}
-    assert _by(counted, "latest_finish") == {"": (1380, 0)}
+    assert _by(counted, "latest_finish") == {"": (1290, 0)}
 
 
 async def test_the_latest_finish_follows_the_evening_past_midnight(world: World) -> None:
@@ -293,7 +299,7 @@ def test_two_families_activity_names_alike_are_one_row() -> None:
         DayRow(DAY.isoformat(), "work_ms:family", "retired-two", 2 * HOUR, 0),
     ]
     period = st.period_of("day", DAY, DAY, None)
-    block = page._machine(
+    block = blocks._machine(
         cast(Any, SimpleNamespace(book=page.Book.of(rows, locked=False), period=period))
     )
     assert [(row.piece.text, row.value) for row in block.lists[0].rows] == [("Other", 5 * HOUR)]
@@ -331,9 +337,9 @@ def test_a_daily_average_divides_by_the_days_sift_was_counting() -> None:
     """September 2026 looked at on the 29th: 29 days so far. A record that began on the 22nd has
     counted 8 of them (22 to 29), and a daily average divides by 8."""
     september = st.period_of("month", date(2026, 9, 29), date(2026, 9, 29), None)
-    assert page._days_counted(september, None) == 29
-    assert page._days_counted(september, date(2026, 9, 22)) == 8
-    assert page._days_counted(september, date(2025, 1, 1)) == 29
+    assert blocks._days_counted(september, None) == 29
+    assert blocks._days_counted(september, date(2026, 9, 22)) == 8
+    assert blocks._days_counted(september, date(2025, 1, 1)) == 29
 
 
 # --- the words a figure is said in ---------------------------------------------------------------
@@ -438,9 +444,9 @@ def test_a_figures_trend_is_the_charts_bars() -> None:
     book = page.Book.of(rows, locked=False)
     today = date(2026, 9, 29)
     week = st.period_of("week", date(2026, 3, 10), today, None)
-    assert page._trend(week, book, "sittings") == [0, 2, 0, 0, 5, 0, 0]
+    assert blocks._trend(week, book, "sittings") == [0, 2, 0, 0, 5, 0, 0]
     year = st.period_of("year", date(2026, 3, 10), today, None)
-    assert page._trend(year, book, "sittings") == [0, 0, 7, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    assert blocks._trend(year, book, "sittings") == [0, 0, 7, 0, 0, 0, 0, 0, 0, 0, 0, 0]
     day = st.period_of("day", date(2026, 3, 13), today, None)
-    assert page._trend(day, book, "sittings") == []
-    assert page._trend(day, book, "viewed_ms")[21] == 3 * MINUTE
+    assert blocks._trend(day, book, "sittings") == []
+    assert blocks._trend(day, book, "viewed_ms")[21] == 3 * MINUTE

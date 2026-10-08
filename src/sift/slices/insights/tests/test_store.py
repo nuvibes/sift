@@ -87,7 +87,7 @@ async def test_a_files_sittings_are_keyed_by_the_kind_it_wrote_down(world: World
 
 async def test_a_theater_wall_is_one_hour_per_hour_and_one_sitting(world: World) -> None:
     await world.wall("evening", at(20), at(21), arrangement="saved-wall")
-    cells = [await world.add_file("video") for _ in range(4)]
+    cells = [await world.add_file("video", length_ms=7_200_000) for _ in range(4)]
     for cell in cells:
         await world.person_on(cell, "person-one")
         await world.sit(cell, at(20), 3_600_000, screen="theater", theater_session="evening")
@@ -98,9 +98,15 @@ async def test_a_theater_wall_is_one_hour_per_hour_and_one_sitting(world: World)
         "theater": 3_600_000
     }
     assert _by(counted, "theater_ms:wall")["saved-wall"].whole == 3_600_000
-    # The things on the wall were each on screen for the hour.
-    assert _by(counted, "files_viewed")[""].whole == 4
-    assert _by(counted, "viewed_ms:person")["person-one"].whole == 4 * 3_600_000
+    # What the cells cycled through is the wall's own figure, never files or People viewed.
+    assert _by(counted, "theater_files")["saved-wall"].whole == 4
+    assert "files_viewed" not in {row.metric for row in counted}
+    assert "viewed_ms:person" not in {row.metric for row in counted}
+
+
+async def test_a_wall_with_nothing_playing_is_no_time_and_no_sitting(world: World) -> None:
+    await world.wall("idle", at(0, 23), at(21, 2))
+    assert await _count(world) == []
 
 
 async def test_a_hidden_file_is_counted_and_split_out(world: World) -> None:

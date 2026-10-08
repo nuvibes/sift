@@ -185,6 +185,10 @@ HISTORY_MODULES = (
     # are SENTENCES, not captions: see `STATEMENT_MODULES`.
     "src/sift/slices/insights/statements.py",
     "src/sift/slices/insights/recaps.py",
+    "src/sift/slices/insights/statements_cards.py",
+    "src/sift/slices/insights/together.py",
+    "src/sift/slices/insights/definitions.py",
+    "src/sift/slices/insights/recaps_cards.py",
 )
 
 #: THE HISTORY MODULES THAT SAY A SENTENCE RATHER THAN A CAPTION.
@@ -198,6 +202,10 @@ HISTORY_MODULES = (
 STATEMENT_MODULES = (
     "src/sift/slices/insights/statements.py",
     "src/sift/slices/insights/recaps.py",
+    "src/sift/slices/insights/statements_cards.py",
+    "src/sift/slices/insights/together.py",
+    "src/sift/slices/insights/definitions.py",
+    "src/sift/slices/insights/recaps_cards.py",
 )
 
 #: The file name every area's decision wording is written in (`kernel.workbench.Words`).

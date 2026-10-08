@@ -103,6 +103,12 @@
     "privacy.network_sharing"
   ],
   "get-to-know": [],
+  "insights": [
+    "insights.recap_day",
+    "insights.recap_month",
+    "insights.recap_week",
+    "insights.recap_year"
+  ],
   "library": [
     "library.save_folder",
     "library.storage_folders"

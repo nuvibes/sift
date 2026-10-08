@@ -6844,6 +6844,13 @@
             "title": "Caption",
             "type": "array"
           },
+          "defines": {
+            "items": {
+              "$ref": "#/components/schemas/HistoryPiece"
+            },
+            "title": "Defines",
+            "type": "array"
+          },
           "hidden_part": {
             "default": 0,
             "title": "Hidden Part",
@@ -6898,6 +6905,7 @@
           "hidden_part",
           "caption",
           "trend",
+          "defines",
           "said",
           "hidden_said"
         ],
@@ -16973,6 +16981,14 @@
               "compared",
               "o",
               "closing",
+              "top_file",
+              "first_last",
+              "new_favourite",
+              "rediscovered",
+              "session",
+              "downloads",
+              "theater_files",
+              "alongside",
               "achievement"
             ],
             "title": "Kind",
@@ -37395,7 +37411,7 @@
     },
     "/api/insights/recaps": {
       "get": {
-        "description": "Every recap of a week, a month or a year this User has, newest first, drawn for their vault\nstate now, and the one the top of Insights and Browse's header announce.",
+        "description": "Every recap of a day, a week, a month or a year this User has, newest first, drawn for their vault\nstate now, and the one the top of Insights and Browse's header announce.",
         "operationId": "list_recaps_api_insights_recaps_get",
         "responses": {
           "200": {

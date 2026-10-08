@@ -319,6 +319,7 @@ SETTINGS_PANES: Mapping[str, str] = {
     "Maintenance": "maintenance",
     "Logs": "logs",
     "Privacy and Security": "privacy",
+    "Insights": "insights",
     "Appearance": "appearance",
     "Backup": "backup",
     "Updates": "updates",

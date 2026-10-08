@@ -115,7 +115,8 @@ export const KINDS: Record<string, { many: string }> = {
 	backup: { many: 'Backups' },
 	database_file: { many: 'Database files' },
 	computer: { many: 'The computer running Sift' },
-	saved_filter: { many: 'Saved filters' }
+	saved_filter: { many: 'Saved filters' },
+	recap: { many: 'Recaps' }
 };
 
 /**
@@ -174,6 +175,7 @@ export const VERBS: Record<string, { label: string }> = {
 	update_started: { label: 'Update started' },
 	library_opened: { label: 'Another library opened' },
 	restarted: { label: 'Restarted' },
+	recounted: { label: 'Re-counted' },
 	wall_sent: { label: 'Sent a Theater wall' }
 };
 

@@ -39,7 +39,7 @@ async def list_recaps(
     database: Annotated[Database, Depends(wiring.database)],
     viewer: Annotated[Viewer, Depends(current_viewer)],
 ) -> RecapList:
-    """Every recap of a week, a month or a year this User has, newest first, drawn for their vault
+    """Every recap of a day, a week, a month or a year this User has, newest first, drawn for their vault
     state now, and the one the top of Insights and Browse's header announce."""
     listed, announced = await recaps.heads(database, viewer)
     return RecapList(recaps=listed, announced=announced)

@@ -13,10 +13,12 @@ from __future__ import annotations
 import inspect
 import re
 from datetime import date
+from fractions import Fraction
 
 import pytest
 
 from sift.kernel.access import sentences as say
+from sift.slices.insights import definitions, statements_cards, together
 from sift.slices.insights import statements as st
 from sift.slices.insights.statements import Moment, Named, period_of
 
@@ -29,6 +31,8 @@ SOMEBODY = "Neve Alder"
 PERSON = Named("person", "p1", SOMEBODY)
 WALL = Named("wall", "w1", "Nine up")
 SITE = Named("site", "s1", "Quillhouse")
+FILE = Named("asset", "f1", "harbour.mp4")
+OTHER_FILE = Named("asset", "f2", "lantern.jpg")
 
 HOUR = 3_600_000
 MINUTE = 60_000
@@ -145,6 +149,39 @@ SAID: tuple[tuple[str, say.Line | None], ...] = (
     ),
     ("busiest hour, midnight and noon", st.busiest_hour(0, 40 * MINUTE, "12")),
     ("songs", st.songs(12)),
+    ("most-viewed file", statements_cards.most_viewed_file(AUGUST, FILE, 14)),
+    (
+        "first and last, a day",
+        statements_cards.first_and_last(
+            TODAY_ONLY, FILE, Moment(TODAY, 9 * 60 + 10), OTHER_FILE, Moment(TODAY, 1500), "12"
+        ),
+    ),
+    (
+        "first and last, a week",
+        statements_cards.first_and_last(
+            LAST_WEEK,
+            FILE,
+            Moment(date(2026, 9, 14), 8 * 60),
+            OTHER_FILE,
+            Moment(date(2026, 9, 20), 23 * 60),
+            "24",
+        ),
+    ),
+    ("a new favourite", statements_cards.new_favourite(AUGUST, FILE, 5)),
+    ("rediscovered", statements_cards.rediscovered(AUGUST, FILE, 214)),
+    ("longest session", statements_cards.longest_session(AUGUST, 2 * HOUR, 34)),
+    ("longest session, no pages", statements_cards.longest_session(TODAY_ONLY, 40 * MINUTE, 0)),
+    ("downloads", statements_cards.downloaded(AUGUST, 40)),
+    ("Theater showed", statements_cards.theater_showed(AUGUST, 1240)),
+    ("a definition", definitions.definition("Files opened")),
+    ("together, weeks", together.together("week", together.Pair("theater", "starred", 9, 0.8))),
+    (
+        "together, the top person",
+        together.together("day", together.Pair("person", "starred", 12, 0.7), PERSON),
+    ),
+    ("together, months", together.together("month", together.Pair("sessions", "decided", 8, 0.6))),
+    ("together, arrivals", together.together("day", together.Pair("viewed", "added", 10, 0.9))),
+    ("together, O", together.together("week", together.Pair("viewed", "o", 11, 0.65))),
 )
 
 #: THE EXAMPLE SET, WORD FOR WORD, pinned so the sentences cannot drift.
@@ -158,7 +195,7 @@ PINNED = [
     (SAID[12][1], "You spent 5 hours in Theater, mostly on your Saved Layout 'Nine up'."),
     (SAID[14][1], "14 files you came back to three times or more."),
     (SAID[16][1], "You looked through 36 Photo Sets."),
-    (SAID[-1][1], "You viewed files carrying 12 songs."),
+    (SAID[59][1], "You viewed files carrying 12 songs."),
     (SAID[17][1], "You opened Sift 38 times this week."),
     (
         SAID[21][1],
@@ -226,6 +263,61 @@ PINNED = [
 ]
 
 
+def said_as(what: str) -> say.Line | None:
+    """A line of `SAID` by what it is."""
+    return next(line for one, line in SAID if one == what)
+
+
+PINNED += [
+    (said_as("most-viewed file"), "The file you viewed most in August was harbour.mp4: 14 views."),
+    (
+        said_as("first and last, a day"),
+        "Your first file today was harbour.mp4, at 9:10 AM, and your last lantern.jpg,"
+        " on Saturday at 1:00 AM.",
+    ),
+    (
+        said_as("first and last, a week"),
+        "Your first file last week was harbour.mp4, on Monday at 08:00, and your last"
+        " lantern.jpg, on Sunday at 23:00.",
+    ),
+    (
+        said_as("a new favourite"),
+        "A new favorite in August: harbour.mp4, viewed 5 times on the first day you opened it.",
+    ),
+    (
+        said_as("rediscovered"),
+        "Welcome back to harbour.mp4, viewed again in August after 214 days.",
+    ),
+    (
+        said_as("longest session"),
+        "Your longest visit in August ran 2 hours from opening Sift to closing it, across 34"
+        " pages.",
+    ),
+    (
+        said_as("longest session, no pages"),
+        "Your longest visit today ran 40 minutes from opening Sift to closing it.",
+    ),
+    (said_as("downloads"), "Sift finished 40 downloads for you in August."),
+    (said_as("Theater showed"), "Theater showed you 1,240 files in August."),
+    (said_as("a definition"), "Files you opened outside Theater, each counted once."),
+    (
+        said_as("together, weeks"),
+        "Over 9 weeks, the weeks you viewed Theater most were the weeks you starred the most"
+        " files.",
+    ),
+    (
+        said_as("together, the top person"),
+        f"Over 12 days, the days you viewed {SOMEBODY} most were the days you starred the most"
+        " files.",
+    ),
+    (
+        said_as("together, months"),
+        "Over 8 months, the months you had the most sessions were the months you answered the"
+        " most questions on Organize.",
+    ),
+]
+
+
 @pytest.mark.parametrize(("line", "words"), PINNED, ids=[w[:40] for _, w in PINNED])
 def test_the_statements_read_exactly(line: say.Line | None, words: str) -> None:
     assert say.text_of(line or ()) == words
@@ -250,16 +342,19 @@ def test_every_builder_is_in_the_table() -> None:
     """A builder added and not listed in `SAID` fails here, so no sentence escapes the rules."""
     source = inspect.getsource(inspect.getmodule(test_every_builder_is_in_the_table))  # type: ignore[arg-type]
     table = source[source.index("SAID: tuple") : source.index("#: THE EXAMPLE SET")]
+    modules = {"st": st, "statements_cards": statements_cards, "together": together}
+    modules["definitions"] = definitions
     builders = [
-        name
-        for name, function in inspect.getmembers(st, inspect.isfunction)
-        if function.__module__ == st.__name__
+        f"{alias}.{name}"
+        for alias, module in modules.items()
+        for name, function in inspect.getmembers(module, inspect.isfunction)
+        if function.__module__ == module.__name__
         and not name.startswith("_")
         and "Line" in str(inspect.signature(function).return_annotation)
         and name not in ("statements_of",)
     ]
-    assert len(builders) >= 20, builders
-    missing = [name for name in builders if f"st.{name}(" not in table]
+    assert len(builders) >= 30, builders
+    missing = [name for name in builders if f"{name}(" not in table]
     assert not missing, missing
 
 
@@ -449,6 +544,8 @@ def test_a_figure_of_nothing_says_nothing() -> None:
     assert st.most_from(SITE, 0) is None
     # A single day's own start needs no day under it: it is that day.
     assert st.on_the_day(TODAY_ONLY, Moment(TODAY, 9 * 60)) is None
+    assert statements_cards.downloaded(AUGUST, 0) is None
+    assert statements_cards.theater_showed(AUGUST, 0) is None
 
 
 def test_an_hour_mark_is_the_hour_alone_on_either_clock() -> None:
@@ -477,3 +574,122 @@ def test_a_figure_carries_its_words_by_the_statements_own_rule() -> None:
     row = NamedRow(piece={"text": "x"}, value=13, unit="views")  # type: ignore[arg-type]
     assert row.said == "13 views"
     assert "said" in Figure(label="Viewed", value=0, unit="count").model_dump()
+
+
+#: The words that would say one measure caused another: a sentence putting two side by side says
+#: they happened together, never why.
+CAUSE_WORDS = ("because", "so", "led to", "made you", "thanks to", "due to")
+
+
+@pytest.mark.parametrize(("what", "line"), SAID, ids=[one for one, _ in SAID])
+def test_no_statement_says_one_thing_caused_another(what: str, line: say.Line | None) -> None:
+    words = say.text_of(line or ()).lower()
+    for cause in CAUSE_WORDS:
+        # "so far" is the open period's, a time and never a joiner.
+        assert not re.search(rf"\b{cause}\b(?! far)", words), f"{what}: {cause!r} in {words}"
+
+
+def _labels_drawn(module: object) -> set[str]:
+    """Every figure label a module's source draws: `label="..."`, `figure("...")`,
+    `files_figure("...")`, and a definition asked for by name."""
+    source = inspect.getsource(module)  # type: ignore[arg-type]
+    found = set(re.findall(r'label="([^"]+)"', source))
+    found |= set(re.findall(r'\.(?:files_)?figure\(\s*"([^"]+)"', source))
+    found |= set(re.findall(r'_defined\("([^"]+)"\)', source))
+    return found
+
+
+def test_every_figure_the_page_draws_carries_its_definition() -> None:
+    from sift.slices.insights import router, router_blocks
+
+    labels = _labels_drawn(router) | _labels_drawn(router_blocks)
+    assert {"Viewed", "Files opened", "In Theater", "Theater sessions", "Tasks"} <= labels
+    missing = sorted(label for label in labels if definitions.definition(label) is None)
+    assert not missing, missing
+    for label in labels:
+        words = say.text_of(definitions.definition(label) or ())
+        assert words.endswith(".") and "watch" not in words.lower(), words
+        assert not re.search(r"(?i)\bsittings?\b", words), words
+
+
+def test_a_label_with_no_definition_carries_none() -> None:
+    assert definitions.definition("Not a figure") is None
+
+
+def _run(pattern: str) -> list[int]:
+    return [int(one) for one in pattern.split()]
+
+
+#: Nine closed periods: Theater rising with starring, viewing against arrivals with no order.
+SERIES = {
+    "theater": _run("1 2 3 4 5 6 7 8 9"),
+    "starred": _run("2 1 4 3 6 5 8 7 9"),
+    "viewed": _run("5 1 9 2 8 3 7 4 6"),
+    "added": _run("1 2 3 4 5 6 7 8 9"),
+    "sessions": _run("1 2 3 4 5 6 7 8 9"),
+    "decided": _run("1 2 3 4 5 6 7 8 9"),
+}
+
+
+def test_together_says_only_the_strong_pairs_strongest_first() -> None:
+    pairs = together.together_pairs(SERIES)
+    assert [(one.first, one.second, one.n) for one in pairs] == [
+        ("sessions", "decided", 9),
+        ("theater", "starred", 9),
+    ]
+    assert pairs[0].rho == pytest.approx(1.0)
+
+
+def test_together_reads_only_periods_with_both_measures_and_at_least_eight() -> None:
+    seven = {"sessions": _run("1 2 3 4 5 6 7 0 0"), "decided": _run("1 2 3 4 5 6 7 8 9")}
+    assert together.together_pairs(seven) == []
+    eight = {"sessions": _run("1 2 3 4 5 6 7 0 8"), "decided": _run("1 2 3 4 5 6 7 8 9")}
+    assert [one.n for one in together.together_pairs(eight)] == [8]
+    flat = {"sessions": _run("3 3 3 3 3 3 3 3"), "decided": _run("1 2 3 4 5 6 7 8")}
+    assert together.together_pairs(flat) == []
+
+
+def test_together_says_at_most_three() -> None:
+    rising = _run("1 2 3 4 5 6 7 8 9 10")
+    every = {measure: rising for measure in together.MEASURES}
+    assert len(together.together_pairs(every)) == together.TOGETHER_MOST == 3
+    assert (8, Fraction(3, 5)) == (together.TOGETHER_FLOOR, together.TOGETHER_AT)
+
+
+def test_a_pair_of_the_top_person_names_them() -> None:
+    with pytest.raises(ValueError, match="names the person"):
+        together.together("day", together.Pair("person", "starred", 9, 0.9))
+
+
+def test_the_spans_together_reads_are_closed_and_whole() -> None:
+    """A month's days before today; a year's whole weeks; everything's whole months."""
+    unit, days = together.closed_spans(THIS_MONTH)
+    assert unit == "day" and len(days) == 24 and days[-1] == (date(2026, 9, 24),) * 2
+    unit, weeks = together.closed_spans(period_of("year", TODAY, TODAY, None))
+    assert unit == "week" and weeks[0] == (date(2026, 1, 5), date(2026, 1, 11))
+    assert weeks[-1] == (date(2026, 9, 14), date(2026, 9, 20))
+    unit, months = together.closed_spans(EVER)
+    assert unit == "month" and months[0] == (date(2026, 4, 1), date(2026, 4, 30))
+    assert months[-1] == (date(2026, 8, 1), date(2026, 8, 31))
+    from_first = period_of("all", TODAY, TODAY, date(2026, 7, 1))
+    assert together.closed_spans(from_first)[1][0] == (date(2026, 7, 1), date(2026, 7, 31))
+
+
+def test_a_series_adds_each_span_up_and_reads_the_top_person_only_with_one() -> None:
+    daily = {
+        "2026-09-01": {("viewed_ms", ""): 5, ("viewed_ms:person", "p1"): 2},
+        "2026-09-02": {("viewed_ms", ""): 7},
+    }
+    spans = [(date(2026, 9, 1), date(2026, 9, 2)), (date(2026, 9, 3), date(2026, 9, 3))]
+    with_her = together.series_of(daily, spans, "p1")
+    assert with_her["viewed"] == [12, 0] and with_her["person"] == [2, 0]
+    assert "person" not in together.series_of(daily, spans, None)
+
+
+def test_a_figure_takes_its_definition_from_its_label_unless_named() -> None:
+    from sift.slices.insights.models import Figure
+
+    assert say.text_of(definitions.definition("Deleted") or ()) in str(
+        Figure(label="Deleted", value=3, unit="count").defines
+    )
+    assert Figure(label="Not a figure", value=3, unit="count").defines == []

@@ -11,6 +11,8 @@ import { flushSync, mount, unmount } from 'svelte';
 
 import { ApiError } from '$lib/api/client';
 
+import source from './+page.svelte?raw';
+
 const server = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn() }));
 
 vi.mock('$lib/api/client', async (importOriginal) => ({
@@ -170,7 +172,25 @@ describe('the cards', () => {
 		await later();
 		const when = inView();
 		expect(when.querySelector('.hour-ring .ring')).not.toBeNull();
-		expect(when.querySelectorAll('.hour-ring tbody tr')).toHaveLength(24);
+	});
+
+	it('gives each card its span at the foot, so a card saved as a picture says when', async () => {
+		await draw();
+		expect(inView().querySelector('.foot')?.textContent).toBe('September 2026');
+	});
+
+	/* Every card one size so Later stands still: the story is one definite width, its list one
+	   column the whole of it, and the card that width (its own test holds 9:16). Centring the list's
+	   items would let each card's words decide its width again. A layout this runner cannot
+	   measure; the pinned browser suite reads the sizes. */
+	it('stands every card in one width, whatever it says', () => {
+		const rule = (name: string) =>
+			new RegExp(`\\n\\t\\.${name} \\{([^}]*)\\}`).exec(source)?.[1] ?? '';
+		expect(rule('story')).toMatch(/inline-size: min\(\s*100%,\s*var\(--story-width\)/);
+		expect(rule('cards')).toContain('grid-template-columns: minmax(0, 1fr);');
+		expect(rule('cards')).not.toContain('justify-items');
+		expect(rule('turned')).not.toContain('justify-items');
+		expect(rule('story')).not.toContain('align-items: center');
 	});
 });
 
@@ -186,12 +206,12 @@ describe('what the vault leaves', () => {
 		expect(host.textContent).toContain('Some of September is hidden. Unlock to include it.');
 		expect(inView().querySelector('[role="img"][aria-label="Hidden"]')).not.toBeNull();
 		expect(host.querySelector('.cards')?.textContent).not.toContain('Elina Sorrel');
-		const screenshot = [...host.querySelectorAll('button')].find((button) =>
+		const save = [...host.querySelectorAll('button')].find((button) =>
 			button.textContent?.includes('Save as picture')
 		) as HTMLButtonElement;
-		expect(screenshot.disabled).toBe(true);
+		expect(save.disabled).toBe(true);
 		await later();
-		expect(screenshot.disabled).toBe(false);
+		expect(save.disabled).toBe(false);
 	});
 
 	it('says there is no recap at an address with none behind it, and nothing about why', async () => {

@@ -405,6 +405,7 @@
 		'/favorites',
 		'/hidden',
 		'/insights',
+		'/insights/stats',
 		'/insights/recaps',
 		'/insights/recaps/[id]',
 		/* The phone's list of every kind of thing, and its list of Settings and the account. */

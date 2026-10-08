@@ -9,26 +9,29 @@
 	 * darkest for the least, with a key from less to more. Every cell is the same size in a month
 	 * and in a year, a fixed share of the reading measure, so the two maps read as one kind of thing.
 	 *
-	 * Pointing at a cell says its day and figure in the line above; the table under the drawing says
-	 * every day in words, and the drawing is hidden from assistive technology.
+	 * A cell's day and figure are its tooltip, under the pointer or the keyboard: the arrows step a
+	 * day up and down and a week across.
 	 */
 	import type { Snippet } from 'svelte';
 
-	import FiguresTable from '$lib/components/charts/FiguresTable.svelte';
+	import { Pointing } from '$lib/components/charts/pointing.svelte';
 	import { LEVEL_PAINT, levels } from '$lib/components/charts/series';
 	import { CHART_WORDS } from '$lib/components/charts/words';
+	import Tooltip from '$lib/components/common/Tooltip.svelte';
 	import { calendarDay } from '$lib/shell/when';
 
 	interface Props {
 		/** Every day drawn, in order, each an ISO day with its figure. */
 		days: readonly { day: string; value: number }[];
 		format: (value: number) => string;
-		/** What the map is of, for the table's caption. */
+		/** What the map is of: its name to assistive technology. */
 		label: string;
 		caption?: Snippet;
+		/** A day whose tooltip stays up whatever the pointer does: the DESIGN GALLERY's open bubble. */
+		held?: number | null;
 	}
 
-	let { days, format, label, caption }: Props = $props();
+	let { days, format, label, caption, held = null }: Props = $props();
 
 	/** Days since the Unix epoch of an ISO day: a calendar day has no zone, so it is read as UTC. */
 	function dayNumber(iso: string): number {
@@ -48,30 +51,54 @@
 		})
 	);
 
-	let pointed = $state<number | null>(null);
+	const pointing = new Pointing(() => days.length, {
+		ArrowUp: -1,
+		ArrowDown: 1,
+		ArrowLeft: -7,
+		ArrowRight: 7
+	});
+	const pointed = $derived(pointing.at === null ? null : (cells[pointing.at] ?? null));
 </script>
 
 <figure class="heat-map">
-	<p class="readout" aria-hidden="true">
-		{#if pointed !== null && cells[pointed]}
-			<span class="when">{calendarDay(cells[pointed].day)}</span>
-			{format(cells[pointed].value)}
-		{/if}
-	</p>
-
-	<div class="grid" aria-hidden="true">
+	<!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
+	<div
+		class="grid"
+		role="group"
+		tabindex="0"
+		aria-label={pointed === null
+			? label
+			: `${label}: ${calendarDay(pointed.day)}, ${format(pointed.value)}`}
+		onkeydown={pointing.keydown}
+		onfocus={pointing.focus}
+		onblur={pointing.blur}
+	>
 		{#each cells as cell, index (cell.day)}
+			{#snippet detail()}
+				<span class="figure">{format(cell.value)}</span>
+			{/snippet}
 			<span
 				class="cell"
-				class:pointed={pointed === index}
+				class:pointed={pointing.at === index || held === index}
 				data-level={level(cell.value)}
-				role="presentation"
+				aria-hidden="true"
 				style:grid-row={cell.row}
 				style:grid-column={cell.column}
 				style:background-color={LEVEL_PAINT[level(cell.value)]}
-				onpointerenter={() => (pointed = index)}
-				onpointerleave={() => (pointed = null)}
-			></span>
+				onpointerenter={() => pointing.point(index)}
+				onpointerleave={() => pointing.point(null)}
+			>
+				<Tooltip
+					label={calendarDay(cell.day)}
+					{detail}
+					placement="top"
+					stretch
+					shrinks
+					held={pointing.held(index) || held === index}
+				>
+					<span class="hit"></span>
+				</Tooltip>
+			</span>
 		{/each}
 	</div>
 
@@ -86,13 +113,6 @@
 	{#if caption}
 		<figcaption>{@render caption()}</figcaption>
 	{/if}
-
-	<FiguresTable
-		summary={CHART_WORDS.days}
-		caption={label}
-		columns={[label]}
-		rows={days.map((one) => ({ label: calendarDay(one.day), cells: [format(one.value)] }))}
-	/>
 </figure>
 
 <style>
@@ -106,14 +126,18 @@
 
 	/* A year's fifty-three weeks across the reading measure sets the cell, and a month keeps it.
 	   On a narrower screen every column gives up the same share, so a year still fits. */
+	/* As wide as its weeks, so the keyboard's ring hugs the days rather than the row. */
 	.grid {
 		display: grid;
+		align-self: flex-start;
+		max-inline-size: 100%;
 		grid-template-rows: repeat(7, auto);
 		grid-auto-columns: minmax(0, calc(var(--page-measure) / 53 - var(--chart-mark-gap)));
 		gap: var(--chart-mark-gap);
 	}
 
 	.cell {
+		display: flex;
 		aspect-ratio: 1;
 		border-radius: var(--radius-sm);
 		transition: outline-color var(--dur-instant) var(--ease);
@@ -124,16 +148,13 @@
 		outline-color: var(--sift-ink-2);
 	}
 
-	.readout {
-		min-block-size: 1lh;
-		margin: 0;
-		font: var(--text-label);
-		color: var(--sift-ink-2);
+	/* The cell's whole square is what the pointer finds. */
+	.hit {
+		flex: 1;
 	}
 
-	.when {
-		margin-inline-end: var(--space-2);
-		color: var(--sift-ink);
+	.figure {
+		font-variant-numeric: tabular-nums;
 	}
 
 	.key {

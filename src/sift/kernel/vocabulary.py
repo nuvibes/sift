@@ -115,12 +115,16 @@ VIA_BACKUP = "backup"
 #: library folder: one `edited` receipt on the settings it chose, whose Undo puts them back.
 VIA_BENCHMARK = "benchmark"
 
+#: Insights adding up a User's days (`slices/insights`): a recap counted again after a correction.
+VIA_INSIGHTS = "insights"
+
 TASK_VIAS = (
     VIA_FINGERPRINT,
     VIA_PHOTO_SET_FLOOR,
     VIA_UPDATE,
     VIA_BACKUP,
     VIA_BENCHMARK,
+    VIA_INSIGHTS,
 )
 
 #: Every word a Sift actor's id may be on a ledger event: a pass that makes rows, or a task that
@@ -195,6 +199,9 @@ SubjectKind = Literal[
     "computer",
     # A saved filter, deleted with the last thing it named (`slices/search`). No page.
     "saved_filter",
+    # One User's recap of a day, a week, a month or a year on Insights (`recounted`); named by the
+    # days it covers.
+    "recap",
 ]
 
 

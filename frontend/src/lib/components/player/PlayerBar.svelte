@@ -780,9 +780,9 @@
 	}
 
 	/*
-	 * The drawer's contents, in four columns: a player's seven stand four and three with the three
-	 * that open a menu in the top row, and three columns would leave the player's seventh alone on
-	 * a row. A Theater cell's fourteen stand two rows of seven. The ground, edge, corner, inset and shadow are
+	 * The drawer's contents, in three columns: a player's nine stand three rows of three with the
+	 * three that open a menu in the top row. A Theater cell's fourteen stand two rows of seven. The
+	 * ground, edge, corner, inset and shadow are
 	 * `Panel`'s. A direct child, so a caller whose drawer holds its own panel is not laid out by
 	 * this rule too; anchored on `.bridge`, this file's own element, so it reaches nothing but the
 	 * drawer it draws.
@@ -790,7 +790,7 @@
 	 * The gap is tighter than a panel's own: these are icon buttons in a grid, not blocks of words.
 	 */
 	.bridge > :global(.panel) {
-		grid-template-columns: repeat(4, auto);
+		grid-template-columns: repeat(3, auto);
 		gap: var(--space-1);
 	}
 

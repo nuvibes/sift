@@ -3,17 +3,18 @@
 	 * The player's drawer: everything about the clip rather than the playhead, the things somebody
 	 * sets once and then watches. One shape: every control is drawn whether or not it can act, and
 	 * one that cannot is dimmed with the reason on it. The three that open a menu stand in the top
-	 * row, so each opens above the drawer; then Randomize and the loop; then the facts. Shuffle and
-	 * Repeat are not here: they stand on the bar either side of the step pair (`Transport`), since
-	 * they decide what Previous and Next do.
+	 * row, so each opens above the drawer; then Randomize, what happens at the end and Shuffle, the
+	 * three about what comes next; then the loop and the facts. Three rows of three.
 	 */
 	import { Button, Popover } from '$lib/components/common';
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
 	import { ACTS } from '$lib/player/acts';
 	import type { PlaybackPlan, Quality } from '$lib/player/playback';
 	import ClipButton from './ClipButton.svelte';
+	import RunControls from './RunControls.svelte';
 	import ScreenshotButton from './ScreenshotButton.svelte';
 	import type { getStage } from './stage.svelte';
+	import type { RepeatControl, ShuffleControl } from './Transport.svelte';
 
 	interface Props {
 		/** The file being watched. */
@@ -38,6 +39,9 @@
 		statsOpen: boolean;
 		onquality: (quality: Quality) => void;
 		onrandom: () => void;
+		/** What happens at the end, and the order: the run's, drawn here beside Randomize. */
+		repeat: RepeatControl;
+		shuffle: ShuffleControl;
 		onmark: () => void;
 		onsave: () => void;
 		/** Keep the bar up while the pointer is on a portalled menu; let it go again. */
@@ -64,6 +68,8 @@
 		statsOpen = $bindable(),
 		onquality,
 		onrandom,
+		repeat,
+		shuffle,
 		onmark,
 		onsave,
 		onhold,
@@ -145,6 +151,8 @@
 		onclick={onrandom}
 	/>
 </Tooltip>
+
+<RunControls {repeat} {shuffle} keyboard="player" />
 
 <!-- Two presses set the ends of a loop, a third clears it; the markers on the timeline drag. -->
 <Tooltip label={abLabel} placement="top">

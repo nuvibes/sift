@@ -4954,7 +4954,7 @@ export interface paths {
         };
         /**
          * List Recaps
-         * @description Every recap of a week, a month or a year this User has, newest first, drawn for their vault
+         * @description Every recap of a day, a week, a month or a year this User has, newest first, drawn for their vault
          *     state now, and the one the top of Insights and Browse's header announce.
          */
         get: operations["list_recaps_api_insights_recaps_get"];
@@ -15234,6 +15234,8 @@ export interface components {
         Figure: {
             /** Caption */
             caption: components["schemas"]["HistoryPiece"][];
+            /** Defines */
+            defines: components["schemas"]["HistoryPiece"][];
             /**
              * Hidden Part
              * @default 0
@@ -20201,7 +20203,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "headline" | "top_person" | "top_five" | "top_site" | "top_tag" | "top_song" | "theater" | "when" | "rated" | "sift_did" | "compared" | "o" | "closing" | "achievement";
+            kind: "headline" | "top_person" | "top_five" | "top_site" | "top_tag" | "top_song" | "theater" | "when" | "rated" | "sift_did" | "compared" | "o" | "closing" | "top_file" | "first_last" | "new_favourite" | "rediscovered" | "session" | "downloads" | "theater_files" | "alongside" | "achievement";
             /** Rows */
             rows: components["schemas"]["NamedRow"][];
             /** Statement */

@@ -6,7 +6,7 @@ from __future__ import annotations
 import pytest
 
 from sift.kernel.db import registered_components
-from sift.slices.insights import schema, store
+from sift.slices.insights import metrics, schema, store
 from sift.slices.insights.store import DayRow
 from sift.slices.insights.tests.conftest import DAY, World
 
@@ -64,3 +64,63 @@ async def test_version_five_adds_every_day_up_again(world: World) -> None:
         await store.start_progress(connection, world.user, DAY)
         await schema.initialize(connection, 4)
     assert await store.added_up_to(world.db, world.user) is None
+
+
+async def test_version_seven_adds_every_day_up_again_and_dates_the_recaps_before_it(
+    world: World,
+) -> None:
+    """Version 7 corrects the statements: every day is counted again, and a recap made before it
+    says so (`metrics_version` 6), so it can be made again once and only once."""
+    made = await store.write_recap(world.db, world.user, "week:2026-W11", "[]")
+    assert made.metrics_version == metrics.METRICS_VERSION
+    await world.run("UPDATE recaps SET metrics_version = 0")
+    async with world.db.write() as connection:
+        await store.start_progress(connection, world.user, DAY)
+        await schema.initialize(connection, 6)
+    assert await store.added_up_to(world.db, world.user) is None
+    (behind,) = await store.recaps_behind(world.db, world.user)
+    assert behind.metrics_version == 6
+    assert await store.remake_recap(world.db, world.user, behind.id, "[1]")
+    assert not await store.remake_recap(world.db, world.user, behind.id, "[2]")
+    again = await store.recap(world.db, world.user, behind.id)
+    assert again is not None and (again.body, again.metrics_version) == ("[1]", 7)
+    assert await store.recaps_behind(world.db, world.user) == []
+
+
+async def _departure(world: World, asset_id: str) -> tuple[int, list[str]]:
+    (row,) = await world.db.fetch_all(
+        "SELECT viewers_known FROM file_departures WHERE asset_id = ?", (asset_id,)
+    )
+    seen = await world.db.fetch_all(
+        "SELECT user_id FROM file_departure_viewers WHERE asset_id = ?", (asset_id,)
+    )
+    return int(row["viewers_known"]), [str(one["user_id"]) for one in seen]
+
+
+async def test_a_departure_never_claims_viewers_it_could_not_read(world: World) -> None:
+    """SQLite runs a delete's triggers newest first, and the verdict's own trigger takes the file's
+    verdict rows away. Made newer than the departure's (as a later verdict step does), it runs
+    first: the departure then says its viewers are unknown and counts for an admin, rather than
+    keeping nobody. The version 7 step makes the departure's trigger the newer again, and marks
+    the departures kept with nobody as unknown."""
+    first = await world.add_file("video")
+    second = await world.add_file("video")
+    (made,) = await world.db.fetch_all(
+        "SELECT sql FROM sqlite_master WHERE name = 'vis_assets_delete_before'"
+    )
+    await world.run("DROP TRIGGER vis_assets_delete_before")
+    await world.run(str(made["sql"]))
+    await world.run("DELETE FROM assets WHERE id = ?", (first,))
+    assert await _departure(world, first) == (0, [])
+    (ended,) = await world.db.fetch_all(
+        "SELECT ended_at FROM file_departures WHERE asset_id = ?", (first,)
+    )
+    params = {"user": world.user, "start": ended["ended_at"], "end": ended["ended_at"] + 1}
+    (removed,) = await metrics.rows_of("files_removed", world.db.fetch_all, params)
+    assert removed["whole"] == 1
+    await world.run("UPDATE file_departures SET viewers_known = 1 WHERE asset_id = ?", (first,))
+    async with world.db.write() as connection:
+        await schema.initialize(connection, 6)
+    assert await _departure(world, first) == (0, [])
+    await world.run("DELETE FROM assets WHERE id = ?", (second,))
+    assert await _departure(world, second) == (1, [world.user])

@@ -1,5 +1,5 @@
 {
-  "sift_modules": 863,
+  "sift_modules": 876,
   "never_at_start": [
     "onnxruntime",
     "sentencepiece",
@@ -7,5 +7,5 @@
     "pillow_heif",
     "sqlite_vec"
   ],
-  "why": "863: three modules split out of ones already imported at start (holding from the worker pool, folds and router_controls from the jobs router), none new work; 860: db_writer (the writer's held-time words and the log's fold, split out of db at its length) and the visibility fold's own module; 858: the placeless component (the stranded files' kept rows), imported with the content store's places; 857: four modules split out of ones already imported at start (backlog from the content schema, pacing from the ledger, visibility_walls and visibility_settled from visibility); none is new work"
+  "why": "876: thirteen modules split out of ones already imported at start (the Insights statements by family out of metrics.py, the recaps' periods, cards, recipes and draw out of recaps.py, the page's blocks out of router.py, the definitions and card builders out of statements.py, together.py the Alongside layer), none new work; 863: three modules split out of ones already imported at start (holding from the worker pool, folds and router_controls from the jobs router), none new work; 860: db_writer (the writer's held-time words and the log's fold, split out of db at its length) and the visibility fold's own module; 858: the placeless component (the stranded files' kept rows), imported with the content store's places; 857: four modules split out of ones already imported at start (backlog from the content schema, pacing from the ledger, visibility_walls and visibility_settled from visibility); none is new work"
 }

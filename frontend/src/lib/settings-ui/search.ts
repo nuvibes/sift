@@ -48,6 +48,7 @@ import { crumbsOf } from './settings-path';
  * into the bundle wherever search is used, and the panes are drawn one at a time on purpose. */
 import { SEARCHABLE as music } from './Music.search';
 import { SEARCHABLE as getToKnow } from './GetToKnow.search';
+import { SEARCHABLE as insights } from './Insights.search';
 import { SEARCHABLE as recognitionSwitches } from './RecognitionSection.search';
 import { SEARCHABLE as users } from './Users.search';
 import { SEARCHABLE as backup } from './Backup.search';
@@ -227,6 +228,7 @@ export const DECLARED: Searchable[] = [
 	...downloads,
 	...music,
 	...getToKnow,
+	...insights,
 	...recognitionSwitches,
 	...users,
 	...backup,
