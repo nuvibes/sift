@@ -14,10 +14,17 @@ import { goto } from '$app/navigation';
 
 import { words } from '$lib/design/testing.svelte';
 import { calendarDay } from '$lib/shell/when';
+import { toasts } from '$lib/shell/toasts.svelte';
+import { DECK_WORDS } from '$lib/components/insights/words';
 import type { InsightsBlock, InsightsPage, Place } from '$lib/components/insights/period';
 import Insights from './+page.svelte';
 
-const mocks = vi.hoisted(() => ({ insights: vi.fn(), post: vi.fn(async () => undefined) }));
+const NO_RECAPS = { recaps: [], announced: null };
+const mocks = vi.hoisted(() => ({
+	insights: vi.fn(),
+	recaps: vi.fn(),
+	post: vi.fn(async () => undefined)
+}));
 
 /* Only the one read this screen makes is the fixture; everything the recaps and the hint read
    answers "nothing yet", which each of them draws as nothing or as its own empty line. */
@@ -29,7 +36,7 @@ vi.mock('$lib/api/client', async (importOriginal) => {
 			...(real.api as object),
 			get: vi.fn(async (path: string, options?: { query?: Record<string, unknown> }) => {
 				if (path === '/insights') return mocks.insights(options?.query);
-				if (path === '/insights/recaps') return { recaps: [], announced: null };
+				if (path === '/insights/recaps') return mocks.recaps();
 				if (path === '/settings/interface') return { state: {} };
 				throw new Error(`not in this test: ${path}`);
 			}),
@@ -109,6 +116,8 @@ const headings = (root: HTMLElement) =>
 
 beforeEach(() => {
 	mocks.insights.mockReset();
+	mocks.recaps.mockReset();
+	mocks.recaps.mockResolvedValue(NO_RECAPS);
 	vi.mocked(goto).mockClear();
 });
 
@@ -259,5 +268,87 @@ describe('the Insights screen', () => {
 		expect(row.lastElementChild?.contains(stats as Node), 'Stats is not last').toBe(true);
 		stats?.click();
 		expect(goto).toHaveBeenCalledWith('/insights/stats?period=month&at=2026-09-14');
+	});
+
+	it('says Alongside under its floor while the viewing is past its own', async () => {
+		const answer = page();
+		answer.blocks.push(block('alongside', 'Alongside', 'Not enough yet to say.', false));
+		mocks.insights.mockResolvedValue(answer);
+		const screen = await open({ period: 'month', at: null });
+		expect(words(screen.querySelector('[data-block="alongside"] .statements'))).toBe(
+			'Not enough yet to say.'
+		);
+		expect(screen.querySelector('[data-block="opinions"]')).not.toBeNull();
+	});
+
+	it('draws no Alongside while the whole viewing is below its floor', async () => {
+		mocks.insights.mockResolvedValue(
+			page({
+				blocks: [
+					block('overview', 'Overview', 'Not enough yet to say.', false),
+					block('alongside', 'Alongside', 'Not enough yet to say.', false)
+				]
+			})
+		);
+		const screen = await open({ period: 'month', at: null });
+		expect(screen.querySelector('[data-block="alongside"]')).toBeNull();
+	});
+});
+
+describe("the period's recap as cards", () => {
+	const deckPress = (screen: HTMLElement, said: string) =>
+		[...screen.querySelectorAll<HTMLButtonElement>('.periods button')].find(
+			(one) => words(one) === said
+		);
+
+	it("opens the period's recap from beside Stats", async () => {
+		mocks.insights.mockResolvedValue(page({ today_is_live: false }));
+		mocks.recaps.mockResolvedValue({
+			recaps: [
+				{
+					id: 'r-aug',
+					period: 'month:2026-08',
+					title: 'Your August',
+					span: '',
+					cards: 9,
+					made_at: 1,
+					seen_at: null
+				},
+				{
+					id: 'r-sep',
+					period: 'month:2026-09',
+					title: 'Your September',
+					span: '',
+					cards: 9,
+					made_at: 2,
+					seen_at: null
+				}
+			],
+			announced: null
+		});
+		const screen = await open({ period: 'month', at: '2026-09-14' });
+		const press = deckPress(screen, DECK_WORDS.month.see);
+		expect(press, 'no press for the deck').toBeDefined();
+		expect(press?.parentElement?.lastElementChild?.textContent?.trim()).toBe('Stats');
+		press?.click();
+		await vi.waitFor(() => expect(goto).toHaveBeenCalledWith('/insights/recaps/r-sep'));
+	});
+
+	it('says there is no recap of the period yet, and when one is created', async () => {
+		const shown = vi.spyOn(toasts, 'show');
+		mocks.insights.mockResolvedValue(
+			page({ period: 'week', from: '2026-09-14', to: '2026-09-20' })
+		);
+		const screen = await open({ period: 'week', at: null });
+		deckPress(screen, DECK_WORDS.week.see)?.click();
+		await vi.waitFor(() => expect(shown).toHaveBeenCalledWith(DECK_WORDS.week.none));
+		expect(goto).not.toHaveBeenCalled();
+		shown.mockRestore();
+	});
+
+	it('has no deck press on All, which has no recap', async () => {
+		mocks.insights.mockResolvedValue(page({ period: 'all', from: '2026-01-01', to: '2026-09-30' }));
+		const screen = await open({ period: 'all', at: null });
+		expect(words(screen.querySelector('.periods .after'))).toBe('Stats');
 	});
 });

@@ -23,8 +23,10 @@ statement a later version corrected is made again, once, from the days added up 
 
 A recap is announced by one card at the top of Insights and one quiet line on Browse's header, for a
 week (a day's for a day), the longest period first, inside Sift and nowhere else (`announced`). Opening it or pressing the cross ends that. It is
-never shareable and never exportable: its audience is one person, and a share button is a way to
-leak the library.
+never a share: Sift sends a recap nowhere, and no button posts a card or puts it on another device.
+A card may be kept by the one person reading it, as a picture or the deck as a video, through the
+one door every screenshot takes (`deliver`), and only a card that is not a locked tile, names
+nothing hidden and has something to say (the client's `savable`).
 """
 
 from __future__ import annotations

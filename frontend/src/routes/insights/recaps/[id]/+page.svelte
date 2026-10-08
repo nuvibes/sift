@@ -23,11 +23,14 @@
 	 * and Later stand still as the cards turn. On a window too short for that the width is taken
 	 * once from the window, so the whole card and its controls are on screen together.
 	 *
-	 * ## A picture of a card
+	 * ## A picture of a card, a set of them, the deck as a video
 	 *
 	 * Under the card, Save as picture paints the card in view again at 1080 wide (`share-card.ts`)
 	 * and hands it to the door every screenshot takes. Offered only for a card that may be saved
-	 * (`savable`).
+	 * (`savable`). Under that, Save all as pictures does the same for every savable card still
+	 * ticked, one file each, and a year's or a month's deck can be saved as a video
+	 * (`deck-video.ts`). Each card is laid out for that on a stage nobody sees, one at a time,
+	 * and painted from there. The year's closing card offers Keep as Collections.
 	 *
 	 * ## What is decided here, and what is not
 	 *
@@ -43,19 +46,41 @@
 	 * A recap is made to be shown a card at a time, and a card to be kept as a picture; what must
 	 * not leave is kept back by `savable` (see `RecapCard`).
 	 */
-	import { untrack } from 'svelte';
+	import { tick, untrack } from 'svelte';
 
 	import { page } from '$app/state';
 	import { isMissing } from '$lib/api/client';
 	import {
 		BackButton,
 		Button,
+		Checkbox,
 		Empty,
+		Modal,
 		Note,
 		Problem,
+		ProgressBar,
 		Skeleton,
 		Tooltip
 	} from '$lib/components/common';
+	import { thing } from '$lib/components/common/toast-pieces';
+	import {
+		keepAsCollections,
+		readKeep,
+		readSession,
+		type KeepSheet,
+		type SessionPath
+	} from '$lib/components/insights/cards/kinds';
+	import {
+		encodeFilm,
+		filmCard,
+		filmName,
+		filmOf,
+		filmed,
+		type Held
+	} from '$lib/components/insights/deck-video';
+	import { filesSaid } from '$lib/entity/entity-counts';
+	import { session } from '$lib/shell/session.svelte';
+	import { toasts } from '$lib/shell/toasts.svelte';
 	import type { Crumb } from '$lib/components/common';
 	import RecapCard, { savable } from '$lib/components/insights/RecapCard.svelte';
 	import { cardPicture, pictureName } from '$lib/components/insights/share-card';
@@ -81,6 +106,9 @@
 	let at = $state(0);
 	let turned = $state(1);
 	let taking = $state(false);
+	let recap = $state<Recap | null>(null);
+	let missing = $state(false);
+	let failed = $state(false);
 
 	/** How far a card slides in from as it is turned to, in px: a card's width would be a lurch. */
 	const TURN = 32;
@@ -120,6 +148,137 @@
 		}
 	}
 
+	/* THE STAGE: a card laid out where nobody sees it, to be painted as a picture or filmed. Within
+	   the window, so its pictures load as they would on screen, and clipped to nothing. */
+	let stage = $state<HTMLElement | null>(null);
+	let staged = $state<number | null>(null);
+
+	async function laidOut(index: number): Promise<HTMLElement | null> {
+		staged = index;
+		await tick();
+		await document.fonts?.ready;
+		return stage?.querySelector<HTMLElement>('.recap-card') ?? null;
+	}
+
+	/* The set: every card that may be saved, less the ones the reader unticked. */
+	let untick = $state<Set<number>>(new Set());
+	const savables = $derived(
+		recap ? recap.cards.flatMap((card, index) => (savable(card) ? [index] : [])) : []
+	);
+	const picked = $derived(savables.filter((index) => !untick.has(index)));
+	const leftOut = $derived(recap ? recap.cards.length - savables.length : 0);
+
+	function pick(index: number, on: boolean): void {
+		const next = new Set(untick);
+		if (on) next.delete(index);
+		else next.add(index);
+		untick = next;
+	}
+
+	/* A browser stops a page's downloads after a burst of ten, so a set is saved a second apart. */
+	const PACE_MS = 1100;
+	let takingAll = $state<{ done: number; total: number } | null>(null);
+
+	async function takeAll(): Promise<void> {
+		if (!recap || taking) return;
+		taking = true;
+		takingAll = { done: 0, total: picked.length };
+		try {
+			for (const [n, index] of picked.entries()) {
+				if (n > 0) await new Promise((wake) => setTimeout(wake, PACE_MS));
+				const drawn = await laidOut(index);
+				const picture = drawn ? await cardPicture(drawn) : null;
+				// Untyped, so the clipboard (which holds one picture) refuses it and each lands
+				// as a file of its own.
+				if (picture) await deliver(new Blob([picture]), pictureName(recap.period, index));
+				takingAll = { done: n + 1, total: picked.length };
+			}
+		} finally {
+			staged = null;
+			taking = false;
+			takingAll = null;
+		}
+	}
+
+	/* The video: frames drawn, then the server encoding them. */
+	let filming = $state<{ done: number; total: number; encoding: boolean } | null>(null);
+
+	async function film(): Promise<void> {
+		if (!recap || filming) return;
+		const ground = getComputedStyle(document.body).backgroundColor;
+		filming = { done: 0, total: savables.length, encoding: false };
+		try {
+			const frames: Held[] = [];
+			for (const index of savables) {
+				const drawn = await laidOut(index);
+				const held = drawn ? await filmCard(drawn, recap.cards[index], ground) : null;
+				if (held) frames.push(...held);
+				filming = { ...filming, done: filming.done + 1 };
+			}
+			staged = null;
+			filming = { ...filming, encoding: true };
+			const mp4 = await encodeFilm(recap.id, filmOf(frames));
+			await deliver(mp4, filmName(recap.period));
+		} catch {
+			toasts.show("The video couldn't be saved", { tone: 'error' });
+		} finally {
+			staged = null;
+			filming = null;
+		}
+	}
+
+	/* The longest session's pages, for the card that says how one session went. */
+	let sessionPath = $state<SessionPath | null>(null);
+
+	/* Keep as Collections: the year's closing card, an admin's press. */
+	const keeps = $derived(
+		recap?.period.startsWith('year:') === true &&
+			recap.cards[at]?.kind === 'closing' &&
+			session.isAdmin
+	);
+	let sheet = $state<KeepSheet | null>(null);
+	let keepTicks = $state<Set<string>>(new Set());
+	let keeping = $state(false);
+
+	async function openKeep(): Promise<void> {
+		if (!recap) return;
+		try {
+			sheet = await readKeep(recap.id);
+			keepTicks = new Set(
+				sheet.lists.filter((one) => one.ticked && !one.kept).map((one) => one.key)
+			);
+		} catch {
+			toasts.show("Keep as Collections couldn't be opened", { tone: 'error' });
+		}
+	}
+
+	function keepTick(key: string, on: boolean): void {
+		const next = new Set(keepTicks);
+		if (on) next.add(key);
+		else next.delete(key);
+		keepTicks = next;
+	}
+
+	async function keep(): Promise<void> {
+		if (!sheet || keeping) return;
+		keeping = true;
+		try {
+			const kept = await keepAsCollections(sheet.lists.filter((one) => keepTicks.has(one.key)));
+			sheet = null;
+			const named = kept.flatMap((one, n) => [
+				n ? ', ' : '',
+				thing('collection', one.id, one.name)
+			]);
+			toasts.show(kept.length ? ['Sift created ', ...named] : 'Nothing new to keep', {
+				tone: 'success'
+			});
+		} catch {
+			toasts.show("The Collections couldn't be created", { tone: 'error' });
+		} finally {
+			keeping = false;
+		}
+	}
+
 	/* The deck's width where the window is too short for a whole card at the story's width: what
 	   is left under the card's top, less the controls, at 9:16. Measured when a deck opens and
 	   when the window changes, never between two cards. */
@@ -138,10 +297,6 @@
 		if (recap && list && controls) untrack(fit);
 	});
 
-	let recap = $state<Recap | null>(null);
-	let missing = $state(false);
-	let failed = $state(false);
-
 	/* Answers are numbered so a slow one for an address already left cannot land on the next. */
 	let asked = 0;
 
@@ -152,6 +307,9 @@
 			if (mine !== asked) return;
 			recap = got;
 			at = Math.min(at, Math.max(0, got.cards.length - 1));
+			sessionPath = got.cards.some((card) => card.kind === 'session' && !card.hidden)
+				? await readSession(got.id).catch(() => null)
+				: null;
 			missing = false;
 			failed = false;
 		} catch (error) {
@@ -256,7 +414,13 @@
 						>
 							{#if index === at}
 								<div class="turned" in:arrive={{ x: turned * TURN, pace: 'slow' }}>
-									<RecapCard {card} heading={recap.title} place={place(index)} foot={recap.span} />
+									<RecapCard
+										{card}
+										heading={recap.title}
+										place={place(index)}
+										foot={recap.span}
+										session={sessionPath}
+									/>
 								</div>
 							{/if}
 						</li>
@@ -290,7 +454,106 @@
 						/>
 					</Tooltip>
 				</div>
+				<div class="deck-saves">
+					<Checkbox
+						state={savable(recap.cards[at]) && !untick.has(at) ? 'on' : 'off'}
+						disabled={!savable(recap.cards[at])}
+						label="This card in the set"
+						onchange={(next) => pick(at, next === 'on')}
+					/>
+					<Button
+						icon="photo_library"
+						tone="ghost"
+						disabled={picked.length === 0 || taking || filming !== null}
+						onclick={() => void takeAll()}
+						>{picked.length === savables.length
+							? 'Save all as pictures'
+							: `Save ${picked.length} as pictures`}</Button
+					>
+					{#if filmed(recap.period)}
+						<Button
+							icon="save"
+							tone="ghost"
+							disabled={savables.length === 0 || taking || filming !== null}
+							onclick={() => void film()}>Save as video</Button
+						>
+					{/if}
+					{#if keeps}
+						<Button icon="bookmark_add" tone="ghost" onclick={() => void openKeep()}
+							>Keep as Collections</Button
+						>
+					{/if}
+				</div>
+				{#if leftOut > 0}
+					<p class="left-out">
+						{savables.length} of {recap.cards.length}; {leftOut}
+						{leftOut === 1 ? 'names' : 'name'} something hidden
+					</p>
+				{/if}
+				{#if takingAll}
+					<ProgressBar
+						value={takingAll.done}
+						max={takingAll.total}
+						label={`Saving pictures: ${takingAll.done} of ${takingAll.total}`}
+					/>
+				{/if}
+				{#if filming}
+					<ProgressBar
+						value={filming.encoding ? null : filming.done}
+						max={filming.total}
+						label={filming.encoding
+							? 'Encoding the video'
+							: `Drawing the video: ${filming.done} of ${filming.total} cards`}
+					/>
+				{/if}
 			</section>
+
+			<div class="stage" bind:this={stage} aria-hidden="true" inert>
+				{#if staged !== null && recap.cards[staged]}
+					<RecapCard
+						card={recap.cards[staged]}
+						heading={recap.title}
+						place={place(staged)}
+						foot={recap.span}
+						session={sessionPath}
+					/>
+				{/if}
+			</div>
+
+			<Modal
+				open={sheet !== null}
+				onOpenChange={(open) => {
+					if (!open) sheet = null;
+				}}
+				title="Keep as Collections"
+				description="Sift creates each one you tick as a Collection, named for the year."
+			>
+				{#snippet children()}
+					<ul class="keep">
+						{#each sheet?.lists ?? [] as one (one.key)}
+							<li>
+								{#if one.kept}
+									<a href={`/collections/${one.kept}`}>{one.name}</a>
+									<span class="kept">Already kept</span>
+								{:else}
+									<Checkbox
+										state={keepTicks.has(one.key) ? 'on' : 'off'}
+										label={one.name}
+										onchange={(next) => keepTick(one.key, next === 'on')}
+									/>
+									<span>{one.name}</span>
+									<span class="kept">{filesSaid(one.asset_ids.length)}</span>
+								{/if}
+							</li>
+						{/each}
+					</ul>
+				{/snippet}
+				{#snippet footer()}
+					<Button disabled={keepTicks.size === 0 || keeping} onclick={() => void keep()}
+						>Keep</Button
+					>
+				{/snippet}
+			</Modal>
 
 			{#if onInsights}
 				<a class="see-it" href={onInsights.href}>{onInsights.label}</a>
@@ -353,11 +616,54 @@
 		display: grid;
 	}
 
-	.controls {
+	.controls,
+	.deck-saves {
 		display: flex;
 		align-items: center;
 		justify-content: center;
 		gap: var(--space-2);
+	}
+
+	.deck-saves {
+		flex-wrap: wrap;
+	}
+
+	.left-out {
+		margin: 0;
+		font: var(--text-label);
+		color: var(--sift-ink-3);
+		text-align: center;
+	}
+
+	/* Laid out at the story's width inside the window, so its pictures load, and drawn nowhere. */
+	.stage {
+		position: absolute;
+		inset-block-start: 0;
+		inset-inline-start: 0;
+		inline-size: var(--story-width);
+		clip-path: inset(50%);
+		pointer-events: none;
+	}
+
+	.keep {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-3);
+		margin: 0;
+		padding: 0;
+		list-style: none;
+	}
+
+	.keep li {
+		display: flex;
+		align-items: center;
+		gap: var(--space-2);
+	}
+
+	.kept {
+		margin-inline-start: auto;
+		font: var(--text-label);
+		color: var(--sift-ink-3);
 	}
 
 	/* The way on, in the link face every quiet way on in Insights wears. */

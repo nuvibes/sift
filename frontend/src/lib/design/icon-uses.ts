@@ -588,7 +588,7 @@ export const ICON_USES: Record<IconName, IconUse> = {
 	},
 	info: {
 		what: 'Something worth knowing',
-		where: 'A plain toast, the details panel, and the About section.'
+		where: 'A plain toast, the details panel, the About section, and each figure on Insights.'
 	},
 	inbox: {
 		what: 'Organize',

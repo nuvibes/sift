@@ -34,7 +34,7 @@ it('draws a glyph and a title when it is the whole screen', () => {
 	expect(shown.querySelector('.empty .glyph')).not.toBeNull();
 	expect(words(shown.querySelector('.empty .title'))).toBe('No recaps yet');
 	expect(words(shown.querySelector('.empty .said'))).toBe(
-		'After a week, a month or a year with enough viewing in it, its recap appears here.'
+		'After a day, a week, a month or a year with enough viewing in it, its recap appears here.'
 	);
 });
 
@@ -42,5 +42,7 @@ it('says the whole of it in one sentence inside a block', () => {
 	const shown = draw({ limit: 6 });
 
 	expect(shown.querySelector('.empty .title')).toBeNull();
-	expect(words(shown.querySelector('.empty .said'))).toMatch(/^No recaps yet\. After a week/);
+	expect(words(shown.querySelector('.empty .said'))).toMatch(
+		/^No recaps yet\. After a day, a week/
+	);
 });

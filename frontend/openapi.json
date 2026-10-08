@@ -1717,6 +1717,20 @@
         "title": "Body_import_upload_api_capture_import_file_post",
         "type": "object"
       },
+      "Body_recap_video_api_insights_recaps__recap_id__video_post": {
+        "properties": {
+          "frames": {
+            "contentMediaType": "application/octet-stream",
+            "title": "Frames",
+            "type": "string"
+          }
+        },
+        "required": [
+          "frames"
+        ],
+        "title": "Body_recap_video_api_insights_recaps__recap_id__video_post",
+        "type": "object"
+      },
       "Body_restore_api_backup_restore_post": {
         "properties": {
           "file": {
@@ -10464,6 +10478,66 @@
         "title": "KeepPicture",
         "type": "object"
       },
+      "KeepSheet": {
+        "properties": {
+          "lists": {
+            "items": {
+              "$ref": "#/components/schemas/KeptList"
+            },
+            "title": "Lists",
+            "type": "array"
+          }
+        },
+        "required": [
+          "lists"
+        ],
+        "title": "KeepSheet",
+        "type": "object"
+      },
+      "KeptList": {
+        "description": "One Collection the press can keep: its name, its files, and the one kept, if any.",
+        "properties": {
+          "asset_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Asset Ids",
+            "type": "array"
+          },
+          "kept": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kept"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "ticked": {
+            "title": "Ticked",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "key",
+          "name",
+          "asset_ids",
+          "ticked",
+          "kept"
+        ],
+        "title": "KeptList",
+        "type": "object"
+      },
       "KeptNameOut": {
         "description": "One value in a saved search that its chip cannot read from the query alone.\n\n`field` is the parameter as the query spells it; `value` is what the query holds there (an id,\nor a name nothing answers to any more); `name` is what the thing is called now, or null where\nit is gone.",
         "properties": {
@@ -16919,6 +16993,16 @@
       "RecapCard": {
         "description": "One card, as the reader may be shown it now.",
         "properties": {
+          "calendar": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Calendar"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "chart": {
             "anyOf": [
               {
@@ -16949,6 +17033,13 @@
                 "type": "null"
               }
             ]
+          },
+          "figures": {
+            "items": {
+              "$ref": "#/components/schemas/Figure"
+            },
+            "title": "Figures",
+            "type": "array"
           },
           "hidden": {
             "default": false,
@@ -16989,6 +17080,10 @@
               "downloads",
               "theater_files",
               "alongside",
+              "mosaic",
+              "before_after",
+              "race",
+              "heatmap",
               "achievement"
             ],
             "title": "Kind",
@@ -17017,6 +17112,8 @@
           "cover",
           "rows",
           "chart",
+          "calendar",
+          "figures",
           "hidden_things",
           "hidden"
         ],
@@ -20618,6 +20715,28 @@
         "title": "SemanticStatus",
         "type": "object"
       },
+      "SessionPath": {
+        "properties": {
+          "more": {
+            "default": 0,
+            "title": "More",
+            "type": "integer"
+          },
+          "steps": {
+            "items": {
+              "$ref": "#/components/schemas/SessionStep"
+            },
+            "title": "Steps",
+            "type": "array"
+          }
+        },
+        "required": [
+          "steps",
+          "more"
+        ],
+        "title": "SessionPath",
+        "type": "object"
+      },
       "SessionReport": {
         "description": "One report of a Theater session: the wall opening, or the wall closing.\n\nFacts only, the way a sitting's report is. The wall sends one when it opens, with nothing on it\nbut the time, and one when it closes, with what it was: the layout, how many cells, what each\nwas drawing from, the saved wall it came from, and how many different files it showed. Every\nfield is optional so that the opening report is the same shape as the closing one, and so a\nroute answering a keepalive from a closing page never refuses the whole report over one field.",
         "properties": {
@@ -20695,6 +20814,24 @@
           }
         },
         "title": "SessionReport",
+        "type": "object"
+      },
+      "SessionStep": {
+        "description": "One page of the path, as a link to it, and how long into the session it was opened.",
+        "properties": {
+          "after_ms": {
+            "title": "After Ms",
+            "type": "integer"
+          },
+          "piece": {
+            "$ref": "#/components/schemas/HistoryPiece"
+          }
+        },
+        "required": [
+          "piece",
+          "after_ms"
+        ],
+        "title": "SessionStep",
         "type": "object"
       },
       "SetFolderAnswers": {
@@ -37505,6 +37642,141 @@
           }
         },
         "summary": "Dismiss Recap",
+        "tags": [
+          "insights"
+        ]
+      }
+    },
+    "/api/insights/recaps/{recap_id}/keep": {
+      "get": {
+        "description": "The Collections a year's recap can be kept as, each with the files the reader may put in\nit now, and the one already kept. Creating them is the Collections routes'.",
+        "operationId": "keep_sheet_api_insights_recaps__recap_id__keep_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "recap_id",
+            "required": true,
+            "schema": {
+              "title": "Recap Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KeepSheet"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Keep Sheet",
+        "tags": [
+          "insights"
+        ]
+      }
+    },
+    "/api/insights/recaps/{recap_id}/session": {
+      "get": {
+        "description": "The pages of the recap's longest session, each as the reader may be shown it now.",
+        "operationId": "recap_session_api_insights_recaps__recap_id__session_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "recap_id",
+            "required": true,
+            "schema": {
+              "title": "Recap Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionPath"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Recap Session",
+        "tags": [
+          "insights"
+        ]
+      }
+    },
+    "/api/insights/recaps/{recap_id}/video": {
+      "post": {
+        "description": "The frames in the body, encoded as an MP4 of the deck. Only the caller's own year or month\nrecap; nothing of the library is read.",
+        "operationId": "recap_video_api_insights_recaps__recap_id__video_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "recap_id",
+            "required": true,
+            "schema": {
+              "title": "Recap Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_recap_video_api_insights_recaps__recap_id__video_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "video/mp4": {}
+            },
+            "description": "The deck as an MP4."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Recap Video",
         "tags": [
           "insights"
         ]

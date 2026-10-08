@@ -62,6 +62,17 @@ const page = {
 			notes: []
 		},
 		{
+			id: 'alongside',
+			title: 'Alongside',
+			floor_reached: false,
+			statements: [said('Not enough yet to say.')],
+			figures: [],
+			chart: null,
+			lists: [],
+			calendar: null,
+			notes: []
+		},
+		{
 			id: 'when',
 			title: 'When',
 			floor_reached: true,
@@ -88,10 +99,10 @@ const names = [
 ];
 const recap = {
 	id: 'r-one',
-	period: 'week:2026-W40',
-	title: 'Your week',
-	span: 'September 28 to October 4, 2026',
-	heading: 'Last week, in 4 cards',
+	period: 'month:2026-09',
+	title: 'Your September',
+	span: 'September 2026',
+	heading: 'September, in 4 cards',
 	made_at: 1791500000000,
 	first_day: '2026-09-28',
 	hidden_line: null,
@@ -107,7 +118,9 @@ const recap = {
 			rows: [],
 			chart: null,
 			hidden_things: [],
-			hidden: false
+			hidden: false,
+			figures: [],
+			calendar: null
 		},
 		{
 			id: 'c2',
@@ -124,7 +137,9 @@ const recap = {
 			})),
 			chart: null,
 			hidden_things: [],
-			hidden: false
+			hidden: false,
+			figures: [],
+			calendar: null
 		},
 		{
 			id: 'c3',
@@ -138,18 +153,22 @@ const recap = {
 				Array.from({ length: 24 }, (_, hour) => (hour === 22 ? 2 * HOUR : 0))
 			),
 			hidden_things: [],
-			hidden: false
+			hidden: false,
+			figures: [],
+			calendar: null
 		},
 		{
 			id: 'c4',
 			kind: 'closing',
 			figure: null,
-			statement: said('That was last week.'),
+			statement: said('That was September.'),
 			cover: null,
 			rows: [],
 			chart: null,
 			hidden_things: [],
-			hidden: false
+			hidden: false,
+			figures: [],
+			calendar: null
 		}
 	]
 };
@@ -220,4 +239,53 @@ test("a recap's cards are one size and Later never moves", async ({ page: browse
 	for (const box of boxes) expect(box).toEqual(boxes[0]);
 	for (const press of presses) expect(press).toEqual(presses[0]);
 	expect(boxes[0].h).toBeGreaterThan(boxes[0].w);
+});
+
+test('a figure says what it counts on a hover, and Alongside under its floor says so', async ({
+	page: browser
+}) => {
+	await browser.goto('/insights?period=week');
+	await browser.getByRole('button', { name: 'What counts' }).nth(1).hover();
+	await expect(browser.getByRole('tooltip')).toContainText('What sessions counts.');
+	await expect(browser.locator('[data-block="alongside"]')).toContainText('Not enough yet to say.');
+	await browser.goto('/insights?period=day');
+	await expect(browser.locator('[data-block="alongside"]')).toHaveCount(0);
+});
+
+test('See this week as cards says when no recap exists yet', async ({ page: browser }) => {
+	await browser.goto('/insights?period=week');
+	await browser.getByRole('button', { name: 'See this week as cards' }).click();
+	await expect(browser.getByText(/No recap of this week yet/)).toBeVisible();
+});
+
+test('a set of cards is saved one file each, the unticked card left out', async ({
+	page: browser
+}) => {
+	await browser.goto('/insights/recaps/r-one');
+	await expect(browser.getByRole('button', { name: 'Save all as pictures' })).toBeVisible();
+	// The tick is the card in view's: turn to the last card and leave it out of the set.
+	for (let turn = 0; turn < 3; turn += 1)
+		await browser.getByRole('button', { name: 'Later' }).click();
+	await browser.getByRole('checkbox', { name: 'This card in the set' }).click();
+	const downloads: string[] = [];
+	browser.on('download', (one) => downloads.push(one.suggestedFilename()));
+	await browser.getByRole('button', { name: 'Save 3 as pictures' }).click();
+	await expect.poll(() => downloads.length, { timeout: 20_000 }).toBe(3);
+	expect(downloads.every((name) => name.endsWith('.png'))).toBe(true);
+});
+
+test('a deck is saved as a video through the server, frames in', async ({ page: browser }) => {
+	let frames = 0;
+	await browser.route('**/api/insights/recaps/r-one/video', async (route) => {
+		const body = route.request().postDataBuffer();
+		// One film of frames, each a picture: a two-card deck is far over ten kilobytes.
+		frames = body ? Math.floor(body.length / 10_000) : 0;
+		await route.fulfill({ status: 200, contentType: 'video/mp4', body: Buffer.from('mp4') });
+	});
+	await browser.goto('/insights/recaps/r-one');
+	const saved = browser.waitForEvent('download', { timeout: 60_000 });
+	await browser.getByRole('button', { name: 'Save as video' }).click();
+	const file = await saved;
+	expect(file.suggestedFilename()).toMatch(/\.mp4$/);
+	expect(frames).toBeGreaterThan(10);
 });

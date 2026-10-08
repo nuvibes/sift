@@ -110,3 +110,20 @@ describe('the card at the top of Insights', () => {
 		expect(line.textContent).not.toContain('is ready');
 	});
 });
+
+it("announces the one recap the server names, a day's by its weekday, in both places", async () => {
+	const day = {
+		...SEPTEMBER,
+		id: 'r-day',
+		period: 'day:2026-10-06',
+		title: 'Your Tuesday',
+		span: 'October 6, 2026'
+	};
+	server.get.mockResolvedValue({ recaps: [day, SEPTEMBER], announced: day });
+	const line = await draw(RecapLine);
+	const card = await draw(RecapAnnouncement);
+	expect(line.querySelector('a')?.textContent).toBe('Your Tuesday is ready');
+	expect(line.querySelector('a')?.getAttribute('href')).toBe('/insights/recaps/r-day');
+	expect(card.querySelector('a')?.getAttribute('href')).toBe('/insights/recaps/r-day');
+	expect(card.textContent).not.toContain('Your September');
+});

@@ -1,9 +1,8 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """Every route, called over HTTP as each kind of user, answers what `MATRIX` says it should.
 
-A behavioural gate rather than a lint: a static check proves a route has an authorization check,
-not that the check answers right. A route missing from `MATRIX` fails the build, so adding a route
-means deciding, in writing, who may call it.
+A behavioural gate: a static check proves a route has an authorization check, not that it answers
+right. A route missing from `MATRIX` fails the build, so adding one means deciding who may call it.
 """
 
 from __future__ import annotations
@@ -79,15 +78,10 @@ class Policy(StrEnum):
     """Any signed-in user, guest included. The route still has to scope what it returns."""
 
     ADMIN = "admin"
-    """Admins only, enforced by the server. Hiding the button is not this."""
 
 
-#: Every id below names a real seeded row. A route answers 404 for an id that names nothing, and
-#: this table reads 404 as a refusal, so a made-up id would pass for every role and prove nothing.
-#: A destructive route gets a row of its own, so the routes called after it still find theirs.
-#:
-#: Two jobs because retry needs a failed one and cancel an unfinished one; the cancellable one is
-#: `blocked`, because the booted workers would claim and fail a `queued` one first.
+#: Every id names a real seeded row (a made-up id's 404 reads as a refusal for every role); a
+#: destructive route gets a row of its own. Two jobs: retry needs a failed one, cancel a `blocked` one.
 FAILED_JOB = "01HX0000000000000000000001"
 CANCELABLE_JOB = "01HX0000000000000000000002"
 A_FINISHED_RUN = "01HX0000000000000000000003"
@@ -1495,21 +1489,27 @@ MATRIX: dict[tuple[str, str], Case] = {
     ("DELETE", "/api/sites/{site_id}"): Case(
         Policy.ADMIN, params={"site_id": A_DELETABLE_SITE}, destructive=True
     ),
-    # --- Get to know Sift: each path is worked out for whoever asks.
     ("GET", "/api/insights/path"): Case(Policy.AUTHENTICATED),
-    # --- Insights: every read is narrowed to the asker; what Sift did is left out of a guest's page
-    # inside the route.
+    # --- Insights: every read is narrowed to the asker inside the route.
     ("GET", "/api/insights"): Case(Policy.AUTHENTICATED),
     ("POST", "/api/insights/visits"): Case(Policy.AUTHENTICATED),
     ("DELETE", "/api/insights/history"): Case(Policy.AUTHENTICATED),
-    # --- Recaps: asked with the caller's id beside the recap's, so another User's recap answers the
-    # 404 an unminted id does. The sweep's users own none, so both roles get that 404.
+    # --- Recaps: another User's recap answers the 404 an unminted id does; the sweep's users own none.
     ("GET", "/api/insights/recaps"): Case(Policy.AUTHENTICATED),
     ("GET", "/api/insights/recaps/{recap_id}"): Case(
         Policy.AUTHENTICATED, params={"recap_id": A_RECAP}, answers_anyway=404
     ),
     ("POST", "/api/insights/recaps/{recap_id}/dismiss"): Case(
         Policy.AUTHENTICATED, params={"recap_id": A_RECAP}, answers_anyway=404
+    ),
+    ("POST", "/api/insights/recaps/{recap_id}/video"): Case(
+        Policy.AUTHENTICATED, params={"recap_id": A_RECAP}, answers_anyway=404
+    ),
+    ("GET", "/api/insights/recaps/{recap_id}/session"): Case(
+        Policy.AUTHENTICATED, params={"recap_id": A_RECAP}, answers_anyway=404
+    ),
+    ("GET", "/api/insights/recaps/{recap_id}/keep"): Case(
+        Policy.ADMIN, params={"recap_id": A_RECAP}, answers_anyway=404
     ),
     # The browser client holds nothing; every endpoint it calls decides for itself.
     ("GET", "/{path:path}"): Case(Policy.PUBLIC, params={"path": ""}),

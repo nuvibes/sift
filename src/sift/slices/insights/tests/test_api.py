@@ -891,6 +891,12 @@ async def test_alongside_says_two_measures_rose_together_with_its_sample(
     assert [said(line) for line in alongside["statements"]] == [
         "Over 10 days, the days you viewed Theater most were the days you starred the most files."
     ]
+    # Two figures a sentence, the first measure's then the second's, each with its definition.
+    assert [(one["label"], one["unit"]) for one in alongside["figures"]] == [
+        ("In Theater", "ms"),
+        ("Starred", "count"),
+    ]
+    assert all(one["value"] > 0 and one["defines"] for one in alongside["figures"])
     theater = block(body, "theater")
     defines = {one["label"]: said(one["defines"]) for one in theater["figures"]}
     assert defines["Sessions"] == text_of(definitions.definition("Theater sessions") or ())

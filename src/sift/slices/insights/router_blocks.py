@@ -745,12 +745,38 @@ async def _alongside_block(access: Repository, database: Database, page: Page) -
     unit, spans = together.closed_spans(page.period)
     people = await top(access, database, page.viewer, "person", book.keyed("viewed_ms:person"), 1)
     person = people[0][0] if people else None
-    pairs = together.together_pairs(
-        together.series_of(book.daily, spans, person.id if person else None)
-    )
+    series = together.series_of(book.daily, spans, person.id if person else None)
+    pairs = together.together_pairs(series)
     if not pairs:
         return _block("alongside", floor_reached=False)
-    return _block("alongside", [together.together(unit, pair, person) for pair in pairs])
+    # Two figures a sentence, the first measure's then the second's, summed over the same closed
+    # spans the coefficient was read over: the client draws them beside the sentence.
+    figures = [
+        _measure_figure(measure, series) for pair in pairs for measure in (pair.first, pair.second)
+    ]
+    return _block(
+        "alongside", [together.together(unit, pair, person) for pair in pairs], figures=figures
+    )
+
+
+#: Each Alongside measure's figure label, one the definitions know.
+_MEASURE_LABELS: Mapping[str, str] = {
+    "theater": "In Theater",
+    "starred": "Starred",
+    "viewed": "Viewed",
+    "added": "Files arrived",
+    "sessions": "Sessions",
+    "decided": "Questions answered",
+    "o": "O count",
+    "person": "Viewed",
+}
+
+
+def _measure_figure(measure: str, series: Mapping[str, Sequence[int]]) -> Figure:
+    """One measure of an Alongside pair over the spans it was read over, as a figure."""
+    metric, _key = together.MEASURES[measure]
+    unit: Unit = "ms" if metric.startswith("viewed_ms") else "count"
+    return Figure(label=_MEASURE_LABELS[measure], value=sum(series.get(measure, ())), unit=unit)
 
 
 def _days_counted(period: Period, first: date | None) -> int:

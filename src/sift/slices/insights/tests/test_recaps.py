@@ -801,7 +801,7 @@ async def test_a_deck_holds_at_most_its_cards_and_always_closes(
         "headline",
         "top_person",
         "new_favourite",
-        "top_five",
+        "mosaic",
         "closing",
     ]
     assert len(recaps.DECKS[PeriodKind.YEAR]) > 18 and set(recaps.DECKS[PeriodKind.YEAR]) <= set(

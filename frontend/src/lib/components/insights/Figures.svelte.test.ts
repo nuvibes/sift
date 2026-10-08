@@ -10,6 +10,7 @@ import { reactiveProps, words } from '$lib/design/testing.svelte';
 import { applyStyles, removeStyles } from '$lib/design/testing-styles';
 import { clockTime } from '$lib/shell/when';
 import Figures from './Figures.svelte';
+import { INSIGHTS_WORDS } from './words';
 import source from '$lib/components/charts/FigureCard.svelte?raw';
 import figuresSource from './Figures.svelte?raw';
 import type { Figure } from './figures';
@@ -151,4 +152,57 @@ it('shares the row between the cards it has, leaving no room for a card that is 
 	const row = host.querySelector('.figures') as HTMLElement;
 	applyStyles(figuresSource, row);
 	expect(getComputedStyle(row).gridTemplateColumns).toContain('auto-fit');
+});
+
+describe('what a figure counts', () => {
+	const plain = (text: string) => ({
+		text,
+		kind: null,
+		id: null,
+		href: null,
+		gone: false,
+		rest: [],
+		lead: ''
+	});
+
+	it("says the server's one sentence in the press's tooltip, held by a press, let go by Escape", async () => {
+		draw([{ ...sessions(12), defines: [plain('One for each view outside Theater.')] }]);
+		const press = host.querySelector<HTMLButtonElement>(
+			`.aside button[aria-label="${INSIGHTS_WORDS.defines}"]`
+		);
+		expect(press, 'the figure carries no press for its definition').not.toBeNull();
+		const bubble = () => document.querySelector('[role="tooltip"]');
+		press?.click();
+		flushSync();
+		await vi.waitFor(() => expect(bubble()).not.toBeNull());
+		expect(words(bubble())).toContain(INSIGHTS_WORDS.defines);
+		expect(words(bubble())).toContain('One for each view outside Theater.');
+		expect(document.querySelector('[role="dialog"]'), 'a panel opened').toBeNull();
+		press?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+		flushSync();
+		await vi.waitFor(() => expect(bubble()).toBeNull());
+		/* Let go, so the next press holds it again rather than letting go of nothing. */
+		press?.click();
+		flushSync();
+		await vi.waitFor(() => expect(bubble()).not.toBeNull());
+	});
+
+	it('draws no press for a figure the server sent no definition for', () => {
+		draw([sessions(12)]);
+		expect(host.querySelector('.aside')).toBeNull();
+	});
+
+	it('says the hidden part beside the press while the vault is open', () => {
+		draw([
+			{
+				...sessions(12),
+				hidden_part: 3,
+				hidden_said: '3',
+				defines: [plain('One for each view outside Theater.')]
+			}
+		]);
+		const foot = host.querySelector('.aside') as HTMLElement;
+		expect(words(foot)).toContain('3');
+		expect(foot.querySelector('button')?.getAttribute('aria-label')).toBe(INSIGHTS_WORDS.defines);
+	});
 });

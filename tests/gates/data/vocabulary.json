@@ -81,8 +81,7 @@
 			"NVIDIA",
 			"AcoustID",
 			"GNU",
-			"AGPL-3.0-or-later"
-		],
+			"AGPL-3.0-or-later", "Collections", "Collection"],
 		"phrases": ["Photo Sets", "Photo Set", "Smart Search", "Sites and Tunnels", "Tasks and Activity", "App History", "Updates and Info", "Privacy and Security", "User Management", "Space Grotesk", "Geist Mono", "JetBrains Mono", "Instrument Sans", "Public Sans", "DM Sans", "Saved Layouts", "Saved Layout", "Task Queue", "Import tasks", "Stage View", "Identify settings", "Scan settings", "Generate settings"]
 	},
 

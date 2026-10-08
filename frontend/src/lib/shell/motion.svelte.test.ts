@@ -565,6 +565,10 @@ describe('the one number in the app that moves', () => {
 			.filter((where) => where !== 'lib/shell/motion.svelte.ts')
 			.filter((where) => /\bcountUp\b/.test(readFileSync(join(SOURCE, where), 'utf8')));
 
-		expect(readers).toEqual(['lib/components/charts/FigureCard.svelte']);
+		// And the deck's video, which paints that one count-up frame by frame: the same number moving.
+		expect(readers).toEqual([
+			'lib/components/charts/FigureCard.svelte',
+			'lib/components/insights/deck-video.ts'
+		]);
 	});
 });

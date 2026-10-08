@@ -20,6 +20,30 @@ vi.mock('$lib/api/client', async (importOriginal) => ({
 	api: { get: server.get, post: server.post }
 }));
 vi.mock('$app/navigation', () => ({ goto: vi.fn(), replaceState: vi.fn() }));
+
+const saving = vi.hoisted(() => ({
+	deliver: vi.fn(),
+	cardPicture: vi.fn(),
+	filmCard: vi.fn(),
+	encodeFilm: vi.fn(),
+	keepAsCollections: vi.fn(),
+	admin: { isAdmin: true }
+}));
+vi.mock('$lib/player/snapshot', () => ({ deliver: saving.deliver }));
+vi.mock('$lib/shell/session.svelte', () => ({ session: saving.admin }));
+vi.mock('$lib/components/insights/share-card', async (importOriginal) => ({
+	...(await importOriginal<typeof import('$lib/components/insights/share-card')>()),
+	cardPicture: saving.cardPicture
+}));
+vi.mock('$lib/components/insights/deck-video', async (importOriginal) => ({
+	...(await importOriginal<typeof import('$lib/components/insights/deck-video')>()),
+	filmCard: saving.filmCard,
+	encodeFilm: saving.encodeFilm
+}));
+vi.mock('$lib/components/insights/cards/kinds', async (importOriginal) => ({
+	...(await importOriginal<typeof import('$lib/components/insights/cards/kinds')>()),
+	keepAsCollections: saving.keepAsCollections
+}));
 vi.mock('$app/state', () => ({
 	navigating: { to: null, from: null, type: null, complete: null, delta: null, willUnload: false },
 	page: {
@@ -46,6 +70,8 @@ function card(kind: string, text: string, hidden = false, over: Record<string, u
 		cover: null,
 		rows: [],
 		chart: null,
+		calendar: null,
+		figures: [],
 		hidden_things: [],
 		hidden,
 		...over
@@ -219,5 +245,177 @@ describe('what the vault leaves', () => {
 		await draw();
 		expect(host.textContent).toContain("There's no recap here.");
 		expect(host.textContent).not.toMatch(/hidden|vault|locked/i);
+	});
+});
+
+const press = (words: string) =>
+	(
+		[...document.querySelectorAll('button')].find((button) =>
+			button.textContent?.trim().endsWith(words)
+		) as HTMLButtonElement | undefined
+	)?.click();
+
+async function settle(): Promise<void> {
+	for (let turn = 0; turn < 40; turn += 1) {
+		await vi.advanceTimersByTimeAsync(1200);
+		flushSync();
+	}
+}
+
+describe('saving the deck', () => {
+	beforeEach(() => {
+		vi.useFakeTimers({ toFake: ['setTimeout'] });
+		for (const one of [saving.deliver, saving.cardPicture, saving.filmCard, saving.encodeFilm])
+			one.mockReset();
+		saving.cardPicture.mockResolvedValue(new Blob(['png'], { type: 'image/png' }));
+	});
+
+	afterEach(() => {
+		vi.useRealTimers();
+	});
+
+	it('saves the ticked cards as pictures, one file each, never a card that may not be', async () => {
+		server.get.mockResolvedValue(
+			recap({
+				cards: [
+					card('headline', 'You viewed 41 hours in September.'),
+					card('top_person', '', true),
+					card('o', 'You pressed O 3 times in September.'),
+					card('closing', 'That was September.')
+				]
+			})
+		);
+		await draw();
+		expect(host.querySelector('.left-out')?.textContent?.replace(/\s+/g, ' ').trim()).toBe(
+			'3 of 4; 1 names something hidden'
+		);
+		// The first card out of the set.
+		(host.querySelector('.deck-saves [role="checkbox"]') as HTMLElement).click();
+		flushSync();
+		press('Save 2 as pictures');
+		await settle();
+		expect(saving.deliver.mock.calls.map(([, name]) => name)).toEqual([
+			'recap-month-2026-09-3.png',
+			'recap-month-2026-09-4.png'
+		]);
+		// Untyped, so the clipboard refuses each and it lands as a file.
+		expect(saving.deliver.mock.calls.every(([picture]) => (picture as Blob).type === '')).toBe(
+			true
+		);
+		expect(host.querySelector('.stage .recap-card')).toBeNull();
+	});
+
+	it("films a month's savable cards and saves the video through the same door", async () => {
+		saving.filmCard.mockResolvedValue([{ picture: new Blob(['f']), held: 90 }]);
+		saving.encodeFilm.mockResolvedValue(new Blob(['mp4'], { type: 'video/mp4' }));
+		await draw();
+		press('Save as video');
+		await settle();
+		expect(saving.filmCard).toHaveBeenCalledTimes(3);
+		expect(saving.encodeFilm.mock.calls[0][0]).toBe('r-sep');
+		expect(saving.deliver).toHaveBeenCalledWith(expect.any(Blob), 'recap-month-2026-09.mp4');
+		expect(host.querySelector('[role="progressbar"]')).toBeNull();
+	});
+
+	it('says so when the video cannot be saved', async () => {
+		saving.filmCard.mockResolvedValue([{ picture: new Blob(['f']), held: 90 }]);
+		saving.encodeFilm.mockRejectedValue(new ApiError(500, 'no'));
+		await draw();
+		press('Save as video');
+		await settle();
+		expect(saving.deliver).not.toHaveBeenCalled();
+	});
+
+	it("offers no video of a week's deck", async () => {
+		server.get.mockResolvedValue(recap({ period: 'week:2026-W39' }));
+		await draw();
+		expect(host.textContent).not.toContain('Save as video');
+	});
+});
+
+describe("a year's deck", () => {
+	const year = () =>
+		recap({
+			id: 'r-year',
+			period: 'year:2025',
+			cards: [
+				card('session', 'Your longest visit in 2025 ran 2 hours.'),
+				card('closing', 'That was 2025.')
+			]
+		});
+	const sheet = {
+		lists: [
+			{
+				key: 'most_viewed',
+				name: 'Your 2025, most viewed',
+				asset_ids: ['a1', 'a2'],
+				ticked: true,
+				kept: null
+			},
+			{
+				key: 'rediscovered',
+				name: 'Rediscoveries of 2025',
+				asset_ids: ['a2'],
+				ticked: true,
+				kept: 'c1'
+			},
+			{
+				key: 'new_favourites',
+				name: 'New favorites of 2025',
+				asset_ids: ['a3'],
+				ticked: false,
+				kept: null
+			}
+		]
+	};
+
+	beforeEach(() => {
+		server.get.mockImplementation(async (path: string) => {
+			if (path.endsWith('/session'))
+				return {
+					steps: [
+						{ piece: said('Browse')[0], after_ms: 0 },
+						{ piece: said('Theater')[0], after_ms: 60_000 }
+					],
+					more: 0
+				};
+			if (path.endsWith('/keep')) return sheet;
+			return year();
+		});
+		saving.keepAsCollections.mockReset();
+		saving.keepAsCollections.mockResolvedValue([{ id: 'c2', name: 'Your 2025, most viewed' }]);
+	});
+
+	it('draws how one session went from its pages', async () => {
+		await draw();
+		expect(server.get).toHaveBeenCalledWith('/insights/recaps/r-year/session');
+		expect(inView().querySelector('.session .path')?.textContent).toContain('Theater');
+	});
+
+	it('keeps the ticked lists as Collections from its closing card, never one kept already', async () => {
+		await draw();
+		expect(host.textContent).not.toContain('Keep as Collections');
+		await later();
+		press('Keep as Collections');
+		for (let turn = 0; turn < 6; turn += 1) await Promise.resolve();
+		flushSync();
+		const body = document.body.textContent ?? '';
+		expect(body).toContain('Already kept');
+		expect(body).toContain('2 files');
+		press('Keep');
+		for (let turn = 0; turn < 6; turn += 1) await Promise.resolve();
+		const keptNow = saving.keepAsCollections.mock.calls[0][0] as { key: string }[];
+		expect(keptNow.map((one) => one.key)).toEqual(['most_viewed']);
+	});
+
+	it('offers Keep as Collections to an admin only', async () => {
+		saving.admin.isAdmin = false;
+		try {
+			await draw();
+			await later();
+			expect(host.textContent).not.toContain('Keep as Collections');
+		} finally {
+			saving.admin.isAdmin = true;
+		}
 	});
 });

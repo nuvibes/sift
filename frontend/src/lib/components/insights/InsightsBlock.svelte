@@ -7,12 +7,14 @@
 	 * shape on the wire (`InsightsBlock`) and differs only in what it carries: ten components would
 	 * be ten copies of this markup, free to drift. What makes Overview Overview is the answer.
 	 *
-	 * The statements are the block's figures said as sentences, so past its floor they are not drawn
-	 * again beside the figures; each figure carries the one sentence worth reading under it. They
-	 * are drawn where there is nothing else to show: below the floor ("Not enough yet to say."), or
-	 * where every figure is zero ("You spent no time in Theater this month."). The one exception is
-	 * a CARD of the grid (`variant="card"`), which leads with the block's first statement set large:
-	 * a card says one thing, and its figures are the evidence under it.
+	 * Every figure is a micro card (`Figures`), and the block's one sentence, its first statement,
+	 * stands under them as their reading; the page's hero sets it above, as the page's headline.
+	 * Where there is nothing else to show, below the floor ("Not enough yet to say.") or where every
+	 * figure is zero ("You spent no time in Theater this month."), the statements are all there is.
+	 *
+	 * Alongside is statements that each set two measures side by side, and the server sends their
+	 * figures two to a sentence, in the sentences' order: each sentence is drawn with its two
+	 * figures beside it.
 	 */
 	import { Panel, SectionHeading } from '$lib/components/common';
 	import HeatMap from '$lib/components/charts/HeatMap.svelte';
@@ -27,13 +29,11 @@
 
 	interface Props {
 		block: InsightsBlock;
-		/** `large` for the period's headline block, `small` for one card among several. */
+		/** `large` for a block across the page, `small` for one card among several: its lists in one
+		 *  column. */
 		size?: 'large' | 'small';
-		/**
-		 * `section`, a band of the page under its heading; `card`, one card of the grid the smaller
-		 * blocks stand in, which leads with the block's one statement (a card says one thing, and
-		 * its figures are the evidence under it).
-		 */
+		/** `section`, a band of the page under its heading; `card`, one card of the grid the smaller
+		 *  blocks stand in, its figures bare inside it. */
 		variant?: 'section' | 'card';
 		/** Lead each list with its first row, drawn large with its picture. */
 		lead?: boolean;
@@ -62,19 +62,48 @@
 		!block.floor_reached ||
 			(!block.figures.some(worthACard) && !block.chart && !calendar && block.lists.length === 0)
 	);
-	/* A card's one statement: the first the block says. */
-	const statement = $derived(variant === 'card' || hero ? (block.statements[0] ?? null) : null);
+	/* The block's one sentence: the first it says, unless a figure already carries it as its own. */
+	const text = (pieces: readonly { text: string }[]) => pieces.map((piece) => piece.text).join('');
+	const statement = $derived(block.statements[0] ?? null);
+	const repeated = $derived(
+		statement !== null &&
+			block.figures.some((figure) => worthACard(figure) && text(figure.caption) === text(statement))
+	);
+	/* Alongside's sentences, each with the two figures it sets side by side where they were sent. */
+	const together = $derived(
+		block.id === 'alongside'
+			? block.statements.map((line, index) => ({
+					line,
+					figures:
+						block.figures.length === 2 * block.statements.length
+							? block.figures.slice(2 * index, 2 * index + 2)
+							: []
+				}))
+			: null
+	);
 </script>
 
 {#snippet body()}
 	<SectionHeading id={heading} band={variant === 'card'}>{block.title}</SectionHeading>
-	{#if saysOnlyWords}
+	{#if together && block.floor_reached}
+		<div class="together">
+			{#each together as one, index (index)}
+				<div class="side-by-side">
+					<p class="sentence"><HistorySentence pieces={one.line} /></p>
+					<Figures figures={one.figures} size="small" />
+				</div>
+			{/each}
+		</div>
+	{:else if saysOnlyWords}
 		<Statements lines={block.statements} />
 	{:else}
-		{#if statement}
-			<p class="statement" class:headline={hero}><HistorySentence pieces={statement} /></p>
+		{#if hero && statement}
+			<p class="statement headline"><HistorySentence pieces={statement} /></p>
 		{/if}
-		<Figures figures={block.figures} {size} lead={hero} bare={variant === 'card'} />
+		<Figures figures={block.figures} size="small" lead={hero} bare={variant === 'card'} />
+		{#if !hero && statement && !repeated}
+			<p class="sentence"><HistorySentence pieces={statement} /></p>
+		{/if}
 		{#if hero && (block.chart || (calendar && calendar.days.length > 0))}
 			<!-- The period drawn: its bars and, for a month or a year, its days, on one card. -->
 			<Panel tone="raised" corner="lg" inset="md">
@@ -188,12 +217,32 @@
 		min-inline-size: 0;
 	}
 
-	/* The card's one statement, set as the thing the card says. */
 	.statement {
 		margin: 0;
-		font: var(--text-h2);
-		letter-spacing: var(--tracking-h2);
 		text-wrap: balance;
 		color: var(--sift-ink);
+	}
+
+	/* The block's sentence, under its figures as their reading. */
+	.sentence {
+		margin: 0;
+		max-inline-size: 72ch;
+		font: var(--text-body);
+		text-wrap: pretty;
+		color: var(--sift-ink);
+	}
+
+	/* Alongside: a sentence at the start, its two figures beside it where there is room. */
+	.together {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-6);
+	}
+
+	.side-by-side {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr));
+		align-items: center;
+		gap: var(--space-4);
 	}
 </style>

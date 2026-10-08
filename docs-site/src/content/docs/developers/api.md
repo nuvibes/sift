@@ -240,6 +240,9 @@ This reference lists every route Sift answers, grouped by what it's about. The f
 - `GET /api/insights/recaps`: List Recaps
 - `GET /api/insights/recaps/{recap_id}`: Open Recap
 - `POST /api/insights/recaps/{recap_id}/dismiss`: Dismiss Recap
+- `GET /api/insights/recaps/{recap_id}/keep`: Keep Sheet
+- `GET /api/insights/recaps/{recap_id}/session`: Recap Session
+- `POST /api/insights/recaps/{recap_id}/video`: Recap Video
 - `POST /api/insights/visits`: Report Visits
 
 ## Jobs

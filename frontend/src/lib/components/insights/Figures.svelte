@@ -9,6 +9,9 @@
 	 * crossed-out eye, which is named Hidden; while it is locked the server sends 0 there (a locked
 	 * page says nothing about what it left out), so nothing is drawn.
 	 *
+	 * What a figure counts is one hover away: the server's one sentence (`defines`), in the tooltip
+	 * of the small press at the end of the figure's foot line. A press holds it; Escape lets go.
+	 *
 	 * `lead` sets the first figure as the one the page leads with: the figure size, on the accent's
 	 * run, twice the width of the others. A figure the server sent a `trend` for draws it along its
 	 * foot. While it counts, a figure's in-between frames are worded by the same short form the
@@ -16,6 +19,7 @@
 	 * digits.
 	 */
 	import Icon from '$lib/components/Icon.svelte';
+	import { Button, Tooltip } from '$lib/components/common';
 	import FigureCard from '$lib/components/charts/FigureCard.svelte';
 	import HistorySentence from '$lib/components/common/HistorySentence.svelte';
 
@@ -35,14 +39,36 @@
 	let { figures, size = 'large', lead = false, bare = false }: Props = $props();
 
 	const shown = $derived(figures.filter(worthACard));
+	/* The figure whose definition a press is holding up. */
+	let held = $state<number | null>(null);
 </script>
 
 {#if shown.length > 0}
 	<div class="figures {size}">
 		{#each shown as figure, index (index)}
-			{#snippet hiddenPart()}
-				<Icon name="visibility_off" size={16} label={INSIGHTS_WORDS.hidden} />
-				{saidOf(figure.hidden_said, figure.hidden_part, figure.unit)}
+			{#snippet foot()}
+				{#if figure.hidden_part > 0}
+					<Icon name="visibility_off" size={16} label={INSIGHTS_WORDS.hidden} />
+					{saidOf(figure.hidden_said, figure.hidden_part, figure.unit)}
+				{/if}
+				{#if figure.defines.length > 0}
+					<span class="defines">
+						<Tooltip label={INSIGHTS_WORDS.defines} held={held === index}>
+							{#snippet detail()}<HistorySentence pieces={figure.defines} />{/snippet}
+							<Button
+								tone="ghost"
+								size="small"
+								icon="info"
+								aria-label={INSIGHTS_WORDS.defines}
+								onclick={() => (held = held === index ? null : index)}
+								onkeydown={(event: KeyboardEvent) => {
+									if (event.key === 'Escape') held = null;
+								}}
+								onblur={() => (held = null)}
+							/>
+						</Tooltip>
+					</span>
+				{/if}
 			{/snippet}
 			{#snippet sentence()}
 				<HistorySentence pieces={figure.caption ?? []} />
@@ -60,7 +86,7 @@
 					tone={lead && index === 0 ? 'lit' : 'plain'}
 					trend={figure.trend ?? []}
 					ground={!bare}
-					aside={figure.hidden_part > 0 ? hiddenPart : undefined}
+					aside={figure.hidden_part > 0 || figure.defines.length > 0 ? foot : undefined}
 					caption={figure.caption && figure.caption.length > 0 ? sentence : undefined}
 				/>
 			</div>
@@ -90,13 +116,18 @@
 		min-inline-size: 0;
 	}
 
+	/* The press at the end of the figure's foot line, after the hidden part where there is one. */
+	.defines {
+		margin-inline-start: auto;
+	}
+
 	/* The figure a page leads with takes two columns where the row has them. */
-	.large .first {
+	.first {
 		grid-column: span 2;
 	}
 
 	@media (max-width: 767px) {
-		.large .first {
+		.first {
 			grid-column: auto;
 		}
 	}

@@ -8,8 +8,8 @@
 	},
 	"client-coverage": {
 		"untouched": 7,
-		"lines": 85.73,
-		"uncovered_lines": 5895
+		"lines": 85.81,
+		"uncovered_lines": 5892
 	},
 	"state-matrix": {
 		"undrawn": 0
@@ -459,7 +459,7 @@
 			"frontend/src/lib/components/insights/NamedList.svelte": 37.3,
 			"frontend/src/lib/components/insights/figures.ts": 39.6,
 			"frontend/src/lib/components/insights/period.ts": 39.6,
-			"frontend/src/lib/components/insights/words.ts": 43.6,
+			"frontend/src/lib/components/insights/words.ts": 38.5,
 			"frontend/src/lib/components/insights/your-path.ts": 51.6,
 			"frontend/src/lib/components/organize/Answers.svelte": 25.2,
 			"frontend/src/lib/components/organize/BoardCard.svelte": 37.5,
@@ -644,7 +644,7 @@
 			"frontend/src/lib/library/pinning.svelte.test.ts": 27.4,
 			"frontend/src/lib/library/pinning.svelte.ts": 66.7,
 			"frontend/src/lib/library/rating.svelte.ts": 56.6,
-			"frontend/src/lib/library/recaps.svelte.ts": 48.2,
+			"frontend/src/lib/library/recaps.svelte.ts": 45.1,
 			"frontend/src/lib/library/sharing-marks.ts": 55.2,
 			"frontend/src/lib/library/sharing.test.ts": 25.7,
 			"frontend/src/lib/library/sharing.ts": 49.9,
@@ -1107,7 +1107,7 @@
 			"frontend/src/lib/components/insights/NamedList.svelte": 22,
 			"frontend/src/lib/components/insights/figures.ts": 44,
 			"frontend/src/lib/components/insights/period.ts": 36,
-			"frontend/src/lib/components/insights/words.ts": 34,
+			"frontend/src/lib/components/insights/words.ts": 40,
 			"frontend/src/lib/components/insights/your-path.ts": 32,
 			"frontend/src/lib/components/organize/Answers.svelte": 41,
 			"frontend/src/lib/components/organize/BoardCard.svelte": 104,
@@ -1292,7 +1292,7 @@
 			"frontend/src/lib/library/pinning.svelte.test.ts": 37,
 			"frontend/src/lib/library/pinning.svelte.ts": 92,
 			"frontend/src/lib/library/rating.svelte.ts": 77,
-			"frontend/src/lib/library/recaps.svelte.ts": 54,
+			"frontend/src/lib/library/recaps.svelte.ts": 60,
 			"frontend/src/lib/library/sharing-marks.ts": 79,
 			"frontend/src/lib/library/sharing.test.ts": 27,
 			"frontend/src/lib/library/sharing.ts": 235,

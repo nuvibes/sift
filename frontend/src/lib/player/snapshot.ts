@@ -269,7 +269,7 @@ async function saveToLibrary(
 	of: string | null
 ): Promise<boolean> {
 	const form = new FormData();
-	form.set('file', new File([picture], name, { type: 'image/png' }));
+	form.set('file', new File([picture], name, { type: picture.type || 'image/png' }));
 	if (folder) form.set('dest_folder_id', folder);
 	// The file on screen, whose name the import gives the screenshot.
 	if (of) form.set('screenshot_of', of);

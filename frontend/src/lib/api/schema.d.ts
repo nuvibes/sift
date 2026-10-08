@@ -5007,6 +5007,68 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/insights/recaps/{recap_id}/keep": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Keep Sheet
+         * @description The Collections a year's recap can be kept as, each with the files the reader may put in
+         *     it now, and the one already kept. Creating them is the Collections routes'.
+         */
+        get: operations["keep_sheet_api_insights_recaps__recap_id__keep_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/insights/recaps/{recap_id}/session": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Recap Session
+         * @description The pages of the recap's longest session, each as the reader may be shown it now.
+         */
+        get: operations["recap_session_api_insights_recaps__recap_id__session_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/insights/recaps/{recap_id}/video": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Recap Video
+         * @description The frames in the body, encoded as an MP4 of the deck. Only the caller's own year or month
+         *     recap; nothing of the library is read.
+         */
+        post: operations["recap_video_api_insights_recaps__recap_id__video_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/insights/visits": {
         parameters: {
             query?: never;
@@ -12851,6 +12913,11 @@ export interface components {
             /** Screenshot Of */
             screenshot_of?: string | null;
         };
+        /** Body_recap_video_api_insights_recaps__recap_id__video_post */
+        Body_recap_video_api_insights_recaps__recap_id__video_post: {
+            /** Frames */
+            frames: string;
+        };
         /** Body_restore_api_backup_restore_post */
         Body_restore_api_backup_restore_post: {
             /** File */
@@ -16948,6 +17015,27 @@ export interface components {
             /** Subject */
             subject: string;
         };
+        /** KeepSheet */
+        KeepSheet: {
+            /** Lists */
+            lists: components["schemas"]["KeptList"][];
+        };
+        /**
+         * KeptList
+         * @description One Collection the press can keep: its name, its files, and the one kept, if any.
+         */
+        KeptList: {
+            /** Asset Ids */
+            asset_ids: string[];
+            /** Kept */
+            kept: string | null;
+            /** Key */
+            key: string;
+            /** Name */
+            name: string;
+            /** Ticked */
+            ticked: boolean;
+        };
         /**
          * KeptNameOut
          * @description One value in a saved search that its chip cannot read from the query alone.
@@ -20186,10 +20274,13 @@ export interface components {
          * @description One card, as the reader may be shown it now.
          */
         RecapCard: {
+            calendar: components["schemas"]["Calendar"] | null;
             chart: components["schemas"]["Chart"] | null;
             /** Cover */
             cover: string | null;
             figure: components["schemas"]["Figure"] | null;
+            /** Figures */
+            figures: components["schemas"]["Figure"][];
             /**
              * Hidden
              * @default false
@@ -20203,7 +20294,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "headline" | "top_person" | "top_five" | "top_site" | "top_tag" | "top_song" | "theater" | "when" | "rated" | "sift_did" | "compared" | "o" | "closing" | "top_file" | "first_last" | "new_favourite" | "rediscovered" | "session" | "downloads" | "theater_files" | "alongside" | "achievement";
+            kind: "headline" | "top_person" | "top_five" | "top_site" | "top_tag" | "top_song" | "theater" | "when" | "rated" | "sift_did" | "compared" | "o" | "closing" | "top_file" | "first_last" | "new_favourite" | "rediscovered" | "session" | "downloads" | "theater_files" | "alongside" | "mosaic" | "before_after" | "race" | "heatmap" | "achievement";
             /** Rows */
             rows: components["schemas"]["NamedRow"][];
             /** Statement */
@@ -21870,6 +21961,16 @@ export interface components {
              */
             waiting_files: number;
         };
+        /** SessionPath */
+        SessionPath: {
+            /**
+             * More
+             * @default 0
+             */
+            more: number;
+            /** Steps */
+            steps: components["schemas"]["SessionStep"][];
+        };
         /**
          * SessionReport
          * @description One report of a Theater session: the wall opening, or the wall closing.
@@ -21904,6 +22005,15 @@ export interface components {
             layout?: string | null;
             /** Sources */
             sources?: string[] | null;
+        };
+        /**
+         * SessionStep
+         * @description One page of the path, as a link to it, and how long into the session it was opened.
+         */
+        SessionStep: {
+            /** After Ms */
+            after_ms: number;
+            piece: components["schemas"]["HistoryPiece"];
         };
         /**
          * SetFolderAnswers
@@ -31355,6 +31465,103 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    keep_sheet_api_insights_recaps__recap_id__keep_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                recap_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KeepSheet"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    recap_session_api_insights_recaps__recap_id__session_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                recap_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionPath"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    recap_video_api_insights_recaps__recap_id__video_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                recap_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_recap_video_api_insights_recaps__recap_id__video_post"];
+            };
+        };
+        responses: {
+            /** @description The deck as an MP4. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "video/mp4": unknown;
+                };
             };
             /** @description Validation Error */
             422: {

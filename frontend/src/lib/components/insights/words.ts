@@ -31,8 +31,35 @@ export const INSIGHTS_WORDS = {
 	/** The heading over the recaps this account has. */
 	recaps: 'Recaps',
 	/** What the time by kind adds up to, for the key under the By kind bar. */
-	byKind: 'Time viewed, by kind'
+	byKind: 'Time viewed, by kind',
+	/** The press beside a figure, and the heading of the sentence it opens: what the figure counts. */
+	defines: 'What counts'
 } as const;
+
+/**
+ * The press beside Stats that opens this period's recap as its deck of cards, and what it says
+ * where there is none: a recap is created the day after its period ends, and only of a period
+ * with enough viewing in it.
+ */
+export const DECK_WORDS: Record<'day' | 'week' | 'month' | 'year', { see: string; none: string }> =
+	{
+		day: {
+			see: 'See this day as cards',
+			none: 'No recap of this day yet. Sift creates one the morning after a day with enough viewing in it.'
+		},
+		week: {
+			see: 'See this week as cards',
+			none: 'No recap of this week yet. Sift creates one the day after a week with enough viewing in it.'
+		},
+		month: {
+			see: 'See this month as cards',
+			none: 'No recap of this month yet. Sift creates one the day after a month with enough viewing in it.'
+		},
+		year: {
+			see: 'See this year as cards',
+			none: 'No recap of this year yet. Sift creates one the day after a year with enough viewing in it.'
+		}
+	};
 
 /**
  * The Stats view's words: the screen's name (and the press on Insights that opens it), its line,

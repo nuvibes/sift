@@ -34,7 +34,7 @@ a week closed, and a recap is opened again long after.
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import date
 from typing import cast
@@ -51,8 +51,10 @@ from sift.slices.insights.path import achievement_head
 from sift.slices.insights.recaps_cards import (
     BUILDERS,
     FILE_METRICS,
+    Said,
     _figure_names,
     _said,
+    span_of,
 )
 from sift.slices.insights.recaps_models import (
     CardKind,
@@ -76,6 +78,7 @@ from sift.slices.insights.recaps_periods import (
 from sift.slices.insights.recaps_recipes import (
     _READS,
     FILES_COUNTED,
+    _Totals,
     _totals,
 )
 from sift.slices.insights.store import RecapRow
@@ -160,8 +163,9 @@ def _draw(
                 for name in _naming(one, recipe)
             )
         ]
-        # The first-and-last card chooses among its files when it is said (`_first_last`).
-        naming = gone_now if card.kind != "first_last" else []
+        # The first-and-last card chooses among its files when it is said (`_first_last`), and
+        # the closing card, which every recap keeps, leaves out a figure naming a hidden thing.
+        naming = gone_now if card.kind not in _SAID_AROUND else []
         if locked and (naming or (below_floor and card.kind != "closing")):
             something_hidden = True
             if placeholder and card.kind != "o":
@@ -179,13 +183,22 @@ def _draw(
             if locked and placeholder and card.kind != "o":
                 out.append(_stub(card.kind))
             continue
-        if drawn.figure is not None:
-            drawn.figure.hidden_part = (
-                0 if locked else sum(hidden.get(name, 0) for name in _figure_names(words))
-            )
+        _hidden_figures(drawn, words, {} if locked else hidden)
         drawn.hidden_things = [] if locked else gone_now
         out.append(drawn)
     return _Drawn(out, something_hidden and locked and placeholder)
+
+
+def _hidden_figures(drawn: RecapCard, words: Said, hidden: Mapping[str, int]) -> None:
+    """Each figure's hidden part, for an open vault: nothing while locked (`hidden` empty)."""
+    if drawn.figure is not None:
+        drawn.figure.hidden_part = sum(hidden.get(name, 0) for name in _figure_names(words))
+    for figure, cell in zip(drawn.figures, words.cells, strict=True):
+        figure.hidden_part = hidden.get(cell.figure, 0)
+
+
+#: The cards that leave out what they may not say rather than being locked whole.
+_SAID_AROUND = frozenset({"first_last", "closing"})
 
 
 def _naming(one: NamedThing, recipe: Recipe) -> list[str]:
@@ -239,7 +252,28 @@ async def _hidden_parts(
         for name in _sources_of(cards):
             scope, metric, key = _parts(name)
             parts[name] = read[scope].get((metric, key), (0, 0))[1]
+        parts.update(_within(rows, _sources_of(cards)))
         out.append(parts)
+    return out
+
+
+def _within(rows: _Totals, names: Iterable[str]) -> dict[str, int]:
+    """The hidden part of each source read over part of its period (a day, a month), from one
+    walk of the rows."""
+    wanted: dict[tuple[str, str], list[tuple[str, str, str]]] = {}
+    for name in names:
+        _, metric, key = _parts(name)
+        span = span_of(key)
+        if span is not None:
+            base, first, last = span
+            wanted.setdefault((metric, base), []).append(
+                (name, first.isoformat(), last.isoformat())
+            )
+    out = {name: 0 for found in wanted.values() for name, _, _ in found}
+    for row in rows.rows:
+        for name, low, high in wanted.get((row.metric, row.key), ()):
+            if low <= row.day <= high:
+                out[name] += row.hidden
     return out
 
 

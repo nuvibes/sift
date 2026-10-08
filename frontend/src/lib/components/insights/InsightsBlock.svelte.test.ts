@@ -182,12 +182,31 @@ afterEach(() => {
 });
 
 describe('a block past its floor', () => {
-	it('draws its title and its figures as cards, and not the statements that say them again', () => {
+	it('draws its title, its figures as micro cards and its one sentence under them', () => {
 		const block = draw(overview());
 		expect(words(block.querySelector('h2'))).toBe('Overview');
 		expect(block.querySelector('.statements')).toBeNull();
+		expect(block.querySelector('.figures.small')).not.toBeNull();
 		const figures = [...block.querySelectorAll('.figure')].map((one) => words(one));
 		expect(figures).toEqual(['Viewed 1 d 17 h', 'Sessions 212', 'Daily average 1 h 20 min']);
+		const sentence = block.querySelector('.sentence') as HTMLElement;
+		expect(words(sentence)).toBe(
+			'You viewed 41 hours in August: 29 of videos, 9 of pictures, 3 of GIFs.'
+		);
+		expect(
+			block.querySelector('.figures')?.compareDocumentPosition(sentence),
+			'the sentence stands above the figures'
+		).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+	});
+
+	it('draws no sentence a figure already carries as its own', () => {
+		const fixture = overview();
+		fixture.figures[0] = { ...fixture.figures[0], caption: fixture.statements[0] };
+		const block = draw(fixture);
+		expect(block.querySelector('.sentence')).toBeNull();
+		expect(words(block.querySelector('.figure .caption'))).toBe(
+			'You viewed 41 hours in August: 29 of videos, 9 of pictures, 3 of GIFs.'
+		);
 	});
 
 	it("puts the server's one sentence under a figure, and leaves a figure of nothing out", () => {
@@ -295,6 +314,8 @@ describe('a block past its floor', () => {
 		expect(words(block.querySelector('.statement.headline'))).toBe(
 			'You viewed 41 hours in August: 29 of videos, 9 of pictures, 3 of GIFs.'
 		);
+		expect(block.querySelector('.sentence'), 'the headline is said again under it').toBeNull();
+		expect(block.querySelector('.figure.first .hero.lit')).not.toBeNull();
 		const card = block.querySelector('.drawn') as HTMLElement;
 		expect(card.querySelector('.bar-chart')).not.toBeNull();
 		expect(card.querySelector('.heat-map')).not.toBeNull();
@@ -334,15 +355,10 @@ describe('a block past its floor', () => {
 		);
 	});
 
-	it('draws a block it has no name for (Alongside) the way it draws any block', () => {
-		const block = draw({
-			...overview(),
-			id: 'alongside',
-			title: 'Alongside',
-			chart: null
-		});
-		expect(block.querySelector('[data-block="alongside"]')).not.toBeNull();
-		expect(words(block.querySelector('h2'))).toBe('Alongside');
+	it('draws a block it has no name for the way it draws any block', () => {
+		const block = draw({ ...overview(), id: 'later', title: 'Later', chart: null });
+		expect(block.querySelector('[data-block="later"]')).not.toBeNull();
+		expect(words(block.querySelector('h2'))).toBe('Later');
 		expect(block.querySelectorAll('.figure')).toHaveLength(3);
 	});
 
@@ -423,5 +439,62 @@ describe('a block below its floor', () => {
 		expect(words(block.querySelector('h2'))).toBe('When');
 		expect(words(block.querySelector('.statements'))).toBe('Not enough yet to say.');
 		expect(block.querySelector('.figures, .bar-chart, .ranked-list')).toBeNull();
+	});
+});
+
+describe('Alongside', () => {
+	const SAID = [
+		'Over 9 weeks, the weeks you viewed Theater most were the weeks you starred the most files.',
+		'Over 9 weeks, the weeks you viewed the most were the weeks the most files arrived.'
+	];
+
+	function alongside(figures: Figure[]): Block {
+		return sentBlock({
+			id: 'alongside',
+			title: 'Alongside',
+			floor_reached: true,
+			statements: SAID.map((line) => [plain(line)]),
+			figures
+		});
+	}
+
+	it('draws each sentence with its own two figures beside it, in order', () => {
+		const block = draw(
+			alongside([
+				figure('In Theater', 9 * HOUR, 'ms'),
+				figure('Starred', 40, 'count'),
+				figure('Viewed', 30 * HOUR, 'ms'),
+				figure('Files arrived', 900, 'count')
+			])
+		);
+		const rows = [...block.querySelectorAll('.side-by-side')];
+		expect(rows.map((row) => words(row.querySelector('.sentence')))).toEqual(SAID);
+		expect(
+			rows.map((row) => [...row.querySelectorAll('.figure .label')].map((label) => words(label)))
+		).toEqual([
+			['In Theater', 'Starred'],
+			['Viewed', 'Files arrived']
+		]);
+	});
+
+	it('draws the sentences alone when the figures do not come two to a sentence', () => {
+		const block = draw(alongside([figure('In Theater', 9 * HOUR, 'ms')]));
+		expect([...block.querySelectorAll('.side-by-side .sentence')].map((p) => words(p))).toEqual(
+			SAID
+		);
+		expect(block.querySelector('.figure')).toBeNull();
+	});
+
+	it('says only the one line below its floor', () => {
+		const block = draw(
+			sentBlock({
+				id: 'alongside',
+				title: 'Alongside',
+				floor_reached: false,
+				statements: [[plain('Not enough yet to say.')]]
+			})
+		);
+		expect(words(block.querySelector('.statements'))).toBe('Not enough yet to say.');
+		expect(block.querySelector('.side-by-side')).toBeNull();
 	});
 });

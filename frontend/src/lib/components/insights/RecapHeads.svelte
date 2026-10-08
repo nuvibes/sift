@@ -7,7 +7,7 @@
 	 * come to draw a recap differently.
 	 *
 	 * A row is the title, the days it covers and how many cards it has: the span is what tells one
-	 * "Your week" from the next, and the count is the count this reader will be shown now, which the
+	 * "Your week" from the next (a day's is titled by its weekday, "Your Tuesday"), and the count is the count this reader will be shown now, which the
 	 * server works out for the vault as it stands. A recap a locked vault leaves out is simply not in
 	 * the list.
 	 */
@@ -42,12 +42,12 @@
 	     draw differently (a page carries the glyph and title, a block its sentence alone). -->
 	{#if scope === 'page'}
 		<Empty scope="page" icon="event_repeat" title="No recaps yet">
-			After a week, a month or a year with enough viewing in it, its recap appears here.
+			After a day, a week, a month or a year with enough viewing in it, its recap appears here.
 		</Empty>
 	{:else}
 		<Empty scope="block"
-			>No recaps yet. After a week, a month or a year with enough viewing in it, its recap appears
-			here.
+			>No recaps yet. After a day, a week, a month or a year with enough viewing in it, its recap
+			appears here.
 		</Empty>
 	{/if}
 {:else if shown.length > 0}

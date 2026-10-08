@@ -2,18 +2,15 @@
 	/*
 	 * THE CARD AT THE TOP OF INSIGHTS: a recap is ready, and the way to it.
 	 *
-	 * "Your September", a middle dot and "Ready to read" ("Your week" on a Monday). The whole card
-	 * opens the recap, and opening it is what ends the announcement (the server writes that when it
-	 * draws the recap); the cross ends it without opening. Either way the recap stays in the Recaps
-	 * list below, to be opened whenever.
+	 * "Your September", a middle dot and "Ready to read". Which recap is the server's: the longest
+	 * period's first. The whole card opens it, which ends the announcement; the cross ends it
+	 * without opening. Either way the recap stays in the Recaps list below.
 	 *
-	 * Never a modal, never a sound, never a notification outside the window. It is one card on the
-	 * page somebody already chose to open, and it is gone a week after the recap was made whether or
-	 * not anybody looked: the server stops announcing it then, so nothing here counts days.
+	 * Never a modal, never a sound, never a notification outside the window. The server stops
+	 * announcing a recap after a week (a day's after one day), so nothing here counts days.
 	 *
-	 * Draws nothing at all while there is nothing to announce, including while the list is being
-	 * read and when the read failed: a missing card is the same drawing as no recap, and an error
-	 * about a nicety has no business at the top of a page.
+	 * Draws nothing while there is nothing to announce, while the list is read and when the read
+	 * failed: an error about a nicety has no business at the top of a page.
 	 */
 	import { onMount } from 'svelte';
 

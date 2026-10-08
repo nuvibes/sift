@@ -13,6 +13,9 @@
  *
  * A picture on the card that cannot be drawn (none, a 404, a failed decode) is left off, and the
  * card is saved without it rather than not at all.
+ *
+ * The deck's video paints the same way, frame by frame (`deck-video.ts`), with each figure at the
+ * number it has counted up to by that frame (`counting`).
  */
 /** The picture's width: a phone's screen at the resolution a phone shows one. */
 const PICTURE_WIDTH = 1080;
@@ -91,6 +94,8 @@ interface Painting {
 	context: CanvasRenderingContext2D;
 	origin: DOMRect;
 	scale: number;
+	/** A figure's words at this moment, given its final words; absent, the final words. */
+	counting?: (final: string) => string;
 }
 
 function boxOf(painting: Painting, element: Element) {
@@ -188,8 +193,9 @@ function paintPicture(painting: Painting, image: HTMLImageElement, style: CSSSty
 
 function paintWords(painting: Painting, node: Text, style: CSSStyleDeclaration): void {
 	const { context } = painting;
-	// A figure still counting up is painted at the figure it lands on.
-	const final = node.parentElement?.closest('[data-final]')?.getAttribute('data-final');
+	// A figure still counting up is painted at the figure it lands on, or where a frame has it.
+	const landed = node.parentElement?.closest('[data-final]')?.getAttribute('data-final');
+	const final = landed == null ? null : (painting.counting?.(landed) ?? landed);
 	const words: Word[] = [];
 	const range = document.createRange();
 	for (const match of node.data.matchAll(/\S+/g)) {
@@ -246,9 +252,13 @@ function paintElement(painting: Painting, element: Element, card: HTMLElement): 
 	context.restore();
 }
 
-/** The card painted at 1080 wide, as a PNG. Null for a card that may not be saved (the second
- *  lock on the deck's door), one not laid out, or where the browser gives no canvas. */
-export async function cardPicture(card: HTMLElement): Promise<Blob | null> {
+/** The card painted at 1080 wide onto a canvas, each counting figure at `counting`'s words. Null
+ *  for a card that may not be saved (the second lock on the deck's door), one not laid out, or
+ *  where the browser gives no canvas. */
+export async function paintCard(
+	card: HTMLElement,
+	counting?: (final: string) => string
+): Promise<HTMLCanvasElement | null> {
 	if (card.dataset.savable !== 'true') return null;
 	if (card.getBoundingClientRect().width === 0) return null;
 	const canvas = document.createElement('canvas');
@@ -264,9 +274,16 @@ export async function cardPicture(card: HTMLElement): Promise<Blob | null> {
 	canvas.width = PICTURE_WIDTH;
 	canvas.height = Math.round(origin.height * scale);
 	context.scale(scale, scale);
-	const painting = { context, origin, scale };
+	const painting = { context, origin, scale, counting };
 	paintGround(painting, card);
 	paintElement(painting, card, card);
+	return canvas;
+}
+
+/** The card painted at 1080 wide, as a PNG, or null where `paintCard` gives no canvas. */
+export async function cardPicture(card: HTMLElement): Promise<Blob | null> {
+	const canvas = await paintCard(card);
+	if (canvas === null) return null;
 	return new Promise((settle) => {
 		try {
 			canvas.toBlob((blob) => settle(blob), 'image/png');

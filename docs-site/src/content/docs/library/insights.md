@@ -28,9 +28,9 @@ Insights opens with a sentence about the period and the time you spent viewing. 
 - **What arrived**: the files added to your library, by Site.
 - **What Sift did**: how long Sift worked on its tasks, by task. Only an admin sees this card.
 
-Point at a bar, a day or an hour of a chart to read its figures. With the keyboard, a chart is one stop and the arrows move along it. Every figure says what it counts when you point at it. **Stats**, at the end of the row of tabs, shows every figure of the period as tables. Each table has a **Copy**.
+Point at a bar, a day or an hour of a chart to read its figures. With the keyboard, a chart is one stop and the arrows move along it. Every figure has a small **What counts** mark at the end of its card. Point at it to read exactly what the figure counts. **Stats**, at the end of the row of tabs, shows every figure of the period as tables. Each table has a **Copy**. **See this week as cards**, beside Stats, opens the week's recap, or says when one will be created.
 
-**Alongside**, on Week, Month, Year and All, says what moved together in your own record. It needs at least eight periods, and it never says one thing caused another. For example: "Over 9 weeks, the weeks you viewed Theater most were the weeks you starred the most files."
+**Alongside**, last on Week, Month, Year and All, says when two things rose and fell together in your own record. Each sentence says over how many periods, with both figures beside it. It needs at least eight periods. It never says one thing caused another. For example: "Over 9 weeks, the weeks you viewed Theater most were the weeks you starred the most files."
 
 A card with too little to say yet is left out. While [Hidden](/library/hidden/#unlock-and-lock-hidden) is locked, the figures leave out what you hid, and the page says so. Unlock Hidden to include it.
 

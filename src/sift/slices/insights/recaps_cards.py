@@ -5,6 +5,7 @@ again whenever it is drawn. See `recaps` for the design.
 
 from __future__ import annotations
 
+import calendar
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
@@ -14,7 +15,17 @@ from sift.kernel.access.sentences import Line, capitalized, said
 from sift.kernel.wire import pieces_of
 from sift.slices.insights import statements, statements_cards, together
 from sift.slices.insights.metrics import split_file_key
-from sift.slices.insights.models import Bar, BarPart, Chart, Figure, NamedRow, Unit, cover_of
+from sift.slices.insights.models import (
+    Bar,
+    BarPart,
+    Calendar,
+    Chart,
+    DayValue,
+    Figure,
+    NamedRow,
+    Unit,
+    cover_of,
+)
 from sift.slices.insights.recaps_models import (
     CardKind,
     NamedThing,
@@ -34,6 +45,31 @@ from sift.slices.insights.statements import Named
 Figures = Mapping[str, int]
 
 
+def within(key: str, first: date, last: date) -> str:
+    """A key read over part of the period (`metric|key@first~last`): a day of a year, a month."""
+    return f"{key}@{first.isoformat()}~{last.isoformat()}"
+
+
+def span_of(key: str) -> tuple[str, date, date] | None:
+    """(the key, the first day, the last day) of a key read over part of the period, else None."""
+    base, at, span = key.rpartition("@")
+    if not at:
+        return None
+    first, _, last = span.partition("~")
+    return base, date.fromisoformat(first), date.fromisoformat(last)
+
+
+@dataclass(frozen=True, slots=True)
+class Cell:
+    """One figure of the closing card's summary: what it counts, and what it names under it."""
+
+    label: str
+    figure: str
+    unit: Unit
+    caption: Line = ()
+    defines: str = ""
+
+
 @dataclass(frozen=True, slots=True)
 class Said:
     """What a card says: its sentence, and which of its figures is the one it shows."""
@@ -46,6 +82,8 @@ class Said:
     cover: str | None = None
     rows: tuple[NamedRow, ...] = ()
     chart: Chart | None = None
+    calendar: Calendar | None = None
+    cells: tuple[Cell, ...] = ()
 
 
 #: One card's words from its figures. None when there is nothing true to say with them.
@@ -260,8 +298,61 @@ def _compared(figures: Figures, recipe: Recipe, period: Period, today: date) -> 
 
 
 def _closing(figures: Figures, recipe: Recipe, period: Period, today: date) -> Said | None:
+    """ "That was 2026.", and a year's six figures beside it. A figure naming a thing the reader
+    may not be told of reads 0 locked, and is left out rather than the card."""
     name = statements.named_period(period.said_on(today))
-    return Said(capitalized(said(f"That was {name}.")))
+    line = capitalized(said(f"That was {name}."))
+    if period.kind is not PeriodKind.YEAR:
+        return Said(line)
+    return Said(line, cells=_summary(figures, recipe, period.said_on(today)))
+
+
+#: What each figure of the summary that names a thing counts.
+_TOP_DEFINES = {
+    "person": "The person whose files you viewed longest.",
+    "site": "The Site whose files you viewed longest.",
+}
+
+
+def _summary(figures: Figures, recipe: Recipe, said_on: statements.Period) -> tuple[Cell, ...]:
+    """The year at a glance: time viewed, files added, the top person and Site, the busiest day
+    and the sessions, each only where it has something to say."""
+    cells = [
+        Cell("Viewed", source("viewed_ms"), "ms"),
+        Cell("Files arrived", source("files_added"), "count"),
+    ]
+    for kind, label in (("person", "Top person"), ("site", "Top Site")):
+        one = _named(recipe, kind)
+        if one is not None:
+            thing = said(statements.named(Named(kind, one.id, one.name)))
+            name = source(f"viewed_ms:{kind}", one.id)
+            cells.append(Cell(label, name, "ms", thing, _TOP_DEFINES[kind]))
+    busiest = _busiest(figures, recipe)
+    if busiest is not None:
+        line = said(statements_cards.day_named(busiest[0], said_on.today))
+        cells.append(Cell("Busiest day", busiest[1], "ms", line, "The day you viewed the most."))
+    cells.append(Cell("Sessions", source("sittings"), "count"))
+    return tuple(cell for cell in cells if figures.get(cell.figure, 0) > 0)
+
+
+def _days(figures: Figures, recipe: Recipe) -> dict[date, tuple[str, int]]:
+    """The days a card keeps the time viewed of, each with its source and its figure."""
+    out: dict[date, tuple[str, int]] = {}
+    for name in recipe.sources:
+        _, metric, key = _parts(name)
+        span = span_of(key) if metric == "viewed_ms" else None
+        if span is not None:
+            out[span[1]] = (name, figures.get(name, 0))
+    return out
+
+
+def _busiest(figures: Figures, recipe: Recipe) -> tuple[date, str] | None:
+    """The day with the most time viewed the reader may be told of, the earliest on a tie."""
+    shown = [(-value, day, name) for day, (name, value) in _days(figures, recipe).items() if value]
+    if not shown:
+        return None
+    _, day, name = min(shown)
+    return day, name
 
 
 #: The per-file metrics a card may name a file by: each keyed by the file (`split_file_key`).
@@ -357,7 +448,9 @@ def _first_last(figures: Figures, recipe: Recipe, period: Period, today: date) -
         )
         for key, moment in ((first[1], began), (last[1], ended))
     )
-    return Said(line, rows=rows)
+    if figures.get(source("files_added"), 0) <= 0:
+        return Said(line, rows=rows)
+    return Said(line, source("files_added"), "Files arrived", "count", rows=rows)
 
 
 def _session(figures: Figures, recipe: Recipe, period: Period, today: date) -> Said | None:
@@ -382,6 +475,121 @@ def _theater_files(figures: Figures, recipe: Recipe, period: Period, today: date
         period.said_on(today), sum(figures.get(name, 0) for name in walls)
     )
     return None if line is None else Said(line, walls, "Files in Theater", "count")
+
+
+def _file_views(figures: Figures, recipe: Recipe, asset: str) -> int:
+    return sum(
+        figures.get(name, 0)
+        for name in recipe.sources
+        if (parts := _parts(name))[1] == "sittings:file" and split_file_key(parts[2])[1] == asset
+    )
+
+
+def _mosaic(figures: Figures, recipe: Recipe, period: Period, today: date) -> Said | None:
+    """The five files viewed most, drawn side by side, the first the largest. Two or more."""
+    rows = tuple(
+        NamedRow(
+            piece=pieces_of(said(statements.named(_file(one))))[0],
+            value=views,
+            unit="views",
+            cover=cover_of("asset", one.id),
+        )
+        for one in recipe.named
+        if (views := _file_views(figures, recipe, one.id)) > 0
+    )
+    if len(rows) < 2:
+        return None
+    return Said(statements_cards.most_viewed_files(period.said_on(today)), rows=rows)
+
+
+def _spans(recipe: Recipe, metric: str) -> list[tuple[date, date]]:
+    """The parts of the period a card keeps `metric` over, in order."""
+    found = {
+        (span[1], span[2])
+        for name in recipe.sources
+        if (parts := _parts(name))[1] == metric and (span := span_of(parts[2])) is not None
+    }
+    return sorted(found)
+
+
+def _before_after(figures: Figures, recipe: Recipe, period: Period, today: date) -> Said | None:
+    """The first month's time by kind beside the last month's, and whether the lead changed."""
+    spans = _spans(recipe, "viewed_ms:kind")
+    if len(spans) != 2:
+        return None
+    bars: list[Bar] = []
+    leads: list[str] = []
+    for first, last in spans:
+        parts = [
+            BarPart(
+                kind=kind, value=figures.get(source("viewed_ms:kind", within(kind, first, last)), 0)
+            )
+            for kind in _KINDS
+        ]
+        if not any(part.value for part in parts):
+            return None
+        leads.append(max(parts, key=lambda part: part.value).kind)
+        bars.append(Bar(label=calendar.month_name[first.month], parts=parts))
+    line = statements_cards.focus(bars[0].label, leads[0], bars[1].label, leads[1])
+    return Said(line, chart=Chart(kind="share", unit="ms", bars=bars))
+
+
+def _race(figures: Figures, recipe: Recipe, period: Period, today: date) -> Said | None:
+    """The top five people month by month, and the one who led the most months."""
+    people = [one for one in recipe.named if one.kind == "person"]
+    spans = _spans(recipe, "viewed_ms:person")
+    if len(people) < 2 or not spans:
+        return None
+    bars = [
+        Bar(
+            label=calendar.month_abbr[first.month],
+            parts=[
+                BarPart(
+                    kind=one.id,
+                    value=figures.get(source("viewed_ms:person", within(one.id, first, last)), 0),
+                )
+                for one in people
+            ],
+        )
+        for first, last in spans
+    ]
+    led = [max(bar.parts, key=lambda part: part.value).kind for bar in bars if _any_value(bar)]
+    if not led:
+        return None
+    top = max(people, key=lambda one: led.count(one.id))
+    rows = tuple(
+        NamedRow(
+            piece=pieces_of(said(statements.named(Named("person", one.id, one.name))))[0],
+            value=figures.get(source("viewed_ms:person", one.id), 0),
+            unit="ms",
+            cover=cover_of("person", one.id),
+        )
+        for one in people
+    )
+    line = statements_cards.months_led(
+        period.said_on(today), Named("person", top.id, top.name), led.count(top.id), len(led)
+    )
+    return Said(line, rows=rows, chart=Chart(unit="ms", bars=bars))
+
+
+def _any_value(bar: Bar) -> bool:
+    return any(part.value for part in bar.parts)
+
+
+def _heatmap(figures: Figures, recipe: Recipe, period: Period, today: date) -> Said | None:
+    """The period's days, each with its time viewed, and the busiest of them."""
+    days = _days(figures, recipe)
+    busiest = _busiest(figures, recipe)
+    if busiest is None:
+        return None
+    every = (period.first + timedelta(days=n) for n in range((period.last - period.first).days + 1))
+    drawn = Calendar(
+        unit="ms",
+        days=[DayValue(day=day.isoformat(), value=days.get(day, ("", 0))[1]) for day in every],
+    )
+    viewed = sum(1 for _, value in days.values() if value > 0)
+    line = statements_cards.days_viewed(period.said_on(today), viewed, busiest[0])
+    return Said(line, busiest[1], "Viewed", "ms", calendar=drawn)
 
 
 #: Where an alongside card keeps its pair (`together:<first>|<second>`, the sample), and the
@@ -437,6 +645,10 @@ BUILDERS: dict[str, Builder] = {
     "downloads": _downloads,
     "theater_files": _theater_files,
     "alongside": _alongside,
+    "mosaic": _mosaic,
+    "before_after": _before_after,
+    "race": _race,
+    "heatmap": _heatmap,
 }
 
 
@@ -469,4 +681,15 @@ def _said(kind: str, words: Said | None, figures: Figures) -> RecapCard | None:
         cover=words.cover,
         rows=list(words.rows),
         chart=words.chart,
+        calendar=words.calendar,
+        figures=[
+            Figure(
+                label=cell.label,
+                value=figures.get(cell.figure, 0),
+                unit=cell.unit,
+                caption=pieces_of(cell.caption),
+                defines=pieces_of(said(cell.defines)) if cell.defines else [],
+            )
+            for cell in words.cells
+        ],
     )

@@ -31,7 +31,10 @@
 	 * (`said`); the sentence arrives as PIECES and `HistorySentence` draws them, so a person or a
 	 * Site a card names is a way to them, and nothing here builds a word. The top person's card
 	 * carries her portrait; the top five are a ranked list led by the first; the favourite time is
-	 * the day's twenty-four hours as a ring.
+	 * the day's twenty-four hours as a ring. A year's own kinds draw a picture of their own, one
+	 * component a kind under `cards/`: the five files as a mosaic, the first and last file, the
+	 * first and last month by kind, the top five month by month, the year's days, the longest
+	 * session's pages, and the closing card's six figures.
 	 *
 	 * The ground is the accent's run, deepest at the foot (`--sift-accent-shade-1` to `-2`), with
 	 * the figure in its tint: the accent's own colour at more than one step, never another hue, and
@@ -69,6 +72,14 @@
 	import type { components } from '$lib/api/schema';
 	import { figureWords, saidOf, timeWords, wordsOf } from '$lib/components/insights/figures';
 	import { KIND_WORDS } from '$lib/components/insights/words';
+	import BeforeAfter from '$lib/components/insights/cards/BeforeAfter.svelte';
+	import FirstLast from '$lib/components/insights/cards/FirstLast.svelte';
+	import Heat from '$lib/components/insights/cards/Heat.svelte';
+	import Mosaic from '$lib/components/insights/cards/Mosaic.svelte';
+	import Race from '$lib/components/insights/cards/Race.svelte';
+	import SessionSteps from '$lib/components/insights/cards/SessionPath.svelte';
+	import Summary from '$lib/components/insights/cards/Summary.svelte';
+	import type { SessionPath } from '$lib/components/insights/cards/kinds';
 	import type { RecapCard } from '$lib/library/recaps.svelte';
 
 	type NamedRow = components['schemas']['NamedRow'];
@@ -82,9 +93,31 @@
 		/** The span the recap covers, at the foot, so a card kept as a picture says which week. */
 		foot?: string;
 		size?: 'micro' | 'story' | 'hero';
+		/** The longest session's pages, for the card that says how one session went. */
+		session?: SessionPath | null;
 	}
 
-	let { card, heading = '', place = '', foot = '', size = 'story' }: Props = $props();
+	let {
+		card,
+		heading = '',
+		place = '',
+		foot = '',
+		size = 'story',
+		session = null
+	}: Props = $props();
+
+	/* The kind whose picture is a drawing of its own, or null for the cover, ring and list. */
+	const own = $derived.by(() => {
+		if (size === 'micro') return null;
+		const { kind } = card;
+		if (kind === 'mosaic' && card.rows.length > 0) return kind;
+		if (kind === 'first_last' && card.rows.length > 0) return kind;
+		if ((kind === 'before_after' || kind === 'race') && card.chart) return kind;
+		if (kind === 'heatmap' && card.calendar) return kind;
+		if (kind === 'closing' && card.figures.length > 0) return kind;
+		if (kind === 'session' && session && session.steps.length > 0) return kind;
+		return null;
+	});
 
 	/* Past this many letters a sentence is set a step smaller, so it fits beside a picture. */
 	const LONG = 90;
@@ -100,7 +133,9 @@
 		(card.rows ?? []).map((row) => ({ ...row, said: saidOf(row.said, row.value, row.unit) }))
 	);
 	const hours = $derived(
-		card.chart ? card.chart.bars.map((bar) => bar.parts.reduce((sum, p) => sum + p.value, 0)) : []
+		card.chart?.bars.length === 24 && own === null
+			? card.chart.bars.map((bar) => bar.parts.reduce((sum, p) => sum + p.value, 0))
+			: []
 	);
 	const hourWords = $derived(
 		wordsOf(
@@ -155,11 +190,26 @@
 		{:else}
 			<div
 				class="card"
-				class:pictured={size !== 'micro' && (card.cover !== null || hours.length > 0)}
+				class:pictured={size !== 'micro' &&
+					(own !== null || card.cover !== null || hours.length > 0)}
 				class:ringed={size !== 'micro' && hours.length > 0}
 			>
 				<!-- A micro card is the figure and its sentence: the picture, list and ring are the story's. -->
-				{#if size === 'micro'}{:else if hours.length > 0}
+				{#if size === 'micro'}{:else if own === 'mosaic'}
+					<Mosaic {rows} />
+				{:else if own === 'first_last'}
+					<FirstLast {rows} figure={card.figure} />
+				{:else if own === 'before_after' && card.chart}
+					<BeforeAfter chart={card.chart} />
+				{:else if own === 'race' && card.chart}
+					<Race {rows} chart={card.chart} />
+				{:else if own === 'heatmap' && card.calendar}
+					<Heat calendar={card.calendar} label={heading || KIND_WORDS.all} />
+				{:else if own === 'closing'}
+					<Summary figures={card.figures} />
+				{:else if own === 'session' && session}
+					<SessionSteps path={session} />
+				{:else if hours.length > 0}
 					<div class="picture">
 						<div class="fit square">
 							<HourRing {hours} format={hourWords} label={KIND_WORDS.all} middle={hour} />
@@ -180,11 +230,11 @@
 						</div>
 					</div>
 				{/if}
-				{#if size !== 'micro' && rows.length > 0}
+				{#if size !== 'micro' && own === null && rows.length > 0}
 					<RankedList {rows} {name} cover={portrait} most={5} lead />
 				{/if}
 				<div class="words">
-					{#if card.figure}
+					{#if card.figure && own !== 'first_last'}
 						<FigureCard
 							label={card.figure.label}
 							value={card.figure.value}

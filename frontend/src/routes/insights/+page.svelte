@@ -17,8 +17,11 @@
 	 * where it starts and ends is the server's answer. Nothing waits on anything else: the heading
 	 * and tabs draw immediately, the recaps read their own answers, and a period changing keeps the
 	 * last figures dimmed until the next are in. Your path is under Settings, in Get to know Sift.
+	 *
+	 * Beside Stats, a press opens this period's recap as its deck of cards, or says there is none.
 	 */
 	import { goto } from '$app/navigation';
+	import { toasts } from '$lib/shell/toasts.svelte';
 
 	import { Button, Problem, SectionHeading, Skeleton } from '$lib/components/common';
 	import { PeriodAnswer } from '$lib/components/insights/answer.svelte';
@@ -35,10 +38,11 @@
 		type Place
 	} from '$lib/components/insights/period';
 	import { drawsAnything } from '$lib/components/insights/figures';
-	import { INSIGHTS_WORDS, STATS_WORDS } from '$lib/components/insights/words';
+	import { DECK_WORDS, INSIGHTS_WORDS, STATS_WORDS } from '$lib/components/insights/words';
 	import PageFrame from '$lib/components/shell/PageFrame.svelte';
 	import PageHeader from '$lib/components/shell/PageHeader.svelte';
 	import { onAssetStateChange, reloadOnLibraryChange } from '$lib/library/changes.svelte';
+	import { periodKey, recapShelf } from '$lib/library/recaps.svelte';
 
 	let { data }: { data: Place } = $props();
 
@@ -62,15 +66,19 @@
 	const failed = $derived(read.failed);
 	const loading = $derived(read.loading);
 
-	/* A block below its floor, or past it with nothing to draw, is left out: a heading over nothing
-	   is an empty box on the page (see `drawsAnything`). */
-	const blocks = $derived(
-		answer?.blocks.filter(
-			(block) => !DRAWN_ELSEWHERE.has(block.id) && block.floor_reached && drawsAnything(block)
-		) ?? []
-	);
 	/* The viewing below its floor: the page opens on what there is instead (see the header). */
 	const overview = $derived(answer?.blocks.find((block) => block.id === 'overview') ?? null);
+	/* A block below its floor, or past it with nothing to draw, is left out: a heading over nothing
+	   is an empty box on the page (see `drawsAnything`). Alongside is the exception while the
+	   viewing is past its floor: it is looked for by name, so it says "Not enough yet to say.". */
+	const blocks = $derived(
+		answer?.blocks.filter(
+			(block) =>
+				!DRAWN_ELSEWHERE.has(block.id) &&
+				((block.floor_reached && drawsAnything(block)) ||
+					(block.id === 'alongside' && overview?.floor_reached === true))
+		) ?? []
+	);
 	const lead = $derived(
 		answer === null || overview?.floor_reached
 			? []
@@ -78,6 +86,18 @@
 				? answer.first_sentences
 				: (overview?.statements ?? [])
 	);
+	/* The deck press's words: every period but All has a recap of its own. */
+	const deck = $derived(data.period === 'all' ? null : DECK_WORDS[data.period]);
+
+	/* The recap of the period answered, opened as its deck; where none was created, said why. */
+	async function openDeck(): Promise<void> {
+		if (answer === null || deck === null) return;
+		await recapShelf.load();
+		const recap = recapShelf.of(periodKey(answer.period, answer.from) ?? '');
+		if (recap) await goto(`/insights/recaps/${encodeURIComponent(recap.id)}`);
+		else toasts.show(deck.none);
+	}
+
 	type Group = {
 		id: string;
 		size: 'large' | 'small';
@@ -110,9 +130,14 @@
 <svelte:head><title>{INSIGHTS_WORDS.title}</title></svelte:head>
 
 {#snippet stats()}
-	<Button size="small" tone="secondary" onclick={() => void goto(addressOf(data, STATS_PATH))}
-		>{STATS_WORDS.title}</Button
-	>
+	<div class="presses">
+		{#if deck}
+			<Button size="small" tone="secondary" onclick={() => void openDeck()}>{deck.see}</Button>
+		{/if}
+		<Button size="small" tone="secondary" onclick={() => void goto(addressOf(data, STATS_PATH))}
+			>{STATS_WORDS.title}</Button
+		>
+	</div>
 {/snippet}
 
 <PageFrame>
@@ -206,6 +231,12 @@
 
 	.pair {
 		align-items: start;
+	}
+
+	.presses {
+		display: flex;
+		flex-wrap: wrap;
+		gap: var(--space-2);
 	}
 
 	/* The last period's figures while the next are on their way: still readable, plainly not current. */

@@ -4,13 +4,20 @@ held to `statements`' rules."""
 
 from __future__ import annotations
 
+from datetime import date
+
 from sift.kernel.access.sentences import Line, said
 from sift.slices.insights.statements import (
+    KIND_WORDS,
+    THEATER,
+    WEEKDAYS,
     Clock,
     Moment,
     Named,
     Period,
+    _day_words,
     _on,
+    count,
     counted,
     duration,
     named,
@@ -85,3 +92,49 @@ def theater_showed(period: Period, files: int) -> Line | None:
     if files <= 0:
         return None
     return said(f"Theater showed you {counted(files, 'file', 'files')} {when(period)}.")
+
+
+def most_viewed_files(period: Period) -> Line:
+    """ "The files you viewed most in 2026." The heading of the five drawn side by side."""
+    return said(f"The files you viewed most {when(period)}.")
+
+
+def _mostly(kind: str) -> str:
+    return "Theater" if kind == THEATER else KIND_WORDS[kind][1]
+
+
+def focus(first_month: str, first_kind: str, last_month: str, last_kind: str) -> Line:
+    """ "Your focus shifted: January was mostly videos, December mostly pictures.", only where
+    the kind with the most time changed, else "Much the same: mostly videos in January and in
+    December." """
+    if first_kind != last_kind:
+        return said(
+            f"Your focus shifted: {first_month} was mostly {_mostly(first_kind)}, "
+            f"{last_month} mostly {_mostly(last_kind)}."
+        )
+    return said(
+        f"Much the same: mostly {_mostly(first_kind)} in {first_month} and in {last_month}."
+    )
+
+
+def months_led(period: Period, person: Named, months: int, of: int) -> Line:
+    """ "Ava Lin was the person you viewed most in 7 of 12 months in 2026." Over the months with
+    any time, the top five people's month by month beside it."""
+    return said(
+        named(person),
+        f" was the person you viewed most in {count(months)} of "
+        f"{counted(of, 'month', 'months')} {when(period)}.",
+    )
+
+
+def days_viewed(period: Period, days: int, busiest: date) -> Line:
+    """ "You viewed files on 214 days in 2026, the most on Saturday, March 14." """
+    return said(
+        f"You viewed files on {counted(days, 'day', 'days')} {when(period)}, the most on "
+        f"{day_named(busiest, period.today)}."
+    )
+
+
+def day_named(day: date, today: date) -> str:
+    """ "Saturday, March 14": the busiest day, under its figure on the closing card."""
+    return f"{WEEKDAYS[day.weekday()]}, {_day_words(day, today)}"

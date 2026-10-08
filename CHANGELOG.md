@@ -23,6 +23,14 @@ version's section, dated, when that version is published.
   turns each kind on or off. A recap re-counted after a correction says so in History.
 - **A recap's cards are one size** as you turn through them, a Site's mark whole on its card, and
   the saved picture is the card as you see it.
+- **Your year, as a deck of 18 cards**: the five files you viewed most as a mosaic, the first and
+  last file, the first month against the last, how one visit went, People month by month, the
+  year's days, and a closing card of six figures. Tick cards and save them as pictures, one file
+  each; save a year's or a month's deck as a video, with the cards' own motion; keep the year's
+  lists as Collections with one press, never created on their own.
+- **Insights draws every figure as a card** with its definition behind a small mark, each block's
+  sentence under its figures, Alongside last with its two figures beside each sentence, and
+  "See this week as cards" beside Stats.
 - **The popout player's Repeat and Shuffle are in its drawer**, beside Randomize, as on Theater's
   bar; the row keeps Previous, Play and Next.
 

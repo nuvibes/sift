@@ -9,7 +9,7 @@ import { flushSync, mount, unmount } from 'svelte';
 import type { RecapCard as Card } from '$lib/library/recaps.svelte';
 
 import RecapCard from './RecapCard.svelte';
-import { cardPicture, linesOf, pictureName, type Word } from './share-card';
+import { cardPicture, linesOf, paintCard, pictureName, type Word } from './share-card';
 
 describe('a picture of a recap card', () => {
 	it('is named for the recap and the card, safe as a file name', () => {
@@ -205,6 +205,8 @@ function card(over: Partial<Card>): Card {
 		cover: null,
 		rows: [],
 		chart: null,
+		calendar: null,
+		figures: [],
 		hidden_things: [],
 		hidden: false,
 		...over
@@ -247,6 +249,13 @@ describe('a card painted as a picture', () => {
 			'6 of pictures, 5 in Theater.',
 			'SEPTEMBER 21 TO 27'
 		]);
+	});
+
+	it('paints a figure at the words a frame has it counted up to', async () => {
+		const canvas = await paintCard(draw(card({})), (final) => (final === '19 h' ? '7 h' : final));
+		expect(canvas?.width).toBe(1080);
+		expect(painted()).toContain('7 h');
+		expect(painted()).not.toContain('19 h');
 	});
 
 	it("paints a Site's mark whole over its blurred ground, inside the frame's corner", async () => {

@@ -43,6 +43,7 @@ JULY = period_of("month", date(2026, 7, 10), TODAY, None)
 THIS_WEEK = period_of("week", TODAY, TODAY, None)
 LAST_WEEK = period_of("week", date(2026, 9, 16), TODAY, None)
 TODAY_ONLY = period_of("day", TODAY, TODAY, None)
+LAST_YEAR = period_of("year", date(2025, 6, 1), TODAY, None)
 EVER = period_of("all", TODAY, TODAY, date(2026, 3, 3))
 
 #: EVERY STATEMENT INSIGHTS CAN SAY, as (what it is, the line). Every public builder is here:
@@ -173,6 +174,11 @@ SAID: tuple[tuple[str, say.Line | None], ...] = (
     ("longest session, no pages", statements_cards.longest_session(TODAY_ONLY, 40 * MINUTE, 0)),
     ("downloads", statements_cards.downloaded(AUGUST, 40)),
     ("Theater showed", statements_cards.theater_showed(AUGUST, 1240)),
+    ("the five files", statements_cards.most_viewed_files(LAST_YEAR)),
+    ("focus shifted", statements_cards.focus("January", "video", "December", "image")),
+    ("focus the same", statements_cards.focus("January", "theater", "December", "theater")),
+    ("months led", statements_cards.months_led(LAST_YEAR, PERSON, 7, 12)),
+    ("days viewed", statements_cards.days_viewed(LAST_YEAR, 214, date(2025, 3, 14))),
     ("a definition", definitions.definition("Files opened")),
     ("together, weeks", together.together("week", together.Pair("theater", "starred", 9, 0.8))),
     (

@@ -54,6 +54,8 @@ function card(over: Partial<Card> = {}): Card {
 		cover: '/api/people/p1/cover',
 		chart: null,
 		rows: [],
+		calendar: null,
+		figures: [],
 		hidden_things: [],
 		hidden: false,
 		...over

@@ -20,7 +20,7 @@ from typing import Literal
 from pydantic import Field
 
 from sift.kernel.wire import HistoryPiece, Wire
-from sift.slices.insights.models import Chart, Figure, NamedRow
+from sift.slices.insights.models import Calendar, Chart, Figure, NamedRow
 
 #: Every kind of card a recap holds. `achievement` is a learning path goal's; the rest are a
 #: period's.
@@ -46,6 +46,10 @@ CardKind = Literal[
     "downloads",
     "theater_files",
     "alongside",
+    "mosaic",
+    "before_after",
+    "race",
+    "heatmap",
     "achievement",
 ]
 
@@ -61,8 +65,13 @@ class RecapCard(Wire):
     #: The ranked rows of a card that names several things: the top five people, or the first and
     #: last file (each row's figure a minute of the day).
     rows: list[NamedRow] = Field(default_factory=list)
-    #: The favourite time's 24 hours, drawn as a ring.
+    #: The favourite time's 24 hours, drawn as a ring; a year's first and last month by kind; the
+    #: top five people month by month.
     chart: Chart | None = None
+    #: The year's days, each with its time viewed.
+    calendar: Calendar | None = None
+    #: The closing card's figures, side by side: the period summed up.
+    figures: list[Figure] = Field(default_factory=list)
     #: The ids on the card that are hidden for the reader NOW. Empty on a card whose `hidden` is
     #: true, which says nothing about what it would have named.
     hidden_things: list[str] = Field(default_factory=list)

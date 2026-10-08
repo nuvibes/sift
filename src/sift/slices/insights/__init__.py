@@ -19,13 +19,16 @@ from sift.kernel.use_history import RECORD_KEY
 from sift.slices.insights import (
     capture,  # noqa: F401 (imported so its part of clearing a history registers itself)
     capture_router,
+    keep_router,
     path,
     path_router,
     recaps,
     recaps_router,
     router,
     schema,  # noqa: F401 (imported so the tables register themselves)
+    session_router,
     store,
+    video_router,
 )
 from sift.slices.insights.metrics import ADMIN_ONLY, METRICS
 from sift.slices.insights.rollup import keep_the_days_added_up
@@ -74,11 +77,14 @@ __all__ = [
     "Figures",
     "RecapRow",
     "capture_router",
+    "keep_router",
     "keep_the_days_added_up",
     "path",
     "path_router",
     "recaps",
     "recaps_router",
     "router",
+    "session_router",
     "store",
+    "video_router",
 ]

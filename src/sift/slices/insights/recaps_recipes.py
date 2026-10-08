@@ -5,6 +5,7 @@ the cards each kind of recap holds in the order they are read. See `recaps` for 
 
 from __future__ import annotations
 
+import calendar
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, timedelta
@@ -22,6 +23,7 @@ from sift.slices.insights.recaps_cards import (
     _WHOLE,
     BUILDERS,
     _said,
+    within,
 )
 from sift.slices.insights.recaps_models import (
     KeptCard,
@@ -90,22 +92,26 @@ DECKS: Mapping[PeriodKind, tuple[str, ...]] = {
         "top_person",
         "new_favourite",
         "compared",
-        "top_five",
-        "top_site",
+        "mosaic",
         "rediscovered",
-        "theater",
-        "top_file",
-        "alongside",
+        "heatmap",
+        "top_five",
+        "before_after",
         "when",
+        "top_site",
         "session",
-        "theater_files",
-        "downloads",
+        "theater",
+        "race",
+        "alongside",
         "sift_did",
+        "first_last",
+        "top_song",
+        "downloads",
+        "theater_files",
         "rated",
         "o",
         "top_tag",
-        "top_song",
-        "first_last",
+        "top_file",
         "closing",
     ),
 }
@@ -204,8 +210,9 @@ _TAG_NAMES = "SELECT id, name FROM tags WHERE id IN (?*)"
 _SONG_NAMES = "SELECT id, name FROM songs WHERE id IN (?*)"
 
 
-#: How many people the top-five card names.
+#: How many people the top-five card names, and how many files the mosaic draws.
 TOP_FIVE = 5
+MOSAIC = 5
 
 
 async def _names(database: Database, statement: str, ids: Sequence[str]) -> dict[str, str]:
@@ -272,6 +279,8 @@ async def build(
     named, person = await _named_recipes(database, totals)
     recipes.update(named)
     recipes.update(await _file_recipes(database, rows, period, totals))
+    if period.kind is PeriodKind.YEAR:
+        recipes.update(_year_recipes(rows, period, totals, recipes))
     alongside = _together_recipe(rows, period, person)
     if alongside is not None:
         recipes["alongside"] = alongside
@@ -450,6 +459,12 @@ async def _file_recipes(
         for row in await arrivals.file_names(database.fetch_all, sorted(ids))
     }
     out: dict[str, Recipe] = {}
+    most = [key for key in ranked["top_file"] if split_file_key(key)[1] in names][:MOSAIC]
+    if len(most) > 1:
+        out["mosaic"] = Recipe(
+            sources=_sources(totals, [("sittings:file", key) for key in most]),
+            named=_distinct_named([split_file_key(key)[1] for key in most], names),
+        )
     for kind, keys in ranked.items():
         key = next((key for key in keys if split_file_key(key)[1] in names), None)
         if key is not None:
@@ -465,6 +480,7 @@ async def _file_recipes(
             sources={
                 **{source("first_file", key): at for at, key in first},
                 **{source("last_file", key): at for at, key in last},
+                **_sources(totals, [("files_added", "")]),
             },
             named=_distinct_named([key for _, key in (*first, *last)], names),
         )
@@ -519,6 +535,93 @@ def _together_recipe(rows: _Totals, period: Period, person: NamedThing | None) -
         sources[_WHOLE + source(metric, key)] = _whole(totals, metric, key)
     named = [person] if person is not None and "person" in (best.first, best.second) else []
     return Recipe(sources=sources, named=named)
+
+
+def _daily(
+    rows: _Totals, period: Period, metric: str, keys: set[str]
+) -> dict[tuple[str, date], int]:
+    """`metric` for each of `keys`, whole, day by day over the period."""
+    low, high = period.first.isoformat(), period.last.isoformat()
+    out: dict[tuple[str, date], int] = {}
+    for row in rows.rows:
+        if row.metric == metric and row.key in keys and low <= row.day <= high and row.whole:
+            at = (row.key, date.fromisoformat(row.day))
+            out[at] = out.get(at, 0) + row.whole
+    return out
+
+
+def _monthly(daily: Mapping[tuple[str, date], int]) -> dict[tuple[str, int], int]:
+    out: dict[tuple[str, int], int] = {}
+    for (key, day), whole in daily.items():
+        out[(key, day.month)] = out.get((key, day.month), 0) + whole
+    return out
+
+
+def _month(period: Period, month: int) -> tuple[date, date]:
+    year = period.first.year
+    return date(year, month, 1), date(year, month, calendar.monthrange(year, month)[1])
+
+
+def _year_recipes(
+    rows: _Totals, period: Period, totals: Totals, recipes: Mapping[str, Recipe]
+) -> dict[str, Recipe]:
+    """The cards only a year draws: its days, its first and last month by kind, its top five
+    people month by month, and the summary the closing card adds up."""
+    days = {
+        source("viewed_ms", within("", day, day)): whole
+        for (_, day), whole in sorted(_daily(rows, period, "viewed_ms", {""}).items())
+    }
+    out: dict[str, Recipe] = {"heatmap": Recipe(sources=days)} if days else {}
+    kinds = _monthly(_daily(rows, period, "viewed_ms:kind", set(_KINDS)))
+    months = sorted({month for (_, month), whole in kinds.items() if whole})
+    if len(months) > 1:
+        out["before_after"] = Recipe(
+            sources={
+                source("viewed_ms:kind", within(kind, *_month(period, month))): kinds.get(
+                    (kind, month), 0
+                )
+                for month in (months[0], months[-1])
+                for kind in _KINDS
+            }
+        )
+    five = recipes.get("top_five")
+    if five is not None:
+        people = _monthly(_daily(rows, period, "viewed_ms:person", {one.id for one in five.named}))
+        out["race"] = Recipe(
+            sources={
+                **five.sources,
+                **{
+                    source("viewed_ms:person", within(key, *_month(period, month))): whole
+                    for (key, month), whole in sorted(people.items())
+                },
+            },
+            named=five.named,
+        )
+    out["closing"] = _summary_recipe(totals, recipes, days)
+    return out
+
+
+def _summary_recipe(
+    totals: Totals, recipes: Mapping[str, Recipe], days: Mapping[str, int]
+) -> Recipe:
+    """The closing card's figures: the year's time, files added and sessions, its top person and
+    Site, and its days, of which the busiest is chosen when the card is said."""
+    named = [
+        one for card in ("top_person", "top_site") if card in recipes for one in recipes[card].named
+    ]
+    return Recipe(
+        sources={
+            **_sources(totals, [("sittings", ""), ("viewed_ms", ""), ("files_added", "")]),
+            **{
+                source(f"viewed_ms:{one.kind}", one.id): _whole(
+                    totals, f"viewed_ms:{one.kind}", one.id
+                )
+                for one in named
+            },
+            **days,
+        },
+        named=named,
+    )
 
 
 def body_of(cards: Sequence[KeptCard]) -> str:

@@ -51,10 +51,10 @@ class RecapShelf {
 	/** Whether the list has been read for the account signed in now. */
 	readonly loaded = $derived(this.#mine !== null);
 
-	/** Every recap of a week, a month or a year, newest first, as the server drew them now. */
+	/** Every recap of a day, a week, a month or a year, newest first, as the server drew them now. */
 	readonly recaps = $derived<readonly RecapHead[]>(this.#mine?.recaps ?? []);
 
-	/** The recap being announced: made in the last week, neither opened nor closed. */
+	/** The recap being announced, in the server's order: the longest period's first. */
 	readonly announced = $derived<RecapHead | null>(this.#mine?.announced ?? null);
 
 	/**
@@ -87,6 +87,11 @@ class RecapShelf {
 	 * pressed reads as a cross that does not work. If the server refuses, the list is read again and
 	 * says what is true.
 	 */
+	/** The recap of one period, by its key (`periodKey`), or null where none was created. */
+	of(period: string): RecapHead | null {
+		return this.recaps.find((head) => head.period === period) ?? null;
+	}
+
 	async dismiss(id: string): Promise<void> {
 		this.#forget(id);
 		try {
@@ -128,4 +133,22 @@ export async function readRecap(id: string): Promise<Recap> {
 	const recap = await api.get<Recap>(`/insights/recaps/${encodeURIComponent(id)}`);
 	recapShelf.opened(recap.id);
 	return recap;
+}
+
+/**
+ * The key the server files a period's recap under (`recaps_periods.Period.key`), from its span and
+ * its first day: a week by its ISO year and week. All of it has no recap.
+ */
+export function periodKey(span: string, first: string): string | null {
+	if (span === 'day') return `day:${first}`;
+	if (span === 'month') return `month:${first.slice(0, 7)}`;
+	if (span === 'year') return `year:${first.slice(0, 4)}`;
+	if (span !== 'week') return null;
+	const [year, month, day] = first.split('-').map(Number);
+	const at = new Date(Date.UTC(year, month - 1, day));
+	/* The ISO week is the one its Thursday falls in, counted from that year's first Thursday. */
+	at.setUTCDate(at.getUTCDate() + 3 - ((at.getUTCDay() + 6) % 7));
+	const isoYear = at.getUTCFullYear();
+	const week = 1 + Math.floor((at.getTime() - Date.UTC(isoYear, 0, 1)) / 604_800_000);
+	return `week:${isoYear}-W${String(week).padStart(2, '0')}`;
 }

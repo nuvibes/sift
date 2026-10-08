@@ -6,9 +6,9 @@
 	 * wall may not be keeping up and how many files are arriving: the one slot a screen has for a
 	 * passing fact. Never a second bar above the wall, never a modal, never a sound.
 	 *
-	 * The same announcement the card at the top of Insights is, read from the same list: opening
-	 * the recap or pressing the cross in either place ends it in both. The server stops announcing a
-	 * recap a week after it was made, so nothing here counts days.
+	 * The same announcement as the card at the top of Insights, from the same list: opening the
+	 * recap or pressing the cross in either place ends it in both. The server picks it and stops
+	 * announcing it, so nothing here counts days.
 	 *
 	 * Draws nothing at all while there is nothing to announce, and nothing when the read failed:
 	 * a missing line is the same drawing as no recap.
