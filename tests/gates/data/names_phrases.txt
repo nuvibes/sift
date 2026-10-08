@@ -518,3 +518,5 @@ Raw Cuts
 One Exif
 Stage View
 Whether Activity
+Task Queue
+Cancel Identify
