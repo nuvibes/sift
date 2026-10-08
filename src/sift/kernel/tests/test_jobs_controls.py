@@ -1368,6 +1368,9 @@ async def test_a_cancel_of_a_pass_stops_its_types_and_nothing_else(job_queue: Jo
 
     assert await job_queue.cancel_types(["face_scan"]) == 2
     assert await job_queue.cancel_types([]) == 0
+    assert await job_queue.cancel_types(["no_such_type"]) == 0, (
+        "nothing of it queued: nothing rolled up"
+    )
     for one in stopped:
         assert (await job_queue.get(one)).state is JobState.CANCELED  # type: ignore[union-attr]
     assert (await job_queue.get(finished)).state is JobState.DONE  # type: ignore[union-attr]

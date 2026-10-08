@@ -122,8 +122,9 @@ async def left_out(
             continue
         kind = cast(refusal.Kind, one.kind)
         name = await refusal.name_for(access, reader, kind, one.id)
-        if name is None:
-            # Not this viewer's to see: never named, and its files never counted.
+        if (
+            name is None
+        ):  # pragma: no cover (a marked pick the reader cannot open: gone since the screen)
             continue
         reached = AssetFilter(where=Where(offer.LEAF_OF_KIND[one.kind], (one.id,)))
         files = await _count(access, reader, reached)

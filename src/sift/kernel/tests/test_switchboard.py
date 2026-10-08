@@ -28,7 +28,7 @@ from sift.kernel.jobs import (
     WorkerPool,
     register_handler,
 )
-from sift.kernel.jobs.families import Family
+from sift.kernel.jobs.families import Family, products_of
 from sift.kernel.jobs.switchboard import QuietHold, one_reading, one_reading_now
 
 pytestmark = pytest.mark.usefixtures("clean_handlers")
@@ -309,3 +309,39 @@ async def test_an_answer_to_an_earlier_ask_does_not_clear_the_one_out_now() -> N
     board._asked(stale)
     assert board._asking is current, "the answer out now is still shared"
     await current
+
+
+async def test_what_activity_reads_as_off_never_refuses_work() -> None:
+    """A declaration for Activity's eye only: the claim-only work of a folder that said yes still
+    runs while the task's When is Only when I press it."""
+    board = Switchboard()
+    told: list[bool] = [True]
+
+    async def starts_on_its_own() -> bool:
+        return told[0]
+
+    board.declare_shown(starts_on_its_own, "audio_fingerprint")
+    assert await board.refusal("audio_fingerprint") is None
+    assert await board.shown_off("audio_fingerprint") is False
+    told[0] = False
+    assert await board.shown_off("audio_fingerprint") is True
+    assert await board.refusal("audio_fingerprint") is None, "shown off, never refused"
+    assert await board.shown_off("undeclared") is False
+
+
+async def test_a_declaration_that_cannot_be_read_reads_as_on_and_a_refusing_switch_as_off() -> None:
+    board = Switchboard()
+
+    async def explode() -> bool:
+        raise RuntimeError("no database")
+
+    board.declare_shown(explode, "audio_fingerprint")
+    assert await board.shown_off("audio_fingerprint") is False
+    board.declare(_switch(False), "scan")
+    assert await board.shown_off("scan") is True
+
+
+def test_a_passes_products_and_a_sub_tasks_one() -> None:
+    assert products_of(Family.GENERATE) == ["previews", "sprites", "thumbnails"]
+    assert products_of(job_type="face_scan") == ["faces"]
+    assert products_of(job_type="no_such_type") == []

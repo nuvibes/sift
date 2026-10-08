@@ -596,7 +596,7 @@
 		"src/sift/slices/swap/refusal.py": 28.0,
 		"src/sift/slices/swap/schema.py": 33.3,
 		"src/sift/slices/swap/token.py": 29.9,
-		"src/sift/slices/swap/weight.py": 27.2,
+		"src/sift/slices/swap/weight.py": 27.0,
 		"src/sift/slices/tags_ratings/__init__.py": 53.3,
 		"src/sift/slices/tags_ratings/enrich.py": 44.7,
 		"src/sift/slices/tags_ratings/models.py": 55.9,

@@ -1148,6 +1148,36 @@ describe('pointing at what narrows', () => {
 		return pointing;
 	}
 
+	it('a kept filter lands through choose where the narrowing offers it, and through write otherwise', async () => {
+		const choose = vi.fn();
+		const write = vi.fn();
+		held.url = new URL('http://x/theater');
+		screenBar.publish(owner, {
+			filterable: true,
+			narrowing: { read: () => new URLSearchParams(''), write, choose }
+		});
+		host = document.createElement('div');
+		document.body.append(host);
+		drawn = mount(FilterBar, { target: host }) as Record<string, unknown>;
+		flushSync();
+		await openPanel();
+		(
+			host.querySelector(
+				'button.kept-filter, [data-kept] button, .kept button'
+			) as HTMLButtonElement | null
+		)?.click();
+		if (choose.mock.calls.length === 0) {
+			// The panel draws the kept filters under their own heading; press the first one by its name.
+			const press = [...host.querySelectorAll('button')].find((one) =>
+				one.textContent?.includes('Runway clips')
+			);
+			press?.click();
+		}
+		flushSync();
+		expect(choose, 'a finished choice lands now').toHaveBeenCalledTimes(1);
+		expect(write, 'and not as a tick').not.toHaveBeenCalled();
+	});
+
 	it('lights the cells from a chip and from a column', async () => {
 		const pointing = drawOverACell();
 

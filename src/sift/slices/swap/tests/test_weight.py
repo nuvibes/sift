@@ -204,3 +204,17 @@ async def test_what_keeps_a_file_out_is_never_named_to_a_reader_who_cannot_see_i
     await hide(library.db, "person", ids["person"], library.admin.id)
     named = await refusal.refused_by(library.access, library.db, library.admin, "asset", ids["p1"])
     assert named == []
+
+
+async def test_a_pick_that_is_gone_is_neither_named_nor_counted(library: Library) -> None:  # noqa: F811
+    assert await _left_out(library, [Chosen(kind="asset", id="01NOTHING0000000000000000")]) == (
+        (),
+        0,
+    )
+
+
+async def test_a_name_is_none_for_a_file_the_reader_cannot_open(library: Library) -> None:  # noqa: F811
+    assert (
+        await refusal.name_for(library.access, library.admin, "asset", "01NOTHING0000000000000000")
+        is None
+    )

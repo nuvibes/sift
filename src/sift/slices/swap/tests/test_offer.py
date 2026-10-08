@@ -916,3 +916,11 @@ async def test_a_chosen_song_offers_the_files_that_carry_it_hidden_or_not(
     await hide(library.db, "song", song_id, library.admin.id)
     assert await _names(library, chosen) == {"t1", "c1"}
     assert await weigh(library.access, _NoFilters(), library.admin, chosen) == (2, 200)
+
+
+async def test_a_fingerprints_pick_of_somebody_gone_names_nobody(library: Library) -> None:
+    """A pick carried from a screen after the person went: nothing to name, nothing refused."""
+    chosen = [Chosen(kind="facial_fingerprints", id="01NOBODY000000000000000000")]
+    after = await files_of(library.access, library.db, _NoFilters(), library.admin, chosen)
+    assert after.files == () and after.people == ()
+    assert await people_of(library.db, after) == []

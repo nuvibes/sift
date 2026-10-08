@@ -10,8 +10,9 @@ from __future__ import annotations
 
 import pytest
 
+import sift.slices.suggestions.schema  # noqa: F401 (registers the folders' answers table)
 from sift.kernel.content import tree as tree_module
-from sift.kernel.content.tree import FolderTotals, TreeReads
+from sift.kernel.content.tree import FolderTotals, TreeReads, people_answered_for
 from sift.kernel.db import Database
 
 pytestmark = pytest.mark.unit
@@ -247,3 +248,45 @@ async def test_a_second_fold_does_not_see_the_first_ones_numbers(tree: TreeReads
     found = await tree.totals_by_folder({"a2": (1, 2)}, counted={"a2"})
 
     assert found["f-shoot"] == FolderTotals(summed=1, newest=2, counted=1)
+
+
+async def test_a_copy_that_is_gone_from_a_folder_is_not_among_its_present_files(
+    tree: TreeReads, temp_db: Database
+) -> None:
+    """A record of where a file used to sit is not the folder's: the present read leaves it out,
+    the plain read keeps it."""
+    async with temp_db.write() as c:
+        await c.execute(
+            "INSERT INTO asset_locations"
+            " (id, asset_id, root_id, folder_id, rel_path, filename,"
+            "  status, first_seen_at, last_seen_at)"
+            " VALUES ('l-a4-gone', 'a4', 'r1', 'f-cuts', 'shoot/outtakes/004.jpg', '004.jpg',"
+            " 'missing', ?, ?)",
+            (_EPOCH, _EPOCH),
+        )
+    assert set(await tree.assets_under("f-cuts")) == {"a3", "a4"}
+    assert await tree.assets_present_under("f-cuts") == ["a3"]
+
+
+async def test_the_people_a_folder_was_answered_as_reach_only_its_present_files(
+    tree: TreeReads, temp_db: Database
+) -> None:
+    async with temp_db.write() as c:
+        await c.execute(
+            "INSERT INTO people (id, name, created_at) VALUES ('p1', 'Someone', ?)", (_EPOCH,)
+        )
+        await c.execute(
+            "INSERT INTO folder_people (folder_id, person_id, created_at) VALUES ('f-shoot', 'p1', ?)",
+            (_EPOCH,),
+        )
+        await c.execute(
+            "INSERT INTO asset_locations"
+            " (id, asset_id, root_id, folder_id, rel_path, filename,"
+            "  status, first_seen_at, last_seen_at)"
+            " VALUES ('l-a4-gone', 'a4', 'r1', 'f-cuts', 'shoot/outtakes/004.jpg', '004.jpg',"
+            " 'missing', ?, ?)",
+            (_EPOCH, _EPOCH),
+        )
+    answered = await people_answered_for(temp_db, ["a1", "a3", "a4", "a2", "a1"])
+    assert answered == {"a1": frozenset({"p1"}), "a2": frozenset({"p1"}), "a3": frozenset({"p1"})}
+    assert await people_answered_for(temp_db, []) == {}

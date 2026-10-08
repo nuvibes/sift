@@ -8,8 +8,8 @@
 	},
 	"client-coverage": {
 		"untouched": 7,
-		"lines": 85.08,
-		"uncovered_lines": 6113
+		"lines": 85.34,
+		"uncovered_lines": 6024
 	},
 	"state-matrix": {
 		"undrawn": 0
