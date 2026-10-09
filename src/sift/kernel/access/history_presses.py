@@ -23,6 +23,7 @@ from sift.kernel.access.history_events import (
 from sift.kernel.access.history_line import Actor, Event, by_of
 from sift.kernel.access.history_press_totals import (
     RESUM,
+    SUM_OWED,
     TOTAL_ALL,
     TOTALS_TABLES,
     TOTALS_TRIGGERS,
@@ -544,15 +545,14 @@ async def _keep_the_triggers(connection: Connection, *, added: bool) -> None:
         await connection.execute(_LABEL_ALL)
         present = {}
     remade = await _made_again(connection, TOTALS_TRIGGERS, present)
-    if added or remade or len(totalled) < 2:
-        for statement in TOTAL_ALL:
-            await connection.execute(statement)
+    for statement in TOTAL_ALL if added or remade or len(totalled) < 3 else SUM_OWED:
+        await connection.execute(statement)
 
 
 #: The totals' tables a record already has; both, where they were kept.
 _TOTALS_KEPT = (
     "SELECT name FROM sqlite_master WHERE type = 'table'"
-    " AND name IN ('workbench_press_objects', 'workbench_press_subjects')"
+    " AND name IN ('workbench_press_objects', 'workbench_press_subjects', 'workbench_totals_owed')"
 )
 
 

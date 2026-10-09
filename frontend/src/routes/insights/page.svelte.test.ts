@@ -1,10 +1,10 @@
 /* The Insights screen, drawn from fixture answers of the contracts' shape.
  *
- * What is held here is what the screen decides rather than what a block draws: it asks for the
- * period its address names, it lays out the blocks the answer carries and no others (so What Sift
- * did is on an admin's page and absent from a guest's because the server left it out, not because
- * anything here knows who is looking), it opens on the first sentences only while the viewing is
- * below its floor, the tabs run All, Day, Week, Month, Year, and the arrows move the address.
+ * What is held here is what the screen decides rather than what a tile draws: it asks for the
+ * period its address names, it lays the answer out as the board's tiles and no others (so What
+ * Sift did is on an admin's board and absent from a guest's because the server left it out), the
+ * first screen stands before the answer lands, the tabs run All, Day, Week, Month, Year, and the
+ * arrows move the address.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -84,7 +84,7 @@ function page(over: Partial<InsightsPage> = {}, { admin = false } = {}): Insight
 		blocks: [
 			...VIEWING.map(([id, title]) => block(id, title, `${title} says so.`)),
 			block('organizing', 'Organizing', 'You answered 120 questions on Organize this month.'),
-			block('arrived', 'What arrived', '142 files arrived this month.'),
+			block('arrived', 'What was imported', '142 files imported this month.'),
 			...(admin
 				? [block('machine', 'What Sift did', 'Sift worked on tasks for 14 hours this month.')]
 				: []),
@@ -108,11 +108,11 @@ async function open(data: Place): Promise<HTMLElement> {
 	return host;
 }
 
-/* Every block's heading and the recaps': a section's is an h2, a card's the band heading inside it. */
-const headings = (root: HTMLElement) =>
-	[...root.querySelectorAll('h2, h3')]
-		.filter((h) => h.id.startsWith('insights-'))
-		.map((h) => words(h));
+/* The board's tiles, in its order. */
+const slots = (root: HTMLElement) =>
+	[...root.querySelectorAll('.board [data-slot]')].map((one) => one.getAttribute('data-slot'));
+const tile = (root: HTMLElement, slot: string) =>
+	root.querySelector<HTMLElement>(`.board [data-slot="${slot}"]`);
 
 beforeEach(() => {
 	mocks.insights.mockReset();
@@ -134,78 +134,117 @@ describe('the Insights screen', () => {
 		expect(mocks.insights).toHaveBeenCalledWith({ period: 'month', at: '2026-09-14' });
 	});
 
-	it('draws the head line and lays the blocks out as the story: the pair, the lists, the grid', async () => {
+	it('draws the head line and the first screen, then the families, with no section headings', async () => {
 		mocks.insights.mockResolvedValue(page());
 		const screen = await open({ period: 'month', at: null });
 		expect(words(screen.querySelector('.lede'))).toBe(
 			'Your library, your viewing and your organizing, in numbers. Nothing here leaves this device.'
 		);
-		/* The first sentences are each a figure on a card, so past the floor they are not repeated. */
-		expect(screen.querySelector('.statements.lead')).toBeNull();
-		expect(headings(screen).slice(0, 9)).toEqual([
-			'Overview',
-			'By kind',
-			'When',
-			'Most viewed',
-			'Theater',
-			'Visits',
-			'Opinions',
-			'Organizing',
-			'What arrived'
-		]);
-		const inGroup = (selector: string) =>
-			[...screen.querySelectorAll(`${selector} [data-block]`)].map((one) =>
-				one.getAttribute('data-block')
-			);
-		expect(inGroup('.group.pair')).toEqual(['by_kind', 'when']);
-		expect(inGroup('.group.row').slice(0, 5)).toEqual([
-			'theater',
-			'sittings',
-			'opinions',
+		expect(slots(screen)).toEqual([
+			'headline',
+			'viewed',
+			'people',
+			'top_file',
+			'sites',
+			'days',
+			'imported',
+			'visits',
+			'sessions',
+			'third',
+			'by_kind',
+			'when',
 			'organizing',
-			'arrived'
+			'opinions',
+			'theater',
+			'library'
 		]);
+		expect(words(tile(screen, 'headline'))).toContain('You viewed 41 hours this month so far.');
+		expect(screen.querySelector('.board h2, .board h3')).toBeNull();
+	});
+
+	it('stands the first screen as skeletons before the answer, in the same places', async () => {
+		mocks.insights.mockReturnValue(new Promise(() => {}));
+		const screen = await open({ period: 'day', at: null });
+		expect(slots(screen)).toEqual([
+			'headline',
+			'viewed',
+			'people',
+			'top_file',
+			'sites',
+			'when',
+			'imported',
+			'visits',
+			'sessions',
+			'third'
+		]);
+		expect(screen.querySelectorAll('.board .bone')).toHaveLength(10);
+		expect(screen.querySelector('.board')?.getAttribute('aria-busy')).toBe('true');
+	});
+
+	it("opens Stats at the tile's own table, from anywhere on the tile and from its link", async () => {
+		mocks.insights.mockResolvedValue(page());
+		const screen = await open({ period: 'month', at: '2026-09-14' });
+		const theater = tile(screen, 'theater');
+		const link = theater?.querySelector('a.open');
+		expect(link?.getAttribute('href')).toBe('/insights/stats?period=month&at=2026-09-14#theater');
+		expect(words(link)).toBe('Theater in Stats');
+		const pressed = vi.fn((event: Event) => event.preventDefault());
+		link?.addEventListener('click', pressed);
+		theater?.querySelector('article')?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+		expect(pressed).toHaveBeenCalledTimes(1);
 	});
 
 	it('has no learning paths of its own: they are under Settings, in Get to know Sift', async () => {
 		mocks.insights.mockResolvedValue(page());
 		const screen = await open({ period: 'month', at: null });
-		expect(headings(screen)).not.toContain('Learning paths');
-		expect(screen.querySelector('[data-block="path"]')).toBeNull();
+		expect(screen.querySelector('[data-slot="path"]')).toBeNull();
+		expect(screen.querySelector('a.open[href$="#path"]')).toBeNull();
 	});
 
-	it("draws What Sift did on an admin's answer and has no such heading on a guest's", async () => {
+	it("draws What Sift did on an admin's answer and no such tile on a guest's", async () => {
 		mocks.insights.mockResolvedValue(page({}, { admin: true }));
 		const admin = await open({ period: 'month', at: null });
-		expect(headings(admin)).toContain('What Sift did');
+		expect(slots(admin)).toContain('machine');
 		unmount(drawn!);
 		drawn = undefined;
 		host.remove();
 
 		mocks.insights.mockResolvedValue(page());
 		const guest = await open({ period: 'month', at: null });
-		expect(headings(guest)).not.toContain('What Sift did');
-		expect(guest.querySelector('[data-block="machine"]')).toBeNull();
+		expect(slots(guest)).not.toContain('machine');
 	});
 
-	it('opens on the first sentences while the viewing is below its floor, and draws no empty block', async () => {
+	it('leads with the first sentences while the viewing is below its floor, and draws no empty tile', async () => {
 		mocks.insights.mockResolvedValue(
 			page({
-				first_sentences: [[plain('142 files arrived today.')]],
+				period: 'day',
+				first_sentences: [[plain('142 files imported today.')]],
 				blocks: [
 					block('overview', 'Overview', 'Not enough yet to say.', false),
 					block('when', 'When', 'Not enough yet to say.', false),
-					block('arrived', 'What arrived', '142 files arrived today.')
+					block('arrived', 'What was imported', '142 files imported today.')
 				]
 			})
 		);
 		const screen = await open({ period: 'day', at: null });
-		expect(words(screen.querySelector('.statements.lead'))).toBe('142 files arrived today.');
-		expect(screen.querySelector('[data-block="when"]')).toBeNull();
-		expect(headings(screen)).toContain('What arrived');
+		expect(words(tile(screen, 'headline'))).toContain('142 files imported today.');
+		expect(words(tile(screen, 'viewed'))).toContain('Not enough yet to say.');
+		expect(slots(screen)).toEqual([
+			'headline',
+			'viewed',
+			'people',
+			'top_file',
+			'sites',
+			'when',
+			'imported',
+			'visits',
+			'sessions',
+			'third',
+			'library'
+		]);
 	});
 
-	it("draws the empty library's sentence the server sends, as the page's first sentence", async () => {
+	it("draws the empty library's sentence the server sends, as the board's headline", async () => {
 		mocks.insights.mockResolvedValue(
 			page({
 				first_sentences: [
@@ -219,7 +258,7 @@ describe('the Insights screen', () => {
 			})
 		);
 		const screen = await open({ period: 'week', at: null });
-		expect(words(screen.querySelector('.statements.lead'))).toBe(
+		expect(words(tile(screen, 'headline'))).toContain(
 			'Insights start once you have viewed a few things. Sift is keeping count from today.'
 		);
 	});
@@ -275,10 +314,8 @@ describe('the Insights screen', () => {
 		answer.blocks.push(block('alongside', 'Alongside', 'Not enough yet to say.', false));
 		mocks.insights.mockResolvedValue(answer);
 		const screen = await open({ period: 'month', at: null });
-		expect(words(screen.querySelector('[data-block="alongside"] .statements'))).toBe(
-			'Not enough yet to say.'
-		);
-		expect(screen.querySelector('[data-block="opinions"]')).not.toBeNull();
+		expect(words(tile(screen, 'alongside'))).toContain('Not enough yet to say.');
+		expect(slots(screen)).toContain('opinions');
 	});
 
 	it('draws no Alongside while the whole viewing is below its floor', async () => {
@@ -291,7 +328,7 @@ describe('the Insights screen', () => {
 			})
 		);
 		const screen = await open({ period: 'month', at: null });
-		expect(screen.querySelector('[data-block="alongside"]')).toBeNull();
+		expect(slots(screen)).not.toContain('alongside');
 	});
 });
 
@@ -344,6 +381,21 @@ describe("the period's recap as cards", () => {
 		await vi.waitFor(() => expect(shown).toHaveBeenCalledWith(DECK_WORDS.week.none));
 		expect(goto).not.toHaveBeenCalled();
 		shown.mockRestore();
+	});
+
+	it("says today's recap on the day that holds today, and this day's on another", async () => {
+		mocks.insights.mockResolvedValue(page({ period: 'day', from: '2026-09-14', to: '2026-09-14' }));
+		const today = await open({ period: 'day', at: null });
+		expect(deckPress(today, "See today's recap")).toBeDefined();
+		unmount(drawn!);
+		drawn = undefined;
+		host.remove();
+
+		mocks.insights.mockResolvedValue(
+			page({ period: 'day', from: '2026-09-13', to: '2026-09-13', today_is_live: false })
+		);
+		const before = await open({ period: 'day', at: '2026-09-13' });
+		expect(deckPress(before, "See this day's recap")).toBeDefined();
 	});
 
 	it('has no deck press on All, which has no recap', async () => {

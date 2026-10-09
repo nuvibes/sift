@@ -38,6 +38,13 @@ class Pace:
     sample of runs has a spread only where there is more than one run, so a single run answers
     with three equal figures and the screen draws one number rather than a range."""
 
+    def priced(self, left: float, workers: int) -> Estimate:
+        """This many items over the workers, between the sample's quick and slow ends."""
+        quick = left * self.quick / workers
+        return Estimate(
+            int(quick), int(max(left * self.slow / workers, quick)), self.items, workers
+        )
+
 
 @dataclass(frozen=True, slots=True)
 class Estimate:

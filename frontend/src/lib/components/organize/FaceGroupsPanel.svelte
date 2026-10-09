@@ -27,9 +27,8 @@
 	 * (`FaceService.position_in_to_check`), because only the server holds the scoped, floored,
 	 * ordered list the group is a position in.
 	 *
-	 * The page is a fixed 24. This panel hands its rows to `FaceGroups` to draw, and the measurable
-	 * grid is that component's, so the paging here is never measured and its size is the fallback
-	 * on every visit.
+	 * The page is whole rows of the wall: this panel hands its rows to `FaceGroups` to draw, and
+	 * hands it this paging's measure for the wall it draws them on.
 	 */
 	import { page as address } from '$app/state';
 	import { onDestroy, untrack } from 'svelte';
@@ -68,9 +67,7 @@
 	let total = $state(0);
 	let underFloor = $state(0);
 	let loading = $state(true);
-	/* No wall name: nothing here is measured (see the note at the top), so there is nothing for a
-	   session to remember and the size is the fixed page on every visit. */
-	const paging = new CardPaging(PAGE);
+	const paging = new CardPaging(PAGE, 'faces.unnamed');
 
 	async function load() {
 		const asked = showing;
@@ -213,6 +210,7 @@
 			supplied={groups}
 			onreload={load}
 			tab={queue}
+			measure={paging.cards}
 			quiet
 		/>
 	{/if}

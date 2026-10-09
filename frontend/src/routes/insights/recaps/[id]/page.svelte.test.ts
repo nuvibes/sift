@@ -13,11 +13,11 @@ import { ApiError } from '$lib/api/client';
 
 import source from './+page.svelte?raw';
 
-const server = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn() }));
+const server = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), put: vi.fn() }));
 
 vi.mock('$lib/api/client', async (importOriginal) => ({
 	...(await importOriginal<typeof import('$lib/api/client')>()),
-	api: { get: server.get, post: server.post }
+	api: { get: server.get, post: server.post, put: server.put }
 }));
 vi.mock('$app/navigation', () => ({ goto: vi.fn(), replaceState: vi.fn() }));
 
@@ -166,7 +166,7 @@ describe('the cards', () => {
 		expect(see?.getAttribute('href')).toBe('/insights?period=month&at=2026-09-01');
 	});
 
-	it('draws the top five as a ranked list and the favourite time as a ring', async () => {
+	it('draws each card through the one card, in order', async () => {
 		const person = (name: string, value: number) => ({
 			piece: { text: name, kind: 'person', id: name, href: null, gone: false, rest: [], lead: '' },
 			value,
@@ -190,19 +190,16 @@ describe('the cards', () => {
 			})
 		);
 		await draw();
-		const five = inView();
-		expect(five.querySelector('.ranked-list .first')?.textContent).toContain('Elina Sorrel');
-		expect([...five.querySelectorAll('.ranked-list li')].map((li) => li.textContent)).toEqual([
-			expect.stringContaining('Cassia Lynn')
-		]);
+		// Each through the one card, which draws its own picture (its own tests hold the designs).
+		expect(inView().querySelector('.recap-card')?.getAttribute('data-card')).toBe('top_five');
+		expect(inView().textContent).toContain('Elina Sorrel');
 		await later();
-		const when = inView();
-		expect(when.querySelector('.hour-ring .ring')).not.toBeNull();
+		expect(inView().querySelector('.recap-card')?.getAttribute('data-card')).toBe('when');
 	});
 
 	it('gives each card its span at the foot, so a card saved as a picture says when', async () => {
 		await draw();
-		expect(inView().querySelector('.foot')?.textContent).toBe('September 2026');
+		expect(inView().querySelector('.foot')?.textContent).toContain('September 2026');
 	});
 
 	/* Every card one size so Later stands still: the story is one definite width, its list one
@@ -326,10 +323,98 @@ describe('saving the deck', () => {
 		expect(saving.deliver).not.toHaveBeenCalled();
 	});
 
+	it('saves a square picture as the square tile of the same card, named for its cut', async () => {
+		const laid: string[] = [];
+		saving.cardPicture.mockImplementation(async (drawn: HTMLElement) => {
+			laid.push(`${drawn.className} ${drawn.parentElement?.className}`);
+			return new Blob(['png'], { type: 'image/png' });
+		});
+		await draw();
+		const [, square] = host.querySelectorAll<HTMLElement>('.deck-saves [role="checkbox"]');
+		square.click();
+		flushSync();
+		press('Save as picture');
+		await settle();
+		expect(saving.deliver.mock.calls.map(([, name]) => name)).toEqual([
+			'recap-month-2026-09-1-square.png'
+		]);
+		expect(laid[0]).toMatch(/recap-card tile/);
+		expect(laid[0]).toMatch(/\bstage\b.*\bsquare\b/);
+		expect(host.querySelector('.stage .recap-card')).toBeNull();
+		// Off again, the picture is the card on screen, 9:16.
+		square.click();
+		flushSync();
+		press('Save as picture');
+		await settle();
+		expect(saving.deliver.mock.calls.at(-1)?.[1]).toBe('recap-month-2026-09-1.png');
+		expect(laid.at(-1)).toMatch(/recap-card story/);
+	});
+
+	it("stands every card on the deck's own pictures", async () => {
+		server.get.mockResolvedValue(
+			recap({
+				cards: [
+					card('headline', 'You viewed 41 hours in September.'),
+					card('top_file', 'Your most viewed file.', false, { cover: '/api/assets/f9/thumb' })
+				]
+			})
+		);
+		await draw();
+		expect(
+			[...inView().querySelectorAll('.recap-card img')].map((one) => one.getAttribute('src'))
+		).toContain('/api/assets/f9/thumb');
+	});
+
 	it("offers no video of a week's deck", async () => {
 		server.get.mockResolvedValue(recap({ period: 'week:2026-W39' }));
 		await draw();
 		expect(host.textContent).not.toContain('Save as video');
+	});
+});
+
+describe('leaving something out', () => {
+	it('takes what the card names out of the recap, then reads the deck again', async () => {
+		const her = {
+			text: 'Elina Sorrel',
+			kind: 'person',
+			id: 'p1',
+			href: '/people/p1',
+			gone: false,
+			rest: [],
+			lead: ''
+		};
+		server.get.mockResolvedValue(
+			recap({
+				cards: [
+					card('top_person', '', false, { statement: [her, ...said(' was the one.')] }),
+					card('closing', 'That was September.')
+				]
+			})
+		);
+		server.put.mockReset();
+		server.put.mockResolvedValue({});
+		await draw();
+		const reads = server.get.mock.calls.length;
+		press('Leave out');
+		flushSync();
+		const tick = [...document.querySelectorAll<HTMLElement>('[role="dialog"] [role="checkbox"]')];
+		expect(tick).toHaveLength(1);
+		tick[0].click();
+		flushSync();
+		press('Save');
+		for (let turn = 0; turn < 6; turn += 1) await Promise.resolve();
+		expect(server.put).toHaveBeenCalledWith('/insights/recaps/r-sep/left-out', {
+			body: { ids: ['p1'] }
+		});
+		expect(server.get.mock.calls.length).toBeGreaterThan(reads);
+	});
+
+	it('offers nothing to leave out on a card that names nobody', async () => {
+		await draw();
+		const button = [...host.querySelectorAll('button')].find((one) =>
+			one.textContent?.includes('Leave out')
+		);
+		expect(button?.disabled).toBe(true);
 	});
 });
 

@@ -54,7 +54,7 @@
 	} = $props();
 
 	const NAME = 'Add a folder';
-	const SAID = 'Its files are imported, and new ones as they arrive.';
+	const SAID = 'Its files are imported, and new ones as they appear in it.';
 
 	let addOpen = $state(false);
 	let addError = $state<string | undefined>(undefined);

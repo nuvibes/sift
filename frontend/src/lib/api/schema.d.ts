@@ -5029,6 +5029,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/insights/recaps/{recap_id}/left-out": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Leave Out
+         * @description Take people and files out of a recap, or put them back: the cards naming one are drawn
+         *     again without it, for the deck and its pictures alike. Answers the recap drawn again.
+         */
+        put: operations["leave_out_api_insights_recaps__recap_id__left_out_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/insights/recaps/{recap_id}/session": {
         parameters: {
             query?: never;
@@ -15082,7 +15103,7 @@ export interface components {
             failed: number;
             /**
              * For Task
-             * @description How many files wait for their task's own run, in one sentence said after the time left, or null: while only arriving files run, the time left is theirs alone.
+             * @description How many files wait for their task's own run, in one sentence said after the time left, or null: while only files being imported run, the time left is theirs alone.
              */
             for_task: string | null;
             /** Label */
@@ -15811,7 +15832,7 @@ export interface components {
             keys: string[];
             /**
              * Labels
-             * @description What each of `keys` is called on screen, by key. A key retired into a task's When (a folder's answer is still stored under it) is called by what a folder's answer does, which is only what happens as a file arrives.
+             * @description What each of `keys` is called on screen, by key. A key retired into a task's When (a folder's answer is still stored under it) is called by what a folder's answer does, which is only what happens as a file is imported.
              */
             labels: {
                 [key: string]: string;
@@ -20275,13 +20296,19 @@ export interface components {
          * @description One card, as the reader may be shown it now.
          */
         RecapCard: {
+            /** Accent Hue */
+            accent_hue: number | null;
             calendar: components["schemas"]["Calendar"] | null;
             chart: components["schemas"]["Chart"] | null;
+            /** Context */
+            context: components["schemas"]["HistoryPiece"][];
             /** Cover */
             cover: string | null;
             figure: components["schemas"]["Figure"] | null;
             /** Figures */
             figures: components["schemas"]["Figure"][];
+            /** Headline */
+            headline: components["schemas"]["HistoryPiece"][];
             /**
              * Hidden
              * @default false
@@ -20300,6 +20327,7 @@ export interface components {
             rows: components["schemas"]["NamedRow"][];
             /** Statement */
             statement: components["schemas"]["HistoryPiece"][];
+            wall: components["schemas"]["Wall"] | null;
         };
         /**
          * RecapHead
@@ -20323,6 +20351,14 @@ export interface components {
             span: string;
             /** Title */
             title: string;
+        };
+        /**
+         * RecapLeftOut
+         * @description The people and files a reader takes out of their recap before sharing it.
+         */
+        RecapLeftOut: {
+            /** Ids */
+            ids: string[];
         };
         /**
          * RecapList
@@ -24832,6 +24868,32 @@ export interface components {
              * @default []
              */
             items: components["schemas"]["WaitingEntry"][];
+        };
+        /**
+         * Wall
+         * @description A Saved Layout's grid, for the card that draws the wall in miniature.
+         */
+        Wall: {
+            /** Cols */
+            cols: number;
+            /** Rows */
+            rows: number;
+            /** Slots */
+            slots: components["schemas"]["WallSlot"][];
+        };
+        /**
+         * WallSlot
+         * @description Where one cell of a Theater wall sits: its top-left track and how many it covers, from 0.
+         */
+        WallSlot: {
+            /** Col */
+            col: number;
+            /** Col Span */
+            col_span: number;
+            /** Row */
+            row: number;
+            /** Row Span */
+            row_span: number;
         };
         /**
          * WatermarkStatus
@@ -31565,6 +31627,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["KeepSheet"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    leave_out_api_insights_recaps__recap_id__left_out_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                recap_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RecapLeftOut"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Recap"];
                 };
             };
             /** @description Validation Error */

@@ -120,15 +120,15 @@ WITH v AS (
             FROM plays p
            WHERE p.id IN (SELECT value FROM json_each(:views)) AND p.user_id = :user)
 )
-SELECT asset_id AS key, (first - before) / 86400 AS whole,
-       CASE WHEN hid THEN (first - before) / 86400 ELSE 0 END AS hidden
+SELECT asset_id AS key, unixepoch(first, 'unixepoch', 'localtime') / 86400 - unixepoch(before, 'unixepoch', 'localtime') / 86400 AS whole,
+       CASE WHEN hid THEN unixepoch(first, 'unixepoch', 'localtime') / 86400 - unixepoch(before, 'unixepoch', 'localtime') / 86400 ELSE 0 END AS hidden
   FROM (SELECT v.asset_id, MIN(v.started_at) AS first, MAX(v.hid) AS hid,
                (SELECT MAX(q.started_at) FROM plays q
                  WHERE q.asset_id = v.asset_id AND q.user_id = :user
                    AND q.started_at < :start AND COALESCE(q.screen, '') <> 'theater') AS before
           FROM v WHERE v.began AND NOT v.in_theater AND v.asset_id IS NOT NULL
          GROUP BY v.asset_id)
- WHERE (first - before) / 86400 >= 180
+ WHERE unixepoch(first, 'unixepoch', 'localtime') / 86400 - unixepoch(before, 'unixepoch', 'localtime') / 86400 >= 180
 """
 
 

@@ -66,7 +66,8 @@
 	import { answered } from '$lib/organize/organize.svelte';
 	import { reloadOnLibraryChange } from '$lib/library/changes.svelte';
 	import { toasts } from '$lib/shell/toasts.svelte';
-	import { pressOnCard } from '$lib/components/common/card-press';
+	import CardWall from '$lib/components/organize/CardWall.svelte';
+	import DecisionCard from '$lib/components/organize/DecisionCard.svelte';
 	import RecognitionStrength from '$lib/components/RecognitionStrength.svelte';
 	import {
 		CROPS_ON_A_CARD,
@@ -493,94 +494,90 @@
 	{:else}
 		<!-- No count of its own: the tab says how many, and the pager says it again under the
 		     cards, as on every other tab of this page. -->
-		<ul class="people" {@attach paging.cards}>
+		<CardWall cards={paging.cards}>
 			{#each people as person, at (`${at}:${person.person_id ?? 'nameless'}`)}
-				<!-- A press on the card's ground opens what its faces open. See `pressOnCard`. -->
-				<!-- svelte-ignore a11y_click_events_have_key_events: the keyboard reaches it through the
-				     card's own link. -->
-				<li
-					class="person"
-					class:opens={Boolean(person.person_id)}
-					onclick={(event) => pressOnCard(event, person.person_id ? facesHref(person) : undefined)}
-				>
-					<!-- The thumbnails are the link, exactly as on the group wall: a card shows a handful
+				<!-- The card every Organize wall wears; a press on its ground opens what its faces
+				     open. -->
+				<li>
+					<DecisionCard opens={person.person_id ? facesHref(person) : undefined}>
+						<!-- The thumbnails are the link, exactly as on the group wall: a card shows a handful
 					     and checking a decision usually needs all of them, at the moment in the file
 					     where each was found. Somebody this account may not be told about has no page
 					     to open, so their card is not a link. -->
-					{#if person.person_id}
-						<FaceCovers
-							faces={person.faces}
-							most={CROPS_ON_A_CARD}
-							href={facesHref(person)}
-							label={`Open every face named ${person.person_name ?? 'as them'}`}
-							picked={selection.has(person.person_id)}
-							onpointerdown={(event) => gesture.pressStart(person.person_id as string, event)}
-							onpointerup={() => gesture.pressEnd()}
-							onclickcapture={(event) => gesture.clicked(person.person_id as string, event)}
-							sweepId={person.person_id}
-						/>
-					{:else}
-						<FaceCovers faces={person.faces} most={CROPS_ON_A_CARD} />
-					{/if}
+						{#if person.person_id}
+							<FaceCovers
+								faces={person.faces}
+								most={CROPS_ON_A_CARD}
+								href={facesHref(person)}
+								label={`Open every face named ${person.person_name ?? 'as them'}`}
+								picked={selection.has(person.person_id)}
+								onpointerdown={(event) => gesture.pressStart(person.person_id as string, event)}
+								onpointerup={() => gesture.pressEnd()}
+								onclickcapture={(event) => gesture.clicked(person.person_id as string, event)}
+								sweepId={person.person_id}
+							/>
+						{:else}
+							<FaceCovers faces={person.faces} most={CROPS_ON_A_CARD} />
+						{/if}
 
-					<!-- A card with no id on THIS wall is the concealed gather and can be nothing else.
+						<!-- A card with no id on THIS wall is the concealed gather and can be nothing else.
 					     Every face here is already attached to somebody; a face nobody has named is a
 					     question and lives on the other tab. So the server withholds the name AND the
 					     id together, and everybody this account may not be told about arrives as one
 					     nameless card. "Not named" would describe the opposite state (somebody Sift
 					     found and nobody has named), so the one card that means "there is a name and
 					     it is not yours to see" takes the word the vault uses everywhere else. -->
-					{#if person.person_id}
-						<p class="who">
-							<a href={`/people/${person.person_id}`}>{person.person_name}</a>
-							{#if rematching.people.has(person.person_id)}
-								<Tooltip label={matchingSaid(person.person_name)} placement="bottom">
-									<Spinner size={12} label={matchingSaid(person.person_name)} />
-								</Tooltip>
-							{/if}
-						</p>
-					{:else}
-						<p class="who">Hidden</p>
-					{/if}
-					<!-- The three numbers, in this order and these words. See the note above the
+						{#if person.person_id}
+							<p class="who">
+								<a href={`/people/${person.person_id}`}>{person.person_name}</a>
+								{#if rematching.people.has(person.person_id)}
+									<Tooltip label={matchingSaid(person.person_name)} placement="bottom">
+										<Spinner size={12} label={matchingSaid(person.person_name)} />
+									</Tooltip>
+								{/if}
+							</p>
+						{:else}
+							<p class="who">Hidden</p>
+						{/if}
+						<!-- The three numbers, in this order and these words. See the note above the
 					     selection for why they are one reading. -->
-					<p class="counts">
-						{#if person.confirmed > 0}
-							<span class="one"
-								>You confirmed {person.confirmed.toLocaleString()} as {firstOf(person)}</span
-							>
-						{/if}
-						{#if person.matched > 0}
-							<span class="one"
-								>Sift recognized {person.matched.toLocaleString()} as {firstOf(person)}</span
-							>
-						{/if}
-						{#if person.waiting > 0}
-							<!-- Singular said in full rather than a plural with a number in front of it:
+						<p class="counts">
+							{#if person.confirmed > 0}
+								<span class="one"
+									>You confirmed {person.confirmed.toLocaleString()} as {firstOf(person)}</span
+								>
+							{/if}
+							{#if person.matched > 0}
+								<span class="one"
+									>Sift recognized {person.matched.toLocaleString()} as {firstOf(person)}</span
+								>
+							{/if}
+							{#if person.waiting > 0}
+								<!-- Singular said in full rather than a plural with a number in front of it:
 							     "1 need your input" is the easy fault for a count, and it is the state a
 							     card is in one press from empty. -->
-							<span class="one pending">
-								{person.waiting === 1
-									? '1 awaiting your input'
-									: `${person.waiting.toLocaleString()} awaiting your input`}
-							</span>
-						{:else}
-							<span class="one settled">Nothing needs your input</span>
-						{/if}
-					</p>
+								<span class="one pending">
+									{person.waiting === 1
+										? '1 awaiting your input'
+										: `${person.waiting.toLocaleString()} awaiting your input`}
+								</span>
+							{:else}
+								<span class="one settled">Nothing needs your input</span>
+							{/if}
+						</p>
 
-					<!-- How reliably Sift can identify them, drawn from the one reading taken for the
+						<!-- How reliably Sift can identify them, drawn from the one reading taken for the
 					     whole screen rather than a request per card. -->
-					{#if person.person_id}
-						<RecognitionStrength
-							personId={person.person_id}
-							name={person.person_name}
-							{strengths}
-						/>
-					{/if}
+						{#if person.person_id}
+							<RecognitionStrength
+								personId={person.person_id}
+								name={person.person_name}
+								{strengths}
+							/>
+						{/if}
 
-					{#if person.person_id && (person.matched > 0 || person.waiting > 0)}
-						<!--
+						{#if person.person_id && (person.matched > 0 || person.waiting > 0)}
+							<!--
 							One control at the foot of the card, not two: the card is about fourteen
 							rems wide, and the two acts side by side would run off its edge. Both
 							are real questions (agreeing with what Sift matched on its own, and with
@@ -608,61 +605,62 @@
 							Nothing can fold out of the card: `SplitButton` wraps rather than
 							spilling.
 						-->
-						{@const leadsWithWaiting = person.waiting > 0}
-						{@const answering = leadsWithWaiting ? person.waiting : person.matched}
-						<div class="row">
-							<SplitButton
-								tone="primary"
-								icon="check"
-								disabled={busy !== null}
-								trailingLabel={`More for ${person.person_name ?? 'them'}`}
-								onclick={() =>
-									leadsWithWaiting ? void agree(person) : void agreeToMatches(person)}
-							>
-								{busy === person.person_id
-									? 'Answering\u2026'
-									: `Yes (${answering.toLocaleString()})`}
-								{#snippet menu()}
-									<!-- The refusal of exactly what the lead confirms, and it
+							{@const leadsWithWaiting = person.waiting > 0}
+							{@const answering = leadsWithWaiting ? person.waiting : person.matched}
+							<div class="row">
+								<SplitButton
+									tone="primary"
+									icon="check"
+									disabled={busy !== null}
+									trailingLabel={`More for ${person.person_name ?? 'them'}`}
+									onclick={() =>
+										leadsWithWaiting ? void agree(person) : void agreeToMatches(person)}
+								>
+									{busy === person.person_id
+										? 'Answering\u2026'
+										: `Yes (${answering.toLocaleString()})`}
+									{#snippet menu()}
+										<!-- The refusal of exactly what the lead confirms, and it
 									     writes. Two doors behind one row: the guesses are refused
 									     where they were proposed, the matches where they were
 									     matched, and which one this card is about is the same
 									     question the lead answers. The answer decided here is one
 									     part; the two that go somewhere to look first are the next. -->
-									<ContextMenuGroup>
-										<ContextMenuItem
-											label={`No (${answering.toLocaleString()})`}
-											icon="close"
-											onselect={() => void refuse(person)}
-										/>
-									</ContextMenuGroup>
-									<ContextMenuGroup>
-										<!-- And the row for somebody who wants to look first. It navigates
+										<ContextMenuGroup>
+											<ContextMenuItem
+												label={`No (${answering.toLocaleString()})`}
+												icon="close"
+												onselect={() => void refuse(person)}
+											/>
+										</ContextMenuGroup>
+										<ContextMenuGroup>
+											<!-- And the row for somebody who wants to look first. It navigates
 										     rather than writing, and it says so: a "No" that goes somewhere
 										     and changes nothing reads as a press that did not work. -->
-										<ContextMenuItem
-											label="No, one at a time"
-											icon="arrow_forward"
-											onselect={() => void goto(facesHref(person))}
-										/>
-										<!-- The same address the thumbnails open, so there is one way to this
+											<ContextMenuItem
+												label="No, one at a time"
+												icon="arrow_forward"
+												onselect={() => void goto(facesHref(person))}
+											/>
+											<!-- The same address the thumbnails open, so there is one way to this
 										     person's faces rather than two. A row rather than a link because this
 										     menu's rows are the app's menu rows and none of them is an anchor; and
 										     `arrow_forward` rather than the eye, which is the vault's reveal and
 										     the count of times a file was opened. -->
-										<ContextMenuItem
-											label="Show me"
-											icon="arrow_forward"
-											onselect={() => void goto(facesHref(person))}
-										/>
-									</ContextMenuGroup>
-								{/snippet}
-							</SplitButton>
-						</div>
-					{/if}
+											<ContextMenuItem
+												label="Show me"
+												icon="arrow_forward"
+												onselect={() => void goto(facesHref(person))}
+											/>
+										</ContextMenuGroup>
+									{/snippet}
+								</SplitButton>
+							</div>
+						{/if}
+					</DecisionCard>
 				</li>
 			{/each}
-		</ul>
+		</CardWall>
 	{/if}
 </section>
 
@@ -707,45 +705,6 @@
 		flex-direction: column;
 	}
 
-	/*
-	 * The same column the groups wall uses (`FaceGroups`), so a card is one width on both walls of
-	 * this feature and a control that fits one fits the other. It holds four crops and a row of
-	 * controls.
-	 */
-	.people {
-		list-style: none;
-		margin: 0;
-		padding: 0;
-		display: grid;
-		grid-template-columns: repeat(auto-fill, minmax(15.25rem, 1fr));
-		gap: var(--space-3);
-	}
-
-	.person {
-		display: flex;
-		flex-direction: column;
-		gap: var(--space-2);
-		padding: var(--space-3);
-		border-radius: var(--radius-lg);
-		/* The card's light (see `--sift-card`). It has no border, so the fill is the whole of it. */
-		background: var(--sift-card);
-		transition: background var(--dur-instant) var(--ease);
-	}
-
-	/* A card that opens something wears the hover and pressed layers `DecisionCard` draws. */
-	.person.opens {
-		cursor: pointer;
-	}
-
-	.person.opens:hover {
-		background: var(--sift-card-hover-layer), var(--sift-card);
-		--sift-line: var(--sift-card-hover-line);
-	}
-
-	.person.opens:active:not(:has(a:active, button:active)) {
-		background: var(--sift-card-press-layer), var(--sift-card);
-	}
-
 	.who {
 		margin: 0;
 		overflow-wrap: anywhere;
@@ -786,6 +745,8 @@
 		display: flex;
 		flex-direction: column;
 		gap: var(--space-1);
+		/* Three lines held, however many it says, so every card on the wall is one height. */
+		min-block-size: calc(3lh + 2 * var(--space-1));
 		margin: 0;
 		font: var(--text-body-sm);
 		color: var(--sift-ink-3);

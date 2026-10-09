@@ -95,7 +95,7 @@ export const COPY = {
 			`Sift ran this benchmark by itself and set ${n === 1 ? 'this number' : 'these numbers'} from it. History has the line, with Undo.`,
 		notSet: (n: number) => `Sift didn't set ${n === 1 ? 'this number' : 'these numbers'}.`,
 		wholeToCome: (byItself: boolean) =>
-			`This is a first measure, taken so your first folder's files could start arriving. ${byItself ? "The full benchmark runs by itself once Sift has nothing else to do and nobody's using this device. Press Run it again to run it now." : "The full benchmark hasn't run yet. Press Run it again to run it."}`,
+			`This is a first measure, taken so Sift could start importing your first folder's files. ${byItself ? "The full benchmark runs by itself once Sift has nothing else to do and nobody's using this device. Press Run it again to run it now." : "The full benchmark hasn't run yet. Press Run it again to run it."}`,
 		/* The two presses on the toasts about that run: the row while it runs or after a failure,
 		   the row and its results once it set something. */
 		open: 'Open',

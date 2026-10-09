@@ -168,6 +168,16 @@ const RULES = [
 		find: (source) => source.match(/<h[1-6][\s>]/g)?.length ?? 0
 	},
 	{
+		id: 'card-wall',
+		what: 'a wall of decision cards laid out by its own grid rule',
+		instead:
+			"import CardWall from '$lib/components/organize/CardWall.svelte': one wall, one column rule, whole rows",
+		find: (source) =>
+			/<DecisionCard\b/.test(source)
+				? (source.match(/grid-template-columns:\s*repeat\(auto-fill/g)?.length ?? 0)
+				: 0
+	},
+	{
 		id: 'chip',
 		what: 'a hand-declared .chip rule',
 		instead: "import Chip from '$lib/components/common/Chip.svelte'",

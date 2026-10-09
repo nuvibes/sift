@@ -34,19 +34,26 @@ a week closed, and a recap is opened again long after.
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping, Sequence
+import asyncio
+import math
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import date
+from io import BytesIO
 from typing import cast
 
 from pydantic import TypeAdapter, ValidationError
 
-from sift.kernel.access import Viewer
+from sift.kernel.access import Viewer, arrivals
+from sift.kernel.access.sentences import said
 from sift.kernel.access.viewer import Concealment
+from sift.kernel.content import ContentStore, DerivativeKind
 from sift.kernel.db import Database
 from sift.kernel.log import get_logger
-from sift.slices.insights import statements
+from sift.kernel.wire import pieces_of
+from sift.slices.insights import statements, store
 from sift.slices.insights.metrics import split_file_key
+from sift.slices.insights.models import Bar, BarPart, Chart, NamedRow, cover_of
 from sift.slices.insights.path import achievement_head
 from sift.slices.insights.recaps_cards import (
     BUILDERS,
@@ -54,6 +61,7 @@ from sift.slices.insights.recaps_cards import (
     Said,
     _figure_names,
     _said,
+    _spans,
     span_of,
 )
 from sift.slices.insights.recaps_models import (
@@ -115,9 +123,14 @@ def _draw(
     viewer: Viewer,
     hidden: Mapping[str, int],
     today: date,
+    left_out: frozenset[str] = frozenset(),
 ) -> _Drawn | None:
     """THE VAULT RULE FOR A RECAP: the cards this reader may be shown now, or None for a recap that
     is not there at all for them. `hidden` is the hidden part of every source, worked out now.
+
+    `left_out` is what the reader took out of this recap before sharing it (a person, a file): a
+    card naming one is absent whatever the vault, as in Show nothing mode, and the cards said
+    around a thing (`_SAID_AROUND`) are said without it.
 
     A card with no recipe (an achievement) is drawn as it was built: it names nothing the vault
     decides, and it carries no figure with a hidden part.
@@ -128,29 +141,16 @@ def _draw(
     def shown(name: str, whole: int) -> int:
         return whole - min(hidden.get(name, 0), whole) if locked else whole
 
-    below_floor = False
-    if locked and period is not None:
-        sittings = next(
-            (
-                card.recipe.sources[source("sittings")]
-                for card in cards
-                if card.kind == "closing"
-                and card.recipe is not None
-                and source("sittings") in card.recipe.sources
-            ),
-            None,
-        )
-        if sittings is not None and shown(source("sittings"), sittings) < FLOOR_SITTINGS:
-            if not placeholder:
-                return None
-            below_floor = True
+    below_floor = locked and period is not None and _short(cards, shown)
+    if below_floor and not placeholder:
+        return None
 
     out: list[RecapCard] = []
     something_hidden = below_floor
     for card in cards:
         recipe = card.recipe
         if recipe is None or period is None:
-            out.append(RecapCard(**card.model_dump(exclude={"recipe", "hidden_things"})))
+            out.append(RecapCard(**card.model_dump(exclude=_KEPT_ONLY)))
             continue
         # A named thing is hidden for this reader now when all of its figure in the period is:
         # the store's split says so for a hidden person or Site, for one whose every file is, and
@@ -166,27 +166,64 @@ def _draw(
         # The first-and-last card chooses among its files when it is said (`_first_last`), and
         # the closing card, which every recap keeps, leaves out a figure naming a hidden thing.
         naming = gone_now if card.kind not in _SAID_AROUND else []
+        taken = _taken_out(recipe, left_out)
+        if taken and card.kind not in _SAID_AROUND:
+            continue
         if locked and (naming or (below_floor and card.kind != "closing")):
             something_hidden = True
             if placeholder and card.kind != "o":
                 out.append(_stub(card.kind))
             continue
         figures = {name: shown(name, whole) for name, whole in recipe.sources.items()}
+        figures.update(dict.fromkeys(taken, 0))
         if locked and any(hidden.get(name, 0) for name in recipe.sources):
             something_hidden = True
-        words = BUILDERS[card.kind](figures, recipe, period, today)
-        drawn = _said(card.kind, words, figures)
-        if drawn is None or words is None:
+        drawn = _spoken(card.kind, figures, recipe, period, today, {} if locked else hidden)
+        if drawn is None:
             # Nothing true left to say once the hidden part is out. The O card is absent in both
             # modes; any other card is a locked tile in placeholder mode, so that mode's gap is
             # where the card was.
             if locked and placeholder and card.kind != "o":
                 out.append(_stub(card.kind))
             continue
-        _hidden_figures(drawn, words, {} if locked else hidden)
         drawn.hidden_things = [] if locked else gone_now
         out.append(drawn)
+    _top_picture(out)
     return _Drawn(out, something_hidden and locked and placeholder)
+
+
+#: The cards whose first picture is the period's most viewed file, in the order they are asked.
+_TOP_FILE = ("mosaic", "top_file")
+
+
+def _top_picture(cards: list[RecapCard]) -> None:
+    """The closing card's picture: the most viewed file's, as a card this reader is shown has it,
+    and none where that card names something hidden."""
+    closing = next((card for card in cards if card.kind == "closing" and card.figures), None)
+    shown = {card.kind: card for card in cards if not card.hidden and not card.hidden_things}
+    top = next((shown[kind] for kind in _TOP_FILE if kind in shown), None)
+    if closing is not None and top is not None:
+        closing.cover = top.rows[0].cover if top.rows else top.cover
+
+
+def _spoken(
+    kind: str,
+    figures: Mapping[str, int],
+    recipe: Recipe,
+    period: Period,
+    today: date,
+    hidden: Mapping[str, int],
+) -> RecapCard | None:
+    """A card said from its figures now, each figure's hidden part on it (`hidden` empty while
+    locked), and the cover card's shares by kind; None when there is nothing true to say."""
+    words = BUILDERS[kind](figures, recipe, period, today)
+    drawn = _said(kind, words, figures)
+    if drawn is None or words is None:
+        return None
+    _hidden_figures(drawn, words, hidden)
+    if kind == "headline":
+        drawn.chart = _by_kind(figures)
+    return drawn
 
 
 def _hidden_figures(drawn: RecapCard, words: Said, hidden: Mapping[str, int]) -> None:
@@ -197,8 +234,113 @@ def _hidden_figures(drawn: RecapCard, words: Said, hidden: Mapping[str, int]) ->
         figure.hidden_part = hidden.get(cell.figure, 0)
 
 
-#: The cards that leave out what they may not say rather than being locked whole.
-_SAID_AROUND = frozenset({"first_last", "closing"})
+def _short(cards: Sequence[KeptCard], shown: Callable[[str, int], int]) -> bool:
+    """Whether the visits this reader may be told of fall under the floor a recap needs."""
+    sittings = next(
+        (
+            card.recipe.sources[source("sittings")]
+            for card in cards
+            if card.kind == "closing"
+            and card.recipe is not None
+            and source("sittings") in card.recipe.sources
+        ),
+        None,
+    )
+    return sittings is not None and shown(source("sittings"), sittings) < FLOOR_SITTINGS
+
+
+#: What a kept card holds that a reader is never sent as it was kept.
+_KEPT_ONLY = {"recipe", "hidden_things", "accent_hue", "accent_of"}
+
+#: The cards that leave out what they may not say rather than being locked whole: the Theater
+#: wall leaves the cell of such a file empty.
+_SAID_AROUND = frozenset({"first_last", "closing", "theater_files"})
+
+
+def _taken_out(recipe: Recipe, left_out: frozenset[str]) -> set[str]:
+    """The sources of the things this card names that the reader took out of the recap."""
+    return {name for one in recipe.named if one.id in left_out for name in _naming(one, recipe)}
+
+
+def _by_kind(figures: Mapping[str, int]) -> Chart | None:
+    """The time viewed by kind, as the cover card's one bar of shares; None for a card whose
+    recipe keeps no split."""
+    parts = [
+        BarPart(kind=kind, value=figures.get(source("viewed_ms:kind", kind), 0))
+        for kind in (*statements.KINDS, statements.THEATER)
+    ]
+    if sum(1 for part in parts if part.value > 0) < 2:
+        return None
+    return Chart(kind="share", unit="ms", bars=[Bar(label="Viewed", parts=parts)])
+
+
+#: A pixel greyer than this (OKLCH chroma) has no colour to give a card.
+_GREY = 0.04
+#: The share of a still's pixels that must have a colour for it to give one.
+_COLOURED = 0.08
+
+
+def _oklab(red: int, green: int, blue: int) -> tuple[float, float, float]:
+    """An sRGB pixel in OKLab: lightness, then the two axes of colour."""
+
+    def linear(channel: int) -> float:
+        c = channel / 255
+        return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
+
+    r, g, b = linear(red), linear(green), linear(blue)
+    l = (0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b) ** (1 / 3)  # noqa: E741
+    m = (0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b) ** (1 / 3)
+    s = (0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b) ** (1 / 3)
+    return (
+        0.2104542553 * l + 0.7936177850 * m - 0.0040720468 * s,
+        1.9779984951 * l - 2.4285922050 * m + 0.4505937099 * s,
+        0.0259040371 * l + 0.7827717662 * m - 0.8086757660 * s,
+    )
+
+
+async def still_hue(content: ContentStore, asset_id: str) -> int | None:
+    """The hue of a file's thumbnail, read through the cache's own confinement; None where it has
+    none on disk."""
+    thumb = next(
+        (one for one in await content.derivatives(asset_id) if one.kind is DerivativeKind.THUMB),
+        None,
+    )
+    path = None if thumb is None else await content.derivative_at(thumb.rel_cache_path)
+    if path is None:
+        return None
+    try:
+        still = await asyncio.to_thread(path.read_bytes)
+    except OSError:
+        return None
+    return await asyncio.to_thread(accent_hue, still)
+
+
+def accent_hue(still: bytes) -> int | None:
+    """The hue a still is mostly, in OKLCH degrees, for the card it heads to take its colour
+    from: each coloured pixel pulls towards its hue by how coloured it is. None for a still that
+    is mostly grey, or that does not open as a picture."""
+    # Here and not at the top: the picture library is never loaded while the server starts.
+    from PIL import Image, UnidentifiedImageError
+
+    try:
+        with Image.open(BytesIO(still)) as opened:
+            raw = opened.convert("RGB").resize((24, 24)).tobytes()
+    except (UnidentifiedImageError, OSError, ValueError):
+        return None
+    across = down = 0.0
+    coloured = 0
+    pixels = [tuple(raw[at : at + 3]) for at in range(0, len(raw), 3)]
+    for red, green, blue in pixels:
+        lightness, a, b = _oklab(red, green, blue)
+        chroma = math.hypot(a, b)
+        if chroma < _GREY or not 0.15 < lightness < 0.95:
+            continue
+        coloured += 1
+        across += a
+        down += b
+    if coloured < _COLOURED * len(pixels):
+        return None
+    return round(math.degrees(math.atan2(down, across))) % 360
 
 
 def _naming(one: NamedThing, recipe: Recipe) -> list[str]:
@@ -333,10 +475,84 @@ async def _open_all(
     out: list[_Opened] = []
     for row, period, cards in kept:
         hidden = next(parts) if period is not None else {}
-        drawn = _draw(cards, period, viewer, hidden, today)
+        drawn = _draw(cards, period, viewer, hidden, today, frozenset(row.left_out))
         if drawn is not None:
+            if not only_counting:
+                await _month_pictures(database, viewer.id, cards, drawn.cards)
+                await _coloured(database, viewer, today, cards, drawn.cards, row.left_out)
             out.append(_Opened(row, period, drawn))
     return out
+
+
+async def _coloured(
+    database: Database,
+    viewer: Viewer,
+    today: date,
+    kept: Sequence[KeptCard],
+    cards: Sequence[RecapCard],
+    left_out: Sequence[str],
+) -> None:
+    """The cards' colour, the hue of the period's most-viewed file: never one a locked reader may
+    not be shown now, nor one the reader took out of the recap."""
+    first = kept[0] if kept else None
+    if first is None or first.accent_hue is None or first.accent_of in (None, *left_out):
+        return
+    files = [str(first.accent_of)]
+    if not viewer.show_hidden and await store.hidden_files(
+        database.fetch_all, viewer.id, today, files
+    ):
+        return
+    for card in cards:
+        if not card.hidden:
+            card.accent_hue = first.accent_hue
+
+
+#: How many of each month's files the first-and-last-month card draws.
+MONTH_PICTURES = 3
+
+
+async def _month_pictures(
+    database: Database, user_id: str, kept: Sequence[KeptCard], cards: Sequence[RecapCard]
+) -> None:
+    """The first and last month's most viewed files beside their shares, as many of each, read
+    when the card is drawn from those months' own rows. Never a file with any hidden part, nor one
+    since gone, so the card names nothing hidden for any reader."""
+    card = next((one for one in cards if one.kind == "before_after" and not one.hidden), None)
+    recipe = next((one.recipe for one in kept if one.kind == "before_after" and one.recipe), None)
+    if card is None or recipe is None:
+        return
+    months: list[dict[str, int]] = []
+    for first, last in _spans(recipe, "viewed_ms:kind"):
+        read = await store.rows(database, user_id, first, last, ("sittings:file",))
+        views: dict[str, list[int]] = {}
+        for row in read.rows:
+            pair = views.setdefault(split_file_key(row.key)[1], [0, 0])
+            pair[0] += row.whole
+            pair[1] += row.hidden
+        ranked = sorted(
+            ((whole, asset) for asset, (whole, hidden) in views.items() if not hidden),
+            key=lambda one: (-one[0], one[1]),
+        )
+        months.append({asset: whole for whole, asset in ranked[: MONTH_PICTURES * 2]})
+    ids = sorted({asset for month in months for asset in month})
+    names = {
+        str(one["id"]): str(one["name"])
+        for one in await arrivals.file_names(database.fetch_all, ids)
+    }
+    shown = [[asset for asset in month if asset in names][:MONTH_PICTURES] for month in months]
+    most = min((len(month) for month in shown), default=0)
+    card.rows = [
+        _file_row(asset, names[asset], month[asset])
+        for month, picked in zip(months, shown, strict=True)
+        for asset in picked[:most]
+    ]
+
+
+def _file_row(asset: str, name: str, views: int) -> NamedRow:
+    line = said(statements.named(statements.Named("asset", asset, name)))
+    return NamedRow(
+        piece=pieces_of(line)[0], value=views, unit="views", cover=cover_of("asset", asset)
+    )
 
 
 def _on_clock(period: Period | None, hours: statements.Clock) -> Period | None:

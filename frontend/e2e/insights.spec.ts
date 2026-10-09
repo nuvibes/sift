@@ -110,6 +110,10 @@ const recap = {
 		{
 			id: 'c1',
 			kind: 'headline',
+			headline: [],
+			context: [],
+			wall: null,
+			accent_hue: null,
 			figure: figure('Viewed', 3 * HOUR + 21 * 60000, 'ms', '3 h 21 min'),
 			statement: said(
 				'You viewed about 3 hours last week: 1 hour 19 minutes of videos, 29 minutes of pictures, 2 minutes of GIFs, 1 hour 30 minutes in Theater.'
@@ -125,6 +129,10 @@ const recap = {
 		{
 			id: 'c2',
 			kind: 'top_five',
+			headline: [],
+			context: [],
+			wall: null,
+			accent_hue: null,
 			figure: null,
 			statement: said('These five were the people you viewed most.'),
 			cover: null,
@@ -144,6 +152,10 @@ const recap = {
 		{
 			id: 'c3',
 			kind: 'when',
+			headline: [],
+			context: [],
+			wall: null,
+			accent_hue: null,
 			figure: figure('Busiest hour', 2 * HOUR, 'ms', '2 h'),
 			statement: said('10 PM was your favourite time.'),
 			cover: null,
@@ -160,6 +172,10 @@ const recap = {
 		{
 			id: 'c4',
 			kind: 'closing',
+			headline: [],
+			context: [],
+			wall: null,
+			accent_hue: null,
 			figure: null,
 			statement: said('That was September.'),
 			cover: null,
@@ -190,15 +206,45 @@ test.beforeEach(async ({ page: browser }) => {
 	);
 });
 
-test('Stats shows every figure as tables and keeps its period', async ({ page: browser }) => {
+test('Stats is panels under an index, keeps its period, and Back returns to Insights', async ({
+	page: browser
+}) => {
+	await browser.setViewportSize({ width: 1400, height: 900 });
 	await browser.goto('/insights?period=week');
 	await browser.getByRole('button', { name: 'Stats' }).click();
 	await expect(browser).toHaveURL(/\/insights\/stats\?period=week/);
-	await expect(browser.getByText('What counts').first()).toBeVisible();
+	await expect(browser.locator('nav.section-index a').first()).toBeVisible();
+	await expect(browser.locator('article').first()).toBeVisible();
 	await browser.getByRole('button', { name: 'Copy' }).first().click();
 	await expect(browser.getByText('Copied')).toBeVisible();
+	const sideways = await browser.evaluate(
+		() => document.documentElement.scrollWidth <= window.innerWidth
+	);
+	expect(sideways, 'Stats scrolls sideways at 1400').toBe(true);
 	await browser.getByRole('button', { name: 'Earlier' }).click();
 	await expect(browser).toHaveURL(/\/insights\/stats/);
+	await browser.locator('a.back').click();
+	await expect(browser).toHaveURL(/\/insights\?period=week/);
+});
+
+test('the board fills the width and a tile opens its own table on Stats', async ({
+	page: browser
+}) => {
+	await browser.setViewportSize({ width: 1920, height: 1080 });
+	await browser.goto('/insights?period=week');
+	const board = browser.locator('.board');
+	await expect(board).toBeVisible();
+	const [frame, grid] = await Promise.all([
+		browser.locator('.frame-body').first().boundingBox(),
+		board.boundingBox()
+	]);
+	if (!frame || !grid) throw new Error('the board or its frame has no box');
+	expect(grid.width, 'the board leaves the width unused').toBeGreaterThan(frame.width * 0.9);
+	await board.locator('li.tile[data-slot="viewed"]').click();
+	await expect(browser).toHaveURL(/\/insights\/stats\?period=week.*#overview/);
+	await expect(
+		browser.locator('article#overview.lit, article[id^="overview"].lit').first()
+	).toBeVisible();
 });
 
 test('a chart is read from the keyboard, bar by bar, and Escape lets go', async ({
@@ -252,9 +298,9 @@ test('a figure says what it counts on a hover, and Alongside under its floor say
 	await expect(browser.locator('[data-block="alongside"]')).toHaveCount(0);
 });
 
-test('See this week as cards says when no recap exists yet', async ({ page: browser }) => {
+test("See this week's recap says when no recap exists yet", async ({ page: browser }) => {
 	await browser.goto('/insights?period=week');
-	await browser.getByRole('button', { name: 'See this week as cards' }).click();
+	await browser.getByRole('button', { name: "See this week's recap" }).click();
 	await expect(browser.getByText(/No recap of this week yet/)).toBeVisible();
 });
 

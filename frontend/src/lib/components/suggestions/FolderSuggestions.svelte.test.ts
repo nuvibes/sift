@@ -588,10 +588,10 @@ describe('a card at its own height', () => {
 			total: 1
 		});
 		const root = await render();
-		const card = root.querySelector('.cards > li') as HTMLElement;
+		const card = root.querySelector('.wall > li') as HTMLElement;
 		const where = root.querySelector('.where') as HTMLElement;
 		const why = root.querySelector('.why') as HTMLElement;
-		applyStyles(source, card);
+		applyStyles(source, where);
 
 		expect(getComputedStyle(card).minBlockSize).not.toMatch(/decision-card-height/);
 		for (const line of [where, why]) {

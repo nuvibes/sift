@@ -37,37 +37,54 @@ export const INSIGHTS_WORDS = {
 } as const;
 
 /**
- * The press beside Stats that opens this period's recap as its deck of cards, and what it says
+ * The press beside Stats that opens this period's recap as its deck of cards (today's, said so),
+ * and what it says
  * where there is none: a recap is created the day after its period ends, and only of a period
  * with enough viewing in it.
  */
-export const DECK_WORDS: Record<'day' | 'week' | 'month' | 'year', { see: string; none: string }> =
-	{
-		day: {
-			see: 'See this day as cards',
-			none: 'No recap of this day yet. Sift creates one the morning after a day with enough viewing in it.'
-		},
-		week: {
-			see: 'See this week as cards',
-			none: 'No recap of this week yet. Sift creates one the day after a week with enough viewing in it.'
-		},
-		month: {
-			see: 'See this month as cards',
-			none: 'No recap of this month yet. Sift creates one the day after a month with enough viewing in it.'
-		},
-		year: {
-			see: 'See this year as cards',
-			none: 'No recap of this year yet. Sift creates one the day after a year with enough viewing in it.'
-		}
-	};
+export const DECK_WORDS: Record<
+	'day' | 'week' | 'month' | 'year',
+	{ see: string; today?: string; none: string }
+> = {
+	day: {
+		see: "See this day's recap",
+		today: "See today's recap",
+		none: 'No recap of this day yet. Sift creates one the morning after a day with enough viewing in it.'
+	},
+	week: {
+		see: "See this week's recap",
+		none: 'No recap of this week yet. Sift creates one the day after a week with enough viewing in it.'
+	},
+	month: {
+		see: "See this month's recap",
+		none: 'No recap of this month yet. Sift creates one the day after a month with enough viewing in it.'
+	},
+	year: {
+		see: "See this year's recap",
+		none: 'No recap of this year yet. Sift creates one the day after a year with enough viewing in it.'
+	}
+};
 
 /**
  * The Stats view's words: the screen's name (and the press on Insights that opens it), its line,
- * and the headings of its tables. The figures and the names in them are the server's.
+ * its index, and the headings of its tables. The figures and the names in them are the server's.
  */
 export const STATS_WORDS = {
 	title: 'Stats',
-	headLine: 'Every figure for this period, as tables. Copy a table to paste it anywhere.',
+	headLine: 'Every figure behind Insights, with its table. Copy a table to paste it anywhere.',
+	/** The index down the side: what it is, and each entry's count. */
+	index: 'Stats sections',
+	tables: (count: number) => (count === 1 ? '1 table' : `${count} tables`),
+	/** Each family's heading, in the board's order. */
+	families: {
+		viewing: 'Viewing',
+		people: 'People',
+		sites: 'Sites',
+		organizing: 'Organizing',
+		theater: 'Theater',
+		downloads: 'Library',
+		alongside: 'Alongside'
+	},
 	/** The caption over a block's figures, and the heading of each column. */
 	figures: 'Figures',
 	what: 'What',
@@ -77,12 +94,38 @@ export const STATS_WORDS = {
 	/** The captions over a chart's table and a calendar's. */
 	bars: 'Each bar',
 	days: 'Each day',
+	/** The caption over one whole split by kind. */
+	kinds: 'Each kind',
 	/** The heading over a list's names. */
 	name: 'Name',
 	copy: 'Copy',
 	copyLabel: 'Copy this table',
 	copied: 'Copied',
 	copyFailed: "That table couldn't be copied"
+} as const;
+
+/** The board's own words: a tile's title where no block names it, and what its press opens. */
+export const BOARD_WORDS = {
+	/** The headline tile's title: the period it is the line of. */
+	headline: {
+		day: 'Your day',
+		week: 'Your week',
+		month: 'Your month',
+		year: 'Your year',
+		all: 'All of it'
+	} satisfies Record<Span, string>,
+	/** The time viewed tile's title: what each of its bars is. */
+	bars: {
+		day: 'Hour by hour',
+		week: 'Day by day',
+		month: 'Day by day',
+		year: 'Month by month',
+		all: 'Month by month'
+	} satisfies Record<Span, string>,
+	/** The days tile's title: the period's days as a calendar of squares. */
+	days: 'Calendar',
+	/** The keyboard's way into a tile's table on Stats. */
+	open: (title: string) => `${title} in Stats`
 } as const;
 
 /** What each period tab says. */
@@ -97,7 +140,7 @@ export const PERIOD_WORDS: Record<Span, string> = {
 /**
  * What each kind of viewing is called in a chart's key: the words the server's own statements use
  * ("29 of videos, 9 of pictures, 3 of GIFs"); `all`, the one part of a bar that is not split by
- * kind (the hours of the day); and `added`, the files that arrived.
+ * kind (the hours of the day); and `added`, the files imported.
  */
 export const KIND_WORDS: Record<string, string> = {
 	video: 'Videos',
@@ -105,5 +148,5 @@ export const KIND_WORDS: Record<string, string> = {
 	gif: 'GIFs',
 	theater: 'Theater',
 	all: 'Viewed',
-	added: 'Arrived'
+	added: 'Imported'
 };

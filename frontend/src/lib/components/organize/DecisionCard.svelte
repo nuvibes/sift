@@ -30,9 +30,9 @@
 	 *
 	 * ## A card that opens something
 	 *
-	 * `opens` is what the card's activation does (an address, or a call). The whole card then takes
-	 * the hover layer, and a press anywhere on it that is not a control or a link does the same,
-	 * as a press on a tile does (`pressOnCard`).
+	 * `opens` is what the card's activation does (an address, or a call). The whole card then lifts
+	 * under the pointer with the hover layer on its light, and a press anywhere on it that is not a
+	 * control or a link does the same, as a press on a tile does (`pressOnCard`).
 	 */
 	import type { Snippet } from 'svelte';
 	import { pressOnCard, type CardOpens } from '$lib/components/common/card-press';
@@ -158,11 +158,27 @@
 	 */
 	.card.opens {
 		cursor: pointer;
+		transition:
+			transform var(--dur-fast) var(--ease),
+			box-shadow var(--dur-fast) var(--ease);
+		border-radius: var(--radius-lg);
+	}
+
+	/* And the lift, as an entity card's: the layer alone is a few levels of light, which a card
+	   under the pointer on a wide wall does not visibly answer with. */
+	.card.opens:hover {
+		transform: translateY(var(--lift-y));
+		box-shadow: var(--elev-tile-lift);
 	}
 
 	.card.opens:hover :global(.panel) {
 		background: var(--sift-card-hover-layer), var(--sift-card-fill);
 		--sift-line: var(--sift-card-hover-line);
+	}
+
+	/* A press settles it back onto the wall, the pressed layer on its light. */
+	.card.opens:active:not(:has(a:active, button:active)) {
+		transform: none;
 	}
 
 	.card.opens:active:not(:has(a:active, button:active)) :global(.panel) {

@@ -1,6 +1,6 @@
 Folders is the list of folders Sift imports your files from. To open it, go to [Settings > Folders](/settings/library).
 
-Come here to add a folder to your library, scan one again, or remove one. Sift imports what is in a folder you add, and new files as they arrive.
+Come here to add a folder to your library, scan one again, or remove one. Sift imports what is in a folder you add, and new files as they appear in it.
 
 ![The Folders pane in Settings](../../../assets/screens/settings-library.jpg)
 

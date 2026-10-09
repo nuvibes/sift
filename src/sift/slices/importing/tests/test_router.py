@@ -758,7 +758,7 @@ def test_the_routes_reach_the_parts_the_application_assembled(client: TestClient
     # A key retired into a task's When is called by what a FOLDER's answer does, declared where
     # the key was retired: the task's title would promise a run over the folder, and a folder's
     # answer only decides what happens as a file arrives.
-    assert labels["importing.generate"] == "Generate as files arrive"
+    assert labels["importing.generate"] == "Generate as files are imported"
     helps = listed.json()["helps"]
     assert helps["music.fingerprint"].endswith("when Generate runs for this folder.")
     assert set(helps) <= set(labels)

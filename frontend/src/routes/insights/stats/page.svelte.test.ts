@@ -1,12 +1,13 @@
-/* The Stats view, drawn from a fixture answer of the contracts' shape: every block in the page's
- * order as tables (figures, bars, days, each list whole), a block under its floor as its one line,
- * the tabs and arrows kept on this screen, and Copy putting a table on the clipboard as tab-separated
- * text. */
+/* The Stats view, drawn from a fixture answer of the contracts' shape: the index of families, a panel
+ * per table (figures, bars, days, each list whole) in its board family, a block under its floor as its
+ * one line, the way back, the address a tile opens lit, the tabs and arrows kept on this screen, and
+ * Copy putting a table on the clipboard as tab-separated text. */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushSync, mount, tick, unmount } from 'svelte';
 
 import { goto } from '$app/navigation';
+import { page } from '$app/state';
 
 import { words } from '$lib/design/testing.svelte';
 import type { InsightsBlock, InsightsPage, Place } from '$lib/components/insights/period';
@@ -14,7 +15,7 @@ import { toasts } from '$lib/shell/toasts.svelte';
 
 const mocks = vi.hoisted(() => ({
 	insights: vi.fn(),
-	copyText: vi.fn(async (_text: string) => true)
+	copyText: vi.fn(async (_text: string) => true as boolean)
 }));
 
 vi.mock('$lib/shell/clipboard', () => ({ copyText: mocks.copyText }));
@@ -128,7 +129,7 @@ function answer(): InsightsPage {
 								piece: { ...plain('Neve Alder'), kind: 'person', id: 'p1' },
 								value: 2 * HOUR,
 								unit: 'ms',
-								cover: null,
+								cover: '/api/people/p1/cover',
 								said: '2 h'
 							},
 							{
@@ -180,83 +181,216 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+	page.url = new URL('http://localhost/') as typeof page.url;
 	if (drawn) unmount(drawn);
 	drawn = undefined;
 	host?.remove();
 });
 
+const panel = (screen: Element, id: string) => screen.querySelector(`article#${id}`) as HTMLElement;
+
 describe('the Stats view', () => {
-	it('asks for the period its address names, and draws every block in order but the recaps', async () => {
+	it('asks for the period its address names, and draws a panel per table in its board family', async () => {
 		mocks.insights.mockResolvedValue(answer());
 		const screen = await open({ period: 'week', at: '2026-10-07' });
 		expect(mocks.insights).toHaveBeenCalledWith({ period: 'week', at: '2026-10-07' });
 		expect(
-			[...screen.querySelectorAll('section[data-block]')].map((one) =>
-				one.getAttribute('data-block')
-			)
-		).toEqual(['overview', 'most_viewed', 'opinions']);
+			[...screen.querySelectorAll('section.family')].map((one) => [
+				one.id,
+				[...one.querySelectorAll('article')].map((article) => article.id)
+			])
+		).toEqual([
+			['family-viewing', ['overview-figures', 'overview-bars']],
+			['family-people', ['most_viewed-person']],
+			['family-organizing', ['opinions-words']]
+		]);
+		expect(panel(screen, 'most_viewed-person').dataset.family).toBe('people');
+		expect(screen.querySelector('[data-block="recaps"]')).toBeNull();
 	});
 
-	it("draws a block's figures as rows: the server's words, the hidden part, the trend, what counts", async () => {
+	it('indexes the families down the side, each with its count of tables', async () => {
 		mocks.insights.mockResolvedValue(answer());
 		const screen = await open({ period: 'week', at: null });
-		const overview = screen.querySelector('[data-block="overview"]') as HTMLElement;
-		const [figures, bars] = tables(overview);
-		expect([...figures.querySelectorAll('thead th')].map((th) => words(th))).toEqual([
+		const index = screen.querySelector('nav[aria-label="Stats sections"]') as HTMLElement;
+		expect(
+			[...index.querySelectorAll('a')].map((link) => [link.getAttribute('href'), words(link)])
+		).toEqual([
+			['#family-viewing', 'Viewing 2 tables'],
+			['#family-people', 'People 1 table'],
+			['#family-organizing', 'Organizing']
+		]);
+		expect(index.querySelector('[aria-current]')).toBeNull();
+	});
+
+	it('goes back to Insights at the period on screen, and keeps the crumb', async () => {
+		mocks.insights.mockResolvedValue(answer());
+		const screen = await open({ period: 'week', at: '2026-10-07' });
+		const back = screen.querySelector('a.back') as HTMLAnchorElement;
+		expect(words(back)).toBe('Insights');
+		expect(back.getAttribute('href')).toBe('/insights?period=week&at=2026-10-07');
+	});
+
+	it("draws a block's figures large, their trend a bar per mark, what they count on the title's mark", async () => {
+		mocks.insights.mockResolvedValue(answer());
+		const screen = await open({ period: 'week', at: null });
+		const figures = panel(screen, 'overview-figures');
+		expect(words(figures.querySelector('h3'))).toBe('Overview');
+		expect(words(figures.querySelector('.sentence'))).toBe('You viewed 3 hours this week.');
+		const table = figures.querySelector('table') as HTMLTableElement;
+		expect([...table.querySelectorAll('thead th')].map((th) => words(th))).toEqual([
 			'What',
 			'Figure',
 			'Hidden',
-			'Trend',
-			'What counts'
+			'Trend'
 		]);
-		expect(rows(figures)).toEqual([
-			['Viewed', '3 h', '', '1 h, 2 h', 'Time a file was in front of you.'],
-			['Daily average', '30 min', '10 min', '', '']
+		expect(rows(table).map((row) => row.slice(0, 3))).toEqual([
+			['Viewed', '3 h', ''],
+			['Daily average', '30 min', '10 min']
 		]);
-		/* The chart's bars open, a kind to a column. */
-		expect(words(figures.querySelector('tbody td:last-child p')), 'not a sentence').toBe(
-			'Time a file was in front of you.'
-		);
-		expect(rows(bars)).toEqual([
+		/* The trend: a bar per mark, named by Overview's own bars, walked by the arrows. */
+		const spark = table.querySelector('[role="group"]') as HTMLElement;
+		expect(spark.querySelectorAll('.column')).toHaveLength(2);
+		spark.dispatchEvent(new FocusEvent('focus'));
+		flushSync();
+		expect(spark.getAttribute('aria-label')).toBe('Viewed, Trend: Mon, 1 h');
+		spark.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+		flushSync();
+		expect(spark.getAttribute('aria-label')).toBe('Viewed, Trend: Tue, 2 h');
+		spark.querySelectorAll('.column')[0].dispatchEvent(new PointerEvent('pointerenter'));
+		flushSync();
+		expect(spark.querySelector('.pointed')).toBe(spark.querySelectorAll('.column')[0]);
+		spark.querySelectorAll('.column')[0].dispatchEvent(new PointerEvent('pointerleave'));
+		spark.dispatchEvent(new FocusEvent('blur'));
+		flushSync();
+		expect(spark.getAttribute('aria-label')).toBe('Viewed, Trend');
+
+		/* What counts: held by a press, let go by Escape and by leaving. */
+		const press = figures.querySelector<HTMLButtonElement>('button[aria-label="What counts"]')!;
+		const bubble = () => document.querySelector('[role="tooltip"]');
+		press.click();
+		flushSync();
+		await vi.waitFor(() => expect(bubble()).not.toBeNull());
+		expect(words(bubble())).toContain('Viewed Time a file was in front of you.');
+		press.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+		flushSync();
+		await vi.waitFor(() => expect(bubble()).toBeNull());
+		press.click();
+		flushSync();
+		press.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+		press.dispatchEvent(new FocusEvent('blur'));
+		flushSync();
+		await vi.waitFor(() => expect(bubble()).toBeNull());
+		/* The definition is on the panel, not a column of the table. */
+		expect(words(table)).not.toContain('Time a file was in front of you.');
+	});
+
+	it("draws a chart's bars over their table, under its block's name", async () => {
+		mocks.insights.mockResolvedValue(answer());
+		const screen = await open({ period: 'week', at: null });
+		const bars = panel(screen, 'overview-bars');
+		expect(words(bars.querySelector('.eyebrow'))).toBe('Overview');
+		expect(words(bars.querySelector('h3'))).toBe('Each bar');
+		expect(bars.querySelector('.chart .bar-chart')).not.toBeNull();
+		expect(rows(bars.querySelector('table')!)).toEqual([
 			['Mon', '1 h', '0 min'],
 			['Tue', '1 h', '1 h']
 		]);
-		/* No sentence past the floor: the story is Insights'. */
-		expect(overview.textContent).not.toContain('You viewed 3 hours this week.');
 	});
 
-	it('draws each list whole, ranked, the name the way to the thing', async () => {
+	it('draws each list whole and ranked, its picture and a bar as long as its share beside each name', async () => {
 		mocks.insights.mockResolvedValue(answer());
 		const screen = await open({ period: 'week', at: null });
-		const [people] = tables(screen.querySelector('[data-block="most_viewed"]') as HTMLElement);
-		expect(rows(people)).toEqual([
-			['1', 'Neve Alder', '2 h'],
-			['2', 'Oren Vale', '1 h']
+		const people = panel(screen, 'most_viewed-person');
+		const table = people.querySelector('table') as HTMLTableElement;
+		expect(rows(table).map(([rank, , figure]) => [rank, figure])).toEqual([
+			['1', '2 h'],
+			['2', '1 h']
 		]);
-		expect(people.querySelector('tbody a')?.getAttribute('href')).toContain('p1');
+		expect([...table.querySelectorAll('tbody th a')].map((name) => words(name))).toEqual([
+			'Neve Alder',
+			'Oren Vale'
+		]);
+		expect(table.querySelector('tbody a')?.getAttribute('href')).toContain('p1');
+		expect(
+			[...table.querySelectorAll<HTMLElement>('.share')].map((bar) => bar.style.inlineSize)
+		).toEqual(['100%', '50%']);
+		/* A picture the browser could not draw is drawn as the letter. */
+		const cover = table.querySelector('.cover') as HTMLElement;
+		expect(cover).not.toBeNull();
+		cover.dispatchEvent(new Event('error'));
+		flushSync();
+		expect(table.querySelector('.cover img')).toBeNull();
 	});
 
-	it('says a block under its floor in its one line, with no table', async () => {
+	it('says a block under its floor in its one line, with no table and no Copy', async () => {
 		mocks.insights.mockResolvedValue(answer());
 		const screen = await open({ period: 'week', at: null });
-		const opinions = screen.querySelector('[data-block="opinions"]') as HTMLElement;
+		const opinions = panel(screen, 'opinions-words');
 		expect(tables(opinions)).toHaveLength(0);
+		expect(opinions.querySelector('button')).toBeNull();
 		expect(words(opinions)).toContain('Not enough yet to say.');
 	});
 
-	it('copies a table as tab-separated text and says so', async () => {
+	it('copies a table as tab-separated text and says so, or says it could not', async () => {
 		mocks.insights.mockResolvedValue(answer());
 		const screen = await open({ period: 'week', at: null });
-		const [people] = tables(screen.querySelector('[data-block="most_viewed"]') as HTMLElement);
-		(people.querySelector('caption button') as HTMLButtonElement).click();
+		const copy = panel(screen, 'most_viewed-person').querySelector<HTMLButtonElement>(
+			'button[aria-label="Copy this table"]'
+		)!;
+		copy.click();
 		await vi.waitFor(() => expect(mocks.copyText).toHaveBeenCalled());
 		expect(mocks.copyText).toHaveBeenCalledWith(
 			'Rank\tName\tFigure\n1\tNeve Alder\t2 h\n2\tOren Vale\t1 h'
 		);
 		await vi.waitFor(() => expect(toasts.items.map((one) => one.message)).toContain('Copied'));
+		mocks.copyText.mockResolvedValueOnce(false);
+		panel(screen, 'overview-figures')
+			.querySelector<HTMLButtonElement>('button[aria-label="Copy this table"]')!
+			.click();
+		await vi.waitFor(() =>
+			expect(toasts.items.map((one) => one.message)).toContain("That table couldn't be copied")
+		);
+		expect(mocks.copyText).toHaveBeenLastCalledWith(
+			'What\tFigure\tHidden\tTrend\nViewed\t3 h\t\t1 h, 2 h\nDaily average\t30 min\t10 min\t'
+		);
 	});
 
-	it('keeps its tabs and arrows on this screen, and Insights a crumb away at the same period', async () => {
+	it('lights every panel of the block a tile opened it at, and hands the first focus', async () => {
+		page.url = new URL('http://localhost/insights/stats?period=week#overview') as typeof page.url;
+		mocks.insights.mockResolvedValue(answer());
+		const screen = await open({ period: 'week', at: null });
+		await vi.waitFor(() =>
+			expect([...screen.querySelectorAll('article.lit')].map((one) => one.id)).toEqual([
+				'overview-figures',
+				'overview-bars'
+			])
+		);
+		await vi.waitFor(() => expect(document.activeElement?.id).toBe('overview-figures'));
+		expect(screen.querySelector('nav a[aria-current="location"]')?.getAttribute('href')).toBe(
+			'#family-viewing'
+		);
+	});
+
+	it('lights only the panel an address names, and a family by its own address', async () => {
+		page.url = new URL('http://localhost/insights/stats#most_viewed-person') as typeof page.url;
+		mocks.insights.mockResolvedValue(answer());
+		let screen = await open({ period: 'week', at: null });
+		await vi.waitFor(() => expect(document.activeElement?.id).toBe('most_viewed-person'));
+		expect([...screen.querySelectorAll('article.lit')].map((one) => one.id)).toEqual([
+			'most_viewed-person'
+		]);
+		unmount(drawn!);
+		host.remove();
+		page.url = new URL('http://localhost/insights/stats#family-organizing') as typeof page.url;
+		screen = await open({ period: 'week', at: null });
+		await tick();
+		expect(screen.querySelectorAll('article.lit')).toHaveLength(0);
+		expect(screen.querySelector('nav a[aria-current="location"]')?.getAttribute('href')).toBe(
+			'#family-organizing'
+		);
+	});
+
+	it('keeps its tabs and arrows on this screen', async () => {
 		mocks.insights.mockResolvedValue(answer());
 		const screen = await open({ period: 'week', at: '2026-10-07' });
 		const tabs = [...screen.querySelectorAll('.periods a')];

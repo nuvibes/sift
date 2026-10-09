@@ -200,7 +200,7 @@ describe('where it stands', () => {
 		);
 		expect(parts).toEqual([
 			'Add a folder',
-			'Its files are imported, and new ones as they arrive.',
+			'Its files are imported, and new ones as they appear in it.',
 			'button'
 		]);
 	});

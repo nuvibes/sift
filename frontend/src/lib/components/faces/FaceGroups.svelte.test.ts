@@ -352,7 +352,7 @@ describe('a press on a card', () => {
 	   whatever a press on the faces does (open, or pick while picking) the ground does too. */
 	it('hands a press on the ground to the link that opens the group', async () => {
 		const root = await render();
-		const card = root.querySelector('.groups > li') as HTMLElement;
+		const card = root.querySelector('.wall > li') as HTMLElement;
 		const link = card.querySelector('a[href^="/organize/"]') as HTMLAnchorElement;
 		const opened = vi.fn((event: Event) => event.preventDefault());
 		link.addEventListener('click', opened);
@@ -373,7 +373,7 @@ describe('the question on a card', () => {
 	   back. */
 	it('asks who the group is, with naming as the button and the rest behind it', async () => {
 		const root = await render();
-		const card = root.querySelector('.groups > li') as HTMLElement;
+		const card = root.querySelector('.wall > li') as HTMLElement;
 
 		expect(card.querySelector('.foot .section-heading')?.textContent?.trim()).toBe('Who is this?');
 		expect(card.querySelector('.foot .detail')?.textContent).toBe('3 faces look like one person');
@@ -393,7 +393,7 @@ describe('the question on a card', () => {
 
 	it('asks a discarded group nothing, and offers it back', async () => {
 		const root = await render('ignored');
-		const card = root.querySelector('.groups > li') as HTMLElement;
+		const card = root.querySelector('.wall > li') as HTMLElement;
 
 		expect(card.querySelector('.foot .section-heading')).toBeNull();
 		expect(card.querySelector('.foot .detail')?.textContent).toBe('3 faces');
@@ -413,7 +413,7 @@ describe('the fingerprints question on a card', () => {
 	it('asks to make them a person on the group that looks like them, and on no other', async () => {
 		fingerprintOffers.mockResolvedValue(new Map([['pile-2', offer]]));
 		const root = await render();
-		const [first, second] = [...root.querySelectorAll<HTMLElement>('.groups > li')];
+		const [first, second] = [...root.querySelectorAll<HTMLElement>('.wall > li')];
 
 		expect(first.querySelector('.foot .section-heading')?.textContent?.trim()).toBe('Who is this?');
 		expect(second.querySelector('.foot .section-heading')?.textContent?.trim()).toBe(
@@ -427,7 +427,7 @@ describe('the fingerprints question on a card', () => {
 	it('makes the person in one press, then links to them', async () => {
 		fingerprintOffers.mockResolvedValue(new Map([['pile-2', offer]]));
 		const root = await render();
-		const second = root.querySelectorAll<HTMLElement>('.groups > li')[1];
+		const second = root.querySelectorAll<HTMLElement>('.wall > li')[1];
 		second.querySelector<HTMLButtonElement>('.foot .split .lead button')?.click();
 		await vi.waitFor(() => expect(makePersonFromFingerprints).toHaveBeenCalledWith('entry-7'), {
 			interval: 1
@@ -450,7 +450,7 @@ describe('the fingerprints question on a card', () => {
 	it('keeps naming the group as somebody else one press away, on its own page', async () => {
 		fingerprintOffers.mockResolvedValue(new Map([['pile-2', offer]]));
 		const root = await render();
-		const second = root.querySelectorAll<HTMLElement>('.groups > li')[1];
+		const second = root.querySelectorAll<HTMLElement>('.wall > li')[1];
 		second
 			.querySelector('.foot .split .trail button')
 			?.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, button: 0 }));

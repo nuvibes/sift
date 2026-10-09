@@ -121,6 +121,8 @@ class RecapRow:
     #: The statements' version it was made by (`metrics.METRICS_VERSION`); behind it is a recap
     #: made before a correction.
     metrics_version: int = METRICS_VERSION
+    #: The people and files its reader took out of it before sharing it.
+    left_out: tuple[str, ...] = ()
 
 
 # --- days ------------------------------------------------------------------------------------
@@ -519,6 +521,7 @@ _RECAP_OF_PERIOD = "SELECT * FROM recaps WHERE user_id = ? AND period = ?"
 _RECAPS_OF = "SELECT * FROM recaps WHERE user_id = ? ORDER BY made_at DESC, id DESC"
 _RECAP = "SELECT * FROM recaps WHERE user_id = ? AND id = ?"
 _MARK_SEEN = "UPDATE recaps SET seen_at = ? WHERE user_id = ? AND id = ? AND seen_at IS NULL"
+_LEAVE_OUT = "UPDATE recaps SET left_out = ? WHERE user_id = ? AND id = ?"
 
 
 def _recap(row: Row) -> RecapRow:
@@ -530,7 +533,17 @@ def _recap(row: Row) -> RecapRow:
         seen_at=None if row["seen_at"] is None else int(row["seen_at"]),
         body=str(row["body"]),
         metrics_version=int(row["metrics_version"]),
+        left_out=_ids(row["left_out"]),
     )
+
+
+def _ids(stored: object) -> tuple[str, ...]:
+    """A stored list of ids; none where it does not read as one."""
+    try:
+        held = json.loads(str(stored))
+    except ValueError:
+        return ()
+    return tuple(str(one) for one in held) if isinstance(held, list) else ()
 
 
 async def write_recap(
@@ -626,4 +639,14 @@ async def mark_seen(
         # the `mine` bell (`recaps.svelte.ts`).
         if cursor.rowcount > 0:
             announce(Audience.of_user(user_id), About.MINE)
+        return cursor.rowcount > 0
+
+
+async def leave_out(database: Database, user_id: str, recap_id: str, ids: Sequence[str]) -> bool:
+    """Keep what this User took out of their recap before sharing it, replacing what was kept. True
+    when the recap is theirs. Their other tabs draw it again (`MINE`)."""
+    async with telling(database, Audience.of_user(user_id), About.MINE) as connection:
+        cursor = await connection.execute(
+            _LEAVE_OUT, (json.dumps(sorted(set(ids))), user_id, recap_id)
+        )
         return cursor.rowcount > 0

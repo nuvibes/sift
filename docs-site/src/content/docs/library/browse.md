@@ -63,7 +63,7 @@ Smart Search needs its model, and Sift describes each file first. Turn it on in 
 - **Orientation**: landscape, portrait or square.
 - **Enriched by**: what filled in a file without you, such as a stash-box, a face, a folder name or a watermark.
 - **Created by**: what made the file, such as a download, a swap, a library folder or a file Sift compressed or edited.
-- **Added**: when the file arrived, as a range on a calendar.
+- **Added**: when the file was imported, as a range on a calendar.
 - **Sharing status**: who the file is shared with. Only an admin sees this column.
 - **Asked a stash-box**: when a stash-box was last asked about the file, or that it's kept local.
 - **Left out**: what Sift couldn't make for the file, such as its thumbnail, hover preview or facial fingerprints.
@@ -98,7 +98,7 @@ When you delete the last thing a saved filter names and it holds nothing else, S
 
 - **Closest match**: the files that best match your search words first. It's offered while you search.
 - **Similarity**: the files closest to a Smart Search or to one file first. It's unavailable until you run a Smart Search or choose **Similar to this** on a file.
-- **Newest first** and **Oldest first**: by when a file arrived in your library.
+- **Newest first** and **Oldest first**: by when a file was imported into your library.
 - **Recently edited**: the files whose name, fields, cover, tags or stars changed most recently first.
 - **Name A-Z** and **Name Z-A**: by name.
 - **Longest** and **Shortest**: by a video's length.

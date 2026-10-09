@@ -51,8 +51,7 @@ from urllib.parse import quote
 
 from sift.kernel.access.sentences import Line, Piece, and_then, many, plural, said, thing
 
-#: THE FEWEST SITTINGS A PERIOD NEEDS before anything is said about the viewing in it. A Theater
-#: session counts as one sitting, whatever its cells played (the rollup counts it that way).
+#: THE FEWEST SITTINGS A PERIOD NEEDS before anything is said about its viewing; a Theater wall is one.
 SITTINGS_FLOOR = 10
 
 
@@ -568,7 +567,7 @@ def most_viewed_people(period: Period) -> Line:
 
 def theater(period: Period, total_ms: int, wall: Named | None, wall_ms: int, sessions: int) -> Line:
     """ "You spent 5 hours in Theater, mostly on your Saved Layout 'Nine up'.", or "You spent no
-    time in Theater this month.", which is as true, the way "No files arrived this month." is.
+    time in Theater this month.", which is as true, the way "No files were imported this month." is.
 
     Theater counts each hour a wall played once, however many cells played. "Mostly" is
     a claim, so it is made only where that wall really had more than half the time, over at least
@@ -739,10 +738,11 @@ def named_and_filed(faces_named: int, files_filed: int) -> Line | None:
 
 
 def arrived(period: Period, added: int) -> Line:
-    """ "142 files arrived this month.", or "No files arrived this month.", which is as true."""
+    """ "142 files were imported this month.", or "No files were imported this month.", which is
+    as true."""
     if added <= 0:
-        return said(f"No files arrived {when(period)}.")
-    return said(f"{counted(added, 'file', 'files')} arrived {when(period)}.")
+        return said(f"No files were imported {when(period)}.")
+    return said(f"{counted(added, 'file', 'files')} were imported {when(period)}.")
 
 
 def most_from(site: Named, files: int) -> Line | None:
@@ -762,7 +762,7 @@ def deleted(removed: int) -> Line | None:
 
 def worked(period: Period, total_ms: int) -> Line:
     """ "Sift worked on tasks for 14 hours this month." What Sift did, for an admin, or "Sift
-    spent no time on tasks in July.", which is as true, the way "No files arrived this month." is.
+    spent no time on tasks in July.", which is as true, the way "No files were imported this month." is.
 
     Never None for a period with nothing recorded: the block would then draw no sentence and no list
     at all, the one block on the page that would say nothing."""

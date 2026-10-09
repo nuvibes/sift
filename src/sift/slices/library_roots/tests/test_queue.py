@@ -113,7 +113,7 @@ async def test_the_card_says_what_a_quarantined_download_is(settings: Settings) 
 async def test_one_day_is_not_written_as_one_days(settings: Settings) -> None:
     survey = await QuarantineQueue(settings, Preferences(1)).survey(ADMIN)
 
-    assert "1 day after" in survey.decision
+    assert "for 1 day each" in survey.decision
 
 
 async def test_the_card_says_so_when_the_rule_is_switched_off(settings: Settings) -> None:

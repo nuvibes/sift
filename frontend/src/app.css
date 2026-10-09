@@ -412,6 +412,55 @@
 	--sift-accent-tint-1: color-mix(in oklch, var(--sift-accent) 42%, white);
 	--sift-accent-tint-2: color-mix(in oklch, var(--sift-accent) 18%, white);
 
+	/* INSIGHTS' FAMILIES: one hue a family, each in three swatches a card picks between by its
+	 * top file's colour (`cards/family.ts` holds the same hues). The same lightness as the accents,
+	 * so each run below reads as the accent's does; `contrast.test.ts` measures every swatch. */
+	--family-viewing-a: #0486d3;
+	--family-viewing-b: #447be4;
+	--family-viewing-c: #6f6fe2;
+	--family-people-a: #ca4b85;
+	--family-people-b: #d14a65;
+	--family-people-c: #d24e3e;
+	--family-sites-a: #149483;
+	--family-sites-b: #0f9293;
+	--family-sites-c: #1790a3;
+	--family-organizing-a: #b86a0b;
+	--family-organizing-b: #a97500;
+	--family-organizing-c: #977e0d;
+	--family-theater-a: #7a6bdf;
+	--family-theater-b: #9462d3;
+	--family-theater-c: #ab58be;
+	--family-downloads-a: #599305;
+	--family-downloads-b: #0e9a3f;
+	--family-downloads-c: #06976d;
+	--family-alongside-a: #58889b;
+	--family-alongside-b: #6284a2;
+	--family-alongside-c: #6f80a5;
+	/* Each family's middle swatch as a run, for a holder that paints its own ground. */
+	--family-viewing-1: color-mix(in oklch, var(--family-viewing-b) 46%, black);
+	--family-viewing-2: color-mix(in oklch, var(--family-viewing-b) 24%, black);
+	--family-viewing-ink: color-mix(in oklch, var(--family-viewing-b) 42%, white);
+	--family-people-1: color-mix(in oklch, var(--family-people-b) 46%, black);
+	--family-people-2: color-mix(in oklch, var(--family-people-b) 24%, black);
+	--family-people-ink: color-mix(in oklch, var(--family-people-b) 42%, white);
+	--family-sites-1: color-mix(in oklch, var(--family-sites-b) 46%, black);
+	--family-sites-2: color-mix(in oklch, var(--family-sites-b) 24%, black);
+	--family-sites-ink: color-mix(in oklch, var(--family-sites-b) 42%, white);
+	--family-organizing-1: color-mix(in oklch, var(--family-organizing-b) 46%, black);
+	--family-organizing-2: color-mix(in oklch, var(--family-organizing-b) 24%, black);
+	--family-organizing-ink: color-mix(in oklch, var(--family-organizing-b) 42%, white);
+	--family-theater-1: color-mix(in oklch, var(--family-theater-b) 46%, black);
+	--family-theater-2: color-mix(in oklch, var(--family-theater-b) 24%, black);
+	--family-theater-ink: color-mix(in oklch, var(--family-theater-b) 42%, white);
+	--family-downloads-1: color-mix(in oklch, var(--family-downloads-b) 46%, black);
+	--family-downloads-2: color-mix(in oklch, var(--family-downloads-b) 24%, black);
+	--family-downloads-ink: color-mix(in oklch, var(--family-downloads-b) 42%, white);
+	--family-alongside-1: color-mix(in oklch, var(--family-alongside-b) 46%, black);
+	--family-alongside-2: color-mix(in oklch, var(--family-alongside-b) 24%, black);
+	--family-alongside-ink: color-mix(in oklch, var(--family-alongside-b) 42%, white);
+	/* How much of a card's ground of pictures shows through its family's shade. */
+	--card-ground-scrim: 70%;
+
 	/* THE PMV-CREATOR MARK HAS NO COLOUR OF ITS OWN. One coloured glyph in the corner of some cards
 	 * is the loudest thing on a wall whose subject is the faces, and it reads as a status granted
 	 * rather than as a craft. The mark wears the ink it inherits, so there is no token to keep. The
@@ -1191,12 +1240,41 @@
 	--story-lead-cover: calc(96 * var(--story-px));
 	--story-chart-mark-gap: calc(2 * var(--story-px));
 	--story-page-measure: calc(960 * var(--story-px));
+	/* A card's own sizes, no page token behind them: the heavy number, the headline over it, the
+	 * blur of the pictures behind it, and a podium's lead face. */
+	--story-text-hero: 760 calc(88 * var(--story-px)) / 0.92 var(--font-display);
+	--story-text-hero-wide: 760 calc(66 * var(--story-px)) / 0.95 var(--font-display);
+	--story-text-hero-far: 760 calc(48 * var(--story-px)) / 1 var(--font-display);
+	--story-text-headline: 650 calc(28 * var(--story-px)) / 1.1 var(--font-display);
+	--story-blur: calc(26 * var(--story-px));
+	--story-face: calc(132 * var(--story-px));
+	--story-face-small: calc(52 * var(--story-px));
+	/* The face sizes a card's pictures read: a story card's, restated by a tile in its own box. */
+	--card-face: var(--story-face);
+	--card-face-small: var(--story-face-small);
+	/* A board tile counts its type in its own box: a square tile one unit tall to a band two tall. */
+	--tile-text-hero: 760 clamp(1.5rem, min(30cqb, 30cqi), 5.5rem) / 0.92 var(--font-display);
+	--tile-text-hero-wide: 760 clamp(1.25rem, min(23cqb, 20cqi), 4.25rem) / 0.95 var(--font-display);
+	--tile-text-hero-far: 760 clamp(1rem, min(17cqb, 15cqi), 3.25rem) / 1 var(--font-display);
+	/* A wide tile with no picture says its one figure the larger. */
+	--tile-text-hero-lone: 760 clamp(2rem, min(44cqb, 20cqi), 7rem) / 0.92 var(--font-display);
+	--tile-text-hero-lone-far: 760 clamp(1.5rem, min(30cqb, 13cqi), 5rem) / 0.95 var(--font-display);
+	--tile-text-headline: 650 clamp(1.0625rem, 10cqb, 2rem) / 1.12 var(--font-display);
+	--tile-face: clamp(2rem, 22cqb, 6rem);
+	--tile-face-small: clamp(1.25rem, 12cqb, 2.5rem);
+	--tile-face-flat: clamp(2rem, 46cqb, 5rem);
+	--tile-face-flat-small: clamp(1.25rem, 30cqb, 3rem);
+	/* The most of a tile's height a calendar's squares take. */
+	--tile-days-high: 36cqb;
 	--lead-cover: 96px;
 	/* The narrowest column of the Organize board. The board takes the frame's whole width and lays as
 	 * many columns as fit at this width, each stretched to share what is left: three at 1280 wide, four
 	 * at 1600, five at 1920, one on a phone. At those three widths a card comes out between 318 and
 	 * 328px wide, so the stills and the chips on it keep one size wherever the board is read. */
 	--board-column-min: 288px;
+	/* The narrowest column of every other Organize wall of cards (`CardWall`): two rows of six faces
+	 * at about 51px each, the size four across had on the narrower card. */
+	--card-column-min: 22rem;
 	/* No `--page-screens`. How many screenfuls of rows one page of a paged view holds is
 	 * `PAGE_SCREENS` in `lib/grid/justify.ts`, the one number, and no rule in this stylesheet reads
 	 * it: the scrolling body is a `1fr` grid track in `PageFrame` and takes its height from the

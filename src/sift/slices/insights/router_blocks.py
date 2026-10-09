@@ -65,7 +65,7 @@ TITLES: Mapping[str, str] = {
     # Over a week or longer only: a day has no closed periods inside it to compare.
     "alongside": "Alongside",
     "organizing": "Organizing",
-    "arrived": "What arrived",
+    "arrived": "What was imported",
     "machine": "What Sift did",
 }
 
@@ -498,7 +498,7 @@ async def _overview_block(
             book.figure("Viewed", "viewed_ms", "ms", caption=compared or busiest_day).model_copy(
                 update={"trend": _trend(period, book, "viewed_ms")}
             ),
-            book.figure("Sessions", "sittings", "count").model_copy(
+            book.figure("Visits", "sittings", "count").model_copy(
                 update={"trend": _trend(period, book, "sittings")}
             ),
             third,
@@ -642,8 +642,8 @@ async def _theater_block(access: Repository, database: Database, page: Page) -> 
         ],
         figures=[
             book.figure("In Theater", "viewed_ms:kind", "ms", st.THEATER),
-            book.figure("Sessions", "sittings:kind", "count", st.THEATER).model_copy(
-                update={"defines": _defined("Theater sessions")}
+            book.figure("Visits", "sittings:kind", "count", st.THEATER).model_copy(
+                update={"defines": _defined("Theater visits")}
             ),
             book.figure("Files in Theater", "theater_files", "count"),
         ],
@@ -764,8 +764,8 @@ _MEASURE_LABELS: Mapping[str, str] = {
     "theater": "In Theater",
     "starred": "Starred",
     "viewed": "Viewed",
-    "added": "Files arrived",
-    "sessions": "Sessions",
+    "added": "Files imported",
+    "sessions": "Visits",
     "decided": "Questions answered",
     "o": "O count",
     "person": "Viewed",
@@ -845,7 +845,7 @@ async def _arrived(access: Repository, database: Database, page: Page) -> Insigh
             st.deleted(book.total("files_removed")),
         ],
         figures=[
-            book.figure("Arrived", "files_added", "count", caption=most),
+            book.figure("Imported", "files_added", "count", caption=most),
             book.figure("Deleted", "files_removed", "count"),
         ],
         chart=_growth(page.period, book),

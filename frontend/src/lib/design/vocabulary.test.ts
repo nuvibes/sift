@@ -366,6 +366,30 @@ describe('the vocabulary file is read the same way here as in Python', () => {
 		expect(copy.flatMap((text: string) => offences('wrong_words', text))).toEqual([]);
 	});
 
+	it('holds every form of arrive on screen, where a file is imported', () => {
+		const wrong: [string, string][] = [
+			['New questions appear here as files arrive', 'arrive'],
+			['It arrives with the next Sift update', 'arrives'],
+			['142 files arrived this month', 'arrived'],
+			['A file arriving, or a task running', 'arriving'],
+			['The day of its arrival', 'arrival'],
+			['Arrivals', 'Arrivals']
+		];
+		for (const [sentence, word] of wrong) {
+			expect(
+				offences('wrong_words', sentence).map((one) => one.found),
+				sentence
+			).toEqual([word]);
+		}
+		for (const right of [
+			'New questions appear here as files are imported',
+			'5 files were imported yesterday',
+			'newerArrived'
+		]) {
+			expect(offences('wrong_words', right), right).toEqual([]);
+		}
+	});
+
 	it('knows a verb from a noun at the start of a control', () => {
 		for (const label of [
 			'Delete permanently',

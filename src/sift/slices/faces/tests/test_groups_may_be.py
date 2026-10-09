@@ -1118,6 +1118,8 @@ async def test_a_naming_gives_the_whole_file_and_its_undo_takes_it_and_never_one
     (a cover nobody chose is the first picture filed under them); taking the name back takes the
     file off them and the picture with it (here, no other file: nothing). A picture chosen for
     somebody since the naming is a newer decision and stays."""
+    # A default cover is a picture, and the clip is a video.
+    await temp_db.execute("UPDATE assets SET media_type = 'image' WHERE id = ?", (clip.asset.id,))
     written = WorkbenchStore(temp_db)
     service._recorder = written
     ada = await make_person(temp_db, "Ada Lovelace")
@@ -1147,6 +1149,8 @@ async def test_sifts_own_match_gives_no_face_cover_and_an_older_receipts_undo_ta
     """A re-match that recognizes somebody's first face gives them the whole file as a cover, never
     the face, and its receipt names no cover. A receipt written before (when a match made the face
     the cover) still takes that face off; a question gives nobody a cover."""
+    # A default cover is a picture, and the clip is a video.
+    await temp_db.execute("UPDATE assets SET media_type = 'image' WHERE id = ?", (clip.asset.id,))
     written = WorkbenchStore(temp_db)
     service._recorder = written
     ada = await make_person(temp_db, "Ada Lovelace")

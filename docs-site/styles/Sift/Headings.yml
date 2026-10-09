@@ -67,6 +67,7 @@ exceptions:
   - 'Stage View'
   - 'Stash'
   - 'Stash-boxes'
+  - 'Stats'
   - 'Tag'
   - 'Task Queue'
   - 'Tasks'

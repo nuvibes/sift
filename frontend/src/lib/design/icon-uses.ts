@@ -116,7 +116,7 @@ export const ICON_USES: Record<IconName, IconUse> = {
 		where: "A download's badge on the queue, on a link that turned out to be a repeat."
 	},
 	photo_library: {
-		what: 'A Photo Set: the pictures that arrived together from one shoot.',
+		what: 'A Photo Set: the pictures imported together from one shoot.',
 		where:
 			'The rail, the Photo Sets wall and the tab for them on every entity page. Also the Photo Sets column of the filter panel, and the Has a cover photo column on the walls of things.'
 	},
@@ -268,7 +268,7 @@ export const ICON_USES: Record<IconName, IconUse> = {
 		where: "Generate now under a file's Run task, with Generate all and every pass under it."
 	},
 	split_scene: {
-		what: 'Scan: read the folders for what has arrived',
+		what: 'Scan: read the folders for new files',
 		where:
 			"A library folder's Scan now, and Scan now under a file's Run task with Scan all and its pass. The refresh spinner on the rail and the re-grouping of faces are a different act — look again — and wear the arrows."
 	},
@@ -312,7 +312,7 @@ export const ICON_USES: Record<IconName, IconUse> = {
 	},
 	call_split: {
 		what: 'Split this apart',
-		where: 'Taking faces out of a group, and separating a suggestion from the pile it arrived in.'
+		where: 'Taking faces out of a group, and separating a suggestion from the pile it was found in.'
 	},
 	groups: {
 		what: 'A whole pile of faces, as what a verb is aimed at',
@@ -579,7 +579,7 @@ export const ICON_USES: Record<IconName, IconUse> = {
 	calendar_month: {
 		what: 'A date',
 		where:
-			"The filter panel's Added column, on the control that opens the calendar. Not the history dial beside it in this list: that one is about what you did, this one is about when a file arrived."
+			"The filter panel's Added column, on the control that opens the calendar. Not the history dial beside it in this list: that one is about what you did, this one is about when a file was imported."
 	},
 	history: {
 		what: 'Recently viewed',
@@ -602,7 +602,7 @@ export const ICON_USES: Record<IconName, IconUse> = {
 	shoppingmode: {
 		what: 'A tag somebody applied',
 		where:
-			"The rail's Tags, the tag filter, the tag verb, and the Part of column on the Tags wall. A label on a string, which is what a tag is. A search row falls back to it, so every glyph below exists to keep other filters from arriving as tags."
+			"The rail's Tags, the tag filter, the tag verb, and the Part of column on the Tags wall. A label on a string, which is what a tag is. A search row falls back to it, so every glyph below exists to keep other filters from showing as tags."
 	},
 	camera_roll: {
 		what: 'What KIND of thing the file is: video, picture or GIF',
@@ -615,7 +615,7 @@ export const ICON_USES: Record<IconName, IconUse> = {
 			'The File type row on the search dropdown. A named format, against the roll of film beside it: one asks what the file IS, the other what is inside it.'
 	},
 	calendar_clock: {
-		what: 'When something happens: a file arriving, or a task running',
+		what: 'When something happens: a file being imported, or a task running',
 		where:
 			'The Added row on the search dropdown, and Settings > Tasks and Activity, in the Library group. A date with a clock on it rather than the plain calendar the date-range control wears — this one is a moment, not a span.'
 	},
@@ -1004,7 +1004,7 @@ export const ICON_USES: Record<IconName, IconUse> = {
 	clock_arrow_up: {
 		what: 'Newest first',
 		where:
-			'The Sort menu on every wall. A clock is WHEN a file arrived; the arrow is which end of that you want, so the four time orders are one family read by shape and direction rather than four clocks to learn.'
+			'The Sort menu on every wall. A clock is WHEN a file was imported; the arrow is which end of that you want, so the four time orders are one family read by shape and direction rather than four clocks to learn.'
 	},
 	clock_arrow_down: {
 		what: 'Oldest first',

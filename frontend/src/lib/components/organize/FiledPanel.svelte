@@ -25,6 +25,7 @@
 		Problem,
 		Skeleton
 	} from '$lib/components/common';
+	import CardWall from '$lib/components/organize/CardWall.svelte';
 	import DecisionCard from '$lib/components/organize/DecisionCard.svelte';
 	import { libraryChanges } from '$lib/library/changes.svelte';
 	import { decided } from '$lib/organize/organize.svelte';
@@ -168,7 +169,7 @@
 			that person and lists the folder here.
 		</Empty>
 	{:else}
-		<ul class="people">
+		<CardWall>
 			{#each byPerson as person (person.id)}
 				<li>
 					<DecisionCard opens="/people/{person.id}">
@@ -254,30 +255,11 @@
 					</DecisionCard>
 				</li>
 			{/each}
-		</ul>
+		</CardWall>
 	{/if}
 </section>
 
 <style>
-	/* The same wall the questions beside this are laid on: cards that fill the row, the last of
-	   them not stretched to the width of a screen. */
-	.people {
-		list-style: none;
-		margin: 0;
-		padding: 0;
-		display: grid;
-		grid-template-columns: repeat(auto-fill, minmax(min(22rem, 100%), 1fr));
-		gap: var(--space-3);
-	}
-
-	/*
-	 * Each card at its own height, with no floor, as every Organize card is: a floor would leave the
-	 * short ones a band of empty ground. The grid gives the cards of one row one height.
-	 */
-	.people > li {
-		display: grid;
-	}
-
 	.who {
 		display: flex;
 		align-items: center;

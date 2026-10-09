@@ -35,6 +35,10 @@ function card(over: Partial<Card> = {}): Card {
 	return {
 		id: 'top_person',
 		kind: 'top_person',
+		headline: [],
+		context: [],
+		accent_hue: null,
+		wall: null,
 		statement: [
 			piece('Your most-viewed person in September was '),
 			piece('Elina Sorrel', { kind: 'person', id: 'p1', href: '/people/p1' }),
@@ -101,22 +105,29 @@ describe('a locked tile', () => {
 
 describe('a story card', () => {
 	/* Stood up 9:16 at the story's width, whatever the screen: on a phone it is the phone's width. */
-	it('is stood up as a story, and a card with the hours carries the ring', () => {
+	it('is stood up as a story, and a card with the hours draws them as a skyline', () => {
 		const bars = Array.from({ length: 24 }, (_one, at) => ({
-			label: String(at),
+			label: String(at).padStart(2, '0'),
 			said: '',
 			parts: [{ kind: 'all', value: at === 19 ? 4 : 1, said: '' }],
 			...(at === 0 ? { said: 'one tick' } : {})
 		}));
 		const drawn = draw(card({ cover: null, chart: { bars } as unknown as Card['chart'] }));
-		expect(drawn.querySelector('.card.ringed .hour-ring')).not.toBeNull();
+		expect(drawn.querySelector('.card.pictured .skyline')).not.toBeNull();
 		expect(drawn.querySelector('.recap-card.story')).not.toBeNull();
-		// The ring reads its hours in the words the server sent for them.
-		const dial = drawn.querySelector('.hour-ring .dial') as HTMLElement;
-		dial.focus();
+		// The tallest hour is lit and named over it, by the time it began.
+		expect(drawn.querySelectorAll('.skyline .tower')).toHaveLength(24);
+		expect(drawn.querySelector('.column.peak .tower')).not.toBeNull();
+		expect(drawn.querySelector('.skyline .named')?.textContent).toMatch(/^7:00/);
+		// The bars read their hours in the words the server sent for them, along the arrows.
+		const plot = drawn.querySelector('.skyline .plot') as HTMLElement;
+		plot.focus();
 		flushSync();
-		expect(dial.getAttribute('aria-label')).toContain('one tick');
-		expect(drawn.querySelector('.foot')?.textContent).toBe('September 2026');
+		expect(plot.getAttribute('aria-label')).toMatch(/: 12:00 .*, one tick$/);
+		plot.dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true }));
+		flushSync();
+		expect(plot.getAttribute('aria-label')).toMatch(/: 11:00 /);
+		expect(drawn.querySelector('.foot')?.textContent).toBe('September 2026 Sift');
 	});
 
 	/* The holder decides the width and the ratio the height, so every card of a deck is one size
@@ -136,21 +147,21 @@ describe('a story card', () => {
 		/* A tag with no picture answers its cover address 404; every caller of that address draws a
 		   letter rather than the browser's broken-picture mark. */
 		const drawn = draw(card());
-		expect(drawn.querySelector('.avatar.portrait')).not.toBeNull();
+		expect(drawn.querySelector('.is-face .avatar.face')).not.toBeNull();
 		expect(drawn.querySelector('.monogram')?.textContent?.trim()).toBe('E');
 	});
 
 	it('leaves a card with a cover beside its words', () => {
 		const drawn = draw(card());
 		expect(drawn.querySelector('.card.pictured')).not.toBeNull();
-		expect(drawn.querySelector('.card.ringed')).toBeNull();
+		expect(drawn.querySelector('.skyline')).toBeNull();
 	});
 
 	/* A Site's picture is its mark, square and drawn to its own edges: cut to a portrait's 3:4 it
 	   loses its top and foot. It is drawn whole on its own ground, as the Sites wall draws it. */
-	it("frames a Site's mark whole and a song's art square, and a person's cover as a portrait", () => {
+	it("draws a Site's mark whole, a song's art square, a person's face round, a file filling", () => {
 		const site = draw(card({ kind: 'top_site', cover: '/api/sites/s1/cover' }));
-		expect(site.querySelector('.avatar.portrait.mark')).not.toBeNull();
+		expect(site.querySelector('.is-mark .avatar.mark')).not.toBeNull();
 		clear();
 		const again = draw(
 			card({
@@ -159,15 +170,18 @@ describe('a story card', () => {
 				cover: '/api/sites/s1/cover'
 			})
 		);
-		expect(again.querySelector('.avatar.portrait.mark')).not.toBeNull();
+		expect(again.querySelector('.is-mark .avatar.mark')).not.toBeNull();
 		clear();
 		const song = draw(card({ kind: 'top_song', cover: '/api/songs/s1/cover' }));
-		expect(song.querySelector('.avatar.face')).not.toBeNull();
+		expect(song.querySelector('.is-art .avatar.face')).not.toBeNull();
 		expect(song.querySelector('.avatar.mark')).toBeNull();
 		clear();
 		const person = draw(card());
-		expect(person.querySelector('.avatar.portrait')).not.toBeNull();
+		expect(person.querySelector('.is-face')).not.toBeNull();
 		expect(person.querySelector('.avatar.mark')).toBeNull();
+		clear();
+		const file = draw(card({ kind: 'top_file', cover: '/api/assets/f1/thumb' }));
+		expect(file.querySelector('.is-picture .avatar.portrait')).not.toBeNull();
 	});
 
 	it('sets a long sentence a step smaller, and a short one at its own size', () => {

@@ -7,13 +7,14 @@ from __future__ import annotations
 
 import calendar
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from dataclasses import dataclass, replace
+from datetime import date, timedelta
 from typing import cast
 
+from sift.kernel import when
 from sift.kernel.access.sentences import Line, capitalized, said
 from sift.kernel.wire import pieces_of
-from sift.slices.insights import statements, statements_cards, together
+from sift.slices.insights import recaps_voice_facts, statements, statements_cards, together
 from sift.slices.insights.metrics import split_file_key
 from sift.slices.insights.models import (
     Bar,
@@ -31,6 +32,7 @@ from sift.slices.insights.recaps_models import (
     NamedThing,
     RecapCard,
     Recipe,
+    Wall,
 )
 from sift.slices.insights.recaps_periods import (
     USUAL,
@@ -84,6 +86,10 @@ class Said:
     chart: Chart | None = None
     calendar: Calendar | None = None
     cells: tuple[Cell, ...] = ()
+    #: What the card leads with: a few words, and a line or two over its figure.
+    headline: Line = ()
+    context: Line = ()
+    wall: Wall | None = None
 
 
 #: One card's words from its figures. None when there is nothing true to say with them.
@@ -265,7 +271,7 @@ def _sift_did(figures: Figures, recipe: Recipe, period: Period, today: date) -> 
     for at, line in enumerate(shown):
         joined.extend([" " if at else "", line])
     figure = (
-        (source("files_added"), "Files arrived")
+        (source("files_added"), "Files imported")
         if added > 0
         else (source("faces_named"), "Faces named")
         if figures.get(source("faces_named"), 0) > 0
@@ -273,7 +279,7 @@ def _sift_did(figures: Figures, recipe: Recipe, period: Period, today: date) -> 
         if figures.get(source("files_filed"), 0) > 0
         else (source("decided"), "Answered")
     )
-    return Said(said(*joined), figure[0], figure[1], "count")
+    return Said(capitalized(said(*joined)), figure[0], figure[1], "count")
 
 
 def _compared(figures: Figures, recipe: Recipe, period: Period, today: date) -> Said | None:
@@ -319,7 +325,7 @@ def _summary(figures: Figures, recipe: Recipe, said_on: statements.Period) -> tu
     and the sessions, each only where it has something to say."""
     cells = [
         Cell("Viewed", source("viewed_ms"), "ms"),
-        Cell("Files arrived", source("files_added"), "count"),
+        Cell("Files imported", source("files_added"), "count"),
     ]
     for kind, label in (("person", "Top person"), ("site", "Top Site")):
         one = _named(recipe, kind)
@@ -331,7 +337,7 @@ def _summary(figures: Figures, recipe: Recipe, said_on: statements.Period) -> tu
     if busiest is not None:
         line = said(statements_cards.day_named(busiest[0], said_on.today))
         cells.append(Cell("Busiest day", busiest[1], "ms", line, "The day you viewed the most."))
-    cells.append(Cell("Sessions", source("sittings"), "count"))
+    cells.append(Cell("Visits", source("sittings"), "count"))
     return tuple(cell for cell in cells if figures.get(cell.figure, 0) > 0)
 
 
@@ -339,8 +345,8 @@ def _days(figures: Figures, recipe: Recipe) -> dict[date, tuple[str, int]]:
     """The days a card keeps the time viewed of, each with its source and its figure."""
     out: dict[date, tuple[str, int]] = {}
     for name in recipe.sources:
-        _, metric, key = _parts(name)
-        span = span_of(key) if metric == "viewed_ms" else None
+        scope, metric, key = _parts(name)
+        span = span_of(key) if metric == "viewed_ms" and not scope else None
         if span is not None:
             out[span[1]] = (name, figures.get(name, 0))
     return out
@@ -407,7 +413,7 @@ def _rediscovered(figures: Figures, recipe: Recipe, period: Period, today: date)
 def _moment(period: Period, seconds: int) -> statements.Moment:
     """A moment as the statements take it: its day and minute on this device's clock, a day's
     own moment past midnight kept on the day with a minute past 1439, as a latest finish is."""
-    at = datetime.fromtimestamp(seconds)
+    at = when.wall(seconds)
     late = (at.date() - period.first).days if period.kind is PeriodKind.DAY else 0
     return statements.Moment(
         at.date() - timedelta(days=late), at.hour * 60 + at.minute + late * 24 * 60
@@ -450,7 +456,7 @@ def _first_last(figures: Figures, recipe: Recipe, period: Period, today: date) -
     )
     if figures.get(source("files_added"), 0) <= 0:
         return Said(line, rows=rows)
-    return Said(line, source("files_added"), "Files arrived", "count", rows=rows)
+    return Said(line, source("files_added"), "Files imported", "count", rows=rows)
 
 
 def _session(figures: Figures, recipe: Recipe, period: Period, today: date) -> Said | None:
@@ -474,7 +480,23 @@ def _theater_files(figures: Figures, recipe: Recipe, period: Period, today: date
     line = statements_cards.theater_showed(
         period.said_on(today), sum(figures.get(name, 0) for name in walls)
     )
-    return None if line is None else Said(line, walls, "Files in Theater", "count")
+    if line is None:
+        return None
+    if recipe.wall is None:
+        return Said(line, walls, "Files in Theater", "count")
+    # The most-used wall in miniature, a file it showed in each cell. A file the reader may not be
+    # told of reads 0 and leaves its cell empty: the card is said around it.
+    cells = tuple(
+        NamedRow(
+            piece=pieces_of(said(statements.named(_file(one))))[0],
+            value=views,
+            unit="views",
+            cover=cover_of("asset", one.id),
+        )
+        for one in recipe.named
+        if (views := _file_views(figures, recipe, one.id)) > 0
+    )
+    return Said(line, walls, "Files in Theater", "count", rows=cells, wall=recipe.wall)
 
 
 def _file_views(figures: Figures, recipe: Recipe, asset: str) -> int:
@@ -622,8 +644,25 @@ def _alongside(figures: Figures, recipe: Recipe, period: Period, today: date) ->
     return Said(line)
 
 
+def _voiced(kind: str, build: Builder) -> Builder:
+    """A card's builder, with what the card leads with said over the same figures."""
+
+    def said_with_voice(
+        figures: Figures, recipe: Recipe, period: Period, today: date
+    ) -> Said | None:
+        words = build(figures, recipe, period, today)
+        if words is None:
+            return None
+        spoken = recaps_voice_facts.voice(kind, words, figures, recipe, period, today)
+        if spoken is None:
+            return words
+        return replace(words, headline=spoken.headline, context=spoken.context)
+
+    return said_with_voice
+
+
 #: Each card of a period's recap, by kind; the order a deck reads them in is `DECKS`'.
-BUILDERS: dict[str, Builder] = {
+_BUILT: dict[str, Builder] = {
     "headline": _headline,
     "compared": _compared,
     "top_person": _top_person,
@@ -652,6 +691,9 @@ BUILDERS: dict[str, Builder] = {
 }
 
 
+BUILDERS: dict[str, Builder] = {kind: _voiced(kind, build) for kind, build in _BUILT.items()}
+
+
 def _figure_names(words: Said) -> tuple[str, ...]:
     """The sources a card's figure adds up: none, one, or several."""
     if words.figure is None:
@@ -677,11 +719,14 @@ def _said(kind: str, words: Said | None, figures: Figures) -> RecapCard | None:
         id=kind,
         kind=cast(CardKind, kind),
         statement=pieces_of(words.statement),
+        headline=pieces_of(words.headline),
+        context=pieces_of(words.context),
         figure=figure,
         cover=words.cover,
         rows=list(words.rows),
         chart=words.chart,
         calendar=words.calendar,
+        wall=words.wall,
         figures=[
             Figure(
                 label=cell.label,

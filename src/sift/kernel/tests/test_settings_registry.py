@@ -407,11 +407,14 @@ def test_a_retired_key_is_named_on_a_folders_page_by_its_folder_words() -> None:
     _retire(
         "test.arrive",
         into=["test.task"],
-        folder_label="Generate as files arrive",
+        folder_label="Generate as files are imported",
         folder_help="Only on the way in.",
     )
     _retire("test.plain", into=["test.task"])
 
-    assert folder_words_of("test.arrive") == ("Generate as files arrive", "Only on the way in.")
+    assert folder_words_of("test.arrive") == (
+        "Generate as files are imported",
+        "Only on the way in.",
+    )
     assert folder_words_of("test.plain") == ("Generate", None)
     assert folder_words_of("test.task") == ("Generate", None)

@@ -2,11 +2,12 @@
  * A recap's deck as a video: every savable card drawn frame by frame on the client, with the
  * card's own motion, and handed to the server's ffmpeg to be encoded (`video_router.py`).
  *
- * THE SCREEN'S MOTION, NOT A SECOND ONE. Each card arrives as the deck turns to it (`arrive` at
- * the slow pace: it fades in from a little to the side, on `--ease`) while its figures count up
- * over `--dur-ambient` on the same curve (`countUp`), and is then held, three seconds a card. The
+ * THE SCREEN'S MOTION, NOT A SECOND ONE, in the card's two beats. First the card arrives as the
+ * deck turns to it (`arrive` at the slow pace: it fades in from a little to the side, on
+ * `--ease`) with its picture and its words and no number yet; then its numbers count up over
+ * `--dur-ambient` on the same curve (`countUp`), and it is held, three seconds a card. The
  * durations and the curve are read from the same tokens those two read, and reduced motion is
- * honoured the same way: the card fades rather than slides, and its figures stand still.
+ * honoured the same way: the card fades rather than slides, and both beats land together.
  *
  * Each frame is the card painted by `share-card.ts`, the same painting as its picture, at 1080 x
  * 1920, so a card in the video is its picture in every line. Only a frame that differs is sent:
@@ -35,35 +36,40 @@ export interface Held {
 	held: number;
 }
 
-/** The motion of one card at one moment: how far it has arrived, and how far its count has run. */
+/** The motion of one card at one moment: how far it has arrived, and how far its count has run;
+ *  null before the second beat, while the card has no number yet. */
 export interface Moment {
 	arrived: number;
-	counted: number;
+	counted: number | null;
 }
 
-/** The card's moving moments, one a frame, until both its arrival and its count are done. */
+/** The card's moving moments, one a frame: the slide, then the count. */
 export function moments(slideMs: number, countMs: number, reduced: boolean): Moment[] {
 	const ease = bezier(easingToken('--ease', [0.2, 0, 0, 1]));
 	const counts = reduced ? 0 : countMs;
-	const frames = Math.ceil((Math.max(slideMs, counts) * FPS) / 1000);
+	const beat = reduced ? 0 : slideMs;
+	const frames = Math.ceil(((reduced ? slideMs : beat + counts) * FPS) / 1000);
 	return Array.from({ length: frames }, (_, frame) => {
 		const at = (frame * 1000) / FPS;
+		const counting = at - beat;
 		return {
 			arrived: slideMs > 0 ? ease(Math.min(1, at / slideMs)) : 1,
-			counted: counts > 0 ? ease(Math.min(1, at / counts)) : 1
+			counted: counting < 0 ? null : counts > 0 ? ease(Math.min(1, counting / counts)) : 1
 		};
 	});
 }
 
-/** Each counting figure of a card by its final words, as `countUp` draws it part of the way. */
-export function countingOf(card: Card): (counted: number) => (final: string) => string {
+/** Each counting figure of a card by its final words, as `countUp` draws it part of the way, and
+ *  none of them before the second beat. */
+export function countingOf(card: Card): (counted: number | null) => (final: string) => string {
 	const figures = [...(card.figure ? [card.figure] : []), ...card.figures].filter(
 		(one) => one.unit !== 'minute_of_day' && one.value > 0
 	);
 	const finals = new Map(figures.map((one) => [saidOf(one.said, one.value, one.unit), one]));
 	return (counted) => (final) => {
 		const one = finals.get(final);
-		if (!one || counted >= 1) return final;
+		if (!one || counted === null) return one ? '' : final;
+		if (counted >= 1) return final;
 		return figureWords(Math.round(one.value * counted), one.unit);
 	};
 }
@@ -104,7 +110,7 @@ export async function filmCard(
 	const steps = moments(slideMs, durationToken('--dur-ambient', 600), reduced);
 	const counting = countingOf(card);
 	const out: Held[] = [];
-	let painted: { counted: number; canvas: HTMLCanvasElement } | null = null;
+	let painted: { counted: number | null; canvas: HTMLCanvasElement } | null = null;
 	for (const step of [...steps, { arrived: 1, counted: 1 }]) {
 		if (painted === null || painted.counted !== step.counted) {
 			const canvas = await paintCard(element, counting(step.counted));

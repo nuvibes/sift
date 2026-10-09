@@ -39,6 +39,14 @@ def test_a_person_cleared_by_hand_stays_empty_until_a_cover_is_chosen(
     client: TestClient, library: Library
 ) -> None:
     sign_in(client)
+    # A default cover is a picture, and the library's files are videos.
+    write(
+        db_path(client),
+        [
+            ("UPDATE assets SET media_type = 'image' WHERE id = ?", (one,))
+            for one in [library.shared, library.private]
+        ],
+    )
     person = make_person(client, "Wren Halloway")
     assert assign(client, [library.shared], [person]).status_code == 200
     assert _cover(client, "people", person) == (library.shared, None)
@@ -94,6 +102,14 @@ def test_a_merge_gives_a_survivor_with_no_cover_its_first_file(
 ) -> None:
     """A merge MOVES filings rather than writing new ones, so the rule is asked after it."""
     sign_in(client)
+    # A default cover is a picture, and the library's files are videos.
+    write(
+        db_path(client),
+        [
+            ("UPDATE assets SET media_type = 'image' WHERE id = ?", (one,))
+            for one in [library.shared]
+        ],
+    )
     keeping = make_person(client, "Wrenna Sable")
     losing = make_person(client, "Pell Quorley")
     assign(client, [library.shared], [losing])

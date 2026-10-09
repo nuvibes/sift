@@ -125,7 +125,7 @@ UNREACHED = (
     " {host}."
 )
 DROPPED = "the connection to {host} dropped. Check the internet connection, then try again."
-KEPT = " What arrived is kept, so starting again costs only the rest."
+KEPT = " What was downloaded is kept, so starting again downloads only the rest."
 #: After a redirect: where the address asked for sent the download.
 SENT_ON = " {asked} sent the download on to {host}."
 
@@ -220,7 +220,7 @@ def _why(exc: BaseException, host: str) -> str:
 
 
 async def _failed(what: str, why: str, partial: Path) -> str:
-    """The whole sentence, saying what arrived is kept only when something did."""
+    """The whole sentence, saying what was downloaded is kept only when something was."""
     kept = KEPT if await asyncio.to_thread(size_of, partial) else ""
     return f"The {what} couldn't be downloaded: {why}{kept}"
 

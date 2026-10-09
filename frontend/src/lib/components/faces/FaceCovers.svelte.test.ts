@@ -14,6 +14,8 @@ vi.mock('$lib/people/faces.svelte', () => ({
 }));
 
 import FaceCovers from './FaceCovers.svelte';
+import source from './FaceCovers.svelte?raw';
+import { applyStyles, removeStyles } from '$lib/design/testing-styles';
 
 /** As many faces as asked for. Only `track_id` is read here, so only it is written. */
 const faces = (many: number) =>
@@ -93,4 +95,21 @@ it('lays a card strip six across, and a file strip by width', () => {
 	void unmount(two);
 	card.remove();
 	file.remove();
+});
+
+it("lays a group's share of a card strip in its own columns", () => {
+	const host = document.createElement('div');
+	document.body.append(host);
+	const two = mount(FaceCovers, {
+		target: host,
+		props: { faces: faces(3), most: 4, across: 2 } as never
+	});
+	const strip = host.querySelector('.faces') as HTMLElement;
+	expect(strip.classList.contains('across-3')).toBe(false);
+	expect(strip.children).toHaveLength(4);
+	applyStyles(source, strip);
+	expect(getComputedStyle(strip).gridTemplateColumns).toBe('repeat(2, minmax(0, 1fr))');
+	removeStyles();
+	void unmount(two);
+	host.remove();
 });

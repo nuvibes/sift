@@ -15,7 +15,7 @@ DEFINITIONS: Mapping[str, str] = {
         "counts each hour a wall played once, whatever the cells."
     ),
     "Viewed before": "Time viewed in the period before, counted the same way.",
-    "Sessions": (
+    "Visits": (
         "One for each view outside Theater that reached the view threshold, and one for each "
         "Theater wall that played."
     ),
@@ -28,7 +28,7 @@ DEFINITIONS: Mapping[str, str] = {
         "Each hour a Theater wall played counts once, however many cells played. A wall with "
         "nothing playing counts nothing."
     ),
-    "Theater sessions": "Theater walls that played. A wall with nothing playing isn't counted.",
+    "Theater visits": "Theater walls that played. A wall with nothing playing isn't counted.",
     "Files in Theater": "Files a Theater wall played, counted once a day.",
     "Times you opened Sift": "Each time you started viewing after half an hour away or more.",
     "Earliest start": "The earliest time you started viewing, after half an hour away or more.",
@@ -43,8 +43,8 @@ DEFINITIONS: Mapping[str, str] = {
     "Answered": "Answers you gave on Organize. An answer you undid isn't counted.",
     "Faces named": "Faces you named on Organize, or matches you agreed with.",
     "Files filed": "Files you filed, each counted once.",
-    "Arrived": "Files added to the library, counted on the day they arrived.",
-    "Files arrived": "Files added to the library, counted on the day they arrived.",
+    "Imported": "Files added to the library, counted on the day they were imported.",
+    "Files imported": "Files added to the library, counted on the day they were imported.",
     "Deleted": "Files deleted from the library that you could see.",
     "Tasks": (
         "Time Sift's tasks worked, added across every worker, so one day can hold more than 24 "

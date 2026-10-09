@@ -132,6 +132,15 @@ NOT_FOLLOWED: Mapping[str, str] = {
         "change hands: a cache of the rows above, not a fact of its own"
     ),
     "viewer_partner_counts": "the same derived counts, per pair of things",
+    "visibility_filing": (
+        "a share's files still being decided, a page at a time from the facts as they stand; the "
+        "grant it names is forgotten with the thing going, so its pages then decide nothing"
+    ),
+    "workbench_press_objects": (
+        "a total of the record per press, kept by the record's own triggers as a merge rewrites "
+        "what each act was done with"
+    ),
+    "workbench_press_subjects": "the same totals per press, of what each act was about",
     "search_events": (
         "a user's own record of what they searched for and opened, pruned at a year: a log of "
         "what was typed then, not a pointer to follow"

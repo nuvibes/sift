@@ -61,13 +61,9 @@ log = get_logger(__name__)
 COMPONENT = "ledger"
 VERSION = 8
 
-# `files` and `stages` are JSON rather than rows of their own: a run is read whole or not at all,
-# nothing ever asks for one stage across runs, and a row per stage per run would be a table an
-# order of magnitude larger holding the same information.
+# `files` and `stages` are JSON: a run is read whole, and nothing asks for one stage across runs.
 #
-# `machine` is the hardware report's label, `profile` its digest: see `HardwareReport.profile`
-# for why two runs are comparable only within one digest. `settings` is the handful of numbers
-# that decided the pace, so a run can be read beside the settings it ran under.
+# `machine` is the hardware report's label, `profile` its digest (runs compare within one digest), `settings` the numbers that decided the pace.
 _CREATE_TABLE = """
 CREATE TABLE IF NOT EXISTS work_runs (
   id           TEXT PRIMARY KEY,
@@ -313,10 +309,8 @@ _USER_STILL_THERE = "SELECT 1 FROM users WHERE id = ?"
 _SAY = "INSERT INTO said_times VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
 _SAID = "SELECT at, low, high, left, stalled FROM said_times WHERE run_id = ? ORDER BY at"
 _SCORED = "UPDATE work_runs SET time_left = ? WHERE id = ?"
-#: RUNS ARE KEPT FOR EVER. What somebody wants to compare may be the first import, years later, and
-#: a row here is one family's whole stretch of work, not one job, so a library that is scanned every
-#: day writes a few hundred rows a year. A record that quietly forgets is worse than a missing
-#: record, because nobody is told.
+#: RUNS ARE KEPT FOR EVER: the first import may be what is compared years later, and a row is a
+#: family's whole stretch of work, so a library scanned daily writes a few hundred a year.
 
 #: A Build task times each product it makes under this prefix: `build.pictures`,
 #: `build.faces`, and the ledger files those against the run's products. See `stage`.
@@ -1026,42 +1020,48 @@ class Ledger(RunReads):
     ) -> Estimate | None:
         """How long the family's remaining work will take, between two bounds, or None.
 
-        While the family's run is open, the live sample's price at the run's measured rate where
-        this process has timed the work; else the history's pace, by kind where `kinds` is given; else a floor from the
-        benchmark's `first_prices` for the videos left.
+        The history's pace, by kind where `kinds` is given; where the history cannot price it (a
+        first pass, which no closed run has priced), the open run's own finished items at its
+        measured rate; else a floor from the benchmark's `first_prices` for the videos left.
         """
         if left <= 0:
             return None
         workers = max(1, at_once)
         shares = _shares(kinds)
-        prices = self.prices()
-        live = family in self._open
-        if live and (each := time_left.each_item(prices, job_types, shares)) is not None:
-            rate = self.realized(family, prices, time_left.PACE_AT_LEAST)
-            low, high = time_left.measured(left * each, rate, workers)
-            timed = sum(len(self._priced.get((one, ANY_KIND), ())) for one in job_types)
-            return Estimate(low, high, items=timed, at_once=workers)
         kept = await self._kept(family)
         if shares:
-            by_kind = await self._estimate_by_kind(family, left, shares, workers, kept)
-            return by_kind or await self._first_price(
-                family, left * shares.get("video", 0.0), workers
+            history = await self._estimate_by_kind(family, left, shares, workers, kept)
+        else:
+            found = (
+                await self.pace(family, job_types)
+                if kept is None
+                else _kept_pace(kept.get("*")) or _kept_pace(kept.get(""))
             )
-        found = (
-            await self.pace(family, job_types)
-            if kept is None
-            else _kept_pace(kept.get("*")) or _kept_pace(kept.get(""))
+            history = None if found is None or found.slow <= 0 else found.priced(left, workers)
+        videos = left * shares.get("video", 0.0) if shares else left
+        return (
+            history
+            or self._live(family, job_types, left, shares, workers)
+            or await self._first_price(family, videos, workers)
         )
-        if found is None or found.slow <= 0:
-            return await self._first_price(family, left, workers)
-        quick = left * found.quick / workers
-        slow = left * found.slow / workers
-        return Estimate(
-            quick_seconds=int(quick),
-            slow_seconds=int(max(slow, quick)),
-            items=found.items,
-            at_once=workers,
-        )
+
+    def _live(
+        self,
+        family: Family,
+        job_types: Sequence[str],
+        left: float,
+        shares: Mapping[str, float],
+        workers: int,
+    ) -> Estimate | None:
+        """The open run's own finished items, at its measured rate, or None with too few timed."""
+        prices = self.prices()
+        each = time_left.each_item(prices, job_types, shares)
+        if family not in self._open or each is None:
+            return None
+        rate = self.realized(family, prices, time_left.PACE_AT_LEAST)
+        low, high = time_left.measured(left * each, rate, workers)
+        timed = sum(len(self._priced.get((one, ANY_KIND), ())) for one in job_types)
+        return Estimate(low, high, items=timed, at_once=workers)
 
     async def _estimate_by_kind(
         self,

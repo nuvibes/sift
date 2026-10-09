@@ -121,7 +121,12 @@ function render(onyes = vi.fn(), onno = vi.fn(), drawn = card()) {
 }
 
 function rows(): HTMLButtonElement[] {
-	return [...host.querySelectorAll<HTMLButtonElement>('.group button[aria-pressed]')];
+	return [...host.querySelectorAll<HTMLButtonElement>('.ticks button[aria-pressed]')];
+}
+
+/** The words under the question: the guide, then why the groups are here. */
+function told(): string {
+	return host.querySelector('.told')?.textContent ?? '';
 }
 
 function yes(): HTMLButtonElement {
@@ -142,15 +147,14 @@ it('asks about every group, closest first, with the ticks the server started the
 		'6 faces \u00b7 37%'
 	]);
 	expect(rows().map((row) => row.getAttribute('aria-pressed'))).toEqual(['true', 'true', 'false']);
-	// The folder's sentence, said once for the card, and the group's own share of it under it.
-	expect(host.textContent).toContain(
+	// The folder's sentence, said once for the card under the question.
+	expect(host.querySelector('.told')?.textContent).toContain(
 		'Some of these files are in the folder Wren Halloway, which Sift added to Wren Halloway.'
 	);
-	expect(host.querySelector('.fact')?.textContent).toBe('41 of its 47 files are in Wren Halloway');
 });
 
 it('says each reason once, however many groups it is true of', () => {
-	/* The same sentence under every group would be the card repeating itself; a group row carries only
+	/* The same sentence for every group would be the card repeating itself; a group carries only
 	   its own numbers. */
 	const drawn = card();
 	const starter = {
@@ -164,8 +168,8 @@ it('says each reason once, however many groups it is true of', () => {
 	drawn.groups = drawn.groups.map((group) => ({ ...group, reasons: [starter] }));
 	render(vi.fn(), vi.fn(), drawn);
 
-	expect(host.querySelectorAll('.why')).toHaveLength(1);
-	expect(host.querySelector('.why')?.textContent).toBe(
+	expect(told().split('Compared with')).toHaveLength(2);
+	expect(told()).toContain(
 		"Compared with a stash-box's pictures of Wren Halloway, not with faces you confirmed."
 	);
 });
@@ -174,7 +178,7 @@ it("opens each group's own review, face by face, and offers the closest one's in
 	const { goto } = await import('$app/navigation');
 	render();
 
-	const links = [...host.querySelectorAll<HTMLAnchorElement>('.group a.faces')];
+	const links = [...host.querySelectorAll<HTMLAnchorElement>('.strips a.faces')];
 	expect(links.map((one) => one.getAttribute('href'))).toEqual([
 		'/organize/may-be/person-1/close',
 		'/organize/may-be/person-1/folder',
@@ -252,7 +256,7 @@ it("says a group was compared with a stash-box's pictures, with the percentage i
 	render(vi.fn(), vi.fn(), drawn);
 
 	expect(rows().map((row) => readable(row))).toEqual(['47 faces \u00b7 58%']);
-	expect(host.querySelector('.why')?.textContent).toBe(
+	expect(told()).toContain(
 		"Compared with Northlight's pictures of Wren Halloway, not with faces you confirmed."
 	);
 });
@@ -273,8 +277,8 @@ it('names every stash-box the pictures came from, once each', () => {
 	}));
 	render(vi.fn(), vi.fn(), drawn);
 
-	expect(host.querySelectorAll('.why')).toHaveLength(1);
-	expect(host.querySelector('.why')?.textContent).toBe(
+	expect(told().split('Compared with')).toHaveLength(2);
+	expect(told()).toContain(
 		"Compared with Northlight's and Southwind's pictures of Wren Halloway, not with faces you confirmed."
 	);
 });
@@ -323,4 +327,32 @@ it('says nothing more under a card of three groups or fewer', () => {
 	render();
 
 	expect(host.querySelector('a.unseen')).toBeNull();
+});
+
+it('shares the one strip of twelve between the groups, and says Yes about only the faces it drew', () => {
+	/* Two rows of six, split into a block per group: three groups of four cells, two across, so the
+	   card is the height of a question card beside it. */
+	const drawn = card();
+	drawn.groups[0] = {
+		...drawn.groups[0],
+		faces: ['c1', 'c2', 'c3', 'c4', 'c5', 'c6'].map(face)
+	};
+	const { onyes } = render(vi.fn(), vi.fn(), drawn);
+
+	const strips = [...host.querySelectorAll<HTMLElement>('.strips a.faces')];
+	expect(strips.map((one) => one.children.length)).toEqual([4, 4, 4]);
+	expect(strips.every((one) => one.classList.contains('across-2'))).toBe(true);
+	// 47 faces in four cells: three crops and the count of the rest.
+	expect(strips[0].querySelector('.more')?.textContent).toBe('+44');
+
+	rows()[1].click();
+	flushSync();
+	yes().click();
+	expect(onyes).toHaveBeenCalledWith(['close'], ['c1', 'c2', 'c3']);
+});
+
+it('opens her own questions on a press on its ground', () => {
+	render();
+
+	expect(host.querySelector('.card')?.classList.contains('opens')).toBe(true);
 });

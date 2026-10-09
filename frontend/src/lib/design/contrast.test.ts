@@ -107,8 +107,11 @@ function resolve_(name: string, variables: Map<string, string>): string {
 	return value;
 }
 
-const colourOf = (name: string, variables: Map<string, string>): Rgba =>
-	parseColour(resolve_(name, variables));
+/* A step of a run (`color-mix(in oklch, ...)`) is worked out as the browser does (`mixed`). */
+const colourOf = (name: string, variables: Map<string, string>): Rgba => {
+	const value = resolve_(name, variables);
+	return value.startsWith('color-mix(in oklch') ? mixed(value, variables) : parseColour(value);
+};
 
 // --- the pairs ------------------------------------------------------------------------------------
 
@@ -775,6 +778,30 @@ describe("a chart's series never wear a colour that means something", () => {
 				expect(failures, `${base}/${accent}`).toEqual([]);
 			}
 		}
+	});
+
+	it("draws every family's run so the words on it read, in every swatch", () => {
+		/* A card of Insights restates the accent's run in its family's swatch (`RecapCard`), so the
+		 * pairs the run is held to above are held here for each of the twenty-one swatches. */
+		const variables = variablesFor('midnight', 'blue');
+		const swatches = [...variables.keys()].filter((name) => /^--family-[a-z]+-[abc]$/.test(name));
+		expect(swatches).toHaveLength(21);
+		const failures: string[] = [];
+		const run = (swatch: string, share: number, toward: string) =>
+			mixed(`color-mix(in oklch, ${resolve_(swatch, variables)} ${share}%, ${toward})`, variables);
+		for (const swatch of swatches) {
+			const shades = [run(swatch, 24, 'black'), run(swatch, 46, 'black')];
+			const tint = run(swatch, 42, 'white');
+			for (const shade of shades) {
+				for (const ink of ['--sift-ink', '--sift-ink-2']) {
+					const ratio = contrastRatio(colourOf(ink, variables), shade);
+					if (ratio < TEXT) failures.push(`${ink} on ${swatch}'s shade is ${ratio.toFixed(2)}:1`);
+				}
+				const ratio = contrastRatio(tint, shade);
+				if (ratio < TEXT) failures.push(`${swatch}'s tint on its shade is ${ratio.toFixed(2)}:1`);
+			}
+		}
+		expect(failures).toEqual([]);
 	});
 
 	it('would notice a red series inside the failure red', () => {

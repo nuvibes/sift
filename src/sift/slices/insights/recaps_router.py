@@ -16,11 +16,13 @@ from __future__ import annotations
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
+from pydantic import Field
 
 from sift.kernel import wiring
 from sift.kernel.access import Repository, Viewer
 from sift.kernel.db import Database
 from sift.kernel.seams import SettingsSeam
+from sift.kernel.wire import Wire
 from sift.slices.auth import csrf_protect, current_viewer
 from sift.slices.insights import recaps
 from sift.slices.insights.naming import covered_cards
@@ -60,6 +62,28 @@ async def open_recap(
         raise _missing()
     cards = await covered_cards(access, database, viewer, found.cards)
     return found.model_copy(update={"cards": cards})
+
+
+class RecapLeftOut(Wire):
+    """The people and files a reader takes out of their recap before sharing it."""
+
+    ids: list[Annotated[str, Field(max_length=64)]] = Field(max_length=500)
+
+
+@router.put("/insights/recaps/{recap_id}/left-out", dependencies=[Depends(csrf_protect)])
+async def leave_out(
+    recap_id: str,
+    body: RecapLeftOut,
+    database: Annotated[Database, Depends(wiring.database)],
+    access: Annotated[Repository, Depends(wiring.access)],
+    viewer: Annotated[Viewer, Depends(current_viewer)],
+    settings: Annotated[SettingsSeam, Depends(wiring.settings_hub)],
+) -> Recap:
+    """Take people and files out of a recap, or put them back: the cards naming one are drawn
+    again without it, for the deck and its pictures alike. Answers the recap drawn again."""
+    if not await recaps.left_out(database, viewer, recap_id, body.ids):
+        raise _missing()
+    return await open_recap(recap_id, database, access, viewer, settings)
 
 
 @router.post(

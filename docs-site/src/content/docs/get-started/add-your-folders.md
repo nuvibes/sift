@@ -15,7 +15,7 @@ A folder can be on your computer, on another drive, or on a network share Window
 
 1. In [Settings > Folders](/settings/library), click **Add a folder**.
 2. In the Sift app, choose the folder in Windows' own folder window. In a browser, click through the list to the folder you want, then click **Add folder**.
-3. Sift imports the folder's files, and new ones as they arrive.
+3. Sift imports the folder's files, and new ones as they appear in it.
 
 In a browser, the list starts at **Folders Sift already has**. Click **Browse this device** to see the drives of the device Sift runs on, and **Back to the folders Sift has** to return.
 

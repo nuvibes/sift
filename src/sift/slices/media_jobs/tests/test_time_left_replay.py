@@ -30,7 +30,8 @@ WHOLE = {
         {
             "scan": (85, [50, 100, 100], 100, 0, 97, 58, 48),
             "generate": (90, [69, 100, 100], 100, 0, 42, 70, 13),
-            "fingerprint": (86, [32, 100, 100], 83, 0, 35, 65, 11),
+            # A sub-task no closed run priced is said from its own finished files: 83 -> 86.
+            "fingerprint": (84, [28, 100, 100], 86, 0, 38, 64, 11),
         },
     ),
     "import-stall-and-eco.csv.gz": (

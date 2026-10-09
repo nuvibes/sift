@@ -899,7 +899,7 @@ async def test_alongside_says_two_measures_rose_together_with_its_sample(
     assert all(one["value"] > 0 and one["defines"] for one in alongside["figures"])
     theater = block(body, "theater")
     defines = {one["label"]: said(one["defines"]) for one in theater["figures"]}
-    assert defines["Sessions"] == text_of(definitions.definition("Theater sessions") or ())
+    assert defines["Visits"] == text_of(definitions.definition("Theater visits") or ())
     assert defines["In Theater"].startswith("Each hour a Theater wall played counts once")
 
     week = (

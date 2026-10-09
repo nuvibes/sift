@@ -54,12 +54,34 @@ CardKind = Literal[
 ]
 
 
+class WallSlot(Wire):
+    """Where one cell of a Theater wall sits: its top-left track and how many it covers, from 0."""
+
+    row: int = Field(ge=0)
+    col: int = Field(ge=0)
+    row_span: int = Field(ge=1)
+    col_span: int = Field(ge=1)
+
+
+class Wall(Wire):
+    """A Saved Layout's grid, for the card that draws the wall in miniature."""
+
+    rows: int = Field(ge=1)
+    cols: int = Field(ge=1)
+    slots: list[WallSlot]
+
+
 class RecapCard(Wire):
     """One card, as the reader may be shown it now."""
 
     id: str
     kind: CardKind
+    #: The fact the card rests on, said in full: its definition, drawn small under it.
     statement: list[HistoryPiece]
+    #: What the card leads with: two to five words, then a line or two over its figure. Empty on
+    #: a card with no voice (an achievement), which leads with its statement.
+    headline: list[HistoryPiece] = Field(default_factory=list)
+    context: list[HistoryPiece] = Field(default_factory=list)
     figure: Figure | None = None
     cover: str | None = None
     #: The ranked rows of a card that names several things: the top five people, or the first and
@@ -78,6 +100,11 @@ class RecapCard(Wire):
     #: A locked tile: the card is there and what it says is not. Placeholder mode only; in Show
     #: nothing mode such a card is simply absent. Its statement, figure and cover are empty.
     hidden: bool = False
+    #: The hue of the period's most-viewed file, in OKLCH degrees: the card takes its colour from
+    #: it. None for a grey file, one the reader may not be shown, or none at all.
+    accent_hue: int | None = None
+    #: The most-used Saved Layout's grid; `rows` holds a file it showed for each of its cells.
+    wall: Wall | None = None
 
 
 class RecapHead(Wire):
@@ -150,9 +177,13 @@ class Recipe(Wire):
     named: list[NamedThing] = Field(default_factory=list)
     #: Whether the period before was recorded whole and passed the floor, so the card may compare.
     compares: bool = False
+    #: The grid of the wall the card draws.
+    wall: Wall | None = None
 
 
 class KeptCard(RecapCard):
     """A card as frozen in `recaps.body`. `hidden_things` here is every id the card names."""
 
     recipe: Recipe | None = None
+    #: The file `accent_hue` was read from: a reader who may not be shown it is not given its hue.
+    accent_of: str | None = None

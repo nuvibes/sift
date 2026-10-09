@@ -661,6 +661,11 @@ _FILED_LATER = (
     " ON CONFLICT DO UPDATE SET after = ''"
 )
 
+_NOT_FILED_LATER = (
+    " WHERE NOT EXISTS (SELECT 1 FROM visibility_filing f WHERE f.user_id = <<ROW>>.subject_user_id"
+    " AND f.object_type = <<ROW>>.object_type AND f.object_id = <<ROW>>.object_id AND f.after = '')"
+)
+
 ANY_FILING = "SELECT 1 FROM visibility_filing LIMIT 1"
 NEXT_FILING = "SELECT user_id, object_type, object_id, after FROM visibility_filing LIMIT 1"
 CLEAR_FILING = "DELETE FROM visibility_filing"
@@ -851,7 +856,8 @@ def owing(
         .replace("<<PAIRS>>", pairs)
         .replace("<<N>>", str(DEFER_FROM))
     )
-    owed[1] = owed[1] + " WHERE NOT " + deferred
+    # Counted once, by the filing: the pairs are staged unless it was just kept to start over.
+    owed[1] = owed[1] + _NOT_FILED_LATER.replace("<<ROW>>", row)
     later = _FILED_LATER.replace("<<DEFERRED>>", deferred).replace("<<ROW>>", row)
     return [later, *owed]
 

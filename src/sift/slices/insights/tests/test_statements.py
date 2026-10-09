@@ -236,8 +236,8 @@ PINNED = [
     (SAID[27][1], "You pressed O 12 times this month."),
     (SAID[28][1], "You answered 120 questions on Organize this month."),
     (SAID[29][1], "You named 30 faces and filed 45 files."),
-    (SAID[30][1], "142 files arrived this month."),
-    (SAID[31][1], "No files arrived this month."),
+    (SAID[30][1], "142 files were imported this month."),
+    (SAID[31][1], "No files were imported this month."),
     (SAID[32][1], "3 files were deleted."),
     (SAID[33][1], "Sift worked on tasks for 14 hours this month."),
     (SAID[34][1], "Sift found 1,204 faces and fingerprinted 3,000 files."),
@@ -318,7 +318,7 @@ PINNED += [
     ),
     (
         said_as("together, months"),
-        "Over 8 months, the months you had the most sessions were the months you answered the"
+        "Over 8 months, the months you had the most visits were the months you answered the"
         " most questions on Organize.",
     ),
 ]
@@ -609,7 +609,7 @@ def test_every_figure_the_page_draws_carries_its_definition() -> None:
     from sift.slices.insights import router, router_blocks
 
     labels = _labels_drawn(router) | _labels_drawn(router_blocks)
-    assert {"Viewed", "Files opened", "In Theater", "Theater sessions", "Tasks"} <= labels
+    assert {"Viewed", "Files opened", "In Theater", "Theater visits", "Tasks"} <= labels
     missing = sorted(label for label in labels if definitions.definition(label) is None)
     assert not missing, missing
     for label in labels:

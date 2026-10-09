@@ -9,7 +9,16 @@ import { flushSync, mount, unmount } from 'svelte';
 import type { RecapCard as Card } from '$lib/library/recaps.svelte';
 
 import RecapCard from './RecapCard.svelte';
-import { cardPicture, linesOf, paintCard, pictureName, type Word } from './share-card';
+import {
+	built,
+	cardPicture,
+	linesOf,
+	paintCard,
+	pictureName,
+	topLevel,
+	verticalStops,
+	type Word
+} from './share-card';
 
 describe('a picture of a recap card', () => {
 	it('is named for the recap and the card, safe as a file name', () => {
@@ -82,12 +91,21 @@ function recorder(): CanvasRenderingContext2D {
 const CARD_BOX = { left: 100, top: 50, width: 360, height: 640 };
 const LINE = 40;
 
-/* Each word's box: a line every forty letters of its text, a letter five pixels wide. */
+/* Each word's box: a line every forty letters of its text, a letter five pixels wide; a word
+   longer than a line is broken at the line's end, a box on each line. */
 function wordBox(this: Range): DOMRect[] {
-	const line = Math.floor(this.startOffset / LINE);
-	const left = CARD_BOX.left + 24 + (this.startOffset % LINE) * 5;
-	const top = CARD_BOX.top + 300 + line * 20;
-	return [{ left, top, height: 20, width: 5 } as DOMRect];
+	const box = (offset: number) => ({
+		left: CARD_BOX.left + 24 + (offset % LINE) * 5,
+		top: CARD_BOX.top + 300 + Math.floor(offset / LINE) * 20,
+		height: 20,
+		width: 5
+	});
+	const broken =
+		this.endOffset - this.startOffset > LINE / 2 &&
+		Math.floor(this.startOffset / LINE) !== Math.floor((this.endOffset - 1) / LINE);
+	const boxes = [box(this.startOffset)];
+	if (broken) boxes.push(box(Math.floor((this.endOffset - 1) / LINE) * LINE));
+	return boxes as DOMRect[];
 }
 
 /* Styles the test document cannot work out: the ring's paint and hole, and the pictures' fit. */
@@ -95,12 +113,14 @@ const realStyle = window.getComputedStyle.bind(window);
 function styleOf(element: Element): CSSStyleDeclaration {
 	const real = realStyle(element);
 	const over: Record<string, string> = {};
-	if (element.classList.contains('ring')) {
-		over.backgroundImage =
-			'conic-gradient(rgb(10, 20, 30) 0deg 14deg, transparent 14deg 15deg, rgb(40, 50, 60) 15deg 29deg)';
-		over['--hole'] = '62%';
-	}
+	if (element.classList.contains('tower'))
+		over.backgroundColor = element.closest('.peak') ? 'rgb(40, 50, 60)' : 'rgb(10, 20, 30)';
 	if (element.classList.contains('ground')) over.filter = 'blur(32px)';
+	if (element.parentElement?.classList.contains('ground') && element.tagName === 'IMG')
+		over.filter = 'blur(26px)';
+	if (element.classList.contains('shade')) over.backgroundColor = 'rgba(5, 5, 5, 0.7)';
+	if (element.classList.contains('foot-shade'))
+		over.backgroundImage = 'linear-gradient(rgba(5, 5, 5, 0), rgb(5, 5, 5))';
 	if (element.classList.contains('picture') && element.classList.contains('mark'))
 		over.objectFit = 'contain';
 	if (element.classList.contains('framed')) {
@@ -190,6 +210,10 @@ function card(over: Partial<Card>): Card {
 	return {
 		id: 'headline',
 		kind: 'headline',
+		headline: [],
+		context: [],
+		wall: null,
+		accent_hue: null,
 		statement: [piece('You viewed 19 hours last week: 6 of videos, 6 of pictures, 5 in Theater.')],
 		figure: {
 			label: 'Viewed',
@@ -213,12 +237,19 @@ function card(over: Partial<Card>): Card {
 	};
 }
 
-function draw(one: Card): HTMLElement {
+function draw(one: Card, extra: Record<string, unknown> = {}): HTMLElement {
 	host = document.createElement('div');
 	document.body.append(host);
 	mounted = mount(RecapCard, {
 		target: host,
-		props: { card: one, heading: 'Your week', place: '1 of 4', foot: 'September 21 to 27' }
+		props: {
+			card: one,
+			heading: 'Your week',
+			place: '1 of 4',
+			foot: 'September 21 to 27',
+			build: false,
+			...extra
+		}
 	});
 	flushSync();
 	return host.querySelector('.recap-card') as HTMLElement;
@@ -247,8 +278,17 @@ describe('a card painted as a picture', () => {
 			'19 h',
 			'You viewed 19 hours last week: 6 of videos,',
 			'6 of pictures, 5 in Theater.',
-			'SEPTEMBER 21 TO 27'
+			'SEPTEMBER 21 TO 27',
+			'SIFT'
 		]);
+	});
+
+	it('paints a long name the card broke across two lines on both of them', async () => {
+		const name = 'n'.repeat(50);
+		await cardPicture(draw(card({ figure: null, statement: [piece(`A ${name}`)] })));
+		const words = painted();
+		expect(words).toContain(`A ${'n'.repeat(38)}`);
+		expect(words).toContain('n'.repeat(12));
 	});
 
 	it('paints a figure at the words a frame has it counted up to', async () => {
@@ -258,30 +298,32 @@ describe('a card painted as a picture', () => {
 		expect(painted()).not.toContain('19 h');
 	});
 
-	it("paints a Site's mark whole over its blurred ground, inside the frame's corner", async () => {
+	it("paints its ground of pictures blurred under its shades, then a Site's mark", async () => {
 		await cardPicture(
 			draw(
 				card({
 					kind: 'top_site',
 					statement: [piece('Your most-viewed Site was '), piece('Quillhouse', { kind: 'site' })],
 					cover: '/api/sites/s1/cover'
-				})
+				}),
+				{ ground: ['/api/assets/a/thumb'] }
 			)
 		);
 
 		const names = calls.map(([name]) => name);
-		// The frame clips, then the ground is drawn blurred and the mark contained over it.
-		expect(names).toContain('clip');
-		expect(calls).toContainEqual(['set filter', 'blur(96px)']);
+		// The ground's picture blurred at three times the card's blur, then its flat shade, then the
+		// foot's shade as a gradient over its own box, then the mark.
+		expect(calls).toContainEqual(['set filter', 'blur(78px)']);
+		expect(calls).toContainEqual(['set fillStyle', 'rgba(5, 5, 5, 0.7)']);
+		expect(calls).toContainEqual(['linear.stop', 0, 'rgba(5, 5, 5, 0)']);
+		expect(calls).toContainEqual(['linear.stop', 1, 'rgb(5, 5, 5)']);
+		expect(calls).toContainEqual(['createLinearGradient', 0, 60, 0, 380]);
 		const pictures = calls.filter(([name]) => name === 'drawImage');
 		expect(pictures).toHaveLength(2);
-		// Contained: a 256 square in a 240 x 320 box is 240 wide, standing 40 down from the top.
-		expect(pictures[1].slice(2)).toEqual([24, 100, 240, 240]);
-		expect(names.indexOf('clip')).toBeLessThan(names.indexOf('drawImage'));
-		expect(calls).toContainEqual(['set fillStyle', 'rgb(5, 5, 5)']);
+		expect(names.lastIndexOf('linear.stop')).toBeLessThan(names.lastIndexOf('drawImage'));
 	});
 
-	it('paints a ranked list row by row, and the ring as its hours', async () => {
+	it('paints the faces row by row, and the hours as bars with the peak named', async () => {
 		const row = (name: string, cover: string | null = null) => ({
 			piece: piece(name, { kind: 'person', id: name, href: '#' }),
 			value: 3_600_000,
@@ -307,16 +349,60 @@ describe('a card painted as a picture', () => {
 		mounted && void unmount(mounted);
 		host.remove();
 		const hours = Array.from({ length: 24 }, (_, hour) => ({
-			label: String(hour),
+			label: String(hour).padStart(2, '0'),
 			said: '',
 			parts: [{ kind: 'all', value: hour, said: '' }]
 		}));
 		await cardPicture(draw(card({ kind: 'when', chart: { bars: hours } as Card['chart'] })));
-		// Two painted hours of the stood-in paint, each an arc out and an arc back.
-		const fills = calls.filter(([name]) => name === 'set fillStyle').map(([, value]) => value);
-		expect(fills).toContain('rgb(10, 20, 30)');
-		expect(fills).toContain('rgb(40, 50, 60)');
-		expect(calls.filter(([name]) => name === 'arc')).toHaveLength(4);
+		// Every hour but the first (nothing) is a bar; the last, the most, is the peak.
+		const fills = calls
+			.filter(([name]) => name === 'set fillStyle')
+			.map(([, value]) => String(value));
+		expect(fills.filter((one) => one === 'rgb(10, 20, 30)')).toHaveLength(22);
+		expect(fills.filter((one) => one === 'rgb(40, 50, 60)')).toHaveLength(1);
+		expect(painted().some((one) => String(one).startsWith('11:00'))).toBe(true);
+	});
+
+	it('waits for the second beat before it paints, so the number is there', async () => {
+		vi.useFakeTimers();
+		try {
+			const drawn = draw(card({}), { build: true });
+			expect(drawn.dataset.built).toBe('false');
+			let done = false;
+			const painting = built(drawn).then(() => (done = true));
+			await Promise.resolve();
+			expect(done).toBe(false);
+			vi.advanceTimersByTime(450);
+			flushSync();
+			await painting;
+			expect(done).toBe(true);
+			// A card already built is painted with no wait.
+			await built(drawn);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it("reads a top-to-bottom gradient's stops, and leaves any other to the box's colour", () => {
+		expect(topLevel('rgb(1, 2, 3) 0%, color(srgb 0 0 0 / 0.5)')).toEqual([
+			'rgb(1, 2, 3) 0%',
+			'color(srgb 0 0 0 / 0.5)'
+		]);
+		expect(verticalStops('linear-gradient(rgba(1, 2, 3, 0), rgb(1, 2, 3))')).toEqual([
+			{ colour: 'rgba(1, 2, 3, 0)', at: 0 },
+			{ colour: 'rgb(1, 2, 3)', at: 1 }
+		]);
+		expect(
+			verticalStops('linear-gradient(180deg, rgb(1, 2, 3) 20%, rgb(4, 5, 6) 50%, rgb(7, 8, 9))')
+		).toEqual([
+			{ colour: 'rgb(1, 2, 3)', at: 0.2 },
+			{ colour: 'rgb(4, 5, 6)', at: 0.5 },
+			{ colour: 'rgb(7, 8, 9)', at: 1 }
+		]);
+		expect(verticalStops('linear-gradient(to right, red, blue)')).toBeNull();
+		expect(verticalStops('linear-gradient(red)')).toBeNull();
+		expect(verticalStops('radial-gradient(red, blue)')).toBeNull();
+		expect(verticalStops('none')).toBeNull();
 	});
 
 	it('paints nothing of a card that may not be saved, nor of one not laid out', async () => {

@@ -15,7 +15,7 @@ price. Lateness rather than loss.
 ## The switch is the DESTINATION folder's
 
 Off unless the folder the file is going into says yes. The music task is "Only when I press it"
-out of the box, and a folder can answer "Fingerprint music as files arrive" for itself on the
+out of the box, and a folder can answer "Fingerprint music as files are imported" for itself on the
 Importing pane; a file landing there is read here, and a file landing anywhere else is not read at
 all: no pending row, because the read is the cost the switch exists to avoid. A file whose
 destination is not known is treated as off.

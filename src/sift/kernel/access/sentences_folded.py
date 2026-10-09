@@ -190,7 +190,7 @@ def _folded_own_words(
         return Said(
             said(
                 SIFT,
-                f" recorded how {usernames(total)} arrived",
+                f" recorded how {usernames(total)} were added",
                 f", {many(untold)} of them from before this was recorded" if untold else None,
             ),
             groups=groups_of(["username"]),

@@ -90,6 +90,7 @@
 	import Icon from '$lib/components/Icon.svelte';
 	import Answers from '$lib/components/organize/Answers.svelte';
 	import Said from '$lib/components/organize/Said.svelte';
+	import CardWall from '$lib/components/organize/CardWall.svelte';
 	import DecisionCard from '$lib/components/organize/DecisionCard.svelte';
 	import { toasts } from '$lib/shell/toasts.svelte';
 	import { onDestroy, untrack } from 'svelte';
@@ -315,7 +316,7 @@
 		     the count, as the faces tabs do. The server's total, not the cards drawn, so it is the
 		     size of the queue. -->
 		<p class="count">{total === 1 ? '1 shoot waiting' : `${counted(total)} shoots waiting`}</p>
-		<ul class="wall" {@attach paging.cards}>
+		<CardWall cards={paging.cards}>
 			{#each items as one (one.id)}
 				<li>
 					<DecisionCard opens={() => openShoot(one.id)}>
@@ -387,7 +388,7 @@
 					</DecisionCard>
 				</li>
 			{/each}
-		</ul>
+		</CardWall>
 	{/if}
 </section>
 
@@ -428,23 +429,6 @@
 		margin: 0 0 var(--space-3);
 		color: var(--sift-ink-3);
 		font: var(--text-body-sm);
-	}
-
-	.wall {
-		list-style: none;
-		margin: 0;
-		padding: 0;
-		display: grid;
-		grid-template-columns: repeat(auto-fill, minmax(min(22rem, 100%), 1fr));
-		gap: var(--space-4);
-	}
-
-	/*
-	 * Each card at its own height, with no floor, as every Organize card is: a floor would leave the
-	 * short ones a band of empty ground. The grid gives the cards of one row one height.
-	 */
-	.wall > li {
-		display: grid;
 	}
 
 	/* On the card's button side (`DecisionCard`), where an action goes on a card. */

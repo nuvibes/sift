@@ -508,7 +508,7 @@ def _keep_the_days_added_up(teardown: AsyncExitStack, store: Storage, queue: Job
             # by the day just added up. Each is called on its own; see `rollup.add_up_one_day`.
             after_day=(
                 lambda user_id, _day: insights.recaps.make_due(
-                    store.database, user_id, insights.store.local_today()
+                    store.database, user_id, insights.store.local_today(), content=store.content
                 ),
                 lambda user_id, day: insights.path.make_due(
                     store.database, user_id, day, content=store.content

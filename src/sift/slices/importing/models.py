@@ -35,7 +35,7 @@ class FolderList(Wire):
         default_factory=dict,
         description="What each of `keys` is called on screen, by key. A key retired into a task's "
         "When (a folder's answer is still stored under it) is called by what a folder's answer "
-        "does, which is only what happens as a file arrives.",
+        "does, which is only what happens as a file is imported.",
     )
     helps: dict[str, str] = Field(
         default_factory=dict,

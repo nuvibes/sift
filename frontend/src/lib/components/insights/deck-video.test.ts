@@ -44,6 +44,10 @@ function card(over: Partial<Card> = {}): Card {
 	return {
 		id: 'headline',
 		kind: 'headline',
+		headline: [],
+		context: [],
+		wall: null,
+		accent_hue: null,
 		statement: [],
 		figure: figure('Viewed', 1000, 'count', '1,000'),
 		cover: null,
@@ -58,14 +62,17 @@ function card(over: Partial<Card> = {}): Card {
 }
 
 describe("a card's motion", () => {
-	it('runs a frame a thirtieth of a second until the slide and the count are both done', () => {
+	it('runs a frame a thirtieth of a second: the slide, then the count', () => {
 		const steps: Moment[] = moments(320, 600, false);
-		expect(steps).toHaveLength(18);
-		expect(steps[0]).toEqual({ arrived: 0, counted: 0 });
-		// Both on the one curve: the slide lands at 320 ms, the count runs on to 600.
+		expect(steps).toHaveLength(28);
+		expect(steps[0]).toEqual({ arrived: 0, counted: null });
+		// The first beat has no number: the slide lands at 320 ms, and only then the count runs.
+		expect(steps[9].arrived).toBeLessThan(1);
+		expect(steps[9].counted).toBeNull();
 		expect(steps[10].arrived).toBe(1);
+		expect(steps[10].counted).toBeGreaterThan(0);
 		expect(steps[10].counted).toBeLessThan(1);
-		expect(steps[17].counted).toBeGreaterThan(0.99);
+		expect(steps[27].counted).toBeGreaterThan(0.99);
 	});
 
 	it('only fades with reduced motion, its figures standing still', () => {
@@ -92,6 +99,10 @@ describe("a card's figures mid-count", () => {
 		expect(at(0.5)('9:10 AM')).toBe('9:10 AM');
 		expect(at(0.5)('Viewed')).toBe('Viewed');
 		expect(at(1)('1,000')).toBe('1,000');
+		// Before the second beat a counting figure is not drawn at all; the rest are.
+		expect(at(null)('1,000')).toBe('');
+		expect(at(null)('9:10 AM')).toBe('9:10 AM');
+		expect(at(null)('Viewed')).toBe('Viewed');
 	});
 });
 
@@ -125,13 +136,13 @@ describe('the film', () => {
 });
 
 describe('a card filmed', () => {
-	let drawn: number[];
+	let drawn: string[];
 
 	beforeEach(() => {
 		drawn = [];
 		const canvas = () => ({ width: 1080, height: 1920 }) as HTMLCanvasElement;
 		paintCard.mockImplementation(async (_element: HTMLElement, counting) => {
-			drawn.push(counting ? Number(counting('1,000').replace(/,/g, '')) : -1);
+			drawn.push(counting ? counting('1,000') : 'none');
 			return canvas();
 		});
 		vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation((() => ({
@@ -156,10 +167,13 @@ describe('a card filmed', () => {
 		const total = frames!.reduce((sum, one) => sum + one.held, 0);
 		expect(total).toBe((CARD_MS * FPS) / 1000);
 		expect(frames!.slice(0, -1).every((one) => one.held === 1)).toBe(true);
-		// The figure is painted counting up from nothing to the figure it lands on.
-		expect(drawn[0]).toBe(0);
-		expect(drawn.at(-1)).toBe(1000);
-		expect(drawn).toEqual([...drawn].sort((a, b) => a - b));
+		// The card arrives with no number, then the figure counts up to the one it lands on.
+		expect(drawn[0]).toBe('');
+		const counted = drawn.slice(1).map((one) => Number(one.replace(/,/g, '')));
+		expect(counted.at(-1)).toBe(1000);
+		expect(counted).toEqual([...counted].sort((a, b) => a - b));
+		// The slide is painted once, not a frame at a time.
+		expect(drawn.filter((one) => one === '')).toHaveLength(1);
 	});
 
 	it('paints a card once when nothing on it counts', async () => {

@@ -119,11 +119,11 @@ async def test_the_year_draws_its_own_cards(world: World) -> None:
     assert closing is not None and recap.cards[-1] is closing
     assert [(one.label, words(one.caption)) for one in closing.figures] == [
         ("Viewed", ""),
-        ("Files arrived", ""),
+        ("Files imported", ""),
         ("Top person", "Elina Sorrel"),
         ("Top Site", "Another Studio"),
         ("Busiest day", "Thursday, June 5, 2025"),
-        ("Sessions", ""),
+        ("Visits", ""),
     ]
     assert all(one.defines for one in closing.figures)
     assert closing.hidden_things == [HER]
@@ -139,10 +139,10 @@ async def test_a_locked_year_leaves_out_what_it_may_not_say(world: World) -> Non
     assert closing is not None and closing.hidden_things == []
     assert [one.label for one in closing.figures] == [
         "Viewed",
-        "Files arrived",
+        "Files imported",
         "Top Site",
         "Busiest day",
-        "Sessions",
+        "Visits",
     ]
     # June's hidden part is out of its day, so December is the busiest the reader is told of.
     heat = of(recap, "heatmap")
@@ -172,7 +172,7 @@ async def test_the_first_and_last_carry_the_files_added_between(world: World) ->
     recap = await opened(world, await year_recap(world), unlocked=True)
     both = of(recap, "first_last")
     assert both is not None and both.figure is not None
-    assert (both.figure.label, both.figure.value) == ("Files arrived", 100)
+    assert (both.figure.label, both.figure.value) == ("Files imported", 100)
 
 
 def test_a_part_of_the_period_round_trips() -> None:

@@ -38,6 +38,7 @@ from datetime import date
 
 from sift.kernel.access import Viewer
 from sift.kernel.access.sentences import capitalized, said, text_of
+from sift.kernel.content import ContentStore
 from sift.kernel.db import Connection, Database, in_clause
 from sift.kernel.ledger import Actor, record_event
 from sift.kernel.log import get_logger
@@ -51,8 +52,10 @@ from sift.slices.insights.recaps_draw import (
     _named_as,
     _open_all,
     kept_cards,
+    still_hue,
 )
 from sift.slices.insights.recaps_models import (
+    KeptCard,
     Recap,
     RecapHead,
 )
@@ -103,6 +106,7 @@ __all__ = [
     "heads",
     "kept_cards",
     "kinds_on",
+    "left_out",
     "make_due",
     "opened",
     "period_from_key",
@@ -133,7 +137,18 @@ def _is_false(stored: str) -> bool:
         return False
 
 
-async def make_due(database: Database, user_id: str, today: date) -> list[RecapRow]:
+async def _hued(content: ContentStore | None, cards: list[KeptCard]) -> list[KeptCard]:
+    """The cards with the hue of the period's most-viewed file, read once, as the recap is made."""
+    of = cards[0].accent_of if cards else None
+    hue = None if content is None or of is None else await still_hue(content, of)
+    if hue is None:
+        return cards
+    return [card.model_copy(update={"accent_hue": hue}) for card in cards]
+
+
+async def make_due(
+    database: Database, user_id: str, today: date, *, content: ContentStore | None = None
+) -> list[RecapRow]:
     """Make every recap due for this User today, and answer the ones made.
 
     THE ONE CALL the quiet helper makes, after it has added a day up for this User. Idempotent: a
@@ -142,7 +157,7 @@ async def make_due(database: Database, user_id: str, today: date) -> list[RecapR
     next day while it is still the one just closed.
     """
     reached = await store.added_up_to(database, user_id)
-    await remake_behind(database, user_id, today, reached)
+    await remake_behind(database, user_id, today, reached, content=content)
     periods = due(today, reached, await kinds_on(database, user_id))
     if not periods:
         return []
@@ -154,6 +169,7 @@ async def make_due(database: Database, user_id: str, today: date) -> list[RecapR
         cards = await build(database, user_id, period, today=today)
         if cards is None:
             continue
+        cards = await _hued(content, cards)
         made.append(await store.write_recap(database, user_id, period.key, body_of(cards)))
         log.info("insights.recap_made", period=period.key, cards=len(cards))
     return made
@@ -175,7 +191,12 @@ def _recounted(recap_id: str, period: Period) -> Callable[[Connection], Awaitabl
 
 
 async def remake_behind(
-    database: Database, user_id: str, today: date, reached: date | None
+    database: Database,
+    user_id: str,
+    today: date,
+    reached: date | None,
+    *,
+    content: ContentStore | None = None,
 ) -> list[str]:
     """Make again, once, every recap made by statements a later version corrected, and answer the
     periods made again.
@@ -191,7 +212,9 @@ async def remake_behind(
         period = period_from_key(row.period)
         if period is None or reached is None or period.last > reached:
             continue
-        cards = await build(database, user_id, period, today=today, floor=False) or []
+        cards = await _hued(
+            content, await build(database, user_id, period, today=today, floor=False) or []
+        )
         # Only a row still behind is written, so two helpers racing make it once.
         if await store.remake_recap(  # pragma: no branch
             database,
@@ -295,6 +318,18 @@ async def opened(
         cards=one.drawn.cards,
         hidden_line=line,
         first_day="" if one.period is None else one.period.first.isoformat(),
+    )
+
+
+async def left_out(database: Database, viewer: Viewer, recap_id: str, ids: Sequence[str]) -> bool:
+    """Keep what the reader took out of their recap before sharing it: of these ids, the ones its
+    cards name. False (a 404) for somebody else's recap and for one not there for this reader now."""
+    row = await store.recap(database, viewer.id, recap_id)
+    if row is None or not await _open_all(database, viewer, [row], store.local_today()):
+        return False
+    named = {one for card in kept_cards(row.body) for one in card.hidden_things}
+    return await store.leave_out(
+        database, viewer.id, recap_id, [one for one in ids if one in named]
     )
 
 

@@ -77,7 +77,7 @@ def _transient_message() -> str:
 
 
 def _truncated_message() -> str:
-    return "The download arrived incomplete. Try again; it usually works the second time."
+    return "The download was incomplete. Try again; it usually works the second time."
 
 
 def _paused_message() -> str:

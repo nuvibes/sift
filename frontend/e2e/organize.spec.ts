@@ -147,3 +147,18 @@ test('a press on the ground of a card opens its pile, as the button does', async
 	await expect(page).toHaveURL(/\/organize\/folders$/);
 	expect(traffic.posted).toEqual([]);
 });
+
+test('a card that opens something lifts under the pointer', async ({ page }) => {
+	await serve(page);
+	await page.goto('/organize');
+	const card = cards(page).first();
+	const before = await card.evaluate(
+		(el) => getComputedStyle(el.querySelector('article, .card') ?? el).transform
+	);
+	await card.hover();
+	await expect
+		.poll(() =>
+			card.evaluate((el) => getComputedStyle(el.querySelector('article, .card') ?? el).transform)
+		)
+		.not.toBe(before);
+});

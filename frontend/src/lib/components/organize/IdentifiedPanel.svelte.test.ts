@@ -358,7 +358,7 @@ it('marks her card while the re-match a Yes asked for runs', async () => {
 it('marks everybody a Yes over a selection was about', async () => {
 	const root = await render(card({ matched: 344, waiting: 2444 }));
 	root
-		.querySelector('.person a')
+		.querySelector('.wall > li a')
 		?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, ctrlKey: true }));
 	flushSync();
 	for (let turn = 0; turn < 2; turn += 1) await tick();
@@ -374,7 +374,7 @@ it('marks everybody a Yes over a selection was about', async () => {
 
 it('hands a press on the card ground to the faces it opens', async () => {
 	const root = await render(card({ matched: 344, waiting: 2444 }));
-	const person = root.querySelector('li.person') as HTMLElement;
+	const person = root.querySelector('.wall > li') as HTMLElement;
 	const link = person.querySelector(
 		'a[href="/organize/known-people/person-1?show=suggested"]'
 	) as HTMLAnchorElement;
@@ -386,7 +386,7 @@ it('hands a press on the card ground to the faces it opens', async () => {
 		?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 }));
 
 	expect(opened).toHaveBeenCalledTimes(1);
-	expect(person.classList.contains('opens')).toBe(true);
+	expect(person.querySelector('.card')?.classList.contains('opens')).toBe(true);
 });
 
 it('asks the PERSON from the menu as well as from the lead half', async () => {
@@ -473,10 +473,12 @@ it('narrows itself not at all by how a face was named', async () => {
 describe('the one control fits the narrowest card this wall draws', () => {
 	const source = readFileSync('src/lib/components/organize/IdentifiedPanel.svelte', 'utf8');
 
-	it('draws its cards at the width the groups wall was measured for', () => {
-		// The same column `FaceGroups` uses. Two walls of one feature at two widths is how a control
+	it('draws its cards on the one Organize wall, in the one Organize card', () => {
+		// The wall `FaceGroups` uses too: two walls of one feature at two widths is how a control
 		// that fits one comes to overflow the other.
-		expect(source).toContain('minmax(15.25rem, 1fr)');
+		expect(source).toContain('<CardWall cards={paging.cards}>');
+		expect(source).toContain('<DecisionCard opens=');
+		expect(source).not.toContain('grid-template-columns');
 	});
 
 	it('keeps the refused words off the card', () => {

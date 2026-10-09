@@ -14,6 +14,7 @@
 	import type { components } from '$lib/api/schema';
 	import { Empty, Problem, Skeleton } from '$lib/components/common';
 	import Answers from '$lib/components/organize/Answers.svelte';
+	import CardWall from '$lib/components/organize/CardWall.svelte';
 	import DecisionCard from '$lib/components/organize/DecisionCard.svelte';
 	import { counted } from '$lib/entity/entity-counts';
 	import { libraryChanges, whenChanged } from '$lib/library/changes.svelte';
@@ -104,7 +105,7 @@
 		<p class="count">
 			{total === 1 ? '1 Site to check' : `${counted(total)} Sites to check`}
 		</p>
-		<ul class="wall">
+		<CardWall>
 			{#each items as one (one.id)}
 				<li>
 					<DecisionCard>
@@ -133,7 +134,7 @@
 					</DecisionCard>
 				</li>
 			{/each}
-		</ul>
+		</CardWall>
 	{/if}
 </section>
 
@@ -143,19 +144,6 @@
 		margin: 0 0 var(--space-3);
 		color: var(--sift-ink-3);
 		font: var(--text-body-sm);
-	}
-
-	.wall {
-		list-style: none;
-		margin: 0;
-		padding: 0;
-		display: grid;
-		grid-template-columns: repeat(auto-fill, minmax(min(22rem, 100%), 1fr));
-		gap: var(--space-4);
-	}
-
-	.wall > li {
-		display: grid;
 	}
 
 	.where {

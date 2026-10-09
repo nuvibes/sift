@@ -42,7 +42,7 @@ export const STALL_MS = 12_000;
 export const CONVERTED_STALL_MS = 45_000;
 
 /** What a cell says when it has given up on a file that stopped arriving. */
-export const STALLED_WORDS = 'This file stopped arriving from the library.';
+export const STALLED_WORDS = 'The library stopped sending this file.';
 
 /** The limit for one plan: a direct file's, or a converted one's. */
 export function stallLimit(plan: Pick<PlaybackPlan, 'route'> | null): number {

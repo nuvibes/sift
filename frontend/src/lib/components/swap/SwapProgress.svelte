@@ -80,7 +80,7 @@
 		{
 			heading: 'Receive',
 			verb: 'received',
-			bar: 'How much of what you receive has arrived',
+			bar: 'How much of what you receive is here',
 			direction: session.receiving,
 			waiting: session.answered ? 'Starting' : 'Waiting for what they offer'
 		}
@@ -119,7 +119,7 @@
 		<p class="figures whole"><span>{timeLeftBothWays(session)}</span></p>
 	{:else}
 		<p class="files">{files}</p>
-		<ProgressBar value={fraction} label="How much of the swap has arrived" />
+		<ProgressBar value={fraction} label="How much of the swap is done" />
 		<p class="figures">
 			<span>{bytes}</span>
 			<span>{timeLeft(session)}</span>

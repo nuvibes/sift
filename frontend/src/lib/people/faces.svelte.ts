@@ -253,11 +253,6 @@ export type ToCheckKind = 'person' | 'may_be' | 'group' | 'mismatch';
 /** One group on a `may_be` card: its faces, whether it starts ticked, and why it may be her. */
 export type MayBeGroup = ToCheckItem['groups'][number];
 
-/** How many crops one group's row on a `may_be` card holds: the server's own
- *  `tuning.FACES_PER_GROUP`, which is how many faces of each group it sends and a Yes confirms.
- *  Drawn at that width so a row of three faces keeps the height of a row of six. */
-export const FACES_ON_A_GROUP_ROW = 6;
-
 type ToCheckListing = components['schemas']['ToCheckPage'];
 
 /* What is left to check, as ONE list: a person's proposals first, then the groups by size.

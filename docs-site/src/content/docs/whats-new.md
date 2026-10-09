@@ -30,9 +30,11 @@ What's new lists what each release of Sift changes for you, newest first. To see
   year's days, and a closing card of six figures. Tick cards and save them as pictures, one file
   each; save a year's or a month's deck as a video, with the cards' own motion; keep the year's
   lists as Collections with one press, never created on their own.
-- **Insights draws every figure as a card** with its definition behind a small mark, each block's
-  sentence under its figures, Alongside last with its two figures beside each sentence, and
-  "See this week as cards" beside Stats.
+- **Insights is a board of tiles that fills the window**: the period's headline, the time viewed
+  with its bars, the top People as faces, the top file, the Sites as marks, the days and the counts
+  on the first screen, then the rest by family, each in its colour; every tile opens its own table
+  on Stats, which has an index, a panel per table with a small chart, and a way back. "See today's
+  recap" (this week's, this month's, this year's) beside Stats, on the tabs' line.
 - **The popout player's Repeat and Shuffle are in its drawer**, beside Randomize, as on Theater's
   bar; the row keeps Previous, Play and Next.
 - **Faces: a strength bar that is one rate.** How well Sift recognizes somebody is the share of
@@ -81,6 +83,10 @@ What's new lists what each release of Sift changes for you, newest first. To see
 - **A folded History line costs its presses' totals, not their acts.**
 - **The release script asks again after a wrong signing password** and signs an already built
   release with `--no-build`.
+- **A file is imported, never "arrived"**: every screen, folder setting, help line and the docs say
+  imported.
+- **Recap cards open with a short headline and a line in a warmer voice** over their figure,
+  compared only with your own usual; the plain sentence stays underneath.
 
 ## 0.2.3 - 2026-10-08
 

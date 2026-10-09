@@ -100,15 +100,15 @@ it("draws the server's folder words for a key and the help under it", async () =
 	await open({
 		folders: [{ root_id: 'root-1', name: 'Holiday', answers: {} }],
 		keys: ['music.fingerprint'],
-		labels: { 'music.fingerprint': 'Fingerprint music as files arrive' },
+		labels: { 'music.fingerprint': 'Fingerprint music as files are imported' },
 		helps: {
 			'music.fingerprint':
-				"Reads the file's sound once as it arrives, on this device, when Generate runs for this folder."
+				"Reads the file's sound once as it's imported, on this device, when Generate runs for this folder."
 		}
 	});
 
 	const text = (host.textContent ?? '').replace(/\s+/g, ' ');
-	expect(text).toContain('Fingerprint music as files arrive');
+	expect(text).toContain('Fingerprint music as files are imported');
 	expect(text).toContain('when Generate runs for this folder.');
 	// And a folder that has said nothing follows the library, which is off out of the box.
 	expect(text).toContain('Follow the default');

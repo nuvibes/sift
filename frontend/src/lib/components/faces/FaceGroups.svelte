@@ -11,6 +11,7 @@
 	import { pageOf } from '$lib/entity/related.svelte';
 	import { thing } from '$lib/components/common/toast-pieces';
 	import { untrack } from 'svelte';
+	import type { Attachment } from 'svelte/attachments';
 	/*
 	 * The piles of faces nobody has named, and the piles somebody discarded.
 	 *
@@ -34,6 +35,7 @@
 	import { page as address } from '$app/state';
 	import { anchorIn, rememberAnchor } from '$lib/grid/anchor';
 	import { CardPaging } from '$lib/grid/cards.svelte';
+	import CardWall from '$lib/components/organize/CardWall.svelte';
 	import DecisionCard from '$lib/components/organize/DecisionCard.svelte';
 	import Answers, { type Answer } from '$lib/components/organize/Answers.svelte';
 	import FaceCovers from '$lib/components/faces/FaceCovers.svelte';
@@ -107,9 +109,19 @@
 		 * strip of faces), and the group's own queue answers then.
 		 */
 		tab?: string;
+		/** The host's paging attachment, for a supplied list: the host pages, so the host measures. */
+		measure?: Attachment<HTMLElement>;
 	}
 
-	let { status, onpaging, supplied = null, onreload, quiet = false, tab }: Props = $props();
+	let {
+		status,
+		onpaging,
+		supplied = null,
+		onreload,
+		quiet = false,
+		tab,
+		measure
+	}: Props = $props();
 
 	/** Whether the list is somebody else's. One reading, so no branch can disagree with another. */
 	const handed = $derived(supplied !== null);
@@ -665,7 +677,7 @@
 			: 'Nothing has been discarded. A group you put here stays listed and can be restored.'}
 	</Empty>
 {:else}
-	<ul class="groups" {@attach paging.cards}>
+	<CardWall cards={handed ? measure : paging.cards}>
 		{#each groups as group (group.id)}
 			{@const offer = status === 'open' ? offers.get(group.id) : undefined}
 			{@const made = madeHere.get(group.id)}
@@ -801,7 +813,7 @@
 				</ContextMenu>
 			</li>
 		{/each}
-	</ul>
+	</CardWall>
 {/if}
 
 <ConfirmDialog
@@ -840,32 +852,11 @@
 />
 
 <style>
-	.groups {
-		display: grid;
-		/*
-		 * Wide enough for four crops (4 x 3.25rem + 3 gaps of 0.25rem, plus the card's 0.75rem
-		 * inset either side = 15.25rem). The crops grow to fill whatever width the column ends up
-		 * with (`FaceCovers`), so a wider column means wider crops or a fifth one, never a strip of
-		 * ground.
-		 */
-		grid-template-columns: repeat(auto-fill, minmax(15.25rem, 1fr));
-		gap: var(--space-3);
-		margin: 0;
-		padding: 0;
-		list-style: none;
-	}
-
 	/* The trigger takes no box of its own: the card underneath is what somebody sees and what the
 	   wall lays out, and a wrapper with a size would put a second block between the two. The same
 	   rule, and the same reason, as `DataRow`'s `.row-trigger`. Named for this file alone, as every
 	   caller of `ContextMenu` names its own trigger, so a rule here dresses no other file's. */
 	:global(.group-trigger) {
 		display: contents;
-	}
-
-	/* The card fills its row, so the question and answers at its foot share one line across the
-	   row however many crops each card holds. */
-	.groups > li {
-		display: grid;
 	}
 </style>

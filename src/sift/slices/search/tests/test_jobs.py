@@ -195,7 +195,7 @@ def test_a_checkout_says_the_sentence_without_a_version_and_an_install_names_its
 @pytest.mark.unit
 def test_the_catch_up_and_the_rebuild_are_not_described_the_same_way() -> None:
     """Two different passes wear one job type, and a person watching should be told which."""
-    assert "Indexing what has arrived" in _what_it_is_doing(5, catching_up=True)
+    assert "Indexing what was imported" in _what_it_is_doing(5, catching_up=True)
     assert "Rebuilding the search index" in _what_it_is_doing(5, catching_up=False)
 
 

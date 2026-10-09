@@ -41,7 +41,7 @@ export const COPY = {
 		/** The press beside that row: the row already names what it downloads. */
 		againPress: 'Download',
 		againHelp: 'The models are on this device. Download them again only if a file is damaged.',
-		size: 'The download is a few hundred megabytes. You can leave this screen and follow or cancel it in Activity. A canceled download keeps what arrived, so starting again downloads only the rest.',
+		size: 'The download is a few hundred megabytes. You can leave this screen and follow or cancel it in Activity. A canceled download keeps what it already has, so starting again downloads only the rest.',
 		couldNotStart:
 			"Couldn't start the download. Check that this device is connected to the internet."
 	},

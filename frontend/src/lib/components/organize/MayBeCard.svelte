@@ -30,20 +30,21 @@
 	 * ## Why a group is on the card, said once
 	 *
 	 * The reasons are about the card as much as about each group (her folder, a stash-box's
-	 * pictures), so each is said once above the groups; a group row carries only its own numbers.
+	 * pictures), so each is said once, under the question; a group carries only its own numbers.
+	 *
+	 * ## One height with the question cards
+	 *
+	 * The groups share a question card's strip of two rows of six, a block per group, and each
+	 * tick stands under its block.
 	 */
 	import { goto } from '$app/navigation';
 
 	import FaceCovers from '$lib/components/faces/FaceCovers.svelte';
 	import Answers from '$lib/components/organize/Answers.svelte';
 	import DecisionCard from '$lib/components/organize/DecisionCard.svelte';
-	import { Checkbox, Pressable } from '$lib/components/common';
+	import { Checkbox, Pressable, Tooltip } from '$lib/components/common';
 	import { counted } from '$lib/entity/entity-counts';
-	import {
-		FACES_ON_A_GROUP_ROW,
-		type MayBeGroup,
-		type ToCheckItem
-	} from '$lib/people/faces.svelte';
+	import { CROPS_ON_A_CARD, type MayBeGroup, type ToCheckItem } from '$lib/people/faces.svelte';
 
 	interface Props {
 		/** The `may_be` card: the person is its id and name, the groups are `groups`. */
@@ -80,6 +81,18 @@
 	   come up as these are answered. Yes and No are about the groups drawn, never the unseen. */
 	const shown = $derived(card.groups.slice(0, GROUPS_ON_A_CARD));
 	const unseen = $derived(card.groups.length - shown.length);
+
+	/* The strip's six columns shared between the groups drawn, and the cells each block holds. */
+	const across = $derived(shown.length === 3 ? 2 : shown.length === 2 ? 3 : 6);
+	const cells = $derived(CROPS_ON_A_CARD / Math.max(1, shown.length));
+
+	/** What a group's block draws, so what a Yes confirms: one cell is the counter's. */
+	function drawn(group: MayBeGroup) {
+		return group.faces.slice(
+			0,
+			Math.max(group.size, group.faces.length) > cells ? cells - 1 : cells
+		);
+	}
 
 	const ticked = $derived(shown.filter((group) => chosen(group)));
 
@@ -155,11 +168,22 @@
 		return said;
 	});
 
+	/* The words under the question: what to do with the ticks, then why the groups are here. */
+	const told = $derived([guide, ...reasons].join(' '));
+
 	/* A group's own share of a folder that proposed it: "41 of its 47 files are in that folder". */
 	function inFolder(group: MayBeGroup): string | null {
 		const reason = group.reasons.find((one) => one.kind === 'folder' && one.folder_name);
 		if (!reason) return null;
 		return `${counted(reason.in_folder ?? 0)} of its ${counted(reason.group_files ?? 0)} files are in ${reason.folder_name}`;
+	}
+
+	/* A tick's whole line, where its cell cuts it short, with the group's share of her folder. */
+	function tickSays(group: MayBeGroup): string {
+		const share = likeness(group);
+		return [`${faces(group.size)}${share ? ` \u00b7 ${share}` : ''}`, inFolder(group)]
+			.filter(Boolean)
+			.join('. ');
 	}
 
 	/* The group's own review, face by face: who it may be, and which group. */
@@ -170,22 +194,29 @@
 	function yes(): void {
 		onyes(
 			ticked.map((group) => group.pile_id),
-			ticked.flatMap((group) => group.faces.map((face) => face.track_id))
+			ticked.flatMap((group) => drawn(group).map((face) => face.track_id))
 		);
 	}
 </script>
 
-<DecisionCard>
-	<!-- Why these groups are here, said once for the card rather than under every group. -->
-	{#each reasons as sentence (sentence)}
-		<p class="why">{sentence}</p>
-	{/each}
-
-	<ul class="groups">
+<DecisionCard opens={herInput} detailLines={2}>
+	<!-- Each block opens its group's review, face by face. -->
+	<div class="strips" class:pair={shown.length === 2} class:three={shown.length === 3}>
 		{#each shown as group (group.pile_id)}
-			<li class="group">
-				<!-- The whole row is the control and the box only reports it: a 16-pixel target is a
-				     thing to aim at. The same shape the tick rows on the dialogs wear. -->
+			<FaceCovers
+				faces={drawn(group)}
+				total={group.size}
+				most={cells}
+				{across}
+				href={reviewHref(group)}
+				label={`Review the ${faces(group.size)} that may be ${name}, face by face`}
+			/>
+		{/each}
+	</div>
+	<!-- The whole cell is the control: a 16-pixel box is a thing to aim at. -->
+	<div class="ticks" class:pair={shown.length === 2} class:three={shown.length === 3}>
+		{#each shown as group (group.pile_id)}
+			<Tooltip label={tickSays(group)} stretch shrinks>
 				<Pressable
 					class="tick"
 					feedback="wash"
@@ -195,85 +226,88 @@
 					onclick={() => toggle(group)}
 				>
 					<Checkbox state={chosen(group) ? 'on' : 'off'} mark />
-					<span
+					<span class="count"
 						>{faces(group.size)}{#if likeness(group)}<span class="sure"
 								>&nbsp;&middot; {likeness(group)}</span
 							>{/if}</span
 					>
 				</Pressable>
-				<!-- The crops open this group's own review, face by face, where the question "is
-				     this her?" is asked of each face. These are the faces a Yes confirms, so every
-				     one sent is drawn. -->
-				<FaceCovers
-					faces={group.faces}
-					most={FACES_ON_A_GROUP_ROW}
-					href={reviewHref(group)}
-					label={`Review the ${faces(group.size)} that may be ${name}, face by face`}
-				/>
-				{#if inFolder(group)}
-					<p class="fact">{inFolder(group)}</p>
-				{/if}
-			</li>
+			</Tooltip>
 		{/each}
-	</ul>
-	{#if unseen > 0}
-		<a class="unseen" href={herInput}>and {unseen.toLocaleString()} more</a>
-	{/if}
+	</div>
 
 	{#snippet question()}{asking}{/snippet}
 	<!-- The words fit the count: one group has no order to be in and no "any" to choose among. -->
-	{#snippet detail()}{guide}{/snippet}
+	{#snippet detail()}<Tooltip label={told}><span class="told">{told}</span></Tooltip>{/snippet}
 	<!-- The affirmative leads and the rest sit behind the chevron, the shape every question here
 	     wears: the No about the whole card, ticked or not (none of these groups is them), and the
 	     closest group's review. -->
 	{#snippet answers()}
-		<Answers
-			yes={{ label: 'Yes', icon: 'check', run: yes, disabled: ticked.length === 0 }}
-			rest={[
-				{
-					label: 'No',
-					icon: 'close',
-					run: () => onno(shown.map((group) => group.pile_id))
-				},
-				{
-					label: 'Review each face',
-					icon: 'arrow_forward',
-					run: () => void goto(reviewHref(card.groups[0]))
-				}
-			]}
-			about={name}
-			busy={answering}
-			disabled={busy}
-		/>
+		<div class="answer-line">
+			<Answers
+				yes={{ label: 'Yes', icon: 'check', run: yes, disabled: ticked.length === 0 }}
+				rest={[
+					{
+						label: 'No',
+						icon: 'close',
+						run: () => onno(shown.map((group) => group.pile_id))
+					},
+					{
+						label: 'Review each face',
+						icon: 'arrow_forward',
+						run: () => void goto(reviewHref(card.groups[0]))
+					}
+				]}
+				about={name}
+				busy={answering}
+				disabled={busy}
+			/>
+			{#if unseen > 0}
+				<a class="unseen" href={herInput}>and {unseen.toLocaleString()} more</a>
+			{/if}
+		</div>
 	{/snippet}
 </DecisionCard>
 
 <style>
-	.groups {
-		list-style: none;
-		margin: 0;
-		padding: 0;
-		display: flex;
-		flex-direction: column;
-		gap: var(--space-2);
-	}
-
-	.group {
-		display: flex;
-		flex-direction: column;
+	/* The strip's six columns, shared: the gap between two blocks is the gap between two crops. */
+	.strips,
+	.ticks {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr);
 		gap: var(--space-1);
-		min-inline-size: 0;
 	}
 
-	.group :global(.tick) {
+	.strips.pair,
+	.ticks.pair {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+
+	.strips.three,
+	.ticks.three {
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+	}
+
+	.ticks {
+		min-block-size: var(--control-height-sm);
+	}
+
+	.ticks :global(.tick) {
 		display: flex;
 		align-items: center;
-		gap: var(--space-3);
-		inline-size: 100%;
-		padding: var(--space-1) var(--space-2);
+		gap: var(--space-2);
+		min-inline-size: 0;
+		padding: var(--space-1);
 		text-align: start;
 		font: var(--text-body-sm);
 		color: var(--sift-ink-2);
+	}
+
+	.count {
+		min-inline-size: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 
 	/* How close the group comes: a shade nearer the ink than the count, the one number worth
@@ -282,17 +316,23 @@
 		color: var(--sift-ink);
 	}
 
-	.unseen {
-		align-self: start;
-		font: var(--text-body-sm);
-		color: var(--sift-ink-2);
+	/* Two lines, the room a question card's detail keeps; the whole of it is the tooltip. */
+	.told {
+		display: -webkit-box;
+		-webkit-box-orient: vertical;
+		-webkit-line-clamp: 2;
+		line-clamp: 2;
+		overflow: hidden;
 	}
 
-	.why,
-	.fact {
-		margin: 0;
+	.answer-line {
+		display: flex;
+		align-items: center;
+		gap: var(--space-3);
+	}
+
+	.unseen {
 		font: var(--text-body-sm);
-		color: var(--sift-ink-3);
-		overflow-wrap: anywhere;
+		color: var(--sift-ink-2);
 	}
 </style>

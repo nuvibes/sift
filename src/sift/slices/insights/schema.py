@@ -72,7 +72,7 @@ from sift.kernel.vocabulary import DEPARTURES_KEPT, VIA_UPDATE, Subject
 log = get_logger(__name__)
 
 COMPONENT = "insights"
-VERSION = 7
+VERSION = 8
 
 _CREATE_DAYS = """
 CREATE TABLE IF NOT EXISTS insight_days (
@@ -105,6 +105,7 @@ CREATE TABLE IF NOT EXISTS recaps (
   seen_at  INTEGER,
   body     TEXT NOT NULL,
   metrics_version INTEGER NOT NULL DEFAULT 0,
+  left_out TEXT NOT NULL DEFAULT '[]',
   UNIQUE (user_id, period)
 )
 """
@@ -326,6 +327,11 @@ _ADD_V7 = (
         "ALTER TABLE recaps ADD COLUMN metrics_version INTEGER NOT NULL DEFAULT 0",
     ),
 )
+
+# --- version 8: what a reader took out of a recap before sharing it ------------------------------
+
+#: The ids of the people and files the reader left out, as a JSON list; none for every recap so far.
+_ADD_LEFT_OUT = "ALTER TABLE recaps ADD COLUMN left_out TEXT NOT NULL DEFAULT '[]'"
 
 #: The recaps made before this step were made by the statements it replaces.
 _RECAPS_MADE_BEFORE = "UPDATE recaps SET metrics_version = 6 WHERE metrics_version = 0"
@@ -640,6 +646,8 @@ async def initialize(connection: Connection, on_disk: int) -> None:
         for statement in _REDO:
             await connection.execute(statement)
         await connection.execute(_FORGET_PROGRESS)
+    if on_disk < 8 and not await column_exists(connection, "recaps", "left_out"):
+        await connection.execute(_ADD_LEFT_OUT)
 
 
 # `users` comes from the identity component, so it is built before these keys name it. The trigger

@@ -445,7 +445,7 @@ describe('a block below its floor', () => {
 describe('Alongside', () => {
 	const SAID = [
 		'Over 9 weeks, the weeks you viewed Theater most were the weeks you starred the most files.',
-		'Over 9 weeks, the weeks you viewed the most were the weeks the most files arrived.'
+		'Over 9 weeks, the weeks you viewed the most were the weeks the most files were imported.'
 	];
 
 	function alongside(figures: Figure[]): Block {
@@ -464,7 +464,7 @@ describe('Alongside', () => {
 				figure('In Theater', 9 * HOUR, 'ms'),
 				figure('Starred', 40, 'count'),
 				figure('Viewed', 30 * HOUR, 'ms'),
-				figure('Files arrived', 900, 'count')
+				figure('Files imported', 900, 'count')
 			])
 		);
 		const rows = [...block.querySelectorAll('.side-by-side')];
@@ -473,7 +473,7 @@ describe('Alongside', () => {
 			rows.map((row) => [...row.querySelectorAll('.figure .label')].map((label) => words(label)))
 		).toEqual([
 			['In Theater', 'Starred'],
-			['Viewed', 'Files arrived']
+			['Viewed', 'Files imported']
 		]);
 	});
 

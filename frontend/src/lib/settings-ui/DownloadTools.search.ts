@@ -32,7 +32,7 @@ export const COPY = {
 	cannotCheck: "Couldn't check. Try again in a moment.",
 	unreachable: "Couldn't reach yt-dlp's release list. Try again later.",
 	newer: (version: string) =>
-		`yt-dlp ${version} is out, newer than this one. It arrives with the next Sift update.`,
+		`yt-dlp ${version} is out, newer than this one. It comes with the next Sift update.`,
 	newest: (version: string) => `This is the newest yt-dlp (${version}).`
 } as const;
 

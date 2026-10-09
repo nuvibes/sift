@@ -22,6 +22,10 @@ pytestmark = [pytest.mark.integration]
 #: Room for a read that seeks a few more rows; a rewrite of one file's index is far more.
 _SLACK_STEPS = 60
 
+#: Each file the rename's act names is one row of its press's totals: a seek and an upsert (46
+#: steps), the same at any library size.
+_TOTALS_STEPS_A_FILE = 50
+
 
 @pytest.fixture
 def hearing() -> Iterator[list[StatementRun]]:
@@ -75,4 +79,5 @@ def test_a_rename_costs_the_same_on_three_files_as_on_one_and_never_writes_the_i
         assert "assets_fts" not in run.sql, f"the rename rewrote the search index: {run.name}"
     assert len(on_three) == len(on_one), "the rename's statements grew with its files"
     one, three = sum(run.steps for run in on_one), sum(run.steps for run in on_three)
-    assert three - one <= _SLACK_STEPS, f"the rename's work grew with its files: {one} to {three}"
+    allowed = _SLACK_STEPS + 2 * _TOTALS_STEPS_A_FILE
+    assert three - one <= allowed, f"the rename's work grew with its files: {one} to {three}"

@@ -241,6 +241,14 @@ def test_a_collection_is_never_moved_or_rearranged(client: TestClient, library: 
 def test_a_cover_has_to_be_one_of_the_items(client: TestClient, library: Library) -> None:
     """A cover pointing outside the collection is a membership nothing else in the model knows."""
     sign_in(client)
+    # A default cover is a picture, and the library's files are videos.
+    write(
+        db_path(client),
+        [
+            ("UPDATE assets SET media_type = 'image' WHERE id = ?", (one,))
+            for one in library.all_ids
+        ],
+    )
     collection_id = make_collection(client, "Mixtape")
     edit_items(client, collection_id, [library.first])
 
@@ -264,6 +272,14 @@ def test_taking_out_the_item_a_cover_names_clears_the_cover(
     default every empty cover takes (`kernel/access/default_covers.py`).
     """
     sign_in(client)
+    # A default cover is a picture, and the library's files are videos.
+    write(
+        db_path(client),
+        [
+            ("UPDATE assets SET media_type = 'image' WHERE id = ?", (one,))
+            for one in library.all_ids
+        ],
+    )
     collection_id = make_collection(client, "Mixtape")
     edit_items(client, collection_id, library.all_ids)
     client.put(f"/api/collections/{collection_id}/cover", json={"asset_id": library.second})

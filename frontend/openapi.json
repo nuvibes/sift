@@ -6436,7 +6436,7 @@
                 "type": "null"
               }
             ],
-            "description": "How many files wait for their task's own run, in one sentence said after the time left, or null: while only arriving files run, the time left is theirs alone.",
+            "description": "How many files wait for their task's own run, in one sentence said after the time left, or null: while only files being imported run, the time left is theirs alone.",
             "title": "For Task"
           },
           "label": {
@@ -8127,7 +8127,7 @@
             "additionalProperties": {
               "type": "string"
             },
-            "description": "What each of `keys` is called on screen, by key. A key retired into a task's When (a folder's answer is still stored under it) is called by what a folder's answer does, which is only what happens as a file arrives.",
+            "description": "What each of `keys` is called on screen, by key. A key retired into a task's When (a folder's answer is still stored under it) is called by what a folder's answer does, which is only what happens as a file is imported.",
             "title": "Labels",
             "type": "object"
           }
@@ -16993,6 +16993,17 @@
       "RecapCard": {
         "description": "One card, as the reader may be shown it now.",
         "properties": {
+          "accent_hue": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Accent Hue"
+          },
           "calendar": {
             "anyOf": [
               {
@@ -17012,6 +17023,13 @@
                 "type": "null"
               }
             ]
+          },
+          "context": {
+            "items": {
+              "$ref": "#/components/schemas/HistoryPiece"
+            },
+            "title": "Context",
+            "type": "array"
           },
           "cover": {
             "anyOf": [
@@ -17039,6 +17057,13 @@
               "$ref": "#/components/schemas/Figure"
             },
             "title": "Figures",
+            "type": "array"
+          },
+          "headline": {
+            "items": {
+              "$ref": "#/components/schemas/HistoryPiece"
+            },
+            "title": "Headline",
             "type": "array"
           },
           "hidden": {
@@ -17102,12 +17127,24 @@
             },
             "title": "Statement",
             "type": "array"
+          },
+          "wall": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Wall"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
           "id",
           "kind",
           "statement",
+          "headline",
+          "context",
           "figure",
           "cover",
           "rows",
@@ -17115,7 +17152,9 @@
           "calendar",
           "figures",
           "hidden_things",
-          "hidden"
+          "hidden",
+          "accent_hue",
+          "wall"
         ],
         "title": "RecapCard",
         "type": "object"
@@ -17170,6 +17209,25 @@
           "cards"
         ],
         "title": "RecapHead",
+        "type": "object"
+      },
+      "RecapLeftOut": {
+        "description": "The people and files a reader takes out of their recap before sharing it.",
+        "properties": {
+          "ids": {
+            "items": {
+              "maxLength": 64,
+              "type": "string"
+            },
+            "maxItems": 500,
+            "title": "Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "ids"
+        ],
+        "title": "RecapLeftOut",
         "type": "object"
       },
       "RecapList": {
@@ -26826,6 +26884,68 @@
           "exportable"
         ],
         "title": "WaitingFingerprints",
+        "type": "object"
+      },
+      "Wall": {
+        "description": "A Saved Layout's grid, for the card that draws the wall in miniature.",
+        "properties": {
+          "cols": {
+            "minimum": 1.0,
+            "title": "Cols",
+            "type": "integer"
+          },
+          "rows": {
+            "minimum": 1.0,
+            "title": "Rows",
+            "type": "integer"
+          },
+          "slots": {
+            "items": {
+              "$ref": "#/components/schemas/WallSlot"
+            },
+            "title": "Slots",
+            "type": "array"
+          }
+        },
+        "required": [
+          "rows",
+          "cols",
+          "slots"
+        ],
+        "title": "Wall",
+        "type": "object"
+      },
+      "WallSlot": {
+        "description": "Where one cell of a Theater wall sits: its top-left track and how many it covers, from 0.",
+        "properties": {
+          "col": {
+            "minimum": 0.0,
+            "title": "Col",
+            "type": "integer"
+          },
+          "col_span": {
+            "minimum": 1.0,
+            "title": "Col Span",
+            "type": "integer"
+          },
+          "row": {
+            "minimum": 0.0,
+            "title": "Row",
+            "type": "integer"
+          },
+          "row_span": {
+            "minimum": 1.0,
+            "title": "Row Span",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "row",
+          "col",
+          "row_span",
+          "col_span"
+        ],
+        "title": "WallSlot",
         "type": "object"
       },
       "WatermarkStatus": {
@@ -37793,6 +37913,59 @@
           }
         },
         "summary": "Keep Sheet",
+        "tags": [
+          "insights"
+        ]
+      }
+    },
+    "/api/insights/recaps/{recap_id}/left-out": {
+      "put": {
+        "description": "Take people and files out of a recap, or put them back: the cards naming one are drawn\nagain without it, for the deck and its pictures alike. Answers the recap drawn again.",
+        "operationId": "leave_out_api_insights_recaps__recap_id__left_out_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "recap_id",
+            "required": true,
+            "schema": {
+              "title": "Recap Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecapLeftOut"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Recap"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Leave Out",
         "tags": [
           "insights"
         ]

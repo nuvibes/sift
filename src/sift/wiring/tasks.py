@@ -66,38 +66,38 @@ def retire_the_switches_into_whens() -> None:
         importing.GENERATE_KEY,
         ("generate",),
         why="Generate's When",
-        folder_label="Generate as files arrive",
-        folder_help=f"Generate works on each file as it arrives in this folder. {_BY_HAND}",
+        folder_label="Generate as files are imported",
+        folder_help=f"Generate works on each file as it's imported from this folder. {_BY_HAND}",
     )
     retire_into_whens(
         importing.IDENTIFY_KEY,
         ("faces", "smart-search", "watermarks"),
         why="the Identify group's master, over the three tasks it held",
-        folder_label="Identify as files arrive",
+        folder_label="Identify as files are imported",
         folder_help=(
-            "Faces, Smart Search and watermarks are read for each file as it arrives in this "
-            f"folder. {_BY_HAND}"
+            "Faces, Smart Search and watermarks are read for each file as it's imported from "
+            f"this folder. {_BY_HAND}"
         ),
     )
     retire_into_whens(
         performance.SCAN_FACES_ON_IMPORT_KEY,
         ("faces",),
         why="recognition's When",
-        folder_label="Identify faces as files arrive",
+        folder_label="Identify faces as files are imported",
         folder_help=_BY_HAND,
     )
     retire_into_whens(
         semantic.DESCRIBE_ON_IMPORT_KEY,
         ("smart-search",),
         why="Smart Search's When",
-        folder_label="Describe files for Smart Search as they arrive",
+        folder_label="Describe files for Smart Search as they're imported",
         folder_help=_BY_HAND,
     )
     retire_into_whens(
         watermarks.READ_ON_IMPORT_KEY,
         ("watermarks",),
         why="the watermarks' When",
-        folder_label="Read watermarks as files arrive",
+        folder_label="Read watermarks as files are imported",
         folder_help=_BY_HAND,
     )
     # Generate's arrival answer gates the music fingerprint too (`wiring.imports`, the gate map), so
@@ -106,9 +106,9 @@ def retire_the_switches_into_whens() -> None:
         music.FINGERPRINT_KEY,
         ("music",),
         why="the music fingerprints' When",
-        folder_label="Fingerprint music as files arrive",
+        folder_label="Fingerprint music as files are imported",
         folder_help=(
-            "Reads the file's sound once as it arrives, on this device, when Generate runs for "
+            "Reads the file's sound once as it's imported, on this device, when Generate runs for "
             "this folder."
         ),
     )

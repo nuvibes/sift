@@ -61,7 +61,7 @@ MEASURING_STORAGE: Final = f"{ONE_STORAGE} Under a minute."
 
 #: A first folder's run measures only what its scan needs, and its files arrive after about this.
 FIRST_PART: Final = "first_part"
-FIRST: Final = "Benchmarking this device and the storage your new folder is on, so its files can start arriving."
+FIRST: Final = "Benchmarking this device and the storage your new folder is on, so Sift can start importing its files."
 MEASURING_FIRST: Final = f"{FIRST} About a minute."
 WHOLE_LATER: Final = (
     "The full benchmark runs by itself once Sift has nothing else to do and nobody's using this "
@@ -77,7 +77,7 @@ AWAY_SECONDS: Final = 600.0
 #: How often Sift looks for that moment, and for a reason to stop the run it started.
 LOOK_SECONDS: Final = 5.0
 
-FOLDER_ADDED: Final = "Sift stopped the full benchmark so your new folder's files can arrive."
+FOLDER_ADDED: Final = "Sift stopped the full benchmark so your new folder's files can be imported."
 ASKED_FOR: Final = "Sift stopped the full benchmark so the task you asked for can run."
 IN_USE: Final = "Sift stopped the full benchmark because this device is in use."
 PLAYING: Final = "Sift stopped the full benchmark because a video is playing in Sift."

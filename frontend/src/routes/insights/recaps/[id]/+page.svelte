@@ -30,7 +30,15 @@
 	 * (`savable`). Under that, Save all as pictures does the same for every savable card still
 	 * ticked, one file each, and a year's or a month's deck can be saved as a video
 	 * (`deck-video.ts`). Each card is laid out for that on a stage nobody sees, one at a time,
-	 * and painted from there. The year's closing card offers Keep as Collections.
+	 * and painted from there. Square pictures lays each out as the board's square tile instead,
+	 * the same card, for a picture 1080 square. The year's closing card offers Keep as
+	 * Collections. Every card stands on the deck's own pictures (`groundOf`), on screen, in a
+	 * picture and in the video alike.
+	 *
+	 * Leave out, before a picture is taken: the people and files the card in view names, any of
+	 * them ticked to be taken out of this recap (`PUT .../left-out`, the whole list each time, so
+	 * one unticked is put back). The deck is read again and every card naming one is drawn
+	 * without it, on screen and in every picture after.
 	 *
 	 * ## What is decided here, and what is not
 	 *
@@ -49,7 +57,7 @@
 	import { tick, untrack } from 'svelte';
 
 	import { page } from '$app/state';
-	import { isMissing } from '$lib/api/client';
+	import { api, isMissing } from '$lib/api/client';
 	import {
 		BackButton,
 		Button,
@@ -83,6 +91,7 @@
 	import { toasts } from '$lib/shell/toasts.svelte';
 	import type { Crumb } from '$lib/components/common';
 	import RecapCard, { savable } from '$lib/components/insights/RecapCard.svelte';
+	import { groundOf } from '$lib/components/insights/cards/family';
 	import { cardPicture, pictureName } from '$lib/components/insights/share-card';
 	import { deliver } from '$lib/player/snapshot';
 	import { INSIGHTS_WORDS } from '$lib/components/insights/words';
@@ -132,18 +141,31 @@
 
 	const place = (index: number) => (recap ? `${index + 1} of ${recap.cards.length}` : '');
 
+	/* The deck's own pictures, the ground every card of it stands on. */
+	const ground = $derived(recap ? groundOf(recap.cards) : []);
+
+	/* Pictures 1080 square rather than 1080 by 1920: each card laid out as the board's square tile. */
+	let square = $state(false);
+	const nameOf = (period: string, index: number) =>
+		square
+			? pictureName(period, index).replace(/\.png$/, '-square.png')
+			: pictureName(period, index);
+
 	let list = $state<HTMLElement | null>(null);
 	let controls = $state<HTMLElement | null>(null);
 
 	async function take(): Promise<void> {
 		const card = recap?.cards[at];
-		const drawn = list?.querySelector<HTMLElement>('li:not([hidden]) .recap-card');
-		if (!recap || !card || !savable(card) || !drawn || taking) return;
+		if (!recap || !card || !savable(card) || taking) return;
 		taking = true;
 		try {
-			const picture = await cardPicture(drawn);
-			if (picture) await deliver(picture, pictureName(recap.period, at));
+			const drawn = square
+				? await laidOut(at)
+				: list?.querySelector<HTMLElement>('li:not([hidden]) .recap-card');
+			const picture = drawn ? await cardPicture(drawn) : null;
+			if (picture) await deliver(picture, nameOf(recap.period, at));
 		} finally {
+			staged = null;
 			taking = false;
 		}
 	}
@@ -153,11 +175,26 @@
 	let stage = $state<HTMLElement | null>(null);
 	let staged = $state<number | null>(null);
 
+	/* The longest a staged card waits for its pictures before it is painted without them. */
+	const STAGE_WAIT_MS = 4000;
+
 	async function laidOut(index: number): Promise<HTMLElement | null> {
 		staged = index;
 		await tick();
 		await document.fonts?.ready;
-		return stage?.querySelector<HTMLElement>('.recap-card') ?? null;
+		const card = stage?.querySelector<HTMLElement>('.recap-card') ?? null;
+		/* A picture is put in once it has loaded (an `Avatar` waits on its own ground until then), a
+		   beat after: painted before, it would be missing. A second at most. */
+		for (let frame = 0; frame < 60 && card?.querySelector('.waiting'); frame += 1)
+			await new Promise((next) => requestAnimationFrame(() => next(null)));
+		const pictures = [...(card?.querySelectorAll('img') ?? [])];
+		/* Nobody scrolls to the stage, so a picture waiting to be scrolled to would never load and
+		   its painting would wait for ever: here every picture loads now. */
+		for (const one of pictures) one.loading = 'eager';
+		const settled = Promise.all(pictures.map((one) => one.decode?.().catch(() => undefined)));
+		await Promise.race([settled, new Promise((late) => setTimeout(late, STAGE_WAIT_MS))]);
+		await tick();
+		return card;
 	}
 
 	/* The set: every card that may be saved, less the ones the reader unticked. */
@@ -190,7 +227,7 @@
 				const picture = drawn ? await cardPicture(drawn) : null;
 				// Untyped, so the clipboard (which holds one picture) refuses it and each lands
 				// as a file of its own.
-				if (picture) await deliver(new Blob([picture]), pictureName(recap.period, index));
+				if (picture) await deliver(new Blob([picture]), nameOf(recap.period, index));
 				takingAll = { done: n + 1, total: picked.length };
 			}
 		} finally {
@@ -205,13 +242,13 @@
 
 	async function film(): Promise<void> {
 		if (!recap || filming) return;
-		const ground = getComputedStyle(document.body).backgroundColor;
+		const page = getComputedStyle(document.body).backgroundColor;
 		filming = { done: 0, total: savables.length, encoding: false };
 		try {
 			const frames: Held[] = [];
 			for (const index of savables) {
 				const drawn = await laidOut(index);
-				const held = drawn ? await filmCard(drawn, recap.cards[index], ground) : null;
+				const held = drawn ? await filmCard(drawn, recap.cards[index], page) : null;
 				if (held) frames.push(...held);
 				filming = { ...filming, done: filming.done + 1 };
 			}
@@ -224,6 +261,53 @@
 		} finally {
 			staged = null;
 			filming = null;
+		}
+	}
+
+	/* LEAVE OUT: what the card in view names that may be taken out of the recap, and what is out. */
+	type Named = { id: string; text: string };
+	const LEAVABLE = new Set(['person', 'asset']);
+	let takenOut = $state<string[]>([]);
+	let leaving = $state<Named[] | null>(null);
+	let leaveTicks = $state<Set<string>>(new Set());
+
+	function namedOn(index: number): Named[] {
+		const card = recap?.cards[index];
+		if (!card || card.hidden) return [];
+		const pieces = [...card.statement, ...(card.rows ?? []).map((row) => row.piece)];
+		const found = new Map<string, Named>();
+		for (const piece of pieces) {
+			if (piece.id && piece.kind && LEAVABLE.has(piece.kind) && !piece.gone)
+				found.set(piece.id, { id: piece.id, text: piece.text });
+		}
+		return [...found.values()];
+	}
+
+	function openLeave(): void {
+		leaving = namedOn(at);
+		leaveTicks = new Set(takenOut.filter((one) => leaving?.some((named) => named.id === one)));
+	}
+
+	function leaveTick(key: string, on: boolean): void {
+		const next = new Set(leaveTicks);
+		if (on) next.add(key);
+		else next.delete(key);
+		leaveTicks = next;
+	}
+
+	async function leave(): Promise<void> {
+		if (!recap || !leaving) return;
+		const shown = new Set(leaving.map((one) => one.id));
+		const ids = [...takenOut.filter((one) => !shown.has(one)), ...leaveTicks];
+		try {
+			await api.put(`/insights/recaps/${encodeURIComponent(recap.id)}/left-out`, {
+				body: { ids }
+			});
+			takenOut = ids;
+			leaving = null;
+			await read(id);
+		} catch {
+			toasts.show("This recap couldn't be drawn again", { tone: 'error' });
 		}
 	}
 
@@ -306,6 +390,7 @@
 			const got = await readRecap(which);
 			if (mine !== asked) return;
 			recap = got;
+			takenOut = (got as Recap & { left_out?: string[] }).left_out ?? takenOut;
 			at = Math.min(at, Math.max(0, got.cards.length - 1));
 			sessionPath = got.cards.some((card) => card.kind === 'session' && !card.hidden)
 				? await readSession(got.id).catch(() => null)
@@ -420,6 +505,7 @@
 										place={place(index)}
 										foot={recap.span}
 										session={sessionPath}
+										{ground}
 									/>
 								</div>
 							{/if}
@@ -435,6 +521,11 @@
 							disabled={at === 0}
 							onclick={() => turn(-1)}
 						/>
+					</Tooltip>
+					<Tooltip label="Remove people and files this card names from this recap">
+						<Button tone="ghost" disabled={namedOn(at).length === 0 || taking} onclick={openLeave}
+							>Leave out</Button
+						>
 					</Tooltip>
 					<Tooltip label="A picture of this card, where your screenshots go">
 						<Button
@@ -461,6 +552,14 @@
 						label="This card in the set"
 						onchange={(next) => pick(at, next === 'on')}
 					/>
+					<span class="pick" aria-hidden="true">This card in the set</span>
+					<Checkbox
+						state={square ? 'on' : 'off'}
+						disabled={taking || filming !== null}
+						label="Square pictures"
+						onchange={(next) => (square = next === 'on')}
+					/>
+					<span class="pick" aria-hidden="true">Square pictures</span>
 					<Button
 						icon="photo_library"
 						tone="ghost"
@@ -508,7 +607,13 @@
 				{/if}
 			</section>
 
-			<div class="stage" bind:this={stage} aria-hidden="true" inert>
+			<div
+				class="stage"
+				class:square={square && filming === null}
+				bind:this={stage}
+				aria-hidden="true"
+				inert
+			>
 				{#if staged !== null && recap.cards[staged]}
 					<RecapCard
 						card={recap.cards[staged]}
@@ -516,6 +621,10 @@
 						place={place(staged)}
 						foot={recap.span}
 						session={sessionPath}
+						size={square && filming === null ? 'tile' : 'story'}
+						shape="2x2"
+						{ground}
+						build={false}
 					/>
 				{/if}
 			</div>
@@ -552,6 +661,33 @@
 					<Button disabled={keepTicks.size === 0 || keeping} onclick={() => void keep()}
 						>Keep</Button
 					>
+				{/snippet}
+			</Modal>
+
+			<Modal
+				open={leaving !== null}
+				onOpenChange={(open) => {
+					if (!open) leaving = null;
+				}}
+				title="Leave out"
+				description="Sift draws this recap again without what you tick, in the deck and in its pictures."
+			>
+				{#snippet children()}
+					<ul class="keep">
+						{#each leaving ?? [] as one (one.id)}
+							<li>
+								<Checkbox
+									state={leaveTicks.has(one.id) ? 'on' : 'off'}
+									label={one.text}
+									onchange={(next) => leaveTick(one.id, next === 'on')}
+								/>
+								<span>{one.text}</span>
+							</li>
+						{/each}
+					</ul>
+				{/snippet}
+				{#snippet footer()}
+					<Button icon="save" onclick={() => void leave()}>Save</Button>
 				{/snippet}
 			</Modal>
 
@@ -628,6 +764,13 @@
 		flex-wrap: wrap;
 	}
 
+	/* A tick's words beside it, as the sheets below set them. */
+	.pick {
+		margin-inline-end: var(--space-2);
+		font: var(--text-label);
+		color: var(--sift-ink-2);
+	}
+
 	.left-out {
 		margin: 0;
 		font: var(--text-label);
@@ -643,6 +786,13 @@
 		inline-size: var(--story-width);
 		clip-path: inset(50%);
 		pointer-events: none;
+	}
+
+	/* A square tile: the card fills the stage both ways, a third wider than a story card so a
+	   tile's type has the room a story's has. */
+	.stage.square {
+		inline-size: calc(var(--story-width) * 4 / 3);
+		block-size: calc(var(--story-width) * 4 / 3);
 	}
 
 	.keep {

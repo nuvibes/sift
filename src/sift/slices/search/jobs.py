@@ -228,7 +228,7 @@ def _what_it_is_doing(waiting: int, *, catching_up: bool) -> str:
     has no version at all, and says the rest of the sentence without inventing one.
     """
     files = f"{waiting:,} {'file' if waiting == 1 else 'files'}"
-    scope = "Indexing what has arrived" if catching_up else "Rebuilding the search index"
+    scope = "Indexing what was imported" if catching_up else "Rebuilding the search index"
     version = app_version()
     if version:
         return f"Catching up after the upgrade to {version} \u2014 {scope}, {files}"

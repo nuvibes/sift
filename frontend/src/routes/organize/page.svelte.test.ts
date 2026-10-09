@@ -17,7 +17,7 @@ import { goto } from '$app/navigation';
 import { ApiError } from '$lib/api/client';
 import { session, type Viewer } from '$lib/shell/session.svelte';
 import Board from './+page.svelte';
-import boardSource from './+page.svelte?raw';
+import wallSource from '$lib/components/organize/CardWall.svelte?raw';
 import { applyStyles, removeStyles } from '$lib/design/testing-styles';
 import { words } from '$lib/design/testing.svelte';
 import codepoints from '$lib/generated/icon-codepoints.json';
@@ -770,8 +770,8 @@ describe('nothing on the board decides', () => {
 });
 
 /*
- * THE BOARD FILLS THE FRAME, as many columns as fit, one on a phone: the page's own rules, read
- * with its stylesheet in place. The unit environment lays nothing out, so the column count is
+ * THE BOARD FILLS THE FRAME, as many columns as fit, one on a phone: the wall's rules
+ * (`CardWall`, the board's narrower column), read with its stylesheet in place. The unit environment lays nothing out, so the column count is
  * worked out from the rule itself: the widths below are the frame's content box (the frame less
  * its inset) as the DOM reports them at 1280, 1600 and 1920 wide, and a grid of
  * `auto-fill` columns at least `--board-column-min` wide with `--space-4` between them holds
@@ -780,7 +780,7 @@ describe('nothing on the board decides', () => {
  */
 describe('the wall', () => {
 	const PHONE = '@media (max-width: 767px)';
-	const RULE = 'repeat(auto-fill, minmax(min(var(--board-column-min), 100%), 1fr))';
+	const RULE = 'repeat(auto-fill, minmax(min(var(--wall-column), 100%), 1fr))';
 	/* The frame's content box at each window width, measured (frame 209 to width less 9, inset 24). */
 	const CONTENT = { 1280: 1014, 1600: 1334, 1920: 1654 } as const;
 
@@ -800,7 +800,7 @@ describe('the wall', () => {
 
 		const body = host.querySelector('.frame-body-inner') as HTMLElement;
 		expect(body).not.toBeNull();
-		expect(body.contains(host.querySelector('ul.cards'))).toBe(true);
+		expect(body.contains(host.querySelector('ul.wall'))).toBe(true);
 		expect(body.classList.contains('measure')).toBe(false);
 		expect(body.classList.contains('bleed')).toBe(false);
 	});
@@ -810,8 +810,12 @@ describe('the wall', () => {
 
 		await render();
 
-		const wall = host.querySelector('ul.cards') as HTMLElement;
-		applyStyles(boardSource, wall);
+		const wall = host.querySelector('ul.wall') as HTMLElement;
+		applyStyles(wallSource, wall);
+		expect(wall.classList.contains('board')).toBe(true);
+		expect(getComputedStyle(wall).getPropertyValue('--wall-column')).toBe(
+			'var(--board-column-min)'
+		);
 		expect(getComputedStyle(wall).display).toBe('grid');
 		expect(getComputedStyle(wall).gridTemplateColumns.replace(/\s+/g, ' ')).toBe(RULE);
 		expect(getComputedStyle(wall).gap).toBe('var(--space-4)');
@@ -829,9 +833,9 @@ describe('the wall', () => {
 
 		await render();
 
-		const wall = host.querySelector('ul.cards') as HTMLElement;
-		expect(boardSource).toContain(PHONE);
-		applyStyles(boardSource.replace(PHONE, '@media screen'), wall);
+		const wall = host.querySelector('ul.wall') as HTMLElement;
+		expect(wallSource).toContain(PHONE);
+		applyStyles(wallSource.replace(PHONE, '@media screen'), wall);
 		expect(getComputedStyle(wall).gridTemplateColumns).toBe('minmax(0, 1fr)');
 	});
 });
@@ -846,8 +850,8 @@ describe('every card one size', () => {
 
 		await render();
 
-		const wall = host.querySelector('ul.cards') as HTMLElement;
-		applyStyles(boardSource, wall);
+		const wall = host.querySelector('ul.wall') as HTMLElement;
+		applyStyles(wallSource, wall);
 		expect(getComputedStyle(wall).gridAutoRows).toBe('1fr');
 	});
 

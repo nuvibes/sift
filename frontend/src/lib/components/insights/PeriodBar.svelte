@@ -50,7 +50,7 @@
 </script>
 
 <div class="periods">
-	<Tabs {tabs} current={place.period} label={INSIGHTS_WORDS.periods} />
+	<div class="tabs"><Tabs {tabs} current={place.period} label={INSIGHTS_WORDS.periods} /></div>
 	{#if place.period !== 'all'}
 		<div class="steps">
 			<Tooltip label={INSIGHTS_WORDS.earlier}>
@@ -109,9 +109,14 @@
 		white-space: nowrap;
 	}
 
-	/* The press after the arrows stands at the row's end. */
+	/* The press after the arrows stands at the row's end, its words on the tabs' line. */
 	.after {
 		margin-inline-start: auto;
+	}
+
+	.tabs,
+	.after {
+		align-self: baseline;
 	}
 
 	.stale {

@@ -27,7 +27,7 @@
 	 * holds the scoped, ranked list. A person answered since resolves to nothing and the top is
 	 * served, which on a list that empties as it is answered is the page with the work on it.
 	 *
-	 * The page is a fixed 24: the cards are not measured here, as on Unnamed faces.
+	 * The page is whole rows of the wall (`CardWall`), measured off the first card.
 	 *
 	 * And the groups that may be somebody, after them: two tiers on this one tab, a person's
 	 * standing questions and a card per person of the unnamed groups that may be them
@@ -46,6 +46,7 @@
 
 	import FaceCovers from '$lib/components/faces/FaceCovers.svelte';
 	import Answers from '$lib/components/organize/Answers.svelte';
+	import CardWall from '$lib/components/organize/CardWall.svelte';
 	import DecisionCard from '$lib/components/organize/DecisionCard.svelte';
 	import MayBeCard from '$lib/components/organize/MayBeCard.svelte';
 	import { Empty, Skeleton } from '$lib/components/common';
@@ -96,8 +97,7 @@
 	let people = $state<ToCheckItem[]>([]);
 	let total = $state(0);
 	let loading = $state(true);
-	/* No wall name: nothing here is measured, so there is nothing for a session to remember. */
-	const paging = new CardPaging(PAGE);
+	const paging = new CardPaging(PAGE, 'faces.to-confirm');
 	/* The address's anchor, honoured once, as the tab is entered. Read at mount rather than in an
 	   effect: this panel draws one tab, so there is no filtering to re-enter, and an effect reading
 	   the address would re-run on the anchor this panel itself writes. */
@@ -317,7 +317,7 @@
 			Faces that look like people you have confirmed appear here, so one answer names all of them.
 		</Empty>
 	{:else}
-		<ul class="people">
+		<CardWall cards={paging.cards}>
 			{#each people as person (key(person))}
 				<li>
 					{#if person.kind === 'may_be'}
@@ -332,7 +332,7 @@
 						<!-- The card every question on Organize wears (`DecisionCard`): the crops, then
 						     the question, the line under it and the answers at the foot, so a row of
 						     cards has its questions and its Yes on one line each. -->
-						<DecisionCard opens={reviewHref(person)}>
+						<DecisionCard opens={reviewHref(person)} detailLines={2}>
 							<!-- The crops are the link, two rows of six at every width, the last cell
 							     counting the rest of the faces the question is about. Room is held
 							     for faces a card does not have, so every card is one height. -->
@@ -343,12 +343,13 @@
 								href={reviewHref(person)}
 								label={`Review every face suggested for ${person.person_name}`}
 							/>
+							<!-- How close the best came, on the line a card of groups ticks its
+							     groups on, so both kinds of card are one height. -->
+							<p class="facts">{surest(person) ?? ''}</p>
 							{#snippet question()}{asked(person)}{/snippet}
 							<!-- The card already names the person, so the line says what they were
 							     compared with and how close the best came, without the name again. -->
-							{#snippet detail()}Compared with the faces already named.{#if surest(person)}<span
-										class="sure">{' '}{surest(person)}</span
-									>{/if}{/snippet}
+							{#snippet detail()}Compared with the faces already named.{/snippet}
 							<!-- The affirmative leads and the other answers sit behind the chevron:
 							     the refusal, whole, in one press (see the note at the head of this
 							     file), and a door for somebody who wants to look first. -->
@@ -377,7 +378,7 @@
 					{/if}
 				</li>
 			{/each}
-		</ul>
+		</CardWall>
 	{/if}
 </section>
 
@@ -388,25 +389,14 @@
 		gap: var(--space-3);
 	}
 
-	/* Packed in columns, each card at its own height: a card of groups beside a card of faces
-	   leaves no dead space under the shorter, and nothing is stretched. Read down each column. */
-	.people {
-		list-style: none;
+	/* How close the best of them came, the one figure worth reading first. Held at a control's
+	   height, the height of the tick line on a card of groups. */
+	.facts {
+		display: flex;
+		align-items: center;
+		min-block-size: var(--control-height-sm);
 		margin: 0;
-		padding: 0;
-		columns: 22rem;
-		column-gap: var(--space-3);
-	}
-
-	.people > li {
-		display: grid;
-		break-inside: avoid;
-		margin-block-end: var(--space-3);
-	}
-
-	/* How close the best of them came. A shade nearer the ink than the sentence it sits in, because
-	   it is the one thing on that line worth reading first. */
-	.sure {
+		font: var(--text-body-sm);
 		color: var(--sift-ink-2);
 	}
 </style>

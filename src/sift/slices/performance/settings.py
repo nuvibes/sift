@@ -190,7 +190,7 @@ def _register_import_work() -> None:
     remove_setting(
         GENERATE_THUMBNAILS_KEY,
         label="Generate thumbnails",
-        why="A thumbnail is made for every file as it arrives; there's nothing left to switch.",
+        why="A thumbnail is created for every file as it's imported; there's nothing left to switch.",
     )
     register_setting(
         key=GENERATE_PREVIEWS_KEY,

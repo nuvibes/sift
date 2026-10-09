@@ -123,7 +123,7 @@ FILTERS: tuple[FilterHelp, ...] = (
     FilterHelp(
         Field.PHOTO_SETS,
         "Photo Sets",
-        "A set of pictures that arrived together",
+        "A set of pictures imported together",
         "photo_sets:beach",
     ),
     # The label is the token written for reading (`_one_name`), so it stays "Songs" although the
@@ -150,7 +150,7 @@ FILTERS: tuple[FilterHelp, ...] = (
         "sharing:shared",
     ),
     FilterHelp(Field.DURATION, "Duration", "How long a video runs", "duration:2m+"),
-    FilterHelp(Field.ADDED, "Added", "When it arrived", "added:7d"),
+    FilterHelp(Field.ADDED, "Added", "When it was imported", "added:7d"),
     FilterHelp(Field.RESOLUTION, "Resolution", "How big the picture is", "resolution:4k"),
     FilterHelp(Field.SIZE, "File size", "How much room it takes", "size:500mb+"),
     FilterHelp(Field.VCODEC, "Video codec", "How the picture is encoded", "vcodec:h264"),

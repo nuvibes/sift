@@ -1200,6 +1200,20 @@ async def test_a_pass_with_no_run_on_record_is_priced_from_what_it_has_finished(
     assert run is not None and run.files["video"].ms == 0, "a fileless job prices no kind"
 
 
+async def test_a_pass_the_history_prices_is_not_priced_from_its_own_first_few_items(
+    ledger: Ledger,
+) -> None:
+    for _ in range(20):
+        ledger.finished("face_scan", duration_ms=2000, ok=True, media_type="video")
+    await ledger.settle({}, settings={})
+    for _ in range(10):
+        ledger.finished("face_scan", duration_ms=20_000, ok=True, media_type="video")
+    found = await ledger.estimate(
+        Family.IDENTIFY, ["face_scan"], left=100, at_once=4, kinds={"video": 1.0}
+    )
+    assert found is not None and found.quick_seconds == 50, "the closed run's 2 s, not 20 s"
+
+
 def _gone(ledger: Ledger, family: Family, seconds: float) -> None:
     run = ledger.open_run(family)
     assert run is not None

@@ -205,7 +205,7 @@ def _kept_for(keep_days: int) -> str:
         )
     days = "day" if keep_days == 1 else "days"
     return (
-        f"{_WHAT_IS_HELD}, held here for {keep_days} {days} after each one arrived. "
+        f"{_WHAT_IS_HELD}, held here for {keep_days} {days} each. "
         f"{_ALSO_HELD} Deleting one now can't be undone."
     )
 

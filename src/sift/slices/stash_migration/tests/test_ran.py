@@ -68,7 +68,7 @@ def test_the_sentences_say_imported_the_importing_pane_s_word() -> None:
     )
     assert (
         _said_landed(3, Tally(marks=1))
-        == "Imported what Stash kept for 3 files that arrived, with 1 Loop."
+        == "Imported what Stash kept for 3 newly imported files, with 1 Loop."
     )
 
 
@@ -87,4 +87,4 @@ def test_one_of_a_kind_is_said_as_one() -> None:
 def test_a_landing_with_no_loops_says_no_loops() -> None:
     """The landing's sentence names Loops only when some came with the files, so a pass that
     brought none never says it brought zero."""
-    assert _said_landed(1, Tally()) == "Imported what Stash kept for 1 file that arrived."
+    assert _said_landed(1, Tally()) == "Imported what Stash kept for 1 newly imported file."

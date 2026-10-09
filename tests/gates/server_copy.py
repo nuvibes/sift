@@ -189,6 +189,9 @@ HISTORY_MODULES = (
     "src/sift/slices/insights/together.py",
     "src/sift/slices/insights/definitions.py",
     "src/sift/slices/insights/recaps_cards.py",
+    "src/sift/slices/insights/recaps_voice.py",
+    "src/sift/slices/insights/recaps_voice_facts.py",
+    "src/sift/slices/insights/recaps_voice_lines.py",
 )
 
 #: THE HISTORY MODULES THAT SAY A SENTENCE RATHER THAN A CAPTION.
@@ -206,6 +209,9 @@ STATEMENT_MODULES = (
     "src/sift/slices/insights/together.py",
     "src/sift/slices/insights/definitions.py",
     "src/sift/slices/insights/recaps_cards.py",
+    "src/sift/slices/insights/recaps_voice.py",
+    "src/sift/slices/insights/recaps_voice_facts.py",
+    "src/sift/slices/insights/recaps_voice_lines.py",
 )
 
 #: The file name every area's decision wording is written in (`kernel.workbench.Words`).
@@ -549,8 +555,6 @@ def copy_in(source: str, where: str) -> list[Copy]:
             if id(node) in skip or not isinstance(node, ast.Dict):
                 continue
             for value in node.values:
-                if value is None:
-                    continue
                 for line, text in _words_in(value):
                     if word_shaped(text):
                         emit(line, text, "table")

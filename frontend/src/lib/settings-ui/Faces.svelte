@@ -801,7 +801,7 @@
 					     confirmed faces would name an act that did not happen. -->
 					<p>
 						{feature.references_without_pictures.toLocaleString()} faces from a file of facial fingerprints
-						arrived without their pictures, so the chosen model can't measure them and they no longer
+						were imported without their pictures. The chosen model can't measure them, so they no longer
 						help recognize anyone. Add a file made with this model.
 					</p>
 				{/if}

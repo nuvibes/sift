@@ -9,7 +9,7 @@ import pytest
 
 # Imported for its side effect: registering the record's tables, so a kernel database has them.
 import sift.slices.workbench.schema  # noqa: F401
-from sift.kernel.access.history_press_totals import TOTALS_DIFFERENCES
+from sift.kernel.access.history_press_totals import TOTALS_DIFFERENCES, TOTALS_DROPS
 from sift.kernel.access.history_presses import PRESS_DIFFERENCES
 from sift.kernel.db import Database
 
@@ -114,10 +114,10 @@ async def test_a_record_at_version_eighteen_is_summed_once(record: Database) -> 
 
     async with db.write() as connection:
         for statement in (
-            "DROP TRIGGER workbench_totals_act_moves",
-            "DROP TRIGGER workbench_totals_subject_arrives",
+            *TOTALS_DROPS,
             "DROP TABLE workbench_press_objects",
             "DROP TABLE workbench_press_subjects",
+            "DROP TABLE workbench_totals_owed",
         ):
             await connection.execute(statement)
     for n in range(5):

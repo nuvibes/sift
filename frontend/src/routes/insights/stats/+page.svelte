@@ -1,55 +1,36 @@
 <script lang="ts">
 	/*
-	 * STATS: every figure of a period as tables, the raw view under Insights' story.
+	 * STATS: every figure of a period, family by family, each table a panel.
 	 *
-	 * The same answer Insights draws (`GET /api/insights`), block by block in the page's order: the
-	 * block's figures as rows (the label, the server's words, the hidden part while the vault is
-	 * open, the trend, what the figure counts), its chart's bars and its calendar's days, and each of
-	 * its lists whole. A block under its floor is its one line. No other sentence: the story is
-	 * Insights', and this is where a figure is looked up. Every table has its Copy, which puts it on
-	 * the clipboard as tab-separated text a spreadsheet reads.
-	 *
-	 * Its own period tabs and arrows (`PeriodBar`) keep the address on this screen, so a reader steps
-	 * through periods without leaving the figures, and Back returns to Insights at the same period.
+	 * The same answer Insights draws (`GET /api/insights`), in the board's families: the index down
+	 * the side, and for each family its panels, each one table with its chart drawn small, its
+	 * sentence and its Copy (`StatsPanel`). A board tile opens the view at `#<block>`, or at one
+	 * panel's own id: the panels answering are scrolled to and ringed. Back returns to Insights at
+	 * the period on screen; the tabs and arrows keep the address on this screen.
 	 */
-	import type { Snippet } from 'svelte';
+	import { tick } from 'svelte';
 
+	import { page } from '$app/state';
 	import {
-		Button,
+		BackButton,
 		Problem,
-		Scroller,
 		SectionHeading,
 		Skeleton,
 		type Crumb
 	} from '$lib/components/common';
-	import HistorySentence from '$lib/components/common/HistorySentence.svelte';
-	import FiguresTable from '$lib/components/charts/FiguresTable.svelte';
-	import { tableText, type TableRow } from '$lib/components/charts/table';
-	import { CHART_WORDS } from '$lib/components/charts/words';
-	import { figureWords, saidOf, wordsOf, type Figure } from '$lib/components/insights/figures';
+	import SectionIndex from '$lib/components/charts/SectionIndex.svelte';
 	import { PeriodAnswer } from '$lib/components/insights/answer.svelte';
-	import { chartWords } from '$lib/components/insights/KindBars.svelte';
 	import PeriodBar from '$lib/components/insights/PeriodBar.svelte';
-	import {
-		STATS_PATH,
-		addressOf,
-		type InsightsBlock as Block,
-		type Place
-	} from '$lib/components/insights/period';
-	import { seriesOf } from '$lib/components/insights/series';
-	import Statements from '$lib/components/insights/Statements.svelte';
+	import { STATS_PATH, addressOf, type Place } from '$lib/components/insights/period';
 	import { INSIGHTS_WORDS, STATS_WORDS } from '$lib/components/insights/words';
 	import PageFrame from '$lib/components/shell/PageFrame.svelte';
 	import PageHeader from '$lib/components/shell/PageHeader.svelte';
 	import { onAssetStateChange, reloadOnLibraryChange } from '$lib/library/changes.svelte';
-	import { copyText } from '$lib/shell/clipboard';
-	import { toasts } from '$lib/shell/toasts.svelte';
-	import { calendarDay } from '$lib/shell/when';
+
+	import { answers, familiesOf, type Family } from './panels';
+	import StatsPanel from './StatsPanel.svelte';
 
 	let { data }: { data: Place } = $props();
-
-	/* Drawn from other answers on Insights, and not figures of the period. */
-	const DRAWN_ELSEWHERE = new Set(['recaps', 'path']);
 
 	const read = new PeriodAnswer(() => data);
 	reloadOnLibraryChange(() => void read.reread());
@@ -58,144 +39,62 @@
 	const failed = $derived(read.failed);
 	const loading = $derived(read.loading);
 
+	const back = $derived(addressOf(data));
 	const crumbs = $derived<Crumb[]>([
-		{ label: INSIGHTS_WORDS.title, href: addressOf(data) },
+		{ label: INSIGHTS_WORDS.title, href: back },
 		{ label: STATS_WORDS.title }
 	]);
-	const blocks = $derived(answer?.blocks.filter((block) => !DRAWN_ELSEWHERE.has(block.id)) ?? []);
+	const families = $derived(familiesOf(answer?.blocks ?? []));
 
-	/** One table as the page draws it and as Copy puts it on the clipboard. */
-	interface Table {
-		caption: string;
-		head: string;
-		columns: string[];
-		rows: TableRow[];
-		ranked?: boolean;
-		/** The block whose figures these are, so a definition is drawn as its sentence. */
-		figures?: Figure[];
-	}
+	const sectionOf = (family: Family) => `family-${family}`;
+	const paintOf = (family: Family) => `var(--family-${family}-ink)`;
+	const entries = $derived(
+		families.map(({ family, panels }) => {
+			const tables = panels.filter((one) => one.table !== null).length;
+			return {
+				id: sectionOf(family),
+				label: STATS_WORDS.families[family],
+				note: tables > 0 ? STATS_WORDS.tables(tables) : undefined,
+				paint: paintOf(family)
+			};
+		})
+	);
 
-	/* What a figure counts, as text for its copy; the page draws the server's sentence. */
-	const definesOf = (figure: Figure) => figure.defines.map((piece) => piece.text).join('');
+	/* Where the address sends the reader: a block, a panel or a family. */
+	const hash = $derived(decodeURIComponent(page.url.hash.slice(1)));
+	const current = $derived(
+		families.find(
+			({ family, panels }) =>
+				sectionOf(family) === hash || panels.some((panel) => answers(panel, hash))
+		)?.family ?? null
+	);
 
-	function figuresOf(block: Block): Table | null {
-		if (block.figures.length === 0) return null;
-		const hidden = block.figures.some((figure) => figure.hidden_part > 0);
-		const trend = block.figures.some((figure) => (figure.trend ?? []).length > 0);
-		const defines = block.figures.some((figure) => definesOf(figure) !== '');
-		return {
-			figures: block.figures,
-			caption: STATS_WORDS.figures,
-			head: STATS_WORDS.what,
-			columns: [
-				STATS_WORDS.figure,
-				...(hidden ? [INSIGHTS_WORDS.hidden] : []),
-				...(trend ? [STATS_WORDS.trend] : []),
-				...(defines ? [STATS_WORDS.defines] : [])
-			],
-			rows: block.figures.map((figure) => ({
-				label: figure.label,
-				cells: [
-					saidOf(figure.said, figure.value, figure.unit),
-					...(hidden
-						? [
-								figure.hidden_part > 0
-									? saidOf(figure.hidden_said, figure.hidden_part, figure.unit)
-									: ''
-							]
-						: []),
-					...(trend
-						? [(figure.trend ?? []).map((value) => figureWords(value, figure.unit)).join(', ')]
-						: []),
-					...(defines ? [definesOf(figure)] : [])
-				]
-			}))
-		};
-	}
-
-	function barsOf(block: Block): Table | null {
-		const chart = block.chart;
-		if (!chart || chart.bars.length === 0) return null;
-		const series = seriesOf(chart.bars.flatMap((bar) => bar.parts.map((part) => part.kind)));
-		const words = chartWords(chart);
-		return {
-			caption: STATS_WORDS.bars,
-			head: CHART_WORDS.when,
-			columns: series.map((one) => one.label),
-			rows: chart.bars.map((bar, index) => ({
-				label: index === chart.today ? `${bar.label}, ${CHART_WORDS.soFar}` : bar.label,
-				cells: series.map((one) => words(bar.parts.find((p) => p.kind === one.id)?.value ?? 0))
-			}))
-		};
-	}
-
-	function daysOf(block: Block): Table | null {
-		const calendar = block.calendar;
-		if (!calendar || calendar.days.length === 0) return null;
-		const words = wordsOf(calendar.days, calendar.unit);
-		return {
-			caption: STATS_WORDS.days,
-			head: CHART_WORDS.when,
-			columns: [block.title],
-			rows: calendar.days.map((one) => ({ label: calendarDay(one.day), cells: [words(one.value)] }))
-		};
-	}
-
-	function listTable(list: Block['lists'][number]): Table {
-		return {
-			caption: list.title,
-			head: STATS_WORDS.name,
-			columns: [STATS_WORDS.figure],
-			ranked: true,
-			rows: list.rows.map((row) => ({
-				label: row.piece.text,
-				cells: [saidOf(row.said, row.value, row.unit)]
-			}))
-		};
-	}
-
-	async function copy(table: Table) {
-		const heads = [...(table.ranked ? [CHART_WORDS.rank] : []), table.head, ...table.columns];
-		if (await copyText(tableText(heads, table.rows, table.ranked))) toasts.show(STATS_WORDS.copied);
-		else toasts.show(STATS_WORDS.copyFailed, { tone: 'error' });
-	}
+	/* Once the panels the address names are drawn, bring the first into view and hand it focus. */
+	$effect(() => {
+		const to = hash;
+		if (to === '' || families.length === 0) return;
+		void tick().then(() => {
+			const found =
+				document.getElementById(to) ??
+				[...document.querySelectorAll<HTMLElement>('[data-block]')].find(
+					(one) => one.dataset.block === to
+				);
+			found?.scrollIntoView?.({ block: 'start' });
+			if (found?.tabIndex === -1) found.focus({ preventScroll: true });
+		});
+	});
 </script>
 
 <svelte:head><title>{STATS_WORDS.title}</title></svelte:head>
 
-{#snippet drawn(table: Table, named?: Snippet<[number]>)}
-	{#snippet defined(row: number, column: number)}
-		{@const figure = table.figures?.[row]}
-		{#if figure && column === table.columns.length - 1 && table.columns.at(-1) === STATS_WORDS.defines}
-			<p class="defines"><HistorySentence pieces={figure.defines} /></p>
-		{:else}
-			{table.rows[row].cells[column]}
-		{/if}
-	{/snippet}
-	{#snippet press()}
-		<Button size="small" tone="ghost" aria-label={STATS_WORDS.copyLabel} onclick={() => copy(table)}
-			>{STATS_WORDS.copy}</Button
-		>
-	{/snippet}
-	<Scroller horizontal>
-		<FiguresTable
-			caption={table.caption}
-			head={table.head}
-			columns={table.columns}
-			rows={table.rows}
-			ranked={table.ranked}
-			{named}
-			cell={table.figures ? defined : undefined}
-			action={press}
-		/>
-	</Scroller>
-{/snippet}
-
 <PageFrame {crumbs}>
 	{#snippet header()}
-		<PageHeader title={STATS_WORDS.title} icon="insights">
-			{#snippet lede()}{STATS_WORDS.headLine}{/snippet}
-		</PageHeader>
+		<div class="head">
+			<BackButton to={back} label={INSIGHTS_WORDS.title} />
+			<PageHeader title={STATS_WORDS.title} icon="insights">
+				{#snippet lede()}{STATS_WORDS.headLine}{/snippet}
+			</PageHeader>
+		</div>
 	{/snippet}
 	{#snippet tools()}
 		<PeriodBar place={data} {answer} {loading} path={STATS_PATH} />
@@ -205,28 +104,29 @@
 		<Problem message={INSIGHTS_WORDS.failed} />
 	{:else if answer}
 		<div class="stats" class:stale={loading} aria-busy={loading}>
-			{#each blocks as block (block.id)}
-				<section class="block" data-block={block.id} aria-labelledby={`stats-${block.id}`}>
-					<SectionHeading id={`stats-${block.id}`}>{block.title}</SectionHeading>
-					{#if !block.floor_reached}
-						<Statements lines={block.statements} />
-					{:else}
-						{@const figures = figuresOf(block)}
-						{@const bars = barsOf(block)}
-						{@const days = daysOf(block)}
-						{#if figures}{@render drawn(figures)}{/if}
-						{#if bars}{@render drawn(bars)}{/if}
-						{#if days}{@render drawn(days)}{/if}
-						{#each block.lists as list, index (index)}
-							{@const table = listTable(list)}
-							{#snippet name(at: number)}
-								<HistorySentence pieces={[list.rows[at].piece]} />
-							{/snippet}
-							{@render drawn(table, name)}
-						{/each}
-					{/if}
-				</section>
-			{/each}
+			<SectionIndex
+				label={STATS_WORDS.index}
+				{entries}
+				current={current === null ? null : sectionOf(current)}
+			/>
+			<div class="families">
+				{#each families as { family, panels } (family)}
+					<section
+						class="family"
+						id={sectionOf(family)}
+						aria-labelledby={`${sectionOf(family)}-title`}
+					>
+						<SectionHeading id={`${sectionOf(family)}-title`}>
+							{STATS_WORDS.families[family]}
+						</SectionHeading>
+						<div class="panels">
+							{#each panels as panel (panel.id)}
+								<StatsPanel {panel} lit={answers(panel, hash)} />
+							{/each}
+						</div>
+					</section>
+				{/each}
+			</div>
 		</div>
 	{:else}
 		<Skeleton lines={6} />
@@ -234,23 +134,72 @@
 </PageFrame>
 
 <style>
-	.stats {
+	.head {
 		display: flex;
 		flex-direction: column;
-		gap: var(--space-8);
+		align-items: flex-start;
+		gap: var(--space-2);
 	}
 
-	.block {
+	/* The index down the side, the families taking the rest of the width. */
+	.stats {
+		display: grid;
+		grid-template-columns: max-content minmax(0, 1fr);
+		gap: var(--space-8);
+		align-items: start;
+	}
+
+	.families {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-10);
+		min-inline-size: 0;
+		container-type: inline-size;
+	}
+
+	.family {
 		display: flex;
 		flex-direction: column;
 		gap: var(--space-4);
-		min-inline-size: 0;
+		scroll-margin-block-start: var(--space-4);
 	}
 
-	.defines {
-		margin: 0;
-		white-space: normal;
-		text-align: start;
+	/*
+	 * Panels side by side as the width allows, every row's panels one height. A long chart or a
+	 * calendar takes the whole row; a chart over its table two rows beside two
+	 * short panels.
+	 */
+	.panels {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr);
+		grid-auto-flow: row dense;
+		gap: var(--space-4);
+	}
+
+	.panels > :global(.wide) {
+		grid-column: 1 / -1;
+	}
+
+	@container (min-width: 720px) {
+		.panels {
+			grid-template-columns: repeat(2, minmax(0, 1fr));
+		}
+
+		.panels > :global(.tall:not(.wide)) {
+			grid-row: span 2;
+		}
+	}
+
+	@container (min-width: 1200px) {
+		.panels {
+			grid-template-columns: repeat(3, minmax(0, 1fr));
+		}
+	}
+
+	@media (max-width: 767px) {
+		.stats {
+			grid-template-columns: minmax(0, 1fr);
+		}
 	}
 
 	.stale {

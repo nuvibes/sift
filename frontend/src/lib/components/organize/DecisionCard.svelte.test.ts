@@ -106,4 +106,14 @@ describe('a card that opens something', () => {
 		);
 		expect(style).toMatch(/\.card\.opens \{\s*cursor: pointer;/);
 	});
+
+	it('lifts under the pointer, as an entity card does, and settles under a press', () => {
+		const style = /<style>([\s\S]*)<\/style>/.exec(source)?.[1] ?? '';
+		expect(style).toMatch(
+			/\.card\.opens:hover \{\s*transform: translateY\(var\(--lift-y\)\);\s*box-shadow: var\(--elev-tile-lift\);/
+		);
+		expect(style).toMatch(
+			/\.card\.opens:active:not\(:has\(a:active, button:active\)\) \{\s*transform: none;/
+		);
+	});
 });

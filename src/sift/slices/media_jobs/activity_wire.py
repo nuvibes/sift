@@ -306,7 +306,7 @@ class FamilyOfWork(Wire):
     for_task: str | None = Field(
         default=None,
         description="How many files wait for their task's own run, in one sentence said after the "
-        "time left, or null: while only arriving files run, the time left is theirs alone.",
+        "time left, or null: while only files being imported run, the time left is theirs alone.",
     )
     failed: int = Field(
         default=0,

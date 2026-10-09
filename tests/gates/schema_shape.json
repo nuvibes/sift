@@ -1732,6 +1732,7 @@
       "columns": {
         "body": "text not null",
         "id": "text primary key",
+        "left_out": "text not null default '[]'",
         "made_at": "integer not null",
         "metrics_version": "integer not null default 0",
         "period": "text not null",
@@ -2951,6 +2952,16 @@
         "primary key ( press_id , kind , subject_id )"
       ],
       "options": "without rowid"
+    },
+    "workbench_totals_owed": {
+      "columns": {
+        "kind": "text",
+        "part": "integer not null",
+        "press_id": "text not null",
+        "thing": "text"
+      },
+      "constraints": [],
+      "options": ""
     }
   },
   "triggers": {
@@ -3267,6 +3278,7 @@
     "workbench_press_arrives": "workbench_decisions",
     "workbench_press_goes": "workbench_decisions",
     "workbench_press_moves": "workbench_decisions",
+    "workbench_totals_act_labelled": "workbench_decisions",
     "workbench_totals_act_moves": "workbench_decisions",
     "workbench_totals_act_renamed": "workbench_decisions",
     "workbench_totals_act_stands": "workbench_decisions",
@@ -3285,7 +3297,7 @@
     "file_moves": 4,
     "identity": 4,
     "importing": 1,
-    "insights": 7,
+    "insights": 8,
     "jobs": 16,
     "ledger": 8,
     "library": 7,

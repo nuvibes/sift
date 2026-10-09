@@ -112,8 +112,8 @@ def folders_moved(tally: Tally) -> str:
 
 
 def note_of_landing(files: int, tally: Tally) -> str:
-    """The pass's own sentence: how many files that arrived were given what waited for them."""
-    said = f"Imported what Stash kept for {counted(files, 'file', 'files')} that arrived"
+    """The pass's own sentence: how many newly imported files were given what waited for them."""
+    said = f"Imported what Stash kept for {counted(files, 'newly imported file', 'newly imported files')}"
     if tally.marks:
         said += f", with {counted(tally.marks, 'Loop', 'Loops')}"
     return said + "."

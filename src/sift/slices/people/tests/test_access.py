@@ -15,6 +15,7 @@ from sift.slices.people.tests.conftest import (
     read,
     share,
     sign_in,
+    write,
 )
 from sift.testing.auth import TEST_PIN
 
@@ -261,6 +262,14 @@ def test_the_notes_about_somebody_are_not_on_the_card_any_route_builds(
 ) -> None:
     """Notes are on no card any route builds; Details are read on their own route."""
     sign_in(client)
+    # A default cover is a picture, and the library's files are videos.
+    write(
+        db_path(client),
+        [
+            ("UPDATE assets SET media_type = 'image' WHERE id = ?", (one,))
+            for one in [library.shared]
+        ],
+    )
     person = make_person(client, "Jane Doe")
     client.put(f"/api/people/{person}", json={"name": "Jane Doe", "notes": "something private"})
     assign(client, [library.shared], [person])
@@ -284,6 +293,14 @@ def test_a_person_filed_by_hand_wears_that_file_when_they_have_no_picture(
     as a stash-box's filing does: the filing row fires the default-cover rule
     (`kernel/access/default_covers.py`), whoever wrote it. A picture somebody chose stays."""
     sign_in(client)
+    # A default cover is a picture, and the library's files are videos.
+    write(
+        db_path(client),
+        [
+            ("UPDATE assets SET media_type = 'image' WHERE id = ?", (one,))
+            for one in [library.shared]
+        ],
+    )
     bare = make_person(client, "Tamsin Vole")
     chosen = make_person(client, "Orrin Blythe")
     client.put(f"/api/people/{chosen}/cover", json={"asset_id": library.private})

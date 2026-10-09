@@ -270,7 +270,7 @@ def test_a_folded_press_says_the_press() -> None:
         untold=3500,
     )
     assert backfill.what == (
-        "Sift recorded how 3,600 usernames arrived, 3,500 of them from before this was recorded"
+        "Sift recorded how 3,600 usernames were added, 3,500 of them from before this was recorded"
     )
 
 

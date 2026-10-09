@@ -999,7 +999,6 @@ MATRIX: dict[tuple[str, str], Case] = {
     ("GET", "/api/people/{person_id}/cover"): Case(
         Policy.AUTHENTICATED, params={"person_id": A_PERSON}
     ),
-    # Names people, so it answers the list's rule.
     ("GET", "/api/people/resolve"): Case(Policy.AUTHENTICATED),
     ("GET", "/api/people/{person_id}/links"): Case(
         Policy.AUTHENTICATED, params={"person_id": A_PERSON}
@@ -1012,7 +1011,6 @@ MATRIX: dict[tuple[str, str], Case] = {
     ("DELETE", "/api/people/{person_id}/links/{link_id}"): Case(
         Policy.ADMIN, params={"person_id": A_PERSON, "link_id": A_LINK}
     ),
-    # What was decided about a person is part of their record.
     ("GET", "/api/people/{person_id}/history"): Case(
         Policy.AUTHENTICATED, params={"person_id": A_PERSON}
     ),
@@ -1069,7 +1067,6 @@ MATRIX: dict[tuple[str, str], Case] = {
     ("PUT", "/api/collections/{collection_id}/pin"): Case(
         Policy.AUTHENTICATED, params={"collection_id": A_COLLECTION}
     ),
-    # A tag is shared vocabulary.
     ("GET", "/api/collections/{collection_id}/tags"): Case(
         Policy.AUTHENTICATED, params={"collection_id": A_COLLECTION}
     ),
@@ -1510,6 +1507,9 @@ MATRIX: dict[tuple[str, str], Case] = {
     ),
     ("GET", "/api/insights/recaps/{recap_id}/keep"): Case(
         Policy.ADMIN, params={"recap_id": A_RECAP}, answers_anyway=404
+    ),
+    ("PUT", "/api/insights/recaps/{recap_id}/left-out"): Case(
+        Policy.AUTHENTICATED, params={"recap_id": A_RECAP}, body={"ids": []}, answers_anyway=404
     ),
     # The browser client holds nothing; every endpoint it calls decides for itself.
     ("GET", "/{path:path}"): Case(Policy.PUBLIC, params={"path": ""}),

@@ -1052,13 +1052,13 @@ async def test_a_cancel_sift_made_keeps_its_reason_on_the_row_it_named(job_queue
     child = await job_queue.enqueue("thumbnail", parent_id=parent)
     by_hand = await job_queue.enqueue("scan")
 
-    await job_queue.cancel(parent, why="Sift stopped it so your folder's files can arrive.")
+    await job_queue.cancel(parent, why="Sift stopped it so your folder's files can be imported.")
     await job_queue.cancel(by_hand)
 
     said = [(await job_queue.get(one)) for one in (parent, child, by_hand)]
     assert [one.state.value for one in said if one] == ["canceled"] * 3
     assert [one.error for one in said if one] == [
-        "Sift stopped it so your folder's files can arrive.",
+        "Sift stopped it so your folder's files can be imported.",
         None,
         None,
     ]

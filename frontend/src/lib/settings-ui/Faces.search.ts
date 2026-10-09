@@ -90,7 +90,7 @@ export const COPY = {
 		   press that brings them is rung in its place. */
 		notReady: (row: string) =>
 			`\u201c${row}\u201d is shown once the models are on this device. \u201cDownload the models\u201d puts them there.`,
-		size: 'The download is a few hundred megabytes. You can leave this screen and follow or cancel it in Activity. A canceled download keeps what arrived, so starting again downloads only the rest.',
+		size: 'The download is a few hundred megabytes. You can leave this screen and follow or cancel it in Activity. A canceled download keeps what it already has, so starting again downloads only the rest.',
 		couldNotStart:
 			"Couldn't start the download. Check that this device is connected to the internet, or copy the model files to this device yourself."
 	},

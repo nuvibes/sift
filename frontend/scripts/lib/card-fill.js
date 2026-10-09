@@ -27,7 +27,6 @@ export const CARDS = {
 	'lib/components/common/ChoiceCard.svelte': { flat: [], why: 'a Settings choice' },
 	'lib/components/entity/EntityCard.svelte': { flat: [], why: 'a card on the People wall' },
 	'lib/components/FacesInThis.svelte': { flat: [], why: "a face's card on a file" },
-	'lib/components/organize/IdentifiedPanel.svelte': { flat: [], why: 'a person on Organize' },
 	'lib/components/insights/RecapCard.svelte': { flat: [], why: 'a recap card kept hidden' },
 	'lib/settings-ui/UnlockSecrets.svelte': { flat: [], why: 'the locked card in Settings' },
 	'lib/library/AddFolder.svelte': { flat: [], why: 'the add-a-folder card' },
@@ -57,6 +56,8 @@ export const EXCUSED = {
 	'lib/components/common/ShellBanner.svelte': "the shell's own banner row",
 	'lib/components/common/Skeleton.svelte': 'a placeholder while a screen loads',
 	'lib/components/common/Toaster.svelte': 'a floating toast',
+	'lib/components/insights/cards/Wall.svelte':
+		"a Saved Layout's cells in miniature, each a thumbnail's frame",
 	'lib/components/common/Tooltip.svelte': 'a floating tooltip',
 	'lib/components/faces/MoveFacesDialog.svelte': 'the ground under a face picture in a dialog',
 	'lib/components/faces/PileDetail.svelte': 'the ground under a face picture',

@@ -10,14 +10,23 @@ join relabelled), so a join adds two presses' rows; a parting or a move, which t
 
 from __future__ import annotations
 
+import weakref
 from typing import Final
 
+from sift.kernel.db import Connection, before_commit
+from sift.kernel.db_base import OperationalError
 from sift.kernel.sql_splice import splice
 from sift.kernel.vocabulary import LEDGER_QUEUE
 
 # `object_kind` and `object_id` may be NULL (a setting's act), so the objects' key is matched with
 # IS and has no unique index: NULLs are distinct to one.
 TOTALS_TABLES: Final = (
+    """CREATE TABLE IF NOT EXISTS workbench_totals_owed (
+  press_id TEXT NOT NULL,
+  part     INTEGER NOT NULL,
+  kind     TEXT,
+  thing    TEXT
+)""",
     """CREATE TABLE IF NOT EXISTS workbench_press_objects (
   press_id    TEXT NOT NULL,
   object_kind TEXT,
@@ -89,27 +98,80 @@ DELETE FROM workbench_press_subjects WHERE press_id = {{L}};
 
 #: Every press summed from the record, for a record whose totals are missing or were not kept.
 TOTAL_ALL: Final = (
+    "DELETE FROM workbench_totals_owed",
     "DELETE FROM workbench_press_objects",
     splice(_SUM_OBJECTS, WHERE="press_id IS NOT NULL"),
     "DELETE FROM workbench_press_subjects",
     splice(_SUM_SUBJECTS, WHERE="d.press_id IS NOT NULL"),
 )
 
-# One thing of press `{{L}}` summed again: the act's object `{{K}}`, `{{I}}`.
-_OBJECT_AGAIN = _put(
-    """DELETE FROM workbench_press_objects
- WHERE press_id = {{L}} AND object_kind IS {{K}} AND object_id IS {{I}};
-{{SUM}}""",
-    SUM=_put(
-        _SUM_OBJECTS, WHERE="press_id = {{L}} AND object_kind IS {{K}} AND object_id IS {{I}}"
+# A thing of a press whose newest act or largest name may have left it: kept here as the write runs
+# and summed again once, when it ends (`sum_what_is_owed`), so a merge costs each thing once.
+_OWE = (
+    "INSERT INTO workbench_totals_owed (press_id, part, kind, thing)"
+    " SELECT {{L}}, {{PART}}, {{K}}, {{I}} WHERE {{L}} IS NOT NULL"
+)
+
+# Every owed thing summed again from its press's acts: driven from the press, a seek on its label.
+_OWED = (
+    "SELECT DISTINCT press_id, part, kind, thing FROM workbench_totals_owed WHERE part = {{PART}}"
+)
+SUM_OWED: Final = (
+    "DELETE FROM workbench_press_objects WHERE EXISTS (SELECT 1 FROM workbench_totals_owed o"
+    " WHERE o.part = 0 AND o.press_id = workbench_press_objects.press_id"
+    " AND o.kind IS workbench_press_objects.object_kind"
+    " AND o.thing IS workbench_press_objects.object_id)",
+    splice(
+        """INSERT INTO workbench_press_objects
+       (press_id, object_kind, object_id, name, acts, untold, standing)
+SELECT d.press_id, d.object_kind, d.object_id, MAX(d.object_name), COUNT(*),
+       SUM(d.actor_id IS NULL), SUM({{STANDS}})
+  FROM ({{OWED}}) o CROSS JOIN workbench_decisions d
+    ON d.press_id = o.press_id AND d.object_kind IS o.kind AND d.object_id IS o.thing
+ GROUP BY d.press_id, d.object_kind, d.object_id""",
+        STANDS=_of("d"),
+        OWED=splice(_OWED, PART="0"),
     ),
+    "DELETE FROM workbench_press_subjects WHERE EXISTS (SELECT 1 FROM workbench_totals_owed o"
+    " WHERE o.part = 1 AND o.press_id = workbench_press_subjects.press_id"
+    " AND o.kind = workbench_press_subjects.kind AND o.thing = workbench_press_subjects.subject_id)",
+    splice(
+        """INSERT INTO workbench_press_subjects
+       (press_id, kind, subject_id, name, acts, at, latest)
+SELECT d.press_id, s.kind, s.subject_id, MAX(s.name), COUNT(*), MAX(d.decided_at), MAX(d.id)
+  FROM ({{OWED}}) o CROSS JOIN workbench_decisions d ON d.press_id = o.press_id
+ CROSS JOIN workbench_decision_subjects s
+    ON s.decision_id = d.id AND s.kind = o.kind AND s.subject_id = o.thing
+ GROUP BY d.press_id, s.kind, s.subject_id""",
+        OWED=splice(_OWED, PART="1"),
+    ),
+    "DELETE FROM workbench_totals_owed",
 )
-_SUBJECT_AGAIN = _put(
-    """DELETE FROM workbench_press_subjects
- WHERE press_id = {{L}} AND kind = {{K}} AND subject_id = {{I}};
-{{SUM}}""",
-    SUM=_put(_SUM_SUBJECTS, WHERE="d.press_id = {{L}} AND s.kind = {{K}} AND s.subject_id = {{I}}"),
-)
+ANY_OWED: Final = "SELECT 1 FROM workbench_totals_owed LIMIT 1"
+
+#: The connections already seen holding the owed table: asked once each, as `visibility_settled` does.
+_HOLDING: weakref.WeakSet[Connection] = weakref.WeakSet()
+_HOLDS = "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'workbench_totals_owed'"
+
+
+async def sum_what_is_owed(connection: Connection) -> None:
+    """Before a write commits: every thing it left owed summed again once. One read when none."""
+    if connection not in _HOLDING:
+        if not await connection.execute_fetchall(_HOLDS, ()):
+            return
+        _HOLDING.add(connection)
+    try:
+        owed = await connection.execute_fetchall(ANY_OWED, ())
+    except OperationalError:  # the table dropped since, as an older record's step does
+        _HOLDING.discard(connection)
+        return
+    if owed:
+        for statement in SUM_OWED:
+            await connection.execute(statement)
+
+
+before_commit(sum_what_is_owed)
+
 
 # An act that changes in place, its press and its place kept: what a move does not cover.
 _STAYS = (
@@ -162,14 +224,24 @@ SELECT NEW.press_id, s.kind, s.subject_id, s.name, 1, NEW.decided_at, NEW.id
     SUBJECT_NAME=_put(_LARGER_NAME, A="name", B="excluded.name"),
 )
 
+# An act's first label: its object only, since its subjects are written after it.
+_ARRIVES_ALONE = _ARRIVES.split(";\nINSERT INTO workbench_press_subjects")[0]
+
 #: The totals' own triggers: an act's label moving, a subject arriving, changing or going, and an
 #: act undone, redone or renamed where it stands.
 TOTALS_TRIGGERS: Final = (
     (
+        "workbench_totals_act_labelled",
+        "CREATE TRIGGER IF NOT EXISTS workbench_totals_act_labelled"
+        " AFTER UPDATE OF press_id ON workbench_decisions"
+        f" WHEN OLD.press_id IS NULL AND NEW.press_id IS NOT NULL BEGIN {_ARRIVES_ALONE}; END",
+    ),
+    (
         "workbench_totals_act_moves",
         "CREATE TRIGGER IF NOT EXISTS workbench_totals_act_moves"
         " AFTER UPDATE OF press_id ON workbench_decisions"
-        f" WHEN OLD.press_id IS NOT NEW.press_id BEGIN {_LEAVES}; {_ARRIVES}; END",
+        " WHEN OLD.press_id IS NOT NULL AND OLD.press_id IS NOT NEW.press_id"
+        f" BEGIN {_LEAVES}; {_ARRIVES}; END",
     ),
     (
         "workbench_totals_subject_arrives",
@@ -190,15 +262,17 @@ TOTALS_TRIGGERS: Final = (
         "CREATE TRIGGER IF NOT EXISTS workbench_totals_subject_changes"
         " AFTER UPDATE ON workbench_decision_subjects BEGIN "
         + splice(
-            _SUBJECT_AGAIN,
+            _OWE,
             L=splice(_LABEL_OF, ACT="OLD.decision_id"),
+            PART="1",
             K="OLD.kind",
             I="OLD.subject_id",
         )
         + "; "
         + splice(
-            _SUBJECT_AGAIN,
+            _OWE,
             L=splice(_LABEL_OF, ACT="NEW.decision_id"),
+            PART="1",
             K="NEW.kind",
             I="NEW.subject_id",
         )
@@ -209,8 +283,9 @@ TOTALS_TRIGGERS: Final = (
         "CREATE TRIGGER IF NOT EXISTS workbench_totals_subject_goes"
         " AFTER DELETE ON workbench_decision_subjects BEGIN "
         + splice(
-            _SUBJECT_AGAIN,
+            _OWE,
             L=splice(_LABEL_OF, ACT="OLD.decision_id"),
+            PART="1",
             K="OLD.kind",
             I="OLD.subject_id",
         )
@@ -238,9 +313,9 @@ TOTALS_TRIGGERS: Final = (
         "CREATE TRIGGER IF NOT EXISTS workbench_totals_act_renamed"
         " AFTER UPDATE OF object_kind, object_id, object_name ON workbench_decisions"
         f" WHEN {_STAYS} AND NOT ({_SAME_THING}) BEGIN "
-        + splice(_OBJECT_AGAIN, L="NEW.press_id", K="OLD.object_kind", I="OLD.object_id")
+        + splice(_OWE, L="NEW.press_id", PART="0", K="OLD.object_kind", I="OLD.object_id")
         + "; "
-        + splice(_OBJECT_AGAIN, L="NEW.press_id", K="NEW.object_kind", I="NEW.object_id")
+        + splice(_OWE, L="NEW.press_id", PART="0", K="NEW.object_kind", I="NEW.object_id")
         + "; END",
     ),
 )

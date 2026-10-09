@@ -155,6 +155,8 @@ async def test_a_named_face_gives_the_whole_file_as_a_cover_and_never_the_face(
 ) -> None:
     """A cover nobody chose is the whole first picture filed under the person: the name a face
     puts on its file gives it, and the face itself is never cut out as one."""
+    # A default cover is a picture, and the clip is a video.
+    await temp_db.execute("UPDATE assets SET media_type = 'image' WHERE id = ?", (clip.asset.id,))
     person = await make_person(temp_db, "Ada Lumen")
     (track_id,) = await record(store, clip.asset.id)
 

@@ -6,7 +6,7 @@
  *
  * PAINTED FROM THE PAGE. A browser cannot read the pixels of its own page (only the desktop app's
  * shell can take the window), so the card is painted again from where the page laid it out: its
- * ground, every picture, the ring, and every line of its words in its own face and colour, at its
+ * ground, every picture, its shades and bars, and every line of its words in its own face and colour, at its
  * own place, three times over for a card 360 wide. One layout serves both, so the picture and the
  * card cannot drift. Only a card that may be saved is offered (`RecapCard`'s `savable`): never a
  * locked tile, never a card that names something hidden.
@@ -146,24 +146,52 @@ function paintGround(painting: Painting, card: HTMLElement): void {
 	context.restore();
 }
 
-/* The ring: a conic gradient of one colour per hour, its middle cut out at the ring's `--hole`. */
-const SEGMENT = /([a-z-]+\([^()]*\)|transparent|#[0-9a-f]+)\s+([\d.]+)deg\s+([\d.]+)deg/gi;
-
-function paintRing(painting: Painting, element: Element, style: CSSStyleDeclaration): void {
-	const box = boxOf(painting, element);
-	const outer = Math.min(box.width, box.height) / 2;
-	const inner = (outer * pixels(style.getPropertyValue('--hole') || '0%', 100)) / 100;
-	const x = box.x + box.width / 2;
-	const y = box.y + box.height / 2;
-	const turn = (degrees: number) => ((degrees - 90) * Math.PI) / 180;
-	for (const [, colour, from, to] of style.backgroundImage.matchAll(SEGMENT)) {
-		if (colour === 'transparent') continue;
-		painting.context.beginPath();
-		painting.context.arc(x, y, outer, turn(Number(from)), turn(Number(to)));
-		painting.context.arc(x, y, inner, turn(Number(to)), turn(Number(from)), true);
-		painting.context.fillStyle = colour;
-		painting.context.fill();
+/** A run of text split at its commas outside any brackets: a gradient's arguments. */
+export function topLevel(text: string): string[] {
+	const parts: string[] = [];
+	let depth = 0;
+	let from = 0;
+	for (let at = 0; at < text.length; at++) {
+		if (text[at] === '(') depth++;
+		else if (text[at] === ')') depth--;
+		else if (text[at] === ',' && depth === 0) {
+			parts.push(text.slice(from, at).trim());
+			from = at + 1;
+		}
 	}
+	parts.push(text.slice(from).trim());
+	return parts;
+}
+
+/** A top-to-bottom linear gradient's stops, each its colour and its place from 0 to 1; null for
+ *  any other gradient, which the painter leaves to the box's own colour. */
+export function verticalStops(image: string): { colour: string; at: number }[] | null {
+	const found = /^linear-gradient\((.*)\)$/.exec(image.trim());
+	if (!found) return null;
+	const parts = topLevel(found[1]);
+	if (/^(to |-?[\d.]+(deg|turn|rad))/.test(parts[0])) {
+		if (!/^(to bottom|180deg|0\.5turn)$/.test(parts[0])) return null;
+		parts.shift();
+	}
+	if (parts.length < 2) return null;
+	return parts.map((part, index) => {
+		const place = /\s(-?[\d.]+)%$/.exec(part);
+		return {
+			colour: place ? part.slice(0, place.index).trim() : part,
+			at: place ? Number(place[1]) / 100 : index / (parts.length - 1)
+		};
+	});
+}
+
+/* A box's top-to-bottom gradient, as the shade a card's ground fades through to its foot. */
+function paintGradient(painting: Painting, element: Element, style: CSSStyleDeclaration): void {
+	const stops = verticalStops(style.backgroundImage);
+	if (!stops) return;
+	const box = boxOf(painting, element);
+	const run = painting.context.createLinearGradient(0, box.y, 0, box.y + box.height);
+	for (const stop of stops) run.addColorStop(Math.min(1, Math.max(0, stop.at)), stop.colour);
+	painting.context.fillStyle = run;
+	painting.context.fillRect(box.x, box.y, box.width, box.height);
 }
 
 function paintPicture(painting: Painting, image: HTMLImageElement, style: CSSStyleDeclaration) {
@@ -191,26 +219,42 @@ function paintPicture(painting: Painting, image: HTMLImageElement, style: CSSSty
 	painting.context.restore();
 }
 
+/* A run's words and where the page drew each. A word the page broke across lines (a long name
+   breaks anywhere) is taken a letter at a time, so each line gets its own part of it. */
+function wordsOf(node: Text, origin: DOMRect): Word[] {
+	const words: Word[] = [];
+	const range = document.createRange();
+	const boxOf = (start: number, end: number): Word | null => {
+		range.setStart(node, start);
+		range.setEnd(node, end);
+		const rects = range.getClientRects();
+		if (rects.length !== 1 && end - start > 1) return null;
+		const rect = rects[0];
+		if (!rect) return null;
+		const { left, top, height } = rect;
+		return { start, end, left: left - origin.left, top: top - origin.top, height };
+	};
+	for (const match of node.data.matchAll(/\S+/g)) {
+		const end = match.index + match[0].length;
+		const whole = boxOf(match.index, end);
+		if (whole) {
+			words.push(whole);
+			continue;
+		}
+		for (let at = match.index; at < end; at++) {
+			const letter = boxOf(at, at + 1);
+			if (letter) words.push(letter);
+		}
+	}
+	return words;
+}
+
 function paintWords(painting: Painting, node: Text, style: CSSStyleDeclaration): void {
 	const { context } = painting;
 	// A figure still counting up is painted at the figure it lands on, or where a frame has it.
 	const landed = node.parentElement?.closest('[data-final]')?.getAttribute('data-final');
 	const final = landed == null ? null : (painting.counting?.(landed) ?? landed);
-	const words: Word[] = [];
-	const range = document.createRange();
-	for (const match of node.data.matchAll(/\S+/g)) {
-		range.setStart(node, match.index);
-		range.setEnd(node, match.index + match[0].length);
-		const rect = range.getClientRects()[0];
-		if (!rect) continue;
-		words.push({
-			start: match.index,
-			end: match.index + match[0].length,
-			left: rect.left - painting.origin.left,
-			top: rect.top - painting.origin.top,
-			height: rect.height
-		});
-	}
+	const words = wordsOf(node, painting.origin);
 	context.font = `${style.fontStyle} ${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
 	context.letterSpacing = style.letterSpacing === 'normal' ? '0px' : style.letterSpacing;
 	context.fillStyle = style.color;
@@ -232,7 +276,8 @@ function paintElement(painting: Painting, element: Element, card: HTMLElement): 
 	context.save();
 	context.globalAlpha *= Number(style.opacity);
 	if (element !== card) {
-		if (style.backgroundImage.startsWith('conic-gradient')) paintRing(painting, element, style);
+		if (style.backgroundImage.startsWith('linear-gradient'))
+			paintGradient(painting, element, style);
 		const ground = style.backgroundColor;
 		if (ground && ground !== 'transparent' && !/,\s*0\)$/.test(ground)) {
 			roundedBox(painting, element, style);
@@ -252,6 +297,19 @@ function paintElement(painting: Painting, element: Element, card: HTMLElement): 
 	context.restore();
 }
 
+/** Settles once the card's second beat has landed (`data-built`), so its number is painted. */
+export function built(card: HTMLElement): Promise<void> {
+	if (card.dataset.built !== 'false') return Promise.resolve();
+	return new Promise((settle) => {
+		const watch = new MutationObserver(() => {
+			if (card.dataset.built === 'false') return;
+			watch.disconnect();
+			settle();
+		});
+		watch.observe(card, { attributes: true, attributeFilter: ['data-built'] });
+	});
+}
+
 /** The card painted at 1080 wide onto a canvas, each counting figure at `counting`'s words. Null
  *  for a card that may not be saved (the second lock on the deck's door), one not laid out, or
  *  where the browser gives no canvas. */
@@ -264,6 +322,7 @@ export async function paintCard(
 	const canvas = document.createElement('canvas');
 	const context = canvas.getContext('2d');
 	if (context === null) return null;
+	await built(card);
 	await document.fonts.ready;
 	await Promise.all(
 		[...card.querySelectorAll('img')].map((image) => image.decode().catch(() => undefined))

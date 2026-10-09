@@ -6,6 +6,8 @@ the cards each kind of recap holds in the order they are read. See `recaps` for 
 from __future__ import annotations
 
 import calendar
+import json
+import math
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, timedelta
@@ -29,6 +31,8 @@ from sift.slices.insights.recaps_models import (
     KeptCard,
     NamedThing,
     Recipe,
+    Wall,
+    WallSlot,
 )
 from sift.slices.insights.recaps_periods import (
     FLOOR_SITTINGS,
@@ -38,6 +42,7 @@ from sift.slices.insights.recaps_periods import (
     _usual_window,
     source,
 )
+from sift.slices.insights.recaps_voice import USUAL_WEEKS
 
 #: The most cards a deck holds, the closing card among them: a year read in a few minutes.
 DECK_MOST = 18
@@ -275,16 +280,30 @@ async def build(
     if floor and _whole(totals, "sittings") < FLOOR_SITTINGS:
         return None
     recipes = _figure_recipes(totals)
-    recipes["compared"] = await _compared_recipe(database, user_id, rows, period, totals)
+    first = await _first_viewed(database, user_id)
+    recipes["compared"] = _compared_recipe(first, rows, period, totals)
     named, person = await _named_recipes(database, totals)
     recipes.update(named)
+    _with_usual(recipes, rows, period, first)
     recipes.update(await _file_recipes(database, rows, period, totals))
+    recipes["theater_files"] = await _wall_recipe(
+        database, user_id, period, totals, recipes["theater_files"]
+    )
     if period.kind is PeriodKind.YEAR:
         recipes.update(_year_recipes(rows, period, totals, recipes))
     alongside = _together_recipe(rows, period, person)
     if alongside is not None:
         recipes["alongside"] = alongside
-    return _cards(recipes, period, today)
+    return _cards(recipes, period, today, accent_of=_most_viewed_file(recipes))
+
+
+def _most_viewed_file(recipes: Mapping[str, Recipe]) -> str | None:
+    """The period's most-viewed file, which the cards take their colour from."""
+    for kind in ("top_file", "mosaic"):
+        recipe = recipes.get(kind)
+        if recipe is not None and recipe.named:
+            return recipe.named[0].id
+    return None
 
 
 def _figure_recipes(totals: Totals) -> dict[str, Recipe]:
@@ -332,13 +351,14 @@ def _figure_recipes(totals: Totals) -> dict[str, Recipe]:
     }
 
 
-async def _compared_recipe(
-    database: Database, user_id: str, rows: _Totals, period: Period, totals: Totals
-) -> Recipe:
+async def _first_viewed(database: Database, user_id: str) -> str | None:
+    row = await database.fetch_one(_FIRST_VIEWED, (user_id,))
+    return None if row is None or row["first"] is None else str(row["first"])
+
+
+def _compared_recipe(first: str | None, rows: _Totals, period: Period, totals: Totals) -> Recipe:
     """What the period is compared with: the period before, recorded whole and past the floor, or
     for a day the usual day over the days recorded before it, enough of them."""
-    first_row = await database.fetch_one(_FIRST_VIEWED, (user_id,))
-    first = None if first_row is None or first_row["first"] is None else str(first_row["first"])
     now = _sources(totals, [("viewed_ms", "")])
     if period.kind is PeriodKind.DAY:
         usual_first, usual_last = _usual_window(period)
@@ -391,7 +411,55 @@ async def _named_recipes(
     return out, people[0] if people else None
 
 
-def _cards(recipes: Mapping[str, Recipe], period: Period, today: date) -> list[KeptCard]:
+#: The figures each card's voice compares with the reader's own usual (`recaps_voice.usual`).
+_USUAL_OF: Mapping[str, tuple[tuple[str, str], ...]] = {
+    "theater": (("viewed_ms:kind", statements.THEATER),),
+    "sift_did": (("files_added", ""),),
+}
+
+
+def _with_usual(
+    recipes: dict[str, Recipe], rows: _Totals, period: Period, first: str | None
+) -> None:
+    """Adds what the cards' voices read beside their own figures: everything viewed under a card
+    that crowns one thing, and where the period may be compared, the reader's usual: a day's same
+    weekday over the weeks before it, a longer period's period before."""
+    totals = rows.of(period.first, period.last)
+    for card in ("top_person", "top_site", "top_tag", "top_song"):
+        if card in recipes:
+            recipes[card].sources.update(_sources(totals, [("viewed_ms", "")]))
+    if not recipes["compared"].compares:
+        return
+    if period.kind is not PeriodKind.DAY:
+        earlier = rows.of(period.previous().first, period.previous().last)
+        recipes["when"].sources.update(
+            _sources(earlier, [("viewed_ms:hour", hour) for hour in _HOURS], before=True)
+        )
+        for card, wanted in _USUAL_OF.items():
+            recipes[card].sources.update(_sources(earlier, wanted, before=True))
+        return
+    usual = rows.of(*_usual_window(period))
+    recipes["when"].sources.update(
+        {
+            source("viewed_ms:hour", hour, scope=USUAL): _whole(usual, "viewed_ms:hour", hour)
+            for hour in _HOURS
+        }
+    )
+    weekdays = [
+        day
+        for back in range(1, USUAL_WEEKS + 1)
+        if first is not None and (day := period.first - timedelta(weeks=back)).isoformat() >= first
+    ]
+    for card, wanted in _USUAL_OF.items():
+        for metric, key in wanted:
+            for day in weekdays:
+                whole = _whole(rows.of(day, day), metric, key)
+                recipes[card].sources[source(metric, within(key, day, day), scope=USUAL)] = whole
+
+
+def _cards(
+    recipes: Mapping[str, Recipe], period: Period, today: date, *, accent_of: str | None = None
+) -> list[KeptCard]:
     """The cards the recipes say, in the kind's order, past the most a deck holds the last cards
     before the closing one left out."""
     cards: list[KeptCard] = []
@@ -407,6 +475,7 @@ def _cards(recipes: Mapping[str, Recipe], period: Period, today: date) -> list[K
                 **card.model_dump(exclude={"hidden_things"}),
                 hidden_things=[one.id for one in recipe.named],
                 recipe=recipe,
+                accent_of=accent_of,
             )
         )
     return cards if len(cards) <= DECK_MOST else [*cards[: DECK_MOST - 1], cards[-1]]
@@ -485,6 +554,79 @@ async def _file_recipes(
             named=_distinct_named([key for _, key in (*first, *last)], names),
         )
     return out
+
+
+#: A Saved Layout's stored grid and how many cells it has, the reader's own only.
+_WALL_OF = (
+    "SELECT a.shape, (SELECT COUNT(*) FROM theater_cells c WHERE c.arrangement_id = a.id) AS cells"
+    " FROM theater_arrangements a WHERE a.id = ? AND a.user_id = ?"
+)
+
+#: The files a Saved Layout showed in a span, the most played first, at most one a cell.
+_WALL_FILES = (
+    "SELECT p.asset_id AS asset, COUNT(*) AS plays FROM plays p"
+    " JOIN theater_sessions t ON t.user_id = p.user_id AND t.session = p.theater_session"
+    " WHERE p.user_id = ? AND t.arrangement_id = ? AND p.screen = 'theater'"
+    " AND p.asset_id IS NOT NULL AND p.started_at >= ? AND p.started_at < ?"
+    " GROUP BY p.asset_id ORDER BY plays DESC, p.asset_id LIMIT ?"
+)
+
+#: The most cells a wall has (Theater's own ceiling).
+WALL_MOST = 9
+
+
+def wall_of(stored: object, cells: int) -> Wall | None:
+    """A wall's grid from its stored shape (`{"rows", "cols", "slots": [{"row", "col", "row_span",
+    "col_span"}]}`, as Theater writes it), or an even grid of its cells where it has none or it does
+    not read. None for a wall of no cells."""
+    try:
+        held = json.loads(stored) if isinstance(stored, str) else None
+        wall = Wall.model_validate(held) if isinstance(held, dict) else None
+    except ValueError:
+        wall = None
+    if wall is not None and 0 < len(wall.slots) <= WALL_MOST:
+        return wall
+    count = min(cells, WALL_MOST)
+    if count <= 0:
+        return None
+    cols = math.ceil(math.sqrt(count))
+    return Wall(
+        rows=math.ceil(count / cols),
+        cols=cols,
+        slots=[
+            WallSlot(row=at // cols, col=at % cols, row_span=1, col_span=1) for at in range(count)
+        ],
+    )
+
+
+async def _wall_recipe(
+    database: Database, user_id: str, period: Period, totals: Totals, recipe: Recipe
+) -> Recipe:
+    """The Theater files card with the period's most-used Saved Layout: its grid, and a file it
+    showed for each cell, each named by the source its views are kept under so the vault decides
+    it as it decides any file a card names. The card as it was where no Saved Layout was used."""
+    used = [key for key in _ranked(totals, "theater_files") if key]
+    found = await database.fetch_one(_WALL_OF, (used[0], user_id)) if used else None
+    wall = None if found is None else wall_of(found["shape"], int(found["cells"]))
+    if wall is None:
+        return recipe
+    start, end = store.day_bounds(period.first)[0], store.day_bounds(period.last)[1]
+    shown = [
+        str(row["asset"])
+        for row in await database.fetch_all(
+            _WALL_FILES, (user_id, used[0], start, end, len(wall.slots))
+        )
+    ]
+    names = {
+        str(row["id"]): str(row["name"])
+        for row in await arrivals.file_names(database.fetch_all, shown)
+    }
+    keys = [key for key in _keys(totals, "sittings:file") if split_file_key(key)[1] in names]
+    return Recipe(
+        sources={**recipe.sources, **_sources(totals, [("sittings:file", key) for key in keys])},
+        named=_distinct_named([one for one in shown if one in names], names),
+        wall=wall,
+    )
 
 
 #: The cards that crown one file, and the per-file metric each ranks by.

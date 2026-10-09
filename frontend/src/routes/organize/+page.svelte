@@ -14,6 +14,7 @@
 	import { screenBar } from '$lib/components/shell/screen-bar.svelte';
 	import PageFrame from '$lib/components/shell/PageFrame.svelte';
 	import BoardCard from '$lib/components/organize/BoardCard.svelte';
+	import CardWall from '$lib/components/organize/CardWall.svelte';
 	import { bandsOf } from '$lib/organize/bands';
 	import { heldBoard, type Board, answered } from '$lib/organize/organize.svelte';
 	import { reloadOnLibraryChange } from '$lib/library/changes.svelte';
@@ -41,7 +42,7 @@
 	const cards = $derived(bandsOf(queues).flatMap((band) => band.cards));
 	/* What the empty board says after its first words: what would put something here. */
 	const EMPTY_SENTENCE =
-		'Sift has done everything it can for you. New questions appear here as files arrive, ' +
+		'Sift has done everything it can for you. New questions appear here as files are imported, ' +
 		'like a folder named after a person or a group of faces that may be one person.';
 	/* Whether anything is asking. Only the first band counts towards it: a log with nothing in it
 	   is not an achievement and a log with things in it is not work, so a screen whose only cards
@@ -149,45 +150,11 @@
 		{#if cards.length > 0}
 			<!-- ONE WALL: the bands ORDER the cards, with no headings between them, so the wall lays
 			     out as even rows. The accessible name is one list, "Organize". -->
-			<ul class="cards" aria-label="Organize">
+			<CardWall label="Organize" board>
 				{#each cards as card (card.lead.name)}
 					<li><BoardCard {card} /></li>
 				{/each}
-			</ul>
+			</CardWall>
 		{/if}
 	{/if}
 </PageFrame>
-
-<style>
-	/*
-	 * AS MANY COLUMNS AS FIT, one on a phone. The board fills the frame the way a wall of files does:
-	 * a column is at least `--board-column-min` and the columns share what is left, so the cards run
-	 * edge to edge at every width (three at 1280, four at 1600, five at 1920) and never stand in the
-	 * middle of the screen. `min()` keeps a window narrower than one column from scrolling sideways.
-	 * EVERY CARD ONE SIZE: the piles are of one kind and read by scanning, so every card is the
-	 * column's width and every ROW the tallest card's height (`grid-auto-rows: 1fr`), a last row of
-	 * one card included. Rows sized to their own contents would put a card with stills beside one
-	 * without at one height and the next row at another: cards of three shapes. At a
-	 * phone's width (the shell's own rule) one column, every card still one height.
-	 */
-	.cards {
-		display: grid;
-		grid-template-columns: repeat(auto-fill, minmax(min(var(--board-column-min), 100%), 1fr));
-		grid-auto-rows: 1fr;
-		gap: var(--space-4);
-		margin: 0;
-		padding: 0;
-		list-style: none;
-	}
-
-	.cards > li {
-		display: grid;
-		min-inline-size: 0;
-	}
-
-	@media (max-width: 767px) {
-		.cards {
-			grid-template-columns: minmax(0, 1fr);
-		}
-	}
-</style>

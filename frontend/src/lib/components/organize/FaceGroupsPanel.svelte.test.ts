@@ -11,6 +11,8 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { flushSync, mount, unmount, type Snippet } from 'svelte';
 
 import Panel from './FaceGroupsPanel.svelte';
+import panelSource from './FaceGroupsPanel.svelte?raw';
+import groupsSource from '../faces/FaceGroups.svelte?raw';
 import type { PagerProps } from '$lib/components/common/Pager.svelte';
 import { noServerAt } from '../../../test-setup';
 
@@ -206,4 +208,11 @@ it('keeps the small groups in the anchor it writes, so the way back reopens them
 it('pages groups by a noun the empty pager can say: "No unnamed groups"', async () => {
 	await render('faces-to-name');
 	await vi.waitFor(() => expect(pagers.at(-1)).toMatchObject({ noun: 'unnamed groups' }));
+});
+
+it('measures the wall it hands its rows to, so a page is whole rows of it', () => {
+	/* The host pages, so the host measures: a fixed page under seven columns ends on a row of three. */
+	expect(panelSource).toContain("new CardPaging(PAGE, 'faces.unnamed')");
+	expect(panelSource).toContain('measure={paging.cards}');
+	expect(groupsSource).toContain('<CardWall cards={handed ? measure : paging.cards}>');
 });

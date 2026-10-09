@@ -20,10 +20,10 @@ from sift.kernel import wiring
 from sift.kernel.access import Repository, Role, Viewer
 from sift.kernel.wiring import provide
 from sift.slices.auth import csrf_protect, current_viewer
-from sift.slices.insights import recaps_router
+from sift.slices.insights import recaps_router, store
 from sift.slices.insights.tests.conftest import World
 from sift.slices.insights.tests.test_api import Preferences
-from sift.slices.insights.tests.test_recaps import made, reader, september
+from sift.slices.insights.tests.test_recaps import HER, made, reader, september
 
 pytestmark = pytest.mark.integration
 
@@ -120,3 +120,36 @@ async def test_a_recap_says_its_favourite_hour_on_the_readers_clock(
     preferences.clock = "12"
     body = (await client.get(f"/api/insights/recaps/{recap_id}")).json()
     assert "began at 10:00 PM" in when(body)
+
+
+async def test_a_reader_takes_a_person_out_of_their_recap_and_puts_her_back(
+    app: FastAPI, client: httpx.AsyncClient, world: World
+) -> None:
+    await september(world)
+    recap_id = await made(world)
+    as_(app, reader(world, unlocked=True))
+
+    def kinds(body: Any) -> set[str]:
+        return {card["kind"] for card in body["cards"]}
+
+    taken = await client.put(
+        f"/api/insights/recaps/{recap_id}/left-out", json={"ids": [HER, "not-on-a-card"]}
+    )
+    assert taken.status_code == 200, taken.text
+    assert "top_person" not in kinds(taken.json())
+    kept = await store.recap(world.db, world.user, recap_id)
+    # Only what a card names is kept.
+    assert kept is not None and kept.left_out == (HER,)
+
+    back = await client.put(f"/api/insights/recaps/{recap_id}/left-out", json={"ids": []})
+    assert "top_person" in kinds(back.json())
+
+    stranger = Viewer(id=await world.add_user("u-other"), role=Role.GUEST, show_hidden=True)
+    as_(app, stranger)
+    refused = await client.put(f"/api/insights/recaps/{recap_id}/left-out", json={"ids": [HER]})
+    assert refused.status_code == 404
+    as_(app, reader(world, unlocked=True))
+    missing = await client.put(f"/api/insights/recaps/{NEVER_MINTED}/left-out", json={"ids": []})
+    assert missing.status_code == 404
+    kept = await store.recap(world.db, world.user, recap_id)
+    assert kept is not None and kept.left_out == ()

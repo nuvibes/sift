@@ -18,11 +18,10 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import IO
 
-try:
-    import fcntl
-except ImportError:
-    fcntl = None  # type: ignore[assignment]
+if sys.platform == "win32":
     import msvcrt
+else:
+    import fcntl
 
 #: What every fixture planted into the real source tree is called.
 PLANTED_PREFIX = "GateFixture"
@@ -79,7 +78,7 @@ def the_client_tree() -> Iterator[None]:
 
 
 def _take(handle: IO[bytes]) -> None:
-    if fcntl is not None:
+    if sys.platform != "win32":
         fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
         return
     # Windows' `LK_LOCK` gives up after ten tries a second apart, so the waiting is done here.
@@ -96,7 +95,7 @@ def _take(handle: IO[bytes]) -> None:
 
 
 def _release(handle: IO[bytes]) -> None:
-    if fcntl is not None:
+    if sys.platform != "win32":
         fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
         return
     handle.seek(0)

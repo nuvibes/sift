@@ -43,6 +43,7 @@ Row = aiosqlite.Row
 # A write refused by a constraint, aliased so a feature can name it without the driver. Most writes
 # avoid it by shape (`ON CONFLICT DO NOTHING ... RETURNING`); this is for a row deleted meanwhile.
 IntegrityError = sqlite3.IntegrityError
+OperationalError = sqlite3.OperationalError
 
 Initializer = Callable[[Connection, int], Awaitable[None]]
 

@@ -1862,7 +1862,7 @@ def register_stash_handlers(migration: StashMigration) -> None:
     # or a find, so a row both apply is applied once in effect. A row the run keeps again after
     # the pass has landed it is landed, to no effect, by the next pass.
     register_handler(
-        STASH_ARRIVED, land, name="Importing what Stash kept for arrived files", alone=True
+        STASH_ARRIVED, land, name="Importing what Stash kept for newly imported files", alone=True
     )
 
 

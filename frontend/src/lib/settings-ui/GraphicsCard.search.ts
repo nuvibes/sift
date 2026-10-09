@@ -23,7 +23,7 @@ export const COPY = {
 	waiting: 'Waiting',
 	downloadingNow: 'Downloading',
 	leave:
-		'You can leave this screen; the download continues. Follow or cancel it in Activity. A canceled download keeps what arrived, so starting again downloads only the rest.',
+		'You can leave this screen; the download continues. Follow or cancel it in Activity. A canceled download keeps what it already has, so starting again downloads only the rest.',
 	test: {
 		label: 'Test the GPU',
 		help: "Loads a real model onto the GPU and runs it in a separate process. A GPU that's present doesn't always work; this checks.",

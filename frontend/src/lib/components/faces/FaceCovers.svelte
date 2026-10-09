@@ -65,6 +65,9 @@
 		 * not one of a wall of equals: a file's own strip of faces is as long as that file's faces.
 		 */
 		most?: number;
+		/** Columns of a card's strip: six, or three or two where a card's six columns are shared
+		 *  between two or three groups, so every crop on a wall is one size. */
+		across?: 2 | 3 | 6;
 		/** How many faces the row stands for, where the caller was handed only some of them: the
 		 *  counter counts the rest too ("+217" of 229 when twelve came). */
 		total?: number;
@@ -89,6 +92,7 @@
 		sweepId,
 		most,
 		total,
+		across = 6,
 		hold = true
 	}: Props = $props();
 
@@ -119,6 +123,8 @@
 		{...sweepable}
 		class="faces"
 		class:rows={most !== undefined}
+		class:across-2={across === 2}
+		class:across-3={across === 3}
 		class:picked
 		{href}
 		aria-label={label}
@@ -141,7 +147,12 @@
 		{/each}
 	</a>
 {:else}
-	<div class="faces" class:rows={most !== undefined}>
+	<div
+		class="faces"
+		class:rows={most !== undefined}
+		class:across-2={across === 2}
+		class:across-3={across === 3}
+	>
 		{#each shown as face (face.track_id)}
 			<img src={cropUrl(face)} alt="" loading="lazy" />
 		{/each}
@@ -172,6 +183,14 @@
 	/* A card's strip: six across at every width, so its cells are whole rows. */
 	.faces.rows {
 		grid-template-columns: repeat(6, minmax(0, 1fr));
+	}
+
+	.faces.rows.across-3 {
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+	}
+
+	.faces.rows.across-2 {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
 	}
 
 	a.faces {

@@ -37,6 +37,7 @@
 	import type { OnPaging } from '$lib/components/common/Pager.svelte';
 	import { onDestroy } from 'svelte';
 	import Scroller from '$lib/components/common/Scroller.svelte';
+	import CardWall from '$lib/components/organize/CardWall.svelte';
 	import DecisionCard from '$lib/components/organize/DecisionCard.svelte';
 	import PathText from '$lib/components/PathText.svelte';
 	import Answers from '$lib/components/organize/Answers.svelte';
@@ -408,7 +409,7 @@
 		<!-- A wall of cards, the same wall the faces queue is: one question per card, the picture
 		     first, the answers at the foot, so the cards stand level rather than as rows of uneven
 		     height with checklists opened out in the middle of each. -->
-		<ul class="cards" {@attach paging.cards}>
+		<CardWall cards={paging.cards}>
 			{#each rows as row (row.id)}
 				<!-- Named so a still on the board's card can point at this folder rather than at one
 				     file inside it. `slices/suggestions/queue._claim_anchor` writes the other half;
@@ -590,7 +591,7 @@
 					</DecisionCard>
 				</li>
 			{/each}
-		</ul>
+		</CardWall>
 	{/if}
 </section>
 
@@ -610,25 +611,6 @@
 		display: flex;
 		flex-direction: column;
 		gap: var(--space-2);
-	}
-
-	/* The same grid the faces wall lays its cards on, so the two walls read as one kind of screen. */
-	.cards {
-		list-style: none;
-		margin: 0;
-		padding: 0;
-		display: grid;
-		grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
-		gap: var(--space-3);
-	}
-
-	/*
-	 * Each card at its own height, with no floor: a folder card is a few lines of text, and the wall
-	 * floor would leave most of them a band of empty ground. The grid already gives the cards of one row one
-	 * height, and the two lines kept for the detail under the question hold the questions level.
-	 */
-	.cards > li {
-		display: grid;
 	}
 
 	.who {
