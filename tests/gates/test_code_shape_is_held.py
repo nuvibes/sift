@@ -206,6 +206,5 @@ def test_the_record_is_over_every_line_it_names() -> None:
     assert all(value > shape.TEST_FILE_LINES for value in record["test_file_lines"].values())
     assert all(value > shape.PROSE_SHARE for value in record["prose_share"].values())
     assert record["prose_share"].keys() == record["prose_lines"].keys()
-    assert len(record["module_lines"]) > 20, (
-        "a record this short reads as a walk that found nothing"
-    )
+    # An empty record is the goal, so the walk's sanity is the tree's size, not the record's.
+    assert sum(1 for _ in (_PATH.parents[1] / "src").rglob("*.py")) > 200

@@ -140,7 +140,7 @@ class FaceEvidence:
         self._tree = TreeReads(database)
         self._preferences = preferences
         self._store = store
-        self._teacher = teacher
+        self._teacher = teacher  # the FaceService, behind a seam so evidence imports none of it
         self._queue = queue
 
     async def looking(self) -> bool:

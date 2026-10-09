@@ -1,10 +1,19 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """What Sift does without being asked, declared here so one screen can show all of it.
 
-Each task has one When (As files arrive or On a schedule, During quiet hours, Only when I press
-it), registered as the setting `tasks.<id>.when` and read by the enqueue and the claim; a press
-always runs. Not tasks: the process's own loops, derived counts, settle waits, log rotation and
-the self-test.
+## What is NOT declared here
+
+The process's own loops (The write-ahead checkpoint, the statistics refresh, the job watchdog's
+sweep, a worker's heartbeat, the pool's reconfigure, the keep-awake request, the look for a quiet
+moment, the settings pushed onto the running process, the work after ready, the client's file
+list): timers that keep the process alive, with no cadence anybody chooses. Insights' adder-up
+(`slices/insights/rollup.py`): a derived count whose only right time is soon. The settle waits,
+log rotation (by size) and the self-test (pressed).
+
+## Each task has one When
+
+As files arrive or On a schedule, During quiet hours, Only when I press it: registered as the
+setting `tasks.<id>.when`, read by the enqueue and the claim; a press always runs.
 """
 
 from __future__ import annotations

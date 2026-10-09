@@ -80,7 +80,7 @@ _RECORDS = (
 )
 
 #: Where the record IS (the ledger, the schema), history restated (migrations), and tests.
-_SKIP = ("kernel/ledger.py", "schema.py", "migrations.py", "/tests/", "testing/")
+_SKIP = ("kernel/ledger.py", "schema.py", "schema_steps.py", "migrations.py", "/tests/", "testing/")
 
 #: The writes that deliberately record nothing, each a promise that what it writes is not an ACT:
 #: a measurement, a cache, a row Sift read off a file, or a helper whose caller records.
@@ -112,6 +112,8 @@ NOT_AN_ACT: dict[str, str] = {
     "slices.suggestions.store.unfile_from_a_name_on": "a helper on the caller's connection; the undo that calls it writes the receipt",
     "slices.watermarks.store.unfile_on": "a helper on the caller's connection; the undo that calls it writes the receipt",
     "kernel.access.creator_studios.put_back": "the Undo of a receipt on the caller's connection; the workbench marks that receipt taken back, which is the record of the act",
+    "kernel.access.creator_studios._site_put_back": "the Site half of `put_back`, moved out whole; the same receipt is the record",
+    "kernel.access.creator_studios._let_go_of_what_the_move_made": "the let-go half of `put_back`, moved out whole; the same receipt is the record",
     # A stash-box answer taken back writes ONE receipt for the whole act.
     "kernel.access.catalog.take_back.take_off_filed_on": "a helper on the caller's connection; the take-back that calls it writes one receipt for the whole act",
     "kernel.access.catalog.take_back.remove_shell_on": "a helper on the caller's connection; the take-back that calls it writes one receipt for the whole act",
@@ -149,7 +151,6 @@ NOT_AN_ACT: dict[str, str] = {
     "slices.people.merge._one_into": "one step of a merge; merge_many records each fold in the same transaction",
     "slices.people.site_merge._one_into": "one step of a merge; merge_many records each fold in the same transaction",
     "slices.people.site_merge._fold_usernames": "one step of a merge; merge_many records each fold in the same transaction",
-    "slices.people.site_merge._keep_the_name": "one step of a merge; merge_many records each fold in the same transaction",
     # Credentials: nothing anybody can act on (as `test_a_write_says_who_it_concerns.py` says).
     "slices.auth.service._judge_login": "stamps a session; a credential, not a list",
     "slices.download.service_listing.mark_seen": "an acknowledgement for the rail; no download row changes",
