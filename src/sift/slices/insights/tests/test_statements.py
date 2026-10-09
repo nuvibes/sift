@@ -193,7 +193,7 @@ SAID: tuple[tuple[str, say.Line | None], ...] = (
 #: THE EXAMPLE SET, WORD FOR WORD, pinned so the sentences cannot drift.
 PINNED = [
     (SAID[0][1], "You viewed 41 hours in August: 29 of videos, 9 of pictures, 3 of GIFs."),
-    (SAID[9][1], "312 videos, 1,240 pictures and 96 GIFs, across 212 sessions."),
+    (SAID[9][1], "312 videos, 1,240 pictures and 96 GIFs, across 212 visits."),
     (
         SAID[11][1],
         f"Your most-viewed person this month was {SOMEBODY}: 6 hours, 38 videos and 140 pictures.",
@@ -219,7 +219,7 @@ PINNED = [
     (SAID[6][1], "That's 12 hours fewer than July."),
     (SAID[7][1], "That's 12 hours more than July."),
     (SAID[8][1], "That's the same as July."),
-    (SAID[10][1], "12 videos across 30 sessions."),
+    (SAID[10][1], "12 videos across 30 visits."),
     (SAID[13][1], "You spent 5 hours in Theater."),
     (SAID[15][1], "1 file you came back to three times or more."),
     (SAID[18][1], "You opened Sift twice today."),

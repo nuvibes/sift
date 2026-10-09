@@ -494,6 +494,15 @@ _LEDGER = {
         "SELECT COUNT(*) FROM workbench_decision_subjects s JOIN workbench_decisions d"
         " ON d.id = s.decision_id WHERE d.verb != 'ran'"
     ),
+    # The presses' totals mirror the decisions, so a run's own line is left out of them the same way.
+    "workbench_press_objects": (
+        "SELECT COUNT(*) FROM workbench_press_objects p WHERE EXISTS (SELECT 1 FROM"
+        " workbench_decisions d WHERE d.press_id = p.press_id AND d.verb != 'ran')"
+    ),
+    "workbench_press_subjects": (
+        "SELECT COUNT(*) FROM workbench_press_subjects p WHERE EXISTS (SELECT 1 FROM"
+        " workbench_decisions d WHERE d.press_id = p.press_id AND d.verb != 'ran')"
+    ),
 }
 
 

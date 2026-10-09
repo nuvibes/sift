@@ -521,7 +521,7 @@ def busiest_hour(hour: int, ms: int, hours: Clock) -> Line | None:
 
 
 def files_by_kind(files: Mapping[str, int], sittings: int) -> Line | None:
-    """ "312 videos, 1,240 pictures and 96 GIFs, across 212 sessions."
+    """ "312 videos, 1,240 pictures and 96 GIFs, across 212 visits."
 
     Distinct files viewed in the period, by kind; a kind with none is left out.
     """
@@ -530,7 +530,7 @@ def files_by_kind(files: Mapping[str, int], sittings: int) -> Line | None:
         return None
     joined = and_then(parts)
     comma = "," if len(parts) > 1 else ""
-    return said(f"{joined}{comma} across {counted(sittings, 'session', 'sessions')}.")
+    return said(f"{joined}{comma} across {counted(sittings, 'visit', 'visits')}.")
 
 
 def most_viewed_person(period: Period, person: Named, ms: int, files: Mapping[str, int]) -> Line:

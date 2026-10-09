@@ -535,7 +535,8 @@
     "80000": 8656112
    },
    "count": 1,
-   "why": "rounds O2 and O3: the rediscovered read counts its gap in local days; a recap keeps the usual figures its voice compares against; the sharing press sets and clears its may-defer flag around its writes and reads whether a widening is still being filed, one row each; a write marks what it left owed and sums it once before it commits (the hook reads the owed rows, sums each press thing and subject again, and clears them: flat per row at any size, its table check and pragma once per write), so a new act adds its share by key and a merge marks its moved subjects per row; a default cover is a picture only, so the hide trigger and the merge read the kind of the file"
+   "why": "a merge re-sums every subject row its acts moved, one row per subject the press names, so the merge's totals grow with the people a library holds, not with its files",
+   "per": "person"
   },
   "delete:workbench_totals_owed#c246f14d": {
    "stage": "db.write",
@@ -647,7 +648,7 @@
     "20000": 96,
     "80000": 96
    },
-   "count": 856
+   "count": 863
   },
   "insert:backlog_files#d9fa6ccb": {
    "stage": "db.write",
@@ -655,7 +656,7 @@
     "20000": 15504,
     "80000": 15504
    },
-   "count": 856
+   "count": 863
   },
   "insert:backlog_terms#d29c6586": {
    "stage": "db.write",
@@ -765,7 +766,8 @@
     "80000": 631984
    },
    "count": 1,
-   "why": "rounds O2 and O3: the rediscovered read counts its gap in local days; a recap keeps the usual figures its voice compares against; the sharing press sets and clears its may-defer flag around its writes and reads whether a widening is still being filed, one row each; a write marks what it left owed and sums it once before it commits (the hook reads the owed rows, sums each press thing and subject again, and clears them: flat per row at any size, its table check and pragma once per write), so a new act adds its share by key and a merge marks its moved subjects per row; a default cover is a picture only, so the hide trigger and the merge read the kind of the file"
+   "why": "a merge re-sums every subject row its acts moved, one row per subject the press names, so the merge's totals grow with the people a library holds, not with its files",
+   "per": "person"
   },
   "pragma:-#0110e23b": {
    "stage": "db.write",
@@ -965,7 +967,7 @@
     "20000": 33440,
     "80000": 33440
    },
-   "count": 132
+   "count": 134
   },
   "select:asset_locations#89742260": {
    "stage": "db.write",
@@ -989,7 +991,7 @@
     "20000": 8512,
     "80000": 8512
    },
-   "count": 127
+   "count": 129
   },
   "select:asset_locations#c4bbfcbb": {
    "stage": "db.write",
@@ -1005,7 +1007,7 @@
     "20000": 35840,
     "80000": 35856
    },
-   "count": 153
+   "count": 154
   },
   "select:asset_locations#da2aa158": {
    "stage": "db.read",
@@ -1030,7 +1032,7 @@
     "20000": 39168,
     "80000": 39184
    },
-   "count": 145
+   "count": 146
   },
   "select:asset_locations#fb05fab9": {
    "stage": "db.write",
@@ -1038,7 +1040,7 @@
     "20000": 29520,
     "80000": 29520
    },
-   "count": 300
+   "count": 301
   },
   "select:asset_people#620fb24b": {
    "stage": "db.read",
@@ -1368,7 +1370,7 @@
     "20000": 6528,
     "80000": 6528
    },
-   "count": 1662
+   "count": 1669
   },
   "select:backlog_terms#401e5329": {
    "stage": "db.write",
@@ -2727,7 +2729,7 @@
     "20000": 16,
     "80000": 16
    },
-   "count": 1679,
+   "count": 1686,
    "why": "an act marks itself and its two neighbours of the same press, three index seeks a row, flat with the library, so the History feed reads a page and not the record; a file's counts move once per write: a change records what the file held and one fold moves the counts before the write commits, so a file costs a read of its members where a thousand cost one fold; the hook asks once per connection whether the tables exist and once per write whether anything was touched"
   },
   "select:visibility_owed#c9f07d5a": {
@@ -2855,7 +2857,7 @@
     "20000": 16,
     "80000": 16
    },
-   "count": 1679,
+   "count": 1686,
    "why": "rounds O2 and O3: the rediscovered read counts its gap in local days; a recap keeps the usual figures its voice compares against; the sharing press sets and clears its may-defer flag around its writes and reads whether a widening is still being filed, one row each; a write marks what it left owed and sums it once before it commits (the hook reads the owed rows, sums each press thing and subject again, and clears them: flat per row at any size, its table check and pragma once per write), so a new act adds its share by key and a merge marks its moved subjects per row; a default cover is a picture only, so the hide trigger and the merge read the kind of the file"
   },
   "settings.app_value": {

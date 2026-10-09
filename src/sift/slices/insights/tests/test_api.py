@@ -461,7 +461,7 @@ async def test_every_block_names_what_it_counted(
         "Files": "solo.mp4",
     }
     assert [said(line) for line in block(body, "by_kind")["statements"]] == [
-        "1 video and 1 picture, across 12 sessions.",
+        "1 video and 1 picture, across 12 visits.",
         "1 file you came back to three times or more.",
         "You looked through 1 Photo Set.",
     ]

@@ -167,7 +167,9 @@ def stamp(day: date, hour: int, minute: int = 0) -> int:
 
 src = source
 PERSON = NamedThing(kind="person", id="p1", name="Mara Vell")
-LONG_NAMED = NamedThing(kind="person", id="p1", name="Somebody With A Very Long Name Indeed")
+LONG_NAMED = NamedThing(
+    kind="person", id="p1", name="Orla Finch of the long and winding and very long name"
+)
 FILE = NamedThing(kind="asset", id="a1", name="harbor_lights_04.mp4")
 OTHER = NamedThing(kind="asset", id="a2", name="quiet_cove.jpg")
 
