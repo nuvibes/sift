@@ -5,7 +5,7 @@
  * usernames with nobody behind them. Asking for all of them would draw a queue that can never be
  * emptied.
  *
- * The question is answered on the card through the same people picker Faces to name's "Add as
+ * The question is answered on the card through the same people picker Unnamed faces's "Add as
  * person" opens; the card never links to `/accounts/<id>`.
  *
  * The rest worth holding is the card's own reading: a username is a name on a site, so the picture
@@ -45,7 +45,7 @@ vi.mock('$lib/people/usernames.svelte', () => ({
 	}
 }));
 /* One PAGE of people for the picker, filtered by what is typed: the server's own answer, the same
-   shape the Faces to name picker's test hands its `PickMenu`. */
+   shape the Unnamed faces picker's test hands its `PickMenu`. */
 vi.mock('$lib/people/people.svelte', () => ({
 	people: {
 		choices: async (typed: string) => {
@@ -182,7 +182,7 @@ it('says the ID on the card when it is known', async () => {
 });
 
 /*
- * "Who is this?" opens the same picker Faces to name's "Add as person" opens.
+ * "Who is this?" opens the same picker Unnamed faces's "Add as person" opens.
  *
  * What is asserted is what this card is responsible for: the picker is behind its own button,
  * picking somebody joins the username to them, and creating somebody makes them and then joins. The

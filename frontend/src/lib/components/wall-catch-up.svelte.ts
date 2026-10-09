@@ -9,15 +9,22 @@
  */
 
 import { untrack } from 'svelte';
+import { page } from '$app/state';
 import { capture } from '$lib/capture/capture.svelte';
 import type { Grid, PageStart, RowSource } from '$lib/grid/grid.svelte';
 import { arrivals, whenChanged } from '$lib/library/changes.svelte';
 import { imports } from '$lib/library/imports.svelte';
+import { mini } from '$lib/player/mini.svelte';
 import type { WallMedia } from './wall-media.svelte';
 import type { WallOrder } from './wall-order.svelte';
 
 /** How long a few arrivals wait for more while files are pouring in. */
 const SETTLED_MS = 1500;
+
+/** Whether this tab's own player is open over the wall: the popout, or the corner panel. */
+function playerOver(): boolean {
+	return page.state.asset !== undefined || mini.showing;
+}
 
 /** What a wall's re-reads read and touch. */
 interface WallParts {
@@ -36,6 +43,8 @@ export class WallCatchUp {
 	private owed = false;
 	private settling: ReturnType<typeof setTimeout> | undefined;
 	private settledWas: number;
+	/** An opinion re-read held while this tab's own player was over the wall. */
+	private heldForPlayer = $state(false);
 	/** A take of the newer files is on its way, so the line offering them is not drawn for it. */
 	takingIn = $state(false);
 
@@ -53,6 +62,13 @@ export class WallCatchUp {
 			untrack(() => this.letThemIn());
 		});
 		$effect(() => () => clearTimeout(this.settling));
+		$effect(() => {
+			if (!this.heldForPlayer || playerOver()) return;
+			untrack(() => {
+				this.heldForPlayer = false;
+				void this.catchUp();
+			});
+		});
 		/* Work finished, so there is something new; not on mount, which would repeat the first read. */
 		this.settledWas = untrack(() => imports.settled);
 		$effect(() => {
@@ -114,6 +130,13 @@ export class WallCatchUp {
 		return untrack(() => grid.loadAt(order.fullQuery, start, { quiet: true }));
 	}
 
+	/* A heart, stars or a view moved a file in an order that hangs on them. Held while this tab's
+	   own player is over the wall, which reorders nothing under it, and made once it has gone. */
+	opinionMoved(): void {
+		if (playerOver()) this.heldForPlayer = true;
+		else void this.catchUp();
+	}
+
 	/* Take the files that arrived since this page was chosen, from where the page was ASKED to
 	   start, so a page further down catches up without jumping to the top. Not quiet: it was pressed. */
 	takeTheNewOnes(): void {
@@ -125,8 +148,8 @@ export class WallCatchUp {
 			.finally(() => (this.takingIn = false));
 	}
 
-	/** The "new" line, for what a take does not already have on its way; a lone newcomer waits
-	 *  behind it even at the top, since nothing on a page moves by itself. */
+	/** The "new" or "moved" line, for what a take does not already have on its way; a lone
+	 *  newcomer waits behind it even at the top, since nothing on a page moves by itself. */
 	get offersTheNew(): boolean {
 		const grid = this.wall.grid;
 		return grid.newer > 0 && !this.takingIn;
@@ -144,13 +167,14 @@ export class WallCatchUp {
 	}
 
 	/* A row's worth comes in by itself at the top of the page, fewer once a scan stops pouring them
-	   in, and otherwise waits behind its line: re-rowing a justified wall is a strobe by its rate. */
+	   in, and otherwise waits behind its line: re-rowing a justified wall is a strobe by its rate.
+	   Only arrivals: files that moved up wait for the press. */
 	letThemIn(): void {
 		const grid = this.wall.grid;
 		clearTimeout(this.settling);
 		this.settling = undefined;
 		// Never over a page somebody asked for that is still on its way.
-		if (grid.newer === 0 || grid.loading || !this.atTheTop()) return;
+		if (grid.newer === 0 || !grid.newerArrived || grid.loading || !this.atTheTop()) return;
 		if (grid.newer >= this.aRowsWorth()) {
 			this.takeTheNewOnes();
 			return;
@@ -159,7 +183,8 @@ export class WallCatchUp {
 		this.settling = setTimeout(() => {
 			this.settling = undefined;
 			// Asked again: a page can be turned or scrolled in the wait.
-			if (grid.newer > 0 && !grid.loading && this.atTheTop()) this.takeTheNewOnes();
+			if (grid.newer > 0 && grid.newerArrived && !grid.loading && this.atTheTop())
+				this.takeTheNewOnes();
 		}, SETTLED_MS);
 	}
 }

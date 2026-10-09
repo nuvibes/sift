@@ -487,6 +487,9 @@ export interface StorageReport {
 	cacheDir: string;
 	dataBytes: number;
 	cacheBytes: number;
+	/** When the sizes were measured, in ms since 1970; null before the first walk ends. */
+	measuredAt: number | null;
+	measuring: boolean;
 }
 
 /** How far a move has got. `total` is measured before it starts, so it does not move. */

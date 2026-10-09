@@ -524,6 +524,10 @@ def test_the_roster_carries_the_picture_each_person_is_drawn_by(
     """
     turn_on(client)
     sign_in(client, "admin")
+    # A default cover is a picture, and the scene's file is a video.
+    write(
+        db_path(client), [("UPDATE assets SET media_type = 'image' WHERE id = ?", (scene.asset,))]
+    )
     client.post(f"/api/faces/{scene.track}/confirm", json={"person_id": scene.person})
 
     (known,) = client.get("/api/faces/known").json()["items"]
@@ -1433,7 +1437,7 @@ def test_an_anchor_that_is_gone_opens_the_top_rather_than_refusing(
 def test_a_discarded_first_card_reopens_the_same_page_not_the_top(
     client: TestClient, scene: Scene
 ) -> None:
-    """Page two of Faces to name, discard the group that was its first card.
+    """Page two of Unnamed faces, discard the group that was its first card.
 
     The wall's address names that group (`from`) and the offset it was at (`near`). The group is
     gone from the list, so `from` finds nothing, and the answer is the page it was on, closed up

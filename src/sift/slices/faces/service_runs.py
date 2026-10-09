@@ -86,11 +86,7 @@ class RunsMixin(DecisionsMixin, IdentifiedMixin):
         drawn and the button being pressed is skipped rather than confirmed.
         """
         await self._require_enabled()
-        if not await self.may_see_person(viewer, person_id):
-            return RunAnswered(changed=0)
-        theirs = _narrowed(
-            await self._sightings_for(viewer, person_id, attribution=Attribution.SUGGESTED), only
-        )
+        theirs = await self._standing_to_agree(viewer, person_id, only)
         actionable = await self.touchable_faces(viewer, [face.track_id for face in theirs])
         if not actionable.allowed:
             return RunAnswered(changed=0)
@@ -133,6 +129,27 @@ class RunsMixin(DecisionsMixin, IdentifiedMixin):
             "faces.look_alikes_agreed", person_id=person_id, named=agreed, offered=len(offered)
         )
         return RunAnswered(changed=agreed, offered=len(offered), decision_id=receipt)
+
+    async def look_alikes_to_agree(
+        self, viewer: Viewer, person_id: str, *, only: Collection[str] | None = None
+    ) -> list[str]:
+        """The faces `confirm_look_alikes` would agree to for this viewer now, by id: what a press
+        that is answered before the work is done hands the work, so the work keeps the press's
+        reach (its vault, its page) however much later it runs."""
+        await self._require_enabled()
+        theirs = await self._standing_to_agree(viewer, person_id, only)
+        touchable = await self.touchable_faces(viewer, [face.track_id for face in theirs])
+        return list(touchable.allowed)
+
+    async def _standing_to_agree(
+        self, viewer: Viewer, person_id: str, only: Collection[str] | None
+    ) -> list[Sighting]:
+        """The proposals standing for her that a press names, none for a person withheld."""
+        if not await self.may_see_person(viewer, person_id):
+            return []
+        return _narrowed(
+            await self._sightings_for(viewer, person_id, attribution=Attribution.SUGGESTED), only
+        )
 
     async def reject_look_alikes(
         self, viewer: Viewer, person_id: str, *, only: Collection[str] | None = None

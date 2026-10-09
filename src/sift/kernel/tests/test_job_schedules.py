@@ -133,7 +133,7 @@ def test_declaring_a_task_registers_its_when_as_a_setting(clean_registry: None) 
     assert declared.default == WHEN_QUIET
     assert declared.choices == (WHEN_WORK, WHEN_QUIET, WHEN_PRESS)
     assert declared.choice_labels == (
-        "As files arrive",
+        "As files are imported",
         "During quiet hours",
         "Only when I press it",
     )
@@ -141,12 +141,12 @@ def test_declaring_a_task_registers_its_when_as_a_setting(clean_registry: None) 
 
 
 def test_the_first_when_is_named_for_what_starts_the_task() -> None:
-    """One stored value, two names: a task that waits for files starts "As files arrive", a timed
+    """One stored value, two names: a task that waits for files starts "As files are imported", a timed
     one "On a schedule". Never with its interval beside it: a longer answer would make one task's
     choice wider than every other row's and push its press onto a second line."""
     tasks = registered_schedules()
-    assert tasks["generate"].when_labels({})[WHEN_WORK] == "As files arrive"
-    assert tasks["scan"].cadence({}) == "As files arrive"
+    assert tasks["generate"].when_labels({})[WHEN_WORK] == "As files are imported"
+    assert tasks["scan"].cadence({}) == "As files are imported"
     backup = tasks["backup"]
     daily = {EVERY_DAYS_KEY: 1}
     assert backup.when_labels(daily)[WHEN_WORK] == "On a schedule"

@@ -22,6 +22,7 @@ from sift.kernel.access.history_feed import (
     press_of,
     presses_recent,
 )
+from sift.kernel.access.history_press_totals import TOTALS_DROPS
 from sift.kernel.access.history_presses import keep_presses
 from sift.kernel.db import Database, Params, Row
 from sift.kernel.ledger import Actor, record_event
@@ -256,6 +257,7 @@ async def test_a_record_from_before_the_marks_is_marked_once(
 
     async with temp_db.write() as connection:
         for statement in (
+            *TOTALS_DROPS,
             "DROP TRIGGER workbench_press_arrives",
             "DROP TRIGGER workbench_press_moves",
             "DROP TRIGGER workbench_press_goes",
@@ -284,6 +286,7 @@ async def test_a_record_from_before_the_marks_is_marked_once(
 
     async with temp_db.write() as connection:
         for statement in (
+            *TOTALS_DROPS,
             "DROP TRIGGER workbench_press_arrives",
             "DROP TRIGGER workbench_press_moves",
             "DROP TRIGGER workbench_press_goes",

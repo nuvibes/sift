@@ -12,6 +12,8 @@
  */
 
 import { api } from '$lib/api/client';
+import { bridge } from '$lib/bridge';
+import { isNewer } from '$lib/shell/version-order';
 import { settingChanges } from '$lib/library/changes.svelte';
 import { sayAgo } from '$lib/shell/when';
 
@@ -35,8 +37,12 @@ export class Updates {
 	   that goes wrong is the check failing, which is not worth a message: the screen shows what it
 	   knows, which is nothing. */
 	unavailable = $state(false);
+	/** What version THIS copy of the application is where it is not the library's own (client mode);
+	 *  null in a browser and on the computer running Sift (`bridge.shellVersion`). */
+	here = $state<string | null>(null);
 
 	async load(): Promise<void> {
+		void this.readHere();
 		try {
 			this.state = await api.get<UpdateState>('/update/check');
 			this.loaded = true;
@@ -46,9 +52,24 @@ export class Updates {
 		}
 	}
 
+	async readHere(): Promise<void> {
+		this.here = await bridge.shellVersion();
+	}
+
+	/** Whether THIS copy is behind the newest release, which the server's own verdict never says. */
+	get behindHere(): boolean {
+		const latest = this.state?.latest_version;
+		return this.here !== null && !!latest && isNewer(latest, this.here);
+	}
+
+	/** Whether a newer Sift waits for the library's computer or for this copy. */
+	get waiting(): boolean {
+		return this.state?.update_available === true || this.behindHere;
+	}
+
 	/** Whether to put the banner in front of somebody. */
 	get shouldNotify(): boolean {
-		return this.state !== null && this.state.update_available && !this.state.dismissed;
+		return this.state !== null && this.waiting && !this.state.dismissed;
 	}
 
 	/** Stop the banner for the version currently offered. The next release brings it back. */

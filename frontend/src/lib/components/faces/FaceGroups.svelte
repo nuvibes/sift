@@ -779,6 +779,7 @@
 						question={status === 'open' ? asked : undefined}
 						detail={said}
 						answers={answered}
+						opens={pileHref(group, tab)}
 					>
 						<FaceCovers
 							faces={group.faces}

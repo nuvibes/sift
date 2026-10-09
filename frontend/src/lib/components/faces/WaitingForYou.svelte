@@ -1,3 +1,70 @@
+<script lang="ts" module>
+	import { api } from '$lib/api/client';
+	import { isFinished } from '$lib/jobs/queue.svelte';
+	import type { JobsPage } from '$lib/jobs/family';
+	import { SvelteSet } from 'svelte/reactivity';
+
+	/** How often the queue is asked whether the re-match is still to run. */
+	const WATCH_EVERY = 2000;
+
+	/*
+	 * The People a Yes in this tab was about, while the re-match it asked for is queued or running.
+	 *
+	 * A Yes teaches Sift her face, and the re-match then sweeps the rest of the library against it,
+	 * so her numbers move for a while after the press. Held outside any one screen so her card and
+	 * her page draw the same mark, and cleared once the queue holds no re-match.
+	 */
+	class Rematching {
+		readonly people = new SvelteSet<string>();
+		#watching = false;
+
+		/** Mark her until the re-match a Yes about her asked for has run. */
+		after(personId: string): void {
+			this.people.add(personId);
+			if (!this.#watching) void this.#watch();
+		}
+
+		async #watch(): Promise<void> {
+			this.#watching = true;
+			try {
+				while (this.people.size > 0) {
+					await new Promise((done) => setTimeout(done, WATCH_EVERY));
+					if (this.people.size > 0 && !(await stillMatching())) this.people.clear();
+				}
+			} finally {
+				this.#watching = false;
+			}
+		}
+	}
+
+	/* The agreeing a Yes hands to a task, then the re-match that task asks for. A queue that cannot
+	   be read is not matching: a mark that never goes is worse than none. */
+	async function stillMatching(): Promise<boolean> {
+		try {
+			for (const type of ['face_agree', 'face_rematch']) {
+				const page = await api.get<JobsPage>('/jobs', { query: { type, limit: 5 } });
+				if (page.jobs.some((one) => !isFinished(one.state))) return true;
+			}
+			return false;
+		} catch {
+			return false;
+		}
+	}
+
+	export const rematching = new Rematching();
+
+	/** What a Yes to her proposals says: the agreeing is a task, and this is what it was handed. */
+	export function agreeingWith(faces: number): string {
+		return faces === 1 ? 'Agreeing with 1 face' : `Agreeing with ${faces.toLocaleString()} faces`;
+	}
+
+	/** The working mark's words: "Sift is matching the rest of the library against Ada's face". */
+	export function matchingSaid(name: string | null | undefined): string {
+		const first = name?.trim().split(/\s+/)[0];
+		return `Sift is matching the rest of the library against ${first ? `${first}'s` : 'their'} face`;
+	}
+</script>
+
 <script lang="ts">
 	/*
 	 * What Sift knows of one person's face, in three numbers: the faces you confirmed, the faces
@@ -40,7 +107,7 @@
 	import type { components } from '$lib/api/schema';
 	import { identifiedForPerson } from '$lib/people/faces.svelte';
 	import { primedOr, readingAbout } from '$lib/entity/subject.svelte';
-	import { Tooltip } from '$lib/components/common';
+	import { Spinner, Tooltip } from '$lib/components/common';
 
 	interface Props {
 		personId: string;
@@ -68,7 +135,7 @@
 			? `Faces you confirmed to be ${whom}. These teach Sift what ${first} looks like.`
 			: 'Faces you confirmed to be them. These teach Sift what they look like.'
 	);
-	const waitingTip = $derived(`Faces Sift thinks may be ${whom}, awaiting your confirmation.`);
+	const waitingTip = $derived(`Faces Sift thinks may be ${whom}, awaiting your input.`);
 
 	/** The smallest page there is. The total comes with any page; the rows do not get drawn. */
 	const ONE = { limit: 1, offset: 0 };
@@ -131,6 +198,13 @@
 
 {#if anything}
 	<div class="counts">
+		{#if rematching.people.has(personId)}
+			<p class="one working">
+				<Tooltip label={matchingSaid(name)} placement="bottom">
+					<Spinner size={12} label={matchingSaid(name)} />
+				</Tooltip>
+			</p>
+		{/if}
 		{#if found.confirmed > 0}
 			<!-- The one of the three with nowhere to go, so it is words rather than a link:
 			     agreeing is done on the review screens, and a confirmed face has already been
@@ -179,8 +253,8 @@
 							     button beside them. -->
 							<a class="number" href={toCheck}>
 								{found.waiting === 1
-									? '1 awaiting your confirmation'
-									: `${found.waiting.toLocaleString()} awaiting your confirmation`}
+									? '1 awaiting your input'
+									: `${found.waiting.toLocaleString()} awaiting your input`}
 							</a>
 						</Tooltip>
 					</span>
@@ -218,6 +292,11 @@
 		display: flex;
 		margin: 0;
 		min-inline-size: 0;
+	}
+
+	/* The mark while a re-match about her runs: quieter than the numbers under it. */
+	.working {
+		color: var(--sift-ink-3);
 	}
 
 	/* The number and what it counts, on one line, and it is the loudest thing in the block because

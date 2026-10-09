@@ -160,6 +160,17 @@ STRONG_REFERENCES = 10
 #: recognized.
 GOOD_REFERENCES = 20
 
+#: Her own pictures below which her strength says only that Sift needs a few more: with two, how
+#: often she is matched is a coin toss whatever it reads.
+FEWEST_REFERENCES = 3
+
+#: Where her strength's bands start, on the share of her faces Sift named outright rather than
+#: asked about, answers counted (`Strength.rate`): half, three in four, nine in ten. Chosen, not
+#: yet measured against enough answers to move them.
+RATE_FAIR = 0.50
+RATE_GOOD = 0.75
+RATE_STRONG = 0.90
+
 #: Faces people confirmed as somebody (`Origin.CONFIRMED`) before a group question that clears her
 #: line is named like any match: a description from fewer is too thin for a group nobody looked at.
 GROUP_NAMING_REFERENCES = GOOD_REFERENCES

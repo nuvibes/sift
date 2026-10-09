@@ -27,8 +27,15 @@
 	 * `answers` (`Answers`), and the card draws them the same way on every wall: the question and
 	 * its detail at the foot under the pictures, the answers at the end of the last line. Each wall
 	 * placing its own question would give four layouts and button pairs for one kind of decision.
+	 *
+	 * ## A card that opens something
+	 *
+	 * `opens` is what the card's activation does (an address, or a call). The whole card then takes
+	 * the hover layer, and a press anywhere on it that is not a control or a link does the same,
+	 * as a press on a tile does (`pressOnCard`).
 	 */
 	import type { Snippet } from 'svelte';
+	import { pressOnCard, type CardOpens } from '$lib/components/common/card-press';
 	import Panel from '$lib/components/common/Panel.svelte';
 	import SectionHeading from '$lib/components/common/SectionHeading.svelte';
 
@@ -48,15 +55,33 @@
 		 * of two puts the questions of one row at two heights. Kept at the longest a wall's detail runs.
 		 */
 		detailLines?: number;
+		/** What a press on the card does, where it opens something. See the header. */
+		opens?: CardOpens;
 	}
 
-	let { children, unsettled = false, question, detail, answers, detailLines = 0 }: Props = $props();
+	let {
+		children,
+		unsettled = false,
+		question,
+		detail,
+		answers,
+		detailLines = 0,
+		opens
+	}: Props = $props();
 </script>
 
 <!-- The box is `Panel`'s: the ground, the edge, the corner and the inset, decided in one place
      rather than restated here. What is left in this file is the two things that are a DECISION
      card's own: how its contents flow, and what an unsettled one looks like. -->
-<div class="card" class:unsettled>
+<!-- svelte-ignore a11y_no_static_element_interactions -->
+<!-- svelte-ignore a11y_click_events_have_key_events: the keyboard reaches what this opens through
+     the card's own button or link. -->
+<div
+	class="card"
+	class:unsettled
+	class:opens={opens !== undefined}
+	onclick={(event) => pressOnCard(event, opens)}
+>
 	<!-- No edge and the tighter gap: a card on a wall of cards is bounded by its ground, and the
 	     Panel's default edge would make every card two pixels wider than the wall was measured for. -->
 	<Panel inset="md" corner="lg" edge={false} gap="sm">
@@ -105,6 +130,7 @@
 	.card :global(.panel) {
 		display: flex;
 		flex-direction: column;
+		transition: outline-color var(--dur-instant) var(--ease);
 	}
 
 	/* The question block at the foot of the card. One `auto` margin for the whole block: a second
@@ -123,6 +149,24 @@
 		font: var(--text-body-sm);
 		color: var(--sift-ink-3);
 		overflow-wrap: anywhere;
+	}
+
+	/*
+	 * THE STATE LAYER of a card that opens something: the hover layer under the pointer, the pressed
+	 * layer under a press, laid over the card's light (which a `background-color` would sit under).
+	 * A picture over the light does not fade, so it lands in one frame.
+	 */
+	.card.opens {
+		cursor: pointer;
+	}
+
+	.card.opens:hover :global(.panel) {
+		background: var(--sift-card-hover-layer), var(--sift-card-fill);
+		--sift-line: var(--sift-card-hover-line);
+	}
+
+	.card.opens:active:not(:has(a:active, button:active)) :global(.panel) {
+		background: var(--sift-card-press-layer), var(--sift-card-fill);
 	}
 
 	/* Not settled here: the same box with a dashed edge, which is how `EntityCard` says "this one is

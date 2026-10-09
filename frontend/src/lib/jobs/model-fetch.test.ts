@@ -50,11 +50,11 @@ describe('a download that ended without the models', () => {
 	it('says what arrived is kept only when something did', async () => {
 		endsAs({ state: 'canceled', progress: 0.4 });
 		await ended();
-		expect(watch.outcome).toMatch(/^Download canceled\. What arrived is kept/);
+		expect(watch.outcome).toMatch(/^Download canceled\. What was downloaded is kept/);
 
 		endsAs({ state: 'canceled', progress: 0 });
 		await ended();
-		expect(watch.outcome).toBe('Download canceled before anything arrived.');
+		expect(watch.outcome).toBe('Download canceled before anything was downloaded.');
 	});
 
 	it('says it ended without them when the row says no more, or is gone', async () => {
@@ -92,8 +92,8 @@ describe('a download that ended without the models', () => {
 		await ended();
 
 		expect(shown.mock.calls).toEqual([
-			['Download canceled before anything arrived.', { tone: 'error' }],
-			['Download canceled before anything arrived.', { tone: 'error' }],
+			['Download canceled before anything was downloaded.', { tone: 'error' }],
+			['Download canceled before anything was downloaded.', { tone: 'error' }],
 			['Here now.', { tone: 'success' }]
 		]);
 		shown.mockRestore();

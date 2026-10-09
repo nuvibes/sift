@@ -4,16 +4,21 @@ scopes of a Yes and a No, merging and splitting, and the group a face is waiting
 
 from __future__ import annotations
 
+import time
 from dataclasses import replace
 from pathlib import Path
+from typing import cast
 
 import pytest
 from fastapi.testclient import TestClient
 
+from sift.kernel.access import Role, Viewer
 from sift.kernel.ids import new_id
+from sift.kernel.jobs import JobQueue
 from sift.slices.faces import jobs as faces_jobs
-from sift.slices.faces import tuning
-from sift.slices.faces.service import FACE_STARTERS
+from sift.slices.faces import router_answers, tuning
+from sift.slices.faces.jobs_agree import FACE_AGREE
+from sift.slices.faces.service import FACE_STARTERS, FaceService
 from sift.slices.faces.tests import test_routes
 from sift.slices.faces.tests.test_routes import (
     _ATTRIBUTE,
@@ -551,7 +556,7 @@ def _a_group_of(client: TestClient, scene: Scene, faces: int) -> str:
 def test_the_review_list_opens_from_a_group_at_the_page_that_group_is_on(
     client: TestClient, scene: Scene
 ) -> None:
-    """`from` on Faces to name: the crumb and the browser's Back come back to the page that was
+    """`from` on Unnamed faces: the crumb and the browser's Back come back to the page that was
     being worked. The group is found in the tab's own list (groups above the floor, largest
     first) and the page starts at it, saying which offset that is so the pager can say so too."""
     turn_on(client)
@@ -1471,6 +1476,8 @@ def test_the_answer_doors_are_shut_while_faces_is_off_and_each_does_its_one_job_
     agreed = client.post(f"/api/faces/look-alikes/{person}/confirm")
     assert agreed.status_code == 200
     assert (agreed.json()["changed"], agreed.json()["person_id"]) == (1, person)
+    # The agreement is a task: done once it has run, and it asks for the re-match.
+    _until_done(client, FACE_AGREE)
     listed = client.get(f"/api/faces/identified/people/{person}").json()["items"]
     assert [item["attribution"] for item in listed] == ["confirmed"]
     assert faces_jobs.FACE_REMATCH in queued_types(client)
@@ -1489,3 +1496,71 @@ def test_the_starter_press_says_its_count_first_and_refuses_to_do_nothing(
     refused = client.post("/api/faces/starters")
     assert refused.status_code == 409
     assert "Nobody linked to a stash-box" in refused.json()["detail"]
+
+
+def _until_done(client: TestClient, job_type: str) -> None:
+    """Wait for every task of this type to finish, as the queue reports it; bounded."""
+    for _turn in range(400):
+        jobs = client.get("/api/jobs", params={"type": job_type, "limit": 20}).json()["jobs"]
+        if jobs and all(one["state"] in {"done", "failed", "canceled"} for one in jobs):
+            assert {one["state"] for one in jobs} == {"done"}
+            return
+        time.sleep(0.025)
+    raise AssertionError(f"{job_type} did not finish")
+
+
+class _Agreeing:
+    """The face service as the confirm route sees it, recording what it is asked."""
+
+    def __init__(self, named: list[str]) -> None:
+        self.named = named
+        self.agreed: list[object] = []
+
+    async def enabled(self) -> bool:
+        return True
+
+    async def look_alikes_to_agree(
+        self, _viewer: object, _person: str, *, only: object
+    ) -> list[str]:
+        return self.named
+
+    async def confirm_look_alikes(self, *args: object, **kwargs: object) -> None:
+        self.agreed.append((args, kwargs))
+
+
+class _Queue:
+    def __init__(self) -> None:
+        self.enqueued: list[tuple[str, dict[str, object], str | None]] = []
+
+    async def enqueue(
+        self, job_type: str, payload: dict[str, object], *, requested_by: str | None = None
+    ) -> str:
+        self.enqueued.append((job_type, payload, requested_by))
+        return "job-1"
+
+
+async def test_a_yes_to_a_persons_proposals_is_answered_before_the_agreement_runs() -> None:
+    """The route hands the faces it reached to a task and answers with their count; nothing is
+    agreed to inside the request, and a press reaching nothing queues nothing."""
+    service, queue = _Agreeing(["t1", "t2"]), _Queue()
+    viewer = Viewer(id="u1", role=Role.ADMIN)
+
+    answer = await router_answers.confirm_look_alikes(
+        "p1",
+        service=cast(FaceService, service),
+        queue=cast(JobQueue, queue),
+        viewer=viewer,
+    )
+
+    assert (answer.changed, answer.person_id) == (2, "p1")
+    assert queue.enqueued == [(FACE_AGREE, {"person_id": "p1", "track_ids": ["t1", "t2"]}, "u1")]
+    assert service.agreed == []
+
+    nobody = _Queue()
+    await router_answers.confirm_look_alikes(
+        "p1",
+        service=cast(FaceService, _Agreeing([])),
+        queue=cast(JobQueue, nobody),
+        viewer=viewer,
+    )
+    assert nobody.enqueued == []

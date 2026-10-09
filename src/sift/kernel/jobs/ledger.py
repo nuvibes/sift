@@ -26,6 +26,7 @@ from sift.kernel.audience import EVERY_ADMIN
 from sift.kernel.changes import About, telling
 from sift.kernel.db import Connection, Database, Row, register_schema_initializer
 from sift.kernel.ids import new_id
+from sift.kernel.jobs import time_left
 from sift.kernel.jobs.failure_words import KINDS, OTHERWISE, in_plain_words, kind_of
 from sift.kernel.jobs.families import FAMILY_LABELS, LONG_PASSES, Family
 from sift.kernel.jobs.pacing import FEWEST_ITEMS as FEWEST_ITEMS
@@ -544,16 +545,8 @@ class Ledger(RunReads):
         }
 
     def run_name(self, run: Run) -> str:
-        """What a run is called in its History line: the task it was for, else its family.
-
-        Not always the family: Music's press must not read "You ran Generate in 6 s: 192 files"
-        when the run is Generate's and the work Music's. The task whose products the run was made
-        for, by the title the task registry gives it. A run made for
-        several tasks' products (one Identify run reading faces and watermarks for arriving files)
-        is named after the one that was pressed where one was, else by its family; so
-        is a run that recorded no product, which includes an older run from before products were
-        kept.
-        """
+        """What a run is called in its History line: the task whose products it was made for (a
+        press's, where it served several), else its family, so Music's run is not "Generate"."""
         tasks = {self._task_of[one] for one in run.made_for if one in self._task_of}
         if len(tasks) > 1:
             tasks = {self._task_of[one] for one in run.pressed_for if one in self._task_of}
@@ -611,16 +604,11 @@ class Ledger(RunReads):
         failed_with: str | None = None,
         noted: str | None = None,
     ) -> None:
-        """A job ended. What kind of file it was about is whatever the handler said, or unknown.
+        """A job ended, about a file of the kind the handler said, or unknown.
 
-        `arrived` is how many files it brought into the library that were not there before
-        (`JobContext.arrived`), added up for the run's line. `failed_with` is the error a job that
-        will not be tried again ended with; `noted`, a done job's note, kept when it names a
-        failure kind (a folder left unread).
-
-        `units` is how many files the job FINISHED (`JobContext.units_done`), not what it was about:
-        a walk's files each get a probe of their own, and counted twice they read the pace fifty
-        times over.
+        `arrived`: files new to the library (`JobContext.arrived`). `failed_with`: the error of a
+        job not tried again; `noted`, a done job's note naming a failure kind. `units`: files the
+        job FINISHED (`JobContext.units_done`), as a walk's files each get a probe of their own.
         """
         run = self.started(job_type)
         if ok:
@@ -638,7 +626,8 @@ class Ledger(RunReads):
         counted = run.files.setdefault(kind, FileCount())
         counted.n += max(0, units)
         counted.bytes += size_bytes or 0
-        counted.ms += duration_ms
+        # A job that finished no file (a walk) is no file's cost: its hours over one file priced a kind.
+        counted.ms += duration_ms if units > 0 else 0.0
         run.last_done = time.monotonic()
         if ok and units > 0:
             self._minute(run)[1][(job_type, kind)] += units
@@ -1037,13 +1026,21 @@ class Ledger(RunReads):
     ) -> Estimate | None:
         """How long the family's remaining work will take, between two bounds, or None.
 
-        The history's pace, by kind where `kinds` is given; without one, a floor from the
-        benchmark's `first_prices` for the videos left. A run's own pace is `time_left`'s.
+        While the family's run is open, the live sample's price at the run's measured rate where
+        this process has timed the work; else the history's pace, by kind where `kinds` is given; else a floor from the
+        benchmark's `first_prices` for the videos left.
         """
         if left <= 0:
             return None
         workers = max(1, at_once)
         shares = _shares(kinds)
+        prices = self.prices()
+        live = family in self._open
+        if live and (each := time_left.each_item(prices, job_types, shares)) is not None:
+            rate = self.realized(family, prices, time_left.PACE_AT_LEAST)
+            low, high = time_left.measured(left * each, rate, workers)
+            timed = sum(len(self._priced.get((one, ANY_KIND), ())) for one in job_types)
+            return Estimate(low, high, items=timed, at_once=workers)
         kept = await self._kept(family)
         if shares:
             by_kind = await self._estimate_by_kind(family, left, shares, workers, kept)

@@ -22,7 +22,7 @@ from sift.kernel.db import Connection, register_schema_initializer, register_sch
 from sift.kernel.migrations import column_exists
 
 COMPONENT = "workbench"
-VERSION = 18
+VERSION = 19
 
 # `user_id` carries a key with `ON DELETE SET NULL`; `actor_kind` and `actor_id` are the snapshot
 # that keeps saying who did an act after the user is deleted (see the module docstring).
@@ -99,8 +99,8 @@ async def initialize_workbench(connection: Connection, on_disk: int) -> None:
         for column, statement in _ADD_CLIENT:
             if not await column_exists(connection, "workbench_decisions", column):
                 await connection.execute(statement)
-    if on_disk < 18:
-        # Each act marked (17) and labelled (18) with its press, so the feed reads a page.
+    if on_disk < 19:
+        # Each act marked (17) and labelled (18) with its press, and each press summed (19).
         await keep_presses(connection)
 
 

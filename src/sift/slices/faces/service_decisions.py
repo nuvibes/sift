@@ -5,9 +5,11 @@ between groups, and teaching Sift from faces another feature named.
 
 from __future__ import annotations
 
+import asyncio
 import json
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from sift.kernel.access import Viewer
@@ -29,6 +31,10 @@ from sift.slices.faces.service_pictures import PicturesMixin
 from sift.slices.faces.store import Ruling, StoredTrack
 
 log = get_logger(__name__)
+
+#: How many faces one turn at the writer agrees with: a turn each for five hundred faces held the
+#: screen for a minute, and one turn for them all would hold every other write as long.
+_AGREED_PER_WRITE = 200
 
 
 @dataclass(frozen=True, slots=True)
@@ -598,20 +604,130 @@ class DecisionsMixin(PicturesMixin):
         worth failing the whole call for.
         """
         await self._require_enabled()
-        agreed = 0
-        touched: list[str] = []
         found = await self._store.tracks(track_ids)
-        for track_id in dict.fromkeys(track_ids):
-            track = found.get(track_id)
-            if track is None or track.person_id is None:
-                continue
-            if track.attribution is Attribution.CONFIRMED:
-                continue
-            await self.confirm(track_id, track.person_id, settle=False, taught=taught)
-            touched.append(track.asset_id)
-            agreed += 1
-        await self._settle_all(touched)
-        return agreed
+        agreeing = [
+            track
+            for track in (found.get(track_id) for track_id in dict.fromkeys(track_ids))
+            if track is not None
+            and track.person_id is not None
+            and track.attribution is not Attribution.CONFIRMED
+        ]
+        landed: list[StoredTrack] = []
+        # A turn at the writer per batch, never per face: a face at a time held the writer for a
+        # turn per write and the screen for a minute over five hundred faces.
+        for start in range(0, len(agreeing), _AGREED_PER_WRITE):
+            landed += await self._confirm_together(
+                agreeing[start : start + _AGREED_PER_WRITE], taught=taught
+            )
+        await self._settle_all([track.asset_id for track in landed])
+        return len(landed)
+
+    async def _confirm_together(
+        self, tracks: Sequence[StoredTrack], *, taught: Taught | None
+    ) -> list[StoredTrack]:
+        """`confirm` for a batch of proposed faces, each as the person proposed for it: what
+        `confirm` reads is read first, the pictures off the disk included, then one write names
+        them, remembers them and files each one's reference. The faces it landed.
+
+        Guarded as every restate is: a face answered between the read and the write keeps that
+        answer and is neither confirmed nor counted.
+        """
+        chosen = await self._references_to_file(tracks)
+        if taught is not None:
+            for person_id in {str(track.person_id) for track in tracks}:
+                if person_id not in taught.starters:
+                    taught.starters[person_id] = await self._store.starters_in_use(person_id)
+        pictures: list[tuple[Path, bytes]] = []
+        async with self._store.database.write() as connection:
+            landed = await self._store.restate_on(
+                connection,
+                [
+                    Ruling(
+                        track_id=track.id,
+                        was_person=track.person_id,
+                        was=track.attribution,
+                        person_id=track.person_id,
+                        attribution=Attribution.CONFIRMED,
+                        confidence=1.0,
+                    )
+                    for track in tracks
+                ],
+            )
+            done = [track for track in tracks if track.id in landed]
+            await self._store.remember_confirmations_on(connection, [one.id for one in done])
+            for track in done:
+                made: list[str] = []
+                for filing in chosen.get(track.id, []):
+                    reference_id = await self._store.add_reference_on(
+                        connection,
+                        str(track.person_id),
+                        pictures=pictures,
+                        origin=Origin.CONFIRMED,
+                        track_id=track.id,
+                        asset_id=track.asset_id,
+                        **filing,
+                    )
+                    if reference_id is not None:
+                        made.append(reference_id)
+                if taught is not None:
+                    taught.references.setdefault(track.id, []).extend(made)
+            if done:
+                announce(EVERY_ADMIN, About.LIBRARY)
+        await self._store.write_pictures(pictures)
+        return done
+
+    async def _references_to_file(
+        self, tracks: Sequence[StoredTrack]
+    ) -> dict[str, list[dict[str, Any]]]:
+        """Each face's pictures to file, read before any write: its clearest faces not turned past
+        the bar's angle whose pictures are still on the disk, as many as an appearance files.
+
+        Where she already holds one, the appearance claims it and files no other in its place
+        (`add_reference_on`), so an appearance is never more references than the cap. The pictures
+        are read together rather than one after another, a round per face whose picture had gone.
+        """
+        faces = await self._store.faces_of_many([track.id for track in tracks])
+        line = (await self.configuration()).bar.min_frontality
+        recognizers: dict[str, str] = {}
+        for asset_id in {track.asset_id for track in tracks}:
+            scan = await self._store.scan_of(asset_id)
+            if scan is not None:
+                recognizers[asset_id] = scan.recognizer
+        waiting = {
+            track.id: [
+                face
+                for face in sorted(faces.get(track.id, []), key=lambda one: -one.quality)
+                if not face.turned(line)
+            ]
+            for track in tracks
+            if track.asset_id in recognizers
+        }
+        recognizer_of = {
+            track.id: recognizers[track.asset_id] for track in tracks if track.id in waiting
+        }
+        chosen: dict[str, list[dict[str, Any]]] = {}
+        while waiting:
+            asked = {track_id: rest.pop(0) for track_id, rest in waiting.items() if rest}
+            crops = await asyncio.gather(
+                *(self._store.picture_bytes(face.crop_path) for face in asked.values())
+            )
+            for (track_id, face), crop in zip(asked.items(), crops, strict=True):
+                if crop is None:
+                    continue
+                pixels = face.box.long_side if face.pixels is None else face.pixels
+                chosen.setdefault(track_id, []).append(
+                    {
+                        "vector": face.vector,
+                        "quality": face.quality,
+                        "crop": crop,
+                        "recognizer": recognizer_of[track_id],
+                        "pixels": pixels,
+                    }
+                )
+                if len(chosen[track_id]) >= tuning.REFERENCES_PER_APPEARANCE:
+                    del waiting[track_id]
+            waiting = {track_id: rest for track_id, rest in waiting.items() if rest}
+        return chosen
 
     async def set_aside(self, track_ids: Sequence[str]) -> str | None:
         """Set some faces aside, leaving the rest of their pile where it is.

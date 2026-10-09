@@ -16,9 +16,8 @@ import RecognitionStrength, { startersSay } from './RecognitionStrength.svelte';
  * recognized. After importing people from folders, the ones with two usable photos look exactly
  * like the ones with fifty.
  *
- * What is asserted here is the half this component owns. The BANDS are the server's (five, ten
- * and twenty, proved beside the numbers in `test_references.py`) and this file holds the sentence
- * each one comes to. The two absences are the point as well: a bar reading zero over a feature
+ * What is asserted here is the half this component owns. The BANDS are the server's (proved in
+ * `test_strength_rate.py`) and this file holds the sentence each one comes to. The two absences are the point as well: a bar reading zero over a feature
  * nobody switched on reports a fault where there is none.
  */
 
@@ -82,30 +81,43 @@ describe('how reliably one person can be recognized', () => {
 		expect(host.querySelector('[role="meter"]')).toBeNull();
 	});
 
-	it('draws a meter full at the dependable number the SERVER sent, never the target', async () => {
-		/* Full where matching becomes dependable. The target only steers learning and group naming,
-		   so it reaches neither the bar nor anything a screen reader says. */
-		await draw(strength({ references: 6, floor: 4, strong: 12, target: 31 }));
+	it("draws the meter as the server's rate, and no picture count anywhere", async () => {
+		/* The bar is the share of her faces named without asking. The old thresholds of pictures
+		   reach neither the bar nor anything a screen reader says. */
+		await draw(strength({ references: 6, floor: 4, strong: 12, target: 31, rate: 0.62 } as never));
 
 		const meter = host.querySelector('[role="meter"]');
-		expect(meter?.getAttribute('aria-valuenow')).toBe('6');
-		expect(meter?.getAttribute('aria-valuemax')).toBe('12');
+		expect(meter?.getAttribute('aria-valuenow')).toBe('0.62');
+		expect(meter?.getAttribute('aria-valuemax')).toBe('1');
 		expect(meter?.getAttribute('aria-valuemin')).toBe('0');
-		expect(host.textContent).not.toContain('31');
-		for (const { value } of meter?.attributes ?? []) expect(value).not.toBe('31');
+		for (const number of ['31', '12']) expect(host.textContent).not.toContain(number);
 	});
 
-	it("says what the server's numbers mean for this person, one picture in the singular", async () => {
-		await draw(strength({ verdict: 'weak', references: 2, floor: 5, strong: 10, target: 20 }));
+	it('says what the rate rests on, by where each picture came from', async () => {
+		const basis = { imported: 23, confirmed: 15, learned: 0, turned: 0 };
+		await draw(strength({ verdict: 'good', rate: 0.8, basis } as never));
 		expect(host.querySelector('.basis')?.textContent?.trim()).toBe(
-			'Recognized from 2 pictures. Matching is weak under 5 and dependable from 10.'
+			'From 23 imported fingerprints and 15 faces you confirmed.'
 		);
 
 		host.remove();
-		await draw(strength({ verdict: 'weak', references: 1, floor: 3, strong: 7, target: 20 }));
+		const every = { imported: 1, confirmed: 1, learned: 2, turned: 4 };
+		await draw(strength({ verdict: 'good', rate: 0.8, basis: every } as never));
 		expect(host.querySelector('.basis')?.textContent?.trim()).toBe(
-			'Recognized from 1 picture. Matching is weak under 3 and dependable from 7.'
+			'From 1 imported fingerprint, 1 face you confirmed and 2 faces Sift recognized. 4 faces facing away kept for them, never matched.'
 		);
+
+		host.remove();
+		await draw(strength({ verdict: 'good', rate: 0.8, references: 1 } as never));
+		expect(host.querySelector('.basis')?.textContent?.trim()).toBe('From 1 picture.');
+	});
+
+	it('says the floor and the share in the tooltip, never on the card', async () => {
+		await draw(strength({ verdict: 'good', rate: 0.84, floor: 3 } as never));
+
+		expect(host.textContent).not.toContain('Drawn once Sift has');
+		const said = (await import('./RecognitionStrength.svelte?raw')).default as string;
+		expect(said).toContain('<Tooltip label={rateSaid(strength)}');
 	});
 
 	it('says the verdict in words, at every boundary the server bands on', async () => {
@@ -118,19 +130,16 @@ describe('how reliably one person can be recognized', () => {
 		 * a count of them. The number a person came for is said plainly one line above this,
 		 * in the words of the act that produced it.
 		 */
-		for (const [verdict, references, words] of [
-			['weak', 4, "Sift can't identify Ada yet"],
-			['fair', 5, 'Sift can now identify Ada reasonably well'],
-			['fair', 9, 'Sift can now identify Ada reasonably well'],
-			['good', 10, 'Sift identifies Ada reliably'],
-			['good', 19, 'Sift identifies Ada reliably'],
-			['strong', 20, 'Sift identifies Ada reliably']
+		for (const [verdict, words] of [
+			['few', 'Sift needs a few more faces of Ada'],
+			['unseen', "Sift hasn't found Ada in your files yet"],
+			['weak', "Sift can't identify Ada reliably yet"],
+			['fair', 'Sift can now identify Ada reasonably well'],
+			['good', 'Sift identifies Ada reliably'],
+			['strong', 'Sift identifies Ada reliably']
 		] as const) {
 			host?.remove();
-			await draw(strength({ verdict, references, target: 20, floor: 5, strong: 10 }));
-			const meter = host.querySelector('[role="meter"]');
-			// Full at dependable: past it the meter holds at its top.
-			expect(meter?.getAttribute('aria-valuenow')).toBe(String(Math.min(references, 10)));
+			await draw(strength({ verdict }));
 			expect(host.querySelector('.count .words')?.textContent?.trim()).toBe(words);
 		}
 	});
@@ -215,15 +224,28 @@ describe('how reliably one person can be recognized', () => {
 });
 
 describe('a wall of people', () => {
-	it("draws each card against the wall's dependable number, never its target", () => {
+	it("draws each card from the wall's rate and what it rests on", () => {
 		/* The wall hands every count over in one reading, so the card makes no request of its own. */
 		const strengths: ReferenceStrengths = {
 			floor: 5,
 			strong: 10,
 			target: 20,
 			people: { p1: 5 },
-			verdicts: { p1: 'fair' }
-		};
+			verdicts: { p1: 'fair' },
+			rates: { p1: 0.5 },
+			basis: {
+				p1: {
+					imported: 5,
+					confirmed: 0,
+					learned: 0,
+					turned: 0,
+					matched: 1,
+					asked: 1,
+					yes: 0,
+					no: 0
+				}
+			}
+		} as ReferenceStrengths;
 		host = document.createElement('div');
 		document.body.append(host);
 		mount(RecognitionStrength, {
@@ -234,13 +256,9 @@ describe('a wall of people', () => {
 
 		expect(asked).not.toHaveBeenCalled();
 		const meter = host.querySelector('[role="meter"]');
-		expect(meter?.getAttribute('aria-valuenow')).toBe('5');
-		expect(meter?.getAttribute('aria-valuemax')).toBe('10');
-		// Half of ten, where half of the target would leave three quarters of the track empty.
+		expect(meter?.getAttribute('aria-valuenow')).toBe('0.5');
 		expect(host.querySelector<HTMLElement>('.spectrum')?.style.clipPath).toBe('inset(0 50% 0 0)');
-		expect(host.querySelector('.basis')?.textContent?.trim()).toBe(
-			'Recognized from 5 pictures. Matching is weak under 5 and dependable from 10.'
-		);
+		expect(host.querySelector('.basis')?.textContent?.trim()).toBe('From 5 imported fingerprints.');
 	});
 });
 

@@ -59,6 +59,23 @@ async def test_a_failure_with_attempts_left_goes_back_in_the_queue(job_queue: Jo
 
 
 @pytest.mark.integration
+async def test_a_failure_that_waits_lands_queued_for_later_and_a_last_one_does_not(
+    job_queue: JobQueue,
+) -> None:
+    kind = noop_handler()
+    job_id = await job_queue.enqueue(kind, max_attempts=2)
+    await job_queue.claim(WORKER)
+    assert await job_queue.fail(job_id, WORKER, "dropped", retry_in=30) is JobState.QUEUED
+    job = await job_queue.get(job_id)
+    assert job is not None and job.run_after == job.updated_at + 30
+    plain = await job_queue.enqueue(kind, max_attempts=1)
+    await job_queue.claim(WORKER)
+    assert await job_queue.fail(plain, WORKER, "gone", retry_in=30) is JobState.FAILED
+    last = await job_queue.get(plain)
+    assert last is not None and last.run_after is None, "a failed job waits for nothing"
+
+
+@pytest.mark.integration
 async def test_a_job_that_runs_out_of_attempts_fails(job_queue: JobQueue) -> None:
     job_id = await job_queue.enqueue(noop_handler(), max_attempts=2)
 

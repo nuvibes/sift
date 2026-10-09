@@ -89,6 +89,8 @@ _SAYS = (*_ANNOUNCES, *_WRAPPERS)
 #: screen draws it, which is the question that has no other way of being asked. A screen left stale
 #: is never an entry: the write announces, or its caller does, and the reason names which.
 SILENT: dict[str, str] = {
+    "sharing.service.share": "the flag that lets a large widening defer its pairs; the grant announces, and the filing announces each page",
+    "sharing.service.revoke": "the same flag around the revoke; the revoke announces",
     "faces.store_models.keep_folder_read": "the folders a facial fingerprints import has read whole, a record for the import itself: no screen lists them",
     "kernel.content.identity_derivatives._write_pictures": "the bytes behind rows `add_derivative` announced",
     "kernel.content.identity_probes.probe_still_current": "marks a probe current; nothing a screen draws changes",

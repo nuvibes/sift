@@ -48,14 +48,17 @@ export interface MoveProgress {
 }
 
 export interface StorageReport extends DataLocations {
-	/** What the two folders hold, in bytes. Measured, not stored: it changes constantly. */
+	/** What the two folders hold, in bytes, as last measured (`StorageSizes`). */
 	dataBytes: number;
 	cacheBytes: number;
+	/** When those sizes were measured, in ms since 1970; null before the first walk has finished. */
+	measuredAt: number | null;
+	/** Whether a walk is running now. */
+	measuring: boolean;
 }
 
 export type MoveResult =
-	| { ok: true; locations: DataLocations; renamed: boolean }
-	| { ok: false; reason: string };
+	{ ok: true; locations: DataLocations; renamed: boolean } | { ok: false; reason: string };
 
 /** Everything under a folder, in bytes. Missing is zero rather than an error: a cache folder that
  *  has not been made yet is an ordinary state, not a fault. */
@@ -83,12 +86,122 @@ export async function sizeOf(dir: string): Promise<number> {
 	return total;
 }
 
-export async function describe(locations: DataLocations): Promise<StorageReport> {
-	return {
-		...locations,
-		dataBytes: await sizeOf(locations.dataDir),
-		cacheBytes: await sizeOf(locations.cacheDir)
+/** The folders under the data folder that hold one face crop per file, all near one size: sized
+ *  from their count and a sample, where a stat each is a hundred thousand reads on a large library. */
+const CROPS = [path.join('faces', 'detected'), path.join('faces', 'references')];
+const SAMPLE = 256;
+/** Stats asked together, so a folder of thumbnails is not one disk read after another. */
+const LANES = 32;
+
+async function sizesOf(files: string[]): Promise<number> {
+	let total = 0;
+	let next = 0;
+	const lane = async (): Promise<void> => {
+		while (next < files.length) {
+			const file = files[next++] as string;
+			try {
+				const { size } = await fsp.stat(file);
+				total += size;
+			} catch {
+				/* Gone since the listing: not there to count. */
+			}
+		}
 	};
+	await Promise.all(Array.from({ length: Math.min(LANES, files.length) }, lane));
+	return total;
+}
+
+/** Everything under `dir` in bytes for the screen, a crops folder by its count times a sampled
+ *  mean. A move checks its copy with the exact `sizeOf`. */
+async function measured(dir: string, crops: ReadonlySet<string>, inCrops = false): Promise<number> {
+	let entries: fs.Dirent[];
+	try {
+		entries = await fsp.readdir(dir, { withFileTypes: true });
+	} catch {
+		return 0;
+	}
+	const files = entries.filter((one) => one.isFile()).map((one) => path.join(dir, one.name));
+	let total = 0;
+	if (inCrops && files.length > SAMPLE) {
+		/* In name order, so a folder that has not changed gives the same figure every walk. */
+		files.sort();
+		const step = files.length / SAMPLE;
+		const sample = Array.from(
+			{ length: SAMPLE },
+			(_, at) => files[Math.floor(at * step)] as string
+		);
+		total = Math.round(((await sizesOf(sample)) / SAMPLE) * files.length);
+	} else total = await sizesOf(files);
+	for (const entry of entries.filter((one) => one.isDirectory())) {
+		const inner = path.join(dir, entry.name);
+		total += await measured(inner, crops, inCrops || crops.has(inner));
+	}
+	return total;
+}
+
+/** The two folders' sizes, walked now. */
+export async function measure(
+	locations: DataLocations
+): Promise<{ dataBytes: number; cacheBytes: number }> {
+	const crops = new Set(CROPS.map((one) => path.join(locations.dataDir, one)));
+	return {
+		dataBytes: await measured(locations.dataDir, crops),
+		cacheBytes: await measured(locations.cacheDir, crops)
+	};
+}
+
+export async function describe(locations: DataLocations): Promise<StorageReport> {
+	return { ...locations, ...(await measure(locations)), measuredAt: Date.now(), measuring: false };
+}
+
+/** How old a measurement may be before an ask walks again. Ten minutes: the folders grow by a
+ *  pass's crops and thumbnails over minutes, and a walk reads every entry on the disk. */
+export const SIZES_KEPT_MS = 10 * 60_000;
+
+/**
+ * The storage sizes, answered immediately from the last walk. A walk starts when there is none for
+ * these folders (a move names new ones) or it is older than `SIZES_KEPT_MS`, and never while one is
+ * running: everybody who asks meanwhile shares it.
+ */
+export class StorageSizes {
+	private last: { key: string; dataBytes: number; cacheBytes: number; measuredAt: number } | null =
+		null;
+	private walk: Promise<void> | null = null;
+
+	constructor(
+		private readonly walkFolders: typeof measure = measure,
+		private readonly now: () => number = Date.now
+	) {}
+
+	read(locations: DataLocations): StorageReport {
+		const key = `${locations.dataDir}\n${locations.cacheDir}`;
+		const known = this.last?.key === key ? this.last : null;
+		const stale = known === null || this.now() - known.measuredAt >= SIZES_KEPT_MS;
+		if (stale && this.walk === null) this.walk = this.measure(locations, key);
+		return {
+			...locations,
+			dataBytes: known?.dataBytes ?? 0,
+			cacheBytes: known?.cacheBytes ?? 0,
+			measuredAt: known?.measuredAt ?? null,
+			measuring: this.walk !== null
+		};
+	}
+
+	/** Settles when the walk running now does: for a caller that wants the fresh figure. */
+	settled(): Promise<void> {
+		return this.walk ?? Promise.resolve();
+	}
+
+	private async measure(locations: DataLocations, key: string): Promise<void> {
+		try {
+			const sizes = await this.walkFolders(locations);
+			this.last = { key, ...sizes, measuredAt: this.now() };
+		} catch {
+			/* Left as it was: the next ask walks again. */
+		} finally {
+			this.walk = null;
+		}
+	}
 }
 
 /** Whether `inner` is `outer` or sits inside it, compared as paths rather than by asking the disk.

@@ -29,7 +29,7 @@
 	 * that choice changes how Sift starts, and these folders stay put whichever it is.
 	 */
 	import { onMount } from 'svelte';
-	import { Problem, ProgressBar } from '$lib/components/common';
+	import { Problem, ProgressBar, Spinner } from '$lib/components/common';
 	import ActionRow from './ActionRow.svelte';
 	import SettingGroup from './SettingGroup.svelte';
 	import SaveFolderSection from './SaveFolder.svelte';
@@ -75,6 +75,16 @@
 		report = await bridge.storage();
 	}
 
+	/* No size before the first walk ends: the word and the working mark, never a 0 B. A size once
+	   known is drawn while a new walk runs, and the walk is asked about again until it ends. */
+	const unmeasured = $derived(report !== null && report.measuredAt === null);
+	const REREAD_MS = 1_000;
+	$effect(() => {
+		if (!report?.measuring) return;
+		const again = setTimeout(() => void read(), REREAD_MS);
+		return () => clearTimeout(again);
+	});
+
 	async function moveIt() {
 		moving = true;
 		problem = null;
@@ -100,11 +110,14 @@
 {#if offered}
 	<SettingGroup id="library.storage_folders" heading={COPY.name} help={COPY.help} />
 
+	{#snippet measuring()}<Spinner size={12} /> {COPY.measuring}{/snippet}
+
 	{#if report}
 		<ActionRow
 			label={COPY.library.label}
 			help={COPY.library.help(report.dataDir)}
-			note={formatBytes(report.dataBytes)}
+			note={unmeasured ? undefined : formatBytes(report.dataBytes)}
+			figure={unmeasured ? measuring : undefined}
 			action={COPY.move}
 			icon="folder"
 			busy={moving}
@@ -115,7 +128,8 @@
 		<ActionRow
 			label={COPY.generated.label}
 			help={COPY.generated.help(report.cacheDir)}
-			note={formatBytes(report.cacheBytes)}
+			note={unmeasured ? undefined : formatBytes(report.cacheBytes)}
+			figure={unmeasured ? measuring : undefined}
 			action={COPY.move}
 			icon="folder"
 			busy={moving}

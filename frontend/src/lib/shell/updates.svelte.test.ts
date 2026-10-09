@@ -104,6 +104,33 @@ describe('reading the update state', () => {
 	});
 });
 
+describe('a copy behind its library', () => {
+	/* The server's verdict is its own computer against the feed: a client copy two releases behind
+	   a current library reads nothing from it, so the copy's lag is carried beside it. */
+	it('is waiting for an update the server does not need', async () => {
+		fetchMock.mockResolvedValueOnce(
+			answer({ ...AVAILABLE, current_version: '1.5.0', update_available: false })
+		);
+		vi.stubGlobal('window', {
+			location: { origin: 'http://sift.test' },
+			sift: { shellVersion: async () => '1.4.0' }
+		});
+		const updates = new Updates();
+
+		await updates.load();
+		await updates.readHere();
+
+		expect(updates.here).toBe('1.4.0');
+		expect(updates.behindHere).toBe(true);
+		expect(updates.waiting).toBe(true);
+		expect(updates.shouldNotify, 'the banner speaks for this copy too').toBe(true);
+		updates.here = '1.5.0';
+		expect(updates.waiting, 'this copy is current, and so is the server').toBe(false);
+		updates.here = null;
+		expect(updates.behindHere, 'one computer: the server says').toBe(false);
+	});
+});
+
 describe('dismissing', () => {
 	it('sends the version being hidden and stops notifying', async () => {
 		fetchMock.mockResolvedValueOnce(answer(AVAILABLE));

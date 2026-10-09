@@ -334,14 +334,12 @@ const PASTE_HALF = '.add .half.trail';
 interface Need {
 	room: number;
 	end: number;
-	/* The end group as drawn, which the centre keeps clear of (`--bar-end`). */
-	barEnd: number;
 }
 
 /* By route, kept in this browser. Every screen lays the bar out for the widest one met, so moving
    between screens moves nothing on it, and a screen met before, in this sitting or the last, is in
    place on its first frame. The bar's width is read live, so a window changed since is decided fresh. */
-const NEEDS_KEY = 'sift.screen-bar.needs';
+const NEEDS_KEY = 'sift.screen-bar.needs.2';
 const needs = new Map<string, Need>(readNeeds());
 
 function readNeeds(): [string, Need][] {
@@ -349,7 +347,7 @@ function readNeeds(): [string, Need][] {
 		const kept: unknown = JSON.parse(localStorage.getItem(NEEDS_KEY) ?? '{}');
 		if (kept === null || typeof kept !== 'object') return [];
 		return Object.entries(kept as Record<string, Need>).filter(([, one]) =>
-			[one?.room, one?.end, one?.barEnd].every(Number.isFinite)
+			[one?.room, one?.end].every(Number.isFinite)
 		);
 	} catch {
 		return [];
@@ -358,19 +356,15 @@ function readNeeds(): [string, Need][] {
 
 /** The most any screen met has needed: what every screen's bar is laid out for. */
 function widest(): Need {
-	let most: Need = { room: 0, end: 0, barEnd: 0 };
+	let most: Need = { room: 0, end: 0 };
 	for (const one of needs.values())
-		most = {
-			room: Math.max(most.room, one.room),
-			end: Math.max(most.end, one.end),
-			barEnd: Math.max(most.barEnd, one.barEnd)
-		};
+		most = { room: Math.max(most.room, one.room), end: Math.max(most.end, one.end) };
 	return most;
 }
 
 function keepNeed(screen: string, need: Need): void {
 	const was = needs.get(screen);
-	if (was && was.room === need.room && was.end === need.end && was.barEnd === need.barEnd) return;
+	if (was && was.room === need.room && was.end === need.end) return;
 	needs.set(screen, need);
 	try {
 		localStorage.setItem(NEEDS_KEY, JSON.stringify(Object.fromEntries(needs)));
@@ -432,29 +426,32 @@ class ScreenBar {
 		let pasteRoom = 0;
 		/* The end group with all that may leave counted in, so a leaving moves no threshold. */
 		let end = 0;
-		const sum = () => 2 * (end + gapOf(bar)) + MENUS_ROOM + FIELD_FLOOR;
+		let drawn = 0;
+		const menusBeside = (group: number) =>
+			2 * (group + gapOf(bar)) + MENUS_ROOM + FIELD_FLOOR + raised;
 		let width = Number.POSITIVE_INFINITY;
 		/* What a screen's own menus need beyond the sum; never lowered in a visit, or they would bounce. */
 		let raised = 0;
-		/* The same need as a whole width: the sum is stale while the last screen's end is on the bar. */
+		/* The same need as a whole width, kept for the screens met after this one. */
 		let room = 0;
 		const decide = () => {
 			const onPhone = phone?.matches ?? false;
 			const most = widest();
-			const menus = 2 * (Math.max(end, most.end) + gapOf(bar)) + MENUS_ROOM + FIELD_FLOOR;
-			this.roomOnTopBar = onPhone || width >= Math.max(menus + raised, room, most.room);
-			// Each end must hold the whole end group beside the field's floor, or the group slides.
-			const holds = (group: number) => width >= 2 * (group + gapOf(bar)) + FIELD_FLOOR;
-			this.sizeOnBar = onPhone || holds(end);
-			this.pasteOnBar = onPhone || holds(end - sizeRoom);
+			const full = Math.max(end, most.end);
+			// The menus leave last, after the tile size and then the paste half, each back where it left.
+			const need = Math.max(menusBeside(full - sizeRoom - pasteRoom), room, most.room);
+			this.roomOnTopBar = onPhone || width >= need;
+			this.sizeOnBar = onPhone || width >= need + 2 * (sizeRoom + pasteRoom);
+			this.pasteOnBar = onPhone || width >= need + 2 * pasteRoom;
+			const gone = (this.sizeOnBar ? 0 : sizeRoom) + (this.pasteOnBar ? 0 : pasteRoom);
+			this.barEnd = Math.max(drawn, full - gone);
 		};
 		const observer = new ResizeObserver((entries) => {
 			for (const entry of entries) {
 				if (entry.target === field || ends.includes(entry.target as HTMLElement)) continue;
 				width = entry.contentBoxSize?.[0]?.inlineSize ?? entry.contentRect.width;
 			}
-			const drawn = endWidth();
-			this.barEnd = Math.max(drawn, widest().barEnd);
+			drawn = endWidth();
 			const standing = size?.getBoundingClientRect().width ?? 0;
 			const holder = ends.find((one) => size !== null && one.contains(size));
 			if (standing > 0 && holder !== undefined)
@@ -465,18 +462,18 @@ class ScreenBar {
 			if (field !== null && this.roomOnTopBar && !(phone?.matches ?? false)) {
 				const has = field.getBoundingClientRect().width;
 				if (has > 0 && has < FIELD_FLOOR && Number.isFinite(width)) {
-					raised = Math.max(raised, Math.ceil(width + FIELD_FLOOR - has) - sum());
-					room = Math.max(room, sum() + raised);
+					const asDrawn = menusBeside(this.barEnd) - raised;
+					raised = Math.max(raised, Math.ceil(width + FIELD_FLOOR - has) - asDrawn);
 				}
 			}
-			if (this.#screen !== null) keepNeed(this.#screen, { room, end, barEnd: drawn });
+			room = Math.max(room, menusBeside(end - sizeRoom - pasteRoom));
+			if (this.#screen !== null) keepNeed(this.#screen, { room, end });
 			decide();
 		});
 		/* A new screen starts from what it needed last time, or from the sum: never from another's. */
 		this.#screenChanged = () => {
 			const known = this.#screen === null ? undefined : needs.get(this.#screen);
 			({ room, end } = known ?? { room: 0, end });
-			this.barEnd = Math.max(known?.barEnd ?? this.barEnd, widest().barEnd);
 			raised = 0;
 			decide();
 		};

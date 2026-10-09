@@ -650,3 +650,29 @@ test('every row of the search list lies inside the bar, its words whole', async 
 	});
 	expect(outside, 'rows past the bar or with their words cut').toEqual([]);
 });
+
+/* As the bar narrows the tile size leaves before the menus do, so at 1024 with the rail open Filter
+ * and Sort by still stand on the bar, centred, on a wall and on an entity page alike; at 1280 the
+ * tile size is back. */
+test('the tile size leaves the bar before Filter and Sort by do', async ({ page }) => {
+	await page.setViewportSize({ width: 1024, height: 800 });
+	for (const screen of ['/browse', '/people'] as const) {
+		await page.goto(screen);
+		await settled(page);
+		const menus = page.locator('header.topbar .centre .menus');
+		await expect(menus, `${screen}: the menus left the bar at 1024`).toBeVisible();
+		await expect(page.locator('.bar-fold .menus')).toHaveCount(0);
+		const [bar, centre] = await Promise.all([
+			page.locator('header.topbar').boundingBox(),
+			page.locator('header.topbar .centre').boundingBox()
+		]);
+		if (!bar || !centre) throw new Error(`${screen}: the bar or its centre has no box`);
+		expect(Math.abs(bar.x + bar.width / 2 - (centre.x + centre.width / 2))).toBeLessThan(
+			0.5 + SLACK
+		);
+	}
+	await page.setViewportSize({ width: 1280, height: 800 });
+	await page.goto('/browse');
+	await settled(page);
+	await expect(page.locator('header.topbar .size:not(.gone)')).toBeVisible();
+});

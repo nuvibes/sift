@@ -148,6 +148,16 @@ describe('a row the screen is no longer about', () => {
 		expect(grid.total).toBe(1);
 	});
 
+	it('takes the count its page was asked at down too, so a later arrival still reads as new', async () => {
+		const grid = await gridOf(row('a', true), row('b', true));
+		grid.askedTotal = 2;
+
+		grid.setState('a', { favorite: false, rating: null }, (item) => item.favorite);
+		grid.total += 1;
+
+		expect(grid.newerSaid, 'a file that arrived was called moved').toBe('new');
+	});
+
 	it('stays when it still belongs', async () => {
 		const grid = await gridOf(row('a', true));
 

@@ -42,7 +42,7 @@ IDENTITY_COMPONENT = "identity"
 IDENTITY_VERSION = 4
 
 CATALOG_COMPONENT = "catalog"
-CATALOG_VERSION = 92
+CATALOG_VERSION = 93
 
 ACCESS_COMPONENT = "access"
 ACCESS_VERSION = 5
@@ -1688,11 +1688,11 @@ async def initialize_catalog(connection: Connection, on_disk: int) -> None:
             await step(connection)
 
 
-#: The steps after 89, each run below its version: 92 indexes the default covers' picks.
 _LATER_STEPS = (
     (90, let_go_of_broken_references),
     (91, schema_columns.forget_the_arrangements),
     (92, default_covers.index_the_picks),
+    (93, default_covers.pictures_only),
 )
 
 register_schema_initializer(IDENTITY_COMPONENT, IDENTITY_VERSION, initialize_identity, baseline=4)

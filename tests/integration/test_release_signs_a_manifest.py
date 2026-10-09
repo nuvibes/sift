@@ -195,3 +195,68 @@ def test_the_packer_is_told_never_to_publish() -> None:
     pack = package["scripts"]["pack"]
 
     assert "--publish never" in pack
+
+
+def test_a_wrong_password_is_asked_again_and_the_third_stops_the_release(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    installer, sums = _built(tmp_path)
+    manifest = release.write_manifest(installer, sums)
+    key = tmp_path / "sift.key"
+    key.write_text("stand-in", encoding="utf-8")
+    asked: list[int] = []
+
+    def minisign(command: list[str], *, where: Path, quiet: bool = False) -> str:
+        del where, quiet
+        asked.append(1)
+        if len(asked) < 3:
+            raise release.ReleaseFailed("Wrong password for that key")
+        for signed in command[command.index("-m") + 1 :]:
+            Path(f"{signed}.minisig").write_text("sig", encoding="utf-8")
+        return ""
+
+    monkeypatch.setattr(release, "run", minisign)
+    monkeypatch.setattr(release, "tool", lambda _name: "minisign")
+    monkeypatch.setattr(release, "MINISIGN_KEY", key)
+
+    assert len(release.sign(sums, manifest)) == 2
+    assert len(asked) == 3
+
+    asked.clear()
+
+    def refused(command: list[str], *, where: Path, quiet: bool = False) -> str:
+        del command, where, quiet
+        asked.append(1)
+        raise release.ReleaseFailed("Wrong password for that key")
+
+    monkeypatch.setattr(release, "run", refused)
+    with pytest.raises(release.ReleaseFailed):
+        release.sign(sums, manifest)
+    assert len(asked) == 3
+
+
+def test_no_build_signs_a_release_an_earlier_run_built_and_left_unsigned(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    installer, sums = _built(tmp_path)
+    handed: list[list[str]] = []
+    signed: list[Path] = []
+
+    def sign(given: Path, manifest: Path) -> list[Path]:
+        signed.append(manifest)
+        for one in (given, manifest):
+            Path(f"{one}.minisig").write_text("sig", encoding="utf-8")
+        return [Path(f"{given}.minisig"), Path(f"{manifest}.minisig")]
+
+    monkeypatch.setattr(release, "sign", sign)
+    monkeypatch.setattr(
+        release, "put_on_the_desktop", lambda files: handed.append([one.name for one in files])
+    )
+
+    release.sign_what_is_built(tmp_path, signing=False)
+    assert signed == [], "a dry run signs nothing"
+    release.sign_what_is_built(tmp_path)
+    release.sign_what_is_built(tmp_path)
+
+    assert signed == [tmp_path / f"{installer.name}.manifest.json"], "signed once, never twice"
+    assert handed[0][:3] == [installer.name, sums.name, f"{installer.name}.manifest.json"]

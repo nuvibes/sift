@@ -1082,6 +1082,25 @@ async def test_the_page_of_waiting_groups_is_a_page_and_its_total_is_not(
 
     assert len(page) == 1
     assert total == 3
+    assert await access.waiting_pile_count(actors.admin, "open") == total
+
+
+async def test_the_count_of_waiting_groups_keeps_the_bounds_of_the_page(
+    access: Repository, actors: Actors, world: World, temp_db: Database
+) -> None:
+    """The count alone takes the floor and the ceiling the page takes, so the line under the
+    floor and the list it opens describe one set."""
+    busy = await _face_on(temp_db, world.solo)
+    await temp_db.execute(
+        "INSERT INTO face_tracks (id, asset_id, started_ms, ended_ms, seen_in, quality, "
+        "pile_id, created_at) VALUES (?, ?, 0, 0, 1, 1.0, ?, 0)",
+        (new_id(), world.twin, busy),
+    )
+    await _face_on(temp_db, world.loose)
+
+    assert await access.waiting_pile_count(actors.admin, "open", ceiling=1) == 1
+    assert await access.waiting_pile_count(actors.admin, "open", floor=2) == 1
+    assert await access.waiting_pile_count(actors.admin, "ignored") == 0
 
 
 async def test_asking_where_a_group_sits_answers_nothing_for_one_that_is_not_there(

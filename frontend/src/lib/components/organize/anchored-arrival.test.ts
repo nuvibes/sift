@@ -162,7 +162,7 @@ afterEach(() => {
 
 const WALLS = [
 	{
-		name: 'Faces to name (the groups)',
+		name: 'Unnamed faces (the groups)',
 		wall: FaceGroups,
 		path: '/organize/faces-to-name',
 		params: {},

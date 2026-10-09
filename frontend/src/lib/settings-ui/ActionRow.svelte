@@ -51,6 +51,8 @@
 		/** A figure shown beside the button: how many, how much. Right-aligned and tabular, so a
 		 *  column of them reads as a column. */
 		note?: string;
+		/** The figure as a snippet, where it is more than text: a working mark while it is measured. */
+		figure?: Snippet;
 		/**
 		 * A second, adjacent act joined to the button's end: "now", and "tonight".
 		 *
@@ -94,6 +96,7 @@
 		busy = false,
 		icon,
 		note,
+		figure,
 		trailingIcon,
 		trailingLabel,
 		ontrailing,
@@ -119,8 +122,10 @@
 	</div>
 	<!-- Held with no figure, the row has nothing for its control column: none is drawn, so the row
 	     does not keep an empty line where its press was. -->
-	{#if !held() || note}<div class="control">
-			{#if note}<span class="note">{note}</span>{/if}
+	{#if !held() || note || figure}<div class="control">
+			{#if figure}<span class="note">{@render figure()}</span>{:else if note}<span class="note"
+					>{note}</span
+				>{/if}
 			<!-- Placed in the second column BY NAME rather than by being the second child. The
 		     figure is optional, so on a row without one the button would be the FIRST grid item
 		     and land in the figure's stretchy column, ending short of the edge every setting

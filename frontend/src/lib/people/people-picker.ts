@@ -27,7 +27,7 @@ export async function askPeople(typed: string): Promise<PickPage> {
 
 /*
  * Somebody the library has never heard of, made and then picked: the picker's own contract, and
- * the same two writes the Faces to name picker makes. The server's `new_person_name` branch would
+ * the same two writes the Unnamed faces picker makes. The server's `new_person_name` branch would
  * make and join in one request, but only by stepping outside the picker: the create row would stop
  * being the same act it is in every other picker in the application.
  */

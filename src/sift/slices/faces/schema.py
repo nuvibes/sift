@@ -38,7 +38,7 @@ from sift.kernel.db import Connection, register_schema_initializer
 from sift.kernel.migrations import check_allows, column_exists, widen_a_check
 
 COMPONENT = "faces"
-VERSION = 43
+VERSION = 44
 
 # Where a scan got to, per asset. The fifth status (never scanned) is the absence of a row,
 # so it cannot drift out of step with reality by being written down somewhere and not updated.
@@ -683,6 +683,7 @@ CREATE TABLE IF NOT EXISTS pack_entry_faces (
   embedding   BLOB NOT NULL,
   quality     REAL NOT NULL,
   recognizer  TEXT NOT NULL,
+  turned      INTEGER NOT NULL DEFAULT 0,
   UNIQUE(entry_id, crop_digest)
 )
 """
@@ -785,6 +786,10 @@ _ENTRY_SOURCE_AND_COUNT = {
 #: Version 41's step: the library a pack came from.
 _PACKS_LIBRARY = "ALTER TABLE face_packs ADD COLUMN library TEXT"
 
+#: Version 44's step: a held face turned past the quality bar's angle, kept for the person and
+#: never made a reference.
+_ENTRY_FACE_TURNED = "ALTER TABLE pack_entry_faces ADD COLUMN turned INTEGER NOT NULL DEFAULT 0"
+
 #: Version 34's step. See `initialize`.
 _INDEXES_A_LIBRARY_MAY_LACK = (_TRACKS_BY_DAY_INDEX, _PILES_BY_STATUS_INDEX)
 
@@ -847,6 +852,9 @@ async def _steps_from_40(connection: Connection, on_disk: int) -> None:
     # Version 43: the pictures a folder import read. Empty until the next import.
     if 0 < on_disk < 43:
         await connection.execute(_CREATE_FOLDER_READ)
+    # Version 44: a held face may be turned. 0 on every older row: none was kept turned before.
+    if 0 < on_disk < 44:
+        await _add_columns(connection, "pack_entry_faces", {"turned": _ENTRY_FACE_TURNED})
 
 
 #: What a scan's settledness is read from; its status and counts move no kept count.

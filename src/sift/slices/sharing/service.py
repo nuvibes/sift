@@ -29,6 +29,7 @@ from sift.kernel.access import (
     Viewer,
     visibility_settled,
 )
+from sift.kernel.audience import Audience
 from sift.kernel.changes import About, announce
 from sift.kernel.db import Database, in_clause
 from sift.kernel.ledger import NAME_NOW
@@ -223,6 +224,7 @@ class SharingService:
         await self._require_object(object_type, object_id)
         opposite = Effect.RESTRICT if effect is Effect.SHARE else Effect.SHARE
         made = await self._recording(viewer, "shared", object_type, object_id, subject_user_id)
+        await self._db.execute(visibility_settled.MAY_DEFER)
         try:
             # The opposite is cleared first and carries NO event: nothing was decided about it, the
             # whole point of the pair is that saying "share this" means exactly that whatever was
@@ -232,6 +234,8 @@ class SharingService:
             await self._access.grant(object_type, object_id, subject_user_id, effect, event=made)
         except AccessError as exc:
             raise InertGrant(str(exc)) from exc
+        finally:
+            await self._db.execute(visibility_settled.NO_DEFER)
         security_event(
             "sharing.granted",
             object_type=object_type.value,
@@ -258,10 +262,13 @@ class SharingService:
         """
         await self._require_object(object_type, object_id)
         taken = await self._recording(viewer, "unshared", object_type, object_id, subject_user_id)
+        await self._db.execute(visibility_settled.MAY_DEFER)
         try:
             await self._access.revoke(object_type, object_id, subject_user_id, effect, event=taken)
         except AccessError as exc:
             raise InertGrant(str(exc)) from exc
+        finally:
+            await self._db.execute(visibility_settled.NO_DEFER)
         security_event(
             "sharing.revoked",
             object_type=object_type.value,
@@ -273,10 +280,13 @@ class SharingService:
         return await self.grants_on(object_type, object_id)
 
     async def _fold_soon(self) -> None:
-        """Fold a large share's counts after its press has answered: its files are visible once
-        the grant commits, and its counts follow a page at a time, each told to the users it moved.
-        Asked again while one runs, that one goes round again; a stop leaves them to the boot."""
-        if await self._db.fetch_one(_ANY_OWED) is None:
+        """File a large widening's pairs and fold a large share's counts after its press has
+        answered, a page at a time, each told to the users it moved: the files first, then the
+        counts. Asked again while one runs, that one goes round again; a stop leaves them to the boot."""
+        if (
+            await self._db.fetch_one(visibility_settled.ANY_FILING) is None
+            and await self._db.fetch_one(_ANY_OWED) is None
+        ):
             return
         self._fold_asked = True
         if self._folding is None or self._folding.done():
@@ -286,10 +296,23 @@ class SharingService:
         try:
             while self._fold_asked:
                 self._fold_asked = False
-                while await self._fold_page():
+                while await self._file_page() or await self._fold_page():
                     pass
         except Exception:
             log.exception("sharing.fold_failed")
+
+    async def _file_page(self) -> bool:
+        """One page of a deferred widening filed, its files read first off the writer."""
+        filing = await self._db.fetch_one(visibility_settled.NEXT_FILING)
+        if filing is None:
+            return False
+        limit = visibility_settled.FILING_PAGE
+        sql, values = visibility_settled.filing_page(filing, limit)
+        files = [str(row["asset_id"]) for row in await self._db.fetch_all(sql, values)]
+        async with self._db.write() as connection:
+            await visibility_settled.file_page(connection, filing, files, limit)
+            announce(Audience.of_user(str(filing["user_id"])), About.LIBRARY)
+        return True
 
     async def _fold_page(self) -> bool:
         async with self._db.write() as connection:

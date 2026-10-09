@@ -113,9 +113,8 @@
 	 *
 	 * What differs between the three uses is what a tab IS, and each gets the element that says so:
 	 *
-	 * - AN ADDRESS (every tab has `href`): a `<nav>` of links with `aria-current="page"`, so the
-	 *   back button steps between tabs, middle-click opens one, and a shared link opens on the tab
-	 *   being looked at. What every entity page draws.
+	 * - AN ADDRESS (every tab has `href`): a `<nav>` of links with `aria-current="page"`, so a link
+	 *   opens on its tab; a press replaces the history entry, so one Back leaves the screen.
 	 * - A FILTER (`onselect`): where there is no address, the same row filters a list the caller
 	 *   already draws, as a tablist: `role="tab"` with `aria-selected`, one tab stop for the row,
 	 *   arrow keys and Home and End moving along it, Enter or Space choosing. Arrowing moves focus
@@ -662,6 +661,7 @@
 				class:here={tab.id === current}
 				href={hrefOf(tab)}
 				aria-current={tab.id === current ? 'page' : undefined}
+				data-sveltekit-replacestate
 			>
 				{@render words(tab)}
 			</a>

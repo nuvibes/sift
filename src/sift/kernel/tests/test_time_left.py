@@ -137,3 +137,17 @@ def test_a_run_is_scored_in_its_words_with_a_minute_either_side_and_by_third() -
         "thirds": [None, None, None],
         "stalled": 1,
     }
+
+
+def test_one_item_costs_the_mean_of_its_types_prices_over_the_kinds_left() -> None:
+    assert time_left.each_item(PRICES, ["thumbnail"], {"image": 0.5, "video": 0.5}) == 2.5
+    assert time_left.each_item(PRICES, ["thumbnail", "probe"], {"image": 1.0}) == 1.5
+    assert time_left.each_item(PRICES, ["thumbnail", "preview"], {"gif": 1.0}) == 2.0
+    assert time_left.each_item(PRICES, ["thumbnail"], {}) == 2.0, "no kinds: the type's own"
+    assert time_left.each_item(PRICES, ["preview"], {"video": 1.0}) is None
+
+
+def test_the_measured_window_is_the_work_at_the_runs_rate_or_over_the_workers() -> None:
+    assert time_left.measured(1600.0, 2.0, 8) == (500, 1280)
+    assert time_left.measured(1600.0, None, 4) == (250, 640)
+    assert time_left.measured(1600.0, None, 0) == (1000, 2560)

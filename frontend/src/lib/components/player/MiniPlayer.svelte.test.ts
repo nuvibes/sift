@@ -111,7 +111,7 @@ import { handover, mini } from '$lib/player/mini.svelte';
 import { api } from '$lib/api/client';
 import { openAsset, reopenAsset, stepBack, stepForward } from '$lib/player/asset-view';
 import { run } from '$lib/player/run.svelte';
-import { dwell } from '$lib/player/dwell.svelte';
+import { dwell, PICTURE_SECONDS } from '$lib/player/dwell.svelte';
 import { phoneWidth } from '$lib/components/common/phone-width.svelte';
 import { libraryChanges } from '$lib/library/changes.svelte';
 
@@ -1281,5 +1281,64 @@ describe('the corner at the end of a clip', () => {
 		expect(mini.asset?.id).toBe('asset-2');
 		const records = asked.mock.calls.filter(([path]) => path === '/assets/asset-2');
 		expect(records).toHaveLength(1);
+	});
+});
+
+describe('a picture in the corner under Play through', () => {
+	const PICTURE = (id: string) => ({ id, runs: false });
+
+	beforeEach(() => {
+		vi.useFakeTimers();
+		dwell.known = true;
+		dwell.pictures = true;
+		dwell.mode = 'loop_all';
+		openAsset('asset-1', [CLIP('asset-1'), PICTURE('asset-2'), CLIP('asset-3')]);
+	});
+
+	afterEach(() => {
+		vi.useRealTimers();
+		dwell.pictures = false;
+		run.reset();
+	});
+
+	async function turns(count = 6) {
+		for (let turn = 0; turn < count; turn += 1) await Promise.resolve();
+		flushSync();
+	}
+
+	it('rests on a picture the run reached and moves on, as the popout does', async () => {
+		served.detail = { id: 'asset-2', media_type: 'image', added_at: 0 };
+		await show({ id: 'asset-1', mediaType: 'video' });
+
+		host.querySelector('video')!.dispatchEvent(new Event('ended'));
+		await turns();
+		expect(mini.asset?.id).toBe('asset-2');
+
+		served.detail = { id: 'asset-3', media_type: 'video', added_at: 0 };
+		await vi.advanceTimersByTimeAsync(PICTURE_SECONDS * 1000 + 50);
+		await turns();
+		expect(mini.asset?.id, 'the run stopped on the picture it reached').toBe('asset-3');
+	});
+
+	it('waits on a picture pressed into the panel', async () => {
+		served.detail = { id: 'asset-3', media_type: 'video', added_at: 0 };
+		await show({ id: 'asset-2', mediaType: 'image' });
+
+		await vi.advanceTimersByTimeAsync(PICTURE_SECONDS * 1000 * 3);
+		await turns();
+		expect(mini.asset?.id, 'a pressed picture moved on by itself').toBe('asset-2');
+	});
+
+	it('waits on a picture Next stepped onto', async () => {
+		served.detail = { id: 'asset-2', media_type: 'image', added_at: 0 };
+		await show({ id: 'asset-1', mediaType: 'video' });
+		button('Next')?.click();
+		await turns();
+		expect(mini.asset?.id).toBe('asset-2');
+
+		served.detail = { id: 'asset-3', media_type: 'video', added_at: 0 };
+		await vi.advanceTimersByTimeAsync(PICTURE_SECONDS * 1000 * 3);
+		await turns();
+		expect(mini.asset?.id, 'a picture stepped to by a press moved on by itself').toBe('asset-2');
 	});
 });

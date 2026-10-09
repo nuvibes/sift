@@ -77,6 +77,8 @@ class FakeShell:
                 "cacheDir": "C:\\Lib\\cache",
                 "dataBytes": 10,
                 "cacheBytes": 20,
+                "measuredAt": 1_700_000_000_000,
+                "measuring": True,
                 "lastMove": {"ok": False, "refusal": "The drive filled up."},
             }
         if method == "POST" and path in ("/storage/move", "/libraries/open"):
@@ -306,6 +308,8 @@ def test_the_storage_folders_are_read_there_with_the_last_move(
         "cache_dir": "C:\\Lib\\cache",
         "data_bytes": 10,
         "cache_bytes": 20,
+        "measured_at": 1_700_000_000_000,
+        "measuring": True,
         "last_move": {"ok": False, "refusal": "The drive filled up."},
     }
 

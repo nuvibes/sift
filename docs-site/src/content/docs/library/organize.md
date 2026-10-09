@@ -43,7 +43,7 @@ Faces holds the questions about who is in your files. Sift finds faces with the 
 
 **Disagreements** lists files whose name says one person while their face is named as another. Choose which is right. **Yes, these are** that person answers for the whole group. For one face, choose **Yes, this face is** that person, or **No, take** that person **off this file**. A correction fixes the name everywhere.
 
-**Faces to name** holds groups of look-alike faces Sift can't name yet, the largest first. Click **Add as person** and type a name. One answer names every face in the group. The arrow beside it offers **Discard**, so Sift doesn't ask about the group again, and **Delete**, which deletes the faces Sift found in the group. Your files aren't touched, and a deleted face can't be brought back.
+**Unnamed faces** holds groups of look-alike faces Sift can't name yet, the largest first. Click **Add as person** and type a name. One answer names every face in the group. The arrow beside it offers **Discard**, so Sift doesn't ask about the group again, and **Delete**, which deletes the faces Sift found in the group. Your files aren't touched, and a deleted face can't be brought back.
 
 A group can look like someone from a facial fingerprints file you added in [Settings > Faces](/settings/faces). The group then offers **Create a person**, which creates them. It's offered only while [Settings > Faces > Create people from these fingerprints as their faces are recognized](/settings/faces#faces.people_from_files) is off.
 

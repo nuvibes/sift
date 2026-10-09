@@ -112,7 +112,7 @@ def board() -> Workbench:
     the folders' card."""
     bench = Workbench()
     bench.register(Pile("suggestions", "Faces to confirm", "faces", lead=True))
-    bench.register(Pile("to_name", "Faces to name", "faces"))
+    bench.register(Pile("to_name", "Unnamed faces", "faces"))
     bench.register(Pile("folders", "Folders to review"))
     identified = Pile("identified", "", "faces")
     bench.register_reverser(identified)

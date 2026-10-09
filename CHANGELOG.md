@@ -33,6 +33,52 @@ version's section, dated, when that version is published.
   "See this week as cards" beside Stats.
 - **The popout player's Repeat and Shuffle are in its drawer**, beside Randomize, as on Theater's
   bar; the row keeps Previous, Play and Next.
+- **Faces: a strength bar that is one rate.** How well Sift recognizes somebody is the share of
+  their faces it named without asking, drawn full width, with the line under it saying what it
+  rests on: imported fingerprints, faces you confirmed, faces Sift recognized. Sift's own picks
+  never outnumber the pictures you confirmed; the ones over that are retired with a History line.
+- **A facial fingerprints folder keeps more of its photos**: a face too small on the first read is
+  measured again at the file's own size, against your library's quality setting, and a face
+  turned away is kept for its person and never matched.
+- **Faces to confirm: every card one height**, its strip two rows of six with a true "+N"; cards
+  of different kinds pack without dead space; a card of several groups shows three and "and N
+  more". "Faces to name" is now **Unnamed faces**; a person's card says "awaiting your input".
+- **Yes to all on hundreds of faces answers immediately** and agrees in the background, in
+  batches, with "Agreeing with N faces" on the card while it runs; after a Yes, a small working
+  mark says Sift is matching the rest of the library against that person's face.
+- **Add as person opens with its filter box first** and a list of eight rows; "All N on this
+  page" and "All N in this group" now pick those faces and open the picker.
+- **Back leaves a tabbed screen in one press**, whatever tabs were pressed on it; a link to a tab
+  still opens on that tab.
+- **A press anywhere on a card opens it**, and every card that opens something lights on hover.
+- **The top bar keeps Filter and Sort by longer** as the window narrows: the trail folds first,
+  then the tile size leaves, then Add's paste half, and the menus last.
+- **Browse says "N moved"**, never "N new", for files already on the wall that moved up because
+  you viewed or hearted them, and the wall does not reorder under an open player; the corner
+  player's Play through runs on past a picture; a filter chip pressed in Theater lands
+  immediately.
+- **Library tasks say what is true**: "48 waiting, runs as files are imported", "1 left out",
+  which opens the files with why each was left out, or "Up to date"; the time left is blank under
+  a minute of work; a running Identify or Smart Search pass shows its window instead of "Not
+  enough to say yet". "Other tasks" sits under Import tasks.
+- **A failed download waits before it tries again**: 30 seconds, then 60, 120, up to ten minutes.
+- **A cover picked by default comes from a picture only**, never a GIF or a video; with no picture
+  the letter shows. A cover you chose is untouched.
+- **A desktop app older than the library it connects to offers its own download**, with the title
+  bar's update mark and the banner; `Settings > Logs > Download log` finds the app's own logs.
+- **The Logs tab's Warnings are warnings**: slow-statement timing lines are filed as Info; the
+  storage figure in Settings answers immediately from the last measurement.
+- **Reads stay quick under a Generate**: a History, Search or Organize read beside a busy pass no
+  longer waits a timer tick per row.
+- **Sharing a large folder or library no longer holds up everything else** while it is applied:
+  their files appear over the next few seconds, and taking a share away still applies
+  immediately.
+- **Fixed: a write that held the library database for more than five seconds** kept warning in
+  the log every five seconds after it had finished, and those warnings slowed Sift more the
+  longer it ran.
+- **A folded History line costs its presses' totals, not their acts.**
+- **The release script asks again after a wrong signing password** and signs an already built
+  release with `--no-build`.
 
 ## 0.2.3 - 2026-10-08
 

@@ -8,7 +8,7 @@ import { readFileSync } from 'node:fs';
 import { needsWiderWindow } from './panels';
 
 describe('the contact sheets', () => {
-	it('are Duplicates, Exact duplicates, Faces to name and Discarded, and their older names', () => {
+	it('are Duplicates, Exact duplicates, Unnamed faces and Discarded, and their older names', () => {
 		for (const queue of [
 			'duplicates',
 			'copies',

@@ -41,7 +41,7 @@ WHENS: tuple[str, ...] = (WHEN_WORK, WHEN_QUIET, WHEN_PRESS)
 #: arrive. A timed task calls the first one `ON_A_SCHEDULE`: the stored value is the same, and
 #: what starts it is its own clock rather than a file. See `ScheduledTask.when_labels`.
 WHEN_LABELS: tuple[str, ...] = (
-    "As files arrive",
+    "As files are imported",
     "During quiet hours",
     "Only when I press it",
 )

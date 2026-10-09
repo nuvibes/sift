@@ -56,7 +56,12 @@ UPDATE jobs
        END,
        error = CASE WHEN stop_wanted IN ('pause', 'benchmark') THEN NULL ELSE ? END,
        stop_wanted = CASE WHEN stop_wanted = 'benchmark' THEN stop_wanted END,
-       updated_at = ?
+       updated_at = ?,
+       -- A retry that waits (`backoff`) lands queued for later; the old row decides, as above.
+       run_after = CASE
+           WHEN stop_wanted IN ('pause', 'benchmark') OR attempts >= max_attempts THEN run_after
+           ELSE COALESCE(?, run_after)
+       END
  WHERE id = ? AND state = 'running' AND claimed_by = ?
 RETURNING state, id, parent_id, type, started_at, note, requested_by, error
 """
@@ -256,20 +261,31 @@ class Settling(HandOffs):
         return True
 
     async def fail(
-        self, job_id: str, worker_id: str, error: str, *, permanent: bool = False
+        self,
+        job_id: str,
+        worker_id: str,
+        error: str,
+        *,
+        permanent: bool = False,
+        retry_in: float | None = None,
     ) -> JobState | None:
         """Record a failure. Returns the state the job landed in, or None if it was not ours.
 
-        Attempts left: back to `queued`; none, or `permanent`: `failed`; asked to pause: `paused`,
-        its attempt handed back (`_FAIL` decides all three). The message is scrubbed on its way in
-        (`_for_the_record`).
+        Attempts left: back to `queued`, not claimed for `retry_in` seconds where given; none, or
+        `permanent`: `failed`; asked to pause: `paused`, its attempt handed back (`_FAIL` decides
+        all three). The message is scrubbed on its way in (`_for_the_record`).
         """
         message = _for_the_record(error)
         now = self._now()
+        retry_at = None if retry_in is None else int(now + retry_in)
 
         async with self._writing() as connection:
-            statement = _FAIL_PERMANENTLY if permanent else _FAIL
-            rows = await _fetch(connection, statement, (message, now, job_id, worker_id))
+            if permanent:
+                rows = await _fetch(
+                    connection, _FAIL_PERMANENTLY, (message, now, job_id, worker_id)
+                )
+            else:
+                rows = await _fetch(connection, _FAIL, (message, now, retry_at, job_id, worker_id))
             if not rows:
                 return None
 

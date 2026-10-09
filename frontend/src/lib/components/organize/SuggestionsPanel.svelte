@@ -21,13 +21,13 @@
 	 * way it agrees: asked of the person, never of a list this card is holding (see
 	 * `rejectLookAlikes`).
 	 *
-	 * Where the page was is carried in the address. It pages as Faces to name does (`CardPaging`;
+	 * Where the page was is carried in the address. It pages as Unnamed faces does (`CardPaging`;
 	 * see `FaceGroupsPanel`): the first person on screen is written as `from`, and the server turns
 	 * it into a place in the list (`FaceService.position_in_to_check`), because only the server
 	 * holds the scoped, ranked list. A person answered since resolves to nothing and the top is
 	 * served, which on a list that empties as it is answered is the page with the work on it.
 	 *
-	 * The page is a fixed 24: the cards are not measured here, as on Faces to name.
+	 * The page is a fixed 24: the cards are not measured here, as on Unnamed faces.
 	 *
 	 * And the groups that may be somebody, after them: two tiers on this one tab, a person's
 	 * standing questions and a card per person of the unnamed groups that may be them
@@ -319,7 +319,7 @@
 	{:else}
 		<ul class="people">
 			{#each people as person (key(person))}
-				<li class:may-be={person.kind === 'may_be'}>
+				<li>
 					{#if person.kind === 'may_be'}
 						<MayBeCard
 							card={person}
@@ -332,15 +332,14 @@
 						<!-- The card every question on Organize wears (`DecisionCard`): the crops, then
 						     the question, the line under it and the answers at the foot, so a row of
 						     cards has its questions and its Yes on one line each. -->
-						<DecisionCard>
-							<!-- The crops are the link: a card shows twelve and checking a proposal
-							     usually needs all of them, at the moment in the file where each was
-							     found. No room is held for faces a card does not have: two faces take
-							     one line, and the foot keeps the bottoms even. See `FaceCovers`. -->
+						<DecisionCard opens={reviewHref(person)}>
+							<!-- The crops are the link, two rows of six at every width, the last cell
+							     counting the rest of the faces the question is about. Room is held
+							     for faces a card does not have, so every card is one height. -->
 							<FaceCovers
 								faces={person.faces}
 								most={CROPS_ON_A_CARD}
-								hold={false}
+								total={person.size}
 								href={reviewHref(person)}
 								label={`Review every face suggested for ${person.person_name}`}
 							/>
@@ -389,25 +388,20 @@
 		gap: var(--space-3);
 	}
 
+	/* Packed in columns, each card at its own height: a card of groups beside a card of faces
+	   leaves no dead space under the shorter, and nothing is stretched. Read down each column. */
 	.people {
 		list-style: none;
 		margin: 0;
 		padding: 0;
-		display: grid;
-		grid-template-columns: repeat(auto-fill, minmax(22rem, 1fr));
-		gap: var(--space-3);
+		columns: 22rem;
+		column-gap: var(--space-3);
 	}
 
-	/* Each card fills its grid cell, so the cards of one row are one height and the foot of each
-	   (the question and its answers) lands on one line. */
 	.people > li {
 		display: grid;
-	}
-
-	/* A may-be card holds a row per group, so one card can be many times the height of another.
-	   Each stands at its own height, so a row of them does not stretch to its tallest. */
-	.people > li.may-be {
-		align-self: start;
+		break-inside: avoid;
+		margin-block-end: var(--space-3);
 	}
 
 	/* How close the best of them came. A shade nearer the ink than the sentence it sits in, because

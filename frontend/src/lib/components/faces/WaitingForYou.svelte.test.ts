@@ -84,7 +84,7 @@ describe('what Sift knows of one person', () => {
 		expect(said).toEqual([
 			'You confirmed 12 as them',
 			'Sift recognized 300 as them',
-			'2,400 awaiting your confirmation'
+			'2,400 awaiting your input'
 		]);
 	});
 
@@ -110,7 +110,7 @@ describe('what Sift knows of one person', () => {
 		await draw();
 
 		const said = [...host.querySelectorAll('.number')].map((one) => one.textContent?.trim());
-		expect(said).toEqual(['1 awaiting your confirmation']);
+		expect(said).toEqual(['1 awaiting your input']);
 	});
 
 	it('keeps the sentence that says what each number is, one hover away', async () => {
@@ -138,7 +138,7 @@ describe('what Sift knows of one person', () => {
 		expect(said).toEqual([
 			'Faces you confirmed to be them. These teach Sift what they look like.',
 			'Faces Sift named without asking. Agree to each one from its card.',
-			'Faces Sift thinks may be them, awaiting your confirmation.'
+			'Faces Sift thinks may be them, awaiting your input.'
 		]);
 	});
 
@@ -171,7 +171,7 @@ describe('what Sift knows of one person', () => {
 		expect(said[0]).toBe(
 			'Faces you confirmed to be Ada Byron. These teach Sift what Ada looks like.'
 		);
-		expect(said[2]).toBe('Faces Sift thinks may be Ada Byron, awaiting your confirmation.');
+		expect(said[2]).toBe('Faces Sift thinks may be Ada Byron, awaiting your input.');
 	});
 
 	it('does not tell anybody to press words that may be inside a menu', async () => {
@@ -237,7 +237,7 @@ describe('what Sift knows of one person', () => {
 		});
 
 		expect(host.querySelector('.asks .row .number')?.textContent?.trim()).toBe(
-			'9 awaiting your confirmation'
+			'9 awaiting your input'
 		);
 		expect(host.querySelector('.asks .help')?.textContent).toBe(
 			'Found with the starter pictures from StashDB.'

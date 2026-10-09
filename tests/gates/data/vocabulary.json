@@ -201,6 +201,7 @@
 		{ "word": "out of eco mode", "instead": "turbo mode", "why": "the same press, the same one name: \"Turbo mode on this device although you're working\"" },
 		{ "word": "making", "instead": "creating", "why": "Sift creates a file, a backup or a Loop; it never makes one" },
 		{ "word": "at once", "instead": "immediately", "why": "the screen says immediately; where it meant at the same time, together or in one go" },
+		{ "word": "awaiting your confirmation", "instead": "awaiting your input", "why": "the same verb as the tab it opens, Needs your input" },
 		{ "word": "platforms", "instead": "Sites", "why": "the same" },
 		{ "word": "performer", "instead": "person", "why": "a stash-box's word for a Person" },
 		{ "word": "performers", "instead": "People", "why": "the same" },

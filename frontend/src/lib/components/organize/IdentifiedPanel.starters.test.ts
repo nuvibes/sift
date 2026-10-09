@@ -1,7 +1,7 @@
 /*
  * People Sift can recognize, with the People known from starter pictures alone set apart.
  *
- * The control sits on the tab line where Faces to name keeps its small groups: one press shows
+ * The control sits on the tab line where Unnamed faces keeps its small groups: one press shows
  * only them, the other everybody else, each with its count, and the narrowing is in the address so
  * a refresh and Back keep it. Pressing the half that is showing goes back to everybody.
  */

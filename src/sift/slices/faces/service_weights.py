@@ -29,14 +29,12 @@ log = get_logger(__name__)
 #: they are the same state and a person reading one row after the other must not be told two
 #: things. It is declared here, in the feature that knows, so the composition root's copy can be
 #: repointed at it rather than kept in step by hand.
-MODELS_NOT_INSTALLED = (
-    "The recognition models haven't been downloaded yet. This will run as soon as they arrive."
-)
+MODELS_NOT_INSTALLED = "The recognition models haven't been downloaded yet. This will run as soon as they are downloaded."
 
 #: What a PRESS answers when the chosen models are missing, and it cannot be the sentence above.
 #:
 #: That one is true of a task already in the queue, which waits and runs when the models arrive.
-#: A press refused here queues nothing, so "this will run as soon as they arrive" would promise a
+#: A press refused here queues nothing, so "this will run as soon as they are downloaded" would promise a
 #: run nobody started. It names the models chosen (the Recognition models setting's own word for
 #: them) and the two ways out the Faces screen offers, in that screen's words.
 MODELS_MISSING_REFUSAL = (

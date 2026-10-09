@@ -135,8 +135,8 @@ KINDS: tuple[FailureKind, ...] = (
     ),
     _kind(
         "arrived-damaged",
-        r"didn't arrive intact",
-        "The download didn't arrive intact, so it was removed. Run it again to download it afresh.",
+        r"came in damaged",
+        "The download came in damaged, so it was removed. Run it again to download it afresh.",
     ),
     _kind(
         "unreadable",

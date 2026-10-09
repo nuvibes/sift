@@ -21,6 +21,12 @@ from sift.kernel.access.history_events import (
     presses_of_asset,
 )
 from sift.kernel.access.history_line import Actor, Event, by_of
+from sift.kernel.access.history_press_totals import (
+    RESUM,
+    TOTAL_ALL,
+    TOTALS_TABLES,
+    TOTALS_TRIGGERS,
+)
 from sift.kernel.access.sentences import SIFT
 from sift.kernel.access.viewer import Viewer
 from sift.kernel.db import Connection, Database, point_read
@@ -364,6 +370,12 @@ _JOINS = (
     + _labelled(_MERGED, _NEW_BEFORE, _NEW_AFTER, "NEW.id")
 )
 
+# The press an act left or parted summed again: what it holds lost a newest act the totals cannot
+# know the next of. A moving act can pass through the later part of the press it parts on its way
+# to its own, so that is summed again too; every other press took its acts' shares with them.
+_LEFT = splice(RESUM, L="OLD.press_id")
+_PASSED = splice(RESUM, L=splice(_LABEL_OF, ACT=_WAS_AFTER))
+
 PRESS_TRIGGERS: Final = (
     (
         "workbench_press_arrives",
@@ -384,25 +396,31 @@ PRESS_TRIGGERS: Final = (
             " WHEN OLD.fold_key IS NOT NEW.fold_key OR OLD.decided_at IS NOT NEW.decided_at"
             " OR OLD.id IS NOT NEW.id"
             " BEGIN {{MARKED}} WHERE id = NEW.id OR id = {{BEFORE}} OR id = {{AFTER}}"
-            " OR id = {{WAS_BEFORE}} OR id = {{WAS_AFTER}}; {{SPLIT}}; {{JOINS}}; END",
+            " OR id = {{WAS_BEFORE}} OR id = {{WAS_AFTER}}; {{SPLIT}}; {{PARTED}}; {{JOINS}};"
+            " {{TOTALS}}; END",
             MARKED=_MARKED,
             BEFORE=_NEW_BEFORE,
             AFTER=_NEW_AFTER,
             WAS_BEFORE=_WAS_BEFORE,
             WAS_AFTER=_WAS_AFTER,
             SPLIT=_labelled(_SPLIT, _WAS_BEFORE, _WAS_AFTER),
+            # Moved within its press to open a press of its own there: it and the acts after it,
+            # which it alone joined to the acts before, are a press apart.
+            PARTED=_labelled(_SPLIT, _NEW_BEFORE, "NEW.id"),
             JOINS=_JOINS,
+            TOTALS=_LEFT + "; " + _PASSED,
         ),
     ),
     (
         "workbench_press_goes",
         splice(
             "CREATE TRIGGER IF NOT EXISTS workbench_press_goes AFTER DELETE ON workbench_decisions"
-            " BEGIN {{MARKED}} WHERE id = {{BEFORE}} OR id = {{AFTER}}; {{SPLIT}}; END",
+            " BEGIN {{MARKED}} WHERE id = {{BEFORE}} OR id = {{AFTER}}; {{SPLIT}}; {{TOTALS}}; END",
             MARKED=_MARKED,
             BEFORE=_OLD_BEFORE,
             AFTER=_OLD_AFTER,
             SPLIT=_labelled(_SPLIT, _OLD_BEFORE, _OLD_AFTER),
+            TOTALS=_LEFT,
         ),
     ),
 )
@@ -441,8 +459,10 @@ UNION ALL
 SELECT press_id FROM workbench_decisions WHERE opens = 1 GROUP BY press_id HAVING COUNT(*) > 1
 """
 
-#: Each press trigger dropped by name, for one whose text this build no longer writes.
-_UNTRIGGERED: Final = {name: f"DROP TRIGGER IF EXISTS {name}" for name, _ddl in PRESS_TRIGGERS}
+#: Each press and totals trigger dropped by name, for one whose text this build no longer writes.
+_UNTRIGGERED: Final = {
+    name: f"DROP TRIGGER IF EXISTS {name}" for name, _ddl in (*PRESS_TRIGGERS, *TOTALS_TRIGGERS)
+}
 
 #: What a key generated from an older rule takes with it: the triggers and indexes that read it.
 _UNKEYED: Final = (
@@ -498,20 +518,53 @@ async def keep_presses(connection: Connection) -> None:
             added = True
     for index in PRESS_INDEXES:
         await connection.execute(index)
+    await _keep_the_triggers(connection, added=added)
+
+
+async def _keep_the_triggers(connection: Connection, *, added: bool) -> None:
+    """The press and totals triggers made again where missing or older, and what they keep walked
+    again where any was: the marks and labels, then the totals."""
+    totalled = list(await connection.execute_fetchall(_TOTALS_KEPT, ()))
+    for ddl in TOTALS_TABLES:
+        await connection.execute(ddl)
     present = {
         str(row["name"]): str(row["sql"])
         for row in await connection.execute_fetchall(
-            "SELECT name, sql FROM sqlite_master"
-            " WHERE type = 'trigger' AND tbl_name = 'workbench_decisions'",
+            "SELECT name, sql FROM sqlite_master WHERE type = 'trigger'"
+            " AND tbl_name IN ('workbench_decisions', 'workbench_decision_subjects')",
             (),
         )
     }
-    for name, ddl in PRESS_TRIGGERS:
+    added |= await _made_again(connection, PRESS_TRIGGERS, present)
+    if added:
+        # Every act marked and labelled again with the totals' triggers off: summed once after.
+        for name, _ddl in TOTALS_TRIGGERS:
+            await connection.execute(_UNTRIGGERED[name])
+        await connection.execute(_MARK_ALL)
+        await connection.execute(_LABEL_ALL)
+        present = {}
+    remade = await _made_again(connection, TOTALS_TRIGGERS, present)
+    if added or remade or len(totalled) < 2:
+        for statement in TOTAL_ALL:
+            await connection.execute(statement)
+
+
+#: The totals' tables a record already has; both, where they were kept.
+_TOTALS_KEPT = (
+    "SELECT name FROM sqlite_master WHERE type = 'table'"
+    " AND name IN ('workbench_press_objects', 'workbench_press_subjects')"
+)
+
+
+async def _made_again(
+    connection: Connection, triggers: Sequence[tuple[str, str]], present: Mapping[str, str]
+) -> bool:
+    """Each trigger missing or built by older code made again; True when any was."""
+    made = False
+    for name, ddl in triggers:
         # SQLite keeps the text without its IF NOT EXISTS: one that differs was built by older code.
         if present.get(name) != ddl.replace(" IF NOT EXISTS", "", 1):
             await connection.execute(_UNTRIGGERED[name])
             await connection.execute(ddl)
-            added = True
-    if added:
-        await connection.execute(_MARK_ALL)
-        await connection.execute(_LABEL_ALL)
+            made = True
+    return made

@@ -19,7 +19,6 @@ from __future__ import annotations
 import asyncio
 import io
 import json
-import os
 from collections.abc import Callable
 from pathlib import Path
 from typing import Annotated, Any, Literal
@@ -57,10 +56,6 @@ _NOT_SEARCHED = frozenset({"timestamp", "level"})
 
 #: The longest search text taken. A search box, not a place to paste a log into.
 _MOST_SEARCH = 200
-
-#: The desktop app's own folder in the roaming profile, by the names it has been installed under.
-#: Its `shell.log` and `backend.log` hold the exit codes and the start facts.
-_APP_FOLDERS = ("sift-desktop", "Sift")
 
 
 def _parsed(line: str) -> LogLine:
@@ -225,9 +220,7 @@ async def archive(
 
 
 def app_logs(settings: Settings) -> Path | None:
-    """The desktop app's log folder, where that app started this backend; else None."""
-    roaming = os.environ.get("APPDATA")
-    if settings.shell_url is None or not roaming:
-        return None
-    folders = (Path(roaming) / name for name in _APP_FOLDERS)
-    return next((one for one in folders if (one / "shell.log").is_file()), None)
+    """The desktop app's log folder (its `shell.log` and `backend.log`), as the app that started
+    this backend said it; else None."""
+    folder = settings.app_log_dir
+    return folder if folder is not None and folder.is_dir() else None

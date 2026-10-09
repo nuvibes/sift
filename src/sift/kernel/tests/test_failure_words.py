@@ -126,8 +126,8 @@ async def test_a_refused_download_and_one_that_arrived_damaged_are_said_by_their
         )
     assert (kind_of(f"AccelError: {failed.value}") or KINDS[0]).name == "server-refused"
     for stored in (
-        "WeightError: The reader model didn't arrive intact, so it was removed.",
-        "AccelError: The onnxruntime package didn't arrive intact. Nothing was installed.",
+        "WeightError: The reader model came in damaged, so it was removed.",
+        "AccelError: The onnxruntime package came in damaged. Nothing was installed.",
     ):
         assert (kind_of(stored) or KINDS[0]).name == "arrived-damaged"
 

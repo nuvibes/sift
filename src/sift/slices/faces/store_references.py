@@ -24,7 +24,6 @@ from sift.slices.faces.models import (
     Vector,
 )
 from sift.slices.faces.receipts import IDENTIFIED_QUEUE
-from sift.slices.faces.store_models import ModelsStore
 from sift.slices.faces.store_pictures import (
     _digest,
     _read_pictures,
@@ -35,6 +34,7 @@ from sift.slices.faces.store_records import (
     _reference,
     now_ms,
 )
+from sift.slices.faces.store_strength import StrengthStore
 
 #: Every appearance a recognizer described, with its clearest description (see `library_faces`).
 _LIBRARY_FACES = (
@@ -59,7 +59,7 @@ _REFERENCES_SEEN = splice(
 )
 
 
-class ReferencesStore(ModelsStore):
+class ReferencesStore(StrengthStore):
     """The pictures a person is recognised by: her own, the starters, and the entries of a pack."""
 
     # --- references --------------------------------------------------------------------------
@@ -240,11 +240,11 @@ class ReferencesStore(ModelsStore):
         crop: bytes | None,
         digest: str,
         recognizer: str,
+        turned: bool = False,
     ) -> str | None:
         """One face under an unclaimed entry. None if the entry already holds this exact picture.
 
-        Stored in the shape a reference is stored in, because that is what it becomes the moment
-        somebody claims the entry: the claim is a copy, not a conversion.
+        Stored as a reference is, since a claim copies it into one; a `turned` face is never copied.
         """
         face_id = new_id()
         path = self.crop_path(self.reference_root, face_id)
@@ -258,8 +258,8 @@ class ReferencesStore(ModelsStore):
             await asyncio.to_thread(_write_pictures, [(path, crop)])
         await self._db.execute(
             "INSERT INTO pack_entry_faces "
-            "(id, entry_id, crop_path, crop_digest, embedding, quality, recognizer) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "(id, entry_id, crop_path, crop_digest, embedding, quality, recognizer, turned) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 face_id,
                 entry_id,
@@ -268,6 +268,7 @@ class ReferencesStore(ModelsStore):
                 recognize.pack(vector),
                 quality,
                 recognizer,
+                int(turned),
             ),
         )
         return face_id
@@ -373,7 +374,7 @@ class ReferencesStore(ModelsStore):
             "SELECT e.id AS entry_id, f.embedding AS embedding FROM pack_entries e"
             " JOIN face_packs p ON p.id = e.pack_id"
             " JOIN pack_entry_faces f ON f.entry_id = e.id"
-            " WHERE e.claimed_person_id IS NULL AND e.declined_at IS NULL"
+            " WHERE e.claimed_person_id IS NULL AND e.declined_at IS NULL AND f.turned = 0"
             " AND substr(p.name, 1, ?) != ? AND f.recognizer = ? ORDER BY e.id, f.id",
             (len(self.SWAPPED_PACKS), self.SWAPPED_PACKS, recognizer),
         )
@@ -465,7 +466,8 @@ class ReferencesStore(ModelsStore):
 
     async def entry_faces(self, entry_id: str) -> list[Row]:
         return await self._db.fetch_all(
-            "SELECT * FROM pack_entry_faces WHERE entry_id = ? ORDER BY quality DESC", (entry_id,)
+            "SELECT * FROM pack_entry_faces WHERE entry_id = ? AND turned = 0 ORDER BY quality DESC",
+            (entry_id,),
         )
 
     async def claim_entry_on(self, connection: Connection, entry_id: str, person_id: str) -> bool:
@@ -614,15 +616,18 @@ class ReferencesStore(ModelsStore):
         """File faces Sift recognized as her references (`Origin.RECOGNIZED`), in one transaction.
 
         Each face is (appearance, file, vector, quality, picture, pixels). Returns the rows made,
-        keyed by the appearance. A picture she already holds adds nothing, by the identity rule
-        `add_reference` keeps. Her starters are not retired here: somebody known from enough
-        confirmed faces to learn from has none in use.
+        keyed by the appearance. A picture she already holds adds nothing (`add_reference`), and
+        never more than her confirmed pictures (`room_for_picks_on`). Her starters are not retired:
+        somebody known from enough confirmed faces to learn from has none in use.
         """
         stamp = now_ms()
         written: list[tuple[Path, bytes]] = []
         made: dict[str, str] = {}
         async with self._db.write() as connection:
+            room = await self.room_for_picks_on(connection, person_id)
             for track_id, asset_id, vector, quality, crop, pixels in faces:
+                if len(made) >= room:
+                    break
                 identity = _digest(crop)
                 held = list(
                     await connection.execute_fetchall(

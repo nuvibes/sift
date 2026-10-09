@@ -53,10 +53,9 @@
 		 * So every card on a wall is the same size. The crops are the tallest thing on a card, and
 		 * a card as tall as its subject's face count would make the rows step up and down.
 		 *
-		 * A fixed cell count rather than a fixed height, which is why no size is written anywhere:
-		 * every cell is square and the columns divide the card's own width, so a count of cells is
-		 * a height, the same on every card of that wall at every window size. A height in rems
-		 * would be right at one column count only.
+		 * Six crops a row whatever the card's width, so a count of cells is whole rows and a height,
+		 * the same on every card of that wall at every window size: a row filled by width would
+		 * leave twelve faces two cells short of a second row of seven.
 		 *
 		 * Handed more than it draws, the last cell says how many are not shown, so a card never
 		 * reports twelve of somebody's two thousand faces as though that were all. Handed fewer,
@@ -66,6 +65,9 @@
 		 * not one of a wall of equals: a file's own strip of faces is as long as that file's faces.
 		 */
 		most?: number;
+		/** How many faces the row stands for, where the caller was handed only some of them: the
+		 *  counter counts the rest too ("+217" of 229 when twelve came). */
+		total?: number;
 		/**
 		 * Whether a short row holds the room of a full one (the default, with `most`). Off, `most`
 		 * is only the cap and its counter: a card of two faces takes one line of crops, and a wall
@@ -86,6 +88,7 @@
 		oncontextmenu,
 		sweepId,
 		most,
+		total,
 		hold = true
 	}: Props = $props();
 
@@ -94,9 +97,8 @@
 	/* How many are not drawn, and 0 when everything is. The counter takes a cell of its own, so it
 	   is the number over the CAP LESS ONE: a "+1" standing where the one face it counts could
 	   have been drawn would be a cell spent hiding something it had room for. */
-	const hidden = $derived(
-		most !== undefined && faces.length > most ? faces.length - (most - 1) : 0
-	);
+	const standing = $derived(Math.max(faces.length, total ?? 0));
+	const hidden = $derived(most !== undefined && standing > most ? standing - (most - 1) : 0);
 	/** The crops actually drawn: everything, or as many as fit beside whatever the counter needs. */
 	const shown = $derived(most === undefined ? faces : faces.slice(0, hidden > 0 ? most - 1 : most));
 	/* The empty cells that keep a short row the same height as a full one. An array because Svelte
@@ -116,6 +118,7 @@
 	<a
 		{...sweepable}
 		class="faces"
+		class:rows={most !== undefined}
 		class:picked
 		{href}
 		aria-label={label}
@@ -138,7 +141,7 @@
 		{/each}
 	</a>
 {:else}
-	<div class="faces">
+	<div class="faces" class:rows={most !== undefined}>
 		{#each shown as face (face.track_id)}
 			<img src={cropUrl(face)} alt="" loading="lazy" />
 		{/each}
@@ -164,6 +167,11 @@
 		display: grid;
 		grid-template-columns: repeat(auto-fill, minmax(3.25rem, 1fr));
 		gap: var(--space-1);
+	}
+
+	/* A card's strip: six across at every width, so its cells are whole rows. */
+	.faces.rows {
+		grid-template-columns: repeat(6, minmax(0, 1fr));
 	}
 
 	a.faces {

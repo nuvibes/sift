@@ -124,6 +124,8 @@ class Tally:
     added: int = 0
     left_out: Counter[Finding] = field(default_factory=Counter)
     near_copies: int = 0
+    #: Kept for their person though turned past the bar's angle, never compared with anybody.
+    turned: int = 0
     to_check: list[str] = field(default_factory=list)
     #: Folders an earlier import read whole, passed over without a picture read.
     already: int = 0
@@ -136,6 +138,7 @@ class Tally:
         self.added += report.added
         self.left_out.update(report.left_out)
         self.near_copies += report.near_duplicates
+        self.turned += report.turned
         if not report.usable or report.left_out or report.near_duplicates:
             self.to_check.append(report.name)
 
@@ -151,6 +154,9 @@ class Tally:
             ]
             photos = "1 photo" if left == 1 else f"{left:,} photos"
             parts.append(f"{photos} left out: {', '.join(reasons)}.")
+        if self.turned:
+            photos = "1 photo" if self.turned == 1 else f"{self.turned:,} photos"
+            parts.append(f"{photos} facing away kept for their person, never matched.")
         if self.near_copies:
             photos = "1 photo" if self.near_copies == 1 else f"{self.near_copies:,} photos"
             parts.append(f"{photos} kept though almost the same as another.")

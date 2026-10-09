@@ -232,7 +232,7 @@ export function organizeCrumbs<
  * The page a queue is a tab OF, as a crumb, or nothing where it is not on one.
  *
  * Jumping from the board straight to the tab ("Organize > Ignored", and a detail opened from it
- * "Organize > Faces to name > A group of faces") would make five tabs of one page five
+ * "Organize > Unnamed faces > A group of faces") would make five tabs of one page five
  * different-looking places, none of them saying what page they were on. One crumb for the page and
  * one for the tab says both, in the order somebody walked.
  *
@@ -256,7 +256,7 @@ function groupCrumb<
  * The tab a detail screen was opened from, when the address names one it may have been.
  *
  * **The origin travels with the detail rather than being guessed from the queue it belongs to.** A
- * group opened from Ignored and a group opened from Faces to name are one screen, so the screen
+ * group opened from Ignored and a group opened from Unnamed faces are one screen, so the screen
  * cannot know which tab somebody left, and a guess would put the way back on the tab the detail
  * is registered under, so a group pressed on Ignored could not get back to Ignored at all.
  *

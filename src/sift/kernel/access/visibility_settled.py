@@ -10,13 +10,14 @@ when the write ends, not once per row.
 from __future__ import annotations
 
 import functools
+import json
 import re
 import weakref
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 from sift.kernel.audience import Audience
-from sift.kernel.db import Connection, before_commit
+from sift.kernel.db import Connection, Row, before_commit
 from sift.kernel.log import get_logger
 
 if TYPE_CHECKING:
@@ -150,7 +151,42 @@ CREATE TABLE IF NOT EXISTS visibility_moved (
 #: The version 18 shape of `visibility_moved`, scratch emptied by every fold: dropped for the new.
 DROP_MOVED = "DROP TABLE IF EXISTS visibility_moved"
 
-TABLES = (CREATE_OWED, CREATE_OWED_INDEX, CREATE_MEMBERS, CREATE_MOVED)
+#: A widening too large to decide while its press waits (`DEFER_FROM` pairs or more): its pairs
+#: are filed after it, a page at a time from `after` on, so a guest sees less than was granted until
+#: the last page and never more. A narrowing is never filed later.
+CREATE_FILING = """
+CREATE TABLE IF NOT EXISTS visibility_filing (
+  user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  object_type TEXT NOT NULL,
+  object_id   TEXT NOT NULL,
+  after       TEXT NOT NULL DEFAULT '',
+  PRIMARY KEY (user_id, object_type, object_id)
+) WITHOUT ROWID
+"""
+
+#: A grant row that can only show a user more (a share made, a restrict taken away): the one kind
+#: filed after its press. A narrowing is decided in its own write, whatever its size.
+WIDENING = {"INSERT": "NEW.effect = 'share'", "DELETE": "OLD.effect = 'restrict'"}
+
+
+def widening(event: str, tail: str) -> str | None:
+    """The widening test for a grant trigger on `event`; none for an update's or its `_was` half."""
+    return None if tail else WIDENING.get(event)
+
+
+#: Set by a caller that files what it defers (the sharing press): any other write decides in place.
+CREATE_MAY_DEFER = "CREATE TABLE IF NOT EXISTS visibility_may_defer (id INTEGER PRIMARY KEY)"
+MAY_DEFER = "INSERT OR IGNORE INTO visibility_may_defer (id) VALUES (1)"
+NO_DEFER = "DELETE FROM visibility_may_defer"
+
+TABLES = (
+    CREATE_OWED,
+    CREATE_OWED_INDEX,
+    CREATE_MEMBERS,
+    CREATE_MOVED,
+    CREATE_FILING,
+    CREATE_MAY_DEFER,
+)
 
 TOUCH, ANSWERS, ROWS, FOLD, OWE, GOING = "touch", "answers", "rows", "fold", "owe", "going"
 TOUCH_CALL, ROWS_CALL = (RUN.replace("<<STEP>>", step) for step in (TOUCH, ROWS))
@@ -605,6 +641,105 @@ def moving_steps(
     ]
 
 
+#: From this many pairs a widening is filed after its press: about 29 microseconds a pair held the
+#: writer in its press (a 100,000-file fixture), so the 250 ms budget is crossed near 8,600 pairs,
+#: and a widening decided in place holds it at most about half that.
+DEFER_FROM = 4_000
+
+#: Pairs filed per page: about 60 ms of the writer, and over `OWED_FROM`, so their counts are owed.
+FILING_PAGE = 2_000
+
+# Whether the grant row `ROW` defers its pairs: a widening, by a caller that files, of many pairs.
+_DEFERRED = (
+    "(<<WIDENING>> AND EXISTS (SELECT 1 FROM visibility_may_defer)"
+    " AND (SELECT COUNT(*) FROM (SELECT 1 FROM (<<PAIRS>>) LIMIT <<N>>)) >= <<N>>)"
+)
+# The filing kept, started again from the first pair where one was under way.
+_FILED_LATER = (
+    "INSERT INTO visibility_filing (user_id, object_type, object_id)"
+    " SELECT <<ROW>>.subject_user_id, <<ROW>>.object_type, <<ROW>>.object_id WHERE <<DEFERRED>>"
+    " ON CONFLICT DO UPDATE SET after = ''"
+)
+
+ANY_FILING = "SELECT 1 FROM visibility_filing LIMIT 1"
+NEXT_FILING = "SELECT user_id, object_type, object_id, after FROM visibility_filing LIMIT 1"
+CLEAR_FILING = "DELETE FROM visibility_filing"
+_STAGE_FILED = (
+    "INSERT INTO visibility_pending (user_id, asset_id)"
+    " SELECT ?, a.id FROM json_each(?) j CROSS JOIN assets a ON a.id = j.value"
+)
+# Moved on past the page, or done; unless a widening since started it again.
+_FILED_TO = (
+    "UPDATE visibility_filing SET after = ?"
+    " WHERE user_id = ? AND object_type = ? AND object_id = ? AND after = ?"
+)
+_FILED = (
+    "DELETE FROM visibility_filing"
+    " WHERE user_id = ? AND object_type = ? AND object_id = ? AND after = ?"
+)
+
+
+def filing_page(filing: Row, limit: int) -> tuple[str, dict[str, object]]:
+    """The next page of a filing's files, as a read and its values: in order of id, from `after`."""
+    from sift.kernel.access import visibility as v
+
+    kind = str(filing["object_type"])
+    pairs = {
+        "root": v._ONE_USER_IN_ROOT.replace("{root}", "{object}"),
+        "folder": v._ONE_USER_UNDER_FOLDER.replace("{folder}", "{object}"),
+    }.get(kind) or v._MEMBERS_OF[kind]
+    sql = (
+        "SELECT DISTINCT asset_id FROM ("  # noqa: S608 (module constants and named values only)
+        + pairs.format(user=":user", object=":object")
+        + ") WHERE asset_id > :after ORDER BY asset_id LIMIT :limit"
+    )
+    values = {
+        "user": filing["user_id"],
+        "object": filing["object_id"],
+        "after": filing["after"],
+        "limit": limit,
+    }
+    return sql, values
+
+
+#: A filed page's steps, in order: settle, answer, owe the counts where many, settled.
+_PAGE_CALLS = (
+    *(RUN.replace("<<STEP>>", step) for step in (SETTLE, ANSWERS)),
+    OWE_IF_MANY,
+    RUN.replace("<<STEP>>", SETTLED),
+)
+
+
+async def file_page(connection: Connection, filing: Row, files: Sequence[str], limit: int) -> None:
+    """One page of a filing decided, as its press would have, and the filing moved on past it."""
+    from sift.kernel.access import visibility as v
+
+    await connection.execute(v._CLEAR_PENDING)
+    await connection.execute(_STAGE_FILED, (filing["user_id"], json.dumps(list(files))))
+    for statement in _PAGE_CALLS:
+        await connection.execute(statement)
+    key = (filing["user_id"], filing["object_type"], filing["object_id"], filing["after"])
+    if len(files) < limit:
+        await connection.execute(_FILED, key)
+    else:
+        await connection.execute(_FILED_TO, (files[-1], *key))
+
+
+async def file_what_is_deferred(connection: Connection) -> None:
+    """At boot: a widening a stop left part filed, filed to the end, and nobody left deferring."""
+    if not await connection.execute_fetchall(_HOLDS_FILING):
+        return
+    await connection.execute(NO_DEFER)
+    while filing := next(iter(await connection.execute_fetchall(NEXT_FILING)), None):
+        sql, values = filing_page(filing, FILING_PAGE)
+        files = [str(row[0]) for row in await connection.execute_fetchall(sql, values)]
+        await file_page(connection, filing, files, FILING_PAGE)
+    log.info("visibility.deferred_filed")
+
+
+_HOLDS_FILING = "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'visibility_filing'"
+
+
 #: How many owed files one fold takes after a large share: under a second of the writer on a
 #: library of 100,000 files (a page of 2,000 held it up to 1.3 s there).
 OWED_FOLD_PAGE = 1_000
@@ -662,7 +797,9 @@ async def later_steps(connection: Connection, on_disk: int) -> None:
 
 
 async def fold_what_is_owed(connection: Connection) -> None:
-    """At boot: a share's counts a stop left owed, folded before anything reads them."""
+    """At boot: a widening a stop left part filed, then a share's counts left owed, folded
+    before anything reads them."""
+    await file_what_is_deferred(connection)
     if not await connection.execute_fetchall(ANY_OWED):
         return
     while await fold_owed(connection, OWED_FOLD_PAGE):
@@ -674,7 +811,7 @@ async def start_empty(connection: Connection) -> None:
     is made from the rows."""
     for table in (CREATE, *TABLES):
         await connection.execute(table)
-    for statement in (CLEAR_OWED, CLEAR_MEMBERS, CLEAR_MOVED):
+    for statement in (CLEAR_OWED, CLEAR_MEMBERS, CLEAR_MOVED, CLEAR_FILING):
         await connection.execute(statement)
 
 
@@ -697,13 +834,26 @@ def decided_by() -> frozenset[str]:
     return frozenset(re.findall(r"\b(?:FROM|JOIN)\s+([a-z_]+)\b", v._VERDICT_ROWS + v._PLACE_ROWS))
 
 
-def owing(halves: _Recompute, pairs: str) -> list[str]:
+def owing(
+    halves: _Recompute, pairs: str, *, row: str = "", widening: str | None = None
+) -> list[str]:
     """`whole` for a grant: from `OWED_FROM` settled pairs its counts are owed past the write,
-    so the press answers once its rows are written."""
+    so the press answers once its rows are written. A `widening` of `DEFER_FROM` pairs or more
+    stages none: the grant row `row` is filed after it (`file_page`)."""
     made = halves.whole(pairs)
     if halves.version_13:
         return made
-    return [*made[:4], OWE_IF_MANY, *made[4:]]
+    owed = [*made[:4], OWE_IF_MANY, *made[4:]]
+    if widening is None:
+        return owed
+    deferred = (
+        _DEFERRED.replace("<<WIDENING>>", widening)
+        .replace("<<PAIRS>>", pairs)
+        .replace("<<N>>", str(DEFER_FROM))
+    )
+    owed[1] = owed[1] + " WHERE NOT " + deferred
+    later = _FILED_LATER.replace("<<DEFERRED>>", deferred).replace("<<ROW>>", row)
+    return [later, *owed]
 
 
 def going(halves: _Recompute, pairs: str) -> list[str]:

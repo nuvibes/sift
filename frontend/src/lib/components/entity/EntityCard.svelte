@@ -9,6 +9,7 @@
 	 * vertical clips, and large enough to be RECOGNISED among forty.
 	 */
 	import Pressable from '$lib/components/common/Pressable.svelte';
+	import { pressOnCard } from '$lib/components/common/card-press';
 	import type { Snippet } from 'svelte';
 	import { coverUrl } from '$lib/entity/art';
 	import type { Frame } from '$lib/entity/cover-frame';
@@ -362,8 +363,9 @@
 
 {#snippet card()}
 	<!-- svelte-ignore a11y_no_static_element_interactions: the card's own controls are still the
-	     focusable things here; these three only observe a press that is already going to an anchor
-	     or a button inside, and every one of them is reachable by keyboard on its own. -->
+	     focusable things here; these only observe a press, or hand one on the card's ground to its
+	     picture (`pressOnCard`), and every one of them is reachable by keyboard on its own. -->
+	<!-- svelte-ignore a11y_click_events_have_key_events -->
 	<div
 		{...sweepable}
 		{...offered}
@@ -376,6 +378,7 @@
 		onpointercancel={pressEnded}
 		onpointerleave={pressEnded}
 		onclickcapture={onclickcapture ? clickCaught : undefined}
+		onclick={(event) => pressOnCard(event, onpick ? () => onpick?.() : href)}
 	>
 		<!-- What the card says while something is held over it, since a ring alone says nothing of what. -->
 		{#if dropping}
@@ -544,6 +547,11 @@
 		transition:
 			transform var(--dur-fast) var(--ease),
 			box-shadow var(--dur-fast) var(--ease);
+	}
+
+	/* A press anywhere on it opens it (`pressOnCard`). */
+	.card:not(.locked) {
+		cursor: pointer;
 	}
 
 	/* HOVER is the lift, and draws no ring: a ring on a card means it is selected. */

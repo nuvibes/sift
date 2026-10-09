@@ -46,6 +46,7 @@ from sift.kernel.jobs import (
     JobQueue,
     JobSwitchedOff,
     WaitingForPassword,
+    backs_off,
     register_handler,
 )
 from sift.kernel.jobs.families import AGAIN, Family
@@ -972,6 +973,7 @@ def _register_one_at_a_time(service: FaceService, left_out: LeftOutStore | None)
         # One at a time: two would append to the same partial file.
         alone=True,
     )
+    backs_off(FACE_FETCH_WEIGHTS)
     register_handler(
         FACE_FORGET,
         lambda context: forget(context, service=service),

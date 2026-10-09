@@ -32,7 +32,9 @@ async def test_the_step_gives_a_stash_box_s_people_their_first_file_and_nothing_
     temp_db: Database, world: World
 ) -> None:
     # A library at the version before the step: the rule that gives every kind its first file's
-    # picture (catalog v75, `default_covers`) is not there yet, so a filing gives nothing.
+    # picture (catalog v75, `default_covers`) is not there yet, so a filing gives nothing. Its
+    # files are pictures, the only kind a default cover is.
+    await temp_db.execute("UPDATE assets SET media_type = 'image'")
     async with temp_db.write() as connection:
         for statement in default_covers.drop_triggers():
             await connection.execute(statement)

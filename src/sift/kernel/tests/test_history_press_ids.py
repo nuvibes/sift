@@ -8,6 +8,7 @@ import pytest
 
 # Imported for its side effect: registering the record's tables, so a kernel database has them.
 import sift.slices.workbench.schema  # noqa: F401
+from sift.kernel.access.history_press_totals import TOTALS_DROPS
 from sift.kernel.access.history_presses import PRESS_DIFFERENCES
 from sift.kernel.db import Database
 
@@ -92,6 +93,7 @@ async def test_a_record_at_version_seventeen_is_labelled_once(record: Database) 
 
     async with temp_db.write() as connection:
         for statement in (
+            *TOTALS_DROPS,
             "DROP TRIGGER workbench_press_arrives",
             "DROP TRIGGER workbench_press_moves",
             "DROP TRIGGER workbench_press_goes",

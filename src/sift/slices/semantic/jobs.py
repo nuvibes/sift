@@ -33,7 +33,7 @@ import asyncio
 from collections.abc import Sequence
 from contextlib import suppress
 
-from sift.kernel.jobs import JobContext, register_handler
+from sift.kernel.jobs import JobContext, backs_off, register_handler
 from sift.kernel.jobs.families import Family
 from sift.kernel.ledger import Actor
 from sift.kernel.log import get_logger
@@ -208,6 +208,7 @@ def register_handlers(
         name="Downloading Smart Search model",
         alone=True,
     )
+    backs_off(SEMANTIC_FETCH_MODELS)
     register_handler(
         SEMANTIC_FORGET,
         lambda context: forget(context, service=service),

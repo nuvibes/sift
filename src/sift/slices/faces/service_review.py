@@ -10,12 +10,18 @@ from dataclasses import dataclass
 
 from sift.kernel.access import Viewer
 from sift.kernel.access.repository import MAX_PAGE_SIZE
+from sift.kernel.log import get_logger
 from sift.slices.faces import tuning
 from sift.slices.faces.models import PileStatus, ToCheckKind, ToCheckShow
 from sift.slices.faces.search import kept, searched_page
 from sift.slices.faces.service_may_be import MayBeMixin, ToCheckView
 from sift.slices.faces.service_visibility import Sighting
 from sift.slices.faces.store import FiledFace
+
+log = get_logger(__name__)
+
+#: How many windows one page reads at most when piles in it show no faces. See `piles`.
+_WINDOWS_AT_MOST = 4
 
 
 @dataclass(frozen=True, slots=True)
@@ -136,18 +142,42 @@ class ReviewMixin(MayBeMixin):
         pile sits and the number printed on it is a measure of what is being kept back, the same
         disclosure, arrived at from a third direction. The id breaks ties so a page is stable.
         """
-        window, total = await self._repository.waiting_piles(
-            viewer,
-            status.value,
-            # No page size means the whole wall, which the resolver bounds at one page rather than
-            # letting a caller ask for a library: the statement reads one page, never every group
-            # there is.
-            limit=page_size or MAX_PAGE_SIZE,
-            offset=offset,
-            floor=floor,
-            ceiling=ceiling,
-        )
+        # No page size means the whole wall, which the resolver bounds at one page rather than
+        # letting a caller ask for a library: the statement reads one page, never every group there
+        # is.
+        wanted = page_size or MAX_PAGE_SIZE
+        out: list[GroupView] = []
+        start, total, unshown = max(0, offset), 0, 0
+        # A pile the stored counts rank but that shows none of its faces (named between the two
+        # reads, or counts that disagree with the faces) leaves a gap, filled from the piles after
+        # the window rather than served as a short page; bounded, so a wall of such piles costs a
+        # few reads, never a walk of the library.
+        for read in range(_WINDOWS_AT_MOST):
+            window, counted = await self._repository.waiting_piles(
+                viewer,
+                status.value,
+                limit=wanted - len(out),
+                offset=start,
+                floor=floor,
+                ceiling=ceiling,
+            )
+            # The first read's total: a read past the end of the wall counts nothing.
+            total = counted if read == 0 else total
+            drawn = await self._drawn_piles(viewer, status, window, limit=limit)
+            out.extend(drawn)
+            start += len(window)
+            unshown += len(window) - len(drawn)
+            if len(drawn) == len(window) or not window:
+                break
+        if unshown:
+            log.warning("faces.piles_unshown", piles=unshown, offset=offset)
+        return out, total
 
+    async def _drawn_piles(
+        self, viewer: Viewer, status: PileStatus, window: Sequence[tuple[str, int]], *, limit: int
+    ) -> list[GroupView]:
+        """The piles of one window as this viewer may see them, a few faces each, in the window's
+        order; a pile showing none of its faces is left out."""
         # Two reads for the whole page, not two per pile: a store read and a resolver call per pile
         # grow linearly with the page, to most of a second for a page of forty-eight.
         held = await self._store.tracks_in_piles([pile_id for pile_id, _visible in window])
@@ -165,11 +195,8 @@ class ReviewMixin(MayBeMixin):
         )
         out: list[GroupView] = []
         for pile_id, _visible in window:
-            tracks = held.get(pile_id, [])
-            faces = [track for track in tracks if track.asset_id in shown]
+            faces = [track for track in held.get(pile_id, []) if track.asset_id in shown]
             if not faces:
-                # Named out from under us between the two reads. Skipped rather than drawn empty,
-                # and the total is a beat stale for one request either way.
                 continue
             out.append(
                 GroupView(
@@ -186,7 +213,7 @@ class ReviewMixin(MayBeMixin):
                     ],
                 )
             )
-        return out, total
+        return out
 
     async def position_of_pile(
         self, viewer: Viewer, status: PileStatus, pile_id: str
@@ -477,7 +504,7 @@ class ReviewMixin(MayBeMixin):
         or refusing is done about a person, and nobody set a person aside.
 
         **`kind` reads one of the three tiers, which is what the Faces tabs are** (Suggestions,
-        Disagreements, Faces to name), because one list of thousands of rows cannot say which part
+        Disagreements, Unnamed faces), because one list of thousands of rows cannot say which part
         of it somebody has reached. It is a narrowing here rather than a filter over
         a page for the reason every narrowing in this file is: filtering after paging asks for the
         wrong rows, and the count and the contents then describe different sets. The order, the
@@ -509,6 +536,7 @@ class ReviewMixin(MayBeMixin):
         people_total = 0
         may_be_total = 0
         group_total = 0
+        small_groups = 0
         if wanted is None or ToCheckKind.MISMATCH in wanted:
             mismatched, mismatch_total = await self.filed_faces_that_do_not_match(
                 viewer, limit=limit, offset=begin, who=who
@@ -564,13 +592,11 @@ class ReviewMixin(MayBeMixin):
             )
             if room > 0:
                 page.extend(_as_group(group) for group in groups[:room])
-        _under, small_groups = await self._repository.waiting_piles(
-            viewer,
-            PileStatus.OPEN.value,
-            limit=1,
-            offset=0,
-            ceiling=tuning.STRANGER_FLOOR - 1,
-        )
+            # The line under the floor is the groups tab's alone: a tab drawing no groups is not
+            # charged a count of every group.
+            small_groups = await self._repository.waiting_pile_count(
+                viewer, PileStatus.OPEN.value, ceiling=tuning.STRANGER_FLOOR - 1
+            )
         return page, mismatch_total + people_total + may_be_total + group_total, small_groups
 
     async def _held_back(

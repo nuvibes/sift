@@ -199,6 +199,10 @@ it('puts the three stages first and folds every other task under them', async ()
 	}
 	expect(fold?.open).toBe(false);
 	expect(fold?.querySelector('summary')?.textContent).toBe('Other tasks');
+	/* Under the stages, before Folder-specific import settings, which are not tasks. */
+	const folders = host.querySelector('[id="importing.folders"]')!;
+	expect(stages!.compareDocumentPosition(fold!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+	expect(fold!.compareDocumentPosition(folders) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 	// The one fold, not a disclosure drawn by hand.
 	expect(fold?.classList.contains('fold')).toBe(true);
 });

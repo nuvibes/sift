@@ -228,7 +228,7 @@ describe('the one rule for a way back', () => {
 
 /* THE EXIT NOBODY PRESSED. A group of faces leaves once it is emptied, an entity page once its
    subject is deleted or hidden, a "new ..." screen on Cancel. A fixed address there is page one
-   of a fixed wall, and for a group of faces always Faces to name, even from Discarded. */
+   of a fixed wall, and for a group of faces always Unnamed faces, even from Discarded. */
 describe('the one way back for an automatic exit', () => {
 	let go: ReturnType<typeof vi.fn>;
 	const gone = vi.mocked(goto);
@@ -273,7 +273,7 @@ describe('the one way back for an automatic exit', () => {
 		expect(gone).toHaveBeenCalledExactlyOnceWith('/people');
 	});
 
-	it('returns a group of faces to the tab it was opened from, not to Faces to name', async () => {
+	it('returns a group of faces to the tab it was opened from, not to Unnamed faces', async () => {
 		tabWas(['/organize/ignored?from=g2&near=24', '/organize/faces-to-name/g7?via=ignored']);
 
 		await leaveFor('/organize/ignored');

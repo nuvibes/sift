@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping, Sequence
 from typing import Any
 
@@ -39,6 +40,32 @@ _PROPOSAL_COLUMNS = (
     "state",
     "created_at",
     "updated_at",
+)
+
+
+# Many faces' confirmations in two statements, from `[track id, new row id]` pairs, each as the
+# person its row now carries and on its clearest face, as `remember_confirmation` chooses it: the
+# description the next scan of the file finds to put the name back on.
+_FORGET_CONFIRMED = (
+    "DELETE FROM face_confirmations WHERE id IN (SELECT c.id FROM json_each(?) AS j"
+    " JOIN face_tracks AS t ON t.id = json_extract(j.value, '$[0]')"
+    " JOIN face_detections AS d ON d.id = (SELECT best.id FROM face_detections AS best"
+    "  WHERE best.track_id = t.id ORDER BY best.quality DESC, best.id LIMIT 1)"
+    " JOIN face_confirmations AS c ON c.asset_id = t.asset_id AND c.person_id = t.person_id"
+    " AND c.embedding = d.embedding)"
+)
+_REMEMBER_CONFIRMED = (
+    "INSERT INTO face_confirmations (id, asset_id, person_id, embedding, recognizer, created_at)"
+    " SELECT MIN(json_extract(j.value, '$[1]')), t.asset_id, t.person_id, d.embedding,"
+    " (SELECT s.recognizer FROM face_scans AS s WHERE s.asset_id = t.asset_id), ?"
+    " FROM json_each(?) AS j"
+    " JOIN face_tracks AS t ON t.id = json_extract(j.value, '$[0]')"
+    " JOIN face_detections AS d ON d.id = (SELECT best.id FROM face_detections AS best"
+    "  WHERE best.track_id = t.id ORDER BY best.quality DESC, best.id LIMIT 1)"
+    " WHERE t.person_id IS NOT NULL"
+    # One row per decision, as rewriting one at a time leaves: two faces of a file on one
+    # description are one confirmation.
+    " GROUP BY t.asset_id, t.person_id, d.embedding"
 )
 
 
@@ -674,3 +701,12 @@ class PilesStore(PicturesStore):
             (pile_id,),
         )
         return [str(row["asset_id"]) for row in rows]
+
+    async def remember_confirmations_on(
+        self, connection: Connection, track_ids: Sequence[str]
+    ) -> None:
+        """`remember_confirmation` for many faces inside the caller's write, each as the person its
+        row now carries: two statements however many faces, rewritten rather than appended."""
+        pairs = json.dumps([[track_id, new_id()] for track_id in dict.fromkeys(track_ids)])
+        await connection.execute(_FORGET_CONFIRMED, (pairs,))
+        await connection.execute(_REMEMBER_CONFIRMED, (now_ms(), pairs))

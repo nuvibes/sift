@@ -435,7 +435,7 @@ async def test_a_narrowed_tab_pages_its_own_tier_from_the_top(
 async def test_the_position_of_a_group_is_where_the_groups_tab_pages_it(
     service: FaceService, temp_db: Database, admin: Viewer, proposed: str, seeded_pile: str
 ) -> None:
-    """`from` on Faces to name resolves in that tab's own list: the groups above the floor, largest
+    """`from` on Unnamed faces resolves in that tab's own list: the groups above the floor, largest
     first. The position is checked against the page `to_check` actually serves at that offset, so
     the read and the list cannot drift apart without this failing."""
     await seed_group(temp_db, "8", 8)
@@ -533,7 +533,7 @@ async def test_each_tab_is_titled_for_what_it_holds(service: FaceService, admin:
     assert titles == [
         "Faces to confirm",
         "Disagreements",
-        "Faces to name",
+        "Unnamed faces",
         "Discarded",
         "People Sift can recognize",
     ]

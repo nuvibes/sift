@@ -6,6 +6,7 @@ from __future__ import annotations
 import re
 import sqlite3
 import statistics
+import sys
 import time
 from collections import deque
 from dataclasses import dataclass
@@ -240,6 +241,18 @@ def time_a_point_read(database_path: Path) -> float:
         connection.close()
     timings.sort()
     return timings[len(timings) // 2]
+
+
+#: The interpreter's switch interval: under a millisecond, because on Windows a wait of one or more
+#: is a whole timer tick, and a reader waits one for each row it hands back while another thread
+#: runs Python (a 4,000-row read beside one busy thread: 2 ms alone, over 4 s at 1 ms, 13 ms here).
+READER_SWITCH_SECONDS = 0.0005
+
+
+def keep_readers_in_turn() -> None:
+    """Shorten the interpreter's switch interval to `READER_SWITCH_SECONDS`, never lengthen it."""
+    if sys.getswitchinterval() > READER_SWITCH_SECONDS:
+        sys.setswitchinterval(READER_SWITCH_SECONDS)
 
 
 #: The file's schema cookie. Read from the file's header, so it answers without the schema parsed.

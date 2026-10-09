@@ -42,15 +42,22 @@ WRITER_HELD_SECONDS = 5.0
 WRITE_HELD_SAY_SECONDS = 5.0
 
 
-def _writer_still_held(connection: _JudgedWriter, began: float, every: float) -> None:
-    """Said once, then again every `every` seconds until the block's end cancels it."""
+def _writer_still_held(
+    connection: _JudgedWriter, began: float, every: float, next_one: list[asyncio.TimerHandle]
+) -> None:
+    """Said once, then again every `every` seconds until the block's end cancels `next_one`, which
+    always holds the next: a line cancelled at its first would go on for ever, every few seconds."""
     log.warning(
         "db.writer_held",
         seconds=round(time.monotonic() - began, 1),
         statements=connection.statements,
         statement=connection.last_statement,
     )
-    asyncio.get_running_loop().call_later(every, _writer_still_held, connection, began, every)
+    next_one[:] = [
+        asyncio.get_running_loop().call_later(
+            every, _writer_still_held, connection, began, every, next_one
+        )
+    ]
 
 
 async def keep_the_log_folded(

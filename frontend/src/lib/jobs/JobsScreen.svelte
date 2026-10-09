@@ -58,7 +58,9 @@
 	import SectionHeading from '$lib/components/common/SectionHeading.svelte';
 	import Note from '$lib/components/common/Note.svelte';
 	import { QUEUE_PAGE, Queue, type JobState, type Which } from './queue.svelte';
-	import { pressTasks } from './tasks.svelte';
+	import { pressTasks, taskList } from './tasks.svelte';
+	import { leftOut } from './left-out.svelte';
+	import TasksLeftOut from '$lib/settings-ui/TasksLeftOut.svelte';
 	import { kindChoices } from './kinds';
 	import Pager from '$lib/components/common/Pager.svelte';
 
@@ -225,12 +227,11 @@
 		document.getElementById(listId)?.scrollIntoView({ block: 'start' });
 	}
 
-	/* Which passes cannot run and which are switched off are the server's to say, per family
-	   (`Switchboard`); `passes` reads them. */
-
-	/* One bar per family, from the page the socket pushes: what somebody waits for, in fewer lines
-	   than its rows. The arithmetic and the words are in `passes`, where a test can reach them. */
-	const queues = $derived(passes(queue.page));
+	/* One bar per family, from the page the socket pushes, with each task's When and the files its
+	   products left out; the arithmetic and the words are in `passes`, where a test can reach them. */
+	const whens = $derived(Object.fromEntries(taskList.tasks.map((one) => [one.id, one.when])));
+	const queues = $derived(passes(queue.page, { whens, leftOut: leftOut.counts }));
+	$effect(() => leftOut.follow(queues.map((one) => one.moving).join()));
 	const chored = $derived(chores(queue.page, now));
 
 	/* The one list above the queue: a group heading, the group's rows, and under a pass of several
@@ -829,6 +830,12 @@
 									><Badge state={nowState(one.tone)} label={one.now} /></Button
 								>
 							</Tooltip>
+						{:else if line.kind === 'pass' && line.pass.leftOut > 0}
+							<TasksLeftOut
+								products={leftOut.named(line.pass.leftOutOf)}
+								title={one.title}
+								tone="quiet"><Badge state={nowState(one.tone)} label={one.now} /></TasksLeftOut
+							>
 						{:else}
 							<Tooltip label={one.now} stretch
 								><Badge state={nowState(one.tone)} label={one.now} /></Tooltip
@@ -1111,9 +1118,7 @@
 		margin-block-end: var(--space-5);
 	}
 
-	/* The strip and the pile's actions on one line, the strip at the start and the door at the
-	   end. The space above is the space a group takes from the one before it, so the strip does
-	   not stand flush against the last row of the list above. The arrangement inside is `Tabs`'s. */
+	/* The strip at the start and the pile's actions at the end, a group's space clear of the list. */
 	.filters {
 		display: flex;
 		align-items: center;
@@ -1127,14 +1132,12 @@
 		margin-inline-end: auto;
 	}
 
-	/* The sentence under the strip stands a step clear of the column heads under it, as the strip
-	   itself does. */
+	/* The sentence under the strip stands a step clear of the column heads under it. */
 	.stepping-back {
 		margin-block-end: var(--space-4);
 	}
 
-	/* The list's heading and its Type row: the space above is the space a group takes from the one
-	   before it. */
+	/* The list's heading: a group's space clear of the one before it. */
 	.list-head {
 		margin-block-start: var(--space-6);
 	}
@@ -1187,8 +1190,7 @@
 		gap: var(--space-2);
 	}
 
-	/* Sharing a line means each part has to be able to give way. Without a floor of nothing the
-	   longest of them pushes the rest off the end of the row instead of being cut short. */
+	/* Sharing a line, each part gives way, or the longest pushes the rest off the row's end. */
 	.subject.compact .what,
 	.subject.compact .doing,
 	.subject.compact .why {
@@ -1200,16 +1202,14 @@
 		white-space: nowrap;
 	}
 
-	/* The name, what is being done and why it failed WRAP rather than cut a word: half of
-	   "Checking what to identify" says nothing. Compact lays them along one line instead. */
+	/* The name, what is being done and why WRAP rather than cut a word; compact lays them along. */
 	.what {
 		color: var(--sift-ink);
 		font: var(--text-body);
 		overflow-wrap: anywhere;
 	}
 
-	/* The job's name, under the filename it is about. One step down and muted, so the row reads as
-	   "this file, and this is what is happening to it" rather than as two facts of equal weight. */
+	/* The job's name under its file's, one step down and muted: the file, then what happens to it. */
 	.opens {
 		color: inherit;
 		text-decoration: none;
@@ -1225,8 +1225,7 @@
 		font: var(--text-body-sm);
 	}
 
-	/* The note under an opened family (its steps on their way, or the press for more of them)
-	   across the row's tracks rather than in the first of them. */
+	/* The note under an opened family, across the row's tracks rather than in the first. */
 	.steps-note {
 		grid-column: 1 / -1;
 		padding-inline-start: var(--space-8);
@@ -1238,8 +1237,7 @@
 		font: var(--text-body-sm);
 	}
 
-	/* How the last run went is the Done column's fact: the cell spans Progress and Done, and the
-	   words end on Done's edge under its heading, as the counts above them do. */
+	/* How the last run went spans Progress and Done, ending on Done's edge as the counts do. */
 	.pass-last {
 		display: block;
 		text-align: end;
@@ -1247,8 +1245,7 @@
 		font: var(--text-body-sm);
 	}
 
-	/* A failed run's phrase, in the failure's ink, dotted under because there is more behind it:
-	   the shape a task row's last dry run has. */
+	/* A failed run's phrase in the failure's ink, dotted under: there is more behind it. */
 	.pass-last :global(.failed-run) {
 		font: inherit;
 		color: var(--sift-bad-text);
@@ -1256,8 +1253,7 @@
 		text-underline-offset: 0.15em;
 	}
 
-	/* Words, so left: the column's own alignment. Right-aligned, a column of sentences of
-	   different lengths has a ragged left edge. */
+	/* Words, so left: right-aligned sentences of different lengths have a ragged left edge. */
 	.pass-eta {
 		color: var(--sift-ink-3);
 		font: var(--text-body-sm);

@@ -318,7 +318,7 @@
 		<ul class="wall" {@attach paging.cards}>
 			{#each items as one (one.id)}
 				<li>
-					<DecisionCard>
+					<DecisionCard opens={() => openShoot(one.id)}>
 						<!-- The question and the line under it at the card's foot, the answers after
 						     them: the one place every question on Organize is asked
 						     (`DecisionCard`). Only the question links the person. -->

@@ -43,7 +43,6 @@
 		type NotesInline
 	} from '$lib/shell/updates.svelte';
 	import { COPY } from './Updates.search';
-	import { isNewer } from '$lib/shell/version-order';
 	import { explainAbsentRows } from '$lib/settings-ui/settings-anchor.svelte';
 	/* The versions of the programs Sift downloads with, and the yt-dlp check. Here because
 	   "is what Sift runs up to date" is this pane's question, and a newer yt-dlp arrives with a newer
@@ -87,9 +86,7 @@
 	const NO_NOTES = 'Release notes are shown here when a new version is out.';
 	$effect(() =>
 		explainAbsentRows((key) =>
-			key === 'notes-heading' && current !== null && !current.update_available
-				? { because: NO_NOTES }
-				: null
+			key === 'notes-heading' && current !== null && !updates.waiting ? { because: NO_NOTES } : null
 		)
 	);
 
@@ -108,15 +105,15 @@
 	 * install and cannot differ. So this screen needs no mode flag and makes no comparison: a
 	 * version here is a second computer to name, and null is a browser, a checkout, or the machine
 	 * the library lives on. Same shape as the hardware block on the Performance screen. */
-	let here = $state<string | null>(null);
+	const here = $derived(updates.here);
 
 	onMount(() => {
 		if (session.isAdmin) {
 			void updates.load();
 			void declarations.load();
-			if (!canInstall) void readServerDesktop().then((answer) => (desk = answer));
+			void readServerDesktop().then((answer) => (desk = answer));
 		}
-		void bridge.shellVersion().then((answer) => (here = answer));
+		void updates.readHere();
 		void (async () => {
 			try {
 				const report = await api.get<components['schemas']['VersionReport']>('/update/version');
@@ -131,9 +128,7 @@
 	const lastChecked = $derived(current ? describeLastChecked(current.last_checked) : '');
 	/* The verdict for THIS copy: the state's own is the library's machine against the feed, which
 	 * says nothing about a client two releases behind it. */
-	const behindHere = $derived(
-		here !== null && !!current?.latest_version && isNewer(current.latest_version, here)
-	);
+	const behindHere = $derived(updates.behindHere);
 
 	/*
 	 * WHETHER SIFT LOOKS FOR A NEW VERSION ON ITS OWN: the one request it makes to the internet
@@ -180,10 +175,11 @@
 	 * only speaks up when they disagree answers that question by silence. */
 	const split = $derived(here !== null && current !== null);
 
-	/* Whether THIS window can install. Only the desktop app showing its own library offers the
-	 * verb: a browser has no installer to run, and a window onto a library on another device would
-	 * be installing on the wrong machine, so the bridge leaves it off there. */
+	/* Whether THIS window can install: only the desktop app, a browser has no installer to run. It
+	 * installs on this device, so a window onto a library elsewhere offers it only when this copy is
+	 * the one behind; the library's computer is updated there. */
 	const canInstall = bridge.canApplyUpdate();
+	const installsHere = $derived(canInstall && (here === null || behindHere));
 
 	const blocks = $derived(current ? notesBlocks(current.notes, current.release_page ?? '') : []);
 
@@ -356,7 +352,7 @@
 		</SettingGroup>
 	{/if}
 
-	{#if current.update_available}
+	{#if updates.waiting}
 		{#if blocks.length > 0}
 			<section class="notes" aria-labelledby="notes-heading">
 				<SectionHeading id="notes-heading">{COPY.notes}</SectionHeading>
@@ -394,7 +390,7 @@
 
 		<section class="apply" aria-labelledby="apply-heading">
 			<SectionHeading id="apply-heading">{COPY.install.name}</SectionHeading>
-			{#if canInstall}
+			{#if installsHere}
 				<!-- The application form. One button, and it still does not update itself: it downloads,
 				     checks the download really is Sift's, and opens the installer for you to agree to. -->
 				<p>{COPY.app}</p>

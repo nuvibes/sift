@@ -109,7 +109,7 @@ async def test_a_partial_that_fails_its_check_is_removed_so_the_next_attempt_sta
     partial.write_bytes(b"something else entirely" * 50)
     server = Server(Answer(416), Answer(200, payload))
 
-    with pytest.raises(WeightError, match="didn't arrive intact, so it was removed"):
+    with pytest.raises(WeightError, match="came in damaged, so it was removed"):
         await probe.fetch(weight, session_factory=lambda: server)
     assert not partial.exists()
 

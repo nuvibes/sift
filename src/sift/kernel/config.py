@@ -368,14 +368,14 @@ class Settings(BaseSettings):
     """
 
     shell_url: str | None = None
-    """Where the desktop app that started this backend answers the acts only it can do.
-
-    Set by the desktop app alone, to an address on 127.0.0.1 it chose for this launch. Starting with
-    Windows and the firewall rule belong to the computer running Sift, and only its app can read or
-    change them, so an admin on another computer reaches them through this backend, which asks its
-    app here. Unset (a backend run by hand, or in a container) there is no app to ask, and the
-    screens say so.
+    """Where the desktop app that started this backend answers the acts only it can do: an address
+    on 127.0.0.1 it chose for this launch. An admin on another computer reaches the starting with
+    Windows and the firewall rule through it. Unset (a backend run by hand, or in a container),
+    the screens say there is no app to ask.
     """
+
+    app_log_dir: Path | None = None
+    """The desktop app's own log folder, said by the app that started this backend."""
 
     shell_token: SecretStr | None = None
     """This launch's secret for asking the desktop app. Made fresh by the app at every launch and

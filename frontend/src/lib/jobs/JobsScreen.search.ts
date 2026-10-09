@@ -3,6 +3,13 @@
 
 import { currentShare, turboModeSays } from '$lib/components/shell/turbo-mode';
 
+/* What starts a pass's waiting files, by its task's When (`quiet_hours.WHENS`). */
+const RUNS: Readonly<Record<string, string>> = {
+	work: 'runs as files are imported',
+	quiet: 'runs during quiet hours',
+	press: 'runs only when you press it'
+};
+
 export const COPY = {
 	tabs: { tasks: 'Tasks', history: 'App History', log: 'Logs' },
 	tabsLabel: 'Tasks and what Sift has been doing',
@@ -35,6 +42,14 @@ export const COPY = {
 	},
 	/* Beside the running count in eco mode or turbo mode: the sidebar leaf's words. */
 	steppingBack: (state: 'less' | 'full') => `${turboModeSays(state, currentShare())}.`,
+	/* A pass with nothing queued: what waits and, by its task's When, what starts it. */
+	waiting: (n: number, when: string | undefined): string | null => {
+		const starts = when ? RUNS[when] : undefined;
+		if (n > 0)
+			return starts ? `${n.toLocaleString()} waiting, ${starts}` : `${n.toLocaleString()} waiting`;
+		return starts ? starts.charAt(0).toUpperCase() + starts.slice(1) : null;
+	},
+	leftOut: (n: number) => `${n.toLocaleString()} left out`,
 	/* More of a family's steps than the first page held. */
 	moreSteps: 'Show more steps',
 	/* Why a task failed, on the hover of what says so. */

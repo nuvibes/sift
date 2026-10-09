@@ -289,3 +289,38 @@ it('says what to do with one group in words that fit one', () => {
 		"Deselect it if it isn't Wren Halloway."
 	);
 });
+
+it('draws the closest three groups and counts the rest into her own questions', () => {
+	const drawn = card();
+	const extra = drawn.groups[2];
+	drawn.groups = [
+		...drawn.groups,
+		...[1, 2, 3, 4].map((n) => ({ ...extra, pile_id: `more-${n}` }))
+	];
+	const { onno } = render(vi.fn(), vi.fn(), drawn);
+
+	expect(rows()).toHaveLength(3);
+	expect(host.querySelector('.section-heading')?.textContent?.trim()).toBe(
+		'These 3 groups may be Wren Halloway'
+	);
+	const more = host.querySelector<HTMLAnchorElement>('a.unseen');
+	expect(more?.textContent?.trim()).toBe('and 4 more');
+	expect(more?.getAttribute('href')).toBe(
+		'/organize/known-people/person-1?show=suggested&via=faces'
+	);
+	// No is about the groups drawn, never the ones nobody saw.
+	host
+		.querySelector<HTMLButtonElement>('.answers .trail button')
+		?.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, button: 0 }));
+	flushSync();
+	[...document.querySelectorAll<HTMLElement>('.ui-menu [role="menuitem"]')]
+		.find((one) => readable(one) === 'No')
+		?.click();
+	expect(onno).toHaveBeenCalledWith(['close', 'folder', 'doubtful']);
+});
+
+it('says nothing more under a card of three groups or fewer', () => {
+	render();
+
+	expect(host.querySelector('a.unseen')).toBeNull();
+});

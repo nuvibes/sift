@@ -171,7 +171,7 @@
 		<ul class="people">
 			{#each byPerson as person (person.id)}
 				<li>
-					<DecisionCard>
+					<DecisionCard opens="/people/{person.id}">
 						<header class="who">
 							<a class="portrait" href="/people/{person.id}" aria-label="Open {person.person}">
 								<!-- The token, so this portrait may be kept for a week. The address is the

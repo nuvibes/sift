@@ -6,8 +6,8 @@
 	 *
 	 * Quiet hours at the top: one row saying the range, the install's one clock, with its two
 	 * times and the keep-awake switch on its own page behind Edit. Then Import tasks (`Importing`:
-	 * Scan, Generate and Identify, each with its Edit, then Folder-specific import settings), every
-	 * other task folded under Other tasks, and Activity, the queue, which the screen hands in. Each
+	 * Scan, Generate and Identify, each with its Edit, every other task folded under them as Other
+	 * tasks, then Folder-specific import settings), and Activity, which the screen hands in. Each
 	 * task is one row: its When (as files arrive or on a schedule, during quiet hours, or only when
 	 * pressed), its press, how its last run ended, when the next one is and how much is waiting.
 	 *
@@ -179,6 +179,20 @@
 	{/each}
 {/snippet}
 
+<!-- Folded under the stages, which are what most people come here for. A deep link to a row in
+     here opens it, as it opens any closed disclosure. -->
+{#snippet otherTasks()}
+	{#if others.length > 0}
+		<Fold summary={COPY.others.name} id="tasks.others">
+			<SettingGroup help={COPY.others.help}>
+				{#each others as task (task.id)}
+					{@render taskRows(task)}
+				{/each}
+			</SettingGroup>
+		</Fold>
+	{/if}
+{/snippet}
+
 <section>
 	<p class="lede">{COPY.lede}</p>
 
@@ -205,19 +219,7 @@
 		     runs, and the reassuring reading of silence here is the wrong one. -->
 		<Problem message={COPY.cannotLoad} />
 	{:else}
-		<Importing rows={settingRows} />
-
-		{#if others.length > 0}
-			<!-- Folded: the stages are what most people come here for. A deep link to a row in here
-			     opens it, as it opens any closed disclosure. -->
-			<Fold summary={COPY.others.name} id="tasks.others">
-				<SettingGroup help={COPY.others.help}>
-					{#each others as task (task.id)}
-						{@render taskRows(task)}
-					{/each}
-				</SettingGroup>
-			</Fold>
-		{/if}
+		<Importing rows={settingRows} after={otherTasks} />
 	{/if}
 
 	{#if activity}

@@ -28,9 +28,7 @@
 	const inTheApp = bridge.canDressTitleBar();
 
 	/* Dismissing the banner does not hide this: it is the standing reminder. The banner loads the state. */
-	const waiting = $derived(
-		arrows && inTheApp && session.isAdmin && updates.state?.update_available === true
-	);
+	const waiting = $derived(arrows && inTheApp && session.isAdmin && updates.waiting);
 
 	/** The two facts read off the window's history, and the one event that moves them. */
 	interface WindowHistory extends EventTarget {

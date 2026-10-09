@@ -49,7 +49,10 @@ vi.mock('$lib/people/faces.svelte', () => ({
 	blankOnRefusal: () => {}
 }));
 
-vi.mock('$lib/shell/toasts.svelte', () => ({ toasts: { show: () => {} } }));
+const said = vi.hoisted(() => [] as unknown[]);
+vi.mock('$lib/shell/toasts.svelte', () => ({
+	toasts: { show: (words: unknown) => said.push(words) }
+}));
 /* `replaceState` as well as `goto`: the wall writes its own anchor into the address as it settles,
    and a mock naming only what this file asserts takes that away and fails the load. */
 const goto = vi.fn();
@@ -65,6 +68,7 @@ vi.mock('$lib/library/changes.svelte', async () => ({
 }));
 
 import IdentifiedPanel from './IdentifiedPanel.svelte';
+import { rematching } from '$lib/components/faces/WaitingForYou.svelte';
 
 /* Invented for this file, as the rule for a fixture in this repo asks. */
 function card(over: Record<string, unknown> = {}): Record<string, unknown> {
@@ -98,6 +102,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+	rematching.people.clear();
 	if (mounted) unmount(mounted);
 	mounted = null;
 	host?.remove();
@@ -160,7 +165,7 @@ it('says the three numbers in the words every faces screen says them in', async 
 	expect(said).toEqual([
 		'You confirmed 13 as Wren',
 		'Sift recognized 344 as Wren',
-		'13 awaiting your confirmation'
+		'13 awaiting your input'
 	]);
 });
 
@@ -170,8 +175,8 @@ it('says the one that is waiting in the singular when there is one of it', async
 	const root = await render(card({ waiting: 1 }));
 
 	const said = [...root.querySelectorAll('.one')].map((one) => one.textContent?.trim());
-	expect(said).toContain('1 awaiting your confirmation');
-	expect(said).not.toContain('1 awaiting your confirmations');
+	expect(said).toContain('1 awaiting your input');
+	expect(said).not.toContain('1 awaiting your inputs');
 });
 
 it('says nothing needs an answer rather than that the card looks good', async () => {
@@ -321,6 +326,7 @@ it('agrees with every match for the person rather than with the faces on the car
 	for (let turn = 0; turn < 4; turn += 1) await tick();
 
 	expect(confirmMatches).toHaveBeenCalledWith('person-1');
+	expect(rematching.people.has('person-1')).toBe(true);
 });
 
 it('agrees with every proposal for the person from the answer', async () => {
@@ -331,6 +337,56 @@ it('agrees with every proposal for the person from the answer', async () => {
 	for (let turn = 0; turn < 4; turn += 1) await tick();
 
 	expect(confirmLookAlikes).toHaveBeenCalledWith('person-1');
+});
+
+it('marks her card while the re-match a Yes asked for runs', async () => {
+	const root = await render(card({ matched: 344, waiting: 2444 }));
+	expect(root.querySelector('.who [role="status"]')).toBeNull();
+
+	root.querySelector<HTMLButtonElement>('.row .lead button')?.click();
+	flushSync();
+	for (let turn = 0; turn < 4; turn += 1) await tick();
+	flushSync();
+
+	expect(root.querySelector('.who [role="status"]')?.getAttribute('aria-label')).toBe(
+		"Sift is matching the rest of the library against Wren's face"
+	);
+	// The agreeing is a task: the press says what it handed over.
+	expect(said).toContain('Agreeing with 13 faces');
+});
+
+it('marks everybody a Yes over a selection was about', async () => {
+	const root = await render(card({ matched: 344, waiting: 2444 }));
+	root
+		.querySelector('.person a')
+		?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, ctrlKey: true }));
+	flushSync();
+	for (let turn = 0; turn < 2; turn += 1) await tick();
+
+	const bar = document.querySelector<HTMLElement>('[role="region"][aria-label="Selection"]');
+	expect(bar).not.toBeNull();
+	press(bar as HTMLElement, 'Yes (2,444)')?.click();
+	for (let turn = 0; turn < 6; turn += 1) await tick();
+
+	expect(confirmLookAlikes).toHaveBeenCalledWith('person-1');
+	expect(rematching.people.has('person-1')).toBe(true);
+});
+
+it('hands a press on the card ground to the faces it opens', async () => {
+	const root = await render(card({ matched: 344, waiting: 2444 }));
+	const person = root.querySelector('li.person') as HTMLElement;
+	const link = person.querySelector(
+		'a[href="/organize/known-people/person-1?show=suggested"]'
+	) as HTMLAnchorElement;
+	const opened = vi.fn((event: Event) => event.preventDefault());
+	link.addEventListener('click', opened);
+
+	person
+		.querySelector('.counts')
+		?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 }));
+
+	expect(opened).toHaveBeenCalledTimes(1);
+	expect(person.classList.contains('opens')).toBe(true);
 });
 
 it('asks the PERSON from the menu as well as from the lead half', async () => {

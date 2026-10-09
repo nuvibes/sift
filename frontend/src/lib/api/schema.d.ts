@@ -4020,9 +4020,10 @@ export interface paths {
          *     **Which faces, by `scope`** (`RunWrite`): none or `all` is every one standing on the tab, read
          *     by the server; `page` and `picked` are narrowed against that set.
          *
-         *     Both halves of naming by hand: each face is agreed to, and the rest of any group it waited in
-         *     is offered as her. A re-match is asked for afterwards, since each agreement adds a reference.
-         *     A person this user may not be told about answers "nothing changed", never 404.
+         *     Answered immediately with how many will be agreed to (`changed`); the agreement runs as a task
+         *     (`jobs_agree.FACE_AGREE`), over the faces this press reached, and asks for the re-match. Both
+         *     halves of naming by hand: each face is agreed to, and the rest of any group it waited in is
+         *     offered as her. A person this user may not be told about answers "nothing changed", never 404.
          */
         post: operations["confirm_look_alikes_api_faces_look_alikes__person_id__confirm_post"];
         delete?: never;
@@ -20380,11 +20381,13 @@ export interface components {
          *     The target and the floor travel with the count. A screen that held its own copy of either would
          *     go on drawing the same verdict after the number behind it moved.
          *
-         *     `verdict` is a token and not a sentence: `none`, `weak`, `fair`, `good`, `strong`. The bands
-         *     belong here, beside the numbers that decide them; the wording a person reads belongs to the
-         *     screen drawing it, which is the same split every other reading in Sift uses.
+         *     `verdict` is a token and not a sentence: `none`, `few`, `unseen`, `weak`, `fair`, `good`,
+         *     `strong`. The bands belong here, beside the numbers that decide them; the wording a person
+         *     reads belongs to the screen drawing it. `fraction` is `rate`, the share of her faces named
+         *     outright, and `basis` what it rests on.
          */
         RecognitionStrength: {
+            basis: components["schemas"]["StrengthBasis"];
             /**
              * Floor
              * @default 0
@@ -20395,6 +20398,8 @@ export interface components {
              * @default 0
              */
             fraction: number;
+            /** Rate */
+            rate: number | null;
             /**
              * References
              * @default 0
@@ -20568,6 +20573,13 @@ export interface components {
          */
         ReferenceStrengths: {
             /**
+             * Basis
+             * @default {}
+             */
+            basis: {
+                [key: string]: components["schemas"]["StrengthBasis"];
+            };
+            /**
              * Floor
              * @default 0
              */
@@ -20577,6 +20589,13 @@ export interface components {
              * @default {}
              */
             people: {
+                [key: string]: number;
+            };
+            /**
+             * Rates
+             * @default {}
+             */
+            rates: {
                 [key: string]: number;
             };
             /**
@@ -23121,6 +23140,57 @@ export interface components {
             /** Data Dir */
             data_dir: string;
             last_move: components["schemas"]["ActTaken"] | null;
+            /** Measured At */
+            measured_at: number | null;
+            /** Measuring */
+            measuring: boolean;
+        };
+        /**
+         * StrengthBasis
+         * @description What a person's strength rests on: her pictures by where they came from (`turned` are kept
+         *     for her and never compared), and her faces Sift found, by what it did with them.
+         */
+        StrengthBasis: {
+            /**
+             * Asked
+             * @default 0
+             */
+            asked: number;
+            /**
+             * Confirmed
+             * @default 0
+             */
+            confirmed: number;
+            /**
+             * Imported
+             * @default 0
+             */
+            imported: number;
+            /**
+             * Learned
+             * @default 0
+             */
+            learned: number;
+            /**
+             * Matched
+             * @default 0
+             */
+            matched: number;
+            /**
+             * No
+             * @default 0
+             */
+            no: number;
+            /**
+             * Turned
+             * @default 0
+             */
+            turned: number;
+            /**
+             * Yes
+             * @default 0
+             */
+            yes: number;
         };
         /**
          * StudioAnswered

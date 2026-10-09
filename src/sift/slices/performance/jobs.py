@@ -12,7 +12,7 @@ import asyncio
 from contextlib import suppress
 
 from sift.kernel.config import Settings
-from sift.kernel.jobs import JobContext, register_handler
+from sift.kernel.jobs import JobContext, backs_off, register_handler
 from sift.kernel.log import get_logger
 from sift.kernel.ml import accel
 
@@ -89,3 +89,4 @@ def register_handlers(*, settings: Settings) -> None:
         lambda context: install_accelerator(context, settings=settings),
         name="Downloading GPU support",
     )
+    backs_off(ACCEL_INSTALL)

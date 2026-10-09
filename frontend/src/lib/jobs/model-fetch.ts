@@ -27,8 +27,8 @@ export function endedWithout(row: Ending | null, what = 'the models'): string {
 	if (row?.state === 'failed' && row.error) return row.error.replace(/^[A-Z]\w*:\s*/, '');
 	if (row?.state === 'canceled') {
 		return row.progress > 0
-			? 'Download canceled. What arrived is kept, so starting again costs only the rest.'
-			: 'Download canceled before anything arrived.';
+			? 'Download canceled. What was downloaded is kept, so starting again costs only the rest.'
+			: 'Download canceled before anything was downloaded.';
 	}
 	return `The download ended without ${what}. Open Activity to see why.`;
 }

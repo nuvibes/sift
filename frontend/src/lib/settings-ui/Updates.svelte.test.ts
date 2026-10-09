@@ -83,6 +83,7 @@ beforeEach(() => {
 	updates.state = null;
 	updates.loaded = false;
 	updates.unavailable = false;
+	updates.here = null;
 });
 
 afterEach(() => {
@@ -429,6 +430,33 @@ describe('when the application and the library are different computers', () => {
 		await settled(answer);
 		expect(text()).toContain(COPY.availableHere('0.2.1'));
 		expect(text()).not.toContain(COPY.newest);
+	});
+
+	/* The download is offered to THIS copy, on this device, even with the library's own computer
+	   current; and a current copy never offers to install the library's update here. */
+	it('offers this copy the download when it is behind the library, installing here', async () => {
+		const answer = Promise.resolve('0.2.2');
+		const applyUpdate = vi.fn(async () => ({ ok: true, version: '0.2.3' }));
+		window.sift = { shellVersion: () => answer, applyUpdate };
+		show({ ...NOTHING_KNOWN, current_version: '0.2.3', latest_version: '0.2.3' });
+
+		await settled(answer);
+		const press = [...host.querySelectorAll('button')].find((one) =>
+			one.textContent?.includes(COPY.downloadInstall('0.2.3'))
+		);
+		expect(press, 'the download for this copy').toBeTruthy();
+		press?.click();
+		expect(applyUpdate).toHaveBeenCalledOnce();
+	});
+
+	it('leaves the library computer update to that computer when this copy is current', async () => {
+		const answer = Promise.resolve('1.5.0');
+		window.sift = { shellVersion: () => answer, applyUpdate: vi.fn() };
+		show(AVAILABLE);
+
+		await settled(answer);
+		expect(text()).not.toContain(COPY.downloadInstall('1.5.0'));
+		expect(text()).toContain(COPY.elsewhereInstall);
 	});
 
 	it('says the newest version only once this copy has it', async () => {

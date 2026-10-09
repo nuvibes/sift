@@ -273,6 +273,8 @@ export class Backend {
 			 * enables is "stop when stdin reaches EOF", and stdin is at EOF from the first instant in
 			 * any container started without `-i`. See stop_when_the_parent_lets_go in sift/main.py. */
 			SIFT_STOP_ON_STDIN_EOF: 'true',
+			/* Where this shell's own logs are, for the backend's Download log. */
+			SIFT_APP_LOG_DIR: path.dirname(backendLogFile()),
 			...(this.holdOptional ? { SIFT_HOLD_OPTIONAL_FEATURES: 'true' } : {}),
 			/* The feed this shell installs updates from, so the backend's "a new version is out" and
 			 * the shell's Install button read one address and cannot disagree. */

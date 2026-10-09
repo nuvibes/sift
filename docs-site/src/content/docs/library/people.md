@@ -65,7 +65,7 @@ When Sift recognizes faces, the lines under the cover say what it knows of this 
 
 - **You confirmed** a number of faces as this person. Only a face you confirm teaches Sift what they look like.
 - **Sift recognized** a number as this person automatically. Click the line to review them in Organize.
-- **Awaiting your confirmation** counts the faces Sift thinks may be them. Click it to say yes or no to each one.
+- **Awaiting your input** counts the faces Sift thinks may be them. Click it to say yes or no to each one.
 - **Files from the folder with a face still unnamed** counts the files filed under them from a folder whose face nobody has named. Click it to see those files in Browse.
 
 A bar under the lines shows how well Sift recognizes this person. Its sentence reads, for example, **Sift now identifies Anouk effectively**. A line with nothing to count isn't shown.

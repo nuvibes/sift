@@ -13,20 +13,20 @@ Come here to run a task now, change when it runs, choose what each import stage 
 
 ## The tabs
 
-- **Tasks**: every task, its **Edit** and its **Run now** press and its When. A When is **As files arrive**, **On a schedule**, **During quiet hours** or **Only when I press it**, as each task offers. Under the tasks, **Activity**: what is running and what ran, with each task's status, time left and progress, and the **Task Queue**. While a scan is still counting folders, the Scan row and every task after it show **Not known until every folder is counted.** A task that waits for a scan to read its files says **Waiting for the scan to finish.** When a network share holds the reading back, the Scan row names the library folders on that share. **Run now** on a bar opens that task's row.
+- **Tasks**: every task, its **Edit** and its **Run now** press and its When. A When is **As files are imported**, **On a schedule**, **During quiet hours** or **Only when I press it**, as each task offers. Under the tasks, **Activity**: what is running and what ran, with each task's status, time left and progress, and the **Task Queue**. While a scan is still counting folders, the Scan row and every task after it show **Not known until every folder is counted.** A task that waits for a scan to read its files says **Waiting for the scan to finish.** When a network share holds the reading back, the Scan row names the library folders on that share. **Run now** on a bar opens that task's row.
 - <a id="activity.history"></a>**App History**: everything Sift and you have done in your library, newest first. Select a name to open what it happened to.
 - <a id="activity.log"></a>**Logs**: a record of what Sift did. Read it first when something goes wrong.
 
 ## On the Tasks tab
 
 - <a id="tasks.quiet-hours"></a>**Quiet hours**: a stretch of each day when your computer is usually free. A task set to run during quiet hours waits for it to begin and pauses when it ends. **Edit** changes the hours.
-- <a id="tasks.stages"></a>**Import tasks**: Scan, Generate and Identify, the three things Sift does with each file as it arrives, in the order Sift runs them. Each row says when it runs and what is still waiting for it; **Edit** opens the stage's own settings.
+- <a id="tasks.stages"></a>**Import tasks**: Scan, Generate and Identify, the three things Sift does with each file as it's imported, in the order Sift runs them. Each row says when it runs and what is still waiting for it; **Edit** opens the stage's own settings. The count of files a stage left out opens them, each with why.
 - <a id="importing.scan-stage"></a>**Scan**: finds new, changed and removed files in your library folders.
 - <a id="importing.generate-stage"></a>**Generate**: creates thumbnails, hover previews, scrubber strips and fingerprints for new files.
 - <a id="importing.identify-stage"></a>**Identify**: recognizes faces, describes files for Smart Search and reads watermarks. Its settings hold the three recognition switches.
-- <a id="importing.folders"></a>**Folder-specific import settings**: gives one library folder its own settings, or lets it follow the default. **Edit** beside a folder opens them.
 - **Other tasks**: work Sift does for the library as a whole, such as finding duplicates and creating backups.
-- <a id="tasks.activity"></a>**Activity**: what is running and what ran, under **Library tasks** and **Other tasks**. Under it the **Task Queue**, twenty a page, with **Options** and **Type** to show one type of task.
+- <a id="importing.folders"></a>**Folder-specific import settings**: gives one library folder its own settings, or lets it follow the default. **Edit** beside a folder opens them.
+- <a id="tasks.activity"></a>**Activity**: what is running and what ran, under **Library tasks** and **Other tasks**. A task with nothing running says what waits and what starts it (**48 waiting, runs as files are imported**), or **Up to date**. It can also say how many files it left out (**1 left out**), which opens them. Time left says nothing for under a minute of work or for work nothing has started. Under it the **Task Queue**, twenty a page, with **Options** and **Type** to show one type of task.
 - **Other settings**: settings filed with the tasks that belong to no task above.
 
 ## On the App History tab
@@ -70,8 +70,8 @@ Saves your library's records into a folder, and keeps the last few.
 Generates thumbnails, hover previews, scrubber strips and fingerprints for new files.
 
 - **Path**: [Settings > Tasks and Activity > Generate](/settings/tasks#tasks.generate.when)
-- **When it runs**: As files arrive
-- **Choices**: As files arrive, During quiet hours, Only when I press it
+- **When it runs**: As files are imported
+- **Choices**: As files are imported, During quiet hours, Only when I press it
 - **Who sets it**: an admin, for everyone on this Sift
 
 <a id="tasks.identify.when"></a>
@@ -90,8 +90,8 @@ Recognizes faces, describes files for Smart Search and reads watermarks.
 Describes new files, so Smart Search can find them by what they show.
 
 - **Path**: [Settings > Tasks and Activity > Describe files for Smart Search](/settings/tasks#tasks.smart-search.when)
-- **When it runs**: As files arrive
-- **Choices**: As files arrive, During quiet hours, Only when I press it
+- **When it runs**: As files are imported
+- **Choices**: As files are imported, During quiet hours, Only when I press it
 - **More in**: [Settings > Smart Search](/settings/semantic)
 - **Who sets it**: an admin, for everyone on this Sift
 
@@ -102,8 +102,8 @@ Describes new files, so Smart Search can find them by what they show.
 Looks for faces in new files and matches them to your People.
 
 - **Path**: [Settings > Tasks and Activity > Identify faces](/settings/tasks#tasks.faces.when)
-- **When it runs**: As files arrive
-- **Choices**: As files arrive, During quiet hours, Only when I press it
+- **When it runs**: As files are imported
+- **Choices**: As files are imported, During quiet hours, Only when I press it
 - **More in**: [Settings > Faces](/settings/faces)
 - **Who sets it**: an admin, for everyone on this Sift
 
@@ -114,8 +114,8 @@ Looks for faces in new files and matches them to your People.
 Checks new files for a watermark, so the Sites on your files stay up to date.
 
 - **Path**: [Settings > Tasks and Activity > Read watermarks](/settings/tasks#tasks.watermarks.when)
-- **When it runs**: As files arrive
-- **Choices**: As files arrive, During quiet hours, Only when I press it
+- **When it runs**: As files are imported
+- **Choices**: As files are imported, During quiet hours, Only when I press it
 - **More in**: [Settings > Watermarks](/settings/watermarks)
 - **Who sets it**: an admin, for everyone on this Sift
 
@@ -126,8 +126,8 @@ Checks new files for a watermark, so the Sites on your files stay up to date.
 Finds new, changed and removed files in your library folders.
 
 - **Path**: [Settings > Tasks and Activity > Scan](/settings/tasks#tasks.scan.when)
-- **When it runs**: As files arrive
-- **Choices**: As files arrive, During quiet hours, Only when I press it
+- **When it runs**: As files are imported
+- **Choices**: As files are imported, During quiet hours, Only when I press it
 - **Who sets it**: an admin, for everyone on this Sift
 
 <a id="tasks.enrichment.when"></a>
@@ -138,7 +138,7 @@ Looks up new files on the stash-boxes you added, once their fingerprints are rea
 
 - **Path**: [Settings > Tasks and Activity > Look up new files on stash-boxes](/settings/tasks#tasks.enrichment.when)
 - **When it runs**: Only when I press it
-- **Choices**: As files arrive, During quiet hours, Only when I press it
+- **Choices**: As files are imported, During quiet hours, Only when I press it
 - **More in**: [Settings > Stash-boxes](/settings/stash-boxes)
 - **Who sets it**: an admin, for everyone on this Sift
 
@@ -149,8 +149,8 @@ Looks up new files on the stash-boxes you added, once their fingerprints are rea
 Compares the fingerprints of your files to find exact and near duplicates.
 
 - **Path**: [Settings > Tasks and Activity > Find duplicate files](/settings/tasks#tasks.duplicates.when)
-- **When it runs**: As files arrive
-- **Choices**: As files arrive, During quiet hours, Only when I press it
+- **When it runs**: As files are imported
+- **Choices**: As files are imported, During quiet hours, Only when I press it
 - **Who sets it**: an admin, for everyone on this Sift
 
 <a id="tasks.music.when"></a>
@@ -161,7 +161,7 @@ Lets Sift match files that share a song. Generating one reads the file's sound t
 
 - **Path**: [Settings > Tasks and Activity > Generate music fingerprints](/settings/tasks#tasks.music.when)
 - **When it runs**: Only when I press it
-- **Choices**: As files arrive, During quiet hours, Only when I press it
+- **Choices**: As files are imported, During quiet hours, Only when I press it
 - **More in**: [Settings > Music](/settings/music)
 - **Who sets it**: an admin, for everyone on this Sift
 
@@ -173,7 +173,7 @@ Sends each file's music fingerprint and length to AcoustID, never the file, to n
 
 - **Path**: [Settings > Tasks and Activity > Name songs with AcoustID](/settings/tasks#tasks.music-lookup.when)
 - **When it runs**: Only when I press it
-- **Choices**: As files arrive, During quiet hours, Only when I press it
+- **Choices**: As files are imported, During quiet hours, Only when I press it
 - **More in**: [Settings > Music](/settings/music)
 - **Who sets it**: an admin, for everyone on this Sift
 
@@ -184,8 +184,8 @@ Sends each file's music fingerprint and length to AcoustID, never the file, to n
 Finds runs of one creator's photos taken together, to suggest as Photo Sets.
 
 - **Path**: [Settings > Tasks and Activity > Find shoots](/settings/tasks#tasks.shoots.when)
-- **When it runs**: As files arrive
-- **Choices**: As files arrive, During quiet hours, Only when I press it
+- **When it runs**: As files are imported
+- **Choices**: As files are imported, During quiet hours, Only when I press it
 - **Who sets it**: an admin, for everyone on this Sift
 
 <a id="tasks.suggestions.when"></a>
@@ -195,8 +195,8 @@ Finds runs of one creator's photos taken together, to suggest as Photo Sets.
 Suggests a person for a folder that holds one person's files, for you to confirm.
 
 - **Path**: [Settings > Tasks and Activity > Suggest People from your folders](/settings/tasks#tasks.suggestions.when)
-- **When it runs**: As files arrive
-- **Choices**: As files arrive, During quiet hours, Only when I press it
+- **When it runs**: As files are imported
+- **Choices**: As files are imported, During quiet hours, Only when I press it
 - **Who sets it**: an admin, for everyone on this Sift
 
 ## Settings

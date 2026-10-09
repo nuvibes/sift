@@ -23,6 +23,8 @@ export const COPY = {
 			`Thumbnails, hover previews and converted copies. If they're deleted, Sift generates them again, and no file is lost. ${folder}`
 	},
 	move: 'Move both',
+	/* In place of a size not measured yet. */
+	measuring: 'Measuring',
 	moving: 'Moving Sift data',
 	moved: 'Sift is using the new folder',
 	/* Said when a search or a link lands on either block from a browser, which draws neither. */

@@ -1,12 +1,12 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""The picture a thing is drawn as when nobody chose one: its first file's, kept true by the database.
+"""The picture a thing is drawn as when nobody chose one: its first picture, kept true by the database.
 
 A person, a collection and a Photo Set each carry a cover, and one with none is drawn as a letter
-beside files of its own. So the rule is: **an entity with no cover and at least one file that is
-there to read wears the picture of the FIRST file filed under it**, by the filing's time, then by
-the arrangement where the kind has one, then by the file's id. A still's own picture, a video's
-still at the moment the still was cut by what the frame shows: the cover names the whole file, with
-no moment and no window, which is exactly what the tile draws.
+beside files of its own. So the rule is: **an entity with no cover and at least one picture that is
+there to read wears the FIRST picture filed under it**, by the filing's time, then by the
+arrangement where the kind has one, then by the file's id. A picture, never a GIF or a video, whose
+frame would stand for the thing; one with no picture wears its letter (catalog version 93,
+`pictures_only`). The cover names the whole file, with no moment and no window.
 
 ## Not a tag, and not a Site
 
@@ -204,8 +204,12 @@ _PREFIX = "default_cover_"
 #: filings may not have followed it yet.
 _FIRST = (
     "SELECT m.asset_id FROM {{MEMBERSHIP}} JOIN assets a ON a.id = m.asset_id"
-    " WHERE {{BELONGS}} AND {{PRESENT}}{{KEPT}} ORDER BY {{ORDER}}, m.asset_id LIMIT 1"
+    " WHERE {{BELONGS}} AND {{PICTURE}} AND {{PRESENT}}{{KEPT}} ORDER BY {{ORDER}}, m.asset_id"
+    " LIMIT 1"
 )
+
+#: What a default cover may be: a picture as the catalog records its kind, never a GIF or a video.
+_PICTURE = "a.media_type = 'image'"
 
 #: A file nobody keeps in Hidden before any file somebody does: the first of the first kind, else
 #: the first of all. Each reads the kind's index in its order and stops at the first that passes,
@@ -287,6 +291,7 @@ def _first(kind: _Kind, *, hidden: bool = True) -> str:
     pieces = {
         "MEMBERSHIP": kind.membership,
         "BELONGS": splice(kind.belongs, ENTITY=kind.table + ".id"),
+        "PICTURE": _PICTURE,
         "PRESENT": HAS_A_PRESENT_COPY,
         "ORDER": kind.order,
     }
@@ -444,8 +449,8 @@ def _statements(hidden: bool = True) -> _Statements:
     for kind in _KINDS:
         triggers.update(_kind_triggers(kind, hidden))
 
-    def arrived(file: str) -> tuple[str, ...]:
-        filled = tuple(
+    def filled(file: str) -> tuple[str, ...]:
+        return tuple(
             _assign(
                 kind,
                 f"{kind.table}.id IN ({splice(kind.entities_of_file, FILE=file)})",
@@ -453,7 +458,9 @@ def _statements(hidden: bool = True) -> _Statements:
             )
             for kind in _KINDS
         )
-        return filled + (picked_again(file) if hidden else ())
+
+    def arrived(file: str) -> tuple[str, ...]:
+        return filled(file) + (picked_again(file) if hidden else ())
 
     def picked_again(file: str) -> tuple[str, ...]:
         return tuple(
@@ -480,6 +487,15 @@ def _statements(hidden: bool = True) -> _Statements:
             "NEW.status = 'present'"
             " AND (OLD.status IS NOT 'present' OR NEW.asset_id IS NOT OLD.asset_id)"
         ),
+    )
+    # A file's kind read again: the rule lets go of it where it stopped being a picture (`_lost`
+    # picks again), and it may fill a gap where it became one.
+    triggers[_PREFIX + "kind_moved"] = _trigger(
+        _PREFIX + "kind_moved",
+        "UPDATE OF media_type",
+        "assets",
+        tuple(_let_go(kind, "NEW.id") for kind in _KINDS) + filled("NEW.id"),
+        when="NEW.media_type IS NOT OLD.media_type",
     )
     if hidden:
         triggers.update(_hidden_triggers(picked_again))
@@ -685,6 +701,53 @@ async def faces_back_to_the_rule(connection: Connection) -> dict[str, int]:
     counted = list(await connection.execute_fetchall(_PICTURED, (ids,)))
     given: dict[str, int] = {"faces": len(rows), "pictured": int(counted[0][0]) if counted else 0}
     log.info("covers.default.faces_given_back", **given)
+    return given
+
+
+# --- a default cover on a GIF or a video ---------------------------------------------------------
+
+#: Let go of the rule's pick where its file `{{FILE}}` is not a picture: `_lost` then gives the next
+#: first picture, or the letter. A cover somebody chose fails `{{IS_DEFAULT}}` and stays.
+_LET_GO = (
+    "UPDATE {{TABLE}} SET cover_asset_id = NULL, cover_by_default = NULL"
+    " WHERE {{IS_DEFAULT}} AND {{TABLE}}.cover_asset_id IN"
+    " (SELECT a.id FROM assets a WHERE a.id = {{FILE}} AND NOT {{PICTURE}}){{TAIL}}"
+)
+
+
+def _let_go(kind: _Kind, file: str, tail: str = "") -> str:
+    return splice(
+        _LET_GO,
+        TABLE=kind.table,
+        IS_DEFAULT=_is_default(kind.covered, kind.table),
+        PICTURE=_PICTURE,
+        FILE=file,
+        TAIL=tail,
+    )
+
+
+#: Every kind's default cover on a GIF or a video let go, the ids given back.
+_LET_GO_BACK = tuple(
+    (kind, _let_go(kind, kind.table + ".cover_asset_id", " RETURNING id")) for kind in _KINDS
+)
+
+
+async def pictures_only(connection: Connection) -> dict[str, int]:
+    """Catalog version 93: every default cover on a GIF or a video goes back to the rule, which
+    gives the first picture filed there or the letter. How many went per kind, and how many of the
+    people now wear a picture, logged. A default, not an act, so nothing is recorded."""
+    for statement in drop_triggers():
+        await connection.execute(statement)
+    await _make_triggers(connection)
+    given: dict[str, int] = {}
+    people: list[str] = []
+    for kind, let_go in _LET_GO_BACK:
+        rows = [str(row[0]) for row in await connection.execute_fetchall(let_go)]
+        given[kind.word] = len(rows)
+        people += rows if kind.covered is _PERSON else []
+    counted = list(await connection.execute_fetchall(_PICTURED, (json.dumps(people),)))
+    given["pictured"] = int(counted[0][0]) if counted else 0
+    log.info("covers.default.pictures_only", **given)
     return given
 
 

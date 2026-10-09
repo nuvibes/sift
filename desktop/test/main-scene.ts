@@ -242,11 +242,17 @@ export const doubles = {
   },
   storage: () => ({
     refuse: async () => scene.storageRefusal,
-    describe: async (where: DataLocations) => ({
-      ...where,
-      dataBytes: 1,
-      cacheBytes: 2,
-    }),
+    StorageSizes: class {
+      read(where: DataLocations) {
+        return {
+          ...where,
+          dataBytes: 1,
+          cacheBytes: 2,
+          measuredAt: 0,
+          measuring: false,
+        };
+      }
+    },
     move: async (
       _from: DataLocations,
       target: string,

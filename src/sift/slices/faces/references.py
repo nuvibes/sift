@@ -46,7 +46,8 @@ from sift.slices.faces import crop as cropping
 from sift.slices.faces import frames, tuning
 from sift.slices.faces import quality as quality_module
 from sift.slices.faces.detect import Detector
-from sift.slices.faces.models import Finding, Vector
+from sift.slices.faces.models import Box, Detection, Finding, Vector
+from sift.slices.faces.pipeline import Bar
 from sift.slices.faces.recognize import Recognizer
 
 log = get_logger(__name__)
@@ -83,6 +84,9 @@ class Candidate:
     """How big the face was before it was warped onto the stored square. Kept because the square
     is the same size whatever the original was, so this is the last chance to know it."""
     detail: str | None = None
+    turned: bool = False
+    """Kept although turned past the bar's angle (`quality.asked_only`): held for the person and
+    never compared with anybody, the rule a turned face found in a file follows."""
 
     @property
     def usable(self) -> bool:
@@ -148,6 +152,11 @@ class PersonReport:
         return reasons
 
     @property
+    def turned(self) -> int:
+        """Pictures kept for the person although turned past the bar's angle (`Candidate.turned`)."""
+        return sum(1 for item in self.candidates if item.turned)
+
+    @property
     def near_duplicates(self) -> int:
         """Pictures used although almost the same as another of this person's.
 
@@ -169,12 +178,30 @@ class Sheet:
 
 
 class Auditor:
-    """Runs the checks over a folder of folders, one per person."""
+    """Runs the checks over a folder of folders, one per person.
 
-    def __init__(self, settings: Settings, detector: Detector, recognizer: Recognizer) -> None:
+    `bar` is the library's quality preset, the one its scans measure against; absent, the middle
+    preset's. `keep_turned` holds a face turned past the bar's angle rather than refusing it.
+    """
+
+    def __init__(
+        self,
+        settings: Settings,
+        detector: Detector,
+        recognizer: Recognizer,
+        *,
+        bar: Bar | None = None,
+        keep_turned: bool = False,
+    ) -> None:
         self._settings = settings
         self._detector = detector
         self._recognizer = recognizer
+        self._bar = bar or Bar(
+            min_pixels=quality_module.MIN_PIXELS,
+            min_sharpness=quality_module.MIN_SHARPNESS,
+            min_frontality=quality_module.MIN_FRONTALITY,
+        )
+        self._keep_turned = keep_turned
 
     async def examine(self, image: Path) -> Candidate:
         """One picture, checked and described if it passes.
@@ -184,7 +211,43 @@ class Auditor:
         and every stream for the length of the import.
         """
         picture = await frames.decode_image(image, self._settings)
-        return await asyncio.to_thread(self._judge, image, picture)
+        if picture is None:
+            return _unreadable(image)
+        found = await asyncio.to_thread(self._find, image, picture)
+        if isinstance(found, Candidate):
+            return found
+        closer, detection = await self._at_own_size(image, picture, found)
+        return await asyncio.to_thread(self._judge_face, image, closer, detection)
+
+    async def _at_own_size(
+        self, image: Path, picture: np.ndarray, found: Detection
+    ) -> tuple[np.ndarray, Detection]:
+        """The picture a face is measured in: the reduced one, or where the file is larger and the
+        face there is under the size floor, the piece round it at the file's own size. A face is
+        as big as the photograph made it, not as the decode for finding it left it."""
+        height, width = picture.shape[:2]
+        reduced = max(height, width) >= frames.REFERENCE_LONG_SIDE
+        if not reduced or found.box.long_side >= self._bar.min_pixels:
+            return picture, found
+        left, top, right, bottom = frames.reach(found.box, width, height)
+        share = (left / width, top / height, right / width, bottom / height)
+        piece = await frames.decode_image(image, self._settings, piece=share)
+        if piece is None:
+            return picture, found
+        across = piece.shape[1] / (right - left)
+        down = piece.shape[0] / (bottom - top)
+        box = found.box
+        return piece, Detection(
+            box=Box(
+                x=round((box.x - left) * across),
+                y=round((box.y - top) * down),
+                width=max(1, round(box.width * across)),
+                height=max(1, round(box.height * down)),
+            ),
+            score=found.score,
+            landmarks=tuple(((x - left) * across, (y - top) * down) for x, y in found.landmarks),
+            timestamp_ms=found.timestamp_ms,
+        )
 
     async def examine_bytes(self, blob: bytes, label: Path) -> Candidate:
         """A picture that was never a file (a stash-box's photo), checked exactly as a folder's.
@@ -202,10 +265,14 @@ class Auditor:
         Synchronous on purpose, called from a thread.
         """
         if picture is None:
-            return Candidate(
-                path=image, findings=(Finding.UNREADABLE,), detail="not a readable image"
-            )
+            return _unreadable(image)
+        found = self._find(image, picture)
+        if isinstance(found, Candidate):
+            return found
+        return self._judge_face(image, picture, found)
 
+    def _find(self, image: Path, picture: np.ndarray) -> Candidate | Detection:
+        """The one face in a picture, or the refusal of a picture with none, or several."""
         found = self._detector.detect(picture)
         if not found:
             return Candidate(path=image, findings=(Finding.NO_FACE,))
@@ -215,14 +282,24 @@ class Auditor:
                 findings=(Finding.SEVERAL_FACES,),
                 detail=f"{len(found)} faces in one picture",
             )
+        return found[0]
 
-        detection = self._detector.refine(picture, found[0])
+    def _judge_face(self, image: Path, picture: np.ndarray, found: Detection) -> Candidate:
+        """The checks on the one face, in the picture it is measured in, against the bar."""
+        detection = self._detector.refine(picture, found)
         aligned = cropping.align(picture, detection.landmarks)
         chip = aligned.chip
         measured = quality_module.assess(
-            detection.box, detection.landmarks, chip, containment=aligned.containment
+            detection.box,
+            detection.landmarks,
+            chip,
+            containment=aligned.containment,
+            min_pixels=self._bar.min_pixels,
+            min_sharpness=self._bar.min_sharpness,
+            min_frontality=self._bar.min_frontality,
         )
-        if not measured.accepted:
+        turned = self._keep_turned and quality_module.asked_only(measured)
+        if not measured.accepted and not turned:
             # Named by the check that refused it (`Quality.failed`), the same one that wrote the
             # sentence, so somebody told what is wrong with their photo is told something they can
             # act on, and the code and the sentence agree.
@@ -244,6 +321,7 @@ class Auditor:
             chip=chip,
             quality=measured.score,
             pixels=measured.pixels,
+            turned=turned,
         )
 
     async def person(self, folder: Path) -> PersonReport:
@@ -254,7 +332,7 @@ class Auditor:
 
         mark_near_duplicates(report)
         mark_odd_ones_out(report)
-        if len(report.usable) < tuning.MIN_REFERENCES:
+        if sum(not item.turned for item in report.usable) < tuning.MIN_REFERENCES:
             report.findings.append(Finding.BELOW_MINIMUM)
         return report
 
@@ -262,6 +340,10 @@ class Auditor:
         """Every person's folder under one parent, in name order."""
         folders = await asyncio.to_thread(folders_in, root)
         return [await self.person(child) for child in folders]
+
+
+def _unreadable(image: Path) -> Candidate:
+    return Candidate(path=image, findings=(Finding.UNREADABLE,), detail="not a readable image")
 
 
 def images_in(folder: Path) -> list[Path]:
@@ -292,7 +374,7 @@ def mark_near_duplicates(report: PersonReport) -> None:
     """
     kept: list[Vector] = []
     for index, candidate in enumerate(report.candidates):
-        if candidate.vector is None or not candidate.usable:
+        if candidate.vector is None or not candidate.usable or candidate.turned:
             continue
         if any(_similarity(candidate.vector, other) >= tuning.NEAR_DUPLICATE for other in kept):
             report.candidates[index] = _with(candidate, Finding.NEAR_DUPLICATE)
@@ -313,7 +395,7 @@ def mark_odd_ones_out(report: PersonReport) -> None:
     described = [
         (index, candidate.vector)
         for index, candidate in enumerate(report.candidates)
-        if candidate.vector is not None and candidate.usable
+        if candidate.vector is not None and candidate.usable and not candidate.turned
     ]
     if len(described) < 4:
         return

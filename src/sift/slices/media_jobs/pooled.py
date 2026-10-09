@@ -68,7 +68,9 @@ async def priced_together(
     reading = Family.SCAN in rows and rows[Family.SCAN].waiting > 0
     life = ledger.life(Family.SCAN) or 0.0
     within = max(time_left.PACE_AT_LEAST, min(life, _READ_SECONDS.get(Family.SCAN, 0.0)))
-    pass_types = [one for row in passes for one in row.types if one in work]
+    # A sub-task switched off never runs, so its waiting files have no price to wait for.
+    off = {part.type for row in passes for part in row.parts if not part.on}
+    pass_types = [one for row in passes for one in row.types if one in work and one not in off]
     job = Import(
         read=_left([PROBE], work, kinds) if reading else {},
         passes=_left(pass_types, work, kinds),

@@ -40,6 +40,7 @@ from sift.kernel.access.repository.assets import (
     newest_filed_query,
     position_query,
     seek_anchor,
+    waiting_pile_count_query,
     waiting_pile_page_query,
     waiting_pile_position_query,
 )
@@ -926,25 +927,22 @@ class FileReads(RepositoryCore):
         """One page of the groups waiting, each with how many faces this viewer may see, and the
         total, from one statement so the two agree. `floor` and `ceiling` bound a group by the faces
         this viewer may see; one and no ceiling is every group."""
-        _where, bound = NO_FILTER.predicate()
+        size = max(1, min(limit, MAX_PAGE_SIZE))
         rows = await self._db.fetch_all(
             waiting_pile_page_query(),
-            self._params(
-                viewer,
-                asset_id=None,
-                reveal=self._reveal_existence(viewer),
-                limit=max(1, min(limit, MAX_PAGE_SIZE)),
-                offset=max(0, offset),
-                bound={
-                    **bound,
-                    "pile_status": status,
-                    "pile_floor": max(1, floor),
-                    "pile_ceiling": max(0, ceiling),
-                },
-            ),
+            self._waiting(viewer, status, floor, ceiling, limit=size, offset=max(0, offset)),
         )
         page = [(str(row["pile_id"]), int(row["visible"])) for row in rows]
         return page, int(rows[0]["total_count"]) if rows else 0
+
+    async def waiting_pile_count(
+        self, viewer: Viewer, status: str, *, floor: int = 1, ceiling: int = 0
+    ) -> int:
+        """How many groups `waiting_piles` pages through for these bounds, and nothing else."""
+        rows = await self._db.fetch_all(
+            waiting_pile_count_query(), self._waiting(viewer, status, floor, ceiling)
+        )
+        return int(rows[0]["total_count"])
 
     async def waiting_pile_position(
         self,
@@ -960,25 +958,26 @@ class FileReads(RepositoryCore):
         `ceiling`, alike."""
         if not _is_object_id(pile_id):
             return None
-        _where, bound = NO_FILTER.predicate()
         rows = await self._db.fetch_all(
             waiting_pile_position_query(),
-            self._params(
-                viewer,
-                asset_id=None,
-                reveal=self._reveal_existence(viewer),
-                limit=1,
-                offset=0,
-                bound={
-                    **bound,
-                    "pile_status": status,
-                    "pile_id": pile_id,
-                    "pile_floor": max(1, floor),
-                    "pile_ceiling": max(0, ceiling),
-                },
-            ),
+            self._waiting(viewer, status, floor, ceiling, pile_id=pile_id),
         )
         return int(rows[0]["position"]) - 1 if rows else None
+
+    def _waiting(
+        self, viewer: Viewer, status: str, floor: int, ceiling: int, **more: object
+    ) -> dict[str, object]:
+        """The bindings every read of the groups waiting takes, so the three bound one wall;
+        `more` (a page's `limit` and `offset`, a `pile_id`) is laid over them."""
+        _where, bound = NO_FILTER.predicate()
+        piles = {
+            "pile_status": status,
+            "pile_floor": max(1, floor),
+            "pile_ceiling": max(0, ceiling),
+        }
+        reveal = self._reveal_existence(viewer)
+        held = self._params(viewer, asset_id=None, reveal=reveal, limit=1, offset=0, bound=bound)
+        return {**held, **piles, **more}
 
     async def names_on_disk(self, viewer: Viewer, asset_ids: Sequence[str]) -> dict[str, str]:
         """What each of these files is called now (a renamed file keeps its `original_filename`),

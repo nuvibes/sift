@@ -51,8 +51,10 @@ def _written() -> set[str]:
 SECTIONS_TS = PANES / "sections.ts"
 SETTINGS_PANE = PANES / "SettingsPane.svelte"
 
-#: `{#if showing === 'library'}` ... `<LibraryScreen />`: a section and the component it draws.
-BRANCH = re.compile(r"showing === '([\w-]+)'\}\s*(?:<!--(?:(?!-->).)*-->\s*)*<([A-Z]\w*)", re.S)
+#: `{#if showing === 'library'}` ... `<LibraryScreen />`: a section and the component it draws,
+#: read after the markup comments are stripped.
+BRANCH = re.compile(r"showing === '([\w-]+)'\}\s*<([A-Z]\w*)")
+COMMENT = re.compile(r"<!--.*?-->", re.S)
 #: `import Name from './Name.svelte';` or from `$lib/...svelte`.
 SVELTE_IMPORT = re.compile(r"import\s+(\w+)\s+from\s+'([^']+\.svelte)'")
 #: `theater: { section: 'playback' },`
@@ -125,7 +127,7 @@ def _closure(start: Path) -> set[Path]:
 
 def _pane_ids() -> dict[str, set[str]]:
     """Section id -> every id in the pane `SettingsPane` draws for it, and below."""
-    text = SETTINGS_PANE.read_text(encoding="utf-8")
+    text = COMMENT.sub("", SETTINGS_PANE.read_text(encoding="utf-8"))
     imports = dict(SVELTE_IMPORT.findall(text))
     ids: dict[str, set[str]] = {}
     for section, component in BRANCH.findall(text):

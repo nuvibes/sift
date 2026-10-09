@@ -347,6 +347,25 @@ describe('picking several piles', () => {
 	});
 });
 
+describe('a press on a card', () => {
+	/* Anywhere on a card that is not a control opens the group, handed to the card's own link, so
+	   whatever a press on the faces does (open, or pick while picking) the ground does too. */
+	it('hands a press on the ground to the link that opens the group', async () => {
+		const root = await render();
+		const card = root.querySelector('.groups > li') as HTMLElement;
+		const link = card.querySelector('a[href^="/organize/"]') as HTMLAnchorElement;
+		const opened = vi.fn((event: Event) => event.preventDefault());
+		link.addEventListener('click', opened);
+
+		card
+			.querySelector('.foot .detail')
+			?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 }));
+
+		expect(opened).toHaveBeenCalledTimes(1);
+		expect(card.querySelector('.card.opens')).not.toBeNull();
+	});
+});
+
 describe('the question on a card', () => {
 	/* The one shape every Organize question wears: the crops, then the question with the line
 	   the board says under it, then the answers, naming as the button and the rarer two behind

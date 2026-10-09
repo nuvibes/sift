@@ -16,7 +16,7 @@
 	 * app's own record of it.
 	 */
 	import { onMount } from 'svelte';
-	import { Button, Note, Problem } from '$lib/components/common';
+	import { Button, Note, Problem, Spinner } from '$lib/components/common';
 	import Modal from '$lib/components/common/Modal.svelte';
 	import FolderPicker from '$lib/library/FolderPicker.svelte';
 	import { Picker } from '$lib/library/picker.svelte';
@@ -59,6 +59,19 @@
 		void readServerStorage().then((answer) => (report = answer));
 	});
 
+	/* No size before the first walk there ends: the word and the working mark, never a 0 B. A size
+	   once known is drawn while a new walk runs, and the walk is asked about again until it ends. */
+	const unmeasured = $derived(report !== null && report.measured_at === null);
+	const REREAD_MS = 1_000;
+	$effect(() => {
+		if (!report?.measuring) return;
+		const again = setTimeout(
+			() => void readServerStorage().then((answer) => (report = answer ?? report)),
+			REREAD_MS
+		);
+		return () => clearTimeout(again);
+	});
+
 	/* A move that was taken on and then failed: said once Sift is back, from the app's record. */
 	const lastFailed = $derived(
 		report?.last_move && !report.last_move.ok ? WORDS.lastFailed(report.last_move.refusal) : null
@@ -99,11 +112,14 @@
 
 <SettingGroup id="library.storage_folders" heading={COPY.name} help={WORDS.help(machine)} />
 
+{#snippet measuring()}<Spinner size={12} /> {COPY.measuring}{/snippet}
+
 {#if report}
 	<ActionRow
 		label={COPY.library.label}
 		help={COPY.library.help(report.data_dir)}
-		note={formatBytes(report.data_bytes)}
+		note={unmeasured ? undefined : formatBytes(report.data_bytes)}
+		figure={unmeasured ? measuring : undefined}
 		action={COPY.move}
 		icon="folder"
 		busy={moving}
@@ -114,7 +130,8 @@
 	<ActionRow
 		label={COPY.generated.label}
 		help={COPY.generated.help(report.cache_dir)}
-		note={formatBytes(report.cache_bytes)}
+		note={unmeasured ? undefined : formatBytes(report.cache_bytes)}
+		figure={unmeasured ? measuring : undefined}
 		action={COPY.move}
 		icon="folder"
 		busy={moving}

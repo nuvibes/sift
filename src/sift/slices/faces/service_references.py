@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -20,6 +20,7 @@ from sift.slices.faces.models import Origin, Vector
 from sift.slices.faces.references import Auditor, PersonReport, picture_digests
 from sift.slices.faces.service_grouping import GroupingMixin
 from sift.slices.faces.service_weights import WeightsMixin
+from sift.slices.faces.store_strength import Counted
 
 if TYPE_CHECKING:  # numpy is only needed for a signature
     import numpy as np
@@ -44,20 +45,18 @@ class EntryHeld:
 
 @dataclass(frozen=True, slots=True)
 class Strength:
-    """How well Sift can recognize one person, and what that rests on.
+    """How well Sift recognizes one person in this library, and what that rests on.
 
-    The target travels with the count rather than being known by the screen. A bar drawn against a
-    number the client holds its own copy of is a bar that goes on saying "good" after the number
-    behind it has moved.
+    The measure is the library's own: of her faces Sift found, the share it named outright rather
+    than asked about, with every Yes on her counted as named and every No as asked (`rate`). Her
+    pictures by origin (`counted`) say what that rests on. The bands travel with the numbers, so
+    no screen bands a number for itself.
     """
 
     references: int
     target: int
     floor: int
     strong: int = 0
-    """Where recognition becomes dependable rather than merely working. The middle of three bands,
-    because "fine" and "as good as it gets" are different answers and only one of them is worth
-    acting on."""
     starters: int = 0
     """Her STARTER pictures in use: a stash-box's, which make Sift ask about her and never name
     her. Apart from `references`, which they never add to: see `Store.reference_count`."""
@@ -65,41 +64,48 @@ class Strength:
     """Starters retired, at a face of hers somebody confirmed or at a "no"."""
     starters_from: tuple[str, ...] = ()
     """The stash-boxes they came from, by name."""
+    counted: Counted = field(default_factory=Counted)
+
+    @property
+    def rate(self) -> float | None:
+        """The share of her faces named outright, answers counted; None before any is found."""
+        seen = self.counted.matched + self.counted.asked + self.counted.yes + self.counted.no
+        return (self.counted.matched + self.counted.yes) / seen if seen else None
 
     @property
     def fraction(self) -> float:
-        """How far toward dependable this person is, capped at one: the page's bar."""
-        return min(1.0, self.references / self.strong) if self.strong else 0.0
+        """The page's bar: the rate, or nothing before there is one."""
+        return self.rate or 0.0
 
     @property
     def verdict(self) -> str:
-        """What to say about it, in one word this user can act on.
-
-        Three bands rather than two, from the measured curve: below the floor is a coin toss, up to
-        `strong` it works with gaps, past `strong` it is dependable, and at the target there is
-        nothing left worth doing. Collapsing the middle two would say "not there yet" to somebody
-        whose person is already being recognized reliably.
-        """
+        """The band, as a token the screen words: `none`, `few` under the floor of pictures,
+        `unseen` before any face of hers is found, then `weak`, `fair`, `good` and `strong` by the
+        rate."""
         if self.references == 0:
             return "none"
-        if self.references < self.floor:
+        if self.references < tuning.FEWEST_REFERENCES:
+            return "few"
+        rate = self.rate
+        if rate is None:
+            return "unseen"
+        if rate < tuning.RATE_FAIR:
             return "weak"
-        if self.references < self.strong:
+        if rate < tuning.RATE_GOOD:
             return "fair"
-        if self.references < self.target:
-            return "good"
-        return "strong"
+        return "good" if rate < tuning.RATE_STRONG else "strong"
 
 
 def band_of(confirmed: int) -> str:
-    """The word a person's page bands this many confirmed faces with (`Strength.verdict`), for a
-    list that draws many people and must say what the page says about each."""
-    return Strength(
-        references=confirmed,
-        target=tuning.GOOD_REFERENCES,
-        floor=tuning.MIN_REFERENCES,
-        strong=tuning.STRONG_REFERENCES,
-    ).verdict
+    """The word a chooser bands a person's count of confirmed faces with, for a list drawing many
+    people from counts alone."""
+    if confirmed == 0:
+        return "none"
+    if confirmed < tuning.MIN_REFERENCES:
+        return "weak"
+    if confirmed < tuning.STRONG_REFERENCES:
+        return "fair"
+    return "good" if confirmed < tuning.GOOD_REFERENCES else "strong"
 
 
 @dataclass(frozen=True, slots=True)
@@ -138,7 +144,7 @@ class ReferencesMixin(WeightsMixin, GroupingMixin):
             for person_id, name, faces, _, starters in await self._store.roster(prefix)
         ]
 
-    async def reference_strengths(self) -> Strengths:
+    async def reference_strengths(self, viewer: Viewer | None = None) -> Strengths:
         """Everybody's reference count in one go, with the target and the floor they are read against.
 
         `recognition_of` answers for one person and is right for a person's own page. A picker is
@@ -155,19 +161,21 @@ class ReferencesMixin(WeightsMixin, GroupingMixin):
         """
         bands = {
             "target": tuning.GOOD_REFERENCES,
-            "floor": tuning.MIN_REFERENCES,
+            "floor": tuning.FEWEST_REFERENCES,
             "strong": tuning.STRONG_REFERENCES,
         }
         if not await self.enabled():
             return Strengths(people={}, **bands)
         held = await self._store.reference_counts()
+        counted = await self._store.strength_counts(viewer=viewer)
         return Strengths(
             people={
                 person_id: Strength(
                     references=n,
                     target=tuning.GOOD_REFERENCES,
-                    floor=tuning.MIN_REFERENCES,
+                    floor=tuning.FEWEST_REFERENCES,
                     strong=tuning.STRONG_REFERENCES,
+                    counted=counted.get(person_id, Counted()),
                 )
                 for person_id, n in held.items()
             },
@@ -187,11 +195,13 @@ class ReferencesMixin(WeightsMixin, GroupingMixin):
         and the useful thing is to say so where somebody can act on it.
         """
         in_use, retired, sources = await self._store.starters_of(person_id)
+        counted = await self._store.strength_counts(person_id, viewer=viewer)
         return Strength(
             references=await self._store.reference_count(person_id, viewer=viewer),
             target=tuning.GOOD_REFERENCES,
-            floor=tuning.MIN_REFERENCES,
+            floor=tuning.FEWEST_REFERENCES,
             strong=tuning.STRONG_REFERENCES,
+            counted=counted.get(person_id, Counted()),
             starters=in_use,
             starters_retired=retired,
             starters_from=sources,
@@ -226,9 +236,12 @@ class ReferencesMixin(WeightsMixin, GroupingMixin):
             # A stopped import read it whole: what it held is held.
             return PersonReport(name=folder.name, already=True)
         detector, recognizer = await self._models(configured)
-        report = await Auditor(self._settings, detector, recognizer).person(folder)
+        auditor = Auditor(
+            self._settings, detector, recognizer, bar=configured.bar, keep_turned=True
+        )
+        report = await auditor.person(folder)
         usable = [
-            (item.vector, item.chip, item.quality, item.pixels)
+            (item.vector, item.chip, item.quality, item.turned)
             for item in report.usable
             if item.vector is not None and item.chip is not None
         ]
@@ -241,7 +254,7 @@ class ReferencesMixin(WeightsMixin, GroupingMixin):
     async def _hold_folder_faces(
         self,
         name: str,
-        usable: Sequence[tuple[Vector, np.ndarray, float, int]],
+        usable: Sequence[tuple[Vector, np.ndarray, float, bool]],
         recognizer: str,
         *,
         source: str | None,
@@ -268,7 +281,7 @@ class ReferencesMixin(WeightsMixin, GroupingMixin):
         )
         pictures = await cropping.encode([chip for _, chip, _, _ in usable], self._settings)
         held = 0
-        for (vector, _, quality, _pixels), picture in zip(usable, pictures, strict=True):
+        for (vector, _, quality, turned), picture in zip(usable, pictures, strict=True):
             face_id = await self._store.keep_entry_face(
                 entry_id,
                 vector=vector,
@@ -276,6 +289,7 @@ class ReferencesMixin(WeightsMixin, GroupingMixin):
                 crop=picture,
                 digest=cropping.digest(picture),
                 recognizer=recognizer,
+                turned=turned,
             )
             held += face_id is not None
         return held

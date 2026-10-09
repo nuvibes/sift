@@ -119,6 +119,8 @@ _STORAGE = {
     "cache_dir": "cacheDir",
     "data_bytes": "dataBytes",
     "cache_bytes": "cacheBytes",
+    "measured_at": "measuredAt",
+    "measuring": "measuring",
     "last_move": "lastMove",
 }
 _LIBRARY = {

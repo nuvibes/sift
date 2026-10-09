@@ -428,17 +428,34 @@ class NameFacesWrite(FacesWrite):
     whole_group: bool = False
 
 
+class StrengthBasis(Wire):
+    """What a person's strength rests on: her pictures by where they came from (`turned` are kept
+    for her and never compared), and her faces Sift found, by what it did with them."""
+
+    imported: int = 0
+    confirmed: int = 0
+    learned: int = 0
+    turned: int = 0
+    matched: int = 0
+    asked: int = 0
+    yes: int = 0
+    no: int = 0
+
+
 class RecognitionStrength(Wire):
     """How reliably Sift can recognize one person.
 
     The target and the floor travel with the count. A screen that held its own copy of either would
     go on drawing the same verdict after the number behind it moved.
 
-    `verdict` is a token and not a sentence: `none`, `weak`, `fair`, `good`, `strong`. The bands
-    belong here, beside the numbers that decide them; the wording a person reads belongs to the
-    screen drawing it, which is the same split every other reading in Sift uses.
+    `verdict` is a token and not a sentence: `none`, `few`, `unseen`, `weak`, `fair`, `good`,
+    `strong`. The bands belong here, beside the numbers that decide them; the wording a person
+    reads belongs to the screen drawing it. `fraction` is `rate`, the share of her faces named
+    outright, and `basis` what it rests on.
     """
 
+    rate: float | None = None
+    basis: StrengthBasis = Field(default_factory=lambda: StrengthBasis())
     references: int = 0
     target: int = 0
     floor: int = 0
@@ -504,6 +521,9 @@ class ReferenceStrengths(Wire):
     #: The same person's verdict token (`none`, `weak`, `fair`, `good`, `strong`), from the one rule
     #: the person's own reading uses. A screen maps the token to words and never bands the count.
     verdicts: dict[str, str] = Field(default={})
+    #: The same person's rate and what it rests on, as her page reads them.
+    rates: dict[str, float] = Field(default={})
+    basis: dict[str, StrengthBasis] = Field(default={})
     target: int = 0
     floor: int = 0
     strong: int = 0

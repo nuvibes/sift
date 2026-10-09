@@ -1267,6 +1267,7 @@ async def test_a_cover_taken_back_is_only_the_face_that_gave_it_and_the_default_
     """The undo of a face's cover takes it off only while it is still that face, and leaves the
     person as the rule for an empty cover would: their first file's still, marked as the default."""
     person = await make_person(temp_db, "Ada Lovelace")
+    await temp_db.execute("UPDATE assets SET media_type = 'image' WHERE id = ?", (clip.asset.id,))
     tracks = await record(store, clip.asset.id, count=1)
     # A face cover as a receipt written before catalog 79 knows it: nothing makes one any more.
     await temp_db.execute(
@@ -1371,7 +1372,6 @@ async def test_a_pile_split_out_by_hand_survives_the_next_grouping_pass(
     assert pile is not None
     assert pile["by_hand"] == 1
 
-    # A pass that knows nothing about it, which is the ordinary case.
     await store.replace_piles([(tuple(0.0 for _ in range(8)), tracks[2:])])
 
     assert await store.pile_of(made) is not None, "the next pass took a pile somebody had made"

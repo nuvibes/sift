@@ -1244,6 +1244,11 @@ def test_a_cover_nobody_chose_is_not_carried_and_the_survivor_gets_its_own(
     sign_in(client)
     jane = make_person(client, "Jane")
     doe = make_person(client, "Jane Doe")
+    # A default cover is a picture, and the library's files are videos.
+    write(
+        db_path(client),
+        [("UPDATE assets SET media_type = 'image' WHERE id = ?", (library.shared,))],
+    )
     assign(client, [library.shared], [jane])
     (before,) = read(
         db_path(client), "SELECT cover_asset_id, cover_by_default FROM people WHERE id = ?", (jane,)
@@ -1275,6 +1280,10 @@ def test_a_cover_somebody_chose_is_carried_and_said(client: TestClient, library:
     sign_in(client)
     jane = make_person(client, "Jane")
     doe = make_person(client, "Jane Doe")
+    write(
+        db_path(client),
+        [("UPDATE assets SET media_type = 'image' WHERE id = ?", (library.shared,))],
+    )
     assign(client, [library.shared], [jane])
     # Chosen: the cover stands and the rule's mark is gone, which is what choosing writes.
     write(

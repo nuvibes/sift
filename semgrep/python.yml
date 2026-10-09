@@ -128,6 +128,9 @@ rules:
         - src/sift/slices/backup/tests/test_export.py
         - src/sift/slices/backup/tests/test_restore.py
         - src/sift/slices/backup/tests/test_saved_logins.py
+        # Counts the driver's own hops under the kernel handle, to hold a read to one; it opens
+        # no connection of its own.
+        - src/sift/kernel/tests/test_db_readers_in_turn.py
     pattern-either:
       - pattern: import aiosqlite
       - pattern: from aiosqlite import $X

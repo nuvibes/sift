@@ -91,3 +91,24 @@ def test_a_build_for_this_device_only_warns(
     (pushed / "a.txt").write_text("two\n", encoding="utf-8")
     _load().check_the_tree(signed=False, repo=pushed)
     assert "NOT A RELEASE ANYBODY ELSE SHOULD INSTALL" in capsys.readouterr().out
+
+
+def test_the_upgrade_fixture_the_build_writes_is_not_a_change_nobody_committed(
+    pushed: Path,
+) -> None:
+    """A build replaces the last release's fixture with this one's; a run after it, `--no-build`
+    or a second try at the signature, meets that tree and must not refuse it."""
+    release = _load()
+    data = pushed / "tests" / "integration" / "data"
+    data.mkdir(parents=True)
+    (data / "library-0.0.1.sql.gz").write_bytes(b"old")
+    _git(pushed, "add", ".")
+    _git(pushed, "commit", "-m", "fixture")
+    _git(pushed, "push", "origin", "main")
+    (data / "library-0.0.1.sql.gz").unlink()
+    (data / f"library-{release.VERSION}.sql.gz").write_bytes(b"new")
+    release.check_the_tree(signed=True, repo=pushed)
+
+    (data / "library-9.9.9.sql.gz").write_bytes(b"not this build's")
+    with pytest.raises(release.ReleaseFailed, match=r"library-9\.9\.9"):
+        release.check_the_tree(signed=True, repo=pushed)

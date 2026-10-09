@@ -32,6 +32,14 @@ from sift.testing.logs import uncached_log
 
 pytestmark = pytest.mark.anyio
 
+
+@pytest.fixture
+async def world(world: World, temp_db: Database) -> World:
+    """The world's files are videos, and a default cover is a picture: these tests file pictures."""
+    await temp_db.execute("UPDATE assets SET media_type = 'image'")
+    return world
+
+
 _COVER_OF = {
     "person": "SELECT cover_asset_id FROM people WHERE id = ?",
     "site": "SELECT cover_asset_id FROM sites WHERE id = ?",

@@ -95,7 +95,7 @@ function cards(): HTMLElement[] {
 
 /** The way into a pile: the card's one button, Review. */
 function wayIn(): HTMLButtonElement | null {
-	return host.querySelector<HTMLButtonElement>('.board-card .face button');
+	return host.querySelector<HTMLButtonElement>('.board-card button');
 }
 
 /** The name each card wears, in the board's order. */
@@ -311,7 +311,7 @@ describe('when something is waiting', () => {
 
 		expect(cards()).toHaveLength(1);
 		expect(wayIn()).toBeNull();
-		expect(host.querySelector('.press')).toBeNull();
+		expect(host.querySelector('.card.opens')).toBeNull();
 	});
 });
 
@@ -661,13 +661,12 @@ describe('how a card is laid out', () => {
 	});
 
 	it('makes the card itself a press that does what the way in does', async () => {
-		/* Press a card anywhere that is not a control and reach what its name reaches: one press
-		   laid under the card's face, which lets a pointer through everywhere but its controls. */
+		/* Press a card anywhere that is not a control and reach what its name reaches. */
 		mocks.board.mockResolvedValue(answer({ queues: [queue({ name: 'folders', count: 3 })] }));
 
 		await render();
 
-		const press = host.querySelector<HTMLElement>('.board-card > .press');
+		const press = host.querySelector<HTMLElement>('.board-card .purpose');
 		expect(press).not.toBeNull();
 
 		press?.click();
@@ -688,8 +687,8 @@ describe('how a card is laid out', () => {
 
 		await render();
 
-		expect(host.querySelector('.press')).toBeNull();
-		host.querySelector<HTMLElement>('.board-card')?.click();
+		expect(host.querySelector('.card.opens')).toBeNull();
+		host.querySelector<HTMLElement>('.board-card .purpose')?.click();
 		expect(goto).not.toHaveBeenCalled();
 	});
 
@@ -760,7 +759,7 @@ describe('nothing on the board decides', () => {
 		expect(host.textContent).not.toContain('Wren Halloway');
 		expect(host.textContent).not.toContain('Yes, file them');
 		expect(host.querySelector('.answers')).toBeNull();
-		const buttons = [...host.querySelectorAll<HTMLButtonElement>('.board-card .face button')];
+		const buttons = [...host.querySelectorAll<HTMLButtonElement>('.board-card button')];
 		expect(buttons.map((one) => one.getAttribute('aria-label'))).toEqual([
 			'Review Folders that look like somebody'
 		]);
@@ -871,7 +870,7 @@ describe('every card one size', () => {
 				.map((one) => one.classList[0])
 				.filter((one) => one !== 'strip');
 			expect(shape).toEqual(['section-heading', 'purpose', 'lead', 'foot']);
-			expect(card.querySelectorAll('.face button')).toHaveLength(1);
+			expect(card.querySelectorAll('button')).toHaveLength(1);
 		}
 	});
 });

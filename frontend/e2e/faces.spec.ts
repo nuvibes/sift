@@ -232,14 +232,10 @@ const FACE = {
 	teachable: true
 };
 
-test('a tab pressed on a person does not lose the wall the trail comes back to', async ({
-	page
-}) => {
-	await setFaces(page, true);
-
-	/* Both routes are needed and they are two questions: the wall reads the people, and the page
-	   under it reads one person's appearances. The patterns cannot collide: one carries a query
-	   string and the other a path segment. */
+/* Both routes are needed and they are two questions: the wall reads the people, and the page
+   under it reads one person's appearances. The patterns cannot collide: one carries a query
+   string and the other a path segment. */
+async function twoPeople(page: Page) {
 	await page.route('**/api/faces/identified/people?*', (route) =>
 		route.fulfill({
 			json: {
@@ -263,6 +259,13 @@ test('a tab pressed on a person does not lose the wall the trail comes back to',
 			json: { items: [FACE], total: 1, offset: 0, person_name: 'Wren Halloway' }
 		})
 	);
+}
+
+test('a tab pressed on a person does not lose the wall the trail comes back to', async ({
+	page
+}) => {
+	await setFaces(page, true);
+	await twoPeople(page);
 
 	/* The wall's way into one person: their faces, opened on a tab of that page. Matched by the
 	   path, because which tab it opens on is the query's. */
@@ -295,4 +298,24 @@ test('a tab pressed on a person does not lose the wall the trail comes back to',
 		new URL(page.url()).search,
 		'the row the wall was showing was thrown away by the tab'
 	).toBe(address);
+});
+
+test('three tabs pressed on a person are one history entry: Back leaves the page', async ({
+	page
+}) => {
+	await setFaces(page, true);
+	await twoPeople(page);
+
+	await page.goto('/organize/known-people');
+	await page.locator('a[href^="/organize/known-people/idp1"]').click();
+	await expect(page).toHaveURL(/\/organize\/known-people\/idp1/);
+
+	const tabs = page.getByRole('navigation', { name: 'What to show' });
+	for (const name of ['Confirmed', 'Recognized by Sift', 'Needs your input']) {
+		await tabs.getByRole('link', { name }).click();
+		await expect(page).toHaveURL(new RegExp(`/organize/known-people/idp1\\?show=`));
+	}
+
+	await page.goBack();
+	await expect(page).toHaveURL(/\/organize\/known-people(\?|$)/);
 });

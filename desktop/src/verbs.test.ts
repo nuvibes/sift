@@ -666,6 +666,7 @@ describe('a page served by another computer', () => {
 				channels.SET_START_WITH_WINDOWS,
 				channels.FORGET_MODE,
 				channels.SAVE_LOG_ARCHIVE,
+				channels.APPLY_UPDATE,
 				WINDOW_STAGE
 			].sort()
 		);
@@ -850,6 +851,18 @@ describe('a page served by another computer', () => {
 			delete window.capturePage;
 			delete window.getZoomFactor;
 		}
+	});
+
+	/* This copy's own update, for a copy behind the library it shows: no argument, so only a newer
+	   release its own feed signs, and only just after a press in the window. */
+	it('updates this copy only just after a press in the window, once per press', async () => {
+		vi.mocked(applyUpdate).mockClear();
+		expect(await ipcRenderer.invoke(APPLY_UPDATE)).toEqual({ ok: false, reason: 'failed' });
+		expect(applyUpdate).not.toHaveBeenCalled();
+
+		notePress(sender.sender as object);
+		expect(await ipcRenderer.invoke(APPLY_UPDATE)).toEqual({ ok: true, version: '0.1.157' });
+		expect(applyUpdate).toHaveBeenCalledOnce();
 	});
 
 	it('does not count a press from longer ago than the window allows', async () => {

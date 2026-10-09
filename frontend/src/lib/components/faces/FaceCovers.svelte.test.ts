@@ -69,3 +69,28 @@ it('says how many it is not showing, in a cell of its own', () => {
 	expect(drawn.more).toBe('+9');
 	drawn.close();
 });
+
+it('counts the faces it was never handed, as the server counted them', () => {
+	/* A confirm card is sent twelve of somebody's 229 faces; the last cell says the rest. */
+	const drawn = draw({ faces: faces(12), most: 12, total: 229 });
+
+	expect(drawn.cells).toBe(12);
+	expect(drawn.crops).toBe(11);
+	expect(drawn.more).toBe('+218');
+	drawn.close();
+});
+
+it('lays a card strip six across, and a file strip by width', () => {
+	const card = document.createElement('div');
+	const file = document.createElement('div');
+	document.body.append(card, file);
+	const one = mount(FaceCovers, { target: card, props: { faces: faces(3), most: 12 } as never });
+	const two = mount(FaceCovers, { target: file, props: { faces: faces(3) } as never });
+
+	expect(card.querySelector('.faces')?.classList.contains('rows')).toBe(true);
+	expect(file.querySelector('.faces')?.classList.contains('rows')).toBe(false);
+	void unmount(one);
+	void unmount(two);
+	card.remove();
+	file.remove();
+});

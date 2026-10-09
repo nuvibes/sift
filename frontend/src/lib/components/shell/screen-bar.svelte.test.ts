@@ -548,37 +548,40 @@ describe('the room on the top bar', () => {
 		return { bar, size };
 	}
 
-	/* Each side keeps the whole 304 beside the field's floor: 2 * 304 + 227 = 835. */
-	it('takes the tile size off before the centre group would slide, and back at the same width', () => {
+	/* The tile size takes 138 of the 304: the menus need 2 * 166 + 88 + 227 = 647 without it,
+	   and it stays while the bar holds it too, 647 + 2 * 138 = 923. */
+	it('takes the tile size off before the menus would leave, and back at the same width', () => {
 		const { bar, size } = barWithSize();
 		screenBar.watchRoom(bar);
 
-		barIs(835);
+		barIs(923);
 		expect(screenBar.sizeOnBar).toBe(true);
-		barIs(834);
-		expect(screenBar.sizeOnBar, 'the group slid with the tile size still up').toBe(false);
+		barIs(922);
+		expect(screenBar.sizeOnBar, 'the tile size stayed up over the menus').toBe(false);
+		expect(screenBar.roomOnTopBar, 'the menus left before the tile size').toBe(true);
 
 		size.standing = false;
-		barIs(834);
+		barIs(922);
 		expect(screenBar.barEnd, 'the centre is capped by what is drawn').toBe(166);
 		expect(screenBar.sizeOnBar).toBe(false);
-		barIs(835);
+		barIs(923);
 		expect(screenBar.sizeOnBar, 'the tile size came back late').toBe(true);
 	});
 
-	it('moves no threshold of the menus by leaving', () => {
+	it('keeps the menus up once the tile size has gone, down only below their own need', () => {
 		const { bar, size } = barWithSize();
 		screenBar.watchRoom(bar);
-		barIs(834);
-		size.standing = false;
 		barIs(900);
-
-		expect(screenBar.roomOnTopBar, 'the menus came up beside a narrower end').toBe(false);
-		barIs(923);
-		expect(screenBar.roomOnTopBar).toBe(true);
+		size.standing = false;
+		barIs(647);
+		expect(screenBar.roomOnTopBar, 'the menus left with room beside a narrower end').toBe(true);
+		barIs(646);
+		expect(screenBar.roomOnTopBar).toBe(false);
+		expect(screenBar.sizeOnBar, 'the tile size came back as the menus left').toBe(false);
 	});
 
-	/* Without the tile size the end is 166, Add's 36 px paste half in it: 2 * 166 + 227 = 559. */
+	/* With the paste half gone too the end is 130: the menus need 2 * 130 + 315 = 575, the paste
+	   half stays to 575 + 2 * 36 = 647 and the tile size to 647 + 2 * 138 = 923. */
 	it('folds the paste half into Add after the tile size, and back at the same width', () => {
 		const { bar, size } = barWithSize();
 		const trailing = bar.querySelectorAll<HTMLElement>('.actions > *')[1];
@@ -594,22 +597,29 @@ describe('the room on the top bar', () => {
 			({ width: (paste.standing ? 66 : 30) + (size.standing ? 138 : 0) }) as DOMRect;
 		screenBar.watchRoom(bar);
 
-		barIs(834);
+		barIs(922);
 		expect(screenBar.sizeOnBar).toBe(false);
 		expect(screenBar.pasteOnBar, 'the paste half folded before the tile size left').toBe(true);
 		size.standing = false;
-		barIs(559);
+		barIs(647);
 		expect(screenBar.pasteOnBar).toBe(true);
-		barIs(558);
-		expect(screenBar.pasteOnBar, 'the group slid with the paste half still up').toBe(false);
+		barIs(646);
+		expect(screenBar.pasteOnBar, 'the menus were squeezed with the paste half still up').toBe(
+			false
+		);
+		expect(screenBar.roomOnTopBar, 'the menus left before the paste half').toBe(true);
 
 		paste.standing = false;
-		barIs(558);
+		barIs(646);
 		expect(screenBar.barEnd, 'the centre is capped by what is drawn').toBe(130);
 		expect(screenBar.pasteOnBar).toBe(false);
-		barIs(559);
+		barIs(575);
+		expect(screenBar.roomOnTopBar).toBe(true);
+		barIs(574);
+		expect(screenBar.roomOnTopBar, 'the menus stayed up over a squeezed field').toBe(false);
+		barIs(647);
 		expect(screenBar.pasteOnBar, 'the paste half came back late').toBe(true);
-		barIs(834);
+		barIs(922);
 		expect(screenBar.sizeOnBar, "the paste half's leaving moved the tile size's threshold").toBe(
 			false
 		);
@@ -619,10 +629,11 @@ describe('the room on the top bar', () => {
 		/* A guest's: no Add, so the tile size frees its own width and no gap. */
 		const { bar, size } = barWithSize(false);
 		screenBar.watchRoom(bar);
-		barIs(670);
+		/* 2 * 100 + 315 = 515 for the menus, and 2 * 122 more for the tile size. */
+		barIs(758);
 		expect(screenBar.sizeOnBar).toBe(false);
 		size.standing = false;
-		barIs(671);
+		barIs(759);
 		expect(screenBar.sizeOnBar, 'the tile size came back late').toBe(true);
 	});
 
@@ -718,8 +729,8 @@ describe('the room on the top bar', () => {
 
 	it('remembers what each screen needed across sittings, in this browser', async () => {
 		localStorage.setItem(
-			'sift.screen-bar.needs',
-			JSON.stringify({ '/kept': { room: 0, end: 500, barEnd: 480 }, '/broken': { room: 'x' } })
+			'sift.screen-bar.needs.2',
+			JSON.stringify({ '/kept': { room: 0, end: 500 }, '/broken': { room: 'x' } })
 		);
 		vi.resetModules();
 		const fresh = (await import('./screen-bar.svelte')).screenBar;
@@ -729,16 +740,16 @@ describe('the room on the top bar', () => {
 			fresh.publish(Symbol(id), {});
 		};
 		onto('/kept');
-		expect(fresh.barEnd, 'the centre waited for a measurement').toBe(480);
+		expect(fresh.barEnd, 'the centre waited for a measurement').toBe(500);
 
 		onto('/other');
 		barIs(1200);
 		onto('/kept');
 		expect(fresh.roomOnTopBar, 'the menus stood up beside an end of 500').toBe(false);
-		localStorage.removeItem('sift.screen-bar.needs');
+		localStorage.removeItem('sift.screen-bar.needs.2');
 	});
 
-	it("decides the tile size on a screen met again by that screen's own end group", () => {
+	it('decides the tile size by the widest screen met, so moving between screens moves nothing', () => {
 		const { bar, parts } = barWithEnds(100, 204);
 		screenBar.watchRoom(bar);
 		const onto = (id: string) => {
@@ -752,10 +763,9 @@ describe('the room on the top bar', () => {
 		parts[0].getBoundingClientRect = () => ({ width: 10 }) as DOMRect;
 		onto('/browse');
 		barIs(800);
+		expect(screenBar.sizeOnBar, 'a narrower screen put the tile size back').toBe(false);
+		barIs(2000);
 		expect(screenBar.sizeOnBar).toBe(true);
-
-		onto('/theater');
-		expect(screenBar.sizeOnBar, "the last screen's end decided until measured").toBe(false);
 	});
 
 	it('gives back a teardown that stops watching', () => {

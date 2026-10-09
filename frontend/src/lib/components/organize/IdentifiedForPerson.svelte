@@ -57,6 +57,7 @@
 	import MoveFacesDialog from '$lib/components/faces/MoveFacesDialog.svelte';
 	import { announceSkipped, type BulkWriteDone } from '$lib/library/bulk';
 	import { toasts } from '$lib/shell/toasts.svelte';
+	import { agreeingWith, rematching } from '$lib/components/faces/WaitingForYou.svelte';
 	import {
 		IDENTIFIED_PER_PAGE,
 		acceptFaces,
@@ -547,10 +548,7 @@
 		return { ids: [...ids], count: ids.length };
 	}
 
-	/* The two doors per tab, with the scope in the body: the four in `$lib/people/faces.svelte` take it.
-	   Each answers with the receipt its press wrote where the reply carries one, so the toast can
-	   offer Undo immediately (agreeing with Sift's matches does not hand its receipt back yet:
-	   History takes that one back). */
+	/* The two doors per tab, the scope in the body. A No answers with its receipt, for Undo. */
 	async function run(
 		yes: boolean,
 		body: RunWrite
@@ -577,7 +575,9 @@
 				scope === 'all' ? { scope } : { scope, track_ids: [...ids] }
 			);
 			selection.clear();
-			if (yes) {
+			if (yes && changed > 0) rematching.after(personId);
+			if (yes && show !== 'matched') toasts.show(agreeingWith(changed), { tone: 'success' });
+			else if (yes) {
 				decided(
 					changed === 1
 						? 'One face is confirmed'

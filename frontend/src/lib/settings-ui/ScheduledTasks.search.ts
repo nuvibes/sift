@@ -15,7 +15,7 @@ import { counted } from '$lib/entity/entity-counts';
 import type { Searchable } from './search';
 
 export const COPY = {
-	lede: 'When each task runs. A task can run as files arrive or on a schedule, wait for quiet hours, or run only when you press it.',
+	lede: 'When each task runs. A task can run as files are imported or on a schedule, wait for quiet hours, or run only when you press it.',
 	cannotLoad: "Couldn't load the tasks. Refresh the page to try again.",
 	quiet: {
 		heading: 'Quiet hours',
@@ -30,7 +30,7 @@ export const COPY = {
 	},
 	stages: {
 		heading: 'Import tasks',
-		help: 'The three things Sift does with each file as it arrives, in the order it does them.'
+		help: "The three things Sift does with each file as it's imported, in the order it does them."
 	},
 	others: {
 		name: 'Other tasks',

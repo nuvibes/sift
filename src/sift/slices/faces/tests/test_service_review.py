@@ -18,6 +18,7 @@ from sift.kernel.ids import new_id
 from sift.kernel.sampling import face_frames
 from sift.slices.faces import (
     recognize,
+    service_decisions,
     tuning,
 )
 from sift.slices.faces import settings as face_settings
@@ -25,8 +26,10 @@ from sift.slices.faces.frames import Frame
 from sift.slices.faces.models import (
     Appearance,
     Attribution,
+    Described,
     PileStatus,
     ScanStatus,
+    ToCheckKind,
     Vector,
 )
 from sift.slices.faces.models import Origin as FaceOrigin
@@ -35,6 +38,7 @@ from sift.slices.faces.schema import FACE_BAND_KIND
 from sift.slices.faces.service import (
     FaceService,
 )
+from sift.slices.faces.service_decisions import Taught
 from sift.slices.faces.store import PassRecord, Store
 from sift.slices.faces.tests import test_service, test_service_scanning
 from sift.slices.faces.tests.conftest import (
@@ -430,6 +434,131 @@ async def test_agreeing_to_an_appearance_files_one_reference_however_many_frames
     assert await store.reference_count(person) == 1
 
 
+async def _proposed_appearances(
+    store: Store, clip: Ingested, person: str, faces: list[tuple[Described, ...]]
+) -> list[str]:
+    """Appearances of one file, each holding these faces, each proposed as `person`."""
+    tracks = await store.replace_pass(
+        clip.asset.id,
+        [
+            Appearance(started_ms=0, ended_ms=1000, seen_in=len(one), quality=0.9, faces=one)
+            for one in faces
+        ],
+        [
+            [f"\xff\xd8\xff {index}-{at}".encode() for at in range(len(one))]
+            for index, one in enumerate(faces)
+        ],
+        PassRecord(
+            status=ScanStatus.NONE_IDENTIFIED,
+            depth="fast",
+            coverage=1.0,
+            frames_sampled=1,
+            detector="test-detector",
+            recognizer="test-recognizer",
+            settings_digest="abcd1234",
+        ),
+    )
+    for track_id in tracks:
+        await store.attribute(track_id, person, confidence=0.5, attribution=Attribution.SUGGESTED)
+    return tracks
+
+
+async def test_agreeing_with_proposals_together_names_files_and_remembers_each_face(
+    service: FaceService,
+    store: Store,
+    temp_db: Database,
+    clip: Ingested,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The batched agreement names each face, files its clearest picture that is not turned and
+    still on the disk, claims one she already holds, and remembers the decision for the next scan,
+    in turns of a batch at the writer."""
+    monkeypatch.setattr(service_decisions, "_AGREED_PER_WRITE", 2)
+    person = await make_person(temp_db, "Ada Lovelace")
+    turned = _described(0, quality=0.99, vector=person_vector(0))
+    turned = replace(turned, quality=replace(turned.quality, frontality=0.05))
+    held, gone, kept = await _proposed_appearances(
+        store,
+        clip,
+        person,
+        [
+            (
+                _described(0, quality=0.9, vector=person_vector(0)),
+                _described(500, quality=0.8, vector=person_vector(0)),
+                _described(900, quality=0.7, vector=person_vector(0)),
+            ),
+            (
+                _described(0, quality=0.9, vector=person_vector(1)),
+                _described(500, quality=0.8, vector=person_vector(1)),
+            ),
+            (
+                turned,
+                _described(500, quality=0.6, vector=person_vector(2)),
+                _described(900, quality=0.5, vector=person_vector(2)),
+            ),
+        ],
+    )
+    clearest = max(await store.faces_of(held), key=lambda one: one.quality)
+    await store.add_reference(
+        person,
+        vector=clearest.vector,
+        quality=clearest.quality,
+        crop=await store.picture_bytes(clearest.crop_path),
+        origin=FaceOrigin.ADDED,
+        recognizer="test-recognizer",
+    )
+    for face in await store.faces_of(gone):
+        store.resolve(face.crop_path).unlink()
+    taught = Taught()
+
+    agreed = await service.accept_suggestions([held, kept, gone, "no-such-face"], taught=taught)
+
+    assert agreed == 3
+    standing = await store.tracks([held, gone, kept])
+    assert {one.attribution for one in standing.values()} == {Attribution.CONFIRMED}
+    # The first's clearest picture was hers already: it claims that one and files no other.
+    assert {track: len(made) for track, made in taught.references.items()} == {
+        held: 0,
+        gone: 0,
+        kept: 1,
+    }
+    assert await store.reference_count(person) == 2
+    # The third's clearest face is turned: the next one is filed instead.
+    filed = await temp_db.fetch_one(
+        "SELECT quality FROM face_references WHERE id = ?", (taught.references[kept][0],)
+    )
+    assert filed is not None and filed["quality"] == pytest.approx(0.6)
+    # Three remembered on two descriptions: the clearest face of the first and of the third are
+    # one description, which is one confirmation, as rewriting them one at a time leaves.
+    assert [who for who, _vector in await store.confirmations_for(clip.asset.id)] == [person] * 2
+
+
+async def test_agreeing_together_leaves_a_face_answered_since_it_was_read(
+    service: FaceService, store: Store, temp_db: Database, clip: Ingested
+) -> None:
+    """Guarded as every restate is: a face named as somebody else between the read and the
+    write keeps that name and is neither confirmed nor filed."""
+    person = await make_person(temp_db, "Ada Lovelace")
+    other = await make_person(temp_db, "Orla Finch")
+    first, second = await _proposed_appearances(
+        store,
+        clip,
+        person,
+        [
+            (_described(0, quality=0.9, vector=person_vector(0)),),
+            (_described(0, quality=0.9, vector=person_vector(1)),),
+        ],
+    )
+    read = await store.tracks([first, second])
+    await store.attribute(second, other, confidence=1.0, attribution=Attribution.CONFIRMED)
+
+    landed = await service._confirm_together([read[first], read[second]], taught=None)
+
+    assert [one.id for one in landed] == [first]
+    assert (await store.tracks([second]))[second].person_id == other
+    assert await store.reference_count(person) == 1
+
+
 async def test_a_poor_crop_is_named_but_never_becomes_a_reference(
     service: FaceService,
     store: Store,
@@ -663,7 +792,8 @@ async def test_the_walls_verdict_for_a_person_is_the_one_their_own_page_reads(
     alone = await service.recognition_of(person_id)
 
     assert found.people[person_id].references == alone.references == tuning.MIN_REFERENCES + 1
-    assert found.people[person_id].verdict == alone.verdict == "fair"
+    # Pictures and no face of hers found yet: the same token on both.
+    assert found.people[person_id].verdict == alone.verdict == "unseen"
     assert (found.target, found.floor, found.strong) == (alone.target, alone.floor, alone.strong)
 
 
@@ -1060,6 +1190,68 @@ async def test_a_pile_emptied_between_the_two_reads_is_skipped_rather_than_drawn
 
     assert listed == [], "a pile with nothing left to show is skipped, not drawn empty"
     assert total == 1, "the count is a beat stale for one request, which is the accepted cost"
+
+
+async def test_a_page_reads_on_past_a_pile_that_shows_none_of_its_faces(
+    service: FaceService,
+    store: Store,
+    temp_db: Database,
+    clip: Ingested,
+    other_clip: Ingested,
+    third_clip: Ingested,
+    detector: FakeDetector,
+    recognizer: FakeRecognizer,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A pile the counts rank but whose faces show nothing is replaced by the next pile, so a page
+    of one is still one card rather than a blank page under a pager that says one."""
+    admin = await create_user(temp_db, Role.ADMIN)
+    frame = noisy_frame(400, 300, seed=4)
+    box = draw_face(frame, x=60, y=40, size=180)
+    detector.placed = {0: [(box, 0.9)]}
+    await install_reader(service, Scripted([Frame(pixels=frame, timestamp_ms=0)]))
+    recognizer.rule = lambda chip: person_vector(0)
+    await service.scan(clip.asset.id)
+    recognizer.rule = lambda chip: person_vector(1)
+    await service.scan(other_clip.asset.id)
+    await service.scan(third_clip.asset.id)
+    await service.regroup()
+    ranked, _total = await service.piles(admin, PileStatus.OPEN, page_size=50)
+    assert [view.size for view in ranked] == [2, 1], "needs a larger pile ranked first"
+    first = ranked[0].id
+    real = store.tracks_in_piles
+
+    async def _first_emptied(pile_ids: Any) -> dict[str, list[Any]]:
+        held = await real(pile_ids)
+        return {pile: [] if pile == first else tracks for pile, tracks in held.items()}
+
+    monkeypatch.setattr(store, "tracks_in_piles", _first_emptied)
+
+    listed, total = await service.piles(admin, PileStatus.OPEN, page_size=1)
+
+    assert [view.id for view in listed] == [ranked[1].id]
+    assert total == 2
+
+
+async def test_the_small_groups_are_counted_only_where_groups_are_drawn(
+    service: FaceService,
+    temp_db: Database,
+    clip: Ingested,
+    other_clip: Ingested,
+    detector: FakeDetector,
+    recognizer: FakeRecognizer,
+) -> None:
+    """The line under the floor belongs to the groups tab: a tab of a person's questions pays for
+    no count of every group, and the groups tab still says how many there are."""
+    admin = await create_user(temp_db, Role.ADMIN)
+    await _two_files_of_one_stranger(service, detector, recognizer, clip, other_clip)
+    await service.regroup()
+
+    _items, _total, on_groups = await service.to_check(admin, kind=ToCheckKind.GROUP)
+    _items, _total, on_people = await service.to_check(admin, kind=ToCheckKind.PERSON)
+
+    assert on_groups == 1, "a group of two waits under the floor"
+    assert on_people == 0
 
 
 # --- two branches the batched settle path left behind --------------------------------------------
@@ -1716,6 +1908,8 @@ async def test_a_scans_own_match_gives_the_whole_file_and_its_undo_takes_it_back
     written = WorkbenchStore(temp_db)
     service._recorder = written
     cover = "SELECT cover_asset_id, cover_track_id FROM people WHERE id = ?"
+    # A default cover is a picture, and the clip is a video.
+    await temp_db.execute("UPDATE assets SET media_type = 'image' WHERE id = ?", (clip.asset.id,))
     await _one_face_named_by_a_scan(service, store, clip, detector, recognizer, person)
     row = await temp_db.fetch_one(cover, (person,))
     assert row is not None and (row["cover_asset_id"], row["cover_track_id"]) == (

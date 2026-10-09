@@ -472,10 +472,26 @@ def long_side_scale(long_side: int) -> str:
     return f"scale='if(gte(iw,ih),min({long_side},iw),-2)':'if(gte(iw,ih),-2,min({long_side},ih))'"
 
 
+#: The long side a reference picture is decoded to for finding its face.
+REFERENCE_LONG_SIDE = 2048
+
+
+def crop_of(share: tuple[float, float, float, float]) -> str:
+    """The filter that keeps one piece of a picture at its own size: left, top, right and bottom
+    as shares of the whole, so the piece is named without knowing the file's size."""
+    left, top, right, bottom = share
+    return f"crop=w=iw*{right - left:.6f}:h=ih*{bottom - top:.6f}:x=iw*{left:.6f}:y=ih*{top:.6f}"
+
+
 async def decode_image(
-    path: Path, settings: Settings, *, long_side: int = 2048
+    path: Path,
+    settings: Settings,
+    *,
+    long_side: int = REFERENCE_LONG_SIDE,
+    piece: tuple[float, float, float, float] | None = None,
 ) -> np.ndarray | None:
-    """One picture from an image file, for reference import.
+    """One picture from an image file, for reference import, or one `piece` of it at the file's
+    own size (see `crop_of`).
 
     Larger than a video frame is reduced to, because a reference image is looked at only once and
     its landmarks are what everything about that person is aligned by. The decoder is still a
@@ -485,6 +501,7 @@ async def decode_image(
     Asked for a PPM, whose header carries the size the decoder actually produced, so nothing here
     predicts the scaled size and nothing can cut the bytes into rows of the wrong length.
     """
+    scale = long_side_scale(long_side)
     argv = [
         settings.ffmpeg_path,
         *media.background_flags(settings),
@@ -493,7 +510,7 @@ async def decode_image(
         "-frames:v",
         "1",
         "-vf",
-        long_side_scale(long_side),
+        scale if piece is None else f"{crop_of(piece)},{scale}",
         "-f",
         "image2pipe",
         "-vcodec",
@@ -518,7 +535,7 @@ _PPM_HEADER = re.compile(rb"\AP6\s+(\d+)\s+(\d+)\s+255\s")
 
 
 async def decode_picture_bytes(
-    blob: bytes, settings: Settings, *, long_side: int = 2048
+    blob: bytes, settings: Settings, *, long_side: int = REFERENCE_LONG_SIDE
 ) -> np.ndarray | None:
     """One picture from bytes a stranger's server sent, for a starter reference. None if unreadable.
 

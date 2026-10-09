@@ -24,6 +24,7 @@ from sift.slices.auth import csrf_protect, require_admin
 from sift.slices.faces.jobs import (
     ask_for_rematching,
 )
+from sift.slices.faces.jobs_agree import FACE_AGREE
 from sift.slices.faces.models_http import (
     FACES_PER_PAGE,
     FacesDecided,
@@ -179,28 +180,22 @@ async def confirm_look_alikes(
     **Which faces, by `scope`** (`RunWrite`): none or `all` is every one standing on the tab, read
     by the server; `page` and `picked` are narrowed against that set.
 
-    Both halves of naming by hand: each face is agreed to, and the rest of any group it waited in
-    is offered as her. A re-match is asked for afterwards, since each agreement adds a reference.
-    A person this user may not be told about answers "nothing changed", never 404.
+    Answered immediately with how many will be agreed to (`changed`); the agreement runs as a task
+    (`jobs_agree.FACE_AGREE`), over the faces this press reached, and asks for the re-match. Both
+    halves of naming by hand: each face is agreed to, and the rest of any group it waited in is
+    offered as her. A person this user may not be told about answers "nothing changed", never 404.
     """
     if not await service.enabled():
         raise _off()
-    done = await service.confirm_look_alikes(viewer, person_id, only=_only(body))
-    if done.changed:
-        await ask_for_rematching(queue)
+    named = await service.look_alikes_to_agree(viewer, person_id, only=_only(body))
+    if named:
+        await queue.enqueue(
+            FACE_AGREE, {"person_id": person_id, "track_ids": named}, requested_by=viewer.id
+        )
     log.info(
-        "faces.look_alikes_confirmed",
-        person_id=person_id,
-        named=done.changed,
-        offered=done.offered,
-        scope=_scope(body),
+        "faces.look_alikes_agreeing", person_id=person_id, named=len(named), scope=_scope(body)
     )
-    return FacesDecided(
-        changed=done.changed,
-        person_id=person_id,
-        offered=done.offered,
-        decision_id=done.decision_id or None,
-    )
+    return FacesDecided(changed=len(named), person_id=person_id)
 
 
 @router.post("/faces/look-alikes/{person_id}/reject", dependencies=[Depends(csrf_protect)])

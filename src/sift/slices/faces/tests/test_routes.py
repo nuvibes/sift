@@ -992,6 +992,10 @@ def test_naming_a_face_gives_that_person_the_whole_file_never_the_face(
     filed under them: a cover nobody chose is never a face cut out of one."""
     turn_on(client)
     sign_in(client, "admin")
+    # A default cover is a picture, and the scene's file is a video.
+    write(
+        db_path(client), [("UPDATE assets SET media_type = 'image' WHERE id = ?", (scene.asset,))]
+    )
 
     client.post(f"/api/faces/{scene.track}/confirm", json={"person_id": scene.person})
 

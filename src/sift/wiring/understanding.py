@@ -198,6 +198,7 @@ def _build_faces(
         regroup_settles_into=(suggestions.SUGGESTION_SCAN,),
         left_out=LeftOutStore(store.database),
     )
+    faces.register_agreeing(face_service)
     # Creating a person with a name a pack already knew hands them the faces it was holding. Wired
     # here because the slice that creates a person must not know recognition exists, and wrapped,
     # because with the feature switched off the service refuses rather than answering, and "nobody
@@ -327,6 +328,7 @@ def _register_face_piles(
     board.register_reverser(faces.IgnoredRecords(face_service))
     board.register_reverser(faces.IdentifiedRecords(face_service, queue=queue))
     board.register_reverser(faces.AskedOnlyRecords())
+    board.register_reverser(faces.RetiredPickRecords())
     board.register_reverser(faces.BoxQuestionRecords())
     board.register_reverser(faces.StarterRecords(face_service))
     board.register_reverser(faces.FingerprintRecords(face_service))

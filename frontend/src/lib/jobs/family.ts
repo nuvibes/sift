@@ -219,7 +219,24 @@ export interface Pass {
 	allowed: boolean;
 	/** Why its last run failed, while that failure stands and nothing runs, or null. */
 	why: string | null;
+	/** Files its products gave up on, and those products: the Now column's "1 left out". */
+	leftOut: number;
+	leftOutOf: string[];
 }
+
+/** What the page does not carry: each task's When by task id, and each product's left-out files. */
+export interface Around {
+	whens?: Readonly<Record<string, string>>;
+	leftOut?: Readonly<Record<string, number>>;
+}
+
+/** The products whose left-out files are each pass's, by the keys the build sheet gives them. */
+const LEFT_OUT_OF: Readonly<Record<string, readonly string[]>> = {
+	generate: ['thumbnails', 'previews', 'sprites'],
+	fingerprint: ['fingerprints', 'music'],
+	identify: ['faces', 'watermarks'],
+	semantic: ['meaning']
+};
 
 /**
  * Which task on Tasks a pass or a chore is, as the server says it: a fact about the server's
@@ -261,7 +278,7 @@ const CHANGE_IN_IMPORTING = 'Turn on in Import tasks';
  *
  * What it does is choose the words, which is all it should ever do.
  */
-export function passes(page: JobsPage | null): Pass[] {
+export function passes(page: JobsPage | null, around: Around = {}): Pass[] {
 	return FAMILY_ORDER.flatMap((family) => {
 		const declared = page?.families?.[family];
 		if (!declared) return [];
@@ -297,13 +314,15 @@ export function passes(page: JobsPage | null): Pass[] {
 		);
 		const idle = waiting === 0 && outstanding === 0 && !declared.time_unknown;
 		const { failed, why } = failureOf(declared, { on, ready, outstanding });
+		const { leftOutOf, leftOut, when } = aroundOf(family, declared, around);
+		const how = { on, ready, outstanding, idle, failed, waiting, leftOut, when };
 		return [
 			{
 				id: family,
 				title: declared.label,
-				now: nowWord(declared, { on, ready, outstanding, idle, failed }),
-				tone: nowTone({ on, ready, outstanding, idle, failed, reason: declared.reason ?? null }),
-				when: timeLeft(declared, { on, ready, idle }, range),
+				now: nowWord(declared, how),
+				tone: nowTone({ ...how, reason: declared.reason ?? null }),
+				when: timeLeft(declared, { on, ready, idle, outstanding }, range),
 				settingLink: !on,
 				// Done over what wants doing, from the library, so a finished library is full.
 				progress: total > 0 ? (finished / total) * 100 : 0,
@@ -315,23 +334,45 @@ export function passes(page: JobsPage | null): Pass[] {
 				paused: declared.paused ?? false,
 				moving: outstanding > 0,
 				allowed: on && ready,
-				why
+				why,
+				leftOut,
+				leftOutOf
 			}
 		];
 	});
 }
 
+/** A pass's products' left-out files, and the When of the task it runs as. */
+function aroundOf(
+	family: string,
+	declared: NonNullable<JobsPage['families']>[string],
+	around: Around
+): { leftOutOf: string[]; leftOut: number; when: string | undefined } {
+	const count = (one: string) => around.leftOut?.[one] ?? 0;
+	const leftOutOf = (LEFT_OUT_OF[family] ?? []).filter((one) => count(one) > 0);
+	const task = declared.task || declared.runs?.[0]?.task || family;
+	return {
+		leftOutOf,
+		leftOut: leftOutOf.reduce((sum, one) => sum + count(one), 0),
+		when: around.whens?.[task]
+	};
+}
+
 /** When the work will be done, "it cannot start" included, then what waits and the read's pace. */
 function timeLeft(
 	declared: NonNullable<JobsPage['families']>[string],
-	how: { on: boolean; ready: boolean; idle: boolean },
+	how: { on: boolean; ready: boolean; idle: boolean; outstanding: number },
 	range: string
 ): string {
 	if (!how.on) return CHANGE_IN_IMPORTING;
 	if (!how.ready) return declared.problem ?? WAITING_FOR_RUNTIME;
-	let when = how.idle ? NOTHING_WAITING : (declared.time_unknown ?? range);
+	// Work nothing queued or held has no time left, the Now column says what starts it; nor has
+	// under a minute of work.
+	const held = declared.reason && declared.reason !== NOTHING_WAITING;
+	const quiet = (how.outstanding === 0 && !held) || range === UNDER_A_MINUTE;
+	let when = how.idle ? NOTHING_WAITING : (declared.time_unknown ?? (quiet ? '' : range));
 	for (const then of [declared.for_task, declared.pace])
-		if (then) when = `${when.replace(/\.$/, '')}. ${then}`;
+		if (then) when = when ? `${when.replace(/\.$/, '')}. ${then}` : then;
 	return when;
 }
 
@@ -368,7 +409,13 @@ interface How {
 	outstanding: number;
 	idle: boolean;
 	failed: number;
+	waiting: number;
+	leftOut: number;
+	/** The task's When (`work`, `quiet`, `press`), where the task list has said. */
+	when?: string;
 }
+
+const UNDER_A_MINUTE = standsAlone(sayWindow(0, 0));
 
 /**
  * A running STATUS, in the In progress chip's own word (`Badge`'s `running`): "In progress", or "12
@@ -404,8 +451,9 @@ function nowWord(declared: JobsPage['families'][string], how: How): string {
 		return declared.reason.replace(/\.$/, '');
 	if (how.outstanding > 0) return inProgress(declared.running ?? 0);
 	if (how.failed > 0) return failedWord(how.failed);
-	// Nothing happens until somebody presses Run now or a scan brings files: not "Waiting".
-	return how.idle ? 'Up to date' : 'Not started';
+	if (how.idle) return how.leftOut > 0 ? COPY.leftOut(how.leftOut) : 'Up to date';
+	// Nothing queued: what waits, and what starts it ("48 waiting, runs as files arrive").
+	return COPY.waiting(how.waiting, how.when) ?? 'Not started';
 }
 
 function nowTone(how: How & { reason: string | null }): PassTone {
@@ -416,7 +464,7 @@ function nowTone(how: How & { reason: string | null }): PassTone {
 	   the opposite of its own word. The same tone a held pass with nothing queued yet has below. */
 	if (how.outstanding > 0 && how.reason && how.reason !== NOTHING_WAITING) return 'warn';
 	if (how.outstanding > 0) return 'accent';
-	if (how.failed > 0) return 'warn';
+	if (how.failed > 0 || (how.idle && how.leftOut > 0)) return 'warn';
 	if (how.idle) return 'good';
 	return how.reason && how.reason !== NOTHING_WAITING ? 'warn' : 'plain';
 }
@@ -449,7 +497,8 @@ export function chores(page: JobsPage | null, now: number): ChoreView[] {
 		   sweep whose task waits for them, not a bare "Waiting" under a pass held the same way
 		   that says so. Its tone is the held pass's, for the pass's reason. */
 		const held = !running && one.outstanding > 0 && one.reason ? one.reason : null;
-		const range = standsAlone(sayWindow(one.quick_seconds, one.slow_seconds));
+		const said = standsAlone(sayWindow(one.quick_seconds, one.slow_seconds));
+		const range = said === UNDER_A_MINUTE ? '' : said;
 		return {
 			id: one.job_type,
 			title: one.label,

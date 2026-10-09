@@ -40,6 +40,7 @@ from sift.kernel.jobs.queue import (
     JobQueue,
     JobState,
 )
+from sift.kernel.jobs.retrying import backoff
 from sift.kernel.jobs.tuning import (
     HEARTBEAT_SECONDS,
     IDLE_POLL_SECONDS,
@@ -1331,23 +1332,21 @@ class WorkerPool:
             state = await self._queue.fail(job.id, worker_id, str(error), permanent=True)
             landed = state is not None
         else:
-            # Raised after ignoring a pause asked of it: `fail` reads the ask off the row, where a
-            # pause asked since the last heartbeat is written, and answers `paused`.
-            state = await self._queue.fail(job.id, worker_id, f"{type(error).__name__}: {error}")
+            # A pause asked since the last heartbeat is on the row, and `fail` answers `paused`.
+            failed = f"{type(error).__name__}: {error}"
+            wait = backoff(job.type, job.attempts)
+            state = await self._queue.fail(job.id, worker_id, failed, retry_in=wait)
             landed = state is not None
             paused = state is JobState.PAUSED
 
         if not landed:
             # The fence refused it: the job stopped being this worker's while the handler was
-            # finishing (someone cancelled it, or the watchdog took it back) and the outcome
-            # has nowhere to go. Say so. Silently dropping it is how "the job ran, but the row
-            # says otherwise" becomes a mystery instead of a log line.
+            # finishing (cancelled, or taken back by the watchdog). Said, so "the job ran, but
+            # the row says otherwise" is a log line rather than a mystery.
             log.info("job.lost", job_id=job.id, job_type=job.type, worker_id=worker_id)
             return
-        # A paused attempt is left out of the books for the reason a blocked one is: the ledger
-        # records what work COST, and an attempt somebody stopped part way through is not a run of
-        # anything. Counted, it would report the download that was paused at a tenth of a second a
-        # file and drag every estimate built on the figure down with it.
+        # A paused attempt is left out of the books as a blocked one is: the ledger records what
+        # work COST, and a download paused at a tenth of a second a file would drag every estimate.
         if (
             self._ledger is not None
             and not isinstance(error, JobBlocked)

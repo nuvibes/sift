@@ -273,8 +273,11 @@
 		const from = asset?.id;
 		if (!from) return;
 		const next = await playOn(from, endRule());
-		if (next !== from && asset?.id === from) await step(next, (at) => playOn(at, endRule()));
+		if (next !== from && asset?.id === from) await step(next, (at) => playOn(at, endRule()), true);
 	}
+
+	/* The file the run brought up, which a picture rests on and moves on from; a press clears it. */
+	let byTheRun = $state.raw<typeof mini.asset>(null);
 
 	/* The next file is found while this one plays, so its end waits only on the media. */
 	function started() {
@@ -286,12 +289,13 @@
 		(await api.get<components['schemas']['AssetDetail']>(`/assets/${id}`));
 
 	/** Step the panel to a neighbour, from the beginning; on the Audio player, past every picture. */
-	async function step(id: string | null, onward: Onward = () => null) {
+	async function step(id: string | null, onward: Onward = () => null, byRun = false) {
 		if (!id) return;
 		try {
 			const file = mini.bar ? await firstClip(id, onward, recordOf) : await recordOf(id);
 			if (!file) return;
 			mini.open(heldOf(file), { width: window.innerWidth, height: window.innerHeight });
+			byTheRun = byRun ? mini.asset : null;
 		} catch {
 			toasts.show("Sift couldn't open that. The file isn't where it was.", { tone: 'error' });
 		}
@@ -384,21 +388,16 @@
 		plan = null;
 	});
 
-	/*
-	 * The panel offers itself to the phone while it holds a file: a clip through its player, a
-	 * picture through the still view (`offerViewer`). A wall in the panel offers itself.
-	 */
+	/* Offered to the phone while it holds a file, through its player or still view (`offerViewer`);
+	   a wall in the panel offers itself. */
 	const holdsAFile = $derived(asset !== null && !mini.wall);
 	$effect(() => {
 		if (!holdsAFile) return;
 		return untrack(() => offerViewer(() => player?.remote() ?? picture?.remote() ?? null));
 	});
 
-	/*
-	 * The panel takes the shape of what is put in it, once per file as it arrives, keeping its area
-	 * (`shapedTo`) and settling inside the window, which wins over matching the picture exactly.
-	 * Once, because it is a size somebody may then drag away from.
-	 */
+	/* The shape of what is put in it, once per file (a size somebody may then drag away from),
+	   keeping its area (`shapedTo`) and settling inside the window, which wins over the shape. */
 	let shapedFor: string | null = null;
 
 	function takeTheShapeOf(size: { width: number; height: number }) {
@@ -429,11 +428,8 @@
 		if (hideTimer) clearTimeout(hideTimer);
 	});
 
-	/*
-	 * Docked, it comes and goes as the selection bar does (`arrive`); the floating panel grows out of
-	 * the picture it was handed from and fades as it goes (`stageTransition`), and its change to the
-	 * Audio player and back is the same movement (`screenChanges`).
-	 */
+	/* Docked, it comes and goes as the selection bar does (`arrive`); floating, it grows out of the
+	   picture it was handed from (`stageTransition`), and to the Audio player and back likewise. */
 	function docks(node: Element) {
 		return docked
 			? arrive(node, { y: 16, pace: 'base', spring: true })
@@ -575,6 +571,8 @@
 					mediaType={asset.mediaType}
 					compact
 					onpicturesize={takeTheShapeOf}
+					onplayedthrough={goesOn ? () => void playedThrough() : undefined}
+					reachedByRun={byTheRun !== null && byTheRun === asset}
 				/>
 			{:else if asset}
 				<Player

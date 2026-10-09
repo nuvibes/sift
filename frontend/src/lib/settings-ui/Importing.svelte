@@ -38,7 +38,8 @@
 	import { STAGES, taskList, type TaskView } from '$lib/jobs/tasks.svelte';
 	import { COPY as TASKS } from './ScheduledTasks.search';
 	import TaskWhen from './TaskWhen.svelte';
-	import { leftOutWall } from '$lib/library/left-out';
+	import TasksLeftOut from './TasksLeftOut.svelte';
+	import { leftOut } from '$lib/jobs/left-out.svelte';
 	import { toasts } from '$lib/shell/toasts.svelte';
 	import { COPY } from './Importing.search';
 
@@ -53,9 +54,11 @@
 	interface Props {
 		/** The settings a task's When leaves meaningful, drawn under its row by the Tasks pane. */
 		rows?: Snippet<[TaskView]>;
+		/** What the Tasks pane draws under the stages, before the folders: Other tasks. */
+		after?: Snippet;
 	}
 
-	let { rows }: Props = $props();
+	let { rows, after }: Props = $props();
 
 	/* The stages in the order work happens to a file, as the server lists them. */
 	const stages = $derived(
@@ -200,6 +203,7 @@
 		try {
 			await retryBuild([key]);
 			sheet = await fetchBuildSheet();
+			void leftOut.read();
 		} catch (error) {
 			toasts.show(refusalOf(error), { tone: 'error' });
 		} finally {
@@ -304,9 +308,8 @@
      ever. Trying again forgets the verdicts and re-reads the counts; the person decides whether to
      run.
 
-     The count is a link to those files: the Files wall filtered `left_out:<product>`, where each
-     one says under its tile why it was left out. The server counts them as that wall does, for
-     this viewer, so the number and the wall it opens agree (`BuildRow.cannot`). -->
+     The count opens those files, each with why (`TasksLeftOut`), counted as the `left_out:` wall
+     counts them for this viewer, so the number and the list agree (`BuildRow.cannot`). -->
 {#snippet gaveUp(products: readonly string[], said: typeof COPY.generate.cannot)}
 	{#each cannotIn(products) as row (row.key)}
 		<!-- A sentence, so it wraps like one: only a fact (a count, a time) keeps to one line.
@@ -316,8 +319,10 @@
 		<!-- The sentence's last word rides with the press, so a narrow line breaks inside the
 		     sentence and never leaves the press alone under it. -->
 		<span class="sentence">
-			<a href={leftOutWall(row.key)} data-left-out={row.key}
-				>{COPY.leftOut(row.cannot, row.cannot === 1)}</a
+			<span data-left-out={row.key}
+				><TasksLeftOut products={[row]} title={row.label}
+					>{COPY.leftOut(row.cannot, row.cannot === 1)}</TasksLeftOut
+				></span
 			>
 			{words.slice(0, lastBreak + 1)}<span class="with-press"
 				>{words.slice(lastBreak + 1)}
@@ -368,6 +373,8 @@
 		{@render rows?.(task)}
 	{/each}
 </SettingGroup>
+
+{@render after?.()}
 
 <ImportingFolders />
 

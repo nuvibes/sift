@@ -95,6 +95,7 @@ from sift.kernel.db_readers import (
     _parse_the_schema,
     _refuse_writes,
     is_whole_library_read,
+    keep_readers_in_turn,
     point_read,
     registered_point_reads,
     time_a_point_read,
@@ -469,6 +470,7 @@ class Database:
         if self._writer is not None:
             return
 
+        keep_readers_in_turn()
         await asyncio.to_thread(self.path.parent.mkdir, parents=True, exist_ok=True)
         self._writer = await self._open(writer=True)
         self._sweeper = await self._open()
@@ -738,9 +740,16 @@ class Database:
             began = time.monotonic()
             # Every write in the application queues behind this block: one that runs long is said
             # while it runs, since a stalled application writes nothing else to the log.
-            loop = asyncio.get_running_loop()
-            still_held = loop.call_later(
-                WRITER_HELD_SECONDS, _writer_still_held, counting, began, WRITER_HELD_SECONDS
+            still_held: list[asyncio.TimerHandle] = []
+            still_held.append(
+                asyncio.get_running_loop().call_later(
+                    WRITER_HELD_SECONDS,
+                    _writer_still_held,
+                    counting,
+                    began,
+                    WRITER_HELD_SECONDS,
+                    still_held,
+                )
             )
             try:
                 yield connection
@@ -753,7 +762,7 @@ class Database:
                 pending.clear()
                 raise
             finally:
-                still_held.cancel()
+                still_held[0].cancel()
                 _IN_WRITE.reset(held)
                 _AFTER_COMMIT.reset(carried)
                 held_ms = (time.monotonic() - began) * 1000
@@ -850,11 +859,7 @@ class Database:
             async with self.sweep(what) as connection:
                 timing.acquired()
                 _ran_on(timing, connection)
-                cursor = await connection.execute(sql, params)
-                try:
-                    rows = list(await cursor.fetchall())
-                finally:
-                    await cursor.close()
+                rows = list(await connection.execute_fetchall(sql, params))
                 # How WIDE it was: a row count reads the same on an idle box and a loaded one.
                 timing.measured(rows=len(rows))
                 return rows
@@ -886,11 +891,9 @@ class Database:
                 # Borrowing a connection can WAIT, and the wait is not the query.
                 timing.acquired()
                 _ran_on(timing, connection)
-                cursor = await connection.execute(sql, params)
-                try:
-                    rows = list(await cursor.fetchall())
-                finally:
-                    await cursor.close()
+                # One hop to the reader's thread, not three: each costs a turn of a busy loop. The
+                # rows read to the end reset the statement, so no read transaction is left open.
+                rows = list(await connection.execute_fetchall(sql, params))
                 # How WIDE it was: a row count reads the same on an idle box and a loaded one.
                 timing.measured(rows=len(rows))
                 return rows

@@ -36,6 +36,7 @@ from sift.kernel.jobs import (
     JobContext,
     JobPaused,
     WaitingForPassword,
+    backs_off,
     register_handler,
 )
 from sift.kernel.log import get_logger
@@ -208,6 +209,8 @@ def register_handlers(
         ),
         name="Downloading",
     )
+    # A dropped connection is still dropped the same second: each retry waits longer.
+    backs_off(DOWNLOAD)
 
 
 async def download(

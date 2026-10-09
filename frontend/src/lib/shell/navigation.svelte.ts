@@ -47,10 +47,8 @@ class CameFrom {
 	 * opens on the row it was showing; a fixed link throws that away and starts the screen again
 	 * from nothing.
 	 *
-	 * The SECOND answer, not the first: see `returnTo`. A screen whose tabs are real links pushes
-	 * an entry per tab at the same pathname, so a blind step back lands on the previous tab;
-	 * `stepsBackTo` answers that by counting over the tabs from the browser's own record, and this
-	 * is what is left where the browser keeps no such record.
+	 * The SECOND answer, not the first: see `returnTo`. `stepsBackTo` counts from the browser's own
+	 * record, and this is what is left where the browser keeps no such record.
 	 *
 	 * Returned as a same-origin path (`/people?from=abc`), which is what the router takes: a URL
 	 * object carries an origin, and one from a proxy or a tunnel is an origin the browser may not
@@ -78,12 +76,11 @@ class CameFrom {
 	 * HOW MANY STEPS BACK THE SCREEN BEFORE THIS ONE IS, when that screen is at `path`, or null.
 	 *
 	 * Read from the browser's own record of this tab rather than from anything this module wrote,
-	 * and that is what makes a step through history safe. A blind `history.back()` gets the COUNT
-	 * wrong: a screen whose tabs are real links pushes an entry per tab at the same pathname, so
-	 * one step back is the previous tab. This counts: it walks back over every entry at THIS
-	 * screen's pathname (the tabs, and a query the page wrote into its own address), and the
-	 * first entry at any other pathname is the screen before this one. Only when that screen is
-	 * `path` is there a number to hand back.
+	 * and that is what makes a step through history safe. A blind `history.back()` can get the
+	 * COUNT wrong: a screen may hold several entries at its own pathname (a query it pushed, or a
+	 * link to one of its tabs followed from inside it). This counts: it walks back over every entry at THIS screen's
+	 * pathname, and the first entry at any other pathname is the screen before this one. Only when
+	 * that screen is `path` is there a number to hand back.
 	 *
 	 * `path` is a bare pathname, as `addressOf` takes it, and an address carrying a query never
 	 * matches: a crumb to `/browse?in=a` is a particular folder, and stepping back to whichever
@@ -143,7 +140,7 @@ export function returnTo(event: MouseEvent, href: string): void {
  * A group of faces leaves once its last face is decided; a person, a Collection, a Tag, a Site or a
  * Photo Set leaves its page once it is deleted or hidden; every "new ..." screen leaves on Cancel.
  * A fixed address there (`goto('/people')`) is a NEW entry at the bare wall: page one, at the
- * top, and for a group of faces always Faces to name, even when it was opened from Discarded.
+ * top, and for a group of faces always Unnamed faces, even when it was opened from Discarded.
  *
  * So it is `returnTo`'s three answers, in `returnTo`'s order, read from the same memory: the
  * browser's own step where the screen before this one is `href` (the page, the scroll, the router's

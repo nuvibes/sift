@@ -64,6 +64,16 @@ async def _named(store: Store, track_id: str, person: str, sure: float = 0.9) ->
 
 
 async def _learn(service: FaceService, person: str) -> int:
+    # Confirmed pictures of her, so Sift's own picks have room under the cap.
+    for index in range(3):
+        await service._store.add_reference(
+            person,
+            vector=person_vector(0, 50 + index),
+            quality=1.0,
+            crop=f"confirmed {index}".encode(),
+            origin=FaceOrigin.CONFIRMED,
+            recognizer="test-recognizer",
+        )
     return await service.learn_from_recognitions(
         {person: WELL_KNOWN}, await service.configuration()
     )

@@ -41,12 +41,8 @@
 	 * The box and the foot are `DecisionCard`'s, the one card Organize draws, so the button starts
 	 * its line under the words it answers, as on every Organize card.
 	 *
-	 * THE WHOLE CARD IS A PRESS, the way a tile is: `.press` is one button filling the card, laid
-	 * UNDER the card's face, and the face lets a pointer through everywhere but its button. It
-	 * opens what the button opens. It is not reachable by keyboard: the button is the same way in,
-	 * named and in tab order, and a second stop per card would reach nothing new. So it is
-	 * `aria-hidden` and out of tab order. The stills are pictures, never links: every press on a
-	 * card goes to one place.
+	 * THE WHOLE CARD IS A PRESS, the way a tile is (`DecisionCard`'s `opens`): anywhere but its
+	 * button opens what the button opens. The stills are pictures, never links.
 	 *
 	 * The way in is the queue's: the card asks `wayIn(queue)` for an address, which a queue
 	 * declares when it is not a panel (`QueueView.opens`: the music card opens its task's row
@@ -56,7 +52,7 @@
 	import { goto } from '$app/navigation';
 	import { SvelteSet } from 'svelte/reactivity';
 
-	import { Button, Pressable, SectionHeading } from '$lib/components/common';
+	import { Button, SectionHeading } from '$lib/components/common';
 	import Icon from '$lib/components/Icon.svelte';
 	import DecisionCard from '$lib/components/organize/DecisionCard.svelte';
 	import Thumb from '$lib/components/organize/Thumb.svelte';
@@ -115,57 +111,42 @@
 	}
 </script>
 
-<div class="board-card" class:opens={opens !== null}>
-	{#if opens}
-		<!-- The card body, as one press, UNDER the face. See the header for why it is out of tab
-		     order and hidden from a screen reader. -->
-		<Pressable
-			class="press"
-			radius="lg"
-			feedback="none"
-			aria-hidden="true"
-			tabindex={-1}
-			onclick={open}>{#snippet children()}{/snippet}</Pressable
-		>
-	{/if}
-	<div class="face">
-		<DecisionCard answers={opens ? door : undefined}>
-			<SectionHeading band>
-				{#snippet leading()}<span class="glyph"
-						><Icon name={queue.icon as IconName} size={20} /></span
-					>{/snippet}
-				{title}
-			</SectionHeading>
+<div class="board-card">
+	<DecisionCard answers={opens ? door : undefined} opens={opens ?? undefined}>
+		<SectionHeading band>
+			{#snippet leading()}<span class="glyph"><Icon name={queue.icon as IconName} size={20} /></span
+				>{/snippet}
+			{title}
+		</SectionHeading>
 
-			<!-- What the pile is for, in the queue's own sentence. Two lines kept, whatever it takes. -->
-			<p class="purpose">{purpose}</p>
+		<!-- What the pile is for, in the queue's own sentence. Two lines kept, whatever it takes. -->
+		<p class="purpose">{purpose}</p>
 
-			<!-- The lead: the number, and what it counts, said once. -->
-			<p class="lead">
-				<span class="n">{figureOf(card.count)}</span>
-				<span class="verb">{counted}</span>
-			</p>
+		<!-- The lead: the number, and what it counts, said once. -->
+		<p class="lead">
+			<span class="n">{figureOf(card.count)}</span>
+			<span class="verb">{counted}</span>
+		</p>
 
-			{#if settled(card)}
-				<!-- Nothing waiting: said where the stills would be, so the card keeps its place and
-				     its shape and nobody wonders where the pile went. -->
-				<p class="caught-up">{CAUGHT_UP}</p>
-			{:else if strip.length > 0}
-				<!-- Keyed by POSITION as well as by id: two folders holding the same file have the same
-				     still, and keyed on the id alone that is a duplicate key. -->
-				<span class="strip">
-					{#each strip as picture, at (`${picture.kind}:${picture.id}:${at}`)}
-						<Thumb
-							kind={picture.kind}
-							id={picture.id}
-							art={picture.art}
-							onmissing={() => missing.add(keyOf(picture))}
-						/>
-					{/each}
-				</span>
-			{/if}
-		</DecisionCard>
-	</div>
+		{#if settled(card)}
+			<!-- Nothing waiting: said where the stills would be, so the card keeps its place and
+			     its shape and nobody wonders where the pile went. -->
+			<p class="caught-up">{CAUGHT_UP}</p>
+		{:else if strip.length > 0}
+			<!-- Keyed by POSITION as well as by id: two folders holding the same file have the same
+			     still, and keyed on the id alone that is a duplicate key. -->
+			<span class="strip">
+				{#each strip as picture, at (`${picture.kind}:${picture.id}:${at}`)}
+					<Thumb
+						kind={picture.kind}
+						id={picture.id}
+						art={picture.art}
+						onmissing={() => missing.add(keyOf(picture))}
+					/>
+				{/each}
+			</span>
+		{/if}
+	</DecisionCard>
 </div>
 
 <!-- The one button: it opens the pile's page and does nothing else. Named with the card, so a
@@ -182,61 +163,10 @@
 	/*
 	 * The card, filling its cell of the board: the board gives every card one height, and
 	 * `DecisionCard` pushes the button to the foot, so every button stands on one line.
-	 * Positioned, because the press below is measured against it.
 	 */
 	.board-card {
-		position: relative;
 		display: grid;
 		min-inline-size: 0;
-	}
-
-	/* The press, filling the card under its face. */
-	.board-card > :global(.press) {
-		position: absolute;
-		inset: 0;
-		z-index: 0;
-	}
-
-	/*
-	 * The face, over the press. On a card that opens something it lets a pointer through to the
-	 * press everywhere but its button.
-	 */
-	.face {
-		position: relative;
-		z-index: 1;
-		display: grid;
-		min-inline-size: 0;
-	}
-
-	.board-card.opens .face {
-		pointer-events: none;
-	}
-
-	.board-card.opens .face :global(button) {
-		pointer-events: auto;
-	}
-
-	/*
-	 * THE STATE LAYER on the card's own ground: the hover layer under the pointer, the pressed layer
-	 * under a press. A card that opens nothing takes neither, because nothing happens when it is
-	 * pressed. The layer is a picture over the card's light, and a picture does not fade between
-	 * two values, so it lands in one frame; the outline still steps over `--dur-instant`.
-	 */
-	.board-card :global(.panel) {
-		transition:
-			background-color var(--dur-instant) var(--ease),
-			outline-color var(--dur-instant) var(--ease);
-	}
-
-	/* Laid over the card's light, which a `background-color` would sit under and never show. The
-	   panel here has no edge (`DecisionCard`), so the layer goes over the fill alone. */
-	.board-card.opens:hover :global(.panel) {
-		background: var(--sift-card-hover-layer), var(--sift-card-fill);
-		--sift-line: var(--sift-card-hover-line);
-	}
-
-	.board-card.opens:has(> :global(.press:active)) :global(.panel) {
-		background: var(--sift-card-press-layer), var(--sift-card-fill);
 	}
 
 	.glyph {

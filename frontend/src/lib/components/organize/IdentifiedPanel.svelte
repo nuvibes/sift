@@ -23,7 +23,7 @@
 	 * The one narrowing is by what Sift knows a person FROM. A library linked to a stash-box holds
 	 * hundreds of People known from starter pictures alone (a stash-box's photos: Sift may ask
 	 * about them and never names them on their strength), drawn among the few it knows from
-	 * pictures of their own. The control on the tab line sets them apart, where Faces to name keeps
+	 * pictures of their own. The control on the tab line sets them apart, where Unnamed faces keeps
 	 * its small groups: one press shows only them, the other everybody else, each with its count.
 	 *
 	 * And the tab's search box, the walls' own (`WallControls`), beside that control on the tab
@@ -36,6 +36,11 @@
 	import type { OnTools } from '$lib/components/organize/OrganizeHeader.svelte';
 	import FaceCovers from '$lib/components/faces/FaceCovers.svelte';
 	import {
+		agreeingWith,
+		matchingSaid,
+		rematching
+	} from '$lib/components/faces/WaitingForYou.svelte';
+	import {
 		ActionBar,
 		Button,
 		ContextMenuGroup,
@@ -43,8 +48,10 @@
 		Empty,
 		Selection,
 		Skeleton,
+		Spinner,
 		SplitButton,
-		TileGesture
+		TileGesture,
+		Tooltip
 	} from '$lib/components/common';
 	import type { OnPaging } from '$lib/components/common/Pager.svelte';
 	import WallControls from '$lib/components/entity/WallControls.svelte';
@@ -59,7 +66,7 @@
 	import { answered } from '$lib/organize/organize.svelte';
 	import { reloadOnLibraryChange } from '$lib/library/changes.svelte';
 	import { toasts } from '$lib/shell/toasts.svelte';
-	import { thing } from '$lib/components/common/toast-pieces';
+	import { pressOnCard } from '$lib/components/common/card-press';
 	import RecognitionStrength from '$lib/components/RecognitionStrength.svelte';
 	import {
 		CROPS_ON_A_CARD,
@@ -252,10 +259,8 @@
 		busy = person.person_id;
 		try {
 			const answer = await confirmLookAlikes(person.person_id);
-			const faces = answer.changed === 1 ? 'One face is ' : `${counted(answer.changed)} faces are `;
-			const who = thing('person', person.person_id, person.person_name ?? 'them');
-			const more = answer.offered > 0 ? `. ${counted(answer.offered)} more were suggested.` : '';
-			toasts.show([faces, who, more], { tone: 'success' });
+			if (answer.changed > 0) rematching.after(person.person_id);
+			toasts.show(agreeingWith(answer.changed), { tone: 'success' });
 			answered.changed();
 			await load();
 		} catch {
@@ -279,6 +284,7 @@
 		busy = person.person_id;
 		try {
 			const answer = await confirmMatches(person.person_id);
+			if (answer.confirmed > 0) rematching.after(person.person_id);
 			toasts.show(
 				answer.confirmed === 1
 					? 'One match is confirmed'
@@ -414,12 +420,11 @@
 				// Asked of the PERSON, exactly as the card's own press is: a card holds twelve crops
 				// of however many are standing, so agreeing from its list settles twelve of them.
 				const answer = await confirmLookAlikes(id);
+				if (answer.changed > 0) rematching.after(id);
 				agreed += answer.changed;
 			}
 			selection.clear();
-			toasts.show(agreed === 1 ? 'One face is named' : `${counted(agreed)} faces are named`, {
-				tone: 'success'
-			});
+			toasts.show(agreeingWith(agreed), { tone: 'success' });
 			answered.changed();
 			await load();
 		} catch {
@@ -483,14 +488,21 @@
 		<Empty scope="page" icon="search">{emptyWallSays('people', addressWords, false, '')}</Empty>
 	{:else if people.length === 0}
 		<Empty scope="page" icon="person" title="Nobody identified yet">
-			People appear here as their faces are named. Start by naming a group under Faces to name.
+			People appear here as their faces are named. Start by naming a group under Unnamed faces.
 		</Empty>
 	{:else}
 		<!-- No count of its own: the tab says how many, and the pager says it again under the
 		     cards, as on every other tab of this page. -->
 		<ul class="people" {@attach paging.cards}>
 			{#each people as person, at (`${at}:${person.person_id ?? 'nameless'}`)}
-				<li class="person">
+				<!-- A press on the card's ground opens what its faces open. See `pressOnCard`. -->
+				<!-- svelte-ignore a11y_click_events_have_key_events: the keyboard reaches it through the
+				     card's own link. -->
+				<li
+					class="person"
+					class:opens={Boolean(person.person_id)}
+					onclick={(event) => pressOnCard(event, person.person_id ? facesHref(person) : undefined)}
+				>
 					<!-- The thumbnails are the link, exactly as on the group wall: a card shows a handful
 					     and checking a decision usually needs all of them, at the moment in the file
 					     where each was found. Somebody this account may not be told about has no page
@@ -519,7 +531,14 @@
 					     found and nobody has named), so the one card that means "there is a name and
 					     it is not yours to see" takes the word the vault uses everywhere else. -->
 					{#if person.person_id}
-						<a class="who" href={`/people/${person.person_id}`}>{person.person_name}</a>
+						<p class="who">
+							<a href={`/people/${person.person_id}`}>{person.person_name}</a>
+							{#if rematching.people.has(person.person_id)}
+								<Tooltip label={matchingSaid(person.person_name)} placement="bottom">
+									<Spinner size={12} label={matchingSaid(person.person_name)} />
+								</Tooltip>
+							{/if}
+						</p>
 					{:else}
 						<p class="who">Hidden</p>
 					{/if}
@@ -542,8 +561,8 @@
 							     card is in one press from empty. -->
 							<span class="one pending">
 								{person.waiting === 1
-									? '1 awaiting your confirmation'
-									: `${person.waiting.toLocaleString()} awaiting your confirmation`}
+									? '1 awaiting your input'
+									: `${person.waiting.toLocaleString()} awaiting your input`}
 							</span>
 						{:else}
 							<span class="one settled">Nothing needs your input</span>
@@ -710,20 +729,41 @@
 		border-radius: var(--radius-lg);
 		/* The card's light (see `--sift-card`). It has no border, so the fill is the whole of it. */
 		background: var(--sift-card);
+		transition: background var(--dur-instant) var(--ease);
+	}
+
+	/* A card that opens something wears the hover and pressed layers `DecisionCard` draws. */
+	.person.opens {
+		cursor: pointer;
+	}
+
+	.person.opens:hover {
+		background: var(--sift-card-hover-layer), var(--sift-card);
+		--sift-line: var(--sift-card-hover-line);
+	}
+
+	.person.opens:active:not(:has(a:active, button:active)) {
+		background: var(--sift-card-press-layer), var(--sift-card);
 	}
 
 	.who {
 		margin: 0;
 		overflow-wrap: anywhere;
 		color: var(--sift-ink);
+	}
+
+	/* The name, and the working mark after it while a re-match about her runs. */
+	.who a {
+		margin-inline-end: var(--space-2);
+		color: inherit;
 		text-decoration: none;
 	}
 
-	a.who:hover {
+	.who a:hover {
 		text-decoration: underline;
 	}
 
-	a.who:focus-visible {
+	.who a:focus-visible {
 		outline: none;
 		box-shadow: var(--focus-ring);
 		border-radius: var(--radius-sm);

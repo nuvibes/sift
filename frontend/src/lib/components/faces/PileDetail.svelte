@@ -168,6 +168,9 @@
 			name: (ids) => {
 				acting = ids;
 				pickTheAimed();
+				// The field lives on the bar, which rises over a selection: a header row arrives with
+				// nothing picked, so what of these is on this page is picked first.
+				if (picked.length === 0) selection.toggleAll(onPage.filter((id) => ids.includes(id)));
 				naming = true;
 			},
 			move: (ids) => ((acting = ids), (moving = true)),
@@ -810,26 +813,24 @@
 	{/if}
 </PageFrame>
 
-<ActionBar count={picked.length} noun="face" onclear={() => selection.clear()}>
+<!-- While naming, the count is what will be named: "All 254 in this group" reaches past the page. -->
+<ActionBar
+	count={naming ? acting.length : picked.length}
+	noun="face"
+	onclear={() => {
+		selection.clear();
+		naming = false;
+	}}
+>
 	{#snippet actions()}
 		{#if naming}
 			<!--
-				The same selector the "Add to" flyouts are, with its box at the bottom: `PickMenu`
-				pages the whole library, says how many it is not showing, remembers who this account
-				reaches for, and creates from a row worded like every other picker's.
-
-				The box sits at the bottom because this bar sits at the foot of the window, so the
-				menu opens upwards; a box at the top would be at the far end of the list from the
-				button pressed. See `PickMenu`'s `filterAt`.
+				The same selector the "Add to" flyouts are, its box first as on every picker: the
+				list under it is eight rows at most, so the box stays near the button.
 
 				`bind:open` is what closes the naming: dismissing the menu (Escape, a press outside)
-				puts the bar back to its verbs.
-
-				Opens upwards, said rather than discovered: the box is 480px tall against a bar near
-				the bottom edge, and a direction that depends on how much room a window has would
-				open one way on a tall screen and another on a short one. The menu touches the
-				button; the visible space is the bar's own padding above its buttons (`--space-2`)
-				plus the menu's inner `--space-1`.
+				puts the bar back to its verbs. Opens upwards, said rather than discovered, so the
+				direction does not depend on how much room a window has.
 			-->
 			<MenuButton
 				label="Name these faces"
@@ -845,7 +846,6 @@
 					kind="person"
 					plural="people"
 					inline
-					filterAt="bottom"
 					ask={askPeople}
 					onpick={(choice) => void name({ personId: choice.id })}
 					oncreate={makePerson}

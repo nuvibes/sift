@@ -30,10 +30,9 @@ export const COPY = {
 		waiting: (n: string) => `${n} waiting to be scanned`
 	},
 	/**
-	 * The head of a line of files a product gave up on: "24 files", drawn as a link to them (the
-	 * Files wall filtered `left_out:<product>`, each file saying why under its tile). The rest of
-	 * the sentence is the stage's `cannot`, so the two read as one: "24 files couldn't have
-	 * thumbnails generated and are left out."
+	 * The head of a line of files a product gave up on: "24 files", the press that lists them, each
+	 * with why. The rest of the sentence is the stage's `cannot`, so the two read as one: "24 files
+	 * couldn't have thumbnails generated and are left out."
 	 */
 	leftOut: (n: number, one: boolean) => `${counted(n)} ${one ? 'file' : 'files'}`,
 	generate: {
@@ -48,6 +47,13 @@ export const COPY = {
 		cannot: (one: boolean, what: string) =>
 			`couldn't be checked for ${what} and ${one ? 'is' : 'are'} left out.`
 	},
+	/* The page a left-out count opens: each file, and why. */
+	leftOutPage: (what: string) => `Left out: ${what}`,
+	leftOutDoor: 'Left out',
+	leftOutAll: (n: number) => `Show all ${counted(n)} in Browse`,
+	leftOutCannotLoad: "Couldn't load the files that were left out.",
+	aFile: 'A file',
+	noReason: 'Sift gave up on it.',
 	tryAgain: 'Try again',
 	tryingAgain: 'Trying again\u2026',
 	nothingMissing: 'Nothing missing',

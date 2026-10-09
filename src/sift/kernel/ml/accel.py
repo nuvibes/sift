@@ -373,7 +373,7 @@ async def install(
             if not await asyncio.to_thread(_matches, target, wheel.digest):
                 await asyncio.to_thread(target.unlink, True)
                 raise AccelError(
-                    f"The {wheel.name} package didn't arrive intact. Nothing was installed. "
+                    f"The {wheel.name} package came in damaged. Nothing was installed. "
                     "Starting again downloads it afresh."
                 )
         done += wheel.size_bytes

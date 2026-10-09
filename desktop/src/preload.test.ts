@@ -149,6 +149,7 @@ describe('the preload', () => {
 			'captureWindow',
 			'lastServer',
 			'connectState',
+			'applyUpdate',
 			'localHardware',
 			'machineName',
 			'shellVersion',

@@ -1178,6 +1178,31 @@ describe('pointing at what narrows', () => {
 		expect(write, 'and not as a tick').not.toHaveBeenCalled();
 	});
 
+	it("a chip's press lands through choose, while a tick in the panel still writes", async () => {
+		const choose = vi.fn();
+		const write = vi.fn();
+		held.url = new URL('http://x/theater');
+		screenBar.publish(owner, {
+			filterable: true,
+			narrowing: { read: () => new URLSearchParams('tags=beach'), write, choose }
+		});
+		host = document.createElement('div');
+		document.body.append(host);
+		drawn = mount(FilterBar, { target: host }) as Record<string, unknown>;
+		flushSync();
+		host.querySelector<HTMLElement>('.chip .body')?.click();
+		flushSync();
+		expect(choose, 'the chip waited like a tick').toHaveBeenCalledTimes(1);
+		expect(choose.mock.calls[0][0].toString()).toBe('tags=-beach');
+		expect(write).not.toHaveBeenCalled();
+
+		await openPanel();
+		columnRow('runway')?.click();
+		flushSync();
+		expect(write, 'a tick in the panel no longer writes').toHaveBeenCalledTimes(1);
+		expect(choose).toHaveBeenCalledTimes(1);
+	});
+
 	it('lights the cells from a chip and from a column', async () => {
 		const pointing = drawOverACell();
 

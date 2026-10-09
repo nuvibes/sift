@@ -12,6 +12,7 @@ import AssetGrid from './AssetGrid.svelte';
 import { arrivals, assetState, libraryChanges } from '$lib/library/changes.svelte';
 import { vault } from '$lib/shell/vault.svelte';
 import { LOOP_SOURCE, type RowSource } from '$lib/grid/grid.svelte';
+import { mini } from '$lib/player/mini.svelte';
 
 /* A list that cannot turn a row back into its place. Served at `/loops` only because the mock
    answers there; what is under test is the flag, not the address. */
@@ -77,6 +78,7 @@ vi.mock('$app/navigation', () => ({ goto: vi.fn(), replaceState: vi.fn() }));
 vi.mock('$app/state', () => ({
 	navigating: { to: null, from: null, type: null, complete: null, delta: null, willUnload: false },
 	page: {
+		state: {},
 		get url() {
 			return at.url;
 		}
@@ -340,5 +342,19 @@ describe('a heart set elsewhere', () => {
 		await settle();
 
 		expect(asked.queries.length).toBe(0);
+	});
+
+	it('asks nothing while the corner panel is open over the wall, and asks once it closes', async () => {
+		await grid({ query: { fav: 'yes' } });
+		mini.open({ id: 'playing', mediaType: 'video' }, { width: 1400, height: 900 });
+		await settle();
+
+		assetState.changed(hearted);
+		await settle();
+		expect(asked.queries.length, 'the wall reordered under the player').toBe(0);
+
+		mini.close();
+		await settle();
+		expect(asked.queries.length, 'the held re-read was never made').toBe(1);
 	});
 });

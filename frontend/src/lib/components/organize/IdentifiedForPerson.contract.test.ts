@@ -129,7 +129,7 @@ describe('the way back is the tab it was opened from', () => {
 describe('the tab carries its own two answers', () => {
 	/*
 	 * The Recognized by Sift tab offers a way to confirm what Sift named on its own, per face and
-	 * for the tab, like the Faces to name pages.
+	 * for the tab, like the Unnamed faces pages.
 	 *
 	 * Read from the source, as everything here is: what is pinned is which door each press goes
 	 * through and where the row sits; the behaviour behind each door is pinned on the server beside

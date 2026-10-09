@@ -1179,6 +1179,27 @@ async def test_a_type_and_kind_is_priced_from_ten_items_and_a_settings_change_fo
     assert ledger.prices() == {}
 
 
+async def test_a_pass_with_no_run_on_record_is_priced_from_what_it_has_finished(
+    ledger: Ledger,
+) -> None:
+    """Ten thousand done in a first pass, so nothing kept: the open run's own items price it."""
+    kinds = {"video": 1.0}
+    assert await ledger.estimate(Family.IDENTIFY, ["face_scan"], left=42_802, at_once=4) is None
+    for _ in range(10_000):
+        ledger.finished("face_scan", duration_ms=2000, ok=True, media_type="video")
+    _gone(ledger, Family.IDENTIFY, 300)
+    found = await ledger.estimate(
+        Family.IDENTIFY, ["face_scan"], left=42_802, at_once=4, kinds=kinds
+    )
+    assert found is not None and found.items == 200
+    middle = 42_802 * 2.0 / (10_000 * 2.0 / 300)
+    assert found.quick_seconds == pytest.approx(middle / 1.6, rel=0.01)
+    assert found.slow_seconds == pytest.approx(middle * 1.6, rel=0.01)
+    ledger.finished("thumbnail", duration_ms=2000, ok=True, media_type="video", units=0)
+    run = ledger.open_run(Family.GENERATE)
+    assert run is not None and run.files["video"].ms == 0, "a fileless job prices no kind"
+
+
 def _gone(ledger: Ledger, family: Family, seconds: float) -> None:
     run = ledger.open_run(family)
     assert run is not None

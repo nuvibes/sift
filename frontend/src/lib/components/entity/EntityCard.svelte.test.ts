@@ -196,6 +196,19 @@ it('draws the picture as a pick toggle, and the name as the link, when the wall 
 	expect(host.querySelector('.pick')).toBeNull();
 });
 
+it("hands a press on the card's ground to its picture: the link, or the pick", () => {
+	draw({});
+	const heard = vi.fn((event: Event) => event.preventDefault());
+	host.querySelector('a.face')?.addEventListener('click', heard);
+	host.querySelector<HTMLElement>('.body')?.click();
+	expect(heard).toHaveBeenCalledTimes(1);
+	unmount(drawn!);
+	const onpick = vi.fn();
+	draw({ onpick, picked: false });
+	host.querySelector<HTMLElement>('.body')?.click();
+	expect(onpick).toHaveBeenCalledTimes(1);
+});
+
 it('lays the one pick look over the picture of a picked card and says so out loud', () => {
 	draw({ onpick: () => {}, picked: true });
 	expect(host.querySelector('button.face')?.getAttribute('aria-pressed')).toBe('true');

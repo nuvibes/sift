@@ -145,7 +145,7 @@
 				groups.length,
 				total,
 				/* Nouns, as `PagerProps.noun` asks: without one an empty list reads "No to name". */
-				aside ? 'discarded groups' : small ? 'small groups' : 'groups to name'
+				aside ? 'discarded groups' : small ? 'small groups' : 'unnamed groups'
 			)
 		);
 	});
@@ -193,12 +193,12 @@
 		<Empty
 			scope="page"
 			icon="group"
-			title={aside ? 'Nothing discarded' : small ? 'No small groups' : 'Nothing to name'}
+			title={aside ? 'Nothing discarded' : small ? 'No small groups' : 'No unnamed faces'}
 		>
 			{#if aside}
 				A group you discard stays listed here, and you can restore it.
 			{:else if small}
-				A group of fewer than five faces is kept here, so the list of groups to name stays the
+				A group of fewer than five faces is kept here, so the list of unnamed groups stays the
 				questions worth answering.
 			{:else}
 				Faces Sift doesn't recognize appear here in groups, so you name a person once rather than

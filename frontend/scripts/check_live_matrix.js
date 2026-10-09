@@ -161,7 +161,7 @@ export function bellsOf(file, via = [], read = readOnce) {
 export function rereadsOnOpinion(code) {
 	for (const match of code.matchAll(/onAssetStateChange\(/g)) {
 		const body = code.slice(match.index, match.index + 1200).split(/\n\t\}\);/)[0];
-		if (/\b(catchUp|reread\w*|reload\w*|load)\s*\(/.test(body)) return true;
+		if (/\b(catchUp|opinionMoved|reread\w*|reload\w*|load)\s*\(/.test(body)) return true;
 	}
 	return false;
 }

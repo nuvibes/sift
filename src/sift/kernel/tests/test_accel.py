@@ -157,7 +157,7 @@ async def test_a_package_that_did_not_arrive_intact_installs_nothing(
     monkeypatch.setattr(accel, "TOTAL_BYTES", good.size_bytes + damaged.size_bytes)
     index = FakeIndex({good.url: good_body, damaged.url: bad_body})
 
-    with pytest.raises(AccelError, match="didn't arrive intact"):
+    with pytest.raises(AccelError, match="came in damaged"):
         await accel.install(settings, session_factory=lambda: index)
 
     assert not accel.installed(settings)

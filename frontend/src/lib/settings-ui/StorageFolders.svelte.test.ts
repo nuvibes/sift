@@ -65,7 +65,9 @@ const REPORT = {
 	   fixture written in GiB would read as 3.2 GB and the assertion would be about arithmetic
 	   that has its own tests. */
 	dataBytes: 3_000_000_000,
-	cacheBytes: 512_000_000
+	cacheBytes: 512_000_000,
+	measuredAt: 1_700_000_000_000,
+	measuring: false
 };
 
 let host: HTMLDivElement;
@@ -162,6 +164,29 @@ it('names both folders, what each is for, and how much is in it', async () => {
 	expect(host.textContent).toContain('512 MB');
 });
 
+/* A size not measured yet is the word and the working mark, never a 0 B; one measured is drawn
+   while a new walk runs. */
+it('says Measuring with no size yet, and draws the size it has while measuring again', async () => {
+	storage.mockResolvedValue({
+		...REPORT,
+		dataBytes: 0,
+		cacheBytes: 0,
+		measuredAt: null,
+		measuring: true
+	});
+	const first = mount(StorageFolders, { target: host });
+	await settle();
+	expect(host.textContent).toContain(COPY.measuring);
+	expect(host.querySelector('.spinner')).not.toBeNull();
+	expect(host.textContent).not.toContain('0 B');
+	await unmount(first);
+
+	storage.mockResolvedValue({ ...REPORT, measuring: true });
+	await draw();
+	expect(host.textContent).toContain('3.0 GB');
+	expect(host.textContent).not.toContain(COPY.measuring);
+});
+
 it('keeps a refusal on the screen rather than throwing it as a toast', async () => {
 	moveStorage.mockResolvedValue({ ok: false, reason: 'That folder is not empty.' });
 
@@ -230,6 +255,8 @@ const THERE = {
 	cache_dir: 'C:\\Sift\\cache',
 	data_bytes: 3_000_000_000,
 	cache_bytes: 512_000_000,
+	measured_at: 1_700_000_000_000,
+	measuring: false,
 	last_move: { ok: false, refusal: 'The copy is smaller than what it came from.' }
 };
 
@@ -270,6 +297,21 @@ it('draws the folders of the computer running Sift, and says a move there that d
 	expect(host.textContent).toContain('C:\\Sift\\data');
 	expect(host.textContent).toContain(COPY.server.lastFailed(THERE.last_move.refusal));
 	expect(storage).not.toHaveBeenCalled();
+});
+
+it('says Measuring for the folders there with no size yet, never 0 B', async () => {
+	fromAfar();
+	readServerStorage.mockResolvedValue({
+		...THERE,
+		data_bytes: 0,
+		cache_bytes: 0,
+		measured_at: null,
+		measuring: true
+	});
+	await draw();
+	await settle();
+	expect(host.textContent).toContain(COPY.measuring);
+	expect(host.textContent).not.toContain('0 B');
 });
 
 it('moves them into a folder picked on that computer, and says the refusal of the app there', async () => {

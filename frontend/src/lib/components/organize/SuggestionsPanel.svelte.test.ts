@@ -2,7 +2,7 @@
  * The Suggestions tab keeps its place on the way back.
  *
  * Opening a row from a later page and pressing the crumb back must return to that page. It pages as
- * Faces to name does (`FaceGroupsPanel.svelte.test.ts` is the same shape): the first row on screen
+ * Unnamed faces does (`FaceGroupsPanel.svelte.test.ts` is the same shape): the first row on screen
  * is written as `from`, and the way back asks for the page that row is on once, because the landing
  * answers from the rows it was handed (`CardPaging.land`).
  */
@@ -110,9 +110,8 @@ afterEach(() => {
 
 it('asks each question in the one card shape, naming the person once', async () => {
 	/* The question names her; the line under it says what she was compared with and how close the
-	   best came, without the name a second time. A card of one face holds no empty cells for faces
-	   it does not have: the card's foot, not a block of blanks, is what keeps a row's Yes on one
-	   line. */
+	   best came, without the name a second time. A card of one face holds the room of two rows of
+	   six, so every question card is one height. */
 	await render();
 
 	const card = host.querySelector('.people > li');
@@ -122,7 +121,7 @@ it('asks each question in the one card shape, naming the person once', async () 
 	expect(card?.querySelector('.detail')?.textContent).toBe(
 		'Compared with the faces already named. Surest at 70%'
 	);
-	expect(card?.querySelectorAll('.faces .hole')).toHaveLength(0);
+	expect(card?.querySelectorAll('.faces > *')).toHaveLength(12);
 	expect(words(card?.querySelector('.foot .lead button'))).toBe('Yes');
 });
 
@@ -155,20 +154,22 @@ it('writes the first row on screen to the address, so Back and the crumb can fin
 	expect(mocks.replaced.at(-1)).toBe('/organize/faces?from=p24&near=24');
 });
 
-it('stands a may-be card at its own height, where a question card fills its row', () => {
-	/* A may-be card of a dozen groups would stretch the cards beside it hundreds of pixels tall. */
+it('packs the cards in columns, each at its own height, none split between two', () => {
+	/* A card of groups beside a card of faces leaves no dead space under the shorter one. */
 	const list = document.createElement('ul');
 	list.className = 'people svelte-probe1';
 	const question = document.createElement('li');
 	question.className = 'svelte-probe1';
 	const mayBe = document.createElement('li');
-	mayBe.className = 'may-be svelte-probe1';
+	mayBe.className = 'svelte-probe1';
 	list.append(question, mayBe);
 	document.body.append(list);
 	try {
 		applyStyles(panelSource, list);
-		expect(getComputedStyle(mayBe).alignSelf).toBe('start');
-		expect(getComputedStyle(question).alignSelf).not.toBe('start');
+		expect(getComputedStyle(list).columns).toBe('22rem');
+		for (const card of [question, mayBe]) {
+			expect(getComputedStyle(card).breakInside).toBe('avoid');
+		}
 	} finally {
 		removeStyles();
 		list.remove();
@@ -207,4 +208,17 @@ it('says a search that found nobody, rather than that nothing is left to confirm
 
 	expect(host.textContent).toContain('No people match "Quill".');
 	expect(host.textContent).not.toContain('Nothing to confirm');
+});
+
+it("opens the person's review on a press anywhere on the card's ground", async () => {
+	await render();
+	const card = host.querySelector('.people > li');
+	const link = card?.querySelector<HTMLAnchorElement>('a.faces');
+	expect(link?.getAttribute('href')).toBe('/organize/known-people/p0?show=suggested&via=faces');
+	const opened = vi.fn((event: Event) => event.preventDefault());
+	link?.addEventListener('click', opened);
+
+	card?.querySelector<HTMLElement>('.detail')?.click();
+
+	expect(opened).toHaveBeenCalledTimes(1);
 });

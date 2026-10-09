@@ -236,7 +236,7 @@ it("titles the page with its group's name, and puts the tabs and the sentence un
 				group_title: 'Faces',
 				icon: 'person'
 			}),
-			queue({ name: 'faces-to-name', title: 'Faces to name', group: 'faces' })
+			queue({ name: 'faces-to-name', title: 'Unnamed faces', group: 'faces' })
 		],
 		decisions: [],
 		decided: 0

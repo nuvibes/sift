@@ -256,7 +256,7 @@ class WeightStore:
             # Resuming a wrong partial asks for nothing more and fails the same check for ever.
             await asyncio.to_thread(partial.unlink, True)
             raise WeightError(
-                f"The {weight.role} model didn't arrive intact, so it was removed. Starting again "
+                f"The {weight.role} model came in damaged, so it was removed. Starting again "
                 "downloads it afresh."
             ) from exc
         await asyncio.to_thread(partial.unlink, True)

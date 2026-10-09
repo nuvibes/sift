@@ -478,7 +478,7 @@ class MayBeMixin(DecisionsMixin, GroupingMixin, VisibilityMixin):
     ) -> RunAnswered:
         """Name these faces and offer the rest of their groups, with the receipt a group's Yes writes.
 
-        What naming a group from its own card under Faces to name does. It writes the same receipt a
+        What naming a group from its own card under Unnamed faces does. It writes the same receipt a
         "these groups may be her" card writes (one act, one receipt, the shape `confirm_groups`
         writes, `NAMED_GROUPS`), so Undo takes the name off every face the press touched and
         groups them again (`unname_groups`); the History lines alone cannot be taken back.

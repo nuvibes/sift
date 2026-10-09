@@ -65,12 +65,7 @@ import { declareShellScheme, serveShellPages, SHELL_ORIGIN } from './shellpage';
 import { answerSmokeRun } from './smoke';
 import { openShellLink, type Deferred, type ShellLink } from './shelllink';
 import { howToAppear, startedAtSignIn, startWithWindows } from './startup';
-import {
-	describe as describeStorage,
-	move,
-	refuse as refuseStorageFolder,
-	type MoveResult
-} from './storage';
+import { move, refuse as refuseStorageFolder, StorageSizes, type MoveResult } from './storage';
 import { recordForUninstaller } from './uninstall';
 import { feedAddress, type UpdateOutcome } from './update';
 import {
@@ -220,7 +215,7 @@ async function main(): Promise<void> {
 			}
 		},
 		storage: {
-			read: () => describeStorage(locations(settings)),
+			read: async () => storageSizes.read(locations(settings)),
 			/*
 			 * THE ORDER IS THE WHOLE OF THE SAFETY, and only the backend's supervisor can keep it:
 			 * stop, move, write, start. The database's files are held open until the backend is
@@ -467,6 +462,8 @@ const NOT_RUNNING_HERE: Settled = {
 /** What the last move asked from another computer came to, for the screen there to say once Sift
  *  is back. Null until one is asked; this launch only. */
 let lastMove: Settled | null = null;
+/* The two folders' sizes, from one shared and kept walk: the door answers without waiting on it. */
+const storageSizes = new StorageSizes();
 
 async function sharingFromAfar(on: boolean): Promise<Deferred<Settled>> {
 	if (backend === null || !mayShare(settings.mode)) return { answer: NOT_RUNNING_HERE };
@@ -1058,7 +1055,7 @@ async function startBackend(): Promise<void> {
 		firewall: () => firewallState(PORT),
 		openFirewall: (scope) => openFirewall(PORT, undefined, scope),
 		setSharing: sharingFromAfar,
-		storage: async () => ({ ...(await describeStorage(locations(settings))), lastMove }),
+		storage: async () => ({ ...storageSizes.read(locations(settings)), lastMove }),
 		moveStorage: moveFromAfar,
 		update: updateFromAfar,
 		log: (lines) => tailShellLog(lines),

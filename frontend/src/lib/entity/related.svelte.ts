@@ -490,8 +490,8 @@ interface RelatedTab {
 /**
  * The tabs for one page, as addresses.
  *
- * `base` is the page's own address. The chosen tab rides in `?show=`, so every tab is somewhere the
- * back button can return to and a link somebody sends opens on the tab they were looking at.
+ * `base` is the page's own address. The chosen tab rides in `?show=`, so a link somebody sends
+ * opens on the tab they were looking at; a press replaces the entry (`Tabs`), so Back leaves.
  * `files` is written without the parameter, so the plain address is still the plain page.
  */
 export function tabsFor(

@@ -280,7 +280,7 @@
 			);
 		}
 		// A file this wall does not hold may now answer it: Favorites gaining a heart.
-		if (order.hangsOnOpinions) void current.catchUp();
+		if (order.hangsOnOpinions) current.opinionMoved();
 	});
 
 	/* Escape lets go of a selection from wherever the focus is, on the window, and only while
@@ -789,7 +789,7 @@
 								Importing {imports.arriving === 1 ? '1 file' : `${counted(imports.arriving)} files`}
 							</span>
 						{/if}
-						<!-- What has arrived above this page, held still for somebody reading further down,
+						<!-- What has arrived or moved above this page, held still for somebody reading further down,
 						     and the press that takes it. The count is the label. -->
 						{#if current.offersTheNew}
 							<Button
@@ -799,7 +799,7 @@
 								onclick={() => current.takeTheNewOnes()}
 							>
 								{grid.newer.toLocaleString()}
-								new
+								{grid.newerSaid}
 							</Button>
 						{/if}
 					{/snippet}

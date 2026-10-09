@@ -83,7 +83,7 @@
 		 * rule) and what does not is a way back, which the trail already is.
 		 *
 		 * The one exception is a FILTER's way out: "Back to the groups" on the small groups of
-		 * Faces to name leaves a filter rather than the screen, which is why it shares the slot
+		 * Unnamed faces leaves a filter rather than the screen, which is why it shares the slot
 		 * with the chip that entered it. A queue's panel fills this through `OnTools`; a screen
 		 * drawing its own header passes it straight in.
 		 */

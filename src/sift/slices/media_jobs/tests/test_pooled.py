@@ -16,7 +16,7 @@ from sift.kernel.jobs.families import Family
 from sift.kernel.jobs.ledger import Ledger
 from sift.kernel.jobs.time_left import Steady
 from sift.slices.media_jobs import pooled
-from sift.slices.media_jobs.activity_wire import FamilyOfWork, KindOfWork
+from sift.slices.media_jobs.activity_wire import FamilyOfWork, KindOfWork, PartOfWork
 from sift.slices.media_jobs.pooled import STALLED, WAITING_FOR_THE_SCAN, priced_together
 
 FAMILIES = {"probe": Family.SCAN, "thumbnail": Family.GENERATE}
@@ -153,6 +153,20 @@ async def test_with_no_read_left_the_passes_take_their_work_over_the_pool(
     book = await _book(temp_db)
     answer = {"generate": _row("Generate", ["thumbnail", "carrying"], 100, outstanding=4)}
     answer = await priced_together(answer, WORK, KINDS, book, 4, True, ())
+    assert answer["generate"].slow_seconds == int(25 * 1.6)
+
+
+async def test_a_sub_task_switched_off_with_files_waiting_leaves_the_passes_priced(
+    temp_db: Database,
+) -> None:
+    book = await _book(temp_db)
+    off = PartOfWork(type="audio_fingerprint", caption="files", done=0, total=259, on=False)
+    answer = {
+        "generate": _row("Generate", ["thumbnail"], 100, outstanding=4),
+        "fingerprint": _row("Fingerprint", ["audio_fingerprint"], 0, parts=[off]),
+    }
+    work = {"audio_fingerprint": KindOfWork(done=0, outstanding=0, failed=0, waiting=259), **WORK}
+    answer = await priced_together(answer, work, KINDS, book, 4, True, ())
     assert answer["generate"].slow_seconds == int(25 * 1.6)
 
 

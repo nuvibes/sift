@@ -57,6 +57,30 @@ async def test_a_block_holding_the_writer_is_said_while_held_and_when_it_lets_go
     assert ended[0]["held_ms"] >= 150
 
 
+async def test_the_held_lines_stop_when_the_block_lets_go(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, warnings: list[tuple[str, dict[str, Any]]]
+) -> None:
+    """Every line after the first is a timer of its own: the block's end cancels the next one."""
+    monkeypatch.setattr(db_module, "WRITER_HELD_SECONDS", 0.02)
+    database = Database(tmp_path / "held.sqlite3")
+    await database.connect()
+    loop = asyncio.get_running_loop()
+    try:
+        async with database.write() as connection:
+            await connection.execute("CREATE TABLE held (n INTEGER)")
+            said_twice = asyncio.Event()
+            loop.call_later(0.1, said_twice.set)
+            await said_twice.wait()
+        said = sum(1 for event, _fields in warnings if event == "db.writer_held")
+        later = asyncio.Event()
+        loop.call_later(0.2, later.set)
+        await later.wait()
+    finally:
+        await database.close()
+    assert said >= 2
+    assert sum(1 for event, _fields in warnings if event == "db.writer_held") == said
+
+
 async def test_a_short_write_is_not_said_and_the_next_block_counts_afresh(
     tmp_path: Path, warnings: list[tuple[str, dict[str, Any]]]
 ) -> None:

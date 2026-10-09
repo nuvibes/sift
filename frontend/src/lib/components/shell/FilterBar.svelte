@@ -113,22 +113,22 @@
 	};
 
 	/*
-	 * What is on screen, which is what the chips describe: the screen's own filter where it has one
-	 * (a Theater cell, which has no address) and otherwise the address. A kept filter being edited is
-	 * NOT on screen: nothing moves until Save.
+	 * What is on screen, which is what the chips describe: the screen's own filter (a Theater cell,
+	 * which has no address) or the address; a kept filter being edited is not on screen until Save.
+	 * A chip's press is a finished choice, as a kept filter is: it lands now (`choose`).
 	 */
-	const describing = $derived<Narrowing>(tools.narrowing ?? address);
+	const onScreen = $derived<Narrowing>(tools.narrowing ?? address);
+	const describing = $derived<Narrowing>(
+		onScreen.choose ? { ...onScreen, write: onScreen.choose } : onScreen
+	);
 
-	/*
-	 * What the panel reads and writes: an open edit outranks everything, but only on the wall it was
-	 * opened on. The draft outlives the panel and the screen, and walking to another wall with it
-	 * open would point that wall's columns at a filter spelled in another noun's vocabulary.
-	 */
+	/* What the panel reads and writes: an open edit outranks everything, but only on the wall it was
+	   opened on, or another wall's columns would point at a filter in another noun's vocabulary. */
 	const editingHere = $derived(
 		savedSearches.editing?.kind === subject ? savedSearches.editing : null
 	);
 
-	const narrowing = $derived<Narrowing>(editingHere !== null ? keptDraft : describing);
+	const narrowing = $derived<Narrowing>(editingHere !== null ? keptDraft : onScreen);
 
 	/*
 	 * The panel keeps its box while a draft is open, and past its end while the pointer is still in

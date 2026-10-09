@@ -564,10 +564,10 @@ it('keeps Try again on the line with the last word of its sentence', async () =>
 	removeStyles();
 });
 
-it('makes the count of files a product left out a link to them, beside Try again', async () => {
-	/* A count of files nobody can see is a number with no way to act on it. The count opens the
-	   Files wall filtered to exactly those files, each saying why under its tile; the key is the
-	   row's own, which the query language takes as itself (a gate holds that). */
+it('makes the count of files a product left out open them, each with why, beside Try again', async () => {
+	/* A count of files nobody can see is a number with no way to act on it. The count opens a page
+	   of exactly those files, each by name with why in Sift's words, read through the wall's own
+	   filter; the key is the row's own, which the query language takes as itself. */
 	mocks.fetchBuildSheet.mockResolvedValue(
 		sheet({
 			files: 40,
@@ -578,22 +578,70 @@ it('makes the count of files a product left out a link to them, beside Try again
 		})
 	);
 	await draw();
-	const link = await vi.waitFor(() => {
-		const found = stageRow('generate').querySelector<HTMLAnchorElement>('a[data-left-out]');
+	const count = await vi.waitFor(() => {
+		const found = stageRow('generate').querySelector<HTMLElement>('[data-left-out] button');
 		expect(found).not.toBeNull();
 		return found!;
 	});
-	expect(link.textContent?.trim()).toBe('24 files');
-	expect(link.getAttribute('href')).toBe('/browse?left_out=thumbnails');
-	const sentence = link.closest('.sentence')!;
+	expect(count.textContent?.trim()).toBe('24 files');
+	const sentence = count.closest('.sentence')!;
 	expect(sentence.textContent?.replace(/\s+/g, ' ').trim()).toBe(
 		"24 files couldn't have thumbnails generated and are left out. Try again"
 	);
-	/* One file agrees with its number, on the other stage's row, with its own product's link. */
-	const one = stageRow('identify').querySelector<HTMLAnchorElement>('a[data-left-out]')!;
-	expect(one.getAttribute('href')).toBe('/browse?left_out=faces');
+	const one = stageRow('identify').querySelector('[data-left-out="faces"] button')!;
 	expect(one.closest('.sentence')?.textContent?.replace(/\s+/g, ' ').trim()).toBe(
 		"1 file couldn't be checked for faces and is left out. Try again"
+	);
+
+	const tasks = mocks.get.getMockImplementation();
+	const asked: unknown[] = [];
+	mocks.get.mockImplementation((path: string, options?: { query?: unknown }) => {
+		if (path !== '/assets') return tasks ? tasks(path, options) : Promise.resolve({});
+		asked.push(options?.query);
+		const items = [{ id: 'A1', original_filename: 'clip.mp4', left_out: "It wouldn't open." }];
+		return Promise.resolve({
+			items: [...items, { id: 'A2', original_filename: null }],
+			total: 124
+		});
+	});
+	mount(DrilldownPage, { target: host, props: { behind: 'Importing' } });
+	count.click();
+	flushSync();
+	const page = await vi.waitFor(() => {
+		const found = host.querySelectorAll('.what');
+		expect(found.length).toBe(2);
+		return found;
+	});
+	expect(drilldown.title).toBe('Left out: Thumbnails');
+	expect(asked).toEqual([{ left_out: 'thumbnails', limit: 100 }]);
+	expect(page[0].getAttribute('href')).toBe('/asset/A1');
+	expect([...host.querySelectorAll('.why')].map((why) => why.textContent)).toEqual([
+		"It wouldn't open.",
+		'Sift gave up on it.'
+	]);
+	expect(page[1].textContent).toBe('A file');
+	const all = host.querySelector<HTMLAnchorElement>('.more a')!;
+	expect([all.textContent, all.getAttribute('href')]).toEqual([
+		'Show all 124 in Browse',
+		'/browse?left_out=thumbnails'
+	]);
+});
+
+it('says so when the left-out files cannot be read', async () => {
+	mocks.fetchBuildSheet.mockResolvedValue(
+		sheet({ rows: [row('thumbnails', 'Thumbnails', { files: 0, cannot: 2 })] })
+	);
+	await draw();
+	const count = await vi.waitFor(() => {
+		const found = stageRow('generate').querySelector<HTMLElement>('[data-left-out] button');
+		expect(found).not.toBeNull();
+		return found!;
+	});
+	mocks.get.mockRejectedValue(new Error('gone'));
+	mount(DrilldownPage, { target: host, props: { behind: 'Importing' } });
+	count.click();
+	await vi.waitFor(() =>
+		expect(host.textContent).toContain("Couldn't load the files that were left out.")
 	);
 });
 

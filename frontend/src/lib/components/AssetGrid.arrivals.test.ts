@@ -27,7 +27,9 @@ import { libraryChanges } from '$lib/library/changes.svelte';
 const server = vi.hoisted(() => ({
 	held: [] as Record<string, unknown>[],
 	fresh: [] as Record<string, unknown>[],
-	drift: 0
+	drift: 0,
+	/** How many files the library has gained since the wall was first read. */
+	grown: 0
 }));
 
 const at = vi.hoisted(() => ({ url: new URL('http://localhost/browse') }));
@@ -40,7 +42,7 @@ vi.mock('$lib/api/client', () => ({
 				const anchored = 'from' in query;
 				return {
 					items: anchored ? server.held : server.fresh,
-					total: 500,
+					total: 500 + server.grown,
 					limit: 24,
 					offset: anchored ? server.drift : Number(query.offset ?? 0),
 					complete: true
@@ -133,6 +135,7 @@ beforeEach(() => {
 	server.held = ['a', 'b', 'c', 'd', 'e', 'f'].map(file);
 	server.fresh = server.held;
 	server.drift = 0;
+	server.grown = 0;
 	imports.busy = 0;
 });
 
@@ -182,6 +185,13 @@ function topOfWallOnScreen(visible: boolean) {
 /** Files land above the page: the anchor drifts down the library by `count`, and a plain read of
  *  the page now starts with them. */
 function filesArrive(count: number) {
+	filesMove(count);
+	server.grown = count;
+}
+
+/** Files already in the library move above the page (a view in Recently viewed): the anchor
+ *  drifts as it does for arrivals, and the library holds no more files than it did. */
+function filesMove(count: number) {
 	server.drift = count;
 	server.fresh = [
 		...Array.from({ length: count }, (_unused, index) => file(`new${index}`)),
@@ -292,5 +302,22 @@ describe('files arriving while the wall is being watched', () => {
 		await settle();
 
 		expect(tileFor('new0'), 'a file dropped into a watched folder never appeared').not.toBeNull();
+	});
+});
+
+describe('files that moved above the page without arriving', () => {
+	it('says they moved, and waits for the press even at the top of the wall', async () => {
+		await wall();
+		topOfWallOnScreen(true);
+
+		filesMove(20);
+		libraryChanges.changed();
+		await settle();
+		await settle();
+
+		expect(tileFor('new0'), 'the wall reordered by itself under its reader').toBeNull();
+		const said = host.textContent?.replace(/\s+/g, ' ');
+		expect(said, 'the line called files that moved new').toContain('20 moved');
+		expect(said).not.toContain('20 new');
 	});
 });

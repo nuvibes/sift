@@ -168,7 +168,7 @@ describe('the one button', () => {
 	it('says Review, opens the pile and does nothing else', async () => {
 		await draw(queue());
 
-		const buttons = [...host.querySelectorAll<HTMLButtonElement>('.face button')];
+		const buttons = [...host.querySelectorAll<HTMLButtonElement>('.board-card button')];
 		expect(buttons).toHaveLength(1);
 		expect(words(buttons[0])).toContain(REVIEW);
 		expect(buttons[0].getAttribute('aria-label')).toBe('Review Shoots');
@@ -186,15 +186,15 @@ describe('the one button', () => {
 			queue({ name: 'music', title: 'Music', opens: '/settings/schedule#tasks.music.when' })
 		);
 
-		host.querySelector<HTMLButtonElement>('.face button')?.click();
+		host.querySelector<HTMLButtonElement>('.board-card button')?.click();
 		expect(goto).toHaveBeenCalledWith('/settings/schedule#tasks.music.when');
 	});
 
 	it('is not drawn, and the card is no press, for a queue this version cannot open', async () => {
 		await draw(queue({ name: 'from-a-later-version', title: 'Something newer' }));
 
-		expect(host.querySelector('.face button')).toBeNull();
-		expect(host.querySelector('.press')).toBeNull();
+		expect(host.querySelector('.board-card button')).toBeNull();
+		expect(host.querySelector('.card.opens')).toBeNull();
 		expect(host.textContent).toContain('Something newer');
 	});
 });
@@ -238,24 +238,12 @@ describe('the stills', () => {
 });
 
 describe('the press and the state layer', () => {
-	it('lays one press under the face, out of tab order, that opens the pile', async () => {
+	it('makes the whole card a press that opens the pile, adding no tab stop', async () => {
 		await draw(queue());
 
-		const press = host.querySelector<HTMLButtonElement>('.board-card > .press');
-		expect(press?.getAttribute('aria-hidden')).toBe('true');
-		expect(press?.tabIndex).toBe(-1);
-		press?.click();
+		host.querySelector<HTMLElement>('.purpose')?.click();
 		expect(goto).toHaveBeenCalledWith('/organize/shoots');
-	});
-
-	it('answers the pointer with the state layer, stepping the hairline up with it', () => {
-		const style = /<style>([\s\S]*)<\/style>/.exec(boardSource)?.[1] ?? '';
-		expect(style).toMatch(
-			/\.board-card\.opens:hover :global\(\.panel\) \{\s*background: var\(--sift-card-hover-layer\), var\(--sift-card-fill\);\s*--sift-line: var\(--sift-card-hover-line\);/
-		);
-		expect(style).toMatch(
-			/\.press:active\)\) :global\(\.panel\) \{\s*background: var\(--sift-card-press-layer\), var\(--sift-card-fill\)/
-		);
+		expect(host.querySelector('.card.opens')?.hasAttribute('tabindex')).toBe(false);
 	});
 });
 

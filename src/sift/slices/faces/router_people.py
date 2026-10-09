@@ -4,6 +4,7 @@ how well Sift knows somebody."""
 
 from __future__ import annotations
 
+from dataclasses import asdict
 from typing import Annotated
 
 from fastapi import (
@@ -43,6 +44,7 @@ from sift.slices.faces.models_http import (
     StarterPerson,
     StartersOffer,
     StartersQueued,
+    StrengthBasis,
     ToCheckCard,
     ToCheckPage,
     WorkLeft,
@@ -226,6 +228,8 @@ async def recognition_strength(
         return RecognitionStrength()
     strength = await service.recognition_of(person_id, viewer)
     return RecognitionStrength(
+        rate=strength.rate,
+        basis=StrengthBasis(**asdict(strength.counted)),
         references=strength.references,
         target=strength.target,
         floor=strength.floor,
@@ -313,12 +317,18 @@ async def reference_strengths(
     """
     if not await service.enabled():
         raise _off()
-    found = await service.reference_strengths()
+    found = await service.reference_strengths(viewer)
     shown = await access.visible_people(viewer, list(found.people))
     people = {person_id: one for person_id, one in found.people.items() if person_id in shown}
     return ReferenceStrengths(
         people={person_id: one.references for person_id, one in people.items()},
         verdicts={person_id: one.verdict for person_id, one in people.items()},
+        rates={
+            person_id: rate for person_id, one in people.items() if (rate := one.rate) is not None
+        },
+        basis={
+            person_id: StrengthBasis(**asdict(one.counted)) for person_id, one in people.items()
+        },
         target=found.target,
         floor=found.floor,
         strong=found.strong,

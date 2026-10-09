@@ -561,6 +561,16 @@ def waiting_pile_page_query() -> str:
     return _WAITING_PILE_PAGE
 
 
+#: How many groups the wall holds, without ranking them: the line under the floor wants the
+#: number alone, and the page's window and sort cost twice the steps for it.
+_WAITING_PILE_COUNT = "SELECT COUNT(*) AS total_count" + _WAITING_PILES
+
+
+def waiting_pile_count_query() -> str:
+    """How many groups `waiting_pile_page_query` would page through, as one row."""
+    return _WAITING_PILE_COUNT
+
+
 def waiting_pile_position_query() -> str:
     """How far down that wall one group sits, counting from one, or no row at all: a group this
     viewer may see nothing of is not ranked, the same answer a group that does not exist gets."""

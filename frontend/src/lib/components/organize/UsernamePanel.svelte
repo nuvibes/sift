@@ -15,7 +15,7 @@
 	 * `?username=`, exactly the set the server filed under this row), and "See the files" says so
 	 * for anybody who does not try the picture.
 	 *
-	 * "Who is this?" opens the same picker "Add as person" opens on Faces to name: `PickMenu` over
+	 * "Who is this?" opens the same picker "Add as person" opens on Unnamed faces: `PickMenu` over
 	 * the whole library, each person drawn by their face, "Type to filter", one press to pick, and
 	 * its create row making somebody new from what was typed. Whoever carries a name is on its page
 	 * with their face, which is how two of the same name are told apart, and the create row is

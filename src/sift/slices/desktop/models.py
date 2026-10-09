@@ -78,6 +78,9 @@ class StorageView(Wire):
     cache_dir: str
     data_bytes: int
     cache_bytes: int
+    measured_at: int | None
+    """When the sizes were measured, in ms since 1970; null before the first walk there ends."""
+    measuring: bool
     last_move: ActTaken | None
 
 

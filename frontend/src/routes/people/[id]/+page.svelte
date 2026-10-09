@@ -97,7 +97,7 @@
 	const asked = $derived(page.url.searchParams.get('show'));
 	const showingHistory = $derived(asked === HISTORY);
 
-	/* The tab, read off the address so each tab is a place Back and a link reach; unknown means Files. */
+	/* The tab, read off the address so a link reaches it; unknown means Files. */
 	const shown = $derived<RelatedKind>(chosenTab('person', asked));
 	const fileWords = new TabWords();
 

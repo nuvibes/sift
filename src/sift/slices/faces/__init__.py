@@ -49,6 +49,7 @@ from sift.slices.faces.jobs import (
 from sift.slices.faces.jobs import (
     scan as scan_file,
 )
+from sift.slices.faces.jobs_agree import register_agreeing
 from sift.slices.faces.models import (
     Attribution,
     Depth,
@@ -91,6 +92,7 @@ from sift.slices.faces.service import (
 )
 from sift.slices.faces.service_box import BoxQuestionRecords
 from sift.slices.faces.service_fingerprints import FingerprintRecords
+from sift.slices.faces.service_learning import RetiredPickRecords
 from sift.slices.faces.service_waiting import RemovedFingerprintRecords
 from sift.slices.faces.settings import (
     BUDGET_KEY,
@@ -175,6 +177,7 @@ __all__ = [
     "PileStatus",
     "Recognition",
     "RemovedFingerprintRecords",
+    "RetiredPickRecords",
     "ScanStatus",
     "SetAsideQueue",
     "SettingsReader",
@@ -186,6 +189,7 @@ __all__ = [
     "ToNameQueue",
     "WeightError",
     "forgetting",
+    "register_agreeing",
     "register_handlers",
     "router",
     "scan_file",

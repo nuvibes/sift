@@ -508,6 +508,13 @@ describe('the travelling rule on a row of addresses', () => {
 		return { props, under };
 	}
 
+	it('replaces the history entry on a press, so one Back leaves the screen', () => {
+		row('files');
+		const links = [...host.querySelectorAll<HTMLAnchorElement>('a.tab')];
+		expect(links).toHaveLength(PAGES.length);
+		for (const link of links) expect(link.hasAttribute('data-sveltekit-replacestate')).toBe(true);
+	});
+
 	it('crosses the tabs between, at one pace per tab', () => {
 		const { props, under } = row('files');
 		expect(under(), 'no rule drawn under the tab showing').not.toBeNull();

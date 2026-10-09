@@ -574,13 +574,20 @@ def test_a_demoted_timing_reappears_at_debug(capsys: pytest.CaptureFixture[str])
     assert record["level"] == "debug"
 
 
-def test_a_slow_demoted_timing_escalates_to_warning(capsys: pytest.CaptureFixture[str]) -> None:
-    """A slow demoted statement escalates to warning; a tiny real pause crosses the 1ms bar, which
-    an empty block could round under."""
+def test_a_slow_demoted_timing_escalates_to_info_and_never_to_warning(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A slow demoted statement shows in the ordinary log, not among the warnings; a stage that
+    already logs louder keeps its level. A tiny real pause crosses the 1ms bar."""
     import time
 
     configure_logging("INFO", redact_personal=True)
     with timing_hook("db.read", level="debug", slow_ms=1.0, sql="SELECT 1"):
+        time.sleep(0.01)
+    record = _timing_record(capsys.readouterr().out, "db.read")
+    assert record is not None
+    assert record["level"] == "info"
+    with timing_hook("db.read", level="warning", slow_ms=1.0, sql="SELECT 1"):
         time.sleep(0.01)
     record = _timing_record(capsys.readouterr().out, "db.read")
     assert record is not None
@@ -665,7 +672,7 @@ def test_a_statement_that_is_genuinely_slow_still_escalates(
 
     record = _timing_record(capsys.readouterr().out, "db.read")
     assert record is not None
-    assert record["level"] == "warning"
+    assert record["level"] == log_module.SLOW_LEVEL
 
 
 def test_the_wait_ends_once_and_a_second_claim_is_ignored() -> None:
@@ -716,7 +723,7 @@ def test_a_wide_read_escalates_on_the_ROW_COUNT_rather_than_the_clock(
 
     record = _timing_record(capsys.readouterr().out, "db.read")
     assert record is not None
-    assert record["level"] == "warning"
+    assert record["level"] == "info"
 
 
 def test_a_record_names_the_statement_and_never_carries_its_text(
@@ -1032,9 +1039,9 @@ def test_a_statement_that_is_slow_while_the_loop_is_behind_is_not_blamed(
     finally:
         log_module.set_loop_backlog(None)
 
-    written = capsys.readouterr().out
-    assert "loop_backlog_ms" in written
-    assert '"level": "warning"' not in written
+    record = _timing_record(capsys.readouterr().out, "db.read")
+    assert record is not None and "loop_backlog_ms" in record
+    assert record["level"] == "debug"
 
 
 # --- the decorator form ---------------------------------------------------------------------------

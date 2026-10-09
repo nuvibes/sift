@@ -60,6 +60,8 @@ vi.mock('./facts', () => ({
 
 const { ASKED_TO_RESTART, Backend, DRAIN_MS } = await import('./backend');
 const { spawn } = await import('node:child_process');
+const { backendLogFile } = await import('./paths');
+const path = await import('node:path');
 
 function started(): InstanceType<typeof Backend> {
 	const backend = new Backend({ dataDir: 'D:\\data', cacheDir: 'D:\\cache' }, () => {});
@@ -508,5 +510,19 @@ describe('the backend saying it is listening', () => {
 		expect(asked).toBe(1);
 		vi.unstubAllGlobals();
 		vi.useRealTimers();
+	});
+});
+
+/* Where the shell's own logs are, so the backend's Download log carries them by the folder the
+   shell writes to, never by a guess at the name it is installed under. */
+describe('the shell log folder', () => {
+	it('is the folder beside the backend log, handed to the backend it starts', () => {
+		vi.mocked(spawn).mockClear();
+		const backend = new Backend({ dataDir: 'D:\\data', cacheDir: 'D:\\cache' }, () => {});
+		(backend as unknown as { spawnChild(): void }).spawnChild();
+		const { env } = vi.mocked(spawn).mock.calls[0]?.[2] as {
+			env: Record<string, string | undefined>;
+		};
+		expect(env['SIFT_APP_LOG_DIR']).toBe(path.dirname(backendLogFile()));
 	});
 });

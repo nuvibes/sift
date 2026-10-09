@@ -137,3 +137,13 @@ test('Review opens the pile and decides nothing', async ({ page }) => {
 	await expect(page).toHaveURL(/\/organize\/folders$/);
 	expect(traffic.posted).toEqual([]);
 });
+
+test('a press on the ground of a card opens its pile, as the button does', async ({ page }) => {
+	const traffic = await serve(page);
+	await page.goto('/organize');
+
+	await cards(page).first().locator('.purpose').click();
+
+	await expect(page).toHaveURL(/\/organize\/folders$/);
+	expect(traffic.posted).toEqual([]);
+});

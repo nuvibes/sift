@@ -238,6 +238,16 @@ describe('an update waiting', () => {
 		expect(press(), 'nothing newer').toBeNull();
 	});
 
+	it('is drawn for a copy behind the library it shows, which the server says nothing of', () => {
+		inTheApp();
+		offer(false);
+		updates.state = { ...updates.state!, current_version: '0.2.1', update_available: false };
+		updates.here = '0.2.0';
+		draw(true);
+		expect(press()).not.toBeNull();
+		updates.here = null;
+	});
+
 	it('sits left of the system buttons, out of the drag region', () => {
 		const at = source.indexOf(":global(:root[data-window='overlaid']) .update {");
 		expect(at, 'the rule moved').toBeGreaterThan(-1);

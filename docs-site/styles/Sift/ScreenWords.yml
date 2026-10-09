@@ -45,6 +45,7 @@ swap:
   '\banimations\b': 'GIFs'
   '\bartefacts?\b': 'artifact'
   '\bat\ once\b': 'immediately'
+  '\bawaiting\ your\ confirmation\b': 'awaiting your input'
   '\bbehaviour': 'behavior'
   '\bcancell(?:ed|ing)\b': 'canceled'
   '\bcatalogue': 'catalog, or stash-box'

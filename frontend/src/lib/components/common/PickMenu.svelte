@@ -693,6 +693,11 @@
 		min-block-size: 0;
 	}
 
+	/* Eight rows at most, so a roster of hundreds never pushes the box off the window. */
+	.list :global(.scroll-root) {
+		max-block-size: calc(var(--control-height-sm) * 8);
+	}
+
 	/* The rows on their way. The inset is the row's, so the bones land where the names will. */
 	.waiting {
 		padding: var(--menu-row-padding);

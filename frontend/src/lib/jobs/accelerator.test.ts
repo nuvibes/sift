@@ -45,11 +45,11 @@ describe('the GPU support download, once it ends', () => {
 	it('says what arrived is kept only when a cancel came after something did', async () => {
 		endsAs({ state: 'canceled', progress: 0.2 });
 		await ended();
-		expect(accelWatch.outcome).toMatch(/^Download canceled\. What arrived is kept/);
+		expect(accelWatch.outcome).toMatch(/^Download canceled\. What was downloaded is kept/);
 
 		endsAs({ state: 'canceled', progress: 0 });
 		await ended();
-		expect(accelWatch.outcome).toBe('Download canceled before anything arrived.');
+		expect(accelWatch.outcome).toBe('Download canceled before anything was downloaded.');
 	});
 
 	it('names GPU support when the row says nothing more', async () => {

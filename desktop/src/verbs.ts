@@ -204,11 +204,12 @@ export type ReachCheck = (url: string) => Reach | null;
  *
  * A saved server, or anything that can alter a plain-http page on its way here, gets what a window
  * onto a library elsewhere needs and nothing that acts on this machine's own Sift (sharing, the
- * firewall, storage, the library list, the shell's log, first run, updates, the pickers). The
- * clipboard only just after a real press (`READ_CLIPBOARD`), a screenshot of the window, a drag of
- * only what the server streams. `FORGET_MODE` is how a client returns to the first question. How
- * THIS window behaves (the browser, close-to-tray, start with Windows) is stored by this shell and is
- * all visible and reversible. `MACHINE_NAME` is read, never set, so a phone can tell two desks apart.
+ * firewall, storage, the library list, the shell's log, first run, the pickers). The clipboard, a
+ * screenshot and this copy's own update (no argument: only a release its feed signs) only just
+ * after a real press (`pressed`), a drag of only what the server streams. `FORGET_MODE` is how a
+ * client returns to the first question. How THIS window behaves (the browser, close-to-tray, start
+ * with Windows) is stored by this shell and is all visible and reversible. `MACHINE_NAME` is read,
+ * never set, so a phone can tell two desks apart.
  */
 export const REMOTE_VERBS: ReadonlySet<string> = new Set([
 	START_DRAG,
@@ -231,6 +232,7 @@ export const REMOTE_VERBS: ReadonlySet<string> = new Set([
 	SET_START_WITH_WINDOWS,
 	FORGET_MODE,
 	SAVE_LOG_ARCHIVE,
+	APPLY_UPDATE,
 	WINDOW_STAGE
 ]);
 
@@ -386,6 +388,13 @@ function dragArriving(at: Arriving, name: string, total: number | null): void {
  * of the call. Is the page Sift at all, and may a page of its reach use this channel? The preload
  * leaving a method off is a convenience; this is the check.
  */
+/** Whether a page from another computer asks just after a real press here; a refusal is logged. */
+function pressed(event: IpcMainInvokeEvent, reachOf: ReachCheck, what: string): boolean {
+	const ok = reachOf(event.senderFrame?.url ?? '') !== 'remote' || takeGesture(event.sender);
+	if (!ok) log.warning(`${what}.refused`, { why: 'no-recent-press' });
+	return ok;
+}
+
 export function askingFrame(event: IpcMainInvokeEvent, reachOf: ReachCheck, channel: string) {
 	const frame = event.senderFrame;
 	if (frame === null || frame.parent !== null) return null;
@@ -697,7 +706,8 @@ export function registerVerbs(reachOf: ReachCheck, hooks: ShellHooks = {}): void
 	 * address argument would make it "download this and run it". */
 	ipcMain.handle(APPLY_UPDATE, async (event): Promise<UpdateOutcome> => {
 		const frame = askingFrame(event, reachOf, APPLY_UPDATE);
-		if (frame === null) return { ok: false, reason: 'failed' };
+		if (frame === null || !pressed(event, reachOf, 'update'))
+			return { ok: false, reason: 'failed' };
 		return installNewer(feedAddress(feedUrl()), async () => {
 			await stopForUpdate?.();
 		});
@@ -737,25 +747,15 @@ export function registerVerbs(reachOf: ReachCheck, hooks: ShellHooks = {}): void
 
 	ipcMain.handle(READ_CLIPBOARD, async (event): Promise<ClipboardContents | null> => {
 		const frame = askingFrame(event, reachOf, READ_CLIPBOARD);
-		if (frame === null) return null;
-		/* A page from another computer only just after a real press in this window (Paste). */
-		if (reachOf(frame.url) === 'remote' && !takeGesture(event.sender)) {
-			log.warning('clipboard.refused', { why: 'no-recent-press' });
-			return null;
-		}
+		if (frame === null || !pressed(event, reachOf, 'clipboard')) return null;
 		return readClipboard();
 	});
 
 	/* A picture of the window asking, or one area, as PNG bytes; null when there is none. Only the
-	 * page's own pixels; a page from another computer only just after a real press. */
+	 * page's own pixels. */
 	ipcMain.handle(CAPTURE_WINDOW, async (event, area: unknown): Promise<Uint8Array | null> => {
 		const frame = askingFrame(event, reachOf, CAPTURE_WINDOW);
-		if (frame === null) return null;
-		const pressed = reachOf(frame.url) !== 'remote' || takeGesture(event.sender);
-		if (!pressed) {
-			log.warning('capture.refused', { why: 'no-recent-press' });
-			return null;
-		}
+		if (frame === null || !pressed(event, reachOf, 'capture')) return null;
 		return captureWindow(event.sender, area);
 	});
 

@@ -42,3 +42,37 @@ jobs:
       - uses: github/codeql-action/analyze@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
         with:
           category: /language:${{ matrix.language }}
+
+  # A new error-level alert fails the run: open on this ref and, on a pull request, not already open
+  # on the default branch. Read once every analysis has landed (`analyze` waits for its processing).
+  alerts:
+    if: ${{ !github.event.repository.private }}
+    needs: analyze
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      security-events: read
+    steps:
+      - name: No new error-level alert
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REF: ${{ github.ref }}
+          BASE: refs/heads/${{ github.event.repository.default_branch }}
+        run: |
+          open_on() {
+            gh api --paginate \
+              "repos/$GITHUB_REPOSITORY/code-scanning/alerts?state=open&severity=error&per_page=100&ref=$1" \
+              --jq '.[] | [.number, .rule.id, "\(.most_recent_instance.location.path):\(.most_recent_instance.location.start_line)", .html_url] | @tsv'
+          }
+          open_on "$REF" > here.tsv
+          : > base.tsv
+          if [ "$REF" != "$BASE" ]; then
+            open_on "$BASE" > base.tsv
+          fi
+          new="$(awk -F '\t' 'FILENAME == ARGV[1] { seen[$1] = 1; next } !($1 in seen)' base.tsv here.tsv)"
+          if [ -n "$new" ]; then
+            echo "::error::A new error-level CodeQL alert is open on $REF:"
+            printf '%s\n' "$new"
+            exit 1
+          fi
+          echo "No new error-level alert on $REF."

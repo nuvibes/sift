@@ -73,18 +73,31 @@
 		changed[group.pile_id] = !chosen(group);
 	}
 
-	const ticked = $derived(card.groups.filter((group) => chosen(group)));
+	/** Groups a card draws. */
+	const GROUPS_ON_A_CARD = 3;
+
+	/* The closest few, so every card stays near one height; the rest are counted under them and
+	   come up as these are answered. Yes and No are about the groups drawn, never the unseen. */
+	const shown = $derived(card.groups.slice(0, GROUPS_ON_A_CARD));
+	const unseen = $derived(card.groups.length - shown.length);
+
+	const ticked = $derived(shown.filter((group) => chosen(group)));
 
 	/** The card's question, whole: the verb and the noun agree with the count. */
 	const asking = $derived(
-		card.groups.length === 1
+		shown.length === 1
 			? `This group may be ${name}`
-			: `These ${card.groups.length.toLocaleString()} groups may be ${name}`
+			: `These ${shown.length.toLocaleString()} groups may be ${name}`
+	);
+
+	/** Her own Needs your input, where the groups not drawn are reached. */
+	const herInput = $derived(
+		`/organize/known-people/${encodeURIComponent(card.id)}?show=suggested&via=faces`
 	);
 
 	/** What to do with the ticks, in words that fit how many groups there are. */
 	const guide = $derived(
-		card.groups.length === 1
+		shown.length === 1
 			? `Deselect it if it isn't ${name}.`
 			: `Closest first. Deselect any that aren't ${name}.`
 	);
@@ -118,7 +131,7 @@
 		const folders = new Set<string>();
 		const boxes = new Set<string>();
 		let starters = false;
-		for (const group of card.groups) {
+		for (const group of shown) {
 			for (const reason of group.reasons) {
 				if (reason.kind === 'folder' && reason.folder_name) folders.add(reason.folder_name);
 				if (reason.kind === 'stash-box') {
@@ -169,7 +182,7 @@
 	{/each}
 
 	<ul class="groups">
-		{#each card.groups as group (group.pile_id)}
+		{#each shown as group (group.pile_id)}
 			<li class="group">
 				<!-- The whole row is the control and the box only reports it: a 16-pixel target is a
 				     thing to aim at. The same shape the tick rows on the dialogs wear. -->
@@ -203,6 +216,9 @@
 			</li>
 		{/each}
 	</ul>
+	{#if unseen > 0}
+		<a class="unseen" href={herInput}>and {unseen.toLocaleString()} more</a>
+	{/if}
 
 	{#snippet question()}{asking}{/snippet}
 	<!-- The words fit the count: one group has no order to be in and no "any" to choose among. -->
@@ -217,7 +233,7 @@
 				{
 					label: 'No',
 					icon: 'close',
-					run: () => onno(card.groups.map((group) => group.pile_id))
+					run: () => onno(shown.map((group) => group.pile_id))
 				},
 				{
 					label: 'Review each face',
@@ -264,6 +280,12 @@
 	   reading first, as on the question cards beside this one. */
 	.sure {
 		color: var(--sift-ink);
+	}
+
+	.unseen {
+		align-self: start;
+		font: var(--text-body-sm);
+		color: var(--sift-ink-2);
 	}
 
 	.why,

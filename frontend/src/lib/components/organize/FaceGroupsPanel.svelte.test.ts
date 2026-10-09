@@ -1,5 +1,5 @@
 /*
- * Faces to name's small groups: one chip on the tab line, in the same spot both ways.
+ * Unnamed faces's small groups: one chip on the tab line, in the same spot both ways.
  *
  * The way into the small groups and the way back out are one chip reported to the tab line through
  * `ontools`, the slot every panel shares, so the control does not move when pressed. Pinned here is
@@ -139,7 +139,7 @@ it('reports nothing on Discarded, and takes the chip back as it goes', async () 
 /*
  * The place kept on the way back.
  *
- * Opening a group from a later page of Faces to name and pressing the crumb or Back must return to
+ * Opening a group from a later page of Unnamed faces and pressing the crumb or Back must return to
  * that page. The first group on screen is written as `from`, and the way back asks for the page
  * that group is on once: the landing answers from the rows it was handed (see `CardPaging.land`).
  */
@@ -203,7 +203,7 @@ it('keeps the small groups in the anchor it writes, so the way back reopens them
 	expect(pagers.at(-1)).toMatchObject({ offset: 24, noun: 'small groups' });
 });
 
-it('pages groups by a noun the empty pager can say: "No groups to name"', async () => {
+it('pages groups by a noun the empty pager can say: "No unnamed groups"', async () => {
 	await render('faces-to-name');
-	await vi.waitFor(() => expect(pagers.at(-1)).toMatchObject({ noun: 'groups to name' }));
+	await vi.waitFor(() => expect(pagers.at(-1)).toMatchObject({ noun: 'unnamed groups' }));
 });

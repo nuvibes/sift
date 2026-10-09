@@ -320,6 +320,7 @@ class TestFiling:
         """A stash-box's answer is a decision Sift made, like a folder filed, so a person it puts on
         a file and who has no picture is given a picture by the cover rule: their first file
         (`solo`, filed before `loose`). A later answer replaces nothing."""
+        await temp_db.execute("UPDATE assets SET media_type = 'image'")
         await temp_db.execute(
             "UPDATE people SET cover_asset_id = NULL, cover_upload_id = NULL WHERE id = ?",
             (world.person,),

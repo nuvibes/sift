@@ -6,19 +6,31 @@
  * is what `rename` and `copyFile` really do, and a stub of those would be testing the stub.
  */
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-import { describe as report, isInside, move, refuse, sizeOf } from './storage';
+import {
+	describe as report,
+	isInside,
+	measure,
+	move,
+	refuse,
+	SIZES_KEPT_MS,
+	sizeOf,
+	StorageSizes
+} from './storage';
 
 let root: string;
 let current: { dataDir: string; cacheDir: string };
 
 beforeEach(async () => {
 	root = await fs.mkdtemp(path.join(os.tmpdir(), 'sift-storage-'));
-	current = { dataDir: path.join(root, 'live', 'data'), cacheDir: path.join(root, 'live', 'cache') };
+	current = {
+		dataDir: path.join(root, 'live', 'data'),
+		cacheDir: path.join(root, 'live', 'cache')
+	};
 	await fs.mkdir(path.join(current.dataDir, 'quarantine'), { recursive: true });
 	await fs.mkdir(current.cacheDir, { recursive: true });
 	await fs.writeFile(path.join(current.dataDir, 'sift.sqlite3'), 'x'.repeat(500));
@@ -84,7 +96,9 @@ describe('moving', () => {
 		});
 		expect(await fs.readFile(path.join(to, 'data', 'sift.sqlite3'), 'utf8')).toHaveLength(500);
 		// The tree, not only the top level: quarantine sits inside the data folder.
-		expect(await fs.readFile(path.join(to, 'data', 'quarantine', 'bad.mp4'), 'utf8')).toHaveLength(50);
+		expect(await fs.readFile(path.join(to, 'data', 'quarantine', 'bad.mp4'), 'utf8')).toHaveLength(
+			50
+		);
 		expect(await fs.readFile(path.join(to, 'cache', 'thumb.jpg'), 'utf8')).toHaveLength(100);
 		await expect(fs.access(current.dataDir)).rejects.toThrow();
 		await expect(fs.access(current.cacheDir)).rejects.toThrow();
@@ -150,7 +164,79 @@ describe('reading what is there', () => {
 	});
 
 	it('describes both folders and their sizes', async () => {
-		expect(await report(current)).toEqual({ ...current, dataBytes: 550, cacheBytes: 100 });
+		expect(await report(current)).toMatchObject({
+			...current,
+			dataBytes: 550,
+			cacheBytes: 100,
+			measuring: false
+		});
+	});
+
+	it('sizes a face crops folder from its count and a sample, and every other file exactly', async () => {
+		const crops = path.join(current.dataDir, 'faces', 'detected', '01');
+		await fs.mkdir(crops, { recursive: true });
+		/* The 256 sampled are 10 bytes and the 44 left out 1,000: a stat each would say 46,560. */
+		const sampled = new Set(Array.from({ length: 256 }, (_, at) => Math.floor((at * 300) / 256)));
+		for (let at = 0; at < 300; at += 1) {
+			const name = `${String(at).padStart(3, '0')}.jpg`;
+			await fs.writeFile(path.join(crops, name), 'c'.repeat(sampled.has(at) ? 10 : 1000));
+		}
+		expect(await measure(current)).toEqual({ dataBytes: 550 + 3000, cacheBytes: 100 });
+	});
+});
+
+/* The door answers immediately from the last walk; a walk is shared and kept. */
+describe('the sizes the door answers', () => {
+	function held() {
+		let finish: (sizes: { dataBytes: number; cacheBytes: number }) => void = () => {};
+		const walk = vi.fn(
+			() =>
+				new Promise<{ dataBytes: number; cacheBytes: number }>((resolve) => {
+					finish = resolve;
+				})
+		);
+		return { walk, finish: (dataBytes: number) => finish({ dataBytes, cacheBytes: 1 }) };
+	}
+
+	it('answers the first ask without waiting for the walk, and an ask meanwhile shares it', async () => {
+		const { walk, finish } = held();
+		const sizes = new StorageSizes(walk, () => 1_000);
+
+		expect(sizes.read(current)).toMatchObject({ dataBytes: 0, measuredAt: null, measuring: true });
+		expect(sizes.read(current)).toMatchObject({ measuredAt: null, measuring: true });
+		expect(walk).toHaveBeenCalledOnce();
+
+		finish(550);
+		await sizes.settled();
+		expect(sizes.read(current)).toMatchObject({
+			dataBytes: 550,
+			measuredAt: 1_000,
+			measuring: false
+		});
+		expect(walk).toHaveBeenCalledOnce();
+	});
+
+	it('walks again only once the last is older than it keeps, or for other folders', async () => {
+		const { walk, finish } = held();
+		let now = 1_000;
+		const sizes = new StorageSizes(walk, () => now);
+		sizes.read(current);
+		finish(550);
+		await sizes.settled();
+
+		now += SIZES_KEPT_MS - 1;
+		expect(sizes.read(current).measuring).toBe(false);
+		expect(walk).toHaveBeenCalledOnce();
+
+		now += 1;
+		expect(sizes.read(current)).toMatchObject({ dataBytes: 550, measuring: true });
+		expect(walk).toHaveBeenCalledTimes(2);
+		finish(600);
+		await sizes.settled();
+
+		const moved = { dataDir: path.join(root, 'moved', 'data'), cacheDir: current.cacheDir };
+		expect(sizes.read(moved)).toMatchObject({ dataBytes: 0, measuredAt: null, measuring: true });
+		expect(walk).toHaveBeenCalledTimes(3);
 	});
 });
 

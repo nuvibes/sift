@@ -470,17 +470,61 @@ describe('the bar, which is done over what wants doing', () => {
 		expect(one.when).toBe(NOTHING_WAITING);
 	});
 
-	it('says not started for work that lacks a job, rather than waiting', () => {
-		/* Files lack the work and nothing is queued for it: nothing happens until somebody presses
-		   Run now or a scan brings files. "Waiting" promised it would happen by itself. */
+	it('says what waits and what starts it for work that lacks a job, never "Not started"', () => {
+		/* Files lack the work and nothing is queued for it: they run when the task's When says.
+		   "Not started" read as never begun over a pass forty-eight files from done. */
+		const lacking = (whens?: Record<string, string>) =>
+			passes(
+				page(
+					{ identify: { label: 'Identify', types: ['face_scan'], done: 9000, total: 100000 } },
+					{ face_scan: kind({ waiting: 91000, outstanding: 0, total: 100000 }) }
+				),
+				{ whens }
+			)[0];
+
+		expect(lacking().now).toBe('91,000 waiting');
+		expect(lacking({ identify: 'work' }).now).toBe('91,000 waiting, runs as files are imported');
+		expect(lacking({ identify: 'quiet' }).now).toBe('91,000 waiting, runs during quiet hours');
+		expect(lacking({ identify: 'press' }).now).toBe('91,000 waiting, runs only when you press it');
+		expect(nowState(lacking({ identify: 'work' }).tone)).toBe('queued');
+		// Nothing queued has no time left: what starts it is the Now column's.
+		expect(lacking({ identify: 'work' }).when).toBe('');
+	});
+
+	it('reads the When of the task a pass runs as when it is no task of its own', () => {
 		const [one] = passes(
 			page(
-				{ identify: { label: 'Identify', types: ['face_scan'], done: 9000, total: 100000 } },
-				{ face_scan: kind({ waiting: 91000, outstanding: 0, total: 100000 }) }
-			)
+				{
+					fingerprint: {
+						label: 'Fingerprint',
+						runs: [{ task: 'generate', parts: ['fingerprints'] }],
+						outstanding: 0,
+						waiting: 48,
+						done: 1,
+						total: 49
+					}
+				},
+				{}
+			),
+			{ whens: { generate: 'work' } }
 		);
+		expect(one.now).toBe('48 waiting, runs as files are imported');
+	});
 
-		expect(one.now).toBe('Not started');
+	it('says a pass up to date but for the files its products left out, which open', () => {
+		const done = (leftOut: Record<string, number>) =>
+			passes(
+				page(
+					{ identify: { label: 'Identify', outstanding: 0, waiting: 0, done: 10, total: 10 } },
+					{}
+				),
+				{ leftOut }
+			)[0];
+		const one = done({ faces: 1, watermarks: 0, meaning: 4 });
+		expect([one.now, one.leftOut, one.leftOutOf]).toEqual(['1 left out', 1, ['faces']]);
+		expect(nowState(one.tone)).toBe('blocked');
+		expect(done({ faces: 2, watermarks: 1 }).now).toBe('3 left out');
+		expect(done({}).now).toBe('Up to date');
 	});
 
 	it('takes the running count the server attributed rather than summing its own types', () => {
@@ -534,6 +578,11 @@ describe('the estimate, as a range in words', () => {
 
 	it('quotes both ends of what the server measured', () => {
 		expect(priced({ quick_seconds: 64800, slow_seconds: 93600 }).when).toBe('About 18 to 27 hours');
+	});
+
+	it('says nothing for under a minute of work', () => {
+		expect(priced({ quick_seconds: 2, slow_seconds: 40 }).when).toBe('');
+		expect(priced({ quick_seconds: 60, slow_seconds: 200 }).when).toBe('A few minutes');
 	});
 
 	it('says the total is not known while a folder waits to be counted, never a floor', () => {
@@ -694,7 +743,7 @@ describe('a pass whose work cannot run', () => {
 	});
 
 	it('leaves a pass alone when the server says nothing about it', () => {
-		const [identify] = passes(library());
+		const [identify] = passes(held({ identify: { outstanding: 4 } }));
 
 		expect(identify.when).toBe('About 18 to 27 hours');
 		expect(identify.allowed).toBe(true);
@@ -874,6 +923,17 @@ describe('the housekeeping', () => {
 		const moving = swaps({ quick_seconds: 120, slow_seconds: 120 });
 		expect(moving.when).not.toBe('Waiting for them');
 		expect(moving.when).toBe('A few minutes');
+	});
+
+	it('says nothing for a chore with under a minute of work', () => {
+		const [quick] = chores(
+			{
+				...page({}, {}),
+				housekeeping: [chore({ outstanding: 1, quick_seconds: 5, slow_seconds: 9 })]
+			},
+			1000
+		);
+		expect(quick.when).toBe('');
 	});
 
 	it('says never for a chore with no record of a run', () => {

@@ -10,15 +10,11 @@
 
 <script lang="ts">
 	/*
-	 * How reliably Sift can recognize one person, and what it rests on.
+	 * How reliably Sift recognizes one person in this library, and what it rests on.
 	 *
-	 * A number nothing else shows. Matching compares a new face against every reference somebody
-	 * has, so a person with three of them under-matches, correctly, quietly, and with nothing on
-	 * any screen to say why they are never recognized. After importing people from folders, the
-	 * ones with two usable photos look exactly like the ones with fifty.
-	 *
-	 * The bar is full at `strong`, where matching becomes dependable, and that number comes from the
-	 * server with the count: a copy held here would go on saying "good" after the curve moved.
+	 * The bar is the server's rate: of her faces Sift found, the share it named without asking, his
+	 * Yes and No answers counted. Under it, what the pictures it compares with are, by where they
+	 * came from. Under the floor of pictures there is no rate worth drawing, and the words say so.
 	 *
 	 * Absent entirely when recognition is off or nobody has ever been recognized here, for the
 	 * reason the appearances strip is: most installs never turn faces on, and a bar reading zero
@@ -31,8 +27,9 @@
 		type Strength
 	} from '$lib/people/faces.svelte';
 	import { untrack } from 'svelte';
+	import type { components } from '$lib/api/schema';
 	import { primedOr, readingAbout } from '$lib/entity/subject.svelte';
-	import { Meter } from '$lib/components/common';
+	import { Meter, Tooltip } from '$lib/components/common';
 	import { counted } from '$lib/entity/entity-counts';
 	import Icon from '$lib/components/Icon.svelte';
 
@@ -68,13 +65,21 @@
 
 	let { personId, name = null, refresh = 0, strengths = null, onstarters }: Props = $props();
 
+	/** What the bar rests on, as the server sends it. */
+	type Basis = components['schemas']['StrengthBasis'];
+	type Reading = Strength & { rate?: number | null; basis?: Basis };
+	type Wall = ReferenceStrengths & {
+		rates?: Record<string, number>;
+		basis?: Record<string, Basis>;
+	};
+
 	/** Whether the numbers were handed over. One reading, so no branch can disagree with another. */
 	const handed = $derived(strengths !== null);
 
 	/* Kept on screen while it is re-read. See `readingAbout`. The whole block is drawn behind an
 	   `{#if}` on it, so a reading that cleared itself at the top of its own effect would take the
 	   block out of the page and put it back on every library write. */
-	const reading = readingAbout<Strength | null>(
+	const reading = readingAbout<Reading | null>(
 		() => personId,
 		async (id) => (handed ? null : await primedOr('recognition', id, () => recognitionOf(id))),
 		null,
@@ -83,24 +88,24 @@
 	/* The handed reading, put into the shape this draws. The verdict token is the server's on both
 	   paths: a band worked out here from the count would let a card disagree with the page it
 	   opens. */
-	const fromWall = $derived<Strength | null>(
-		strengths === null
+	const wall = $derived(strengths as Wall | null);
+	const fromWall = $derived<Reading | null>(
+		wall === null
 			? null
 			: {
-					references: strengths.people[personId] ?? 0,
+					references: wall.people[personId] ?? 0,
 					// The wall's reading carries no starter pictures; the page's own read does, and
 					// it is what `onstarters` tells (a starter is never counted as a reference).
 					starters: 0,
 					starters_from: [],
 					starters_retired: 0,
-					target: strengths.target,
-					floor: strengths.floor,
-					strong: strengths.strong,
-					fraction:
-						strengths.strong > 0
-							? Math.min(1, (strengths.people[personId] ?? 0) / strengths.strong)
-							: 0,
-					verdict: referenceVerdict(personId, strengths)
+					target: wall.target,
+					floor: wall.floor,
+					strong: wall.strong,
+					rate: wall.rates?.[personId] ?? null,
+					basis: wall.basis?.[personId],
+					fraction: wall.rates?.[personId] ?? 0,
+					verdict: referenceVerdict(personId, wall)
 				}
 	);
 	const strength = $derived(fromWall ?? reading.value);
@@ -122,7 +127,9 @@
 	function wordsFor(first: string): Record<string, string> {
 		return {
 			none: `Sift can't identify ${first} yet`,
-			weak: `Sift can't identify ${first} yet`,
+			few: `Sift needs a few more faces of ${first}`,
+			unseen: `Sift hasn't found ${first} in your files yet`,
+			weak: `Sift can't identify ${first} reliably yet`,
 			fair: `Sift can now identify ${first} reasonably well`,
 			good: `Sift identifies ${first} reliably`,
 			strong: `Sift identifies ${first} reliably`
@@ -133,10 +140,36 @@
 	const first = $derived(name?.trim().split(/\s+/)[0] || 'them');
 	const WORDS = $derived(wordsFor(first));
 
-	/** What the bar rests on, in the server's numbers. */
-	function basisOf(now: Strength): string {
-		const pictures = `${counted(now.references)} ${now.references === 1 ? 'picture' : 'pictures'}`;
-		return `Recognized from ${pictures}. Matching is weak under ${now.floor} and dependable from ${now.strong}.`;
+	function many(count: number, one: string, more: string): string {
+		return `${counted(count)} ${count === 1 ? one : more}`;
+	}
+
+	/** What the bar rests on, by where each picture came from: "From 23 imported fingerprints and
+	 *  15 faces you confirmed." */
+	function basisOf(now: Reading): string {
+		const basis = now.basis;
+		if (!basis) return `From ${many(now.references, 'picture', 'pictures')}.`;
+		const parts = [
+			basis.imported > 0
+				? many(basis.imported, 'imported fingerprint', 'imported fingerprints')
+				: '',
+			basis.confirmed > 0 ? many(basis.confirmed, 'face you confirmed', 'faces you confirmed') : '',
+			basis.learned > 0 ? many(basis.learned, 'face Sift recognized', 'faces Sift recognized') : ''
+		].filter(Boolean);
+		const said =
+			parts.length > 1 ? `${parts.slice(0, -1).join(', ')} and ${parts.at(-1)}` : parts[0];
+		const turned =
+			basis.turned > 0
+				? ` ${many(basis.turned, 'face', 'faces')} facing away kept for them, never matched.`
+				: '';
+		return `From ${said ?? many(now.references, 'picture', 'pictures')}.${turned}`;
+	}
+
+	/** The bar's tooltip: what the share is, and the floor under which there is none. */
+	function rateSaid(now: Reading): string {
+		const floor = `Drawn once Sift has ${many(now.floor, 'picture', 'pictures')} of them.`;
+		if (now.rate === null || now.rate === undefined) return floor;
+		return `${Math.round(now.rate * 100)}% of their faces named without asking, counting your answers. ${floor}`;
 	}
 </script>
 
@@ -144,13 +177,10 @@
 	<div class="block">
 		<!-- The shared meter (a reading, not a task: it goes down when a reference is taken away).
 		     The primitive emits the role and the range, and this draws only the fill. -->
-		<Meter
-			value={Math.min(strength.references, strength.strong)}
-			max={strength.strong}
-			label="How reliably Sift can recognize this person"
-		>
-			{#snippet fill(fraction)}
-				<!--
+		<Tooltip label={rateSaid(strength)} wide stretch>
+			<Meter value={strength.rate ?? 0} max={1} label="How reliably Sift can recognize this person">
+				{#snippet fill(fraction)}
+					<!--
 					The colour is the band, and the band is the server's word for this person.
 
 					Each band has its own short gradient: red into orange while there is not enough
@@ -166,13 +196,14 @@
 					the filled width would reach its far end at every value, so every bar would
 					finish on its band's brightest colour however short.
 				-->
-				<div
-					class="spectrum"
-					data-band={strength.verdict}
-					style:clip-path={`inset(0 ${(1 - fraction) * 100}% 0 0)`}
-				></div>
-			{/snippet}
-		</Meter>
+					<div
+						class="spectrum"
+						data-band={strength.verdict}
+						style:clip-path={`inset(0 ${(1 - fraction) * 100}% 0 0)`}
+					></div>
+				{/snippet}
+			</Meter>
+		</Tooltip>
 		<!-- The verdict wears the person-check glyph in the band's colour, green where Sift identifies
 		     them; its basis sits tight beneath it. -->
 		<div class="said">
@@ -195,7 +226,6 @@
 		display: flex;
 		flex-direction: column;
 		gap: var(--space-2);
-		max-inline-size: 32rem;
 	}
 
 	/* The verdict and what it rests on, one unit under the bar. */

@@ -7,7 +7,7 @@ it somebody has reached; a record hidden behind a control nobody opens is a reco
 
 So the page is a row of tabs, in the order the work is worth doing:
 **Faces to confirm**: the people Sift is proposing; **Disagreements**: the names a pass filed
-that the face in the file does not agree with; **Faces to name**: the groups nobody has named;
+that the face in the file does not agree with; **Unnamed faces**: the groups nobody has named;
 **Discarded**: the groups put aside; and **People Sift can recognize**, the record. Each is its
 own queue registered here, as the other groups on this board are (Folders and Filed;
 Duplicates and Exact copies), so the tab row is the group's own membership and nothing on the
@@ -366,7 +366,7 @@ class ToNameQueue(_FaceQueue):
     """
 
     name = TO_NAME
-    title = "Faces to name"
+    title = "Unnamed faces"
     band = Band.DECISION
     #: See `FACES_GROUP`.
     group = FACES_GROUP

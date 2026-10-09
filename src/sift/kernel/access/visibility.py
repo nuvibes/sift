@@ -44,6 +44,7 @@ from sift.kernel.access.viewer import Viewer, reveals_existence
 from sift.kernel.access.visibility_settled import RECOMPUTE
 from sift.kernel.access.visibility_settled import RUN as _RUN
 from sift.kernel.access.visibility_settled import RUN_USER as _RUN_USER
+from sift.kernel.access.visibility_settled import widening as _widening
 from sift.kernel.db import (
     Connection,
     add_schema_dependency,
@@ -72,7 +73,7 @@ def _filled(template: str, **names: str) -> str:
 
 
 COMPONENT = "visibility"
-VERSION = 19
+VERSION = 20
 
 # --- the tables ----------------------------------------------------------------------------
 
@@ -1241,8 +1242,8 @@ class _Recompute:
         steps = (visibility_settled.SETTLE, visibility_settled.ANSWERS, visibility_settled.SETTLED)
         return [*before[:2], *(_filled(_RUN, STEP=step) for step in steps)]
 
-    def owing(self, pairs: str) -> list[str]:
-        return visibility_settled.owing(self, pairs)
+    def owing(self, pairs: str, *, row: str = "", widening: str | None = None) -> list[str]:
+        return visibility_settled.owing(self, pairs, row=row, widening=widening)
 
     def going(self, pairs: str) -> list[str]:
         return visibility_settled.going(self, pairs)
@@ -1397,8 +1398,7 @@ _EVERY_USER_UNDER_FOLDER = (
 # move. Bounded to the subtree of the site whose parent changed, which is the whole of what such a
 # change can reach: a label joining a network changes who may see the label's files and the files
 # of the labels under IT, and nothing else in the library.
-# `noqa: S608`, as everywhere in this module: the only text put through here is module
-# constants and a trigger's own `NEW`, never a value read at run time.
+# `noqa: S608`: only module constants and a trigger's own `NEW` are put through here.
 _EVERY_USER_UNDER_SITE = (
     "SELECT DISTINCT u.id AS user_id, reached.asset_id"  # noqa: S608
     "  FROM users u, (" + FILES_SITES_REACH.format(ancestors="= {site}") + ") reached"
@@ -1855,24 +1855,24 @@ def _triggers(halves: _Recompute, watched: Sequence[Counted]) -> list[tuple[str,
         ),
     )
 
-    # A grant. One trigger per kind of object, so each reaches exactly the files that object
-    # decides for. The only update the write door makes is the re-grant's upsert, which changes
-    # nothing, so an update fires only when it moves something the verdict reads, and then both
-    # what the row named before (`_was`) and what it names now are decided again.
+    # A grant: one trigger per kind of object, each reaching the files that object decides for. An
+    # update (the re-grant's upsert changes nothing) fires only when it moves what the verdict reads,
+    # and then what the row named before (`_was`) and names now are both decided again.
     grant_events = [("INSERT", "NEW", ""), ("DELETE", "OLD", ""), ("UPDATE", "NEW", "")]
     if not halves.version_13:
         grant_events.append(("UPDATE", "OLD", "_was"))
     for event, row, tail in grant_events:
         user = row + ".subject_user_id"
         obj = row + ".object_id"
+        owing = functools.partial(halves.owing, row=row, widening=_widening(event, tail))
         kinds: dict[str, Sequence[str]] = {
             "global": halves.user(user),
-            "root": halves.owing(_ONE_USER_IN_ROOT.format(user=user, root=obj)),
-            "folder": halves.owing(_ONE_USER_UNDER_FOLDER.format(user=user, folder=obj)),
+            "root": owing(_ONE_USER_IN_ROOT.format(user=user, root=obj)),
+            "folder": owing(_ONE_USER_UNDER_FOLDER.format(user=user, folder=obj)),
             "item": halves.owing(_ONE_USER_ONE_FILE.format(user=user, asset=obj)),
         }
         for kind, members in _MEMBERS_OF.items():
-            kinds[kind] = halves.owing(members.format(user=user, object=obj))
+            kinds[kind] = owing(members.format(user=user, object=obj))
         for kind, body in kinds.items():
             # THE KIND, in the name AND the guard: the STORED spelling of `object_type`, since a
             # trigger watching for a value no row carries never fires and a share silently stops
@@ -2357,8 +2357,8 @@ async def initialize(connection: Connection, on_disk: int) -> None:
     # Version 16: the Filter panel's kinds counted (every step above counted them already).
     if on_disk == 15:
         await visibility_panel.count_the_panel(connection)
-    # Versions 17 to 19: the walls' totals, the counts moved once per write, sizes beside them.
-    if 0 < on_disk < 19:
+    # Versions 17 to 20: the walls' totals, counts moved once per write, sizes, a widening filed.
+    if 0 < on_disk < 20:
         await visibility_settled.later_steps(connection, on_disk)
 
 

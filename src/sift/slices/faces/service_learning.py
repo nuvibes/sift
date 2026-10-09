@@ -7,10 +7,14 @@ from __future__ import annotations
 import json
 from collections.abc import Collection, Mapping, Sequence
 
+from sift.kernel.access import Viewer
 from sift.kernel.access.sentences import FACES_MATCHED, faces_of_person
+from sift.kernel.audience import EVERY_ADMIN
+from sift.kernel.changes import About, announce
 from sift.kernel.ledger import Object as LedgerObject
 from sift.kernel.log import get_logger
 from sift.kernel.vocabulary import VIA_FACES, Subject
+from sift.kernel.workbench import DOER, Named, Piece, Preview, Recorded, Worded
 from sift.slices.faces import tuning
 from sift.slices.faces.models import Attribution, Vector
 from sift.slices.faces.receipts import IDENTIFIED_QUEUE
@@ -18,6 +22,10 @@ from sift.slices.faces.service_base import Configured
 from sift.slices.faces.service_grouping import GroupingMixin
 
 log = get_logger(__name__)
+
+#: Sift's own picks of somebody taken out of her references past the cap (`settle_picks`). Final:
+#: the faces keep their name, and the next learning run files picks again within the cap.
+PICKS_RETIRED_QUEUE = "picks-retired"
 
 
 def _learned_words(
@@ -99,6 +107,7 @@ class LearningMixin(GroupingMixin):
         with the names (`unmatch`). The clearest face of each that is not turned past the quality
         bar's angle, for the reason a confirmation files none of those.
         """
+        await self.settle_picks()
         learned = 0
         line = configured.bar.min_frontality
         for person_id, faces in sorted(confirmed.items()):
@@ -180,3 +189,64 @@ class LearningMixin(GroupingMixin):
                 verb="linked",
                 object=LedgerObject(kind="person", id=person_id, name=name),
             )
+
+    async def settle_picks(self) -> int:
+        """Take Sift's own picks of anybody past the cap out of her references, the oldest first,
+        each person's with her History line in the same write. How many went."""
+        gone = 0
+        for person_id, over in await self._store.picks_over_cap():
+            name = await self._store.person_name(person_id) or "them"
+            async with self._store.database.write() as connection:
+                taken = await self._store.retire_picks_on(connection, person_id, over)
+                if taken and self._recorder is not None:
+                    many = "1 face" if len(taken) == 1 else f"{len(taken):,} faces"
+                    await self._recorder.record_on(
+                        connection,
+                        queue=PICKS_RETIRED_QUEUE,
+                        user_id=None,
+                        via=VIA_FACES,
+                        title=f"Sift took {many} it recognized as {name} out of their reference "
+                        "pictures",
+                        detail="Sift keeps no more of its own picks of a person than the faces "
+                        "you confirmed of them. The faces keep the name; no file is touched.",
+                        payload=json.dumps({"person_id": person_id, "references": list(taken)}),
+                        subjects=[Subject(kind="person", id=person_id)],
+                    )
+                if taken:
+                    announce(EVERY_ADMIN, About.LIBRARY)
+            gone += len(taken)
+            log.info("faces.picks_retired", person_id=person_id, faces=len(taken))
+        return gone
+
+
+class RetiredPickRecords:
+    """Picks taken out past the cap, in History. Final: see `PICKS_RETIRED_QUEUE`."""
+
+    name = PICKS_RETIRED_QUEUE
+    reversible = False
+
+    async def pictures_of(self, viewer: Viewer, payload: str) -> tuple[Preview, ...]:
+        """Nothing: the pictures went with the references."""
+        return ()
+
+    async def reverse(self, viewer: Viewer, receipt_id: str, payload: str) -> bool:
+        """Nothing to put back. See the class."""
+        return False
+
+    def worded(self, recorded: Recorded) -> Worded | None:
+        """This line, worded when shown, the person named. See `kernel.workbench.Recorded`."""
+        held = recorded.held()
+        person, references = held.get("person_id"), held.get("references")
+        if not isinstance(person, str) or not isinstance(references, list) or not references:
+            return None
+        many = "1 face" if len(references) == 1 else f"{len(references):,} faces"
+        more: tuple[Piece, ...] = (recorded.detail,) if recorded.detail else ()
+        return Worded(
+            said=(
+                DOER,
+                f" took {many} it recognized as ",
+                Named(kind="person", id=person),
+                " out of their reference pictures",
+            ),
+            more=more,
+        )

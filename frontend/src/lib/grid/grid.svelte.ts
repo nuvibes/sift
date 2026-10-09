@@ -370,10 +370,8 @@ export class Grid {
 	 */
 	offset = $state(0);
 
-	/**
-	 * Where the page was ASKED to begin. Files arriving above it on a newest-first wall raise
-	 * `offset`, and the difference is how many are new. Written only by a load somebody asked for.
-	 */
+	/** Where the page was ASKED to begin, written only by a load somebody asked for: files landing
+	 *  above it raise `offset`, and the difference is `newer`. */
 	askedAt = $state(0);
 
 	/**
@@ -402,6 +400,11 @@ export class Grid {
 	 * so it cannot drift from what is shown.
 	 */
 	readonly newer = $derived(Math.max(0, this.offset - this.askedAt));
+
+	/** The total when the page was asked for: `newer` with no growth since moved, never arrived. */
+	askedTotal = $state(0);
+	readonly newerArrived = $derived(this.total > this.askedTotal);
+	readonly newerSaid = $derived(this.newerArrived ? 'new' : 'moved');
 
 	/**
 	 * The height the rows have to fit into: one screenful of the grid area, given by whatever draws
@@ -557,6 +560,7 @@ export class Grid {
 		if (updated && !stillBelongs(updated)) {
 			this.items = this.items.filter((item) => item.id !== id);
 			this.total = Math.max(0, this.total - 1);
+			this.askedTotal = Math.max(0, this.askedTotal - 1);
 			this.totalBytes = null;
 		}
 	}
@@ -611,8 +615,9 @@ export class Grid {
 	}
 
 	/** A page somebody asked for has landed: where it begins, and what the wall is now showing. */
-	#show(query: WallQuery, offset: number): void {
+	#show(query: WallQuery, offset: number, total: number): void {
 		this.askedAt = offset;
+		this.askedTotal = total;
 		this.showing = `${JSON.stringify(query)}\n${offset}`;
 	}
 
@@ -790,7 +795,7 @@ export class Grid {
 			if (this.#fromEnd === fromEnd && this.#same(answer)) {
 				this.offset = answer.offset;
 				// A page asked for resets the drift mark even when it holds the same files.
-				if (!options.quiet) this.#show(query, answer.offset);
+				if (!options.quiet) this.#show(query, answer.offset, known.total);
 				this.total = known.total;
 				this.totalBytes = known.totalBytes;
 				this.complete = known.complete;
@@ -801,7 +806,7 @@ export class Grid {
 			this.#fromEnd = fromEnd;
 			this.items = collected;
 			this.offset = answer.offset;
-			if (!options.quiet) this.#show(query, answer.offset);
+			if (!options.quiet) this.#show(query, answer.offset, known.total);
 			this.loaded = collected.length;
 			this.total = known.total;
 			this.totalBytes = known.totalBytes;
@@ -842,7 +847,7 @@ export class Grid {
 		this.#fromEnd = false;
 		this.items = [...collected];
 		this.offset = began;
-		this.#show(query, began);
+		this.#show(query, began, known.total);
 		this.loaded = collected.length;
 		this.total = known.total;
 		this.totalBytes = known.totalBytes;

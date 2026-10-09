@@ -502,13 +502,16 @@ def _report_work(stage: str, milliseconds: float) -> None:
             _stage_sink(stage, milliseconds)
 
 
-#: How many rows one read may hand back before the record is escalated to a warning.
+#: How many rows one read may hand back before the record is escalated to `SLOW_LEVEL`.
 #:
 #: Not a page size and not a limit on what the application may do: it is the line above which a
 #: read stops being a read and becomes a latency risk that only shows up under load. A page of the
 #: grid is 200; the sweeps that legitimately walk the library go through the lane and are counted
 #: there too, which is the point: if something is above this on a request path, it wants finding.
 WIDE_READ_ROWS = 500
+
+#: Where a slow or wide timing is raised to: in the ordinary log, never among the warnings.
+SLOW_LEVEL = "info"
 
 #: Where a finished record reports how many rows it moved. Filled at boot, like `_work_sink`.
 _rows_sink: Callable[[str, int, str | None], None] | None = None
@@ -577,9 +580,9 @@ def timing_hook(
     fires many times a request (the per-statement
     database timings) passes `level="debug"` so it is off by default and one
     `SIFT_LOG_LEVEL=DEBUG` away when a query needs chasing, rather than a wall of SQL in the
-    ordinary log. `slow_ms` escalates a run past that many milliseconds to warning regardless, so a
-    genuinely slow one still shows even when the stage is quiet; and a run that *failed* is
-    escalated the same way when the stage was demoted, because a failed query hidden at debug is a
+    ordinary log. `slow_ms` escalates a run past that many milliseconds to `SLOW_LEVEL` regardless,
+    so a genuinely slow one still shows even when the stage is quiet; and a run that *failed* is
+    escalated to warning when the stage was demoted, because a failed query hidden at debug is a
     failure nobody sees.
 
     **A block that queues should say so**. See `Timing.acquired`. `slow_ms` is then measured
@@ -618,7 +621,7 @@ def timing_hook(
         if (slow_ms is not None and not failed and judged_ms > slow_ms and not behind) or (
             failed and level == "debug"
         ):
-            chosen = "warning"
+            chosen = "warning" if failed else max(level, SLOW_LEVEL, key=_LOG_LEVELS.__getitem__)
         _report_work(stage, elapsed_ms)
         measured = timing._measured
         rows = measured.get("rows")
@@ -629,7 +632,7 @@ def timing_hook(
             # busy, by which time it is somebody reporting the application is unusable, not a log
             # line. See `WIDE_READ_ROWS`.
             if rows >= WIDE_READ_ROWS and not failed:
-                chosen = "warning"
+                chosen = max(chosen, SLOW_LEVEL, key=_LOG_LEVELS.__getitem__)
         # Nothing above this line may be skipped: the health readings and the escalation to warning
         # are what this exists for, and they are the same whether or not anybody is reading the log.
         # Everything BELOW it is the record itself, and building one that is about to be discarded
@@ -644,7 +647,7 @@ def timing_hook(
         # thousand reads would pay four seconds for records nobody would ever see.
         #
         # Asked of `chosen` rather than of `level`, and that ordering is load-bearing: a statement
-        # escalated to warning by `slow_ms` or by `WIDE_READ_ROWS` must still be written even though
+        # escalated by `slow_ms` or by `WIDE_READ_ROWS` must still be written even though
         # its ordinary level is off. Guarding on `level` would silence exactly the lines worth
         # having.
         #

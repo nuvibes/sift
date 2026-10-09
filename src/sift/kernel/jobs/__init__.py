@@ -50,6 +50,7 @@ from sift.kernel.jobs.queue import (
     waits_for_password,
 )
 from sift.kernel.jobs.recovery import recover
+from sift.kernel.jobs.retrying import backoff, backs_off
 from sift.kernel.jobs.schedules import (
     ScheduledTask,
     ScheduleError,
@@ -147,6 +148,8 @@ __all__ = [
     "WorkSummary",
     "WorkerPool",
     "Workspaces",
+    "backoff",
+    "backs_off",
     "by_itself_job_types",
     "claim_rank",
     "counted_as",

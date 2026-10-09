@@ -372,7 +372,7 @@ async def test_naming_a_group_from_its_own_card_writes_the_receipt_a_yes_writes(
     settings: Settings,
     admin: Viewer,
 ) -> None:
-    """Naming a group under Faces to name writes the receipt a "these groups may be her" card
+    """Naming a group under Unnamed faces writes the receipt a "these groups may be her" card
     writes, not only History lines nobody can take back. Same act, same receipt, same Undo."""
     written = WorkbenchStore(temp_db)
     service._recorder = written

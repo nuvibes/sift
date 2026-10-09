@@ -66,7 +66,7 @@
 
 	/*
 	 * Which state of the pile: what still waits, or what was already answered. In the address, as
-	 * the Faces to name wall's filter is, so it survives a refresh and Back. The answered files
+	 * the Unnamed faces wall's filter is, so it survives a refresh and Back. The answered files
 	 * are the same rows in their other state, one press away on the tab line, so an empty waiting
 	 * tab beside a full answered one does not read as switched off.
 	 */

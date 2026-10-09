@@ -87,6 +87,34 @@ def band(seconds: float) -> tuple[float, float]:
     return seconds / RATIO, seconds * RATIO
 
 
+def each_item(
+    prices: Mapping[Key, float], job_types: Sequence[str], shares: Mapping[str, float]
+) -> float | None:
+    """Worker seconds one item of these types costs by the live sample, over the kinds left."""
+
+    def of(kind: str) -> float | None:
+        found = [
+            price
+            for one in job_types
+            if (price := prices.get((one, kind), prices.get((one, ANY_KIND)))) is not None
+        ]
+        return sum(found) / len(found) if found else None
+
+    total = 0.0
+    for kind, share in (shares or {ANY_KIND: 1.0}).items():
+        price = of(kind)
+        if price is None:
+            return None
+        total += share * price
+    return total
+
+
+def measured(work_seconds: float, rate: float | None, workers: int) -> tuple[int, int]:
+    """The window of this much work at the run's measured rate, else spread over the workers."""
+    quick, slow = band(work_seconds / (rate or max(1, workers)))
+    return int(quick), int(slow)
+
+
 def window_of(quick: float, slow: float) -> tuple[int, int]:
     """The window the words stand for, rounded out as the screen rounds them."""
     if slow < 60:

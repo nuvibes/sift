@@ -28,10 +28,12 @@ from sift.kernel.jobs import (
     Workspaces,
     in_claim_order,
     register_handler,
+    retrying,
     worker_pool,
 )
 from sift.kernel.jobs.families import Family
 from sift.kernel.jobs.ledger import Ledger, report_text
+from sift.kernel.jobs.retrying import backoff, backs_off
 from sift.kernel.jobs.tuning import (
     BACKGROUND_PRIORITY,
     DEFAULT_PRIORITY,
@@ -44,6 +46,7 @@ from sift.kernel.tests.jobs_helpers import (
     _a_job,
     drain,
     noop_handler,
+    wait_for_state,
 )
 from sift.testing.fixtures import FakeClock
 
@@ -489,6 +492,40 @@ async def test_a_handler_that_can_never_succeed_fails_once_and_says_why(
     assert job.state is JobState.FAILED
     assert job.attempts == 1, "no retry, because no retry can fix it"
     assert job.error == "the library folder did not answer"
+
+
+@pytest.mark.integration
+async def test_a_download_kind_that_fails_waits_longer_each_time_and_others_do_not(
+    job_queue: JobQueue,
+) -> None:
+    async def dropped(context: JobContext) -> None:
+        raise ConnectionError("the connection dropped")
+
+    register_handler("fetch_a", dropped, name="Test fetch")
+    register_handler("other_a", dropped, name="Test job")
+    backs_off("fetch_a")
+    try:
+        assert [backoff("fetch_a", n) for n in (1, 2, 3, 6)] == [30, 60, 120, 600]
+        assert backoff("other_a", 1) is None
+        fetch = await job_queue.enqueue("fetch_a", max_attempts=3)
+        other = await job_queue.enqueue("other_a", max_attempts=2)
+        pool = WorkerPool(job_queue, concurrency=1, poll_interval=0.01)
+        await pool.start()
+        try:
+            await wait_for_state(job_queue, other, JobState.FAILED)
+            deadline = time.monotonic() + 10
+            while (job := await job_queue.get(fetch)) is not None and job.attempts < 1:
+                assert time.monotonic() < deadline, "the fetch never ran"
+                await asyncio.sleep(0.01)
+        finally:
+            await pool.stop()
+        job = await job_queue.get(fetch)
+        assert job is not None and job.state is JobState.QUEUED and job.attempts == 1
+        assert job.run_after is not None and job.run_after - job.updated_at == 30
+        plain = await job_queue.get(other)
+        assert plain is not None and plain.attempts == 2 and plain.run_after is None
+    finally:
+        retrying._BACKS_OFF.discard("fetch_a")
 
 
 # --- what the ledger is told: no handler knows a ledger exists -------------------------------

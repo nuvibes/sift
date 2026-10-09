@@ -69,6 +69,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import release_bytecode
 import release_gates
+import release_signing
 
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST = ROOT / "scripts" / "vendor_manifest.json"
@@ -784,27 +785,21 @@ def write_manifest(installer: Path, sums: Path) -> Path:
 
 
 def sign(sums: Path, manifest: Path) -> list[Path]:
-    """Minisign over the hash file and the manifest, never over the installer. `-l`, the legacy
-    form, because the desktop application refuses a prehashed signature."""
+    """Minisign over the hash file and the manifest, three tries at the password."""
     minisign = tool("minisign")
-    if not MINISIGN_KEY.is_file():
-        raise ReleaseFailed(
-            f"there is no signing key at {MINISIGN_KEY}.\n"
-            "  Make one once, back it up, and never lose it: every release is verified against "
-            "the public key already shipped, so a lost key means no further update can be "
-            "verified:\n"
-            f"    minisign -G -s {MINISIGN_KEY} -p {MINISIGN_KEY.with_suffix('.pub')}\n"
-            "  Or pass --no-sign to build without one."
-        )
-    run(
-        [minisign, "-S", "-l", "-s", str(MINISIGN_KEY), "-m", str(sums), str(manifest)],
-        where=sums.parent,
+    return release_signing.sign(
+        sums, manifest, minisign=minisign, key=MINISIGN_KEY, run=run, failed=ReleaseFailed
     )
-    signatures = [one.with_name(f"{one.name}.minisig") for one in (sums, manifest)]
-    for signature in signatures:
-        if not signature.is_file():
-            raise ReleaseFailed(f"minisign reported success and wrote no {signature.name}.")
-    return signatures
+
+
+def sign_what_is_built(folder: Path = ARTIFACTS, *, signing: bool = True) -> None:
+    """`--no-build`: sign the release built for this version where an earlier run stopped short of
+    its signatures, so a wrong password never costs a second build. A dry run signs nothing."""
+    installer = folder / f"Sift-{VERSION}-x64-setup.exe"
+    sums = installer.with_name(f"{installer.name}.sha256")
+    if signing and sums.is_file() and not sums.with_name(f"{sums.name}.minisig").is_file():
+        manifest = write_manifest(installer, sums)
+        put_on_the_desktop([installer, sums, manifest, *sign(sums, manifest)])
 
 
 #: What this script is allowed to replace on the desktop: its own artefacts and nothing else.
@@ -1545,7 +1540,8 @@ def check_the_tree(*, signed: bool, repo: Path = ROOT) -> None:
     status = _git(repo, "status", "--porcelain")
     if status.returncode != 0:
         raise ReleaseFailed(f"git could not read the working tree: {status.stderr.strip()}")
-    changed = [line[3:] for line in status.stdout.splitlines() if line.strip()]
+    lines = [one for one in status.stdout.splitlines() if one.strip()]
+    changed = [one[3:] for one in lines if not release_signing.written_by_the_build(one, VERSION)]
     if changed:
         more = f" and {len(changed) - 5} more" if len(changed) > 5 else ""
         problems.append(
@@ -1625,7 +1621,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--no-build",
         action="store_true",
-        help="with --publish: publish the signed release already built for this version",
+        help="with --publish: sign if need be and publish the release built for this version",
     )
     parser.add_argument(
         "--pre-release",
@@ -1666,6 +1662,8 @@ def main(argv: list[str] | None = None) -> int:
             check_the_suite()
         if building:
             build(skip_vendor=args.skip_vendor, no_sign=args.no_sign)
+        else:
+            sign_what_is_built(signing=not args.dry_run)
         if args.publish:
             publish(pre_release=args.pre_release, dry_run=args.dry_run)
         return 0

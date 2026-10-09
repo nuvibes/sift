@@ -152,7 +152,7 @@ class ToCheckKind(StrEnum):
     #: "These groups may be her": one card per person listing the unnamed GROUPS that may be them,
     #: closest first, by how close the group as a whole comes to her pictures, or because most of
     #: a folder filed as her is that group. Every other question here compares one face at a time,
-    #: so a group whose faces each fall just short of the ask line would stay under Faces to name
+    #: so a group whose faces each fall just short of the ask line would stay under Unnamed faces
     #: for ever even when the group as a whole plainly looks like her. Its `id` is the PERSON, like
     #: PERSON's; the two are told apart by this word, never by the id.
     MAY_BE = "may_be"

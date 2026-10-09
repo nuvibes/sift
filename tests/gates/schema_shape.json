@@ -200,6 +200,7 @@
     "ix_workbench_object": "create index ix_workbench_object on workbench_decisions ( object_kind , object_id , decided_at desc )",
     "ix_workbench_openings": "create index ix_workbench_openings on workbench_decisions ( fold_key , decided_at , id ) where opens = 1",
     "ix_workbench_press": "create index ix_workbench_press on workbench_decisions ( press_id , decided_at , id )",
+    "ix_workbench_press_objects": "create index ix_workbench_press_objects on workbench_press_objects ( press_id , object_kind , object_id )",
     "ix_workbench_subject": "create index ix_workbench_subject on workbench_decision_subjects ( kind , subject_id )",
     "ux_acl_global": "create unique index ux_acl_global on acl_grants ( object_type , subject_user_id , effect ) where object_id is null",
     "ux_artists_name": "create unique index ux_artists_name on artists ( name collate nocase )",
@@ -1465,7 +1466,8 @@
         "entry_id": "text not null references pack_entries ( id ) on delete cascade",
         "id": "text primary key",
         "quality": "real not null",
-        "recognizer": "text not null"
+        "recognizer": "text not null",
+        "turned": "integer not null default 0"
       },
       "constraints": [
         "unique ( entry_id , crop_digest )"
@@ -2717,6 +2719,25 @@
       ],
       "options": "without rowid"
     },
+    "visibility_filing": {
+      "columns": {
+        "after": "text not null default ''",
+        "object_id": "text not null",
+        "object_type": "text not null",
+        "user_id": "text not null references users ( id ) on delete cascade"
+      },
+      "constraints": [
+        "primary key ( user_id , object_type , object_id )"
+      ],
+      "options": "without rowid"
+    },
+    "visibility_may_defer": {
+      "columns": {
+        "id": "integer primary key"
+      },
+      "constraints": [],
+      "options": ""
+    },
     "visibility_members": {
       "columns": {
         "asset_id": "text not null references assets ( id ) on delete cascade",
@@ -2902,6 +2923,34 @@
       },
       "constraints": [],
       "options": ""
+    },
+    "workbench_press_objects": {
+      "columns": {
+        "acts": "integer not null",
+        "name": "text",
+        "object_id": "text",
+        "object_kind": "text",
+        "press_id": "text not null",
+        "standing": "integer not null",
+        "untold": "integer not null"
+      },
+      "constraints": [],
+      "options": ""
+    },
+    "workbench_press_subjects": {
+      "columns": {
+        "acts": "integer not null",
+        "at": "integer not null",
+        "kind": "text not null",
+        "latest": "text not null",
+        "name": "text",
+        "press_id": "text not null",
+        "subject_id": "text not null"
+      },
+      "constraints": [
+        "primary key ( press_id , kind , subject_id )"
+      ],
+      "options": "without rowid"
     }
   },
   "triggers": {
@@ -2947,6 +2996,7 @@
     "default_cover_hidden_gone": "viewer_assets",
     "default_cover_hidden_moved": "viewer_assets",
     "default_cover_hidden_new": "viewer_assets",
+    "default_cover_kind_moved": "assets",
     "default_cover_person_filed": "asset_people",
     "default_cover_person_filed_seen": "asset_people",
     "default_cover_person_lost": "people",
@@ -3216,16 +3266,22 @@
     "vis_wall_totals_update": "viewer_entity_counts",
     "workbench_press_arrives": "workbench_decisions",
     "workbench_press_goes": "workbench_decisions",
-    "workbench_press_moves": "workbench_decisions"
+    "workbench_press_moves": "workbench_decisions",
+    "workbench_totals_act_moves": "workbench_decisions",
+    "workbench_totals_act_renamed": "workbench_decisions",
+    "workbench_totals_act_stands": "workbench_decisions",
+    "workbench_totals_subject_arrives": "workbench_decision_subjects",
+    "workbench_totals_subject_changes": "workbench_decision_subjects",
+    "workbench_totals_subject_goes": "workbench_decision_subjects"
   },
   "versions": {
     "access": 5,
     "benchmarks": 3,
-    "catalog": 92,
+    "catalog": 93,
     "content": 31,
     "dedup": 4,
     "download": 38,
-    "faces": 43,
+    "faces": 44,
     "file_moves": 4,
     "identity": 4,
     "importing": 1,
@@ -3253,9 +3309,9 @@
     "tidy": 1,
     "tunnels": 1,
     "user_state": 6,
-    "visibility": 19,
+    "visibility": 20,
     "watermarks": 8,
-    "workbench": 18
+    "workbench": 19
   },
   "views": {
     "visibility_step_answers": "create view visibility_step_answers ( user_id ) as select null where 0",
