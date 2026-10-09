@@ -171,8 +171,7 @@ def _draw(
             continue
         if locked and (naming or (below_floor and card.kind != "closing")):
             something_hidden = True
-            if placeholder and card.kind != "o":
-                out.append(_stub(card.kind))
+            _leave_stub(out, card.kind, placeholder)
             continue
         figures = {name: shown(name, whole) for name, whole in recipe.sources.items()}
         figures.update(dict.fromkeys(taken, 0))
@@ -183,13 +182,19 @@ def _draw(
             # Nothing true left to say once the hidden part is out. The O card is absent in both
             # modes; any other card is a locked tile in placeholder mode, so that mode's gap is
             # where the card was.
-            if locked and placeholder and card.kind != "o":
-                out.append(_stub(card.kind))
+            if locked:
+                _leave_stub(out, card.kind, placeholder)
             continue
         drawn.hidden_things = [] if locked else gone_now
         out.append(drawn)
     _top_picture(out)
     return _Drawn(out, something_hidden and locked and placeholder)
+
+
+def _leave_stub(out: list[RecapCard], kind: str, placeholder: bool) -> None:
+    """A locked tile where the card was, in placeholder mode; the O card is never one."""
+    if placeholder and kind != "o":
+        out.append(_stub(kind))
 
 
 #: The cards whose first picture is the period's most viewed file, in the order they are asked.

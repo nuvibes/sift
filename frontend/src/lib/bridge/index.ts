@@ -1,18 +1,9 @@
-/* The desktop bridge.
- *
- * The same code runs in a browser and in the desktop client; a few things only the desktop can do
- * (dragging a file out, opening a folder), and this is where the app asks whether it can. In a
- * browser every method is a no-op and every capability false, so a feature simply lights up where
- * the bridge is present.
- */
+/* The desktop bridge: what only the desktop client can do. In a browser every method is a no-op
+ * and every capability false, so a feature lights up where the bridge is present. */
 
-/**
- * What came of asking to drag something out: ONE GESTURE wherever the file is, since the shell
- * offers a virtual file whose stream follows the download. A page has nothing to do differently.
- */
+/** One gesture wherever the file is: the shell offers a virtual file that follows the download. */
 export type DragOutcome = 'dragged' | 'unavailable';
 
-/** What the folder screen is offered: a path, and whether a library is already there. */
 interface SuggestedLibrary {
 	path: string;
 	existing: boolean;
@@ -30,27 +21,21 @@ import type {
 export type { CaptureArea };
 export type { Settled, SetupStep };
 
-/** What came of asking to update, every failure named: the server's shape for an update asked of
- *  the computer running Sift, less two fields this shell leaves out. */
+/** The server's shape for an update asked of the computer running Sift, every failure named. */
 type UpdateTaken = components['schemas']['UpdateTaken'];
 export type UpdateOutcome = Pick<UpdateTaken, 'ok'> &
 	Partial<Pick<UpdateTaken, 'version' | 'reason'>>;
 
-/** How a fetch for a drag is getting on. `total` is null until the server says how big it is. */
 /** The computer a client-mode window is running on, which is not the one holding the library. */
 export interface LocalMachine {
 	cpu_model: string | null;
-	/** Logical processors: THREADS, not cores. A twelve-core chip with two threads each answers 24. */
+	/** Logical processors: threads, not cores. */
 	thread_count: number;
 	installed_ram_bytes: number | null;
-	/** Every graphics adapter in it. None of them does work for Sift; the block says so. */
 	gpu_cards: { name: string | null; vram_bytes: number | null }[];
 }
 
-/**
- * The end of the shell's own log, in `/logs`' four facts, so one screen draws either; `lines` are raw
- * JSON records, matched on purpose by `desktop/src/log.ts`, so there is one parser.
- */
+/** The end of the shell's own log in `/logs`' shape, so one screen draws either. */
 type ShellLog = components['schemas']['AppLog'];
 
 export interface DragProgress {
@@ -60,266 +45,127 @@ export interface DragProgress {
 }
 
 interface NativeBridge {
-	/** Can a file be dragged out of the window into another application? */
 	canNativeDrag(): boolean;
-	/** Begin a native drag of an asset's file. Always `unavailable` in a browser. */
 	startDrag(assetId: string): Promise<DragOutcome>;
-	/** Watch a fetch for a drag. Returns the function that stops watching; a no-op in a browser. */
+	/** Watch a fetch for a drag; returns the function that stops watching. */
 	onDragProgress(listen: (progress: DragProgress) => void): () => void;
-	/** Can the clipboard be read without a secure context? Only the desktop client can. */
 	canReadClipboard(): boolean;
-	/**
-	 * What is on the clipboard: a link, a picture, or neither. Null in a browser, whose clipboard read
-	 * needs a secure context that plain http lacks; Ctrl-V still works there, and this adds a button.
-	 */
+	/** A link, a picture, or neither; null in a browser, where plain http has no clipboard read. */
 	readClipboard(): Promise<{ text: string; image: string | null } | null>;
-	/** Can this shell take a picture of its own window? Only the desktop client can. */
 	canCaptureWindow(): boolean;
-	/**
-	 * A picture of this window as a PNG, or of one area of it given in the page's own pixels (a
-	 * `getBoundingClientRect`). Null in a browser, which can read the pixels of a video or a
-	 * canvas but never of the page around them.
-	 */
+	/** This window as a PNG, or one area of it in page pixels; a browser cannot read the page. */
 	captureWindow(area: CaptureArea | null): Promise<Blob | null>;
-	/** Can this shell be told which computer the library is on? Only the desktop client can. */
 	canSaveServer(): boolean;
-	/**
-	 * Save an address and go there. Null when it worked; a sentence to show when it did not, since
-	 * the shell tried the address and saw the answer, and codes would need a second list here.
-	 */
+	/** Save an address and go there: null when it worked, else the sentence the shell saw. */
 	saveServer(origin: string): Promise<string | null>;
-	/** The address last tried, so a correction starts from it. Null in a browser and on a fresh run. */
+	/** The address last tried, so a correction starts from it. */
 	lastServer(): Promise<string | null>;
-	/**
-	 * Where the connect screen stands: the address last tried, why it did not answer when that is
-	 * why the screen is up, and every address saved. A shell from before this verb answers the
-	 * last address alone.
-	 */
+	/** The last address, why it did not answer, and every address saved. */
 	connectState(): Promise<ConnectState>;
-	/** Take one saved address off the list. What comes back is the list afterwards. */
 	forgetServer(origin: string): Promise<SavedServer[]>;
-	/**
-	 * Whether this shell can be set up at all: the two questions asked before a backend exists. False
-	 * in a browser, so those screens say so rather than drawing dead buttons.
-	 */
+	/** Whether the two first-run questions can be asked; false in a browser, so no dead buttons. */
 	canSetUp(): boolean;
-	/** Save which way this copy runs. The shell moves the window on from here. */
+	/** Save which way this copy runs; the shell moves the window on. */
 	chooseMode(mode: 'standalone' | 'client'): Promise<Settled>;
-	/** The folder offered first, and whether a library is already there to carry on with. Null in
-	 *  a browser. */
 	suggestedLibrary(): Promise<SuggestedLibrary | null>;
-	/** Settle the library folder: `pick` false takes the suggestion, true opens the machine's own
-	 *  dialog. The shell moves the window on from here too. */
+	/** Settle the library folder: the suggestion, or (`pick`) the machine's own dialog. */
 	chooseLibrary(pick: boolean): Promise<Settled>;
-	/** Be told each step of taking that folder as it starts. Hands back how to stop listening; in a
-	 *  browser, and on a shell that sends no steps, nothing is ever heard. */
+	/** Hear each step of taking that folder; returns how to stop listening. */
 	onSetupProgress(listen: (step: SetupStep) => void): () => void;
-	/**
-	 * Go back one question, and let the shell redraw whichever that turns out to be: it decides from
-	 * the answers that exist, so no screen name is passed.
-	 */
+	/** Go back one question; the shell decides which from the answers that exist. */
 	setupBack(): Promise<Settled>;
-	/** Can this application update itself on one click? Only the desktop client can. */
 	canApplyUpdate(): boolean;
-	/**
-	 * Download the newest release, prove it is Sift's, and launch it. Takes NOTHING: the shell reads
-	 * the feed and checks the signed hash itself; a method taking an address would be "download this
-	 * and run it".
-	 */
+	/** Download, verify and launch the newest release; takes nothing, so no page names one. */
 	applyUpdate(): Promise<UpdateOutcome>;
-	/**
-	 * What the computer this window is running on is, or null when there is nothing to add (the
-	 * library's own machine, or a browser), so a block appears exactly when there is a SECOND
-	 * computer.
-	 */
+	/** The computer this window runs on, or null where it is the library's own (or a browser). */
 	localHardware(): Promise<LocalMachine | null>;
-	/**
-	 * What the computer this window is on is called, for the phone's remote; every mode, unlike
-	 * `localHardware`; null in a browser or an older shell.
-	 */
+	/** This computer's name, for the phone's remote, in every mode. */
 	machineName(): Promise<string | null>;
-	/**
-	 * Whether this page is inside the desktop application at all: `localHardware`'s null means the
-	 * same on the library's machine and in a browser, which want different words.
-	 */
+	/** Inside the desktop application at all, which `localHardware`'s null cannot tell. */
 	isDesktop(): boolean;
-	/** Can the operating system's own folder dialog be opened? */
 	canChooseFolder(): boolean;
-	/**
-	 * Ask the person to choose a folder, and answer where they chose. Null if they cancelled. The
-	 * operating system's dialog is the grant: no page can open, drive, read or pre-fill it. Always
-	 * null in a browser, rightly.
-	 */
+	/** A folder the person chose in the system dialog, the only grant; null if cancelled. */
 	chooseFolder(): Promise<string | null>;
-	/** Can the operating system's own file dialog be opened, for one database file? */
 	canChooseFile(): boolean;
-	/**
-	 * Ask the person to choose one database file (Migrate from Stash's), and answer where they
-	 * chose. Null if they cancelled, and always null in a browser, where the Stash folder is picked
-	 * with the folder picker and the server finds the database inside it. The path grants nothing:
-	 * the server reads it only inside a folder Sift has been given.
-	 */
+	/** One database file chosen in the system dialog; the path grants nothing. */
 	chooseFile(): Promise<string | null>;
-	/** Can this shell offer the library to the rest of the network? Only the desktop client can. */
 	canShareOnNetwork(): boolean;
-	/** Whether it is being offered, and the address to reach it at. Null in a browser. */
+	/** Whether the library is offered, and its address. */
 	sharing(): Promise<Sharing | null>;
-	/**
-	 * Turn the offer on or off, and answer the state that follows: a BOOLEAN only, so no page can
-	 * choose an address, port or network card.
-	 */
+	/** Turn the offer on or off: a boolean only, so no page chooses an address or network card. */
 	setSharing(on: boolean): Promise<Sharing | null>;
-	/**
-	 * What version THIS copy of the application is: in client mode, not the library's, and possibly
-	 * older. Null in a browser and from a checkout, where Electron would answer its own version.
-	 */
+	/** This copy's version, which in client mode may differ from the library's. */
 	shellVersion(): Promise<string | null>;
-	/**
-	 * The end of the SHELL's own log (the drag, the transfers, the update, the window): this machine's,
-	 * where `/logs` is the server's, another computer in client mode.
-	 */
+	/** The end of the shell's own log, this machine's where `/logs` is the server's. */
 	shellLog(lines: number): Promise<ShellLog | null>;
-	/**
-	 * Hand the shell's own log the library's `logs.detail` and `logs.hide_personal`, so it writes
-	 * what the library's log writes. The answer is whether the shell now writes the detail; null in a
-	 * browser and from a shell too old to be told, which then keeps what it started with.
-	 */
+	/** Hand the shell the library's log settings; answers whether it now writes the detail. */
 	shellLogDetail(detailed: boolean, hidePersonal: boolean): Promise<boolean | null>;
-	/**
-	 * Whether this shell can be asked for its own log AT ALL: not `isDesktop()`, which an older shell
-	 * answers truthfully without having this channel.
-	 */
+	/** Whether the shell has the log channel: an older shell answers `isDesktop()` without it. */
 	canReadShellLog(): boolean;
-	/**
-	 * Save every log of this app and of the library it runs, redacted, as one archive named `name`
-	 * in its `Save files to` folder. The answer is where it went; null where it couldn't be made.
-	 */
+	/** Save every log, redacted, as one archive in the `Save files to` folder. */
 	saveLogArchive(name: string): Promise<{ file: string } | { reason: string }>;
-	/** Whether this shell can make that archive at all. */
 	canSaveLogArchive(): boolean;
-	/** Whether Windows is letting other computers through to Sift, and on which networks. Unknown
-	 *  outside the app. */
+	/** Whether Windows lets other computers through to Sift, and on which networks. */
 	firewall(): Promise<FirewallReport>;
-	/**
-	 * Ask Windows to let them through, and answer what is true afterwards. NOTHING IS PASSED: port
-	 * and rule are the shell's. Windows' own administrator prompt decides, so a refusal is the state
-	 * unchanged.
-	 */
+	/** Ask Windows to let them through; nothing is passed, and its own prompt decides. */
 	openFirewall(scope?: FirewallScope): Promise<FirewallReport>;
-	/** Can this shell choose where links open? Only the desktop client can. */
 	canChooseBrowser(): boolean;
-	/** Which browsers this machine has, and which one links go to. Empty in a browser. */
+	/** Which browsers this machine has, and which one links go to. */
 	browsers(): Promise<BrowserChoice>;
-	/**
-	 * Choose one, or null for whatever the system would have used: an ID OUT OF THE LIST, checked by
-	 * the shell, since the choice is a program it will start.
-	 */
+	/** Choose one by an id from the list, or null for the system's: the shell starts it. */
 	setBrowser(id: string | null): Promise<BrowserChoice>;
 
-	/**
-	 * Where Sift keeps its OWN two folders (the database and the cache) and how big they are.
-	 *
-	 * Null in a browser and in client mode: neither is looking at a library this computer holds.
-	 */
+	/** Where Sift keeps its database and cache, and how big; null in a browser and client mode. */
 	storage(): Promise<StorageReport | null>;
-	/**
-	 * Move both of them under a folder somebody chooses. TAKES NO PATH: only the picker grants one.
-	 * The backend is down meanwhile; the old folder is untouched until the new one is complete.
-	 */
+	/** Move both under a chosen folder; takes no path, and the old folder stays until done. */
 	moveStorage(): Promise<MoveOutcome>;
-	/** Told how far a move has got. Returns the way to stop listening. */
 	onStorageProgress(listen: (progress: MoveProgress) => void): () => void;
-	/** Whether this shell can answer the three above at all. */
 	canMoveStorage(): boolean;
-	/** Whether this shell offers the way back to the first-run question. */
 	canForgetMode(): boolean;
-	/**
-	 * Forget which way Sift was set up, so the next launch asks again; the library folder is kept.
-	 */
+	/** Forget which way Sift was set up, keeping the library folder. */
 	forgetMode(): Promise<boolean>;
 
-	/** Whether this copy of Sift can close and open itself again: the desktop app, on the device it runs on. */
 	canRestartApp(): boolean;
 
-	/** Close Sift and open it again. False where the shell cannot, and the page then says to do it by hand. */
+	/** Close Sift and open it again; false where the shell cannot. */
 	restartApp(): Promise<boolean>;
 
-	/**
-	 * Whether closing the window leaves Sift running in the notification area. Null where nothing
-	 * true can be said (a browser, an older shell), so no switch shows a false "off".
-	 */
+	/** Whether closing the window keeps Sift running; null where nothing true can be said. */
 	keepRunningWhenClosed(): Promise<boolean | null>;
-	/** Say which it should be, and answer what is true afterwards. */
 	setKeepRunningWhenClosed(on: boolean): Promise<boolean | null>;
-	/** Whether this shell can answer the two above at all. */
 	canKeepRunningWhenClosed(): boolean;
 
-	/**
-	 * Whether Sift starts when this person signs in to Windows. Off unless they turned it on; null as
-	 * for `keepRunningWhenClosed`.
-	 */
+	/** Whether Sift starts at sign-in to Windows; null as for `keepRunningWhenClosed`. */
 	startsWithWindows(): Promise<boolean | null>;
-	/** Say which it should be, and answer what is true afterwards. */
 	setStartsWithWindows(on: boolean): Promise<boolean | null>;
-	/** Whether this shell can answer the two above at all. */
 	canStartWithWindows(): boolean;
 
-	/**
-	 * Every library this copy of Sift has opened, and which of them this window is looking at
-	 * (`current` null in client mode). Null in a browser.
-	 */
+	/** Every library this copy has opened, and the one in view (null in client mode). */
 	libraries(): Promise<LibraryList | null>;
-	/**
-	 * Open one of them: a folder ALREADY ON THAT LIST, so no page can aim the backend elsewhere. "Not
-	 * ok" with nothing to say is somebody declining the shell's upgrade question.
-	 */
+	/** Open a library already on that list, so no page can aim the backend elsewhere. */
 	openLibrary(dataDir: string): Promise<Settled>;
-	/**
-	 * Open a library from a database file somebody chooses in the machine's own file picker. Takes
-	 * nothing; the shell decides what the file is (its own `sift.sqlite3` opens in place, any other
-	 * is copied into a new folder after a dialog). "Not ok" alone is a closed picker or a no.
-	 */
+	/** Open a library from a database file chosen in the system picker; the shell decides how. */
 	addLibrary(): Promise<Settled>;
-	/** Take one off the list. The library itself is untouched; this forgets the shortcut. */
+	/** Take one off the list; the library itself is untouched. */
 	forgetLibrary(dataDir: string): Promise<LibraryList | null>;
-	/** Whether this shell can answer the four above at all. */
 	canSwitchLibrary(): boolean;
 
-	/** Where a file saved out of Sift lands on this machine. Null in a browser, which has no say. */
 	downloadFolder(): Promise<DownloadFolder | null>;
-	/** Open the folder picker and take what it answers, or pass nothing to go back to the
-	 *  machine's own Downloads. The page never names the path; only the picker can grant one. */
+	/** The folder picker's answer, or nothing for Downloads; the page names no path. */
 	chooseDownloadFolder(reset?: true): Promise<DownloadFolder | null>;
-	/** Whether this shell can answer the two above at all. */
 	canChooseDownloadFolder(): boolean;
 
-	/**
-	 * Show a backup Sift saved on this computer in its folder, in the system's own file manager.
-	 * True when it was shown. The shell shows only a Sift backup that is on its own disk.
-	 */
+	/** Show a Sift backup on this computer's disk in the system file manager. */
 	showInFolder(path: string): Promise<boolean>;
-	/**
-	 * Whether this window can show one: the Sift app on the computer running Sift. A browser, and
-	 * the app onto a library on another computer, cannot reach that computer's folders.
-	 */
+	/** Only on the computer running Sift. */
 	canShowInFolder(): boolean;
-	/** Are the window's own caption buttons drawn over the page, and can they be repainted? */
 	canDressTitleBar(): boolean;
-	/**
-	 * Paint the window's minimise, maximise and close in the colours this page is drawing itself in:
-	 * TWO plain-hex COLOURS AND NOTHING ELSE, so a page cannot move or remove them. False in a
-	 * browser and on a window with a real title bar.
-	 */
+	/** Paint the caption buttons in the page's colours: two hex colours only. */
 	dressTitleBar(colors: { color: string; symbolColor: string }): Promise<boolean>;
-	/**
-	 * Tell the desktop window how far its page has drawn, with the look the next start's opening
-	 * frame is drawn in: the theme as this browser mirrors it, and the canvas colour. Nothing in a
-	 * browser.
-	 */
+	/** Tell the window how far its page has drawn, with the look the next start opens in. */
 	tellDrawn(stage: WindowStage): void;
 }
 
-/** How far the page has drawn: its first screen, or a screen ready to use. */
 type WindowStage = 'painted' | 'usable';
 
 /** What the opening frame needs of the page: never anything of the library. */
@@ -328,7 +174,6 @@ interface Look {
 	canvas: string;
 }
 
-/** The page's canvas as `#rrggbb`, from the colour the browser computed for it. */
 export function canvasHex(computed: string): string | null {
 	const parts = /^rgba?\((\d+),\s*(\d+),\s*(\d+)/.exec(computed);
 	if (parts === null) return null;
@@ -352,43 +197,32 @@ function look(): Look | null {
 
 export type { LibraryList };
 
-/** Where links open: everything this machine offers, and which of them is chosen. */
 export interface BrowserChoice {
 	chosen: string | null;
 	browsers: { id: string; name: string }[];
 }
 
-/** Where a file saved out of Sift lands. */
 export interface DownloadFolder {
-	/** The folder itself, always a real path: the machine's own where none was chosen. */
 	path: string;
-	/** Whether it was CHOSEN rather than being whatever this machine calls Downloads. The two look
-	 *  the same when the chosen one happens to be Downloads, and only one follows a move. */
+	/** Chosen, not this machine's Downloads; only a chosen one follows a move. */
 	chosen: boolean;
 }
 
-/**
- * Whether the library is offered to the network, and where a second computer would reach it.
- * `enabled` and `live` are two facts: the listening address is fixed at start, so the screen can
- * say "not until you open Sift again".
- */
+/** Whether the library is offered; `enabled` and `live` differ until Sift opens again. */
 export interface Sharing {
 	enabled: boolean;
 	live: boolean;
 	mode: 'standalone' | 'client' | null;
 	address: string | null;
-	/** The port the library answers on. Sent rather than written down here: the shell is what binds
-	 *  the socket, and the firewall rule it offers to create is made from the same number. */
+	/** Sent, as the shell binds it and makes the firewall rule from the same number. */
 	port: number;
 }
 
-/** One address the shell has been told, as the connect screen lists it. */
 export interface SavedServer {
 	label: string;
 	origin: string;
 }
 
-/** Where the connect screen stands. See `Bridge.connectState`. */
 interface ConnectState {
 	last: string | null;
 	problem: string | null;
@@ -397,17 +231,12 @@ interface ConnectState {
 
 type FirewallState = FirewallReport['state'];
 
-/** Which networks the rule opens the port on: home networks only, or every one. */
 export type FirewallScope = 'private' | 'any';
 
-/**
- * The rule, the networks the machine is on, and which of them the rule reaches: Windows files a new
- * network as Public, where a private-only rule opens nothing. `networks` null when Windows could not
- * be asked; `scope` null unless open. The server's shape, so both routes agree.
- */
+/** The rule and the networks it reaches: Windows files a new network as Public. */
 export type FirewallReport = components['schemas']['FirewallView'];
 
-/** The answer a shell from before the networks were read gives: the word alone. */
+/** An older shell's answer, the word alone. */
 function asReport(answer: FirewallReport | FirewallState | null | undefined): FirewallReport {
 	if (answer === null || answer === undefined)
 		return { state: 'unknown', networks: null, scope: null };
@@ -415,9 +244,7 @@ function asReport(answer: FirewallReport | FirewallState | null | undefined): Fi
 	return answer;
 }
 
-/** What the desktop client puts on `window` when it is the one running the page. */
 interface InjectedBridge {
-	/** Present only inside the desktop application. A browser has no bridge at all. */
 	isDesktop?: true;
 	startDrag?: (assetId: string) => Promise<string>;
 	onDragProgress?: (listen: (progress: DragProgress) => void) => () => void;
@@ -458,8 +285,7 @@ interface InjectedBridge {
 	setTitleBar?: (colors: { color: string; symbolColor: string }) => Promise<boolean>;
 	keepRunningWhenClosed?: () => Promise<boolean | null>;
 	keepRunning?: (on: boolean) => Promise<boolean | null>;
-	/* The login item: whether Sift starts when this person signs in to Windows. The shell answers
-	   these two once it has the verb; until then both are absent and the row is not drawn. */
+	/* The login item; absent until the shell has the verb, and the row is not drawn. */
 	startsWithWindows?: () => Promise<boolean | null>;
 	startWithWindows?: (on: boolean) => Promise<boolean | null>;
 	libraries?: () => Promise<LibraryList | null>;
@@ -476,42 +302,37 @@ declare global {
 }
 
 function injected(): InjectedBridge | undefined {
-	// `typeof window` guards the case where this is evaluated outside a browser at all: a unit
-	// test, or a build step touching the module.
+	// Outside a browser (a unit test, a build step) there is no `window`.
 	return typeof window === 'undefined' ? undefined : window.sift;
 }
 
-/** Sift's own two folders on this machine, and what they hold. */
 export interface StorageReport {
 	dataDir: string;
 	cacheDir: string;
 	dataBytes: number;
 	cacheBytes: number;
-	/** When the sizes were measured, in ms since 1970; null before the first walk ends. */
 	measuredAt: number | null;
 	measuring: boolean;
 }
 
-/** How far a move has got. `total` is measured before it starts, so it does not move. */
+/** How far a move has got; `total` is measured before it starts. */
 export interface MoveProgress {
 	copied: number;
 	total: number;
 }
 
-/** `reason: null` is the person closing the folder picker, not a failure. Not exported: read through
- *  `moveStorage`'s return type. */
+/** `reason: null` is the folder picker closed, not a failure. */
 type MoveOutcome =
 	| { ok: true; locations: { dataDir: string; cacheDir: string }; renamed: boolean }
 	| { ok: false; reason: string | null };
 
-// Each capability asks whether its method is there, never a user agent or one desktop flag, so a
-// shell reports exactly what it has, whatever its version.
+// Each capability asks whether its method is there, so a shell reports exactly what it has.
 export const bridge: NativeBridge = {
 	canNativeDrag: () => typeof injected()?.startDrag === 'function',
 
 	async startDrag(assetId: string): Promise<DragOutcome> {
 		const answered = await injected()?.startDrag?.(assetId);
-		/* Checked, not cast: a shell a version ahead could answer a word this page does not know. */
+		/* Checked, not cast: a newer shell could answer a word this page does not know. */
 		return answered === 'dragged' ? answered : 'unavailable';
 	},
 
@@ -529,8 +350,7 @@ export const bridge: NativeBridge = {
 
 	async captureWindow(area: CaptureArea | null) {
 		const bytes = await injected()?.captureWindow?.(area);
-		/* Checked rather than cast: a shell of another version could answer something else, and a
-		 * picture of nothing is no picture. `isView` because the bytes arrive from another realm. */
+		/* `isView` because the bytes arrive from another realm; an empty picture is none. */
 		if (!ArrayBuffer.isView(bytes) || bytes.byteLength === 0) return null;
 		return new Blob([new Uint8Array(bytes)], { type: 'image/png' });
 	},
@@ -538,8 +358,7 @@ export const bridge: NativeBridge = {
 	canSaveServer: () => typeof injected()?.saveServer === 'function',
 
 	async saveServer(origin: string) {
-		/* A browser answers the refusal itself rather than silently doing nothing: the screen has a
-		 * form on it, and a form that submits to nowhere is the worst of the three outcomes. */
+		/* A browser refuses in words, since the screen has a form on it. */
 		const answered = injected()?.saveServer;
 		if (answered === undefined) return 'This only works in the Sift app.';
 		return answered(origin);
@@ -552,7 +371,6 @@ export const bridge: NativeBridge = {
 	async connectState() {
 		const asked = injected()?.connectState;
 		if (asked !== undefined) return asked();
-		/* A shell from before this verb knows the last address and nothing else about the screen. */
 		return { last: await bridge.lastServer(), problem: null, servers: [] };
 	},
 
@@ -560,7 +378,6 @@ export const bridge: NativeBridge = {
 		return (await injected()?.forgetServer?.(origin)) ?? [];
 	},
 
-	/* One capability for both screens, two halves of one sequence. */
 	canSetUp: () => typeof injected()?.chooseMode === 'function',
 
 	async chooseMode(mode: 'standalone' | 'client') {
@@ -648,7 +465,7 @@ export const bridge: NativeBridge = {
 		return (await injected()?.restartApp?.()) ?? false;
 	},
 
-	/* Asked of the WRITE half, like every pair here: the half a switch needs. */
+	/* Asked of the write half, the half a switch needs. */
 	canKeepRunningWhenClosed: () => typeof injected()?.keepRunning === 'function',
 	async keepRunningWhenClosed() {
 		return (await injected()?.keepRunningWhenClosed?.()) ?? null;
@@ -657,7 +474,6 @@ export const bridge: NativeBridge = {
 		return (await injected()?.keepRunning?.(on)) ?? null;
 	},
 
-	/* Asked of the WRITE half, like the pair above. */
 	canStartWithWindows: () => typeof injected()?.startWithWindows === 'function',
 	async startsWithWindows() {
 		return (await injected()?.startsWithWindows?.()) ?? null;
@@ -743,14 +559,10 @@ export const bridge: NativeBridge = {
 	canSaveLogArchive: () => typeof injected()?.saveLogArchive === 'function',
 
 	async firewall() {
-		/* A shell from before the networks were read answers the word alone; it is read as an
-		 * answer that knows nothing about the networks, not as a fault. */
 		return asReport(await injected()?.firewall?.());
 	},
 
 	async openFirewall(scope: FirewallScope = 'private') {
-		/* A shell too old to have this verb answers `unknown`, which is the same thing the screen
-		 * shows when the question cannot be put: what to run by hand. */
 		return asReport(await injected()?.openFirewall?.(scope));
 	}
 };

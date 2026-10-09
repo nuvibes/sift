@@ -1,36 +1,7 @@
 /*
- * Telling a tap, a run of taps and a held key apart, on one key.
- *
- * ## What this is for
- *
- * Theater's number keys address a cell: 3 means "talk to cell three". That is one verb on nine keys
- * and it leaves the most reachable row on the keyboard doing almost nothing, while the acts anybody
- * actually repeats (next file, the one before, and moving through a clip fast) need a modifier
- * and an arrow. The keys the hand is already on now carry all of it: press again for the next file,
- * a third time for the one before, and HOLD a press to change the rate for as long as it is down.
- *
- * ## Why it is a module of its own
- *
- * Because it is a clock, and a clock written inside a key handler is a clock nothing can test. Two
- * timers, four pieces of state and every one of the awkward cases (a second key pressed mid-run, a
- * key let go after the hold has already fired, a keyup that never arrives because the window lost
- * the focus) are decided here, once, against fake timers, rather than being reasoned about in a
- * component where the only way to try them is by hand on a wall of nine videos.
- *
- * ## The two numbers, and what they mean
- *
- * A press becomes a HOLD when it has been down longer than `HOLD_MS` without being let go. A run of
- * taps ENDS when nothing has been pressed for `TAP_MS` after the last release. The hold is the
- * shorter of the two on purpose: a press held past the point where it can still be a tap has already
- * stopped being one, and waiting the full tap window before answering a hold would put a third of a
- * second of nothing between the key going down and the picture changing.
- *
- * ## Auto-repeat is not a second press, and the browser is the one that knows
- *
- * Holding a key down makes the operating system send keydown after keydown, forever. Every one of
- * them arrives with `repeat` set, which is the only honest way to tell them from a finger going up
- * and down fast: the timings overlap, so a clock cannot. They are ignored outright: a held key is
- * ONE press that has not finished yet.
+ * Telling a tap, a run of taps and a held key apart on one key, as a clock tests can drive: press
+ * again for the next file, a third time for the one before, hold to change the rate. The hold is
+ * shorter than the tap window so a hold answers promptly; auto-repeat (`repeat` set) is ignored.
  */
 
 /** A press, or a run of them, and the key it happened on. */
@@ -69,14 +40,7 @@ interface TapHold {
 	down(key: string, repeat?: boolean): void;
 	/** A key came up. */
 	up(key: string): void;
-	/**
-	 * Give up whatever is in progress.
-	 *
-	 * For the window losing the focus and for the screen going away. A held press is RELEASED first,
-	 * because the watcher has changed something (a rate, a direction) that only the release undoes;
-	 * a run of taps waiting out its window is simply dropped, because acting on a key after the
-	 * keyboard has gone elsewhere is acting on something nobody pressed.
-	 */
+	/** Give up what is in progress: a held press is released, a waiting run of taps dropped. */
 	cancel(): void;
 }
 
@@ -84,13 +48,9 @@ export function tapHold(watcher: Watcher, timings: Timings = {}): TapHold {
 	const holdMs = timings.holdMs ?? HOLD_MS;
 	const tapMs = timings.tapMs ?? TAP_MS;
 
-	/** The key the run in progress belongs to, or none. */
 	let key: string | null = null;
-	/** How many presses that run has had. */
 	let count = 0;
-	/** Whether the key is down right now. */
 	let down = false;
-	/** Whether `hold` has been reported for the press that is down. */
 	let held = false;
 	/** The run waiting out its window, so that a flush knows there is one without reading a timer. */
 	let pending: Run | null = null;
@@ -107,14 +67,7 @@ export function tapHold(watcher: Watcher, timings: Timings = {}): TapHold {
 		pending = null;
 	}
 
-	/*
-	 * End the run in progress and report what it was.
-	 *
-	 * The state is cleared BEFORE the watcher is called, in both branches. A watcher is free to press
-	 * something of its own (Theater's does, by stepping a cell), and a recogniser that still had
-	 * half a run in it while that ran would answer the next press as a continuation of one that is
-	 * already over.
-	 */
+	// The state is cleared before the watcher is called: a watcher may press something of its own.
 	function settle() {
 		clearTimeout(holdTimer);
 		clearTimeout(tapTimer);
@@ -132,9 +85,7 @@ export function tapHold(watcher: Watcher, timings: Timings = {}): TapHold {
 	return {
 		down(pressed, repeat = false) {
 			if (repeat) return;
-			/* A key we already believe is down, without the repeat flag. It cannot be a second press
-			   (nothing has been let go), so it is auto-repeat arriving unlabelled, and counting it
-			   would turn one held key into three taps. */
+			/* A key already down without the repeat flag is auto-repeat arriving unlabelled. */
 			if (down && pressed === key) return;
 			if (key !== null && pressed !== key) settle();
 			if (key === null) {

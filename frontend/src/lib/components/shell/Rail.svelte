@@ -31,12 +31,7 @@
 		pressTurboMode
 	} from './turbo-mode';
 
-	/*
-	 * The rail is 208 wide with labels and 64 with icons alone, narrow for a small window or a
-	 * press, and absent below the phone breakpoint. Classes, not a media query, because the markup
-	 * changes too (the mark instead of the wordmark), so the breakpoint is watched in script. No
-	 * forcing it open below 1024px: there is no room.
-	 */
+	/* Watched in script, not a media query: the markup changes too (the mark for the wordmark). */
 	const NARROW_RAIL = '(min-width: 768px) and (max-width: 1023px)';
 
 	let narrow = $state(false);
@@ -50,11 +45,7 @@
 	const tight = $derived(narrow || rail.collapsed);
 	const pathname = $derived(page.url.pathname);
 
-	/*
-	 * ONE turning signal, on the gear, for background work: anything in the queue that is not a
-	 * download, since Settings is where that queue lives. A download turns nothing; its row keeps
-	 * its count, and the Downloads screen shows its progress.
-	 */
+	/* One turning signal, on the gear, for queued work that is not a download. */
 	const settingsWorking = $derived(imports.working > 0);
 
 	/* The leaf or the bolt above the rule, or neither. See `turbo-mode.ts`. */
@@ -71,12 +62,6 @@
 		}
 	}
 
-	/*
-	 * HOW MANY SITES ARE ASKING FOR COOKIES, on the row that leads to them: the Edit cookies count,
-	 * the one thing here waiting on a PERSON. Read through `imports` (`Imports.readCookies`), the
-	 * status dot's store, rather than a second poll.
-	 */
-
 	/* The dot in words, appended to the Downloads label for a screen reader. */
 	const DOWNLOAD_STATUS_LABEL = {
 		none: '',
@@ -84,12 +69,7 @@
 		error: ', a download failed'
 	} as const;
 
-	/*
-	 * What is actually drawn, in the order somebody arranged it: without put-away rows, rows a
-	 * guest is not shown, and the rule, which splits the rest. The window's width takes nothing
-	 * out, so the rail can be learned. Hiding admin rows only avoids offering a door; the server's
-	 * refusal is the control.
-	 */
+	/* What is drawn, in the arranged order; hiding admin rows only avoids offering a door. */
 	const drawn = $derived(
 		rail.order
 			.filter((id) => id === RAIL_DIVIDER || rail.shows(id))
@@ -107,13 +87,7 @@
 
 	let railEl = $state<HTMLElement | null>(null);
 
-	/*
-	 * Rearranging is a mode, entered by holding a row or by Rearrange, since a link that can also be
-	 * picked up gets picked up by accident; `draggable` is false otherwise.
-	 *
-	 * Whether a reflow is still running: `dragover` fires many times a second, and a slide started
-	 * mid-slide measures rows part way through and misplaces them.
-	 */
+	/* Whether a reflow runs: a slide begun mid-slide misplaces the rows it measures. */
 	let reflowing = false;
 
 	async function rearrange(change: () => void): Promise<void> {
@@ -256,18 +230,10 @@
 		if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
 	}
 
-	/*
-	 * The rows move while the row is being dragged, rather than when it is let go, so letting go
-	 * confirms rather than reveals. `landed` remembers the target and side, since `dragover` fires
-	 * many times a second and a move that changes nothing must not re-animate.
-	 */
+	/* Rows move during the drag, so letting go confirms; `landed` stops a repeat re-animating. */
 	let landed = $state<string | null>(null);
 
-	/*
-	 * Where the pointer was when the last landing was decided. Moving rows moves what a still hand
-	 * is over, so a landing answers only the hand travelling `TRAVEL` (16px: under half a row, well
-	 * over a mouse's jitter).
-	 */
+	/* A landing answers only a hand that has moved `TRAVEL`, since moving rows move the target. */
 	let decidedAt: number | null = null;
 
 	const TRAVEL = 16;
@@ -288,11 +254,7 @@
 		return session.isAdmin && TAKES_A_LINK.has(item.id) && carriesALink(event);
 	}
 
-	/*
-	 * Both ends of a link held over a destination row, and BOTH have to cancel the event: the
-	 * browser decides a drop from the last `dragover`, not the enter, and the reorder handler does
-	 * not cancel while nothing is carried.
-	 */
+	/* Both ends of a link over a destination cancel: the drop is decided on the last `dragover`. */
 	function linkOver(event: DragEvent, item: NavItem): boolean {
 		if (!takesALink(item, event)) return false;
 		event.preventDefault();
@@ -301,10 +263,7 @@
 		return true;
 	}
 
-	/*
-	 * Leaving the row, as opposed to crossing onto its own glyph or label, which also fires
-	 * `dragleave`: `relatedTarget` still inside the row means nothing was left.
-	 */
+	/* Leaving the row, not crossing onto its own glyph or label. */
 	function linkOut(event: DragEvent, item: NavItem) {
 		if (takingALink !== item.id) return;
 		const entering = event.relatedTarget;
@@ -327,9 +286,7 @@
 		overZone = null;
 		if (carrying === item.id) return;
 
-		/* A dead band around the middle of the row: flipping at the exact midpoint would re-place the
-		 * row, whose reflow moves the pointer's target, which would flip it back. Inside the band the last
-		 * decision stands. */
+		/* A dead band around the middle, so a reflow under the pointer cannot flip it back. */
 		const box = (event.currentTarget as HTMLElement).getBoundingClientRect();
 		const middle = box.top + box.height / 2;
 		const band = box.height * 0.25;
@@ -354,19 +311,10 @@
 	/* Which zone the pointer is over, or null, drawn grown and outlined so the landing is seen. */
 	let overZone = $state<RailRegion | null>(null);
 
-	/*
-	 * A landing on empty space is decided while dragging and applied when the row is let go.
-	 *
-	 * Applied immediately, a zone landing moves the row into the other half, which shifts the zone
-	 * under a still pointer and throws the row to the end. So a zone only lights up, and the rail
-	 * shifts on release. Rows still reflow live, since a row landing does not change halves.
-	 */
+	/* A zone landing lights up while dragging and applies on release, or the zone moves. */
 	let pendingRegion: RailRegion | null = null;
 
-	/*
-	 * Which zone a point belongs to, worked out from the rail, so every pixel of it (the band's
-	 * margins, the gap under the brand) is in exactly one of three bands and no drop is refused.
-	 */
+	/* Every pixel of the rail is in exactly one of three bands, so no drop is refused. */
 	function regionAt(y: number): RailRegion | null {
 		const band = railEl?.querySelector('.zone.between');
 		if (!band) return null;
@@ -393,11 +341,7 @@
 		overZone = null;
 	}
 
-	/*
-	 * Letting go. A row landing already happened in `dragOverRow`; a zone landing is made only
-	 * here. `stopPropagation` so putting a row straight back is not "end of this half";
-	 * `preventDefault` because an unconsumed drop navigates.
-	 */
+	/* Letting go: a zone landing is made only here. An unconsumed drop navigates. */
 	function endDrop(event: DragEvent, item?: NavItem): void {
 		/* A link from outside, before the reorder half, which returns early with nothing carried. */
 		takingALink = null;
@@ -459,12 +403,8 @@
 			ondragstart={(event) => onDragStart(event, item)}
 			ondragend={onDragEnd}
 		>
-			<!--
-				The two rows that report as well as navigate. Settings turns the gear for background
-				work, the one thing moving in a still rail. Downloads keeps its still arrow and says
-				only an outcome not yet seen (the light), the Sites waiting for cookies (the count),
-				and, to a screen reader, that a download is fetching.
-			-->
+			<!-- Settings turns the gear for background work; Downloads says an unseen outcome
+			and the Sites waiting for cookies. -->
 			<span class="glyph" class:working={turning}>
 				<Icon name={item.icon} filled={active} size={20} />
 				<!-- The Downloads status light until the screen is opened; the label carries it in words. -->
@@ -534,10 +474,7 @@
 			{/snippet}
 
 			{#if rail.iconsOnly && !rail.editing}
-				<!--
-					A tooltip only while the label is off screen (either reason it goes); the link's
-					`aria-label` names it at every width. Not while arranging, when a row goes nowhere.
-				-->
+				<!-- A tooltip only while the label is off screen, and not while arranging. -->
 				<Tooltip label={item.label} placement="right" stretch>
 					{@render link()}
 				</Tooltip>
@@ -577,11 +514,7 @@
 	ondragleave={leaveRail}
 	ondrop={endDrop}
 >
-	<!--
-		The rail scrolls rather than squashing its rows. The whole body scrolls, brand and footer
-		included, so the "you are here" marker in the rail's padding is not clipped; `fill` keeps the
-		footer at the bottom when there is room.
-	-->
+	<!-- The whole body scrolls, so the "you are here" marker in the padding is not clipped. -->
 	<Scroller fill>
 		<div class="rail-body">
 			<!-- The brand, which is also the way home: the mark alone when narrow, since the lockup at
@@ -649,10 +582,7 @@
 		position: relative;
 	}
 
-	/*
-	 * The Downloads status light, cut into the top right of the glyph, where badges go: the ring in
-	 * the rail's own ground punches a gap, so it is a badge on any glyph.
-	 */
+	/* The Downloads light, cut into the glyph's corner by a ring in the rail's ground. */
 	.status {
 		position: absolute;
 		inset-block-start: -2px;
@@ -717,10 +647,7 @@
 		color: var(--sift-accent-text);
 	}
 
-	/*
-	 * THE CELL AND THE BODY ARE TWO BOXES: the rail is the grid cell (place, width, the collapse);
-	 * the body inside the scroller holds the padding, the gap and the halves.
-	 */
+	/* The rail is the grid cell; the body inside the scroller holds the padding and the halves. */
 	.rail {
 		grid-area: rail;
 		width: var(--rail-width);
@@ -761,10 +688,7 @@
 		gap: 2px;
 	}
 
-	/*
-	 * The top half takes the empty space, rather than a margin pushing the bottom down, so the gap
-	 * belongs to the group, whose drop handler means "the end of this half".
-	 */
+	/* The top half takes the empty space, so the gap belongs to its drop handler. */
 	.group:not(.footer) {
 		/* GROW, NEVER SHRINK: shrinking would absorb the shortfall here, and the scroller around it
 		   would never have anything to scroll, leaving the rows stacked on one another. */
@@ -776,12 +700,7 @@
 		padding-top: var(--space-3);
 	}
 
-	/*
-	 * A drop zone, drawn only while arranging: dashed and quiet at rest, emphasised under the
-	 * pointer. The outline covers all the area that takes a drop. Nothing here changes size while a
-	 * row is in the air (that would move the target under the hand), so the emphasis is an edge, the
-	 * accent, a tint and a painted scale.
-	 */
+	/* A drop zone, only while arranging; nothing changes size with a row in the air. */
 	.zone,
 	.group.zoned {
 		border: 1px dashed var(--sift-line);
@@ -892,19 +811,12 @@
 		background: var(--sidebar-primary);
 	}
 
-	/*
-	 * Being arranged: the rows wiggle, the signal that the rail is in a mode, as a phone's icons do;
-	 * the hide buttons say it again without motion for anybody who turned animation off.
-	 */
+	/* Arranging: the rows wiggle, and the hide buttons say it again without motion. */
 	.rail.editing .item {
 		cursor: grab;
 	}
 
-	/*
-	 * The phone-home-screen wiggle: fast, a degree or so, and a small shift on its own period, so no
-	 * two rows are ever in step and it reads as nervous rather than as a pendulum. Linear, since an
-	 * eased curve dwells at the extremes, where a stop looks like a stop.
-	 */
+	/* Fast, a degree or so, linear, with a shift on its own period so no two rows align. */
 	.rail.editing .row {
 		animation:
 			wiggle-turn var(--dur-wiggle) linear infinite,
@@ -939,11 +851,7 @@
 		opacity: 0.4;
 	}
 
-	/*
-	 * A destination with something held over it: the window-wide offer at the size of one row
-	 * (dashed accent edge, accent wash), so the rail, a card and the window speak one language. An
-	 * `outline`, pulled inside, since an inset shadow would paint under the glyph and label.
-	 */
+	/* A link held over a destination: the window-wide offer at one row's size, as an outline. */
 	.row.taking {
 		border-radius: var(--radius-md);
 		outline: 2px dashed var(--sift-accent);
@@ -951,11 +859,7 @@
 		background: var(--sift-accent-wash);
 	}
 
-	/*
-	 * `:global`, because the class lands on an element compiled in `Button`'s file, which a scoped
-	 * rule here would never reach. Only what is about the RAIL is set; the rest is the button's.
-	 * The wrapper is placed so the tooltip and the button keep their own layout.
-	 */
+	/* `:global`, since the class lands on an element compiled in `Button`'s file. */
 	.row .put-away-at {
 		position: absolute;
 		inset-block-start: -2px;
@@ -991,10 +895,7 @@
 		}
 	}
 
-	/*
-	 * Icons only: the labels and the width go, and the tooltip names them. One class, reached by the
-	 * button and by the narrow window (`NARROW_RAIL`), never a media query copy of these rules.
-	 */
+	/* Icons only, reached by the button and the narrow window (`NARROW_RAIL`). */
 	.rail.collapsed {
 		width: var(--rail-width-collapsed);
 	}

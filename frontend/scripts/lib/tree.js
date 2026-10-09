@@ -131,23 +131,45 @@ function strip(text, { markup = true, block = true, line = true }, seen) {
 	 * @param {number} base where `part` starts in `text`
 	 */
 	const code = (part, base) => {
-		let out = part;
-		if (block)
-			out = out.replace(
-				/\/\*[\s\S]*?\*\//g,
-				(/** @type {string} */ found, /** @type {number} */ offset) => {
-					seen(base + offset, found);
-					return blank(found);
+		// One pass: a quote opens a string and a `/*` or `//` inside it is text, which a regex
+		// over the whole part misread (a route glob like '**/api/x/*/thumb' hid the code after it).
+		let out = '';
+		let i = 0;
+		const n = part.length;
+		while (i < n) {
+			const c = part[i];
+			if (c === "'" || c === '"' || c === '`') {
+				let j = i + 1;
+				while (j < n && part[j] !== c) {
+					if (part[j] === '\\') j++;
+					else if (c !== '`' && part[j] === '\n') break;
+					j++;
 				}
-			);
-		if (line)
-			out = out.replace(
-				/(^|[^:'"`\\])\/\/[^\n]*/g,
-				(/** @type {string} */ found, /** @type {string} */ lead, /** @type {number} */ offset) => {
-					seen(base + offset + lead.length, found.slice(lead.length));
-					return lead + blank(found.slice(lead.length));
-				}
-			);
+				out += part.slice(i, Math.min(j + 1, n));
+				i = j + 1;
+				continue;
+			}
+			if (block && c === '/' && part[i + 1] === '*') {
+				const j = part.indexOf('*/', i + 2);
+				const end = j < 0 ? n : j + 2;
+				const found = part.slice(i, end);
+				seen(base + i, found);
+				out += blank(found);
+				i = end;
+				continue;
+			}
+			if (line && c === '/' && part[i + 1] === '/' && !(i > 0 && ':\\'.includes(part[i - 1]))) {
+				let j = part.indexOf('\n', i);
+				if (j < 0) j = n;
+				const found = part.slice(i, j);
+				seen(base + i, found);
+				out += blank(found);
+				i = j;
+				continue;
+			}
+			out += c;
+			i++;
+		}
 		return out;
 	};
 	/**

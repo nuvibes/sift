@@ -2,45 +2,13 @@ import { type Page } from '@playwright/test';
 import { expect, test } from './test';
 import { signInAsAdmin } from './admin';
 
-/*
- * The same app at every screen size, laid out and measured.
- *
- * Three things only a laid-out page can prove:
- *
- *   1. **The furniture is the same number of pixels on every screen.** The rail, the top bar, the
- *      page footer and the controls do not grow with the window; what a bigger window buys is more
- *      content in it. `src/lib/design/dimensions.test.ts` proves nothing is WRITTEN as a share of
- *      the screen. Only a browser can say what a thing actually measured.
- *
- *   2. **Nothing that floats over a screen reaches under the rail.** A bar that is `position: fixed`
- *      and centred at `left: 50%` is centred on the WINDOW rather than the app. The static gate
- *      refuses the habit; this one refuses the outcome, which is what somebody sees.
- *
- *   3. **There is no band of empty ground above the pager.** The pager sits at the end of the
- *      content, under the last row, rather than pinned in a footer (which would leave a strip of
- *      nothing on every page whose rows do not fill the window). What is checked is that the two
- *      are touching; the pager moving between pages is the accepted side of the trade. See
- *      `PageFrame`.
- *
- * ## Why four widths
- *
- * 1024 is where the rail is forced narrow, 1440 is an ordinary laptop, 2560 and 3440 are wide
- * monitors. A fault that only shows at one of them is exactly the fault this rule exists for, and a
- * single-width test would pass on every one of them.
- */
+/* The same app at every size: the furniture keeps its pixels, nothing floating reaches under
+ * the rail, and the pager touches the last row (`PageFrame`). Four widths, from the forced
+ * narrow rail at 1024 to a 3440 monitor. */
 
 const WIDTHS = [1024, 1440, 2560, 3440] as const;
 
-/*
- * A library big enough to page, served by intercepting the API.
- *
- * Intercepted rather than imported for the reason the other grid specs do it: what is under test is
- * the LAYOUT, and a fixed set of proportions makes a page's shape something that can be asserted on
- * rather than something that depends on whatever files happen to be on the machine.
- *
- * Mixed shapes on purpose: widescreen, portrait, square. A page of one shape would fill in a
- * predictable number of files and would pass whether or not the fill loop worked.
- */
+/* A pageable library served by intercepting the API, in mixed shapes so the fill loop is tested. */
 const SHAPES = [
 	{ width: 1920, height: 1080 },
 	{ width: 1080, height: 1920 },
@@ -56,8 +24,7 @@ const LIBRARY = Array.from({ length: 400 }, (_, index) => ({
 	favorite: false,
 	rating: null,
 	concealed: false,
-	// Without this the tile is drawn as still importing, so an assertion about what is on screen
-	// passes for the wrong reason.
+	// Otherwise the tile draws as still importing.
 	thumb: true,
 	original_filename: `file-${index}.jpg`
 }));
@@ -67,11 +34,7 @@ async function serveLibrary(page: Page) {
 		const asked = new URL(route.request().url());
 		const limit = Number(asked.searchParams.get('limit') ?? 50);
 		const anchor = asked.searchParams.get('from');
-		// The real route resolves an anchor to the position the file sits at, and answers with that
-		// offset rather than with the one it was sent. A mock that echoed the request back would let
-		// a broken cursor pass.
-		// A top-up names the last row the grid holds (`after`) and reads on from it, as the server
-		// does: one seek on the sort's index rather than an offset.
+		// Answers at the anchor's position, as the server does; a top-up reads on from `after`.
 		const after = asked.searchParams.get('after');
 		const at = anchor
 			? Math.max(
@@ -111,13 +74,7 @@ async function open(page: Page, width: number, path = '/browse') {
 	await signInAsAdmin(page);
 	await serveLibrary(page);
 	await page.goto(path);
-	/*
-	 * Waited on a real element rather than on `networkidle`.
-	 *
-	 * The app holds a live connection for the job feed, so the network is NEVER idle and every one
-	 * of these would time out at thirty seconds, which reads as the page failing to load rather than as
-	 * the wrong thing being waited for.
-	 */
+	// A real element, not `networkidle`: the live feed keeps the network busy forever.
 	await expect(page.locator('nav[aria-label="Pages"]')).toBeVisible();
 }
 
@@ -160,8 +117,7 @@ test.describe('nothing floating reaches under the rail', () => {
 			const tile = page.locator('[role="listitem"]').first();
 			await expect(tile).toBeVisible();
 
-			// Press and hold is how a selection starts: the same gesture on every surface. 300ms
-			// is `--press-hold`; a little over it, so this is never a race with the threshold.
+			// Press and hold past `--press-hold` (300ms) starts a selection.
 			await tile.hover();
 			await page.mouse.down();
 			await page.waitForTimeout(450);
@@ -182,33 +138,15 @@ test.describe('nothing floating reaches under the rail', () => {
 				).toBeGreaterThanOrEqual(rail.x + rail.width - SLACK);
 			}
 
-			// ...and it does not run off the other end either: a ceiling measured against the
-			// window is too generous.
 			expect(floating!.x + floating!.width).toBeLessThanOrEqual(width + SLACK);
-
-			// Whether it also clears the pager is asked below, on its own, because that is a rule about
-			// two pieces of furniture rather than about this one.
 		});
 	}
 });
 
 test.describe('the pager', () => {
-	/*
-	 * WHERE the pager sits is `e2e/pager-and-marks.spec.ts` and is deliberately not repeated here:
-	 * one rule, one place. What belongs in this file is what the pager has to share the bottom of the
-	 * screen WITH, which is geometry between two components and is exactly what this file is for.
-	 */
+	// Where the pager sits is `pager-and-marks.spec.ts`; here, what shares its corner.
 	test('is not covered by the selection bar', async ({ page }) => {
-		/*
-		 * They want the same corner. The selection bar is a rounded slab over the bottom of the
-		 * screen; if it does not clear a pager in a footer track, every button on the pager is
-		 * visible, enabled and unpressable, and a wall with anything picked cannot be paged at all.
-		 * Playwright says so in as many words ("intercepts pointer events"), and a person just
-		 * presses twice and gives up.
-		 *
-		 * Asserted as boxes rather than by pressing, so the failure names the overlap instead of
-		 * arriving as a thirty-second timeout.
-		 */
+		// The selection bar must clear the pager; asserted as boxes so a failure names the overlap.
 		await open(page, 1280);
 
 		const pagerBox = await box(page, 'nav[aria-label="Pages"]');
@@ -223,8 +161,7 @@ test.describe('the pager', () => {
 
 		const bar = page.locator('[role="region"][aria-label="Selection"]');
 		await expect(bar).toBeVisible();
-		// Settled, not merely visible: the bar rises as it arrives, so its first frame is above where
-		// it comes to rest and a measurement taken then is a picture of the movement.
+		// Settled: the bar rises as it arrives.
 		await page.waitForTimeout(400);
 		const barBox = (await bar.boundingBox())!;
 
@@ -241,23 +178,14 @@ test.describe('the pager', () => {
 		const pager = page.locator('nav[aria-label="Pages"]');
 		await expect(pager).toBeVisible();
 
-		// A position, not a page number: "page 3" is a different set of files on a different
-		// window, so it could not be shared or bookmarked.
+		// A position, not a page number, so it can be shared.
 		await expect(pager.getByRole('button', { name: 'Go to a position' })).toContainText(/of \d/);
 	});
 });
 
 test.describe('the selection bar holds still while a page arrives', () => {
-	/*
-	 * A page arriving fades and rises the frame's body, and for the length of that movement the
-	 * body carries a transform. An element with a transform on it is the containing block for
-	 * everything absolutely positioned inside it. So a bar anchored to the bottom of the SCREEN,
-	 * rendered in the body, would re-anchor to the bottom of the CONTENT for those frames and
-	 * flicker out of existence at the moment somebody is looking at what they have picked. The bar
-	 * is rendered in the frame's floating slot, outside the box that moves.
-	 *
-	 * Sampled every frame rather than before-and-after, because before-and-after cannot see it.
-	 */
+	/* The bar sits outside the body that animates, whose transform would re-anchor it to the
+	 * content. Sampled every frame. */
 	test('rather than jumping to the bottom of the content and back', async ({ page }) => {
 		await open(page, 1440);
 
@@ -287,12 +215,7 @@ test.describe('the selection bar holds still while a page arrives', () => {
 			.click();
 		const frames = await sampling;
 
-		/*
-		 * A page turn empties the selection (the picked files are not on the new page), so the bar
-		 * legitimately LEAVES here, fading and sliding a few pixels as anything leaving does, and
-		 * then it is gone. That small movement is allowed. What is not is the fault: the bar
-		 * drawn seven hundred pixels down the page, at the bottom of the content, and coming back.
-		 */
+		// A page turn empties the selection and the bar leaves; a far jump is the fault.
 		const flung = frames.filter((y) => y !== null && Math.abs(y - resting) > 40);
 		expect(
 			flung,

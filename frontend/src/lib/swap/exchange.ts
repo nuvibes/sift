@@ -1,24 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-/*
- * What a guest picked in swap mode before it pasted an Exchange token, kept for the session it
- * joined.
- *
- * In an exchange the guest chooses what it sends beside the code, on the Swap page. Somebody who
- * picked People and files in swap mode and then pasted the token in the drawer meant those picks:
- * leaving the mode takes them away (`swapMode.leave`), so they are put down here first, under the
- * session's id, and the page takes them up once, as the pickers' starting picks. Nothing leaves
- * this device until They match is pressed with them.
- *
- * In this tab's session storage, as the mode itself is, and taken (read and removed) on the first
- * read: a reload of the code step starts from what the pickers hold then, never from the drawer's
- * picks a second time.
- */
+/* What a guest picked in swap mode before pasting an Exchange token, kept in session storage
+ * under the joined session's id and taken once as the Swap page pickers' starting picks. */
 
 import type { components } from '$lib/api/schema';
 import type { SwapKind } from './mode.svelte';
 
-/** One pick, in the server's own shape for a chosen thing, narrowed to what swap mode picks and
- *  named as the drawer named it. */
+/** One pick, in the server's shape for a chosen thing, named as the drawer named it. */
 export type ExchangePick = Omit<components['schemas']['Chosen'], 'kind' | 'name'> & {
 	kind: SwapKind;
 	name: string;
@@ -26,7 +13,6 @@ export type ExchangePick = Omit<components['schemas']['Chosen'], 'kind' | 'name'
 
 const KEY = 'sift.swap-exchange-picks';
 
-/** What a pick can be: swap mode's kinds. */
 const KINDS: ReadonlySet<string> = new Set<SwapKind>([
 	'asset',
 	'person',
@@ -37,7 +23,6 @@ const KINDS: ReadonlySet<string> = new Set<SwapKind>([
 	'song'
 ]);
 
-/** Put the picks down for the session just joined. */
 export function keepExchangePicks(sessionId: string, picks: readonly ExchangePick[]): void {
 	try {
 		sessionStorage.setItem(KEY, JSON.stringify({ session: sessionId, picks }));

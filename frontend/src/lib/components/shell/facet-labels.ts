@@ -1,14 +1,5 @@
-/*
- * What a filter VALUE is called on screen, where the word the query language uses is not a word to
- * read.
- *
- * A row writes the language's own value, so it counts and selects one set; only the word drawn on
- * it changes. `viewed` (whose `none` would read as an empty file), `rating` (stored out of ten,
- * drawn at the account's scale, so two stored values can read alike, as on a tile) and height
- * bands (drawn in the account's measurement system) are the cases. Here, not in a component,
- * because the panel and the bar's chips draw the same values. The preferences are runes, so the
- * words follow a switch in Settings without a reload.
- */
+/* Screen words for filter values where the query language's word is not one to read; shared
+ * by the panel and the bar's chips, and following preferences without a reload. */
 
 import { SvelteMap } from 'svelte/reactivity';
 import type { ApiPath } from '$lib/api/client';
@@ -21,26 +12,14 @@ import { ratingScale } from '$lib/library/rating.svelte';
 import type { IconName } from '$lib/design/icons';
 import type { EntityKind } from '$lib/entity/related.svelte';
 
-/*
- * THE STASH-BOXES SIFT HAS A WORD FOR, spelled the way each service spells itself.
- *
- * Keyed by the slug the server derives from the box's address, so it is the same word on every
- * install, never what somebody typed when adding the box. One table for both `enriched:` and
- * `created:`, which ask the same boxes two questions.
- */
+// Stash-boxes Sift has a word for, by the server's slug, spelled as each spells itself.
 const BOX_NAMES: Record<string, string> = {
 	stashdb: 'StashDB',
 	pmvstash: 'PMVStash',
 	fansdb: 'FansDB'
 };
 
-/*
- * The same boxes, said as a row of the Enriched by column: "Stash-box: FansDB".
- *
- * That column's rows read `<who>: <how>`; Created by keeps the plain names, since each of its rows
- * names only a maker. Built from the table above so a box cannot appear in one column only, and a
- * function because `EnrichmentMarks` says the same sentence.
- */
+/** A box as a row of the Enriched by column; `EnrichmentMarks` says the same sentence. */
 export function boxRowLabel(name: string): string {
 	return `Stash-box: ${name}`;
 }
@@ -52,12 +31,10 @@ const BOX_ROWS: Record<string, string> = Object.fromEntries(
 const LABELS: Record<string, Record<string, string>> = {
 	// The screen's words for the three kinds; the value stays the language's (`media:gif`).
 	media: { image: 'Photos', video: 'Videos', gif: 'GIFs' },
-	// Two-way, because most of a library has no notion of being finished. Every state the language
-	// takes is spelled out, since a value also arrives from an address a person typed or followed.
+	// Every state is spelled out, since a value also comes from a typed address.
 	viewed: {
 		yes: 'Viewed',
-		/* Opened and not part-way, the column's middle row. `yes` stays the wide word, because
-		   Recently viewed is built on it. */
+		/* `yes` stays the wide word, which Recently viewed is built on. */
 		done: 'Viewed',
 		none: 'Not viewed',
 		finished: 'Finished',
@@ -88,26 +65,20 @@ const LABELS: Record<string, Record<string, string>> = {
 		meaning: 'Smart Search',
 		watermarks: 'Watermarks'
 	},
-	// The authors, said `<who>: <how>` so the column has one grammar. `stash` is the union of the
-	// box rows, so it is not counted on the walls; its word stays for a chip built from an address.
+	// `stash` is the union of the box rows; its word stays for a chip built from an address.
 	enriched: {
 		stash: 'A stash-box',
 		faces: 'Sift: from a face',
 		folder: 'Sift: from a folder name',
 		/* Sift read the file's own name, which told it the Site, never who is in it. */
 		filename: 'Sift: from a file name',
-		/* Sift read the picture for a Site's mark. Its own row because a name and a mark often
-		   disagree, in both directions. */
+		/* Its own row: a name and a mark often disagree. */
 		watermark: 'Sift: from a watermark',
-		/* The same pass as the file-name row, resting on the name and two fields inside the file
-		   (Artist, ImageDescription) agreeing on a username's number: an inference worth checking.
-		   "file metadata" because any file can land here. */
+		/* A file-name inference confirmed by two fields inside the file; worth checking. */
 		metadata: 'Sift: from file metadata',
 		/* AcoustID's name first, as a stash-box's row, because AcoustID said it and Sift asked. */
 		acoustid: 'AcoustID: from the music',
-		/* NEVER VALUES OF THIS FACET: these passes create a row and file nothing onto one. They are
-		   here because the table also answers "what does Sift call this pass" for the Created by
-		   line, for every word `created_by_via` holds (`enrich.svelte.ts`'s `madeBySaid`). */
+		/* Never values of this facet: words for the Created by line (`madeBySaid`). */
 		download: 'Sift: from a download',
 		/* A row (a file, a person, a Site, a Username) that arrived from another install. */
 		swap: 'Sift: from a swap',
@@ -125,15 +96,11 @@ const LABELS: Record<string, Record<string, string>> = {
 		stash_library: 'Sift: from a Stash library',
 		/* Imported whole and attached to no file there, listed apart for one look over them. */
 		stash_unattached: 'Sift: from a Stash library, attached to nothing there',
-		/* The People, Sites and Tags walls count `none` too: an entity is or is not enriched, and
-		   both halves are worth looking at. The presence facet's two words, deliberately. */
+		/* Entity walls count `none` too: both halves are worth looking at. */
 		none: 'Not enriched',
 		...BOX_ROWS
 	},
-	/*
-	 * Who made the row: a box, Sift on its own, or the account asking. `created:sift` is a stored
-	 * answer, not the absence of a box; rows older than the column carry no word and are in no row.
-	 */
+	/** Who made the row; rows older than the column carry no word. */
 	created: {
 		sift: 'Sift',
 		me: 'Me',
@@ -141,11 +108,7 @@ const LABELS: Record<string, Record<string, string>> = {
 		stash_unattached: 'From Stash, attached to nothing',
 		...BOX_NAMES
 	},
-	/*
-	 * Whole facts on the rows. The words say asking, because this column counts when a box was
-	 * last asked and Enriched by counts who wrote, so the two never hold numbers that conflict.
-	 * "Kept local" first: the one row that is a decision, counting the whole rule.
-	 */
+	/** How recently a box answered, apart from who wrote; "Kept local" is the one decision. */
 	enrichment: {
 		local: 'Kept local',
 		never: 'Never asked',
@@ -154,11 +117,7 @@ const LABELS: Record<string, Record<string, string>> = {
 		month: 'Asked this month',
 		older: 'Asked longer ago'
 	},
-	/*
-	 * The presence facets on the entity walls, which answer `yes` and `no`, said as whole facts
-	 * because "no" means something different under each. `linked` is retired (`LINKED_FACET`), so
-	 * its words are read only on a chip built from an address.
-	 */
+	/** Presence facets on entity walls, said whole; `linked` is retired (`LINKED_FACET`). */
 	linked: { yes: 'Enriched by a stash-box', no: 'Not enriched' },
 	cover: { yes: 'Has a cover photo', no: 'No cover photo' },
 	/* "None" because the column's heading carries the whole phrase. */
@@ -171,12 +130,7 @@ const LABELS: Record<string, Record<string, string>> = {
 	mine: { yes: 'Mine', no: 'Shared with me' }
 };
 
-/*
- * The words a stash-box sends, which are enum words rather than words to read (`BLONDE`).
- *
- * Title-cased here once for the panel, the chips and the tooltip, and only per facet: a tag, a
- * person or a folder is a name somebody chose.
- */
+// A stash-box's enum words (`BLONDE`), title-cased only per facet: a tag is a chosen name.
 const TITLE_CASED = new Set([
 	'gender',
 	'hair',
@@ -189,14 +143,10 @@ const TITLE_CASED = new Set([
 	'category'
 ]);
 
-/*
- * An ISO country code, named by `$lib/people/countries` rather than `Intl.DisplayNames` (its head says
- * why), so a facet value and a person's record read identically.
- */
+// Named by `$lib/people/countries`, so a facet value and a person's record read alike.
 const NAMED_COUNTRIES = new Set(['nationality', 'country']);
 
-/** The facets whose values are BANDS OF HEIGHT, under either of the dimension's two spellings.
- *  What is stored is centimetres; what is read follows the account. See `$lib/shell/measure`. */
+/** Height bands under either spelling; stored in centimetres, read in the account's units. */
 const HEIGHT_BANDS = new Set(['height', 'height_cm']);
 
 /** One enum word as a phrase. `BREAST_AUGMENTED` is two words to read and one word to store. */
@@ -209,13 +159,7 @@ function titleCased(word: string): string {
 		.join(' ');
 }
 
-/*
- * THE NAME THE SERVER SENT FOR AN ID, KEPT SO THE CHIP CAN READ IT.
- *
- * The chip is drawn from the address, which holds only the id, so without this a tag picked on the
- * People wall reads as a ULID. Bounded, oldest out first. Reactive, so a name arriving later
- * redraws the chip; one never counted is asked for by the bar (`facetNames`).
- */
+// Names the server sent for ids, so a chip drawn from the address reads a name; bounded.
 const NAMED_BY_THE_SERVER = new SvelteMap<string, string>();
 const REMEMBER_AT_MOST = 2000;
 
@@ -244,10 +188,7 @@ export function rememberFacetNames(facet: string, values: readonly FacetValue[])
 	}
 }
 
-/*
- * The mark a value wears, where a word is not enough to tell the authors apart at a glance.
- * Only Enriched by and Created by, whose rows are authors; each box Sift knows wears its own glyph.
- */
+// Only the author columns wear a glyph per value; each box Sift knows has its own.
 const BOX_ICONS: Record<string, IconName> = {
 	stashdb: 'inventory_2',
 	pmvstash: 'movie',
@@ -277,7 +218,7 @@ const VALUE_ICONS: Record<string, Record<string, IconName>> = {
 		shoot: 'photo_library',
 		...BOX_ICONS
 	},
-	/* Not the `enriched:` pass glyphs: that column names WHICH pass, this one only that it was one. */
+	/* Not the `enriched:` glyphs: that column names which pass, this one only that a pass ran. */
 	created: {
 		sift: 'auto_awesome',
 		me: 'account_circle',
@@ -298,13 +239,7 @@ export function facetValueIcon(facet: string, value: string): IconName | undefin
 	return VALUE_ICONS[facet]?.[value];
 }
 
-/*
- * HOW SIFT MADE A PERSON, A SITE OR A TAG, as the Created by column on those walls counts it: one
- * row per task (`created_by_via`), each in the words the thing's own page uses ("Created by Sift,
- * from facial fingerprints" is the row "Sift: from facial fingerprints"). `sift` stays the row of
- * what Sift made before the task was recorded. `stash` is Sift acting on a stash-box's answer,
- * which the Enriched by column words as the box.
- */
+// The ways Sift made a person, Site or tag: one row per task, in its page's own words.
 const SIFT_MADE_BY: ReadonlySet<string> = new Set([
 	'folder',
 	'filename',
@@ -322,11 +257,7 @@ const SIFT_MADE_BY: ReadonlySet<string> = new Set([
 ]);
 const SIFT_FROM_A_STASH_BOX_ANSWER = 'Sift: from a stash-box answer';
 
-/*
- * WHO MADE A FILE, as the Created by column on a wall of files counts it (`created:`). Each wears
- * the words and glyph the Created by line uses for that maker (`madeLabel`, `madeIcon`), so the
- * two cannot drift. No word is also one of the other `created` values.
- */
+// Who made a file, in the words and glyphs of the line that names makers (`madeLabel`).
 const FILE_MAKERS: Readonly<Record<string, { readonly via: string; readonly act?: string }>> = {
 	compress: { via: 'produced', act: 'compress' },
 	edit: { via: 'produced', act: 'edit' },
@@ -335,13 +266,7 @@ const FILE_MAKERS: Readonly<Record<string, { readonly via: string; readonly act?
 	library: { via: 'library' }
 };
 
-/*
- * WHICH ACT made a row the `produced` pass made, keyed on `tags.created_by_act`.
- *
- * Each act wears its verb's glyph from a file's menu and History's word for it, since `produced`
- * alone would say two acts one way. A row with no act stored keeps the pass's general row. Every editor
- * operation is one act. `facet-labels.test.ts` holds each glyph to its verb's.
- */
+// Which act a `produced` row came from; `facet-labels.test.ts` holds each glyph to its verb.
 export const MADE_ACTS: Readonly<
 	Record<string, { readonly icon: IconName; readonly label: string }>
 > = {
@@ -370,21 +295,12 @@ export function boxIcon(box: string | null | undefined): IconName | undefined {
 	return box ? BOX_ICONS[box] : undefined;
 }
 
-/**
- * A row read after a preposition: a row that is a noun phrase ("A stash-box") keeps its capital
- * only at the start of a line, so "Created by a stash-box" and "Enriched by a stash-box" read as
- * sentences. One rule for every line that puts a row after words of its own.
- */
+/** A row after a preposition: a leading article is lowercased ("Created by a stash-box"). */
 export function afterWords(row: string): string {
 	return row.replace(/^(An?|The) /, (article) => article.toLowerCase());
 }
 
-/**
- * The readable name for one value of one dimension, or the value itself where it needs none.
- *
- * Narrowest first: a spelled-out word, a name the server sent for an id, the facet kind's rule,
- * then the value untouched, so something odd in a library is seen rather than hidden.
- */
+/** The readable name for a value, narrowest rule first, else the value untouched. */
 export function facetValueLabel(facet: string, value: string): string {
 	const made = facet === 'created' ? FILE_MAKERS[value] : undefined;
 	if (made) return madeLabel(made.via, made.act);
@@ -399,17 +315,13 @@ export function facetValueLabel(facet: string, value: string): string {
 	const named = NAMED_BY_THE_SERVER.get(nameKey(facet, value));
 	if (named !== undefined) return named;
 	if (NAMED_COUNTRIES.has(facet)) return countryName(value);
-	/* A height band in the account's system; the words are `$lib/shell/measure`'s, so the column and
-	   the person's record cannot disagree about the same centimetres. */
+	/* The words are `$lib/shell/measure`'s, so the column and the record agree. */
 	if (HEIGHT_BANDS.has(facet)) return heightBand(value, appearance.units);
 	if (TITLE_CASED.has(facet)) return titleCased(value);
 	return value;
 }
 
-/*
- * An O count as the panel says it: the stored count is the filter, "3 times" is read, and "Never"
- * for nought. An older cut's ranges (`o_count:2..4`) still arrive from kept links.
- */
+// "Never" for nought; an older cut's ranges still come from kept links.
 const O_COUNT_RANGES: Record<string, string> = {
 	'2..4': '2 to 4 times',
 	'5..9': '5 to 9 times',
@@ -423,11 +335,7 @@ function oCountLabel(value: string): string {
 	return O_COUNT_RANGES[value] ?? value;
 }
 
-/*
- * A duration band as the panel says it: the stored half-open range is the filter, the words are
- * read. The bands are the server's `duration` column, and a gate holds this table to it. Each
- * band reads as the stretch it holds.
- */
+// Duration bands as words; a gate holds this table to the server's `duration` column.
 const DURATION_BANDS: Record<string, string> = {
 	'0s..<1m': 'Under 1 minute',
 	'1m..<3m': '1 to 3 minutes',
@@ -438,7 +346,7 @@ const DURATION_BANDS: Record<string, string> = {
 	'60m+': '60 minutes or more'
 };
 
-/* An older cut, still kept in links, so a chip reads as words. `bandOrder` reads only the table above. */
+/* An older cut, still in kept links; `bandOrder` reads only the table above. */
 const DURATION_BEFORE: Record<string, string> = {
 	'0s..<30s': 'Under 30 seconds',
 	'30s..<60s': '30 seconds to 1 minute',
@@ -452,12 +360,7 @@ function durationBandLabel(value: string): string {
 	return DURATION_BANDS[value] ?? DURATION_BEFORE[value] ?? value;
 }
 
-/*
- * A file-size band as the panel says it, arranged as the duration bands are.
- *
- * MB and GB, though `size:` scales by 1024 (`_SIZE_UNITS`): the unit somebody types is the unit
- * the row shows, because the row teaches the filter, and the app writes sizes this way everywhere.
- */
+// MB and GB though `size:` scales by 1024: the unit typed is the unit the row shows.
 const SIZE_BANDS: Record<string, string> = {
 	'0..<1mb': 'Under 1 MB',
 	'1mb..<10mb': '1 to 10 MB',
@@ -477,23 +380,14 @@ function sizeBandLabel(value: string): string {
 	return SIZE_BANDS[value] ?? SIZE_BEFORE[value] ?? value;
 }
 
-/*
- * A BANDED dimension's values, in the order the server cut them, or nothing, for a dimension
- * whose values are a list rather than a ladder.
- *
- * Ordered by count, a ladder reads twice and the cut at five hides its ends. The tables above are
- * the ladder (a record literal keeps its written order), read a second way rather than copied.
- */
+/** A banded dimension's values in the server's order, or null for a list, not a ladder. */
 export function bandOrder(facet: string): readonly string[] | null {
 	if (facet === 'duration') return Object.keys(DURATION_BANDS);
 	if (facet === 'size') return Object.keys(SIZE_BANDS);
 	return null;
 }
 
-/*
- * The columns whose values are whole NUMBERS listed one per row (an age, an O count), read in
- * ascending order like a ladder rather than by how many files each holds.
- */
+// Columns of whole numbers (an age, an O count), listed ascending like a ladder.
 const COUNTED_UP: ReadonlySet<string> = new Set(['age', 'o_count']);
 
 /** Whether a column's rows are numbers to list in ascending order. See `COUNTED_UP`. */
@@ -501,8 +395,7 @@ export function countsUp(facet: string): boolean {
 	return COUNTED_UP.has(facet);
 }
 
-/** A stored rating as the number of stars this account sees, or the value untouched when it is
- *  not a number: `rating:none` and `rating:any` are words, and are their own answer. */
+/** A stored rating as this account's stars; `none` and `any` are their own answer. */
 function ratingLabel(value: string): string {
 	const stored = Number(value);
 	if (!Number.isInteger(stored)) return value;
@@ -521,26 +414,13 @@ export interface Facet {
 	span?: boolean;
 	/** Only an admin may ask about it, so it is left out rather than drawn and refused. */
 	admin?: boolean;
-	/**
-	 * The kind of thing this facet's values are the ids OF, where they are ids: the chip asks that
-	 * thing's own page for its name when the panel has not handed one over.
-	 */
+	/** What the values are ids of, so the chip can ask that page for a name. */
 	names?: 'site' | 'tag';
-	/**
-	 * A word the server still filters by that no panel offers as a column any more: read from an
-	 * address and drawn as a chip, never in the chooser. A flag, as `admin` is, so a facet exists
-	 * in one place.
-	 */
+	/** Still filtered by on the server but no longer a column: drawn only as a chip. */
 	retired?: boolean;
 }
 
-/*
- * The dimensions a column can show, and what each is called on screen.
- *
- * The token is the filter a click writes, so a row counts and selects one set; the server refuses
- * a name not on its own copy of the list. The panel, the chip and the search dropdown wear one
- * glyph each from here (`search-kinds` reads `facetIcon`).
- */
+// The file dimensions; the server refuses a token not on its own copy of the list.
 export const FACETS = [
 	{ key: 'media', label: 'Media', icon: 'camera_roll' },
 	{ key: 'tags', label: 'Tags', icon: 'shoppingmode' },
@@ -551,8 +431,7 @@ export const FACETS = [
 	{ key: 'fav', label: 'Favorites', icon: 'favorite' },
 	/* The O counter, one row per count, in ascending order (see `countsUp`). */
 	{ key: 'o_count', label: 'O count', icon: 'water_drop' },
-	/* "View status", not "Viewed": a heading that is one of the answers reads as a filter for it.
-	   The query language uses the same name. */
+	/* "View status": a heading that is one of the answers reads as a filter for it. */
 	{ key: 'viewed', label: 'View status', icon: 'undereye' },
 	/* Whether a Loop has been marked in the file: the Loops screen's own glyph. */
 	{ key: 'loops', label: 'Loops', icon: 'all_inclusive' },
@@ -569,38 +448,23 @@ export const FACETS = [
 	{ key: 'filetype', label: 'File type', icon: 'file_png' },
 	{ key: 'vcodec', label: 'Video codec', icon: 'av1' },
 	{ key: 'acodec', label: 'Audio codec', icon: 'audio_file' },
-	/* Retired: the Music column above groups the same files by the same names. Still a word an
-	   address may carry, so a link written with it keeps narrowing. */
+	/* Retired: the Music column groups the same files; kept so old links still narrow. */
 	{ key: 'music', label: 'Music', icon: 'music_note_2', retired: true },
 	{ key: 'orientation', label: 'Orientation', icon: 'mobile_rotate' },
-	/*
-	 * Who wrote to the file without a person doing it; each row wears its author's mark
-	 * (`facetValueIcon`). The column wears Enrich's glyph: `auto_fix_high` is one of its rows'
-	 * marks and `auto_awesome` is search by meaning's on the same panel.
-	 */
+	/* Who wrote without a person; Enrich's glyph, as `auto_fix_high` is one of its rows'. */
 	{ key: 'enriched', label: 'Enriched by', icon: 'backlight_low' },
-	/*
-	 * Who made the file. The same column and glyph every wall carries for its makers, so one idea
-	 * reads one way; its rows wear each maker's mark (`FILE_MAKERS`).
-	 */
+	/* Who made the file, in the column every wall carries; rows wear each maker's mark. */
 	{ key: 'created', label: 'Created by', icon: 'inventory_2' },
 	/*
 	 * A span (`span`, read by both the column and the fetch so nothing groups files by a date), in
 	 * the chooser with the rest, and called "Added" as the query language calls it.
 	 */
 	{ key: 'added', label: 'Added', icon: 'calendar_clock', span: true },
-	// Admin-only and left out rather than disabled: the server refuses it to anybody else, as it
-	// does `sharing:` in the query language.
+	// Left out, not disabled: the server refuses it to anybody else.
 	{ key: 'sharing', label: 'Sharing status', icon: 'group', admin: true },
 	/*
-	 * The file's own dates and network, then the person's eight, asked of the file through the
-	 * people on it, each with the label and glyph of its cousin in `PERSON_FACETS`. Their tokens
-	 * are the search language's (`hair:`); the record's (`hair_color`) reach the same label.
-	 *
-	 * `enrichment` says when a box was last asked, every file in exactly one row; `enriched` says who
-	 * wrote, a file under every pass. Folded together the rows would partly overlap, so they stay
-	 * two. "Kept local" is a row because a file never sent is never asked, which is the distinction
-	 * this column is opened to make.
+	 * The file's dates and network, then the person's facets asked through the people on it. The
+	 * `enrichment` rows (when asked) stay apart from `enriched` (who wrote), which would overlap.
 	 */
 	{ key: 'enrichment', label: 'Asked a stash-box', icon: 'backlight_low' },
 	/* What Sift could not make for the file, as the Importing pane counts it. */
@@ -618,17 +482,7 @@ export const FACETS = [
 	{ key: 'age', label: 'Age', icon: 'cake' }
 ] as const;
 
-/*
- * The noun's facets, the same columns in the same order wherever a wall of it is drawn.
- *
- * Ordered by use, not the alphabet: a panel opens on the first five (`FacetPanel.options`). The
- * presence facets at the end ask whether a row has something, a fact about the row no record
- * field declares.
- *
- * `linked` is the column `enriched` replaced, kept as a retired word because the server still takes
- * it and a saved `?linked=yes` must filter. It is not mapped onto `enriched`: a box Sift has no
- * word for has no slug, so the mapping would be a silent subset. Declared once for the three walls.
- */
+/** Retired: `enriched` replaced it, but a saved `?linked=yes` must still filter. */
 const LINKED_FACET: Facet = {
 	key: 'linked',
 	label: 'Stash-box link',
@@ -660,25 +514,21 @@ const PERSON_FACETS: readonly Facet[] = [
 	/* The glyph of the mark beside their name, so the column, the chip and the badge are one. */
 	{ key: 'pmv_creator', label: 'PMV creator', icon: 'cinematic_blur' },
 	{ key: 'tags', label: 'Tags', icon: 'shoppingmode', names: 'tag' },
-	/* One row per box that wrote to this row, each with its glyph, since boxes may disagree.
-	   `linked` is kept only as an address word (`LINKED_FACET`). */
+	/* One row per box that wrote to it, as boxes may disagree. */
 	{ key: 'enriched', label: 'Enriched by', icon: 'backlight_low' },
-	/* The nearest picture glyph; the Files wall's Photo Sets glyph, never on one panel with this. */
+	/* The nearest picture glyph, shared with a column never on one panel with this. */
 	{ key: 'cover', label: 'Has a cover photo', icon: 'photo_library' },
-	/* Which box MADE the row, apart from which described it since: one many boxes know may have
-	   been typed in by hand. */
+	/* Which box made the row, apart from which described it since. */
 	{ key: 'created', label: 'Created by', icon: 'inventory_2' },
 	SHARING_FACET,
-	/* Last and admin-only on all three walls: settling one is an admin's to do. The History tab
-	   mark's glyph. */
+	/* Last and admin-only: settling one is an admin's to do. */
 	{ key: 'disagrees', label: 'Stash-box disagreements', icon: 'data_info_alert', admin: true },
 	// Last, and never drawn: the panel is built from the columns and this is not one.
 	LINKED_FACET
 ];
 
 const SITE_FACETS: readonly Facet[] = [
-	/* No `kind` column: almost no record carries one. "Network", not "Parent", which describes
-	   the data's shape. */
+	/* "Network", not "Parent", which describes the data's shape. */
 	{ key: 'parent', label: 'Network', icon: 'hub', names: 'site' },
 	{ key: 'tags', label: 'Tags', icon: 'shoppingmode', names: 'tag' },
 	/* As on the People wall. */
@@ -696,7 +546,7 @@ const SITE_FACETS: readonly Facet[] = [
 
 const TAG_FACETS: readonly Facet[] = [
 	{ key: 'category', label: 'Category', icon: 'category' },
-	/* The tag this one is filed under: the twin of the Sites wall's Network, in the record's word. */
+	/* The tag this one is filed under, named in the record's word. */
 	{ key: 'parent', label: 'Part of', icon: 'shoppingmode', names: 'tag' },
 	/* As on the People wall. */
 	{ key: 'enriched', label: 'Enriched by', icon: 'backlight_low' },
@@ -709,8 +559,7 @@ const TAG_FACETS: readonly Facet[] = [
 	LINKED_FACET
 ];
 
-/* A photo set has no owner column, so only a collection has Whose; otherwise the same columns in
-   the same words as the other walls. */
+/* Only a collection has Whose: a photo set has no column for it. */
 const COLLECTION_FACETS: readonly Facet[] = [
 	{ key: 'mine', label: 'Whose', icon: 'person' },
 	{ key: 'tags', label: 'Tags', icon: 'shoppingmode', names: 'tag' },
@@ -724,8 +573,7 @@ const PHOTO_SET_FACETS: readonly Facet[] = [
 	{ key: 'created', label: 'Created by', icon: 'inventory_2' },
 	SHARING_FACET
 ];
-/* A song carries no tags of its own; its one column of its own is who it credits, answered with
-   the artist's name as the Sites wall's Network is. */
+/* A song's own column is who it credits, answered with the artist's name. */
 const SONG_FACETS: readonly Facet[] = [
 	{ key: 'artists', label: 'Artists', icon: 'artist' },
 	{ key: 'cover', label: 'Has a cover photo', icon: 'photo_library' },
@@ -733,10 +581,7 @@ const SONG_FACETS: readonly Facet[] = [
 	SHARING_FACET
 ];
 
-/*
- * The download queue's one column: which Site a download came from, keyed `site` as its address
- * already is. The state is the screen's tab strip, so it is not also a column.
- */
+/* The download queue's one column, its Site; the state is the tab strip. */
 const DOWNLOAD_FACETS: readonly Facet[] = [
 	{ key: 'site', label: 'Site', icon: 'public', admin: true }
 ];
@@ -761,14 +606,11 @@ export function facetsFor(subject: Subject): readonly Facet[] {
 	return BY_SUBJECT[subject].filter((one) => !one.retired);
 }
 
-/**
- * Just the keys, for the bar deciding which parameters in the address are this wall's filters.
- * The retired ones are in, unlike `facetsFor`, so a saved link does not widen to the whole wall.
- */
 export function facetNames(subject: Subject, key: string): 'site' | 'tag' | undefined {
 	return BY_SUBJECT[subject].find((one) => one.key === key)?.names;
 }
 
+/** Just the keys, retired ones in, so a saved link does not widen to the whole wall. */
 export function facetKeys(subject: Subject): readonly string[] {
 	return BY_SUBJECT[subject].map((one) => one.key);
 }
@@ -785,29 +627,17 @@ export function facetRoute(subject: Subject): ApiPath {
 	return '/photo-sets/facets';
 }
 
-/*
- * HOW A MULTI-VALUE PICK IS SPELLED, WHICH IS NOT THE SAME ON BOTH SIDES.
- *
- * The file route reads a repeated parameter as "and" with a pipe for "or"; the entity routes read
- * a repeat as "or" and know no pipe. A fact about the servers, written once.
- */
+// The file route reads a repeat as "and" with a pipe for "or"; the entity routes, as "or".
 export function picksAreRepeated(subject: Subject): boolean {
 	return subject !== 'asset';
 }
 
-/*
- * Whether a wall's words reach its facet counts as `prefix` matched anywhere in a name, which is
- * how the five walls of things read the words their own box writes. The file route reads `q` as
- * the query language, so on a wall of files the words go as they are.
- */
+// Whether a wall's words reach its counts as a name prefix; on files `q` is the query language.
 export function wordsAreANamePrefix(subject: Subject): boolean {
 	return subject !== 'asset' && subject !== 'download';
 }
 
-/*
- * The one answer every wall's facet route gives, declared once on the kernel's wire. An alias over
- * the generated type, so a field the server drops is a build error (`check_one_server_type`).
- */
+/** One answer for every facet route; an alias, so a dropped field is a build error. */
 export type FacetValue = components['schemas']['FacetValue'];
 
 export type FacetCounts = components['schemas']['FacetCounts'];
@@ -822,10 +652,7 @@ const EVERY_FACET: readonly Facet[] = [
 	...DOWNLOAD_FACETS
 ];
 
-/*
- * What a dimension is CALLED on screen, across every noun, so both spellings (`hair` typed,
- * `hair_color` on the record) reach the same words.
- */
+/** What a dimension is called, so both spellings (`hair`, `hair_color`) read the same. */
 export function facetLabel(key: string, subject?: Subject): string {
 	return declared(key, subject)?.label ?? key;
 }
@@ -841,10 +668,7 @@ function declared(key: string, subject?: Subject): Facet | undefined {
 	return own ?? EVERY_FACET.find((one) => one.key === key);
 }
 
-/**
- * The facet parameters in an address, for the noun on the wall. Anything else (an offset, an
- * anchor) is no filter; repeated keys stay repeats.
- */
+/** The facet parameters in an address for this noun; repeats stay repeats. */
 export function facetParams(subject: Subject, params: URLSearchParams): Record<string, string[]> {
 	const wanted: Record<string, string[]> = {};
 	for (const key of facetKeys(subject)) {
@@ -854,13 +678,7 @@ export function facetParams(subject: Subject, params: URLSearchParams): Record<s
 	return wanted;
 }
 
-/*
- * Which field of the query language names one kind of thing, on a wall of files.
- *
- * A thing reached from another page lands on its own page with the origin as an ordinary filter
- * chip. The value is the name, which the server resolves for whoever asks; a name two things share
- * filters to both, the wider and visible direction.
- */
+// The field naming a kind of thing; the value is its name, so a shared name filters to both.
 const FIELD_OF: Record<EntityKind, string> = {
 	person: 'people',
 	tag: 'tags',
@@ -875,19 +693,12 @@ export function fieldOf(kind: EntityKind): string {
 	return FIELD_OF[kind];
 }
 
-/*
- * The fields a file can carry SEVERAL of, built from the table above. Every other field is one
- * value per file, so two filters on it keep the screen's value (`bothNarrowings`).
- */
+// Fields a file can hold several of; any other keeps the screen's value (`bothNarrowings`).
 const MANY_PER_FILE: ReadonlySet<string> = new Set(Object.values(FIELD_OF));
 
 /*
- * TWO FILTERS ON ONE WALL, WHERE BOTH OF THEM APPLY.
- *
- * A screen's own constraint (a person's page is that person) must not be REMOVED by the address,
- * and AND gives that: the set narrows, never changes. Repeated, never comma-joined, because a comma
- * joins texts and would turn a minus or a pipe into part of a name (`parse_modal` reads each value
- * whole). An identical value on both sides collapses, since Browse passes the address down.
+ * The address cannot remove a screen's own constraint, so both apply as AND. Repeated, never
+ * comma-joined, so a minus or a pipe is never read as part of a name.
  */
 export function bothNarrowings(
 	fromAddress: Record<string, string | string[]>,
@@ -907,13 +718,7 @@ export function bothNarrowings(
 	return asked;
 }
 
-/*
- * ONE HISTORY LINE'S FILES, as the chip on the bar says them.
- *
- * A History count opens the wall at `?filed=<site>~<source>~<day>[~<box>]` (or `tagged`, `named`),
- * which `constraints.Filing` decides on the server; here it is only said. A value this cannot read
- * is still a filter in force, so it is drawn as the address holds it.
- */
+// A History line's files (`?filed=<site>~<source>~<day>[~<box>]`), decided on the server.
 
 /** The three parameters, in the order their chips are drawn. */
 export const FILING_PARAMETERS = ['filed', 'tagged', 'named'] as const;
@@ -965,13 +770,7 @@ function filingActor(filing: Filing): string {
 	return 'by Sift';
 }
 
-/* The day as every date is drawn (`calendarDay`), year and all. It is the server's calendar day,
- * with no zone to convert. */
-
-/**
- * The chip's value: "Instagram by Sift on Sep 12, 2026". `name` is null until known or where the
- * viewer may not be told it, which says "a Site".
- */
+/** The chip's value, "<name> by Sift on <day>"; with no name known it says "a Site". */
 export function filingLabel(filing: Filing, name: string | null): string {
 	const who = name ?? FILING_WORDS[filing.parameter].unnamed;
 	const when = filing.day ? ` on ${calendarDay(filing.day)}` : ' \u2014 no date recorded';

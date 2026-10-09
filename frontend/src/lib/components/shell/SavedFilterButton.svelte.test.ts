@@ -3,18 +3,8 @@ import { flushSync, mount, unmount } from 'svelte';
 import SavedFilterButton from './SavedFilterButton.svelte';
 import type { SavedSearch } from '$lib/search/saved-searches.svelte';
 
-/*
- * One kept filter: the pill, and which of the four things it offers.
- *
- * What is worth pinning here is the part a browser test cannot see cheaply and a reader cannot see
- * at all: that the menu is built from the handlers ACTUALLY SUPPLIED. A caller that cannot honour
- * Edit (the theater's cell picker, which has no screen to give back) must not be offered it,
- * because a menu row that fails reads as broken rather than as not-here.
- *
- * The menus themselves are the library's and cannot be driven in jsdom: opening a `DropdownMenu`
- * needs a layout this environment does not have, and `bits-ui` is deliberately not exercised here.
- * So this asserts what is DECLARED and `saved-searches.spec.ts` presses the rows for real.
- */
+/* One kept filter's pill: its menu is built only from the handlers supplied, as a failing row
+ * reads as broken. The library's menus are pressed for real in `saved-searches.spec.ts`. */
 
 const KEPT: SavedSearch = {
 	id: 'one',
@@ -45,12 +35,7 @@ afterEach(() => {
 	host.remove();
 });
 
-/* The words on a pill, without the funnel in front of them.
- *
- * `textContent` of the whole press includes the ICON's own character (a glyph is a ligature, so
- * it is real text in the element) and a bare `.trim()` does not remove it, because a private-use
- * codepoint is not whitespace. It reads as a leading space in a failure message, which is exactly
- * the kind of thing that gets an assertion loosened instead of understood. */
+/* A pill's words without the glyph's ligature text, which `.trim()` does not remove. */
 function pillName(pill: Element | null | undefined): string {
 	return [...(pill?.childNodes ?? [])]
 		.filter((node) => !(node instanceof Element && node.classList.contains('icon')))
@@ -64,8 +49,7 @@ it('draws the name it was kept under, behind the mark saying what kind of thing 
 
 	const pill = host.querySelector('.name');
 	expect(pillName(pill)).toBe('Runway clips');
-	// The funnel, which is the app's mark for filtering wherever it appears. A row of pills reading
-	// `r4t`, `gym`, `223` says nothing about what sort of thing they are; this says it once.
+	// The funnel says once what sort of thing the pills are.
 	expect(pill?.querySelector('.icon'), 'the pill drew no kind mark').not.toBeNull();
 });
 
@@ -79,10 +63,7 @@ it('pressing the pill applies that filter and nothing else', () => {
 });
 
 it('offers no menu at all when the caller can honour none of it', () => {
-	/*
-	 * A three-dot control opening an empty menu is worse than no control: it says there is
-	 * something there.
-	 */
+	// A three-dot control opening an empty menu says something is there.
 	draw({});
 
 	expect(host.querySelector('button.more')).toBeNull();
@@ -95,8 +76,7 @@ it('offers a menu once there is one thing to put in it', () => {
 });
 
 it('names the menu after the filter it belongs to', () => {
-	/* A row of seven of these announced as seven "More" buttons tells somebody using a screen reader
-	   nothing about which is which. */
+	// Seven "More" buttons would not say which is which.
 	draw({ onremove: () => {} });
 
 	expect(host.querySelector('button.more')?.getAttribute('aria-label')).toBe(
@@ -144,14 +124,10 @@ it('draws one chip for each value in the bubble, so none is cut short', async ()
 });
 
 it('says what the filter holds, before anybody presses it', () => {
-	/* The whole reason a name was not enough. The tooltip is portalled and only exists while it is
-	   shown, so what is asserted here is that the parts were read at all: the bubble's own contents
-	   are `settings`-free markup and are pressed in the browser suite. */
+	// The tooltip is portalled and only exists while shown, so this asserts the parts were read.
 	draw({});
 	const named = host.querySelector('.name');
 
-	// The pill carries the tooltip's describedby wiring only while open; what this asserts is that
-	// mounting with a real stored query (cursor, an included value and an excluded one) draws
-	// without throwing, which is the case the `-Somebody` half exists for.
+	// Mounting with a real stored query (cursor, included and excluded values) draws cleanly.
 	expect(named).not.toBeNull();
 });

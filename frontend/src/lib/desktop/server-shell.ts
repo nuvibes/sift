@@ -1,36 +1,7 @@
 /*
- * The computer running Sift, reached through its own API.
- *
- * ## Why the server, and not this window's bridge
- *
- * An admin can be looking at a library from another computer: the Sift app in client mode, or a
- * browser. What they change about the install (starting with Windows, the firewall rule, a
- * restart) has to happen on the computer running Sift, never on the one in front of them. So these
- * are requests to the server, which asks the Sift app that started it (`/api/desktop`); the bridge
- * of the window they are sitting at is never asked for them.
- *
- * On the computer running Sift itself, the app's own verbs answer the same questions about the
- * same machine, and the panes keep using those there. This is for every other window.
- *
- * ## The things that must be pressed there
- *
- * Opening the firewall raises Windows' own administrator prompt, and an update opens its installer,
- * both on the computer running Sift. Nothing reached over a network can approve them, so the screen
- * says where to go. Choosing a database file in the computer's own picker is the same: it is not
- * offered from here at all, and the screen says where it is.
- *
- * ## The acts that restart Sift there
- *
- * Sharing, moving the storage folders, an update and opening a remembered library each stop Sift on
- * that computer. The app there answers first (taken on, or refused in its own words before anything
- * stopped), and this page then waits for a new run of the server (`followSwitch`), as a restart
- * does.
- *
- * ## Which device asked
- *
- * Every act that changes that computer is written into History with who asked and from which
- * device. The Sift app knows its own computer's name and says it on the ask (`device`); a browser
- * knows none and says nothing, and the line then reads "from another computer".
+ * The computer running Sift, reached through its own API (`/api/desktop`), for a window on
+ * another computer: what an admin changes about the install happens there. Acts that restart
+ * Sift wait for a new run (`followSwitch`); each names the asking device.
  */
 import { ApiError, api } from '$lib/api/client';
 import type { components } from '$lib/api/schema';
@@ -55,7 +26,6 @@ export async function thisDevice(): Promise<string | null> {
 	}
 }
 
-/** An ask's options with the device named, where this window knows its name. */
 function naming<O extends object>(options: O, device: string | null): O {
 	return device ? { ...options, query: { device } } : options;
 }
@@ -74,7 +44,7 @@ export function offersServer(desk: ServerDesktop | null): desk is ServerDesktop 
 	return desk?.has_app === true;
 }
 
-/** Sift starting with Windows is turned on or off THERE, and what is true there afterwards is answered. */
+/** Turn starting with Windows on or off there, answering what is true afterwards. */
 export async function setServerStartsWithWindows(on: boolean): Promise<ServerDesktop> {
 	return api.put<ServerDesktop>(
 		'/desktop/start-with-windows',
@@ -91,7 +61,7 @@ export async function readServerFirewall(): Promise<ServerFirewall | null> {
 	}
 }
 
-/** Ask Windows there to let other computers through. The prompt appears THERE. */
+/** Ask Windows there to let other computers through; the prompt appears there. */
 export async function openServerFirewall(scope: 'private' | 'any'): Promise<ServerFirewall> {
 	return api.post<ServerFirewall>(
 		'/desktop/firewall',
@@ -99,16 +69,9 @@ export async function openServerFirewall(scope: 'private' | 'any'): Promise<Serv
 	);
 }
 
-/** What came of a restart asked from here. */
 type RestartOutcome = { ok: true } | { ok: false; problem: string };
 
-/**
- * Restart Sift on the computer running it, wait for it to come back, and load its first page.
- *
- * The server answers the ask before it goes, so the wait is for a DIFFERENT run (its boot id)
- * rather than for any answer, which the one about to stop would still give. `arrive` is how the
- * page is loaded again once it is back; the tests hand their own.
- */
+/** Restart Sift there, wait for a different run (its boot id), then load the page. */
 export async function restartServer(
 	cannot: string,
 	slow: string,
@@ -128,19 +91,12 @@ export async function restartServer(
 	return (await followSwitch(before, wait)) ? { ok: true } : { ok: false, problem: slow };
 }
 
-/** The wait for Sift to come back after an act that restarts it there. Parameters of `followSwitch`. */
+/** The wait for Sift to come back after an act that restarts it there. */
 export type Wait = Parameters<typeof followSwitch>[1];
 
-/** What came of an act that restarts Sift there: back on a new run, refused, or not back in time. */
 type ActOutcome = { ok: true } | { ok: false; problem: string; refused: boolean };
 
-/**
- * Ask for an act that restarts Sift there, and wait for it to come back.
- *
- * The boot id is read BEFORE asking, since the run answering the ask is the one about to stop. A
- * refusal comes back in the app's own words and nothing stopped; a request that fails outright is
- * said with `cannot`; a wait that runs out is said with `slow`.
- */
+/** Ask for an act that restarts Sift there, boot id read first, and wait for its return. */
 export async function actThere(
 	ask: () => Promise<ServerTaken>,
 	cannot: string,
@@ -178,7 +134,7 @@ export async function readServerStorage(): Promise<ServerStorage | null> {
 	}
 }
 
-/** Move both storage folders there into `folder`, one the server's own folder browser handed back. */
+/** Move both storage folders there into a folder the server's own browser handed back. */
 export async function moveServerStorage(folder: string): Promise<ServerTaken> {
 	return api.post<ServerTaken>(
 		'/desktop/storage/move',
@@ -208,7 +164,7 @@ export async function readServerLibraries(): Promise<ServerLibraries | null> {
 	}
 }
 
-/** Open a library the Sift app there has opened before, named by its data folder as it listed it. */
+/** Open a library the app there has opened before, by its data folder as listed. */
 export async function openServerLibrary(dataDir: string): Promise<ServerTaken> {
 	return api.post<ServerTaken>(
 		'/desktop/libraries/open',

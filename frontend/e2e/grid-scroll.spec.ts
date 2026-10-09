@@ -2,23 +2,15 @@ import { type Page } from '@playwright/test';
 import { expect, test } from './test';
 import { signInAsAdmin } from './admin';
 
-/* A wheel notch moves the wall by what it was pushed, and no further.
- *
- * Rows are not scroll snap points: a row is about 180px tall and a wheel notch about 100px, so a
- * notch would always land inside the pull of a boundary and either spring back or jump a whole
- * row.
- *
- * Only a browser can answer this. Snapping is the compositor's, not the markup's: the scroll
- * position after a wheel event is the one thing no unit environment has an opinion about.
- */
+/* A wheel notch moves the wall by what it was pushed: rows (~180px) are not snap points for a
+ * ~100px notch. Snapping is the compositor's, so a browser. */
 
 const PIXEL = Buffer.from(
 	'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
 	'base64'
 );
 
-/* Enough to overflow the body several times over, in mixed proportions so the rows are real rows
- * rather than a single column of squares. */
+// Mixed proportions, so the rows are real rows.
 const ASSETS = Array.from({ length: 60 }, (_, index) => ({
 	id: `a${index}`,
 	media_type: index % 3 === 2 ? 'image' : 'video',
@@ -58,12 +50,10 @@ test('one wheel notch moves the wall by one wheel notch', async ({ page }) => {
 	await openGrid(page);
 	await page.mouse.move(800, 500);
 
-	// Three in a row, because a snap need not show on every notch: the first can look
-	// correct and the next spring back to where it began.
+	// Three notches: a snap need not show on the first.
 	for (const step of [1, 2, 3]) {
 		const before = await scrollTop(page);
 		await page.mouse.wheel(0, 100);
-		// Long enough for a snap to have finished pulling, had there been one.
 		await page.waitForTimeout(600);
 		const moved = (await scrollTop(page)) - before;
 		expect(moved, `notch ${step} moved ${moved}px`).toBeGreaterThan(80);
@@ -79,8 +69,7 @@ test('the wall does not come to rest anywhere it was not pushed', async ({ page 
 	await page.waitForTimeout(600);
 	const settled = await scrollTop(page);
 
-	// Nothing moves it afterwards. A snap arrives late, so a position read immediately after the
-	// wheel can be right while the one a person actually sees is not.
+	// A snap arrives late, so the resting position is read again.
 	await page.waitForTimeout(700);
 	expect(await scrollTop(page)).toBe(settled);
 });

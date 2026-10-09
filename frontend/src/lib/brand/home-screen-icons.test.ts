@@ -1,12 +1,5 @@
-/*
- * The icons a phone puts on its home screen are the DARK tile: the charcoal ground with the light
- * mark, the same as every other place Sift's icon is drawn.
- *
- * Two readers, two lists. Safari's Add to Home Screen reads the `apple-touch-icon` link in
- * `app.html`; Android and the desktop browsers read the manifest's `icons`. A light tile in either
- * list is a light Sift on that phone's home screen, beside a dark one everywhere else.
- * Each file both lists name is read here, and its corner pixel has to be the charcoal ground.
- */
+/* A home-screen icon is the dark tile in both lists (`apple-touch-icon` and the manifest): each
+ * file's corner pixel must be the charcoal ground. */
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -18,13 +11,7 @@ const STATIC = join(FRONTEND, 'static');
 /** The charcoal every tile is drawn on (`CHARCOAL` in `scripts/brand-icons.mjs`). */
 const CHARCOAL = [0x0f, 0x11, 0x15];
 
-/**
- * The first pixel of a PNG, as red, green and blue.
- *
- * Every row filter predicts the first pixel of the first row from nothing (the pixels to its left
- * and above are taken as zero), so its bytes after the filter byte are the pixel itself and no
- * decoder is needed for the one pixel this asks about.
- */
+/** A PNG's first pixel: every row filter predicts it from zero, so its bytes are the pixel. */
 function cornerPixel(file: string): number[] {
 	const png = readFileSync(file);
 	expect(png.subarray(1, 4).toString('ascii'), `${file} is not a PNG`).toBe('PNG');

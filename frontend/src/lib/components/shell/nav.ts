@@ -1,42 +1,25 @@
 import type { Verb } from '$lib/components/common/verbs';
 import type { IconName } from '$lib/design/icons';
 
-/* Where you can go. One list, read by the rail and the mobile tabs, so the two cannot disagree
- * about what the app contains.
- */
+// One list of destinations, read by the rail and the mobile tabs so they cannot disagree.
 
 export interface NavItem {
-	/**
-	 * What this destination is called in storage, for as long as it exists: not the address, so a
-	 * renamed address cannot quietly reshuffle somebody's remembered rail.
-	 */
+	/** The storage name, not the address, so a renamed address cannot reshuffle a rail. */
 	id: string;
 	href: string;
 	label: string;
 	icon: IconName;
-	/** Rendered only for an admin. See below: this is not what stops a guest. */
+	/** Rendered only for an admin; the server's refusal is what stops a guest. */
 	admin?: boolean;
-	/**
-	 * Opens over the current screen rather than replacing it; the href stays a real address.
-	 * Settings, reached in the middle of doing something else.
-	 */
+	/** Opens over the current screen (Settings); the href stays a real address. */
 	panel?: boolean;
 	/** Cannot be hidden from the rail: Settings alone, since it is where a hidden item is put back. */
 	fixed?: boolean;
-	/**
-	 * What this destination's own row offers on a right-click, beyond arranging the rail: `Verb`s,
-	 * like every other menu, so a test can read them and a disabled one has its reason. A function
-	 * of `RailFacts`, called while the menu is drawn, since what a row can do follows its state.
-	 */
+	/** The row's own right-click `Verb`s, from `RailFacts` read while the menu is drawn. */
 	verbs?: (facts: RailFacts) => readonly Verb[];
 }
 
-/**
- * Where a destination is found on a phone, which has no rail: `tab` on the bottom bar
- * (`MOBILE_TABS`), `library` a row of the Library screen, `more` on More, `cut` not offered (its
- * screen says so to anybody who types its address). Declared on every destination, and
- * `nav.test.ts` refuses one without it.
- */
+/** Where a destination is on a phone, which has no rail; `nav.test.ts` requires one. */
 type PhoneHome = 'tab' | 'library' | 'more' | 'cut';
 
 /** A destination the rail draws, and where the same destination is on a phone. */
@@ -44,11 +27,7 @@ interface RailItem extends NavItem {
 	phone: PhoneHome;
 }
 
-/**
- * What a row's menu may know about the application, beyond where the row goes: handed in by the
- * rail, which holds the store, so this list of destinations imports no work queue. Narrow on
- * purpose.
- */
+/** What a row's menu may know, handed in by the rail so this list imports no work queue. */
 interface RailFacts {
 	/** The Downloads dot: what colour it is showing, or none. See `imports.downloadStatus`. */
 	readonly downloadStatus: 'error' | 'success' | 'none';
@@ -56,13 +35,7 @@ interface RailFacts {
 	clearDownloadStatus(): void;
 }
 
-/**
- * The Downloads row's own verb: put out the dot without opening the screen.
- *
- * "Mark downloads as seen", not "Clear", which in this application removes rows; this removes
- * nothing, and is scoped to this window, as the dot is. Refused rather than absent while the dot is
- * out, so the menu does not change shape.
- */
+/** Put out the Downloads dot without opening the screen; refused, not absent, when out. */
 function downloadsVerbs(facts: RailFacts): readonly Verb[] {
 	const nothingNew = facts.downloadStatus === 'none';
 	return [
@@ -77,19 +50,10 @@ function downloadsVerbs(facts: RailFacts): readonly Verb[] {
 	];
 }
 
-/**
- * The window Theater needs: the width the desktop layout begins at, the rail's floor. A wall still
- * plays in the narrowest desktop window; below this the screen says it needs a wider one.
- */
+/** The width Theater needs: where the desktop layout begins. */
 export const THEATER_MIN_WIDTH = '(min-width: 768px)';
 
-/**
- * Whether Theater has a screen at a phone's width. It does not.
- *
- * A phone fills its screen with one video, so a wall would be thumbnails; the phone has the Remote
- * instead, driving the walls and players at the desk. The one switch the tab, the Remote's address
- * and Theater's phone home read, so a phone Theater is one change away.
- */
+/** Whether a phone gets a Theater screen; it does not, as a phone has the Remote instead. */
 export const THEATER_ON_A_PHONE: boolean = false;
 
 /** Theater's second mode on a phone: the screens at the desk, to drive from the phone. */
@@ -100,29 +64,15 @@ export function theaterTabHref(onAPhone: boolean): string {
 	return onAPhone ? '/theater' : '/remote';
 }
 
-/**
- * Where the Remote's own address sends a phone: nowhere while it is the Theater tab's screen, and
- * Theater's second mode once Theater has a phone screen.
- */
+/** Where the Remote's address sends a phone: nowhere while it is the Theater tab's screen. */
 export function remoteGoesTo(onAPhone: boolean): string | null {
 	return onAPhone ? THEATER_DESK_HREF : null;
 }
 
-/**
- * The rule across the rail, as a position in the order rather than a fixed boundary: the ways of
- * LOOKING at a library above, the places you go TO below. Items can be dragged across it.
- */
+/** The rule across the rail, a position in the order: ways of looking above, places below. */
 export const RAIL_DIVIDER = '--';
 
-/*
- * Every destination the rail can show, in the order it ships (`DEFAULT_RAIL_ORDER`).
- *
- * Above the rule, ways of looking: everything, its groupings, the finer ways in, Favorites, and
- * Theater. Below, places to go: Organize, Downloads, Hidden, Insights, Settings, then Recently
- * viewed, the row reached most often, at the end of the reach. Storage and the machine's work are
- * Settings sections. `admin: true` only hides a door the server would refuse; the refusal is the
- * control.
- */
+// In shipped order. `admin: true` only hides a door the server would refuse.
 export const RAIL_NAV: RailItem[] = [
 	{ id: 'browse', href: '/browse', label: 'Browse', icon: 'browse', phone: 'tab' },
 	{ id: 'people', href: '/people', label: 'People', icon: 'person', phone: 'library' },
@@ -137,14 +87,11 @@ export const RAIL_NAV: RailItem[] = [
 		phone: 'library'
 	},
 	{ id: 'tags', href: '/tags', label: 'Tags', icon: 'shoppingmode', phone: 'library' },
-	/* The songs the files carry, still at `/songs`, which bookmarks and stored orders name. A finer
-	   way in, like a tag, and about what plays, like a Loop. */
+	/* Music still lives at `/songs`, which bookmarks and stored orders name. */
 	{ id: 'songs', href: '/songs', label: 'Music', icon: 'music_note_2', phone: 'library' },
-	/* The marked stretches: a piece of one file, the smallest unit the library has. */
 	{ id: 'loops', href: '/loops', label: 'Loops', icon: 'all_inclusive', phone: 'library' },
 	{ id: 'favorites', href: '/favorites', label: 'Favorites', icon: 'favorite', phone: 'library' },
-	/* Several videos together: a way of LOOKING, so the last row above the rule. No `admin`, as for
-	 * Browse. Cut from a phone, which has the Remote (`THEATER_ON_A_PHONE`). */
+	/* No `admin`, as for Browse; cut from a phone, which has the Remote. */
 	{
 		id: 'theater',
 		href: '/theater',
@@ -152,7 +99,6 @@ export const RAIL_NAV: RailItem[] = [
 		icon: 'interactive_space',
 		phone: THEATER_ON_A_PHONE ? 'tab' : 'cut'
 	},
-	/* The first row below the rule: where files become the groups above it. */
 	{
 		id: 'organize',
 		href: '/organize',
@@ -161,8 +107,7 @@ export const RAIL_NAV: RailItem[] = [
 		admin: true,
 		phone: 'library'
 	},
-	/* The bare arrow, the application's one mark for downloading. What is new here is said by the
-	 * status dot cut into the glyph, and only when it is true. */
+	/* What is new is said by the status dot cut into the glyph. */
 	{
 		id: 'downloads',
 		href: '/downloads',
@@ -172,11 +117,9 @@ export const RAIL_NAV: RailItem[] = [
 		verbs: downloadsVerbs,
 		phone: 'tab'
 	},
-	/* The vault as a place to LOOK at what is hidden; the top bar's control still opens and shuts it
-	 * from anywhere. Called Hidden, as the top bar calls it (`$lib/shell/vault.svelte`). */
+	/* The vault as a place to look; the top bar's control still opens and shuts it. */
 	{ id: 'hidden', href: '/hidden', label: 'Hidden', icon: 'visibility_off', phone: 'library' },
-	/* What you viewed, organized and added, in numbers. No `admin`: an account's figures are its
-	 * own, and the server leaves Sift's own block out of a guest's answer. */
+	/* No `admin`: an account's figures are its own. */
 	{ id: 'insights', href: '/insights', label: 'Insights', icon: 'insights', phone: 'library' },
 	{
 		id: 'settings',
@@ -189,16 +132,10 @@ export const RAIL_NAV: RailItem[] = [
 	},
 	/* Last of all: the row below the rule reached most often, at the end of the reach. */
 	{ id: 'recent', href: '/recent', label: 'Recently viewed', icon: 'history', phone: 'library' }
-	/* Profile is the first section of Settings > You, where everything that is yours already is.
-	 * The DESIGN GALLERY (`/design`), in a build that includes it, is reached by typing its
-	 * address: a row about the application itself is in the way of somebody browsing files. */
+	/* Profile is in Settings; the DESIGN GALLERY (`/design`) is reached by its address. */
 ];
 
-/**
- * The arrangement Sift ships with, and what "reset" puts back. The rule is one of the entries.
- * This and `RAIL_NAV` must agree or a destination is quietly never drawn; `nav.test.ts` refuses
- * the pair when they differ.
- */
+/** The shipped arrangement, which reset puts back; `nav.test.ts` holds it to `RAIL_NAV`. */
 export const DEFAULT_RAIL_ORDER: string[] = [
 	'browse',
 	'people',
@@ -216,7 +153,6 @@ export const DEFAULT_RAIL_ORDER: string[] = [
 	'hidden',
 	'insights',
 	'settings',
-	/* Under Settings, at the end of the reach; anybody who disagrees drags it. */
 	'recent'
 ];
 
@@ -232,10 +168,7 @@ function declared(id: string): RailItem {
 	return item;
 }
 
-/**
- * The rows of the Library screen: Recently viewed first, the most reached, then the rail's shipped
- * order. Not the rail's arrangement: on a phone this list is the only way to a row.
- */
+/** Rows of the Library screen: Recently viewed first, then the shipped order. */
 export const LIBRARY_ROWS: RailItem[] = [
 	declared('recent'),
 	...DEFAULT_RAIL_ORDER.filter((id) => id !== RAIL_DIVIDER && id !== 'recent')
@@ -243,9 +176,7 @@ export const LIBRARY_ROWS: RailItem[] = [
 		.filter((item) => item.phone === 'library')
 ];
 
-/* A phone has no rail: its bottom bar holds the few places reached from anywhere, and the rest is
- * one press into Library or More. Not rearrangeable and not the rail's stored order, so a desktop
- * change never reshapes a phone. Searching is the box on every screen, not a tab. */
+// The phone bar is fixed, never the rail's stored order, so a desktop change never reshapes it.
 
 /** A tab of the phone bar, and the addresses it stays lit on beyond its own. */
 interface MobileTab extends NavItem {
@@ -253,10 +184,7 @@ interface MobileTab extends NavItem {
 	covers?: readonly string[];
 }
 
-/**
- * The Remote's tab: the phone driving what is open at the desk. A tab, reached while something
- * plays; every signed-in person's; not a rail destination, since a desk has the screens.
- */
+/** Tab for the Remote, every signed-in person's; not a rail destination. */
 const REMOTE_TAB: MobileTab = {
 	id: 'remote',
 	href: '/remote',

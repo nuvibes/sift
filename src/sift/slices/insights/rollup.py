@@ -1,60 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""The quiet adder-up: each finished day of each User, added up once, a piece at a time.
-
-## A loop of the process, not a task
-
-This is the shape of `kernel.db.keep_the_statistics_current`: an asyncio loop the application's
-lifespan (`sift/wiring/lifespan.py`) starts and stops beside the checkpoint and the statistics
-refresh. It is deliberately NOT a task. A task is
-something a person can see on Activity, choose a When for on Scheduled tasks, run and cancel; this
-has nothing anybody would choose: the counts it keeps are derived, and there is no right time
-for them other than "soon, and never in anybody's way". `kernel.jobs.schedules` lists it with the
-process's own loops for that reason. It takes no worker slot, so it never holds up a file read.
-
-## One piece
-
-Every minute or so the loop takes ONE piece of work and goes back to sleep:
-
-* the User furthest behind has their next finished day added up (every metric, one User, one
-  day, one write transaction) and their progress moves past it;
-* or, with nobody behind, one day whose vault split went stale is split again and written down,
-  so a reader stops paying for the re-split on every visit.
-
-While there is more to do it comes back after a short pause rather than a minute, so a device that
-was off for a week catches up a day per piece in seconds, and a first run over years of history
-takes minutes rather than days. A piece is small by construction (one User's one day, a matter
-of milliseconds), so work somebody presses while it runs waits at most one piece for the writer.
-
-## It gives way
-
-Before every piece it asks whether anything somebody is waiting for is queued: work at the
-waited-on urgency (`kernel.jobs.WAITED_ON_PRIORITY` and more urgent) that is claimable now. If so,
-no day is added up, and the loop asks again next time round. What it does not give way to is
-background work, which is most of what a busy install is doing and would otherwise starve it.
-
-**The split does not give way.** A day not added up yet costs a reader little (a recent one is
-counted live, an old one is named as still counting), so it can wait for the queue. A STALE SPLIT
-is the opposite: every reader of every period holding that day works it out again (`store.rows`),
-and a queue of pressed identify jobs lasts hours, so while somebody waits, the loop still writes
-one stale day's split down per piece. A piece is one day's read and one small write, and the work
-that was pressed waits at most that write for the writer, which is the bound the adding-up keeps.
-
-## A finished day
-
-A day is finished an hour after its midnight, and then waits while its User is still in the middle
-of something that began on it or since (a sitting reported in the last `PICKUP_GAP_SECONDS`): the
-evening is not over, and a day added up while a sitting is still reporting would be added up
-again. Never longer than a day past its end (`WAIT_AT_MOST_SECONDS`): a wall left cycling all
-night and all day is added up as it stands, and its later pieces mark the day to add up again.
-
-## A day added up again
-
-Some of what a day counted is written later: a sitting reported past the cut, a run finished, a
-file filed under a Username or given a person, a Tag, a Collection, a Photo Set or a song. Each
-such write moves the User's `dirty_from` back to the first day it reaches (the triggers of
-`schema`), and before anything else the helper adds those days up again, one a piece, from there
-up to the last day added up (`store.write_day_again`).
-"""
+"""The quiet adder-up: each finished day of each User, added up once, a piece at a time."""
 
 from __future__ import annotations
 
@@ -89,9 +34,7 @@ WAIT_AT_MOST_SECONDS: Final = 24 * 60 * 60
 #: Whether anything somebody is waiting for is queued. Handed in by the composition root.
 Waiting = Callable[[], Awaitable[bool]]
 
-#: What is done once a User's figures are up to date: given the User and the last finished day,
-#: which is now added up. The recaps and the learning paths' achievements are made here, handed in
-#: by the composition root, which is the one place that holds what the makers need.
+#: Handed in by the composition root, the one place holding what the recap makers need.
 AfterDay = Callable[[str, date], Awaitable[object]]
 
 #: The User furthest behind: nobody added up yet first, then the oldest `added_up_to`. Users are
@@ -105,9 +48,7 @@ SELECT u.id AS user_id, u.created_at AS created_at, p.added_up_to AS added_up_to
  LIMIT 1
 """
 
-#: The first moment there is anything of this User's to count. Each a seek on an index that starts
-#: with the User; a User who has done nothing yet answers NULL, and starts from the day they
-#: were made.
+#: NULL for a User who has done nothing yet, who starts from the day they were made.
 _FIRST_FACT = """
 SELECT MIN(
          COALESCE((SELECT MIN(started_at) FROM plays WHERE user_id = :user), :made),
@@ -155,15 +96,7 @@ def last_finished_day(now: float) -> date:
 async def add_up_one_day(
     database: Database, *, now: float | None = None, after_day: Sequence[AfterDay] = ()
 ) -> bool:
-    """Add up the next finished day of the User furthest behind. False when nobody is behind.
-
-    When the day added up is the last finished one (the User has caught up), each `after_day`
-    is called for them. Only then, and not after every day of a catch-up: what they make (a recap
-    of the period just closed, an achievement reached by now) is about where the User has got to,
-    and one of them asks a whole-library question an admin would otherwise pay for every piece.
-    Each is called on its own, and one that fails is logged and does not stop the next, nor the
-    adding-up: the day is already filed, and the makers are asked again the next day.
-    """
+    """Add up the next finished day of the User furthest behind. False when nobody is behind."""
     moment = time.time() if now is None else now
     if await add_up_again(database):
         return True
@@ -187,9 +120,7 @@ async def add_up_one_day(
     if not waited_out and await still_going(database, user_id, opened, moment):
         return False
     started = time.perf_counter()
-    # The stamp is read BEFORE the count, so a hide landing in between leaves the rows with an
-    # older stamp than the verdict they were split by, and a stale row is split again. Read
-    # after, the same race would file a split as current that is not.
+    # Read before the count: a hide landing in between leaves a stale stamp, split again later.
     stamp_row = await database.fetch_one(_STAMP, (user_id,))
     stamp = int(stamp_row["cache_stamp"]) if stamp_row is not None else 0
     counted = await count_day(database.fetch_all, user_id, day)

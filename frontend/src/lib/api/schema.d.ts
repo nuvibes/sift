@@ -340,26 +340,7 @@ export interface paths {
         put?: never;
         /**
          * Set Assets Vault
-         * @description Hide a selection, or bring it back, for this user, in ONE request.
-         *
-         *     **One request for the selection, never one per file stopping at the first refusal.** Forty
-         *     files hidden one at a time would be forty round trips, forty write transactions and forty bumps
-         *     of the cache stamp, and one file the caller could not touch would end the run part-way with the
-         *     rest still on the screen. The work is never the cost.
-         *
-         *     A file that cannot be resolved is SKIPPED and counted, and the reply says how many and why:
-         *     the same partial-with-a-reason every other bulk write in Sift answers with. The single route
-         *     keeps its flat 404, because over one file there is no half of the answer to give.
-         *
-         *     Counts and no ids, which is the same promise the single route makes by answering with no body
-         *     at all: by the time this is written the rows it describes may be ones the caller is no longer
-         *     allowed to be shown, and naming them would undo the request in the act of confirming it. A
-         *     number of files and a reason names nothing.
-         *
-         *     The PIN is required to go IN, once for the selection rather than once per file, and is not
-         *     required to come back out, for the reason the single route gives: bringing something back is
-         *     reachable exactly when the access layer resolves it at all, so whoever can do it has already
-         *     proved the PIN.
+         * @description Hide a selection, or bring it back, in one request; refused files are counted, not named.
          */
         post: operations["set_assets_vault_api_assets_vault_post"];
         delete?: never;
@@ -1081,15 +1062,7 @@ export interface paths {
         get?: never;
         /**
          * Set Asset Vault
-         * @description Hide one file, or bring it back, for this user.
-         *
-         *     Answered with no body. By the time the answer is written the row it describes may be one the
-         *     caller is no longer allowed to be shown, and describing it anyway would undo the request in the
-         *     act of confirming it.
-         *
-         *     Bringing one back is the same request pointed the other way, and it is reachable exactly when
-         *     this user has Hidden open, because that is when the access layer resolves the file at all.
-         *     Nothing here tests the state to decide; the resolution is the test.
+         * @description Hide one file, or bring it back; no body, since the row may no longer be visible.
          */
         put: operations["set_asset_vault_api_assets__asset_id__vault_put"];
         post?: never;
@@ -3943,12 +3916,7 @@ export interface paths {
         get?: never;
         /**
          * Set Folder Vault
-         * @description Hide a folder, or bring it back. Everything under it goes with it, for this user.
-         *
-         *     The chain is walked by the access layer, not here, and it is walked for every copy of a file
-         *     rather than the one in front of the reader: a file that also sits in a folder somewhere else
-         *     stays concealed on the strength of this one. Otherwise hiding a folder would take things off the
-         *     screen that a second copy quietly put straight back.
+         * @description Hide a folder, or bring it back; the access layer hides every copy under it.
          */
         put: operations["set_folder_vault_api_folders__folder_id__vault_put"];
         post?: never;
@@ -5200,20 +5168,7 @@ export interface paths {
         };
         /**
          * Live State
-         * @description Where this user's view stands right now.
-         *
-         *     Read once when a screen loads, so the socket that opens a moment later can say where it was
-         *     starting from, without which a change landing between the two would be missed by both. Read
-         *     again when a socket closes for a reason it could not carry, because this route sits behind the
-         *     same session check the socket does: an answer means the connection was dropped, and a refusal
-         *     means it was refused.
-         *
-         *     The viewer is resolved even though the mark does not come from it, and that is the point of
-         *     the parameter: this route has to sit behind the same session check the socket does, or it
-         *     cannot tell a refusal from a dropped connection.
-         *
-         *     Answers **429** when this user already holds as many live connections as it may, with a
-         *     `Retry-After`. That is the same limit the socket is refused on, said where a client can read it.
+         * @description Where this user's view stands right now; 429 when at the live connection limit.
          */
         get: operations["live_state_api_live_get"];
         put?: never;
@@ -6518,15 +6473,7 @@ export interface paths {
         };
         /**
          * Read Fields
-         * @description Every field this version describes, grouped by what it belongs to, in reading order.
-         *
-         *     The order is the registry's own and is part of the design: a record whose rows come back
-         *     alphabetical reads as a dump of a table rather than as something somebody laid out.
-         *
-         *     The same answer for everybody. This says what a field IS (its name in plain language and its
-         *     type) and never what any particular thing's value is, so there is nothing here to scope. It
-         *     still needs a session, because the shape of a record is a description of the library's own
-         *     vocabulary and an anonymous caller has no business reading it.
+         * @description Every field, grouped by subject, in the registry's reading order; the same for everybody.
          */
         get: operations["read_fields_api_records_fields_get"];
         put?: never;
@@ -6546,15 +6493,7 @@ export interface paths {
         };
         /**
          * Related Counts
-         * @description Every number on one entity page's tab strip.
-         *
-         *     An unknown kind is refused rather than answered with an empty object. A strip drawn from an
-         *     empty answer is a strip of bare words, with no way to tell a tab with nothing behind it from
-         *     one nobody has looked at, so a client asking the wrong question is told.
-         *
-         *     A `entity_id` naming nothing is not an error. Every narrowing built from it matches no files, so
-         *     every count is nought, which is the honest answer for a thing that is not there and the same
-         *     answer somebody gets for one they may not see.
+         * @description Every number on one entity page's tab strip; an unknown kind is refused.
          */
         get: operations["related_counts_api_related__kind___entity_id__get"];
         put?: never;
@@ -7194,22 +7133,7 @@ export interface paths {
         };
         /**
          * List Shoots
-         * @description The shoots Sift is proposing, newest first, with the pictures of each.
-         *
-         *     The pictures come back through the read that decides visibility, so a proposal drawn here shows
-         *     exactly what this user may be shown. `total` is the count of proposals and not of pictures:
-         *     a figure larger than what the page draws would publish, in the difference, how many files this
-         *     user is not being told about.
-         *
-         *     **And so is every number on a card.** The rule is one rule and it applies to each of the three:
-         *     a proposal's own tallies are the store's, and the store scopes nothing. See the note where the
-         *     card is built.
-         *
-         *     `from` names a proposal to start the page at, instead of an offset: the row the wall was left
-         *     at, carried in its address so the way back lands there (the other walls' `from`, one rule). A
-         *     `from` that is not on the list serves the page it was on (`near`), or the TOP,
-         *     rather than refusing: answering a proposal is
-         *     what takes it off, so on a queue that is the ordinary case, not an error.
+         * @description The shoots Sift is proposing, newest first; `from` resumes at a proposal, or near it.
          */
         get: operations["list_shoots_api_shoots_get"];
         put?: never;
@@ -7229,11 +7153,7 @@ export interface paths {
         };
         /**
          * One Shoot
-         * @description One proposed shoot, with every picture of it: the page a card on the wall opens.
-         *
-         *     The same view the wall's card is built from (`_drawn`), so the page and the card cannot say two
-         *     things about one shoot. A proposal already answered, or one this user may be shown nothing
-         *     of, is not found: a card with no pictures is not a question anybody can answer.
+         * @description One proposed shoot, drawn as the card is; answered or wholly hidden is not found.
          */
         get: operations["one_shoot_api_shoots__proposal_id__get"];
         put?: never;
@@ -7255,15 +7175,7 @@ export interface paths {
         put?: never;
         /**
          * Make The Set
-         * @description Yes: make the Photo Set, through the same derivation a folder of pictures goes through.
-         *
-         *     The body is optional and so is the name in it. The main half of the page's "Create Photo Set"
-         *     presses this with nothing, and the set takes the proposal's name. "Create with a name..." sends `{"name": ...}` and the set is
-         *     called that instead; the receipt records which (`service._payload`).
-         *
-         *     A 409 for a card whose pictures are in a Photo Set already: the press conflicts with the
-         *     library as it stands, and the card is answered by that set as it is refused, so a re-read of
-         *     the page no longer draws it.
+         * @description Create the Photo Set, named as typed or after the proposal; 409 if already filed.
          */
         post: operations["make_the_set_api_shoots__proposal_id__make_post"];
         delete?: never;
@@ -7283,11 +7195,7 @@ export interface paths {
         put?: never;
         /**
          * Name The Rest
-         * @description Put the creator on the pictures of this shoot that carry nobody.
-         *
-         *     Its own route rather than a flag on the one above, because it is its own decision: agreeing that
-         *     pictures belong together is not agreeing who is in them, and each has its own receipt so either
-         *     can be taken back without the other.
+         * @description Put the creator on the nameless pictures: its own decision, receipt and undo.
          */
         post: operations["name_the_rest_api_shoots__proposal_id__name_the_rest_post"];
         delete?: never;
@@ -7307,10 +7215,7 @@ export interface paths {
         put?: never;
         /**
          * Not A Set
-         * @description Not a shoot. Remembered against the pictures, so no rearrangement of them comes back.
-         *
-         *     Permanent, and by picture rather than by grouping: the rule that finds a shoot is greedy and
-         *     its grouping moves, so a no tied to one grouping is a no the next pass would route around.
+         * @description Not a shoot: refused per picture, as the greedy grouping moves between passes.
          */
         post: operations["not_a_set_api_shoots__proposal_id__refuse_post"];
         delete?: never;
@@ -9227,7 +9132,7 @@ export interface paths {
         };
         /**
          * Supported Sites
-         * @description Every Site Sift has a record for, and what it can do with each.
+         * @description Every Site that Sift has a record for, and what it can do with each.
          */
         get: operations["supported_sites_api_supported_sites_get"];
         put?: never;
@@ -9909,10 +9814,7 @@ export interface paths {
         };
         /**
          * Survey
-         * @description What has built up. Removes nothing, and must not.
-         *
-         *     Reads no directory either: the counts that read the disk are the last survey's, with when it
-         *     was taken, and `surveying` says whether a fresh one is on its way.
+         * @description What has built up, the disk counts from the last survey. Removes nothing, and must not.
          */
         get: operations["survey_api_tidy_get"];
         put?: never;
@@ -9934,34 +9836,7 @@ export interface paths {
         put?: never;
         /**
          * Optimize Database
-         * @description Settle the database down: fold the write-ahead log back in and re-plan the indexes.
-         *
-         *     Its own route rather than another tidying, because a tidying REMOVES something and this removes
-         *     nothing. Every row survives, every query answers the same, and the only thing that changes is
-         *     how much disk the file takes and how well SQLite chooses between its indexes. Offering it beside
-         *     things that delete data, under a heading about leftovers, would be inviting somebody to read it
-         *     as one of them.
-         *
-         *     Three steps, in this order and for three different reasons:
-         *
-         *     * The table statistics are refreshed, which is what makes the query planner pick the index it
-         *       should. That also happens at boot, at the end of every whole-library pass and daily
-         *       (`Database.refresh_statistics`), but this is the one somebody presses when a screen has gone
-         *       slow, so it runs whatever the timers have done.
-         *     * The full-text index is rebuilt into fewer, larger segments. Search reads every segment, so an
-         *       index written a row at a time over months is read many times over on every query. The new
-         *       segment is written before the old ones are let go, so the file can end a little larger, with
-         *       the old pages kept inside it for later writes.
-         *     * The write-ahead log is folded back into the database and cut to nothing. LAST, because the
-         *       rebuilt index arrives in the log as a copy of the whole index, and left there it reads as
-         *       the file having grown by that much. A reader that never closes is what stops SQLite doing
-         *       this on its own.
-         *
-         *     Deliberately NOT `VACUUM`. It rewrites the whole file, needs as much free disk again as the
-         *     database takes, and holds an exclusive lock for as long as it runs, which on a self-hosted box
-         *     with a large library is a Sift that appears to have frozen. What it buys over this is the space
-         *     inside the file being handed back to the filesystem, and that space is reused by the next writes
-         *     regardless. Backup already takes a `VACUUM INTO` copy for anybody who wants a compacted file.
+         * @description Refresh statistics, merge the search segments, then fold the log back in; never VACUUM.
          */
         post: operations["optimize_database_api_tidy_database_optimize_post"];
         delete?: never;
@@ -9981,12 +9856,7 @@ export interface paths {
         put?: never;
         /**
          * Start Survey
-         * @description Count what the costly tidyings would remove, in the background. Removes nothing.
-         *
-         *     Its own route rather than a side of the survey read, because reading the cache directory of
-         *     a large library is seconds of the disk, and a screen that paid that on every open would take
-         *     that long to draw. One at a time: a second press while one is going is answered rather than
-         *     doubled.
+         * @description Count what the costly tidyings would remove, in the background, one survey at a time.
          */
         post: operations["start_survey_api_tidy_survey_post"];
         delete?: never;
@@ -10006,13 +9876,7 @@ export interface paths {
         put?: never;
         /**
          * Run
-         * @description Run one tidying, by name. Nothing else runs with it.
-         *
-         *     One at a time on purpose. Each of these is permanent and each has a different consequence, so
-         *     "tidy everything" would be a single press standing in for several different decisions.
-         *
-         *     A costly tidying is surveyed again after it runs and the answer kept, so the count the screen
-         *     reads back is what is left rather than what was counted before the run.
+         * @description Run one tidying by name: each is permanent, so one press is never several decisions.
          */
         post: operations["run_api_tidy__name__post"];
         delete?: never;
@@ -10262,10 +10126,7 @@ export interface paths {
         };
         /**
          * Vault State
-         * @description Whether this browser has the vault open, and whether there is a PIN to open it with.
-         *
-         *     Both are asked before anything about the vault is drawn. Without the second the screen would
-         *     offer to hide something and only then discover there is no way to get it back.
+         * @description Whether this browser has the vault open, and whether a PIN exists to open it.
          */
         get: operations["vault_state_api_vault_get"];
         put?: never;
@@ -10287,11 +10148,7 @@ export interface paths {
         put?: never;
         /**
          * Lock
-         * @description Hide them again. Every lock trigger and the panic control land here.
-         *
-         *     Deliberately the cheapest route in the application: no proof, no precondition, and the same
-         *     answer whether or not anything was open. This is the direction that fails safe, so nothing is
-         *     allowed to stand between pressing it and it happening.
+         * @description Hide them again: no proof and no precondition, since this direction fails safe.
          */
         post: operations["lock_api_vault_lock_post"];
         delete?: never;
@@ -10311,21 +10168,7 @@ export interface paths {
         put?: never;
         /**
          * Unlock
-         * @description Show this user's hidden things, for this browser, until something locks it again.
-         *
-         *     Open to every user, guests included. What comes back is what the caller hid, and nothing
-         *     else: hiding is per user, so there is nothing here that belongs to somebody else and no
-         *     version of this that opens another user's Hidden.
-         *
-         *     The PIN is checked by the auth feature, against the same throttle the lock screen uses, so
-         *     guessing is slowed by the same counter: one secret per user, one budget of attempts, and no
-         *     second door with a fresh allowance behind it. The budget is per user too, so one user
-         *     guessing badly cannot lock another out.
-         *
-         *     What this does not do is reach the master key. The PIN never wraps it and never derives it: the
-         *     key comes from the password and lives in memory, so a restart leaves none and no PIN can
-         *     conjure one. Opening Hidden after a restart is possible and gets you your hidden files; it does
-         *     not get you the saved logins, and that is the design rather than a gap.
+         * @description Show this user's hidden things in this browser; the PIN shares the lock screen's throttle.
          */
         post: operations["unlock_api_vault_unlock_post"];
         delete?: never;
@@ -11077,8 +10920,7 @@ export interface components {
         };
         /**
          * BarPart
-         * @description One kind's share of a bar: videos, pictures, GIFs or Theater, or `all`, for a bar that is
-         *     not split (the hours of the day).
+         * @description One kind's share of a bar, or `all` for a bar that is not split.
          */
         BarPart: {
             /** Kind */
@@ -11630,8 +11472,7 @@ export interface components {
         };
         /**
          * Chart
-         * @description A block's one chart. Bars on a common baseline, the one encoding people read accurately,
-         *     or `share`: one bar whose parts are the shares of a whole. Never a pie, never a gauge.
+         * @description A block's one chart: bars on a common baseline, or one `share` bar; never a pie.
          */
         Chart: {
             /** Bars */
@@ -13345,8 +13186,7 @@ export interface components {
             label: string;
             /**
              * Said
-             * @description `value` in words, by the statements' own rule (`statements.figure_said`), or empty for
-             *     a time of day and a size, which the screen words on the reader's own settings.
+             * @description `value` in words; empty for a time of day and a size, worded on the reader's settings.
              */
             readonly said: string;
             /** Trend */
@@ -14637,8 +14477,7 @@ export interface components {
         };
         /**
          * InsightsBlock
-         * @description One block of the page. Below its floor it carries `floor_reached: false` and the one line
-         *     "Not enough yet to say." as its only statement, and no figures, chart or lists.
+         * @description One block of the page; below its floor, one line and no figures, chart or lists.
          */
         InsightsBlock: {
             calendar: components["schemas"]["Calendar"] | null;
@@ -14660,10 +14499,7 @@ export interface components {
         };
         /**
          * InsightsPage
-         * @description The whole page for one period.
-         *
-         *     `from` and `to` are inclusive ISO days on this device's calendar. `today_is_live` says today's
-         *     figures were counted just now from the raw tables rather than read from the added-up days.
+         * @description The whole page for one period; `from` and `to` are inclusive ISO days.
          */
         InsightsPage: {
             /** Blocks */
@@ -15393,11 +15229,7 @@ export interface components {
         };
         /**
          * LiveState
-         * @description Where a user's view stands, and what has just moved it.
-         *
-         *     One shape for both addresses on purpose. A shape that only ever travelled down a socket would
-         *     have no generated type (the route table does not describe sockets) so the client would
-         *     hand-write an interface and the drift between the two would be silent.
+         * @description Where a user's view stands; one shape for both addresses, so its type is generated.
          */
         LiveState: {
             /** About */
@@ -15838,14 +15670,7 @@ export interface components {
         };
         /**
          * MakeWrite
-         * @description Making the set, and what to call it.
-         *
-         *     `name` is optional and absent is the ordinary press: the set takes the name the proposal
-         *     carries, which is the creator's. Given, it is the name somebody typed into "Create with a
-         *     name...", tidied by the one rule every name in Sift goes through (`clean_name`: control
-         *     characters dropped, a double quote refused out loud, blank refused). How LONG a Photo Set's
-         *     name may be is the Photo Sets' own rule and is checked where it is handed in. See
-         *     `ShootService.make`.
+         * @description Creating the set; `name` absent takes the proposal's, the creator's.
          */
         MakeWrite: {
             /** Name */
@@ -16366,11 +16191,7 @@ export interface components {
         };
         /**
          * NamedRow
-         * @description One row of a list: the thing, as a piece that links to it, its figure, and its picture.
-         *
-         *     `cover` is the address the thing's own picture is served at, the same one its wall and its
-         *     page draw (`/api/people/<id>/cover`, `/api/assets/<id>/thumb`), or null for a thing with no
-         *     picture (a saved wall, a task family). A 404 from it is ordinary: every caller draws a letter.
+         * @description One row of a list; a 404 from `cover` is ordinary, every caller draws a letter.
          */
         NamedRow: {
             /** Cover */

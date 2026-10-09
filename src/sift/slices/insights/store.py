@@ -1,47 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Reading a User's figures, and the few writes the helper and the recaps make.
-
-## The one read: `rows`
-
-`rows(database, user_id, day_from, day_to, metrics)` answers every figure a reader draws, for any
-span of days, as `DayRow`s: a day, a metric, a key, the `whole` and the `hidden` part of it. A
-reader shows `whole` while the vault is open and `whole - hidden` (`DayRow.shown`) while it is
-locked, and never needs to know where a row came from, because there are only two places and they
-answer alike:
-
-* **A finished day the helper has added up** is read from `insight_days`. If what this User may
-  see has changed since its split was worked out (`split_at` behind `users.cache_stamp`), the
-  split is worked out again from the raw tables before the row is handed back (in memory, since
-  a read never writes) and KEPT under the stamp it was worked out at (`_read_split`), so the
-  next read of that day pays nothing until the stamp moves again. The helper writes the fresh
-  split down on its own, and does not wait behind pressed work to do it (`rollup`).
-
-  Both halves, because either alone leaves a reader paying for the helper's backlog: re-split on
-  every request, every visit to a month paid for every stale day in it for as long as the helper
-  waited behind pressed work (a queue of identify jobs is hours); kept but never written down,
-  every restart and every stamp that moves pays again.
-* **Today, and any recent day the helper has not reached yet**, is counted live from the raw tables
-  by the same statements (`count_day`): the SAME SQL, filtered to the one day, never a second
-  copy. `Figures.live_days` says which days those were.
-
-A finished day older than `LIVE_DAYS` that the helper has not reached is neither: it is left out,
-and `Figures.missing_days` names it, so a page can say it is still catching up rather than draw a
-zero that looks like a fact.
-
-## The local day
-
-A day is the server machine's local calendar day (`kernel/when.py`). There is no time zone setting
-anywhere in Sift: the machine's own clock is the answer, and a User on a phone in another zone sees
-the machine's days, which is what every other date Sift shows is written in too.
-
-## A file's vault state, and a file that is gone
-
-A file is hidden for a User when the stored verdict says it is concealed (`viewer_assets`, the one
-place the vault's rule is worked out). A file with no verdict any more (deleted, or no longer
-shared with this User) keeps the state it had the last time its day was split, which the
-per-file rows of that day remember (`metrics.PER_FILE`); with no such row either, it counts as
-hidden, which errs on the side of the vault.
-"""
+"""Reading a User's figures, and the few writes the helper and the recaps make."""
 
 from __future__ import annotations
 
@@ -72,10 +30,7 @@ from sift.slices.insights.metrics import (
     rows_of,
 )
 
-#: How far back a finished day the helper has not reached is still counted live for a reader. A
-#: week, because that is the gap a device switched off for a holiday comes back to, and the helper
-#: closes it within minutes; anything older is a first catch-up through years of history, where a
-#: page counted live would cost a whole-history read on every visit.
+#: Days the helper has not reached yet still counted live; older would read all history per visit.
 LIVE_DAYS: Final = 7
 
 #: How a statement is asked: a read, returning rows. The database's own `fetch_all` is one; a
@@ -129,15 +84,12 @@ class RecapRow:
 
 
 def local_today(now: float | None = None) -> date:
-    """Today on the server machine's clock (`kernel/when.py`). See the module docstring: there is no
-    time zone setting."""
+    """Today on the server machine's clock; there is no time zone setting."""
     return machine.today(now)
 
 
 def day_bounds(day: date) -> tuple[int, int]:
-    """The day as seconds, `[start, end)`, on the server machine's clock (`kernel/when.py`, which
-    works it out from the two midnights, since a day the clocks change on is 23 or 25 hours long).
-    """
+    """The day as seconds, `[start, end)`, from its two midnights on the server machine's clock."""
     return machine.day_bounds(day)
 
 
@@ -147,10 +99,7 @@ def _days(day_from: date, day_to: date) -> list[date]:
 
 # --- counting one day -------------------------------------------------------------------------
 
-#: The files counted as hidden for this User, out of the ones handed in. Concealed by the stored
-#: verdict; or with no verdict at all and no row of this day saying it was not hidden last time.
-#: A per-file row's key is the id, or `<kind>:<id>` for `sittings:file` (`metrics.split_file_key`),
-#: so the id is read after the first colon; a bare id has none and reads whole.
+#: A per-file key is the id or `<kind>:<id>`, so the id is read after the first colon.
 _HIDDEN_FILES = """
 SELECT f.value AS asset_id
   FROM json_each(:files) f
@@ -169,14 +118,7 @@ SELECT f.value AS asset_id
 
 
 async def views_of_the_day(fetch: Fetch, user_id: str, day: date) -> tuple[list[str], set[str]]:
-    """The day's sittings that were views, by the player's own rule, and the files of EVERY sitting.
-
-    The rule is `kernel.content.view_rule.counts_as_a_view` and nothing else: the function the player
-    asks when it decides whether a sitting earned a view, so a sitting Insights counts is exactly a
-    sitting the file's own view count counted. The files are every sitting's, views or not, because
-    when somebody sat down is read from every sitting (`metrics`, the `k` opening) and a file
-    skipped past is hidden or not like one watched.
-    """
+    """The day's sittings that were views, by the player's own rule, and every sitting's files."""
     start, end = day_bounds(day)
     rows = await fetch(DAY_PLAYS, {"user": user_id, "start": start, "end": end})
     views: list[str] = []
@@ -203,13 +145,7 @@ async def hidden_files(fetch: Fetch, user_id: str, day: date, files: Iterable[st
 async def count_day(
     fetch: Fetch, user_id: str, day: date, metrics: Iterable[str] = METRICS
 ) -> list[DayRow]:
-    """Every asked-for figure of one User's one day, counted from the raw tables.
-
-    The one counting path: the helper adds up a finished day with it, a reader counts today with
-    it, and a stale split is worked out again with it. A User with nothing on the day costs one
-    statement (and, when that says nothing, the access layer's one question about what arrived)
-    and gets no rows.
-    """
+    """Every asked-for figure of one User's one day, counted from the raw tables."""
     asked = sorted(set(metrics))
     unknown = [metric for metric in asked if metric not in METRICS]
     if unknown:
@@ -288,15 +224,10 @@ async def added_up_to(database: Database, user_id: str) -> date | None:
     return date.fromisoformat(str(row["added_up_to"])) if row is not None else None
 
 
-#: How many days' fresh splits one database keeps for its readers. A page reads two periods (the one
-#: drawn and the one it is compared with); a year of each for a household of Users is a few
-#: thousand days, and an entry is a day's handful of numbers.
+#: A year of two periods for a household of Users, each a handful of numbers.
 READ_SPLITS_KEPT: Final = 4096
 
-#: The splits reads have worked out, per database, kept under the User's stamp (`MarkedMemo`: an
-#: answer is kept under the mark it was computed at, and a new mark is a new answer). Per database
-#: rather than per process, so two databases (a test's and the next test's) never answer for
-#: each other, and a database closed and dropped takes its splits with it.
+#: Per database, so two never answer for each other and a dropped one takes its splits along.
 _READ_SPLITS: WeakKeyDictionary[Database, MarkedMemo[dict[tuple[str, str], int]]] = (
     WeakKeyDictionary()
 )
@@ -312,12 +243,7 @@ async def fresh_hidden(
 
 
 async def resplit(fetch: Fetch, user_id: str, day: date, stored: Sequence[DayRow]) -> list[DayRow]:
-    """The stored rows of one day with their `hidden` worked out again now.
-
-    Only `hidden` moves. `whole` is what happened; the fresh count is asked only for which part of
-    it is hidden now, and never lifts `hidden` above the stored `whole`. A stored row the fresh
-    count does not produce any more (its raw rows are gone) keeps the split it had.
-    """
+    """The stored rows of one day with their `hidden` worked out again now."""
     fresh = await fresh_hidden(fetch, user_id, day, {row.metric for row in stored})
     return _split_with(stored, fresh)
 
@@ -325,13 +251,7 @@ async def resplit(fetch: Fetch, user_id: str, day: date, stored: Sequence[DayRow
 async def _read_split(
     database: Database, user_id: str, day: date, stamp: int, stored: Sequence[DayRow]
 ) -> list[DayRow]:
-    """`resplit` for a reader: worked out once per day and stamp, then answered from memory.
-
-    The stamp is the one the reader read BEFORE the rows, so a change landing while the count runs
-    leaves the answer filed under the older stamp, and the next reader, seeing the newer one, counts
-    again. The key carries the metrics asked, because a day's split for the comparison's few
-    metrics is not the page's.
-    """
+    """`resplit` for a reader: worked out once per day and stamp, then answered from memory."""
     memo = _READ_SPLITS.get(database)
     if memo is None:
         memo = _READ_SPLITS[database] = MarkedMemo(kept=READ_SPLITS_KEPT)
@@ -444,11 +364,7 @@ _RESTAMP_DAY = "UPDATE insight_days SET split_at = ? WHERE user_id = ? AND day =
 async def write_day(
     connection: Connection, user_id: str, day: date, counted: Sequence[DayRow], stamp: int
 ) -> None:
-    """File one finished day's rows and move the User's progress past it, in the caller's write.
-
-    The day's old rows go first, so adding a day up twice (a helper interrupted after the write and
-    before anything noticed) leaves one set of rows, not two.
-    """
+    """File one finished day's rows and move the User's progress past it, in the caller's write."""
     iso = day.isoformat()
     await connection.execute(_FORGET_DAY, (user_id, iso))
     await connection.executemany(
@@ -475,8 +391,7 @@ async def write_day_again(
     stamp: int,
     mark: int,
 ) -> None:
-    """File a day added up again over its old rows, without moving the User's progress, and move
-    the day to add up again past it. See `_PAST_DIRTY`."""
+    """File a day added up again over its old rows, without moving the User's progress."""
     iso = day.isoformat()
     await connection.execute(_FORGET_DAY, (user_id, iso))
     await connection.executemany(
@@ -506,11 +421,7 @@ async def write_split(
     await connection.execute(_RESTAMP_DAY, (stamp, user_id, iso, stamp))
 
 
-# --- recaps -----------------------------------------------------------------------------------
-#
-# The table is this slice's; what goes in a recap is the recap maker's. A recap FREEZES what
-# happened: once written for a period it is never rewritten, so writing one twice keeps the first.
-# The one exception is a recap made by statements later corrected (`remake_recap`).
+# A recap is frozen: written twice, the first is kept, except by `remake_recap`.
 
 _WRITE_RECAP = (
     "INSERT INTO recaps (id, user_id, period, made_at, seen_at, body, metrics_version)"
@@ -549,12 +460,7 @@ def _ids(stored: object) -> tuple[str, ...]:
 async def write_recap(
     database: Database, user_id: str, period: str, body: str, *, made_at: int | None = None
 ) -> RecapRow:
-    """File a recap for a period, or hand back the one already filed for it (it is never replaced).
-
-    A recap filed tells this User's open screens (the shelf re-reads on `MINE`, as it does for a
-    recap opened), so an Insights tab left open shows it without a reload. One already filed moved
-    nothing and tells nobody.
-    """
+    """File a recap for a period, or hand back the one already filed; only a new one is told."""
     async with telling(database, Audience.of_user(user_id), About.MINE) as connection:
         await connection.execute(
             _WRITE_RECAP,
@@ -596,9 +502,7 @@ async def remake_recap(
     made_at: int | None = None,
     then: Callable[[Connection], Awaitable[object]] | None = None,
 ) -> bool:
-    """Replace a recap made before a correction with one made now. The one write that changes a
-    recap's cards: only a recap behind `METRICS_VERSION`, and only once. True when it was. `then`
-    runs on the same write when it was, so the History line lands with the change it records."""
+    """Replace a recap behind `METRICS_VERSION`, once, `then` on the same write; True if it did."""
     async with telling(database, Audience.of_user(user_id), About.MINE) as connection:
         cursor = await connection.execute(
             _REMAKE_RECAP,
@@ -643,8 +547,7 @@ async def mark_seen(
 
 
 async def leave_out(database: Database, user_id: str, recap_id: str, ids: Sequence[str]) -> bool:
-    """Keep what this User took out of their recap before sharing it, replacing what was kept. True
-    when the recap is theirs. Their other tabs draw it again (`MINE`)."""
+    """Keep what this User took out of their recap before sharing it. True when it is theirs."""
     async with telling(database, Audience.of_user(user_id), About.MINE) as connection:
         cursor = await connection.execute(
             _LEAVE_OUT, (json.dumps(sorted(set(ids))), user_id, recap_id)

@@ -1,20 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 /*
- * What will not go in a swap, as swap mode says it: the mark a card or a tile wears, and the one
- * sentence a press on it says, with the way to change it.
- *
- * Two marks keep a thing out of every swap: Kept local (the "Don't enrich" switch, which keeps
- * everything about a thing on this device) and "Don't swap". A person, a Site or a tag answers for
- * its own row, which its wall row carries (`keep_local`, `keep_from_swaps`); a file answers for
- * itself and for anything it is filed under, which its tile carries as one fact (`swap_refused`)
- * and which a press asks about in full (`keptFromSwaps`, whose answer names what above it keeps it
- * out, as the reader may see it).
- *
- * A press on a refused card or tile never picks it. It says why in one sentence, and offers the way
- * to change it: the switch itself where the mark is on the thing pressed ("Allow swapping", "Allow
- * enrichment", the words the menus use), or a link to the thing above a file that carries it,
- * whose own menu holds the switch. Changing a person's mark from a press on one of their files
- * would change it for every file of theirs, which is a decision to make on their page.
+ * What will not go in a swap (Kept local or "Don't swap", on the thing or above a file): the mark
+ * it wears, and the sentence a press says with the way to change it. A file's inherited mark links
+ * to the thing that carries it, whose page decides for every file.
  */
 
 import { setKeptLocal } from '$lib/entity/enrichment.svelte';
@@ -26,8 +14,7 @@ import type { PickChoice } from '$lib/components/common/verbs';
 /** Which mark keeps a thing back: Kept local, or "Don't swap". */
 export type RefusedMark = 'local' | 'swap';
 
-/** The mark a wall row says it wears, or null for one that goes. Kept local first: it keeps back
- *  more than a swap. The fields are read loosely, since a row from before the field reads none. */
+/** The mark a wall row wears, or null; Kept local first, as it keeps back more. */
 export function refusedMark(row: {
 	keep_local?: boolean | null;
 	keep_from_swaps?: boolean | null;
@@ -37,20 +24,16 @@ export function refusedMark(row: {
 	return null;
 }
 
-/** The glyph a refused card or tile wears where a picked one wears the swap's: the menus' own
- *  "Don't swap". */
 const REFUSED_ICON = 'do_not_disturb_on';
 
-/** Why a row in a swap's chooser cannot be chosen, said on the row itself: the same two marks
- *  the walls say, in the same words, without the name the row already shows. */
+/** Why a chooser's row cannot be chosen, in the walls' words, without the name it shows. */
 function refusedReason(mark: RefusedMark): string {
 	return mark === 'local'
 		? "Kept local, so it isn't offered"
 		: "Kept out of swaps, so it isn't offered";
 }
 
-/** A chooser's row for a wall row, refused where the wall row wears a mark: ONE rule with the
- *  cards, which a press never picks either. */
+/** A chooser's row refused as its card would be: one rule. */
 export function refusedChoice<T extends PickChoice>(
 	choice: T,
 	row: { keep_local?: boolean | null; keep_from_swaps?: boolean | null }
@@ -74,8 +57,7 @@ export function refusedWords(
 	};
 }
 
-/** Take the mark off: Kept local through its own switch, which says what it did; "Don't swap"
- *  through the swap's, said here the same way. The wall reads its rows again on the change. */
+/** Take the mark off through its own switch; the wall reads its rows again on the change. */
 async function letGo(kind: RefusalSubject, id: string, mark: RefusedMark): Promise<void> {
 	if (mark === 'local') {
 		await setKeptLocal(kind, id, false);
@@ -103,8 +85,7 @@ export function sayRefused(
 	});
 }
 
-/** A press on a refused file: its own mark with its switch, or what above it keeps it out, as a
- *  link to that thing's page. Asked as it is pressed: one question, for the one file. */
+/** A press on a refused file: its own mark, or a link to what above it keeps it out. */
 export async function sayFileRefused(id: string): Promise<void> {
 	let state: Awaited<ReturnType<typeof keptFromSwaps>>;
 	try {

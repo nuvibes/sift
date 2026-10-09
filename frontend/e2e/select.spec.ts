@@ -1,14 +1,4 @@
-/* THE SHARED CHOOSER, DRIVEN.
- *
- * `Select` is drawn on many screens, and a unit test cannot prove any of it: opening one needs a
- * real pointer and a portal, and the list is rendered outside the component that asked for it,
- * so a unit test can mount it, read the trigger, and see nothing else at all.
- *
- * The Sort chooser on the screen bar is the caller used here, because it is on every wall in the
- * application and needs nothing but a library to be drawn. What is under test is the PRIMITIVE:
- * where its list is rendered, that a pointer and a keyboard both reach it, that the trigger
- * reports what was chosen, and that leaving without choosing changes nothing.
- */
+/* The shared `Select`, via the Sort chooser: its list is portalled, out of a unit test's sight. */
 import { type Page } from '@playwright/test';
 import { expect, test } from './test';
 import { signInAsAdmin } from './admin';
@@ -48,9 +38,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 test('the list is drawn OUTSIDE the bar that asked for it', async ({ page }) => {
-	/* The portal, which is the whole reason a unit environment can see nothing here. The bar is a
-	   short row with its own stacking context; a list drawn inside it would be clipped by the row
-	   and trapped behind whatever the screen puts over it. */
+	/* Portalled, or the bar's row would clip the list. */
 	await trigger(page).click();
 	const list = page.getByRole('listbox');
 	await expect(list).toBeVisible();
@@ -73,17 +61,12 @@ test('a pointer chooses, the list shuts, and the trigger says what was chosen', 
 });
 
 test('the keyboard reaches every option, and Enter takes one', async ({ page }) => {
-	/* A chooser somebody can open and not operate is worse than one that is simply absent: the
-	   keyboard is the whole of what a screen reader and a speech command have. */
 	await trigger(page).press('Enter');
 	await expect(page.getByRole('listbox')).toBeVisible();
 
 	await page.keyboard.press('ArrowDown');
 	const highlighted = page.locator('[role="option"][data-highlighted]');
 	await expect(highlighted).toHaveCount(1);
-	/* The row's NAME, not the whole of its text. A row draws a mark beside its name: an icon
-	   is a font ligature, so it is text, and it lands in the middle of a comparison of two strings
-	   that look identical printed out. What the trigger has to report is the name. */
 	const chosen = (await highlighted.locator('.ui-select-item-label').textContent())?.trim();
 
 	await page.keyboard.press('Enter');
@@ -94,8 +77,6 @@ test('the keyboard reaches every option, and Enter takes one', async ({ page }) 
 });
 
 test('leaving without choosing changes nothing', async ({ page }) => {
-	/* The other half, and the one that makes the two above worth having: a chooser that wrote on
-	   every open would satisfy both of them perfectly. */
 	const before = (await trigger(page).textContent())?.trim();
 
 	await trigger(page).click();

@@ -1,22 +1,11 @@
-/*
- * THE INSIGHTS SCREEN'S OWN WORDS: the furniture around the server's sentences, and nothing else.
- *
- * Every SENTENCE on the screen is the server's: the first sentences, each block's statements, "Not
- * enough yet to say." below a floor, the empty library's line and the guest's all arrive as pieces
- * (`slices/insights/statements.py`) and are drawn by `HistorySentence`, which builds nothing. So is
- * every block's title and every figure's label. What is written here is what only the screen has:
- * its name, the line under it, the period tabs, the arrows, and what each kind is called in a
- * chart's key. The words around a chart itself are the chart primitives' (`charts/words.ts`).
- *
- * Here rather than inline so the words are in one place the vocabulary gate reads, and so the tests
- * name the words instead of retyping them.
- */
+/* Words only the screen has, around the server's sentences, in one place for the vocabulary gate
+ * and the tests. */
 import type { Span } from '$lib/components/insights/period';
 
 export const INSIGHTS_WORDS = {
 	/** The rail row and the screen's heading. */
 	title: 'Insights',
-	/** The one line under the heading. "this device" is Sift's word for the machine it runs on. */
+	/** "this device" is Sift's word for the machine it runs on. */
 	headLine:
 		'Your library, your viewing and your organizing, in numbers. Nothing here leaves this device.',
 	/** What the row of tabs is, for anybody who cannot see that the words belong together. */
@@ -24,24 +13,17 @@ export const INSIGHTS_WORDS = {
 	/** The arrows either side of the tabs: the period before this one, and the one after. */
 	earlier: 'Earlier',
 	later: 'Later',
-	/** When the answer could not be read. The words every other screen says for it. */
 	failed: "That couldn't be loaded. Try again in a moment.",
 	/** Beside a figure while the vault is open: how much of it is hidden things. */
 	hidden: 'Hidden',
-	/** The heading over the recaps this account has. */
 	recaps: 'Recaps',
 	/** What the time by kind adds up to, for the key under the By kind bar. */
 	byKind: 'Time viewed, by kind',
-	/** The press beside a figure, and the heading of the sentence it opens: what the figure counts. */
+	/** The press beside a figure, and the heading of what it opens. */
 	defines: 'What counts'
 } as const;
 
-/**
- * The press beside Stats that opens this period's recap as its deck of cards (today's, said so),
- * and what it says
- * where there is none: a recap is created the day after its period ends, and only of a period
- * with enough viewing in it.
- */
+/** The press opening this period's recap deck, and what it says where there is none. */
 export const DECK_WORDS: Record<
 	'day' | 'week' | 'month' | 'year',
 	{ see: string; today?: string; none: string }
@@ -65,10 +47,7 @@ export const DECK_WORDS: Record<
 	}
 };
 
-/**
- * The Stats view's words: the screen's name (and the press on Insights that opens it), its line,
- * its index, and the headings of its tables. The figures and the names in them are the server's.
- */
+/** Words of the Stats view; the figures and names in its tables are the server's. */
 export const STATS_WORDS = {
 	title: 'Stats',
 	headLine: 'Every figure behind Insights, with its table. Copy a table to paste it anywhere.',
@@ -137,11 +116,7 @@ export const PERIOD_WORDS: Record<Span, string> = {
 	year: 'Year'
 };
 
-/**
- * What each kind of viewing is called in a chart's key: the words the server's own statements use
- * ("29 of videos, 9 of pictures, 3 of GIFs"); `all`, the one part of a bar that is not split by
- * kind (the hours of the day); and `added`, the files imported.
- */
+/** Each kind in a chart's key, in the server's statements' words; `all` is an unsplit bar. */
 export const KIND_WORDS: Record<string, string> = {
 	video: 'Videos',
 	image: 'Pictures',

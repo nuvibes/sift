@@ -1,73 +1,9 @@
 {
 	"_note": "Python modules over 1000 lines, functions over 80 lines or 10 branches, test files over 2000, and files of 50 or more non-blank lines, test files included, whose prose is over 25%. Each may only fall: scripts/check_code_shape.py, and record a fall with python scripts/check_code_shape.py --record",
-	"module_lines": {
-		"src/sift/testing/library.py": 1013
-	},
-	"function_lines": {
-		"src/sift/testing/fixtures.py::build_world": 97
-	},
-	"function_branches": {
-		"src/sift/slices/insights/recaps_draw.py::_draw": 11
-	},
+	"module_lines": {},
+	"function_lines": {},
+	"function_branches": {},
 	"test_file_lines": {},
-	"prose_share": {
-		"src/sift/client.py": 57.0,
-		"src/sift/main.py": 45.3,
-		"src/sift/slices/insights/capture.py": 29.1,
-		"src/sift/slices/insights/models.py": 39.3,
-		"src/sift/slices/insights/recaps_models.py": 40.9,
-		"src/sift/slices/insights/rollup.py": 30.4,
-		"src/sift/slices/insights/statements.py": 35.2,
-		"src/sift/slices/insights/store.py": 26.1,
-		"src/sift/slices/live/router.py": 58.3,
-		"src/sift/slices/records/router.py": 41.8,
-		"src/sift/slices/related/router.py": 42.8,
-		"src/sift/slices/shoots/__init__.py": 40.4,
-		"src/sift/slices/shoots/clustering.py": 38.7,
-		"src/sift/slices/shoots/models.py": 47.4,
-		"src/sift/slices/shoots/queue.py": 37.2,
-		"src/sift/slices/shoots/router.py": 30.1,
-		"src/sift/slices/shoots/schema.py": 46.3,
-		"src/sift/slices/shoots/service.py": 39.0,
-		"src/sift/slices/shoots/store.py": 33.7,
-		"src/sift/slices/theming/__init__.py": 34.7,
-		"src/sift/slices/tidy/router.py": 38.4,
-		"src/sift/slices/vault/__init__.py": 30.1,
-		"src/sift/slices/vault/router.py": 44.6,
-		"src/sift/testing/auth.py": 34.4,
-		"src/sift/testing/fixtures.py": 30.6,
-		"src/sift/testing/jobs.py": 35.1,
-		"src/sift/testing/library.py": 33.7,
-		"src/sift/testing/tools.py": 54.6
-	},
-	"prose_lines": {
-		"src/sift/client.py": 158,
-		"src/sift/main.py": 242,
-		"src/sift/slices/insights/capture.py": 59,
-		"src/sift/slices/insights/models.py": 66,
-		"src/sift/slices/insights/recaps_models.py": 63,
-		"src/sift/slices/insights/rollup.py": 82,
-		"src/sift/slices/insights/statements.py": 216,
-		"src/sift/slices/insights/store.py": 141,
-		"src/sift/slices/live/router.py": 183,
-		"src/sift/slices/records/router.py": 23,
-		"src/sift/slices/related/router.py": 119,
-		"src/sift/slices/shoots/__init__.py": 23,
-		"src/sift/slices/shoots/clustering.py": 41,
-		"src/sift/slices/shoots/models.py": 37,
-		"src/sift/slices/shoots/queue.py": 70,
-		"src/sift/slices/shoots/router.py": 59,
-		"src/sift/slices/shoots/schema.py": 44,
-		"src/sift/slices/shoots/service.py": 210,
-		"src/sift/slices/shoots/store.py": 125,
-		"src/sift/slices/theming/__init__.py": 94,
-		"src/sift/slices/tidy/router.py": 66,
-		"src/sift/slices/vault/__init__.py": 53,
-		"src/sift/slices/vault/router.py": 83,
-		"src/sift/testing/auth.py": 45,
-		"src/sift/testing/fixtures.py": 172,
-		"src/sift/testing/jobs.py": 26,
-		"src/sift/testing/library.py": 273,
-		"src/sift/testing/tools.py": 53
-	}
+	"prose_share": {},
+	"prose_lines": {}
 }

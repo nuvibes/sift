@@ -3,16 +3,9 @@ import { expect, test } from './test';
 import { signInAsAdmin } from './admin';
 
 /*
- * The folder view, in a browser.
- *
- * The behaviours here are the ones whose faults are SILENT:
- *
- *   - the ordering menu's second request, which is not made at all in name order;
- *   - the hover tally: one request per folder, on the first pointer-move, cached;
- *   - the confirm sentence, built from that tally, with a countless wording when it has not landed;
- *   - the row menu's trigger being unreachable by Tab, which is the whole argument for its ring
- *     being suppressed;
- *   - and, below, the columns layout, the properties panel and the ground menu.
+ * The folder view, where the faults are SILENT: the ordering's second request, the hover tally
+ * asked once, the confirm sentence built from it, the row menu's trigger out of the Tab order,
+ * the columns layout, the properties panel and the ground menu.
  */
 
 const PIXEL = Buffer.from(
@@ -22,9 +15,7 @@ const PIXEL = Buffer.from(
 
 const ROOTS = [{ id: 'r1', name: 'Media' }];
 
-/* Named so that alphabetical order and every other order DISAGREE. `Alpha` is first by name and
-   smallest; `Zulu` is last by name and biggest. An order that is silently not applied therefore
-   reads as name order, and name order is exactly what this can tell apart. */
+/* Name order and every other order DISAGREE here, so an order silently not applied shows. */
 const FOLDERS = [
 	{
 		id: 'f1',
@@ -36,9 +27,7 @@ const FOLDERS = [
 	},
 	{ id: 'f2', name: 'Mike', path: '/media/Mike', rel_path: 'Mike', parent_id: null, root_id: 'r1' },
 	{ id: 'f3', name: 'Zulu', path: '/media/Zulu', rel_path: 'Zulu', parent_id: null, root_id: 'r1' },
-	/* INSIDE one of them, because Delete is deliberately withheld from a library folder: that folder
-	   is not inside anything Sift may write to, and "delete" on one means "stop reading this
-	   library", which is a different act with its own confirmation on the Folders screen. */
+	/* Inside one, because Delete is withheld from a library folder. */
 	{
 		id: 'f4',
 		name: 'Holiday',
@@ -49,7 +38,6 @@ const FOLDERS = [
 	}
 ];
 
-/** What the facts request answers: `Zulu` holds the most and `Alpha` the least. */
 const FACTS = {
 	folders: [
 		{ id: 'f1', file_count: 1, newest_at: 1_000, size_bytes: 1_000 },
@@ -65,8 +53,7 @@ const PROPERTIES: Record<string, { file_count: number; folder_count: number }> =
 	f4: { file_count: 1954, folder_count: 7 }
 };
 
-/** Every request the folder view makes, recorded, so "asked once" and "not asked at all" are both
- *  assertable, and neither is visible on screen. */
+/** Every request the folder view makes, so "asked once" and "not asked" are assertable. */
 type Served = { facts: string[]; properties: string[] };
 
 async function serveLibrary(page: Page): Promise<Served> {
@@ -88,8 +75,7 @@ async function serveLibrary(page: Page): Promise<Served> {
 			body: JSON.stringify({ roots: ROOTS })
 		})
 	);
-	/* BEFORE the tree route, because Playwright takes the LAST match: `/library/folders/facts` and
-	   `/library/folders/f1/properties` both begin with the tree's address. */
+	/* Before the tree route: Playwright takes the LAST match, and both begin with its address. */
 	await page.route('**/api/library/folders/facts**', (route) => {
 		served.facts.push(route.request().url());
 		return route.fulfill({
@@ -123,7 +109,6 @@ async function serveLibrary(page: Page): Promise<Served> {
 	return served;
 }
 
-/** Browse, with the folder view turned on. */
 async function openFolders(page: Page): Promise<Served> {
 	const served = await serveLibrary(page);
 	await page.goto('/browse');
@@ -132,14 +117,8 @@ async function openFolders(page: Page): Promise<Served> {
 	return served;
 }
 
-/** The folder names in the order the band draws them.
- *
- * Read off each ROW rather than from the buttons' text, and neither choice is tidiness. A bare role
- * query answers with every name twice (each row is wrapped in a context-menu trigger, so the
- * wrapper and the button inside it both carry the name), and a row's `innerText` opens with the
- * icon font's ligature on a line of its own, so the raw strings are `"\nAlpha"` and never equal
- * `"Alpha"`. The accessible NAME is clean, which is why the locator below matches on it.
- */
+/** The folder names in drawn order, matched by accessible name: the raw text carries the icon
+ * ligature, and a bare role query answers every name twice. */
 const NAMES = ['Alpha', 'Mike', 'Zulu'];
 
 async function order(page: Page): Promise<string[]> {
@@ -159,11 +138,8 @@ test.beforeEach(async ({ page }) => {
 });
 
 test('opens in name order and asks nothing extra for it', async ({ page }) => {
-	/* The folder tree carries no counts, deliberately: a count that is right needs the whole
-	   concealment rule, and that rule belongs in one query rather than three. So the orders about
-	   size and time are fed by a request of their own, and name order must not make it: a library of
-	   four hundred folders would otherwise walk four hundred subtrees to draw a list nobody has
-	   asked to reorder. */
+	/* The tree carries no counts, so the size and time orders make a request of their own, and
+	   name order must not. */
 	const served = await openFolders(page);
 
 	expect(await order(page)).toEqual(['Alpha', 'Mike', 'Zulu']);
@@ -174,18 +150,10 @@ test('choosing an order by size fetches the facts once and reorders on them', as
 	const served = await openFolders(page);
 
 	await page.getByRole('button', { name: /Sort by/ }).click();
-	/* An OPTION: the orders are a list in the app's own chooser rather than a strip of cards, so the
-	   role is the listbox's. See `top-bar.spec.ts`, which pins the same six words on five screens. */
-	/*
-	 * "Most files", not "Biggest first". The same KEY (`largest`) orders a wall of FILES by
-	 * bytes and a wall of folders by how many files are under each, so `COUNTED_INSTEAD` in
-	 * `sort-state.svelte.ts` gives the counting walls their own two labels and this list says what
-	 * it is actually sorting by.
-	 */
+	/* An option in the app's chooser. "Most files": the same key orders folders by how many files
+	   are under each (`COUNTED_INSTEAD` in `sort-state.svelte.ts`). */
 	await page.getByRole('option', { name: 'Most files' }).click();
 
-	// Zulu holds 900 and Alpha holds 1: an order that was not applied would read as name order,
-	// which is what this fixture is arranged to tell apart.
 	await expect.poll(() => order(page)).toEqual(['Zulu', 'Mike', 'Alpha']);
 	expect(served.facts).toHaveLength(1);
 });
@@ -193,9 +161,7 @@ test('choosing an order by size fetches the facts once and reorders on them', as
 test('pointing at a folder asks what is in it ONCE, and asks nothing before that', async ({
 	page
 }) => {
-	/* The tally a file manager puts in its status bar. Asked when a pointer first crosses the row,
-	   never up front, and never again for the same folder, because the panel and the label are the
-	   same request and asking twice is how they come to disagree. */
+	/* Asked when a pointer first crosses the row, and never again for the same folder. */
 	const served = await openFolders(page);
 	expect(served.properties, 'a folder nobody has pointed at was asked about').toEqual([]);
 
@@ -203,7 +169,7 @@ test('pointing at a folder asks what is in it ONCE, and asks nothing before that
 	await alpha.hover();
 	await expect.poll(() => served.properties).toEqual(['f1']);
 
-	// Away and back: the answer is cached, so the second crossing asks nothing.
+	// Cached, so the second crossing asks nothing.
 	await page.getByRole('button', { name: 'Zulu', exact: true }).hover();
 	await expect.poll(() => served.properties).toEqual(['f1', 'f3']);
 	await alpha.hover();
@@ -217,14 +183,8 @@ test('pointing at a folder asks what is in it ONCE, and asks nothing before that
 test('the delete question carries the count, and the folder it is about is inside one', async ({
 	page
 }) => {
-	/*
-	 * "Delete Holiday?" answers nothing. "Delete Holiday and the 1,954 files in it?" is a question
-	 * somebody can actually answer, which is the whole reason the hover tally is fetched at all.
-	 *
-	 * Reached by a RIGHT-CLICK, because the row's menu is a context menu rather than a button, and
-	 * on a folder INSIDE a library one: Delete is withheld from a library folder, where it would
-	 * mean "stop reading this library": a different act, on a different screen.
-	 */
+	/* The confirm names the files ("Delete Holiday and the 1,954 files in it?"), from the tally.
+	 * On a folder inside a library one: Delete is withheld from a library folder. */
 	const served = await openFolders(page);
 	await page.getByRole('button', { name: 'Alpha', exact: true }).click();
 
@@ -243,8 +203,7 @@ test('the delete question carries the count, and the folder it is about is insid
 });
 
 test('a library folder is not offered Delete at all', async ({ page }) => {
-	/* The other half, and without it the test above would pass against a menu that offers Delete
-	   everywhere. A library folder is not inside anything Sift may write to. */
+	/* Or the test above passes against a menu offering Delete everywhere. */
 	await openFolders(page);
 
 	await page.getByRole('button', { name: 'Alpha', exact: true }).click({ button: 'right' });
@@ -256,11 +215,8 @@ test('a library folder is not offered Delete at all', async ({ page }) => {
 test('the row menu trigger cannot be reached by Tab, which is why it has no ring', async ({
 	page
 }) => {
-	/* Its focus ring is suppressed, and the argument for suppressing it is that no Tab ever lands
-	   there: the trigger is a WRAPPER, and the thing that can be operated is the row inside it,
-	   which keeps its own ring. If bits-ui ever makes the wrapper tabbable that argument is void and
-	   the ring has to come back, so the premise is what is asserted rather than the rule resting on
-	   it. Measured rather than assumed: the note in `ContextMenu` says so in those words. */
+	/* Its ring is suppressed on the premise that no Tab lands on the wrapper, so the premise is
+	   asserted (see `ContextMenu`). */
 	await openFolders(page);
 
 	const trigger = page.locator('[data-context-menu-trigger].menu-wrap').first();
@@ -268,21 +224,10 @@ test('the row menu trigger cannot be reached by Tab, which is why it has no ring
 	await expect(trigger).toHaveAttribute('tabindex', '-1');
 });
 
-/*
- * The columns layout, the properties panel and the ground menu, which need no real library:
- *
- *   - COLUMNS is `columns: 240px` on the same list the other view draws. What it changes is where a
- *     row ENDS UP, which is geometry and needs only enough rows to fill more than one column.
- *   - PROPERTIES reads one request (`/library/folders/{id}/properties`), and this fixture already
- *     answers it, because the hover tally reads the same one.
- *   - THE GROUND MENU is a right-click on the BAND's background, not on the wall of files. The band
- *     is drawn from the folder tree, which this fixture serves.
- *
- * What does want a real library is what none of these assert: whether the numbers are TRUE of a
- * disk. That is the server's, and it has its own tests.
- */
+/* The columns layout, the properties panel and the ground menu need no real library: whether
+ * the numbers are true of a disk is the server's to test. */
 
-/** Enough folders that more than one column is possible. Named so they sort the way they are made. */
+/** Enough folders for more than one column, named to sort the way they are made. */
 const MANY = Array.from({ length: 24 }, (_, at) => ({
 	id: `m${at}`,
 	name: `Folder ${String(at).padStart(2, '0')}`,
@@ -292,10 +237,9 @@ const MANY = Array.from({ length: 24 }, (_, at) => ({
 	root_id: 'r1'
 }));
 
-/** Where each folder row sits across the width, rounded, because a column is an x and not a name. */
+/** How many distinct x positions the rows sit at. */
 async function columnsUsed(page: Page): Promise<number> {
-	/* `.first()` because `EntityBand` on a search result uses the same class name: a bare locator
-	   would be a strict-mode violation the day a folder view and one of those share a screen. */
+	/* `EntityBand` on a search result uses the same class. */
 	return page
 		.locator('.band')
 		.first()
@@ -309,8 +253,7 @@ async function columnsUsed(page: Page): Promise<number> {
 
 test('the columns view uses the width of the window and the list does not', async ({ page }) => {
 	await serveLibrary(page);
-	/* Registered AFTER `serveLibrary`, which is what makes it win: Playwright takes the last
-	   matching handler, so this replaces the four-folder tree with one long enough to wrap. */
+	/* Registered last, so it wins. */
 	await page.route('**/api/library/folders', (route) =>
 		route.fulfill({
 			status: 200,
@@ -323,8 +266,7 @@ test('the columns view uses the width of the window and the list does not', asyn
 	await page.getByRole('button', { name: 'Folders' }).click();
 	await expect(page.getByRole('button', { name: 'Folder 00', exact: true })).toBeVisible();
 
-	/* The claim is comparative, so both halves are measured. One window, two views: a list puts
-	   every name at the same x, and that is the whole of what "one name per line" means. */
+	/* A list puts every name at the same x. */
 	expect(await columnsUsed(page), 'the list view is already in columns').toBe(1);
 
 	await page.getByRole('button', { name: 'Folders in columns' }).click();
@@ -335,16 +277,13 @@ test('the columns view uses the width of the window and the list does not', asyn
 });
 
 test('Properties says all six things about a folder, off the one request', async ({ page }) => {
-	/* Six rows, and the reason to name all six rather than spot-check one: four of them come from
-	   the properties request and two from the row already in hand, so a panel that lost the request
-	   still draws a convincing-looking two-thirds of itself. */
+	/* All six: four come from the properties request, so a lost request still draws two. */
 	await openFolders(page);
 
 	await page.getByRole('button', { name: 'Alpha', exact: true }).click({ button: 'right' });
 	await page.getByRole('menuitem', { name: 'Properties' }).click();
 
-	/* Picked out by a row it must have rather than by its title, which is the folder's own name and
-	   would make this test's subject its own locator. */
+	/* By a row it must have; its title is the folder's own name. */
 	const sheet = page.getByRole('dialog').filter({ hasText: 'Size on disk' });
 	await expect(sheet).toBeVisible();
 
@@ -352,8 +291,7 @@ test('Properties says all six things about a folder, off the one request', async
 		await expect(sheet, `${name} is not one of the rows`).toContainText(name);
 	}
 
-	/* The values, from the fixture's own answer for `f1`: one file, no folders inside it, a
-	   thousand bytes, and no creation time, which is drawn as words rather than left blank. */
+	/* The fixture's `f1`; no creation time is drawn as words. */
 	await expect.poll(() => sheet.innerText()).toContain('/media/f1');
 	await expect(sheet).toContainText('1 File, 0 Folders');
 	await expect(sheet).toContainText('1,000 bytes');
@@ -363,21 +301,13 @@ test('Properties says all six things about a folder, off the one request', async
 test('right-clicking the empty ground of the band offers what the folder itself can do', async ({
 	page
 }) => {
-	/*
-	 * The gesture a file manager has and a web page usually does not: press where there is no row.
-	 *
-	 * INSIDE a folder rather than at the top of the tree, and that is the half worth having.
-	 * "Your folders" is a place on this screen and not a folder on a disk, so at the top there is
-	 * nothing for Properties to be about and the menu deliberately withholds it. See
-	 * `FolderGround`. A test taken at the top would pass against a menu that had lost the row.
-	 */
+	/* A press where there is no row, inside a folder: at the top there is nothing for Properties to
+	 * be about (`FolderGround`). */
 	await openFolders(page);
 	await page.getByRole('button', { name: 'Alpha', exact: true }).click();
 	await expect(page.getByRole('button', { name: 'Holiday', exact: true })).toBeVisible();
 
-	/* A point inside the band that no row is under, found by asking the page rather than by
-	   guessing at an offset: the band is as tall as what is in it, so where its empty space is
-	   depends on the window and on how many folders the fixture drew. */
+	/* Found by asking the page: where the empty space is depends on the window. */
 	const ground = await page
 		.locator('.band-wrap')
 		.first()
@@ -400,13 +330,7 @@ test('right-clicking the empty ground of the band offers what the folder itself 
 	await expect(page.getByRole('menuitem', { name: 'Properties' })).toBeVisible();
 });
 
-/*
- * WHO A FOLDER IS, said by a person.
- *
- * The only correction Sift can learn a MISS from: yes and "not a person" both answer a question it
- * asked, and neither says who it should have been. So the request this sends is the one thing on
- * the folder view that teaches the library something it could not have worked out.
- */
+/* Naming a folder as somebody is the only correction Sift can learn a MISS from. */
 test('naming a folder as somebody sends the correction for that folder', async ({ page }) => {
 	await openFolders(page);
 
@@ -418,15 +342,13 @@ test('naming a folder as somebody sends the correction for that folder', async (
 		});
 		await route.fulfill({ json: { files: 7, person_id: 'x1', name: 'Wren Halloway' } });
 	});
-	/* The people the list offers. Somebody already in the library, so the pick is a pick rather
-	   than a person made on the way; making one from the list has its own tests. */
+	/* Somebody already in the library, so the pick is a pick. */
 	await page.route('**/api/people*', (route) => {
 		if (route.request().method() !== 'GET') return route.fallback();
 		return route.fulfill({ json: { items: [{ id: 'x1', name: 'Wren Halloway' }], total: 1 } });
 	});
 
-	/* Named through the folder's own Add to: Person on a folder names the FOLDER (one
-	   correction for the folder), rather than filing each file under them one at a time. */
+	/* Person on a folder names the FOLDER, one correction rather than one per file. */
 	await page.getByRole('button', { name: 'Alpha', exact: true }).click({ button: 'right' });
 	await page.getByRole('menuitem', { name: 'Add to' }).hover();
 	await page.getByRole('menuitem', { name: 'Person', exact: true }).hover();
@@ -436,7 +358,6 @@ test('naming a folder as somebody sends the correction for that folder', async (
 	await expect.poll(() => sent.length).toBe(1);
 	expect(sent[0].id, 'the correction went to the wrong folder').toBe('f1');
 	expect(sent[0].body).toEqual({ name: 'Wren Halloway', kind: 'person' });
-	/* What it did, said back as the toast every Add to says: seven files, from the answer rather
-	   than from the number of rows on screen. */
+	/* Seven, from the answer rather than from the rows on screen. */
 	await expect(page.getByText(/Added 7 files to\s+Wren Halloway/)).toBeVisible();
 });

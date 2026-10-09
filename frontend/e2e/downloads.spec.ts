@@ -3,33 +3,13 @@ import { expect, test } from './test';
 import { signInAsAdmin } from './admin';
 import { rewrite } from './routes';
 
-/* The download manager, in a browser, against the real server.
- *
- * The page is three regions (the head with the Cookies door and the queue's Pause, the Add box,
- * the queue), the queue one list narrowed by a strip of state chips, and a row that offers the one fix its
- * state has.
- *
- * ## The word is Cookies
- *
- * Nothing on this page speaks of account logins, only cookies. That is a claim about what a
- * person READS, so a browser is the only place it can really be checked: a unit test sees one
- * component's strings and this sees the assembled page, the rail and the shell around it. The
- * last test in this file is that claim, made against the whole document.
- *
- * ## What a browser is here for
- *
- * That the screen is real rather than a placeholder; that the paste box is one control doing two
- * different jobs depending on what is in it, and sends the right one; and that the list refuses a
- * caller who is not signed in. Running a download end to end is not tested here (the job that
- * fetches hands its file to the shared import pipeline), so the rows below are SERVED to the
- * page rather than really queued: this is a test about what the screen draws and what it sends.
+/*
+ * The download manager against the real server: the screen is real, the paste box sends one link
+ * or many the right way, and the word is Cookies across the whole assembled page. The rows are
+ * SERVED rather than queued: this is about what the screen draws and sends.
  */
 
-/** One row of the queue, with every field the wire carries, so nothing arrives `undefined`.
- *
- * Spelled out rather than cast from a partial for the reason the unit fixtures are: a cast
- * compiles and then hands the row a missing field, which draws as a blank line rather than
- * failing as a missing field. */
+/** One row of the queue with every field the wire carries: a cast draws a missing field blank. */
 function row(over: Record<string, unknown> = {}): Record<string, unknown> {
 	return {
 		id: 'one',
@@ -60,11 +40,9 @@ function row(over: Record<string, unknown> = {}): Record<string, unknown> {
 	};
 }
 
-/** Serve the queue a fixed list, so a state can be looked at without a fetcher ever running. */
+/** Serve the queue a fixed list. */
 async function serve(page: Page, downloads: Record<string, unknown>[]): Promise<void> {
-	/* By path, not by glob: the list is read with its narrowing in the query string
-	   (`?limit=50&offset=0&show=all&sort=newest`), and a glob ending at `downloads` matches none of
-	   those addresses. */
+	/* By path: the list carries its narrowing in the query string. */
 	await page.route(
 		(url) => url.pathname === '/api/downloads',
 		async (route) => {
@@ -80,14 +58,7 @@ async function serve(page: Page, downloads: Record<string, unknown>[]): Promise<
 	);
 }
 
-/*
- * The fixture's Site, known to Sift.
- *
- * The rows above name `one-site`, and a screen that names a Site reads its name from the supported
- * list (`nameOf`) rather than trusting whatever a row carried, so a row from a Site Sift has never
- * heard of is drawn by its key. The real list is asked and kept whole; this Site is added to it, in
- * the wire's own shape.
- */
+/* The fixture's Site, added to the real supported list: an unknown Site is drawn by its key. */
 async function knowOneSite(page: Page): Promise<void> {
 	await page.route('**/api/supported-sites', async (route) => {
 		if (route.request().method() !== 'GET') return route.fallback();
@@ -112,14 +83,8 @@ async function knowOneSite(page: Page): Promise<void> {
 	});
 }
 
-/*
- * Somewhere for a download to land.
- *
- * With no download folder set and no Site given one, the paste box asks where a download goes
- * before it sends anything (`Destinations.hasNowhereFor`) rather than let the server refuse it,
- * and this suite's library has no folders at all. The real answer is asked and kept; only the
- * default folder is filled in.
- */
+/* A default download folder, or the paste box asks where to put it first
+ * (`Destinations.hasNowhereFor`). */
 async function aDownloadFolder(page: Page): Promise<void> {
 	await page.route('**/api/site-options', async (route) => {
 		if (route.request().method() !== 'GET') return route.fallback();
@@ -136,10 +101,7 @@ test('the download manager is a screen, and an empty one says so', async ({ page
 
 	await expect(page.getByRole('heading', { name: 'Downloads' })).toBeVisible();
 
-	/* The REGION rather than the sentence. What has to be true is that a queue with nothing in
-	   it still says something (a heading with nothing under it reads as a screen that failed
-	   to load), and the words are the page's to choose, so asserting exact sentences would only
-	   break when they are rewritten. */
+	/* The region, not the sentence: an empty queue still says something. */
 	const said = await page.locator('main p, main li').allInnerTexts();
 	expect(
 		said.join(' ').trim().length,
@@ -150,9 +112,7 @@ test('the download manager is a screen, and an empty one says so', async ({ page
 test('it offers one box to paste links into, and the button counts what is in it', async ({
 	page
 }) => {
-	/* The button carrying the number is the Add region's whole promise: a paste of forty is one act
-	   with one press, and the press has to say how many it is about to take before it takes them.
-	   One link is one download and the button does not count out loud for it. */
+	/* The button counts what it is about to take; one link is not counted out loud. */
 	await signInAsAdmin(page);
 	await serve(page, []);
 	await page.goto('/downloads');
@@ -168,10 +128,7 @@ test('it offers one box to paste links into, and the button counts what is in it
 test('the queue is narrowed by state tabs that say how many are in each state', async ({
 	page
 }) => {
-	/* The tabs every entity page and Organize draw, each a real address, and the counts are
-	   the reason for them: "Needs you" is the one thing on this page somebody has to act on. It
-	   gathers the row waiting for cookies AND the failed one, because a failure is waiting on
-	   somebody to press Try again (`needsYou` in the queue store), so it counts two of these three. */
+	/* "Needs you" gathers the cookies row AND the failed one (`needsYou`): two of three. */
 	await signInAsAdmin(page);
 	await serve(page, [
 		row(),
@@ -185,21 +142,18 @@ test('the queue is narrowed by state tabs that say how many are in each state', 
 		await expect(tabs.getByRole('link', { name: new RegExp(label) })).toBeVisible();
 	}
 
-	// The counts, read off the tabs themselves rather than off the rows they narrow to.
+	// Read off the tabs themselves.
 	await expect(tabs.getByRole('link', { name: /Needs you/ })).toContainText('2');
 	await expect(tabs.getByRole('link', { name: /All/ })).toContainText('3');
 
-	// And the tab showing is the address, so a reload lands on it.
+	// The tab is the address, so a reload lands on it.
 	await tabs.getByRole('link', { name: /Failed/ }).click();
 	await expect(page).toHaveURL(/\/downloads\?show=failed$/);
 });
 
 test('every row stands its columns at the same x', async ({ page }) => {
-	/* One grid of fixed tracks per row: what a row holds (a fix button, two glyphs or none, a
-	   long name or a short one) cannot move where its neighbours' columns are. Read off the
-	   drawn page, which is the only place a layout exists. The columns stand beside the name only
-	   on a wide window (below `FACTS_UNDER_THE_NAME` they go on a line under it), so it is
-	   measured at a width that draws them. */
+	/* Fixed tracks per row, so a row's contents cannot move its neighbours' columns. Wide enough
+	   that the columns stand beside the name (`FACTS_UNDER_THE_NAME`). */
 	await page.setViewportSize({ width: 1600, height: 900 });
 	await signInAsAdmin(page);
 	await serve(page, [
@@ -212,10 +166,7 @@ test('every row stands its columns at the same x', async ({ page }) => {
 
 	const list = page.getByRole('list', { name: 'Downloads' });
 	await expect(list.locator('li')).toHaveCount(4);
-	/* Every cell by the edge it is aligned on (a cell the list aligns to the end of its track
-	   is as wide as what it holds, so its start moves with its words and its end does not), and
-	   the edge each fact is aligned on: the status badge's start, and the end of the moment and
-	   of the fix, which stand against the row's actions. */
+	/* Every cell by the edge it is aligned on. */
 	const columns = await list.evaluate((ul) =>
 		[...ul.querySelectorAll(':scope > li')].map((li) => {
 			const box = (selector: string) => li.querySelector(selector)?.getBoundingClientRect();
@@ -235,15 +186,8 @@ test('every row stands its columns at the same x', async ({ page }) => {
 	for (const one of columns) expect(one).toEqual(columns[0]);
 });
 
-/*
- * THE QUEUE REACHES THE RIGHT EDGE, like every other wall.
- *
- * What anybody can see on a row at rest reaches the edge the list does. The last thing on a row is
- * the arrow that opens it (`DataRow` draws it at the end of every row that folds, always visible),
- * with the figures in front of it. Held here as the measurement: at rest, each row's last visible
- * thing ends within one row's padding of the frame's content edge, and so do the tabs' line and the
- * search.
- */
+/* The queue reaches the right edge like every wall: each row's last visible thing at rest (the
+ * fold arrow, `DataRow`), the tabs' line and the search end within a row's padding of it. */
 test('the rows, the tabs and the search reach the frame right gutter', async ({ page }) => {
 	await signInAsAdmin(page);
 	await page.setViewportSize({ width: 1600, height: 1000 });
@@ -254,7 +198,7 @@ test('the rows, the tabs and the search reach the frame right gutter', async ({ 
 	await page.goto('/downloads');
 	const list = page.getByRole('list', { name: 'Downloads' });
 	await expect(list.locator('li')).toHaveCount(2);
-	// The pointer is kept off the list, so the glyphs are hidden as they are at rest.
+	// The glyphs hidden, as at rest.
 	await page.mouse.move(0, 0);
 
 	const edges = await page.evaluate(() => {
@@ -275,7 +219,7 @@ test('the rows, the tabs and the search reach the frame right gutter', async ({ 
 	expect(edges.list, JSON.stringify(edges)).toBe(edges.content);
 	expect(edges.tabs, JSON.stringify(edges)).toBe(edges.content);
 	expect(edges.search, JSON.stringify(edges)).toBe(edges.content);
-	// Within the row's own padding (12px) and a pixel of rounding.
+	// Within the row's padding (12px) and a pixel.
 	expect(edges.ends.length, JSON.stringify(edges)).toBe(2);
 	for (const end of edges.ends) {
 		expect(edges.content - end, JSON.stringify(edges)).toBeLessThanOrEqual(13);
@@ -285,9 +229,7 @@ test('the rows, the tabs and the search reach the frame right gutter', async ({ 
 test('a row that is waiting says it is waiting for cookies, and offers to take them', async ({
 	page
 }) => {
-	/* The one state on this page that a person can do something about.
-	   The row says what is missing in the words the thing has (cookies), and the fix is on the
-	   row rather than three screens away in Settings. */
+	/* The fix is on the row, in the thing's own word (cookies). */
 	await signInAsAdmin(page);
 	await knowOneSite(page);
 	await serve(page, [row({ status: 'blocked', filename: 'later.mp4' })]);
@@ -300,30 +242,25 @@ test('a row that is waiting says it is waiting for cookies, and offers to take t
 	const sheet = page.getByRole('dialog');
 	await expect(sheet).toBeVisible();
 	await expect(sheet.getByText('Cookies', { exact: true }).first()).toBeVisible();
-	// Opened FROM a row, so it already knows which Site is asking.
+	// Opened from a row, so it knows which Site.
 	await expect(sheet).toContainText('One Site');
 });
 
 test('the Sites pane opens the same sheet, by its own door', async ({ page }) => {
-	/* One component, three doors: the head of this page, a blocked row, and Settings. The
-	   failure this is about is the third door being a second implementation of the same form,
-	   with its own wording and its own read-back. */
+	/* One component behind three doors, not a second form in Settings. */
 	await signInAsAdmin(page);
 	await page.goto('/settings/sites');
 
 	await page.getByRole('button', { name: 'Cookies' }).first().click();
 
-	/* By its name: Settings is itself a dialog, open behind the sheet, so an unnamed dialog is
-	   two of them. */
+	/* By name: Settings is a dialog too, open behind it. */
 	const sheet = page.getByRole('dialog', { name: 'Cookies' });
 	await expect(sheet).toBeVisible();
 	await expect(sheet.getByText('Cookies', { exact: true }).first()).toBeVisible();
 });
 
 test('nothing on the page calls it a login', async ({ page }) => {
-	/* The word asserted where it can actually be broken: over the whole assembled document,
-	   chips, rows, head and all. Every other check in this file names a string it expects to
-	   find; this one is the only shape that catches the string nobody expected. */
+	/* Over the whole document: the only shape that catches a string nobody expected. */
 	await signInAsAdmin(page);
 	await serve(page, [
 		row(),
@@ -349,15 +286,8 @@ test.describe('who is turned away', () => {
 	});
 });
 
-/*
- * THE BULK PASTE BOX.
- *
- * It is one control doing two different things depending on what is in it, and the difference is
- * invisible: one line goes to `/downloads` and is one download; several lines go to
- * `/downloads/links`, which is one request that answers how many were taken and which were refused.
- * A loop over the single route would look identical on screen and would lose the other lines the
- * moment one of them was refused.
- */
+/* One line goes to `/downloads`; several go to `/downloads/links` as one request that says which
+ * were refused. A loop would lose the rest the moment one was refused. */
 test('several links pasted together go as one request, not one each', async ({ page }) => {
 	await signInAsAdmin(page);
 	await aDownloadFolder(page);
@@ -391,11 +321,7 @@ test('several links pasted together go as one request, not one each', async ({ p
 });
 
 test('what is left in the box after a paste is only what still needs doing', async ({ page }) => {
-	/*
-	 * The trap is a silent double-queue: if the whole paste stayed in the box, where somebody goes
-	 * to fix the one line that was refused, pressing Download again would queue every good line a
-	 * second time with nothing on screen saying so.
-	 */
+	/* Only the refused line stays in the box, or pressing again would queue the good ones twice. */
 	await signInAsAdmin(page);
 	await aDownloadFolder(page);
 

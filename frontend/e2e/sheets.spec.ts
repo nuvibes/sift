@@ -3,16 +3,8 @@ import { expect, test } from './test';
 import { signInAsAdmin } from './admin';
 import { trailWords } from './trail';
 
-/* The four sheets and the overlay, driven rather than read.
- *
- * Each of these is a screen: it has a way in, a way out, and something it does. The unit tests
- * assert that the markup is rendered from one declaration, which proves the two surfaces cannot
- * drift apart and proves nothing about whether pressing anything works. What is here is the other
- * half: open it the way a person does, act, and watch what goes out to the server.
- *
- * A dismiss is asserted as well as an action, and deliberately. A sheet that cannot be got out of
- * is a trap on a screen, and it is the half nobody notices until it happens to them.
- */
+/* The four sheets and the overlay, driven: open each the way a person does, act, watch what goes
+ * to the server, and get out again, since a sheet with no way out is a trap. */
 
 const ASSETS = [
 	{ id: 'a1', media_type: 'video', width: 1920, height: 1080, duration_ms: 95_000 },
@@ -20,8 +12,7 @@ const ASSETS = [
 	{ id: 'a3', media_type: 'image', width: 1000, height: 1000, duration_ms: null }
 ].map((asset) => ({ ...asset, favorite: false, rating: null, concealed: false, thumb: true }));
 
-/* A real picture. A tile whose still 404s draws the missing-preview placeholder instead, and a
-   screen of placeholders passes any "this control is absent" assertion for the wrong reason. */
+/* A real picture: placeholders pass an absence assertion for the wrong reason. */
 const PIXEL = Buffer.from(
 	'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
 	'base64'
@@ -48,8 +39,7 @@ const FOLDERS = [
 	}
 ];
 
-/* Managed, because Move is offered only into a root Sift was handed read-write. An unmanaged root
-   leaves the verb off the bar entirely, which is the behaviour rather than a fixture detail. */
+/* Managed: Move is offered only into a root Sift was handed read-write. */
 const ROOTS = [{ id: 'r1', name: 'Media', managed: true }];
 
 async function serveLibrary(page: Page) {
@@ -119,37 +109,24 @@ test('ctrl-F opens the search overlay and puts the caret in it', async ({ page }
 	// The caret has to land in the box, or the shortcut has saved nobody a keystroke.
 	await expect(overlay.locator('input').first()).toBeFocused();
 
-	/* And it has to be ON THE SCREEN, which is a different claim. An overlay drawn under the
-	 * centred modal dialog's class name would inherit its half-width shift and fixed width and
-	 * land half off the left edge: visible, focused, unusable, and passing every assertion
-	 * above.
-	 */
+	/* And ON THE SCREEN: under the centred dialog's class it would land half off the left edge. */
 	await page.waitForTimeout(500); // past the arrive transition, or this measures it mid-flight
 	const view = page.viewportSize()!;
 	const box = (await overlay.boundingBox())!;
 	expect(box.x, 'the overlay starts off the left edge').toBeGreaterThanOrEqual(0);
 	expect(box.x + box.width, 'the overlay runs past the right edge').toBeLessThanOrEqual(view.width);
 	expect(box.y, 'the overlay starts above the top edge').toBeGreaterThanOrEqual(0);
-	/* Centred, near enough, but on the space the grid occupies, NOT on the window. The rail is
-	 * fixed to the left edge and the overlay belongs to what is beside it, so measuring against the
-	 * window would demand it hang partly under the rail to look "centred". The two margins inside
-	 * that space should match rather than one being the whole width. */
+	/* Centred on the space beside the rail, not on the window. */
 	const rail = (await page.getByRole('navigation', { name: 'Main' }).boundingBox())!;
 	const contentStart = rail.x + rail.width;
-	// clientWidth, not the viewport: it stops where the scrollbar starts, and the layout is centred
-	// on the space it can actually draw in. Measuring to the viewport charges the overlay for the
-	// scrollbar and reads as an off-centre box that is exactly centred.
+	// `clientWidth` stops at the scrollbar, which the viewport does not.
 	const contentEnd = await page.evaluate(() => document.documentElement.clientWidth);
 	const leftMargin = box.x - contentStart;
 	const rightMargin = contentEnd - (box.x + box.width);
 	expect(leftMargin, 'the overlay starts left of the content it belongs to').toBeGreaterThanOrEqual(
 		0
 	);
-	/* Twelve pixels, not two. The overlay sits eight pixels further from the rail than from the
-	 * right edge, and that asymmetry is not what this test is for. The fault it guards puts
-	 * hundreds of pixels of the overlay off the screen. A tolerance this size still catches that
-	 * and does not fail on a gutter.
-	 */
+	/* Twelve pixels: the fault puts hundreds off screen, and the gutter is uneven by eight. */
 	expect(Math.abs(leftMargin - rightMargin)).toBeLessThan(12);
 });
 
@@ -165,8 +142,7 @@ test('and escape puts it away again', async ({ page }) => {
 });
 
 test('and it stays out of the way of somebody already typing', async ({ page }) => {
-	/* Ctrl-F belongs to the box when there is a box. This is the rule that stops the application's
-	 * shortcut firing over a search somebody is halfway through writing. */
+	/* Ctrl-F belongs to a box that has focus, not to the application. */
 	await openGrid(page);
 	const field = page.locator('header input').first();
 	await field.click();
@@ -177,18 +153,9 @@ test('and it stays out of the way of somebody already typing', async ({ page }) 
 	await expect(page.getByRole('dialog', { name: 'Search' })).toHaveCount(0);
 });
 
-/* --- the folder browser ----------------------------------------------------------------
- *
- * It is a MODE of Browse rather than a sheet over it: the same screen looked at a different
- * way, with where you are in the address. So the way out is the button that turned it on rather
- * than Escape, and there is no folder-shaped container to find.
- */
+/* --- the folder browser: a MODE of Browse, left by the button that turned it on ---------- */
 
-/**
- * The folders in the folder being looked at, which is all the explorer is: a band above the wall,
- * not a page frame of its own: a frame would make it a second screen beside the one it is a mode
- * of.
- */
+/** The folders in the folder being looked at: a band above the wall, not a frame of its own. */
 const explorer = (page: Page) => page.locator('.band');
 
 test('the folder browser opens on the library and walks into a folder', async ({ page }) => {
@@ -210,19 +177,13 @@ test('the folder browser opens on the library and walks into a folder', async ({
 
 	await folders.getByRole('button', { name: 'Clips', exact: true }).click();
 
-	// The trail is the only thing on screen that says where you are, and it is the SHARED one in the
-	// page header. A page does not draw a trail of its own.
+	// The shared trail in the page header is what says where you are.
 	await expect(page.getByRole('navigation', { name: 'Breadcrumb' })).toBeVisible();
 	await expect.poll(() => trailWords(page)).toContain('Clips');
 });
 
 test('and walking into a folder points the WALL at it, without leaving', async ({ page }) => {
-	/*
-	 * Pressing a folder both walks into it and points the wall at it, which is what a file manager
-	 * has always done in one gesture: the wall under the folders IS the open folder. There is no
-	 * separate "Browse here" verb that would leave the explorer for the tiles and lose the folders
-	 * beside it.
-	 */
+	/* Pressing a folder walks into it and points the wall at it, as a file manager does. */
 	await openGrid(page);
 	const asked: string[] = [];
 	await page.route('**/api/assets?**', (route) => {
@@ -236,13 +197,10 @@ test('and walking into a folder points the WALL at it, without leaving', async (
 
 	await folders.getByRole('button', { name: 'Clips', exact: true }).click();
 
-	/* Still in the explorer. Asked of the CONTROL rather than of the band: a folder with nothing
-	   inside it draws no folders at all, which is what a file manager does and is indistinguishable
-	   from the band being gone. The pressed folder button is what says which of Browse's two ways of
-	   looking is on. */
+	/* Asked of the control: an empty folder draws no band at all. */
 	await expect(page.getByRole('button', { name: 'Back to tiles' })).toBeVisible();
 	await expect(page).toHaveURL(new RegExp(`[?&]folders=${FOLDERS[0].id}`));
-	// And the wall really asked for that folder, which is the half no address can prove.
+	// And the wall really asked for that folder.
 	await expect.poll(() => asked.some((one) => one.includes(`in=${FOLDERS[0].id}`))).toBe(true);
 });
 
@@ -253,23 +211,12 @@ test('and the same button turns it off again without going anywhere', async ({ p
 	await page.getByRole('button', { name: 'Folders' }).click();
 	await expect(explorer(page)).toBeVisible();
 
-	// One button, not two: the control that turned the explorer on is the control that turns it off,
-	// and it is the same folder in the same place wearing a pressed state.
+	// The control that turned the explorer on turns it off.
 	await page.getByRole('button', { name: 'Back to tiles' }).click();
 
 	await expect(explorer(page)).toHaveCount(0);
-	/*
-	 * WAITED FOR, because the address is mid-flight at this instant.
-	 *
-	 * Turning the explorer off changes the question, so the wall takes its remembered row out of
-	 * the address and puts a fresh one back when its page lands: two writes, a request apart.
-	 * Read between them the address is the bare `/browse`, which is neither where it started nor
-	 * where it ends up. The write is a `replaceState` (see `lib/grid/anchor.ts`) and takes effect
-	 * immediately.
-	 *
-	 * Polling is right here and would be wrong one line up: this is a value that ARRIVES and stays,
-	 * not one moving through a range. It still fails if the row never comes back.
-	 */
+	/* Polled: the wall removes its row from the address and writes a fresh one when its page lands
+	 * (`lib/grid/anchor.ts`), so a read between them sees the bare `/browse`. */
 	await expect.poll(() => page.url()).toBe(before);
 });
 
@@ -282,8 +229,7 @@ test('Tag opens the pick flyout and tags every picked file', async ({ page }) =>
 		return route.fulfill({
 			status: 200,
 			contentType: 'application/json',
-			// A page, not a bare list: the tag route pages with the rest of the entity walls, and
-			// a store handed an array reads no rows at all.
+			// A page, not a bare list.
 			body: JSON.stringify({
 				items: [{ id: 't1', name: 'beach', asset_count: 0 }],
 				total: 1,
@@ -303,16 +249,14 @@ test('Tag opens the pick flyout and tags every picked file', async ({ page }) =>
 	});
 
 	await pickFirst(page, 3);
-	/* The bar's "Add to" is ONE button opening onto the places a file can go: five buttons side
-	   by side would be most of a strip that scrolls sideways. Each row opens a flyout over the
-	   whole set, and a press on one of its rows writes to every picked file together; see
-	   `FileVerbs`. */
+	/* One "Add to" opens the places a file can go; a row's flyout writes to every picked file
+	   (`FileVerbs`). */
 	await bar(page).getByRole('button', { name: 'Add to' }).click();
 	await page.getByRole('menuitem', { name: 'Tag' }).click();
 
 	const flyout = page.locator('.pick');
 	await expect(flyout).toBeVisible();
-	// Nothing is written by opening it; the press on a row is the write.
+	// Opening writes nothing; the press on a row is the write.
 	expect(written).toBeNull();
 	await flyout.getByRole('menuitemcheckbox', { name: 'beach' }).click();
 
@@ -328,8 +272,7 @@ test('and closing the pick flyout writes nothing at all', async ({ page }) => {
 		return route.fulfill({
 			status: 200,
 			contentType: 'application/json',
-			// A page, not a bare list: the tag route pages with the rest of the entity walls, and
-			// a store handed an array reads no rows at all.
+			// A page, not a bare list.
 			body: JSON.stringify({
 				items: [{ id: 't1', name: 'beach', asset_count: 0 }],
 				total: 1,
@@ -349,42 +292,28 @@ test('and closing the pick flyout writes nothing at all', async ({ page }) => {
 	});
 
 	await pickFirst(page, 3);
-	/* The bar's "Add to" is ONE button opening onto the places a file can go: five buttons side
-	   by side would be most of a strip that scrolls sideways. Each row opens a flyout over the
-	   whole set, and a press on one of its rows writes to every picked file together; see
-	   `FileVerbs`. */
+	/* "Add to", then the flyout. */
 	await bar(page).getByRole('button', { name: 'Add to' }).click();
 	await page.getByRole('menuitem', { name: 'Tag' }).click();
 	const flyout = page.locator('.pick');
 	await expect(flyout).toBeVisible();
 
-	// Escape twice: once for the flyout, once for the menu it hangs from.
+	// Once for the flyout, once for its menu.
 	await page.keyboard.press('Escape');
 	await page.keyboard.press('Escape');
 
 	await expect(flyout).toHaveCount(0);
 	await expect(page.getByRole('menu')).toHaveCount(0);
 	expect(written).toEqual([]);
-	// And the selection is still there, because nothing was done to it.
+	// Nothing was done to the selection.
 	await expect(bar(page)).toContainText('3 files selected');
 });
 
 test('a person nobody has heard of can be made from the flyout and filed under', async ({
 	page
 }) => {
-	/*
-	 * Making somebody from the flyout files the clip under them on the same press.
-	 *
-	 * Otherwise filing a clip under somebody the library does not know means leaving, making them
-	 * on the People screen, coming back and finding the clip again, so most of the time the clip
-	 * stays filed under nobody. Their other names and links are still the People screen's to fill
-	 * in, which is why the answer is a way through to that page rather than a second person editor
-	 * in this flyout.
-	 *
-	 * Making something IS the answer to the flyout's question, so it closes: leaving it open,
-	 * waiting for a confirm would be a dead end in which the person exists with no faces and no
-	 * files and nothing on screen says so.
-	 */
+	/* Creating somebody from the flyout files the clips under them on the same press, and closes
+	 * it: the rest of their record is the People screen's. */
 	await openGrid(page);
 	await page.route('**/api/people*', (route) => {
 		if (route.request().method() !== 'GET') return route.continue();
@@ -415,10 +344,7 @@ test('a person nobody has heard of can be made from the flyout and filed under',
 	});
 
 	await pickFirst(page, 2);
-	/* The bar's "Add to" is ONE button opening onto the places a file can go: five buttons side
-	   by side would be most of a strip that scrolls sideways. Each row opens a flyout over the
-	   whole set, and a press on one of its rows writes to every picked file together; see
-	   `FileVerbs`. */
+	/* "Add to", then the flyout. */
 	await bar(page).getByRole('button', { name: 'Add to' }).click();
 	await page.getByRole('menuitem', { name: 'Person' }).click();
 
@@ -431,18 +357,17 @@ test('a person nobody has heard of can be made from the flyout and filed under',
 	await expect.poll(() => made).not.toBeNull();
 	expect(made!.name).toBe('Orla Fennimore');
 
-	// Made AND filed, on the one press, for every picked file.
+	// Created AND filed, for every picked file.
 	await expect.poll(() => written).not.toBeNull();
 	expect(written!.person_ids).toEqual(['p9']);
 	expect(written!.asset_ids.slice().sort()).toEqual(['a1', 'a2']);
 
-	// And the flyout is gone, because its question has been answered.
+	// Its question answered, the flyout goes.
 	await expect(flyout).toBeHidden();
 });
 
 test('Add to Person goes through the same flyout to the people endpoint', async ({ page }) => {
-	/* The same component behind a third verb. What differs is only where the answer is sent, which
-	 * is the thing worth checking once per verb rather than once per flyout. */
+	/* The same component behind a third verb: only where the answer goes differs. */
 	await openGrid(page);
 	await page.route('**/api/people*', (route) => {
 		if (route.request().method() !== 'GET') return route.continue();
@@ -463,10 +388,7 @@ test('Add to Person goes through the same flyout to the people endpoint', async 
 	});
 
 	await pickFirst(page, 2);
-	/* The bar's "Add to" is ONE button opening onto the places a file can go: five buttons side
-	   by side would be most of a strip that scrolls sideways. Each row opens a flyout over the
-	   whole set, and a press on one of its rows writes to every picked file together; see
-	   `FileVerbs`. */
+	/* "Add to", then the flyout. */
 	await bar(page).getByRole('button', { name: 'Add to' }).click();
 	await page.getByRole('menuitem', { name: 'Person' }).click();
 
@@ -483,8 +405,7 @@ test('Add to Person goes through the same flyout to the people endpoint', async 
 /* --- the move sheet -------------------------------------------------------------------- */
 
 test('Add to Site says where a selection came from', async ({ page }) => {
-	/* A file came from where it came from, so this only ever adds. Correcting a wrong one is done on
-	 * the file's own record, one file at a time, where what is being corrected is on the screen. */
+	/* This only ever adds; a wrong one is corrected on the file's own record. */
 	await openGrid(page);
 	await page.route('**/api/sites*', (route) => {
 		if (route.request().method() !== 'GET') return route.continue();
@@ -510,10 +431,7 @@ test('Add to Site says where a selection came from', async ({ page }) => {
 	});
 
 	await pickFirst(page, 2);
-	/* The bar's "Add to" is ONE button opening onto the places a file can go: five buttons side
-	   by side would be most of a strip that scrolls sideways. Each row opens a flyout over the
-	   whole set, and a press on one of its rows writes to every picked file together; see
-	   `FileVerbs`. */
+	/* "Add to", then the flyout. */
 	await bar(page).getByRole('button', { name: 'Add to' }).click();
 	await page.getByRole('menuitem', { name: 'Site' }).click();
 
@@ -553,10 +471,7 @@ test('Add to Photo Set puts every picked file into the one chosen', async ({ pag
 	});
 
 	await pickFirst(page, 2);
-	/* The bar's "Add to" is ONE button opening onto the places a file can go: five buttons side
-	   by side would be most of a strip that scrolls sideways. Each row opens a flyout over the
-	   whole set, and a press on one of its rows writes to every picked file together; see
-	   `FileVerbs`. */
+	/* "Add to", then the flyout. */
 	await bar(page).getByRole('button', { name: 'Add to' }).click();
 	await page.getByRole('menuitem', { name: 'Photo Set' }).click();
 
@@ -570,32 +485,24 @@ test('Add to Photo Set puts every picked file into the one chosen', async ({ pag
 });
 
 test('Move refuses to go until a folder has been chosen', async ({ page }) => {
-	/* A destination filled in for somebody is a destination they did not pick, and this writes to a
-	 * real disk. The button being dead until then is the whole guard. */
+	/* This writes to a real disk, so the button is dead until a destination is picked. */
 	await openGrid(page);
 
 	await pickFirst(page, 2);
-	/* Behind the bar's three dots: the bar names "Add to", the rating and the one that deletes,
-	   and keeps everything else one press away. See `barShape`. */
+	/* Behind the bar's three dots (`barShape`). */
 	await bar(page).getByRole('button', { name: 'More for 2 files' }).click();
 	await page.getByRole('menuitem', { name: 'Move' }).click();
 
-	// Scoped to the dialog: the bar's own verb reads "Move" too, so the page-wide name is ambiguous.
+	// Scoped to the dialog: the bar's verb reads "Move" too.
 	const confirm = page.getByRole('alertdialog').getByRole('button', { name: 'Move', exact: true });
 	await expect(confirm).toBeDisabled();
 
-	/* Ticked, and still refused. The sheet has two reasons to hold the button now (no destination,
-	   and no acknowledgement), so leaving both unanswered would let this pass on either one and it
-	   would stop being a test about destinations at all. */
+	/* Ticked and still refused, so this stays about destinations. */
 	await understand(page);
 	await expect(confirm).toBeDisabled();
 });
 
-/* Tick the box that says what a move does, if this account is still being asked.
- *
- * Ticking it is what turns the asking off for good, so whether it is there depends on what the
- * account has done before, and these run against a shared test server in whatever state the
- * last run left it. Absent means already acknowledged, which is a state the sheet is meant to have. */
+/* Tick the acknowledgement if this account is still asked; absent means already acknowledged. */
 async function understand(page: Page): Promise<boolean> {
 	const box = page.getByRole('checkbox', { name: /moves files on my disk/i });
 	if ((await box.count()) === 0) return false;
@@ -605,19 +512,15 @@ async function understand(page: Page): Promise<boolean> {
 
 test('and choosing one moves every picked file into it', async ({ page }) => {
 	await openGrid(page);
-	/* Confirming with the box ticked saves "stop asking" for this account, which would change the
-	   install these run against, and the acknowledgement would then be missing from every later
-	   run, quietly taking the check above with it. Answered here instead of written, and recorded,
-	   because the box BEING what saves the preference is the whole design and is asserted nowhere
-	   else: the jsdom tests cannot reach an enabled Move button without driving the destination
-	   picker, and this is the only place the two halves meet. */
+	/* Confirming with the box ticked saves "stop asking", so it is answered here and recorded: the
+	   only place the confirm and the preference meet. */
 	const acknowledged: unknown[] = [];
 	await page.route('**/api/settings', (route) => {
 		if (route.request().method() !== 'PUT') return route.fallback();
 		acknowledged.push(route.request().postDataJSON());
 		return route.fulfill({ status: 204, body: '' });
 	});
-	/* One request for the whole selection: the ids and the folder, answered with what changed. */
+	/* One request for the whole selection. */
 	const moved: { id: string; folder: string }[] = [];
 	await page.route('**/api/assets/move', (route) => {
 		const body = route.request().postDataJSON() as { asset_ids: string[]; folder_id: string };
@@ -630,8 +533,7 @@ test('and choosing one moves every picked file into it', async ({ page }) => {
 	});
 
 	await pickFirst(page, 2);
-	/* Behind the bar's three dots: the bar names "Add to", the rating and the one that deletes,
-	   and keeps everything else one press away. See `barShape`. */
+	/* Behind the bar's three dots. */
 	await bar(page).getByRole('button', { name: 'More for 2 files' }).click();
 	await page.getByRole('menuitem', { name: 'Move' }).click();
 
@@ -644,9 +546,7 @@ test('and choosing one moves every picked file into it', async ({ page }) => {
 	expect(moved.map((one) => one.id).sort()).toEqual(['a1', 'a2']);
 	expect(new Set(moved.map((one) => one.folder))).toEqual(new Set(['f2']));
 
-	/* And the acknowledgement was saved by CONFIRMING, not by ticking. If the sheet no longer asked
-	   this account there was nothing to tick and nothing to save, which is the same design seen from
-	   the other side. */
+	/* Saved by CONFIRMING, not by ticking. */
 	if (wasAsked) {
 		await expect
 			.poll(() => acknowledged)

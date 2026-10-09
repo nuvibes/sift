@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""The Visual C++ runtime a release carries beside its interpreter."""
+"""The C++ runtime (Microsoft's) a release carries beside its interpreter."""
 
 from __future__ import annotations
 

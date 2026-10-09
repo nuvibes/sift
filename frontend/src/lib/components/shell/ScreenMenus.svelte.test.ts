@@ -5,36 +5,16 @@ import ScreenMenus from './ScreenMenus.svelte';
 import { rail } from './rail-state.svelte';
 import { FILTERS_PANEL, SORT_MENU, screenBar } from './screen-bar.svelte';
 
-/*
- * A second panel id, for the tests about the row's rule rather than any one menu. The row has one
- * panel and one menu on it (the kept filters are at the foot of the filter panel), so a made-up id
- * keeps those tests about two.
- */
+// A made-up second panel id, for tests about the row's rule rather than one menu.
 const SECOND_PANEL = 'a second panel';
 
-/* A screen's own token. The bar draws Filter and Sort dimmed until a screen says they act, and a
-   dimmed trigger is deliberately inert, so a test of HOVERING that never published anything would
-   be hovering two controls that are switched off, and would pass while proving nothing. */
+// Dimmed triggers are inert, so the hover tests need a screen that publishes.
 const SCREEN = Symbol('a screen under the bar');
 
 /*
- * A menu opens because somebody pointed at it, and never because the row arrived under the pointer.
- *
- * The collapse button is on this row, so collapsing the sidebar slides the row under a pointer that
- * has not moved, and `mouseenter` fires on that: it fires whenever a pointer and an element start
- * overlapping, whichever did the moving. Scheduling on `mousemove` alone is not enough, because the
- * next thing anybody does after collapsing is move the mouse, over the trigger the collapse parked
- * them on. Asking whether the pointer crossed onto the trigger is not the answer either: it needs
- * an unbroken stream of mousemoves, and the desktop window's top bar is a drag region that hands
- * the page none, so menus would stop opening on hover at all.
- *
- * What is guarded against is one event, the row moving, so that is what is watched. The rail
- * collapsing parks the row; the row stays parked until the pointer is somewhere else; pointing is
- * otherwise left alone. Both halves are tested here, and so is sliding from one menu to the next.
- *
- * jsdom gives every element a zero-sized box at the origin, so the tests that turn on geometry say
- * where the row is. "The pointer is off the row" is a question about a position, and a test of it
- * that did not say where anything was would be testing nothing.
+ * A menu opens because somebody pointed at it, never because the row moved under the pointer
+ * (the rail collapsing parks it until the pointer leaves). jsdom boxes sit at the origin, so the
+ * tests that turn on geometry say where the row is.
  */
 
 let host: HTMLElement;
@@ -47,11 +27,7 @@ beforeEach(() => {
 		filterable: true,
 		sorts: [{ value: 'newest', label: 'Newest' }],
 		sort: 'newest',
-		/*
-		 * A panel the screen publishes, standing in for any two of the row's triggers: what is
-		 * tested is the row's rule for them, so a published panel is a truer stand-in than a
-		 * built-in. `content` is never rendered by this component; the bar below it draws a panel.
-		 */
+		// A published panel stands in for any second trigger; `content` is never rendered here.
 		panels: [
 			{
 				id: SECOND_PANEL,
@@ -113,14 +89,7 @@ describe('what opens a menu', () => {
 	});
 
 	it('opens the NEXT one when the pointer slides along an open row', () => {
-		/*
-		 * Sliding from an open menu to the one beside it is how a row of menus is used, and a guard
-		 * that needs a crossing breaks it. Nothing about a second menu is different from the first.
-		 *
-		 * Filter to Saved, stepping over the order chooser between them: not because pointing at it
-		 * does nothing (it opens, like the other two) but because this test is about the two that
-		 * drop panels, and the order's own behaviour has its own describe below.
-		 */
+		// Sliding from an open menu to the next: a guard that needs a crossing would break it.
 		moveTo(trigger('Filter'), 120, 118);
 		pastTheDwell();
 		expect(screenBar.open, 'the first one did not open').toBe(FILTERS_PANEL);
@@ -173,9 +142,7 @@ describe('what opens a menu', () => {
 	});
 
 	it('does not restart the dwell on every move, or it would never elapse', () => {
-		/* A mousemove fires many times while a pointer crosses a button. The first schedules the open
-		   and the rest have to be ignored: rescheduling on each one leaves a timer permanently a dwell
-		   away from firing, which is a menu that never opens however long you hover. */
+		// Many mousemoves cross a button; rescheduling on each would never open the menu.
 		const one = trigger('Walls');
 		for (let i = 0; i < 12; i++) {
 			moveTo(one, 150 + (i % 3), 118 + (i % 3));
@@ -189,11 +156,7 @@ describe('what opens a menu', () => {
 
 describe('the order chooser, which is a menu rather than a panel', () => {
 	it('opens on the dwell, exactly as the two panels beside it do', () => {
-		/*
-		 * Opening the orders on hover cannot take the keyboard: this library's Select keeps focus
-		 * on its trigger and drives the list with `aria-activedescendant`, so a pointer crossing
-		 * the bar does not pull the caret out of anything being typed.
-		 */
+		// Hover-opening the orders keeps focus on the trigger (`aria-activedescendant`).
 		moveTo(trigger('Sort by'), 150, 118);
 		pastTheDwell();
 
@@ -201,8 +164,7 @@ describe('the order chooser, which is a menu rather than a panel', () => {
 	});
 
 	it('is what is open, so pointing at a panel beside it takes its place', () => {
-		/* One row, one open thing. All three answer to the same store, which is what makes moving
-		   along the row swap them rather than stack them. */
+		// One row, one open thing: moving along the row swaps them.
 		moveTo(trigger('Sort by'), 150, 118);
 		pastTheDwell();
 		expect(screenBar.open).toBe(SORT_MENU);
@@ -214,11 +176,7 @@ describe('the order chooser, which is a menu rather than a panel', () => {
 	});
 
 	it('takes a click beside its open list, and leaves the row pressable', () => {
-		/*
-		 * A list opened by a press does not fall shut on leaving, so the next click is often on the
-		 * wall to dismiss it. That click must close the list and open nothing. The sheet that takes
-		 * it has a hole over this row, so sliding along the row still reaches the next trigger.
-		 */
+		// A pressed list stays on leaving; the dismissing click closes it and opens nothing.
 		placeRow();
 		screenBar.show(SORT_MENU);
 		flushSync();
@@ -246,11 +204,7 @@ describe('the order chooser, which is a menu rather than a panel', () => {
 	});
 });
 
-/*
- * Escape shuts what the bar has open, and says it took the key. The screen under the bar hears the
- * same keydown on the same window, and the Downloads screen's Escape takes a layer off its list;
- * without the mark one press would do both, shutting the panel and sending the tab back to All.
- */
+// Escape is marked as taken, or the screen below would act on the same press.
 describe('Escape', () => {
 	it('shuts what is open and marks the key as used', () => {
 		screenBar.show(FILTERS_PANEL);
@@ -269,11 +223,7 @@ describe('Escape', () => {
 
 describe('the order of the row', () => {
 	it('is Filter, then Sort, then whatever the screen published', () => {
-		/*
-		 * Reaching order: the two that act on the screen in front of somebody come first, and the
-		 * one that is never unavailable sits at the end, always in the same place. A row whose
-		 * order drifts is a row people stop aiming at.
-		 */
+		// The two that act on the screen first, the always-available one last.
 		const names = [...host.querySelectorAll('button')].map((b) => b.getAttribute('aria-label'));
 
 		expect(names.slice(0, 3)).toEqual(['Filter', 'Sort by', 'Walls']);

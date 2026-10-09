@@ -3,18 +3,9 @@ import { expect, test } from './test';
 import { signInAsAdmin } from './admin';
 import { settled } from './settled';
 
-/* The editor, driven in a real browser.
- *
- * Everything the editor DECIDES is the server's and is tested against the real rules next door.
- * What only a browser can answer is the geometry. A rectangle is dragged by a handle over an
- * element, converted into the picture's own pixels, and sent, and every one of those steps can
- * be correct on its own while the joins between them are not.
- *
- * So these do not re-check the arithmetic. They check the joins: which gestures a kind of file is
- * offered, what a drag actually puts in the request, that what the panel reports is the server's
- * rectangle rather than the one it sent, that a rectangle follows the picture when it is turned,
- * and that the sheet does not move under the pointer while somebody is dragging on it.
- */
+/* The editor in a real browser: the rules are the server's, so these check the joins of the
+ * geometry: which gestures a file is offered, what a drag puts in the request, that the panel
+ * reports the server's rectangle, that a rectangle follows a turn, that the sheet holds still. */
 
 type Media = 'image' | 'video' | 'gif';
 
@@ -79,12 +70,7 @@ function lastSteps(asked: Record<string, unknown>[]): Step[] {
 	return (asked.at(-1)?.steps as Step[]) ?? [];
 }
 
-/* Every preflight the panel sends, in order, and the verdict it is answered with.
- *
- * The requests are collected rather than asserted one at a time on purpose: the panel re-asks on
- * every change, so what matters is what the LAST one said: an assertion on "a request went out
- * carrying these numbers" would pass on the request made before the drag.
- */
+/* Every preflight in order: the panel re-asks on every change, so the LAST one is what counts. */
 async function serve(
 	page: Page,
 	media: Media,
@@ -114,8 +100,7 @@ async function serve(
 	await page.route('**/api/assets/e1/view', (route) => route.fulfill({ status: 204, body: '' }));
 	await page.route('**/api/assets/e1/stream', (route) => route.fulfill({ status: 404 }));
 
-	/* Editing lands a new file beside the original, so it is offered only where the library has a
-	   folder to write into; one is served here, or every editor below opens on a greyed row. */
+	/* An edit lands a new file beside the original, so a folder to write into is served. */
 	await page.route('**/api/library/roots', (route) =>
 		route.fulfill({
 			status: 200,
@@ -179,19 +164,7 @@ async function serve(
 	return { asked, started };
 }
 
-/**
- * Open the editor on the served file.
- *
- * The verb is a parameter because it is not one word: a video is trimmed and a picture is edited,
- * and one panel is behind both. Passing the wrong one here is a thirty-second timeout rather than a
- * sentence, so the test below asserts which file gets which word.
- */
-/**
- * Open the file's own Options menu.
- *
- * The verbs on this screen are rows behind one door, the three dots every other surface in Sift
- * opens its verbs from, so it has no word on it and is found by its accessible name.
- */
+/** Open the file's Options menu, the three dots, by its accessible name. */
 async function openTheOptions(page: Page): Promise<void> {
 	await page.getByRole('button', { name: 'Options for this file', exact: true }).click();
 }
@@ -206,10 +179,8 @@ async function openTheEditor(page: Page, verb: 'Modify' | 'Trim' = 'Modify'): Pr
 
 /** Drag one of the rectangle's handles to a point given as a fraction of the picture. */
 async function dragGrip(page: Page, grip: string, to: { x: number; y: number }): Promise<void> {
-	/* Through Playwright's own checks, which wait until the handle is still and is what a press
-	   there lands on. A press sent by coordinates while the menu that opened this dialog is still
-	   closing lands on a page refusing clicks, and the drag never starts. */
-	// Fonts loaded and the box still: a late face or the entrance would reflow the stage under it.
+	/* Through the runner's checks, so a press does not land while the opening menu is still
+	   closing, with fonts loaded and the box still so the stage does not reflow under it. */
 	const stage = page.locator('figure.stage');
 	await page.evaluate(() => document.fonts.ready);
 	await expect
@@ -221,7 +192,7 @@ async function dragGrip(page: Page, grip: string, to: { x: number; y: number }):
 		.toBe(true);
 	for (let attempt = 0; attempt < 2; attempt += 1) {
 		await page.locator(`[data-grip="${grip}"]`).hover();
-		// Read before the press, as the stage does; a stage that moved under the drag is dragged again.
+		// Read before the press; a stage that moved under the drag is dragged again.
 		const box = (await stage.boundingBox())!;
 		await page.mouse.down();
 		await page.mouse.move(box.x + box.width * to.x, box.y + box.height * to.y, { steps: 10 });
@@ -231,9 +202,8 @@ async function dragGrip(page: Page, grip: string, to: { x: number; y: number }):
 	}
 }
 
-/** The asks once the dialog has an answer about the rectangle as drawn. The dialog asks again
-    after a pause in the dragging, so a slow drag asks mid-way too; the button is dead from the
-    moment the rectangle changes until the answer about its last shape has landed. */
+/** The asks once the dialog has answered about the rectangle as drawn; the button is dead until
+then. */
 async function askedAboutTheDrawnRectangle(
 	page: Page,
 	traffic: { asked: Record<string, unknown>[] }
@@ -250,21 +220,14 @@ test.beforeEach(async ({ page }) => {
 // --- which gestures a kind of file is offered ---------------------------------------------------
 
 test('a clip is offered Trim and a photograph is offered Modify', async ({ page }) => {
-	/*
-	 * The word on the button, asserted on both kinds of file in one test so the two cannot drift
-	 * apart unnoticed. One panel is behind both, and a test that only ever looked at one kind of
-	 * file cannot tell a label apart from a constant. The picture's word is Modify rather than Edit
-	 * because it sits one row above Rename, and "Edit" is what half the application means by
-	 * renaming.
-	 */
+	/* Both kinds of file in one test, so the two words cannot drift. Modify, not Edit: "Edit" is
+	 * what half the application means by renaming. */
 	await serve(page, 'video');
 	await page.goto('/asset/e1');
 	await openTheOptions(page);
 	await expect(page.getByRole('menuitem', { name: 'Trim' })).toBeVisible();
 	await expect(page.getByRole('menuitem', { name: 'Modify' })).toHaveCount(0);
-	/* And Create GIF beside it: making an animation is the editor's third answer, so the row
-	   somebody comes looking for by name has its own name on the menu rather than being a switch
-	   inside Trim. */
+	/* Create GIF has its own row rather than being a switch inside Trim. */
 	await expect(page.getByRole('menuitem', { name: 'Create GIF' })).toBeVisible();
 
 	await serve(page, 'image');
@@ -272,7 +235,7 @@ test('a clip is offered Trim and a photograph is offered Modify', async ({ page 
 	await openTheOptions(page);
 	await expect(page.getByRole('menuitem', { name: 'Modify' })).toBeVisible();
 	await expect(page.getByRole('menuitem', { name: 'Trim' })).toHaveCount(0);
-	// A photograph has no stretch of time to animate, so the row is absent rather than refusing.
+	// A photograph has no stretch of time, so the row is absent.
 	await expect(page.getByRole('menuitem', { name: 'Create GIF' })).toHaveCount(0);
 });
 
@@ -280,8 +243,7 @@ test('a photograph is offered the gestures you do to a photograph', async ({ pag
 	await serve(page, 'image');
 	await openTheEditor(page);
 
-	// The shapes a rectangle can be locked to. Free is one of them: the absence of a shape is a
-	// choice somebody makes, so it is a button rather than the state you get by pressing nothing.
+	// Free is a shape somebody chooses, so it is a button too.
 	const shapes = page.getByRole('group', { name: 'What shape' }).getByRole('button');
 	await expect(shapes).toHaveCount(5);
 	await expect(shapes.nth(0)).toContainText('Free');
@@ -299,11 +261,7 @@ test('a video is offered the lengths worth asking for, and marks on the picture'
 	await serve(page, 'video');
 	await openTheEditor(page, 'Trim');
 
-	/* SIX buttons in a group named for length, and only five of them are lengths. Create GIF
-	   belongs here: it is about the same piece, and it is a pressed state rather than a third
-	   length because it does not change what is marked. Asserted by position and by text rather
-	   than only by count, so a length arriving or leaving still fails here and the one that is
-	   not a length is named as such. */
+	/* Six buttons, five of them lengths: Create GIF is a pressed state, checked by position. */
 	const lengths = page.getByRole('group', { name: 'How long a clip' }).getByRole('button');
 	await expect(lengths).toHaveCount(6);
 	await expect(lengths.nth(0)).toContainText('5s');
@@ -311,14 +269,12 @@ test('a video is offered the lengths worth asking for, and marks on the picture'
 	await expect(lengths.nth(5)).toContainText('Create GIF');
 	await expect(page.getByRole('button', { name: /Where it starts/ })).toBeVisible();
 	await expect(page.getByRole('button', { name: /Where it ends/ })).toBeVisible();
-	// The frames are the real thing: the marks sit across the video itself.
+	// The marks sit across the video itself.
 	await expect(page.locator('figure.stage video')).toBeVisible();
 });
 
 test('an animation is not offered the editor at all', async ({ page }) => {
-	/* The trim promise rather than an oversight. A cut is a copy of the packets already there; a
-	 * GIF's frames each depend on the one before, so the same operation would rebuild every one,
-	 * and a trim that quietly re-encodes is the one thing this is not allowed to be. */
+	/* A trim copies packets, and each GIF frame depends on the one before: no trim is offered. */
 	await serve(page, 'gif');
 	await page.goto('/asset/e1');
 	await openTheOptions(page);
@@ -330,9 +286,7 @@ test('an animation is not offered the editor at all', async ({ page }) => {
 // --- the geometry, which is the half only a browser can answer ----------------------------------
 
 test('the frame the rectangle is drawn on carries the picture own shape', async ({ page }) => {
-	/* The fault this whole file exists for. Fitted inside a box of a fixed height the picture is
-	 * letterboxed, so the pointer is read as a fraction of the BOX while the numbers are about the
-	 * PICTURE, and the rectangle is drawn in one place and cut in another. */
+	/* Letterboxed, the pointer is read off the BOX while the numbers are about the PICTURE. */
 	await serve(page, 'image');
 	await openTheEditor(page);
 
@@ -348,15 +302,14 @@ test('a handle dragged over the picture is sent in the picture own pixels', asyn
 	const traffic = await serve(page, 'image');
 	await openTheEditor(page);
 
-	// The bottom-right handle, dragged to the middle. On a 1600 by 1200 picture that is 800 by 600.
+	// On a 1600 by 1200 picture the middle is 800 by 600.
 	await dragGrip(page, 'se', { x: 0.5, y: 0.5 });
 
 	const crop = (await askedAboutTheDrawnRectangle(page, traffic)).find(
 		(step) => step.operation === 'crop'
 	)!;
 
-	// A pointer lands on whole device pixels, so the fractions are not exact. Anything within one
-	// per cent is the rectangle that was drawn; the fault this catches is out by fifty times that.
+	// Within one per cent: a pointer lands on whole device pixels.
 	expect(Math.abs(Number(crop.width) - 800), `width came out ${crop.width}`).toBeLessThan(16);
 	expect(Math.abs(Number(crop.height) - 600), `height came out ${crop.height}`).toBeLessThan(12);
 	expect(crop.left).toBe(0);
@@ -364,8 +317,7 @@ test('a handle dragged over the picture is sent in the picture own pixels', asyn
 });
 
 test('a rectangle follows the picture when it is turned', async ({ page }) => {
-	/* Left where its numbers were, a rectangle down the left edge of a landscape photograph ends up
-	 * across the top of a portrait one, over something else entirely. */
+	/* A rectangle left where its numbers were would cover something else after a turn. */
 	const traffic = await serve(page, 'image');
 	await openTheEditor(page);
 	await dragGrip(page, 'se', { x: 0.5, y: 0.5 });
@@ -375,8 +327,7 @@ test('a rectangle follows the picture when it is turned', async ({ page }) => {
 
 	await expect.poll(() => lastSteps(traffic.asked).length).toBe(2);
 	const steps = await askedAboutTheDrawnRectangle(page, traffic);
-	// The turn first, then the rectangle in the frame the turn made: a rectangle that was across
-	// the top left is now down the top right, and its sides have swapped.
+	// The turn first, then the rectangle in the frame it made, its sides swapped.
 	expect(steps[0]).toMatchObject({ operation: 'rotate', turn: 'right' });
 	expect(Math.abs(Number(steps[1].width) - 600)).toBeLessThan(12);
 	expect(Math.abs(Number(steps[1].height) - 800)).toBeLessThan(16);
@@ -385,10 +336,7 @@ test('a rectangle follows the picture when it is turned', async ({ page }) => {
 test('the sheet does not move under the pointer while a rectangle is being dragged', async ({
 	page
 }) => {
-	/* The lines under the picture must not change while dragging: if they did, the sheet would
-	 * resize and, being centred, slide, and the rectangle would end somewhere other than where
-	 * the pointer was let go.
-	 */
+	/* The lines under the picture hold still, or the centred sheet slides under the drag. */
 	await serve(page, 'image');
 	await openTheEditor(page);
 
@@ -408,8 +356,7 @@ test('the sheet does not move under the pointer while a rectangle is being dragg
 });
 
 test('nothing is asked about a photograph nothing has been done to yet', async ({ page }) => {
-	/* There is no edit to ask about, and inventing one to ask with would name the copy after
-	 * something nobody did. */
+	/* Nothing to ask about, and an invented edit would name the copy after it. */
 	const traffic = await serve(page, 'image');
 	await openTheEditor(page);
 
@@ -418,15 +365,11 @@ test('nothing is asked about a photograph nothing has been done to yet', async (
 });
 
 test('a photograph a camera turned is aimed at the way it is seen', async ({ page }) => {
-	/* Stored 1600 by 1200 and drawn 1200 by 1600. The browser obeys the camera's note without being
-	 * asked, so a panel aiming at the stored size draws its rectangle over one picture and cuts it
-	 * out of another. */
+	/* Stored 1600 by 1200, drawn 1200 by 1600: the browser obeys the camera's note unasked. */
 	await serve(page, 'image', { frame: { width: 1200, height: 1600 } });
 	await openTheEditor(page);
 
-	/* Read off the shape of the stage rather than off a sentence: the panel does not print the
-	 * frame's numbers, and the picture being drawn in the turned shape is the claim anyway.
-	 */
+	/* The panel does not print the frame's numbers; the stage's shape is the claim. */
 	const box = (await page.locator('figure.stage').boundingBox())!;
 	expect(Math.abs(box.width / box.height - 1200 / 1600)).toBeLessThan(0.02);
 });
@@ -434,9 +377,7 @@ test('a photograph a camera turned is aimed at the way it is seen', async ({ pag
 // --- what the panel says about what will happen -------------------------------------------------
 
 test('the size reported back is the one the server will really cut', async ({ page }) => {
-	/* Colour is stored at half resolution in almost every photograph, so a rectangle lands on
-	 * two-by-two blocks and an odd number is rounded down. A panel reporting its own numbers
-	 * promises a size the file does not come out at: 605 said, 604 on disk. */
+	/* Colour is stored at half resolution, so odd sizes round down: 605 said, 604 on disk. */
 	await serve(page, 'image', {
 		verdict: () =>
 			aVerdict({
@@ -508,8 +449,7 @@ test('a cut says it may begin a moment early, which is the price of it being ins
 });
 
 test('the two handles cannot be dragged past each other', async ({ page }) => {
-	/* Crossed, they describe a piece of less than no time, which the server refuses with a
-	 * sentence about a length, true and nothing to do with what the person actually did. */
+	/* Crossed, the server refuses with a sentence about length, nothing to do with the press. */
 	const traffic = await serve(page, 'video');
 	await openTheEditor(page, 'Trim');
 
@@ -548,9 +488,7 @@ test('a plain press on the kept part looks there, and a drag slides the piece', 
 test('a video that has never had a strip built still edits, and asks for none', async ({
 	page
 }) => {
-	/* The frames come from the video itself, not from a strip built after import, so a video
-	 * added a moment ago is editable immediately.
-	 */
+	/* The frames come from the video itself, so a video added a moment ago is editable. */
 	let stripAsked = 0;
 	await page.route('**/api/assets/*/sprite*', (route) => {
 		stripAsked += 1;
@@ -600,12 +538,7 @@ test('the name the copy will have can be typed over, and the extension cannot', 
 });
 
 test('one file is edited from the menu and a selection is compressed', async ({ page }) => {
-	/* The substitution, in the one place it happens. A rectangle or a moment is chosen for a
-	 * particular photograph and means nothing applied to the next file along.
-	 *
-	 * Both verbs need somewhere Sift may write, because either one lands a new file beside the
-	 * original. So the library has to have a folder it was handed read-write for either of them
-	 * to be drawn at all. */
+	/* Both verbs land a new file, so the library needs a folder it may write to. */
 	await serve(page, 'image');
 	await page.goto('/browse');
 	await expect(page.locator('.tile').first()).toBeVisible();

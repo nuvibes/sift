@@ -1,13 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""The application and the process that serves it.
-
-`create_app` is the HTTP face: the rules every route inherits by being mounted (the security
-headers, the body limit, moved addresses, the error answers) and then the routes. Everything built
-at start-up is built by the lifespan in `sift.wiring`, one module per concern.
-
-`main` is the entry point the desktop shell starts, and it answers the library questions the shell
-asks before anything is started.
-"""
+"""The application, the rules every route inherits, and the process that serves it."""
 
 from __future__ import annotations
 
@@ -19,12 +11,7 @@ from sift.kernel import crash_record  # noqa: F401
 import json
 import os
 
-# The NAME only, never a connection. `sqlite3.Error` is what a library question catches when the
-# copy it was asked for cannot be made. The rule exists because a connection opened outside the
-# kernel misses the pragmas and the single-writer lock; nothing here opens one.
-#
-# The suppression has to be on the IMPORT LINE: semgrep honours `nosemgrep` on the line it
-# flags or the one directly above, and a reason written five lines up is not read at all.
+# Only for `sqlite3.Error`; nothing here opens a connection outside the kernel.
 import sqlite3  # nosemgrep: sift-no-database-driver-outside-kernel
 import sys
 import threading
@@ -40,8 +27,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-# Imported so the component registers: it creates nothing now, but a library records a
-# "benchmarks" version, and a component nothing imports is one the boot would not know.
+# Registers the component: a library records a "benchmarks" version.
 import sift.kernel.benchmarks  # noqa: F401
 from sift import client
 from sift.kernel import lifecycle
@@ -74,40 +60,9 @@ log = get_logger(__name__)
 retire_the_switches_into_whens()
 
 
-# Set on every response. Sift is open-source and internet-exposed, so the browser is told to trust
-# nothing it is not explicitly handed.
-#
-#   - default-src 'self' confines scripts, styles and connections to Sift's own origin, which is
-#     the anti-XSS control that survives a templating mistake; media and images also allow blob:
-#     and data: because thumbnails and streamed segments are built into object URLs in the page.
-#   - frame-ancestors 'none' is the anti-clickjacking control (it replaces X-Frame-Options): no
-#     other site may embed Sift in a frame and trick a logged-in user into clicking through it.
-#   - object-src 'none' and base-uri 'self' remove two old injection footguns (plugins, and
-#     rewriting the document base so relative URLs resolve to an attacker's host).
-#
-# Two directives are not simply 'self', and they are not the same kind of exception.
-#
-# script-src: the client bootstraps with a small inline script, and an inline script has no origin,
-# so `default-src 'self'` forbids it and the browser would refuse to start the app at all. It is
-# named by the hash of its own contents, which the build writes into the page and `script_hashes`
-# reads back. Exactly that script runs and no other: a script an injection writes into a page hashes
-# to something else and does not run, which is the whole point. **This is the XSS control and it
-# stays strict.** 'unsafe-inline' here would permit the injected script as readily as the real one.
-#
-# style-src: 'unsafe-inline', and that is a real loosening, so here is what it buys and what it
-# costs. The client framework builds its screen-reader announcer (the element that tells a screen
-# reader the page changed) with a style attribute written into its own compiled code. There is no
-# setting for it. Refused, the announcer loses the styling that keeps it off screen and its text
-# appears in the middle of the app. The alternatives are worse: a hash for a style attribute needs
-# 'unsafe-hashes', and the hash is of a string inside somebody else's library that changes whenever
-# it is upgraded, so the app would break visually on a routine dependency bump and nobody would know
-# why.
-#
-# What it costs: someone who can inject markup can inject CSS. That is bounded here: the classic
-# use for injected CSS is to send data out through url(), and img-src allows no host but this one,
-# so there is nowhere to send it to. Scripts, the thing worth stopping, are unaffected. What it does
-# not cost, and this is the part worth being clear about: nothing about script-src, frame-ancestors
-# or object-src moves, and a test asserts 'unsafe-inline' never appears in script-src.
+# script-src names the inline bootstrap by hash, so an injected script never runs. style-src allows
+# inline styles because the framework's screen-reader announcer writes a style attribute, and
+# img-src leaves injected CSS nowhere to send data.
 def content_security_policy(script_hashes: tuple[str, ...] = ()) -> str:
     """The policy, given the hashes of the client's own inline scripts."""
     inline = "".join(f" '{h}'" for h in script_hashes)
@@ -125,75 +80,37 @@ def content_security_policy(script_hashes: tuple[str, ...] = ()) -> str:
     )
 
 
-# Sent on every response regardless of scheme, and the same on every response of every build.
-#
-# The content policy is NOT here. It names the hash of the page's inline script, and a client
-# rebuilt under a running server changes that hash; a header frozen at import would make the browser
-# refuse the only script on the page. It is assembled per response by `security_headers` below, from
-# a reading that follows the file.
+# The content policy is not here: a rebuilt client changes the hash it names.
 STATIC_SECURITY_HEADERS: dict[str, str] = {
-    # Stops a browser from guessing that a JSON error or an uploaded file is really HTML or a
-    # script and running it. The ingress gate decides what a file is; this keeps the browser from
-    # second-guessing that from the other side.
     "x-content-type-options": "nosniff",
-    # Do not put Sift's address in the Referer header of any link a user follows out. The address
-    # is the one thing an operator who runs Sift anonymously does not want leaking to a third-party
-    # site, and no feature needs the referrer sent.
+    # A self-hoster's address must not leak to the sites a link leads to.
     "referrer-policy": "no-referrer",
-    # The mark the desktop shell looks for before it trusts an address, so that any other host
-    # answering 200 or 401 on `/health` (a mistyped address on the LAN) does not become a
-    # trusted origin with the shell's bridge attached. Sift's answers carry this on every response,
-    # sign-in refusals included, and the shell requires it.
+    # The desktop shell trusts an address only when this answers, sign-in refusals included.
     "x-sift": "1",
 }
 
 
 def security_headers() -> dict[str, str]:
-    """Every security header this response gets, the policy included.
-
-    A function rather than a table because one of the headers is a reading of the built page rather
-    than a constant: the policy names the hashes of the inline scripts the page BEING SERVED
-    carries, and that page is replaced whenever the client is rebuilt. Asked per response, the
-    header and the page can never disagree; a header frozen at import leaves a blank application
-    after a rebuild.
-
-    It costs about 4 us a response, most of it the one `stat` behind `script_hashes`.
-    """
+    """Every security header this response gets, the policy read per response from the page."""
     return {
         "content-security-policy": content_security_policy(client.script_hashes()),
         **STATIC_SECURITY_HEADERS,
     }
 
 
-# Only meaningful, and only sent, over HTTPS. It tells the browser to refuse plain HTTP to this
-# host for two years, so a later downgrade attempt cannot strip TLS. Sent over plain HTTP it would
-# be ignored by the browser anyway, and Sift is reached over http on the LAN by design, so it is
-# gated on the request actually having arrived over HTTPS, the same signal that marks the cookie
-# Secure. includeSubDomains stays scoped to Sift's own host; there is no preload, which would be a
-# commitment no self-hoster should have made for them.
+# Sent only over HTTPS; no preload, a commitment no self-hoster should have made for them.
 HSTS_HEADER_NAME = "strict-transport-security"
 HSTS_HEADER_VALUE = "max-age=63072000; includeSubDomains"
 
-# The most a non-upload request body may declare. FastAPI buffers the whole body into memory before
-# a validator ever runs, so without this an unauthenticated caller could post a multi-gigabyte JSON
-# body and exhaust memory. A control body (a login, a settings change) is a few hundred bytes; a
-# megabyte is generous headroom. Multipart uploads are exempt: they are admin-only and streamed to
-# disk by the endpoint that takes them, and a reverse proxy is the place to bound those.
+# FastAPI buffers a body before validating it, so an unbounded one could exhaust memory.
 MAX_REQUEST_BODY_BYTES = 1024 * 1024
 
 
 def _add_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(RequestValidationError)
     async def _validation_error(request: Request, exc: RequestValidationError) -> JSONResponse:
-        """Report which field was wrong without echoing what was submitted for it.
-
-        The default validation reply quotes the offending input back: fine for a mistyped port,
-        but a rejected password (too long, wrong type) would come back in the response body. The
-        client learns which field and why, and nothing it typed is reflected.
-        """
+        """Report which field was wrong without echoing it back: a rejected password would leak."""
         errors = exc.errors()
-        # A refusal written for the person who typed the value is said as that sentence, with the
-        # body field it is about, so a form can put it under that field.
         for error in errors:
             said = error.get("ctx", {}).get("error")
             if isinstance(said, Refused):
@@ -211,25 +128,12 @@ def _add_error_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(JobSwitchedOff)
     async def _switched_off(request: Request, exc: JobSwitchedOff) -> JSONResponse:
-        """Somebody asked for work that is switched off. 409, with the sentence the switch carries.
-
-        Handled once here rather than per route, so a route that queues something cannot forget to
-        say why nothing happened, which is the failure this shape exists to stop. 409 and not 403:
-        nothing was refused on who is asking, and the way through is to change a setting.
-        """
+        """Work that is switched off: 409, not 403, since the way through is a setting."""
         return JSONResponse(status_code=409, content={"detail": str(exc)})
 
     @app.exception_handler(Exception)
     async def _unhandled_error(request: Request, exc: Exception) -> JSONResponse:
-        """A genuine bug, anything that is not an HTTPException, still leaves with the security
-        headers and a correlation id.
-
-        The header middleware runs *inside* Starlette's error boundary, so a 500 synthesized when a
-        handler raises would otherwise escape past it: no CSP, no nosniff, and no request-log line
-        either. This is the one place those are reattached. The body stays a fixed generic string;
-        the detail, with its traceback and any path in it, goes to the log, redacted, and never
-        into the response, so a stack trace never reaches a client.
-        """
+        """A bug's 500 escapes the header middleware, so the headers are reattached here."""
         correlation_id = new_id()
         log.exception(
             "http.error",
@@ -251,14 +155,7 @@ def _add_middleware(app: FastAPI, settings: Settings) -> None:
     async def limit_request_body(
         request: Request, call_next: Callable[[Request], Awaitable[Response]]
     ) -> Response:
-        """Refuse an oversized non-upload body before it is read into memory.
-
-        Defined first, so it is the innermost middleware: a rejection still passes back out through
-        the logging and the security-header layers. Multipart uploads are exempt (they are
-        streamed to disk by an admin-only endpoint), so this bounds the JSON and form path, where a
-        body is small and a huge one is an attempt to exhaust memory. A body with no declared length
-        is left to the reverse proxy, which the deployment guide already requires in front of Sift.
-        """
+        """Refuse an oversized non-upload body before it is read; innermost, so still logged."""
         content_type = request.headers.get("content-type", "")
         declared = request.headers.get("content-length")
         if (
@@ -274,12 +171,7 @@ def _add_middleware(app: FastAPI, settings: Settings) -> None:
     async def time_every_request(
         request: Request, call_next: Callable[[Request], Awaitable[Response]]
     ) -> Response:
-        """Times every request and tags it with a correlation id.
-
-        Mounted here rather than left to each slice, so a slice gets instrumentation by existing
-        and cannot forget to add it. The route template is logged, never the resolved path: the
-        path contains ids and query terms.
-        """
+        """Time every request by its route template, never the path, which carries ids."""
         correlation_id = new_id()
         started = time.perf_counter()
 
@@ -301,11 +193,7 @@ def _add_middleware(app: FastAPI, settings: Settings) -> None:
     async def set_security_headers(
         request: Request, call_next: Callable[[Request], Awaitable[Response]]
     ) -> Response:
-        """Attaches the security headers to every response.
-
-        Here rather than on each route so a new route is protected by existing, and cannot forget
-        to opt in. HSTS is added only when the request arrived over HTTPS: see the constant.
-        """
+        """Attach the security headers to every response, HSTS only over HTTPS."""
         response = await call_next(request)
         for name, value in security_headers().items():
             response.headers[name] = value
@@ -313,11 +201,8 @@ def _add_middleware(app: FastAPI, settings: Settings) -> None:
             response.headers[HSTS_HEADER_NAME] = HSTS_HEADER_VALUE
         return response
 
-    # Cross-origin access is locked to an explicit allowlist, empty by default: with nothing listed
-    # the browser's same-origin policy stands and no other site can call the API. allow_credentials
-    # is on so that a listed origin can carry the login cookie; the setting refuses "*", which with
-    # credentials would hand every site on the internet a logged-in session. Added last so it wraps
-    # the stack and can answer a preflight before any handler runs.
+    # An allowlist, empty by default; the setting refuses "*", which with credentials hands out
+    # a logged-in session.
     app.add_middleware(
         CORSMiddleware,
         allow_origins=list(settings.cors_origins),
@@ -330,9 +215,7 @@ def _add_middleware(app: FastAPI, settings: Settings) -> None:
 def create_app() -> FastAPI:
     settings = get_settings()
 
-    # The interactive API docs enumerate every endpoint to whoever can open them, and Sift is meant
-    # to be reachable from the internet. Off unless the operator turns them on; when off, the three
-    # routes are not mounted at all rather than merely hidden.
+    # Off by default, and then not mounted at all: they list every endpoint to anyone.
     docs_kwargs: dict[str, str | None] = (
         {} if settings.enable_docs else {"docs_url": None, "redoc_url": None, "openapi_url": None}
     )
@@ -357,39 +240,15 @@ def create_app() -> FastAPI:
 app = create_app()
 
 
-#: The two questions that can be asked of this module WITHOUT starting anything.
-#:
-#: They exist for the desktop shell's library switcher. Before it stops the backend that is running
-#: and starts one on a different folder, it has to know whether that folder holds a database this
-#: build can read, and it cannot find out by opening it, because opening it IS the migration it
-#: is trying to warn somebody about first.
-#:
-#: A FLAG ON THIS MODULE rather than a script of its own, and that is the whole reason it is here.
-#: The answer is a comparison against the schema registry, and the registry is only complete once
-#: every slice has been imported, which is what importing this module does and what nothing else
-#: does. A separate entry point would have to import the same world to be right, and a smaller one
-#: that imported less would answer confidently from half a registry.
-#:
-#: Each takes a library FOLDER or a database FILE (see `library_database`): the folder form is what
-#: the switcher asks about a library it knows, the file form what it asks about a database somebody
-#: has just chosen.
-#:
-#: The third makes a library from a database file that is not one's own (a backup copy, a file
-#: somebody was given) by copying it into a new library folder. It takes the file and the new
-#: folder's data directory, and never touches the file it copies from.
+#: Questions the library switcher asks without starting anything. Flags on this module, because
+#: the schema registry is complete only once every slice is imported, which this module does.
 INSPECT_LIBRARY = "--inspect-library"
 BACK_UP_LIBRARY = "--back-up-library"
 ADOPT_LIBRARY = "--adopt-library"
 
 
 def answer_about_a_library(argv: Sequence[str], say: Callable[[str], None]) -> int | None:
-    """Answer one of the questions above and say what to exit with, or None for "not asked".
-
-    One JSON object on stdout, and exit 0 even for a library this build refuses. The verdict IS the
-    answer, and an exit code would be a second, coarser copy of it that the shell would then have to
-    keep in step. A non-zero exit is kept for the one thing that is genuinely a fault: being asked a
-    question with no path to ask it about.
-    """
+    """Answer one question as JSON, exit 0 even for a refused library; None if not asked."""
     if len(argv) < 1 or argv[0] not in (INSPECT_LIBRARY, BACK_UP_LIBRARY, ADOPT_LIBRARY):
         return None
     if len(argv) < 2 or not argv[1]:
@@ -407,11 +266,9 @@ def answer_about_a_library(argv: Sequence[str], say: Callable[[str], None]) -> i
     try:
         if argv[0] == ADOPT_LIBRARY:
             made = adopt_database(target, Path(argv[2]))
-            # A copy of another library: its sign-ins and its waiting work stay with that one. A
-            # copy that could not be settled is taken back, so it is never opened as it stands.
+            # A copy that could not be settled is taken back, so it is never opened as it stands.
             try:
                 make_its_own_library(made, now=int(time.time()), note=COPIED_NOTE)
-                # Its first start then says where it came from, as the Import button's door does.
                 leave_origin_note(made.parent, Path(argv[2]).name)
             except BaseException:
                 # nosemgrep: sift-no-file-removal-outside-delete-trash (the copy this call just made and could not settle; never a library anybody opened)
@@ -421,16 +278,14 @@ def answer_about_a_library(argv: Sequence[str], say: Callable[[str], None]) -> i
             return 0
         snapshot = copy_database_aside(library_database(target))
     except (OSError, sqlite3.Error) as refused:
-        # Said rather than raised: the caller is a shell reading stdout, and a traceback on stderr
-        # would reach it as an empty answer with no reason in it.
+        # Said, not raised: the shell reads stdout, and a traceback reaches it as an empty answer.
         say(json.dumps({"ok": False, "detail": str(refused)}))
         return 0
     say(json.dumps({"ok": True, "copy": str(snapshot)}))
     return 0
 
 
-#: Said on stdout once the server is listening, when a desktop shell started it: the shell loads
-#: the window on this line instead of polling for it.
+#: The shell loads the window on this line instead of polling.
 READY_LINE = "sift.listening"
 
 
@@ -456,7 +311,6 @@ def since_the_process_began_ms() -> int | None:
         ):
             return None
         ticks = (times[0].dwHighDateTime << 32) | times[0].dwLowDateTime
-        # 100 ns ticks since 1601, the Windows epoch.
         return round((time.time() - (ticks / 10_000_000 - 11_644_473_600)) * 1000)
     try:
         fields = Path("/proc/self/stat").read_text(encoding="ascii").rsplit(")", 1)[1].split()
@@ -480,16 +334,13 @@ def say_when_listening(server: Any, say: Callable[[str], None]) -> None:
 
 
 def _settings_or_a_sentence() -> Settings:
-    """The settings read, the directories proven writable and SQLite checked BEFORE the server
-    starts: raised inside the server's startup these come out as a traceback, and the one line a
-    self-hoster can act on (a mistyped path) would be buried under twenty that do not."""
+    """Settings, directories and SQLite checked before the server, so an error is one plain line."""
     try:
         settings = get_settings()
         ensure_directories(settings)
-        # Quiet: logging is not configured yet. The application's own startup logs it.
+        # Quiet: logging is not configured yet.
         check_sqlite_capabilities(announce=False)
     except (ConfigError, DatabaseError) as exc:
-        # The technical detail is one environment variable away rather than discarded.
         if os.environ.get("SIFT_LOG_LEVEL", "").upper() == "DEBUG":
             detail = "\n" + "".join(traceback.format_exception(exc))
         else:
@@ -499,9 +350,7 @@ def _settings_or_a_sentence() -> Settings:
 
 
 def main() -> None:
-    # BEFORE the settings are read, deliberately. Every question takes its path as an argument and
-    # answers about THAT path, so requiring a valid SIFT_DATA_DIR in the environment first would
-    # make the preflight fail on exactly the machines it exists to help.
+    # Before the settings: a question names its own path and must not need SIFT_DATA_DIR.
     answered = answer_about_a_library(sys.argv[1:], print)
     if answered is not None:
         raise SystemExit(answered)
@@ -509,9 +358,7 @@ def main() -> None:
     import uvicorn
 
     settings = _settings_or_a_sentence()
-    # Before uvicorn starts, so its own startup lines are scrubbed and formatted like everything
-    # else. Configured inside the lifespan as well, for the case where Sift is served by another
-    # ASGI server that never calls this.
+    # Before uvicorn, so its own startup lines are scrubbed too.
     configure_logging(
         settings.log_level,
         redact_personal=not settings.log_unredacted,
@@ -519,7 +366,6 @@ def main() -> None:
         max_bytes=settings.log_max_bytes,
         backups=settings.log_backups,
     )
-    # Which release wrote every line after this one.
     log.info(
         "boot.imported",
         version=app_version(),
@@ -527,74 +373,33 @@ def main() -> None:
         modules=len(sys.modules),
     )
 
-    # THE APP THIS MODULE BUILT, not its own name. Named as "sift.main:app", uvicorn imports the
-    # module a second time (`python -m sift.main` has already run it as `__main__`), and every
-    # line at module level runs twice: two apps built, and a retirement declared at module level
-    # refused as "retired twice", and the boot fails. The name form exists for reload and workers,
-    # and Sift uses neither.
+    # The app object, not "sift.main:app", which would import this module a second time.
     config = uvicorn.Config(
         app,
         host=settings.host,
         port=settings.port,
-        # uvicorn's access log writes the raw request line, which carries the query string and
-        # any ids in the path. The middleware above already records every request, redacted and
-        # with a correlation id, so this would only ever be a second, leakier copy.
+        # A second, unredacted copy of the request log.
         access_log=False,
-        # Stops uvicorn replacing the handlers installed above with its own, which do not redact.
+        # Keeps uvicorn from replacing the redacting handlers with its own.
         log_config=None,
     )
     server = uvicorn.Server(config)
-    # A Server built by hand rather than `uvicorn.run`, only so that something else can ask it to
-    # stop. See below for who asks, and why there is no other way for them to.
     if settings.stop_on_stdin_eof:
         stop_when_the_parent_lets_go(server)
-        # WHY THE SAME FLAG DECIDES BOTH. It means one thing: something started this process, is
-        # holding on to it, and will notice when it ends. That is exactly the condition under which
-        # asking to be restarted is honest. Anywhere else the backend would stop and stay stopped,
-        # and `can_restart` answers no so the screen says so instead of taking the library off the
-        # air to find out. See sift/kernel/lifecycle.py.
+        # A restart is honest only where a parent holds this process and will start it again.
         lifecycle.stops_with(lambda: setattr(server, "should_exit", True))
         say_when_listening(server, tell_the_shell)
     server.run()
     if lifecycle.was_asked_to_restart():
-        # The clean shutdown has already run: the database is closed and the log is folded. All that
-        # is left is to end with a code the supervisor can tell apart from a crash.
         raise SystemExit(lifecycle.RESTART_EXIT_CODE)
 
 
 def stop_when_the_parent_lets_go(server: object) -> None:
-    """Shut down cleanly when whoever started this lets go of its stdin.
-
-    WHY THIS EXISTS, AND WHY IT IS NOT A SIGNAL.
-
-    `child.kill()` from the desktop shell is SIGTERM on POSIX, and the process gets to close its
-    files; ON WINDOWS NODE HAS NO SUCH THING: every signal name it accepts becomes
-    TerminateProcess, which stops the process where it stands, leaving the database unclosed and the
-    write-ahead log unfolded on every quit.
-
-    A pipe is stronger than a signal.
-    Only the process that spawned this one holds the other end, so nothing on the machine can ask
-    Sift to stop by pretending; there is no port to reach, no token to leak and no endpoint to
-    protect. When the shell closes it, or dies holding it, the read below ends and uvicorn is asked
-    to stop the way it would for Ctrl-C.
-    """
-    # THE RAW FILE DESCRIPTOR, NOT `sys.stdin.buffer`, AND THAT IS NOT A STYLE CHOICE.
-    #
-    # A buffered reader has a lock, and a daemon thread parked inside `read` is holding it when the
-    # interpreter starts to finalize. CPython cannot flush a stream whose lock it cannot take, so it
-    # aborts, printing
-    #
-    #     Fatal Python error: _enter_buffered_busy: could not acquire lock for
-    #     <_io.BufferedReader name='<stdin>'> at interpreter shutdown
-    #
-    # after a clean shutdown, so every stop would end with "Fatal Python error" in the log.
-    #
-    # `os.read` goes at the descriptor directly. There is no buffer, so there is no lock, so there
-    # is nothing for finalization to wait on.
+    """Shut down cleanly when the parent lets go of stdin; on Windows, Node can only kill."""
+    # The raw descriptor: a buffered reader's lock held at shutdown aborts the interpreter.
     try:
         descriptor = sys.stdin.fileno()
     except (AttributeError, OSError, ValueError):
-        # No stdin to watch: a service manager gave this process none. Nothing to do.
         return
 
     def watch() -> None:
@@ -602,16 +407,13 @@ def stop_when_the_parent_lets_go(server: object) -> None:
             while os.read(descriptor, 1):
                 pass
         except (OSError, ValueError):
-            # The pipe went away rather than closing politely. Same meaning: the parent is gone.
             pass
-        # `should_exit` is uvicorn's own flag and is what Ctrl-C sets. The server finishes what it
-        # is serving, runs the lifespan's shutdown, and returns from `run`.
+        # What Ctrl-C sets: the server finishes, runs the shutdown, and returns from `run`.
         server.should_exit = True  # type: ignore[attr-defined]
 
     threading.Thread(target=watch, name="parent-watch", daemon=True).start()
 
 
-# LAST, AND NOTHING BELOW IT. `main()` serves the app this module built, so it runs before any
-# line that follows: a function defined under here is undefined while the server is up.
+# Last: a function defined below this would not exist while the server is up.
 if __name__ == "__main__":
     main()

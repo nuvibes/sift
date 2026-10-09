@@ -1,10 +1,6 @@
 /*
- * What the bar across the top is holding on behalf of the screen underneath it.
- *
- * The bar is drawn once by the layout, and only the screen knows what it can do, so the screen
- * publishes it here. Navigating mounts the new screen before unmounting the old, so a publisher
- * takes a token (a symbol) and only its holder can clear it, as `searchBox.claim` does. The query
- * itself stays in the address, so a filtered view is a link; a screen publishes only what it IS.
+ * What the top bar holds for the screen under it; only the screen knows what it can do. A
+ * publisher holds a token, since the next screen mounts before the last one unmounts.
  */
 
 import type { Attachment } from 'svelte/attachments';
@@ -18,13 +14,12 @@ import type { NarrowedToUsername } from '$lib/grid/grid.svelte';
 import { PHONE_WIDTH } from '$lib/components/common/phone-width.svelte';
 import { stage } from './stage.svelte';
 
-/** One entry in an order dropdown: the value the screen sorts by, and what to call it. */
 export interface SortChoice {
 	value: string;
 	label: string;
 	/** A row that is a press rather than an order (`action` in `common/Select.svelte`). */
 	action?: boolean;
-	/** Drawn dimmed and never chosen: an order this wall cannot be put in now. `detail` says why. */
+	/** Dimmed and never chosen: an order this wall cannot be put in now. */
 	disabled?: boolean;
 	/** A second line under the name: what the order is measured against, or why it is dimmed. */
 	note?: string;
@@ -32,23 +27,14 @@ export interface SortChoice {
 	tooltip?: string;
 }
 
-/**
- * What the Filter control is filtering, when it is not the address bar.
- *
- * Nearly always the address, so a filtered view is a link. The other targets are a saved filter's
- * draft (nothing moves until Save) and a Theater cell (a wall has several sources), and this shape
- * lets the whole Filter panel serve them unchanged. `URLSearchParams`, since the query language
- * reads and writes `q` and a key per facet.
- */
+/** What the Filter control filters when not the address: a saved filter's draft, or a cell. */
 export interface Narrowing {
 	read: () => URLSearchParams;
 	write: (next: URLSearchParams) => void;
 	choose?: (next: URLSearchParams) => void;
-	/** What a control that WILL filter the target spreads, so pointing at it says which target that
-	 *  is. Theater's lights the cells `write` lands on; see `$lib/theater/narrowing`. */
+	/** Spread by a control that will filter the target, to say which one. */
 	pointing?: Pointing;
-	/** What the target filters by on its own control, which the panel never writes and counts
-	 *  every column within, that one's own included: a theater cell's media kinds. */
+	/** What the target filters by on its own control, which the panel never writes. */
 	within?: () => URLSearchParams;
 }
 
@@ -61,20 +47,10 @@ export type Pointing = {
 	[key: symbol]: Attachment;
 };
 
-/*
- * What one control on the bar can do on the screen underneath it.
- *
- * `true` means it acts; a STRING means it does not, and says why when pointed at. The bar's SHAPE
- * is the same on every screen and only a control's STATE changes, because a control that vanishes
- * is one people stop reaching for. Dimmed, not blurred, which reads as loading. One field, never a
- * flag beside a reason that could disagree with it.
- */
-export type Capability = true | string;
+// `true` acts; a string is why not, shown on hover: the bar keeps its shape, controls dim.
+type Capability = true | string;
 
-/**
- * The orders a screen is actually offering, out of what it published: one reader for the union, so
- * no two call sites unpack it differently.
- */
+/** The orders a screen offers, out of what it published. */
 export function ordersOffered(sorts: readonly SortChoice[] | string | undefined): SortChoice[] {
 	// Copied, because the chooser takes a mutable list and a screen's table is `as const`.
 	return Array.isArray(sorts) ? [...sorts] : [];
@@ -85,10 +61,7 @@ export function ableTo(capability: Capability | undefined): boolean {
 	return capability === true;
 }
 
-/*
- * What to say when a screen said nothing at all (Settings, Downloads, a queue, a login): the bar is
- * still above them, and its controls still answer when pointed at.
- */
+// For a screen that said nothing; the bar is still above it, and its controls still answer.
 export const NOT_HERE = {
 	filter: 'Nothing to filter on this screen',
 	sort: 'Nothing to order on this screen',
@@ -101,10 +74,7 @@ export function whyNot(capability: Capability | undefined, fallback: string): st
 	return typeof capability === 'string' ? capability : fallback;
 }
 
-/*
- * A panel the bar drops open under itself: the ONE way a panel opens from this bar. It takes no
- * props and reads the stores its screen writes, so the bar never knows what a panel is about.
- */
+// The one way a panel opens from the bar; it reads its screen's stores, so takes no props.
 interface BarPanel {
 	/** Stable, and unique on this screen. It is what the bar remembers as open. */
 	id: string;
@@ -112,16 +82,9 @@ interface BarPanel {
 	/** The tooltip, and what a screen reader is told the button opens. */
 	label: string;
 	content: Component<Record<string, never>>;
-	/*
-	 * Whether this belongs at the HEAD of the row rather than at its tail: the head is where Filter
-	 * and Order decide what the screen shows, so a panel answering that sits there even on a screen
-	 * with no query language.
-	 */
+	/** At the head of the row, where Filter and Order decide what the screen shows. */
 	lead?: boolean;
-	/**
-	 * Draw the TRIGGER on the top bar instead of on this row; the panel opens where it always does.
-	 * For a panel about the whole application, such as Theater's key sheet.
-	 */
+	/** Draw the trigger on the top bar instead, for a panel about the whole app (the key sheet). */
 	atTheTop?: boolean;
 }
 
@@ -130,38 +93,24 @@ interface BarMenu {
 	/** Stable, and unique on this screen. It is what the bar remembers as open. */
 	id: string;
 	icon: IconName;
-	/** The tooltip, and what a screen reader is told the control is. */
 	label: string;
 	options: SortChoice[];
 	value: string;
 	onChoose: (next: string) => void;
-	/**
-	 * A picture for each option, where the words are not the answer (Theater's layouts), drawn by
-	 * the shared chooser (`Select.preview`). Absent means a list of words.
-	 */
+	/** A picture per option, where words are not the answer (`Select.preview`). */
 	preview?: Snippet<[SortChoice]>;
 }
 
 /** The built-in panel: the facets, which belong to the query language rather than to any screen. */
 export const FILTERS_PANEL = 'filters';
 
-/*
- * The order: a MENU, but one of the row's, because the row holds one open thing at a time. Its id
- * lives in this store for that alone; `FilterBar` registers no panel for it.
- */
+// A menu, but the row holds one open thing at a time, so its id lives here.
 export const SORT_MENU = 'sort';
 
-/*
- * The sheet a phone opens for BOTH of them, Filter and Sort, from one control, since a thumb needs
- * one target for one errand. Its own id, because a screen may order without filtering and the facet
- * panel's id is refused there (`showing` in `FilterBar`).
- */
+// One phone sheet for Filter and Sort; its own id, as a screen may order without filtering.
 export const PHONE_SHEET = 'filter-and-sort';
 
-/*
- * Whether what is open is a MENU rather than a panel: a menu is a floating layer reporting its own
- * pointer, a panel is reported by the drawer. Module-private (`public-surface.test.ts`).
- */
+// A menu reports its own pointer; a panel is reported by the drawer.
 function isAMenu(id: string | null, tools: ScreenTools): boolean {
 	if (id === null) return false;
 	if (id === SORT_MENU) return true;
@@ -169,97 +118,45 @@ function isAMenu(id: string | null, tools: ScreenTools): boolean {
 	return (tools.menus ?? []).some((one) => one.id === id);
 }
 
-/*
- * No sort panel: a list you pick one from is a menu, and only a workspace you watch the wall
- * through earns a panel. No saved panel either: kept filters are drawn at the foot of the filter
- * panel (`SavedFilters`), where the decision is being made.
- */
-
 /** Everything the bar can draw for a screen. Every part is optional; a screen fills what it has. */
 interface ScreenTools {
-	/*
-	 * What this screen IS, as filters, and cannot stop being (a person's page is `people:<them>`):
-	 * drawn as a chip that cannot be taken off, since that would navigate off the screen.
-	 */
+	/** What this screen is, as filters (a person's page is `people:<them>`): a fixed chip. */
 	query?: Record<string, string>;
 
-	/*
-	 * How many things the screen is showing, as its header counts them; absent while counting. The
-	 * Added span column says it in place of values.
-	 */
+	/** How many things the screen shows, as its header counts; absent while counting. */
 	count?: number;
 
-	/*
-	 * The username `?username=` filters this wall to, as the server named it, or null: a username has
-	 * no page, and an id cannot be read on a chip.
-	 */
+	/** The username `?username=` filters to, as the server named it, or null. */
 	username?: NarrowedToUsername | null;
 
-	/*
-	 * Whether the query language applies here: true on every wall, a reason on a screen that is not
-	 * one (the button is still drawn, dimmed; see `Capability`).
-	 */
+	/** Whether the query language applies: true on a wall, else the reason. */
 	filterable?: Capability;
 
-	/*
-	 * WHICH NOUN THIS WALL IS SHOWING, which decides the facet panel's columns, the same wherever
-	 * that noun is listed. Absent means files.
-	 */
+	/** Which noun this wall shows, deciding the facet panel's columns. Absent means files. */
 	subject?: Subject;
 
-	/*
-	 * THE VERBS A FILTER'S CHIP HAS, for a chip that names a thing with verbs of its own: a chip
-	 * for one artist on the Music wall renames that artist. Handed the column, the value and the
-	 * words the chip shows; answers the declared verbs, drawn as the chip's right-click menu, or an
-	 * empty list for a chip that is only a filter. Absent everywhere a chip is only a filter.
-	 */
+	/** A chip's own verbs (its right-click menu), for a chip naming a thing with verbs. */
 	chipVerbs?: (field: string, value: string, label: string) => readonly Verb[];
 
-	/*
-	 * The facets every row on this wall has ONE value of, so the panel leaves them out: a column of
-	 * one row says only what the wall already is. The Loops wall is the files with a Loop, and
-	 * Favorites the files hearted, so neither draws that column. Absent everywhere else, which is
-	 * every facet offered: Browse and Theater leave out nothing.
-	 */
+	/** Facets every row here has one value of (the Loops wall's Loop), left out of the panel. */
 	fixed?: readonly string[];
 
-	/*
-	 * The address's name for the words this wall's own box searches by, where it is not `q` (see
-	 * `wall-words`). The bar draws them as a words chip whose cross takes them off. Absent, the
-	 * words are the typed part of `q`.
-	 */
+	/** The address's name for this wall's own box words, where not `q` (see `wall-words`). */
 	words?: string;
 
-	/*
-	 * What Filter filters here, when the address is the wrong answer (`Narrowing`). Absent on every
-	 * screen whose filter is a page of files at a URL.
-	 */
+	/** What the Filter control filters here, when the address is the wrong answer. */
 	narrowing?: Narrowing;
 
-	/*
-	 * A control the screen puts at the HEAD of the filter panel, such as which Theater cell is
-	 * being edited. Drawn by the screen, as `extra` is, so the bar never knows what a cell is.
-	 */
+	/** A control at the head of the filter panel, drawn by the screen (which Theater cell). */
 	narrowingLead?: Snippet;
 
-	/*
-	 * What the thing being filtered is CALLED, drawn at the head of the chips row, since on a wall
-	 * the chips do not say which source they are on. Grey like a kept filter's name, because the
-	 * accent means a filter in force.
-	 */
+	/** What the filtered thing is called, at the head of the chips row; grey, not the accent. */
 	narrowingName?: string;
 
-	/*
-	 * Menus of this screen's own, drawn beside Filter and Order on the same row with the app's own
-	 * chooser: a list you pick one of, such as Theater's Layout.
-	 */
+	/** Menus of the screen's own beside Filter and Order, such as the Theater layout. */
 	menus?: BarMenu[];
 
-	/*
-	 * The orders this screen offers, and the one it is in. Empty dims the control. A STRING is the
-	 * sentence saying why there are none (`Capability` applied to a list), as Theater's "choose a
-	 * cell". One field, so nothing comes apart.
-	 */
+	/** The orders offered and the one in force; a string says why there are none. */
 	sorts?: readonly SortChoice[] | string;
 	sort?: string;
 	onSort?: (next: string) => void;
@@ -267,19 +164,12 @@ interface ScreenTools {
 	/* Whether the tile-size slider has anything to resize: drawn everywhere, dimmed where not. */
 	resizable?: Capability;
 
-	/*
-	 * Whether the tiles here can PLAY, a separate question from resizing: a wall of cards resizes
-	 * and has nothing to play.
-	 */
+	/** Whether the tiles can play, apart from resizing: a wall of cards resizes, plays nothing. */
 	playable?: Capability;
 
-	/*
-	 * Whether what is on this screen is currently moving, and what pressing the control does: the
-	 * hover previews on a wall of files, the feeds on Theater. The screen answers, as for `sorts`.
-	 */
+	/** Whether the screen is moving now (hover previews, Theater's feeds); the screen answers. */
 	playing?: boolean;
 	onPlay?: () => void;
-	/** What the control is called on this screen, both as a tooltip and to a screen reader. */
 	playLabel?: string;
 	/** The key this screen answers the control with, read from the act table (`keyOf`), if any. */
 	playShortcut?: string;
@@ -287,28 +177,16 @@ interface ScreenTools {
 	/** Anything this screen has that nothing else does, drawn at the end of the bar. */
 	extra?: Snippet;
 
-	/**
-	 * The same, but drawn on the TOP bar between the play control and the vault's: for a control
-	 * about the whole window, such as the wall's silence.
-	 */
+	/** The same on the top bar, for a control about the whole window (the wall's silence). */
 	topExtra?: Snippet;
 
-	/**
-	 * Drawn on this row immediately after the chip naming what the row is filtering: Theater's
-	 * play-everything and silence-everything, reachable while the top bar is hidden.
-	 */
+	/** After the chip naming what the row filters: Theater's play and silence for everything. */
 	besideTheName?: Snippet;
 
-	/**
-	 * Fade this row out, because the screen under it says so: Theater's wall answers the window's
-	 * edges, and the row must go with its own bar rather than lie across the pictures.
-	 */
+	/** Fade this row with the screen's own bar (the Theater wall), not over the pictures. */
 	quiet?: boolean;
 
-	/*
-	 * The panels this screen can drop open, each drawn as a button on the bar. Where they drop
-	 * (under the bar, or up from it while the window is filled) is the stage's business.
-	 */
+	/** Panels this screen can drop open, each a button on the bar. */
 	panels?: BarPanel[];
 }
 
@@ -336,9 +214,7 @@ interface Need {
 	end: number;
 }
 
-/* By route, kept in this browser. Every screen lays the bar out for the widest one met, so moving
-   between screens moves nothing on it, and a screen met before, in this sitting or the last, is in
-   place on its first frame. The bar's width is read live, so a window changed since is decided fresh. */
+// By route, kept in this browser: the bar lays out for the widest screen met, so nothing moves.
 const NEEDS_KEY = 'sift.screen-bar.needs.2';
 const needs = new Map<string, Need>(readNeeds());
 
@@ -378,23 +254,16 @@ class ScreenBar {
 	/** Who filled it. Only they may empty it. See the ordering note above. */
 	#owner: symbol | null = null;
 
-	/*
-	 * Which panel is open, by id, or none. Here so a screen can open its own (a cell's filter button
-	 * opens the bar's panel). Not reset by `publish`, which runs from an effect; cleared when the bar
-	 * is given back.
-	 */
+	/** The open panel's id; here so a screen can open its own. Cleared on release, not publish. */
 	open = $state<string | null>(null);
 
-	/*
-	 * The kept filter the screen under the bar IS, by id, or none: worked out once by the bar
-	 * (`appliedKept`) so a sitting can name it without a second comparison.
-	 */
+	/** The kept filter this screen is, by id, worked out once by the bar (`appliedKept`). */
 	keptInForce = $state<string | null>(null);
 
 	/** Whether the named menus fit on the top bar; one home draws them, never a hidden copy. */
 	roomOnTopBar = $state(true);
 
-	/** The end group's own width in px (`--bar-end`): each side of the centre group is at least this. */
+	/** The end group's width (`--bar-end`), the least each side of the centre group keeps. */
 	barEnd = $state(0);
 
 	/** Whether the tile size is on the bar: it leaves before the centre group would slide. */
@@ -403,7 +272,7 @@ class ScreenBar {
 	/** Whether Add's paste half is on the bar: it folds into Add after the tile size has gone. */
 	pasteOnBar = $state(true);
 
-	/** The tile size's panel on the screen's own row while it is off the top bar. Set by the bar. */
+	/** The tile size's panel on the screen's own row while it is off the top bar. */
 	sizeHome = $state.raw<BarPanel | null>(null);
 
 	/** Watch the top bar's content box, its end group and its field. Hands back the teardown. */
@@ -430,7 +299,7 @@ class ScreenBar {
 		const menusBeside = (group: number) =>
 			2 * (group + gapOf(bar)) + MENUS_ROOM + FIELD_FLOOR + raised;
 		let width = Number.POSITIVE_INFINITY;
-		/* What a screen's own menus need beyond the sum; never lowered in a visit, or they would bounce. */
+		/* What a screen's menus need beyond the sum; never lowered in a visit, or they bounce. */
 		let raised = 0;
 		/* The same need as a whole width, kept for the screens met after this one. */
 		let room = 0;
@@ -438,7 +307,7 @@ class ScreenBar {
 			const onPhone = phone?.matches ?? false;
 			const most = widest();
 			const full = Math.max(end, most.end);
-			// The menus leave last, after the tile size and then the paste half, each back where it left.
+			// The menus leave last, after the tile size and the paste half.
 			const need = Math.max(menusBeside(full - sizeRoom - pasteRoom), room, most.room);
 			this.roomOnTopBar = onPhone || width >= need;
 			this.sizeOnBar = onPhone || width >= need + 2 * (sizeRoom + pasteRoom);
@@ -470,7 +339,7 @@ class ScreenBar {
 			if (this.#screen !== null) keepNeed(this.#screen, { room, end });
 			decide();
 		});
-		/* A new screen starts from what it needed last time, or from the sum: never from another's. */
+		/* A new screen starts from its own last need, or from the sum: never from another's. */
 		this.#screenChanged = () => {
 			const known = this.#screen === null ? undefined : needs.get(this.#screen);
 			({ room, end } = known ?? { room: 0, end });
@@ -478,7 +347,7 @@ class ScreenBar {
 			decide();
 		};
 		observer.observe(bar);
-		// The field and the ends too: a screen's controls change them without the bar changing size.
+		// A screen's controls change the field and the ends without the bar changing size.
 		if (field !== null) observer.observe(field);
 		for (const one of ends) observer.observe(one);
 		phone?.addEventListener('change', decide);
@@ -514,25 +383,13 @@ class ScreenBar {
 		this.#screenChanged?.();
 	}
 
-	/*
-	 * Whether what is open was opened by POINTING at it rather than by pressing it: a hovered menu
-	 * falls shut when the pointer wanders off, a pressed one stays while somebody works inside it.
-	 */
+	// Opened by pointing: it shuts when the pointer wanders off; a pressed one stays.
 	#byHover = false;
 
-	/*
-	 * The grace between leaving and shutting, so the pointer can cross from the trigger to the panel
-	 * further down the page.
-	 */
+	// Grace for the pointer to cross from the trigger to the panel.
 	#leaving: ReturnType<typeof setTimeout> | null = null;
 
-	/*
-	 * Open this panel, or shut it if it is the one already open. A PRESS, so it stays until pressed.
-	 *
-	 * A press on a menu open by HOVER pins it rather than shutting it: pressing what you point at is
-	 * the natural follow-through, and a browser test presses before the page holds still, so the
-	 * dwell would otherwise open it and the press shut it.
-	 */
+	/** Open or shut a panel by press; a press on a hover-opened one pins it. */
 	toggle(id: string): void {
 		this.#cancelLeaving();
 		const pinning = this.open === id && this.#byHover;
@@ -561,20 +418,12 @@ class ScreenBar {
 		this.#inside = true;
 	}
 
-	/*
-	 * WHETHER THE PANEL KEEPS ITS LAID-OUT HEIGHT, which is how a piece of work in it survives a
-	 * change of shape under a still pointer.
-	 *
-	 * Editing a kept filter reflows the panel, and a shorter panel leaves the pointer below its edge
-	 * without moving: `mouseleave` fires and the panel would shut on the press meant to keep working.
-	 * So while a draft is open the panel may grow and never shrink (`FilterBar`), and when the draft
-	 * ends under the pointer the height holds until the pointer genuinely leaves.
-	 */
+	// Held height: a reflow while editing must not leave a still pointer outside the panel.
 	shapeHeld = $state(false);
 	#drafting = false;
 	#inside = false;
 
-	/** Whether a kept filter's draft is open in the panel. Called by the bar as the draft opens and ends. */
+	/** Whether a kept filter's draft is open; called by the bar as the draft opens and ends. */
 	drafting(open: boolean): void {
 		this.#drafting = open;
 		if (open) this.shapeHeld = true;
@@ -582,10 +431,7 @@ class ScreenBar {
 		else if (!this.#inside) this.shapeHeld = false;
 	}
 
-	/*
-	 * Whether somebody is typing in the panel, so has not left it. A caret, not focus, since a
-	 * ticked checkbox keeps focus.
-	 */
+	// A caret in the panel, not focus, since a ticked checkbox keeps focus.
 	#someoneIsTyping(): boolean {
 		if (typeof document === 'undefined') return false;
 		const active = document.activeElement;
@@ -594,23 +440,13 @@ class ScreenBar {
 		return active.closest('.bar-panel') !== null;
 	}
 
-	/*
-	 * Whether something inside the panel has opened a layer of its own: a dropdown is portalled to
-	 * the end of the document, so pointing at its list leaves the panel as far as the DOM knows.
-	 * Asked of the document at the moment of shutting; the library offers nothing to subscribe to.
-	 */
+	// A portalled dropdown is outside the panel in the DOM; nothing to subscribe to, so asked.
 	#aLayerIsOpen(): boolean {
 		if (typeof document === 'undefined') return false;
 		return document.querySelector('[role="listbox"], [role="menu"], [role="dialog"]') !== null;
 	}
 
-	/*
-	 * Whether the open panel is holding a piece of work somebody has not finished.
-	 *
-	 * A panel with Save and Cancel is a mode a drifting pointer must not abandon. Declared by the work
-	 * itself (`data-unfinished`) rather than guessed here. It vetoes the hover close only: Escape,
-	 * the trigger and `close()` still shut it, since a mode you cannot leave would be worse.
-	 */
+	// Work with Save and Cancel (`data-unfinished`) vetoes only the hover close.
 	#somethingIsUnfinished(): boolean {
 		if (typeof document === 'undefined') return false;
 		return document.querySelector('.bar-panel [data-unfinished]') !== null;
@@ -626,10 +462,8 @@ class ScreenBar {
 		this.#leaving = setTimeout(() => {
 			this.#leaving = null;
 			if (!this.#byHover) return;
-			/* Still choosing from a layer the panel opened. Not asked of a menu, which is itself a
-			   layer and would never shut; a menu reports its own pointer (`onListPointer`). */
+			// Still in a layer the panel opened; a menu is a layer itself and reports its pointer.
 			if (!isAMenu(this.open, this.#tools) && this.#aLayerIsOpen()) return;
-			// Still typing into it. Nor is that.
 			if (this.#someoneIsTyping()) return;
 			// Something in it is half done and has a Save waiting. Nor is that.
 			if (this.#somethingIsUnfinished()) return;
@@ -660,14 +494,7 @@ class ScreenBar {
 		this.open = null;
 	}
 
-	/*
-	 * THE SCREEN'S OWN SEARCH BOX, while one is drawn: the box above a wall (`WallControls`).
-	 *
-	 * A wall's box keeps its words under `q`, which the top box (the LIBRARY's search) also follows,
-	 * so two boxes would show one set of letters for two questions. While a wall's box is here, the
-	 * top box reads nothing from the address. Claimed by the box itself, the one thing every such
-	 * wall draws; a token each, since the next wall's box mounts before the last one's goes.
-	 */
+	// The screen's own search box (`WallControls`): it shares `q`, so the top box reads nothing.
 	#ownBoxes = $state<symbol[]>([]);
 
 	/** Whether the screen underneath draws a search box of its own. See above. */

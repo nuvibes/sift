@@ -1,12 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Shared test fixtures.
-
-Slices import from here rather than defining their own. Duplicated setup helpers drift, and
-a permission test that builds its own guest user eventually stops resembling a real one.
-
-Fixtures are added here as the modules they depend on land: a real WAL SQLite database, the
-job runner, the media corpus, and the admin/guest users.
-"""
+"""Shared test fixtures."""
 
 from __future__ import annotations
 
@@ -46,13 +39,7 @@ _LOGGING_LOCK: AbstractContextManager[bool] = logging._lock  # type: ignore[attr
 
 
 class _LoggerRegistry(dict[str, _Named]):
-    """The logging module's registry of named loggers, walked as a copy made under its lock.
-
-    pytest's log capture walks `loggerDict.values()` without that lock as each test phase starts,
-    while a booted app may be creating loggers on the test client's thread (a module's logger is
-    made the first time it logs). A walk that meets an insert raises "dictionary changed size
-    during iteration", so every walk of this registry reads a copy the writers cannot change.
-    """
+    """The logging module's registry of named loggers, walked as a copy made under its lock."""
 
     def _copy(self) -> dict[str, _Named]:
         # The base view reads the storage; `dict(self)` would come back through `keys()` below.
@@ -82,12 +69,7 @@ def pytest_configure() -> None:
 
 @pytest.fixture(scope="session", autouse=True)
 def sqlite_can_do_what_sift_needs() -> None:
-    """Fail the whole run, loudly, on a SQLite that Sift refuses to start on.
-
-    A green suite proves nothing if it ran on a library the app would not have started against.
-    Without this the search tests would fail one at a time, each for its own reason, instead of the
-    run saying the one thing that is actually wrong.
-    """
+    """Fail the whole run, loudly, on a SQLite that Sift refuses to start on."""
     capabilities = probe_sqlite()
     if not capabilities.fts5:
         pytest.fail(
@@ -116,8 +98,7 @@ _NAMES_DAYLIGHT = re.compile(r"[A-Za-z]{3,}[-+]?\d[\d:]*[A-Za-z]{3,}")
 
 
 def _give_a_daylight_rule_its_hour(zone: str | None) -> None:
-    """On Windows the runtime keeps the daylight shift it last read from the system (nothing, on
-    a machine in UTC), so a rule that names a daylight zone, such as "EST5EDT", is given its hour."""
+    """Give a daylight rule its hour on Windows, whose runtime keeps the shift it last read."""
     if os.name != "nt" or zone is None or not _NAMES_DAYLIGHT.fullmatch(zone):
         return
     import ctypes
@@ -129,13 +110,7 @@ def _give_a_daylight_rule_its_hour(zone: str | None) -> None:
 
 @pytest.fixture(scope="session", autouse=True)
 def the_machine_keeps_utc() -> Iterator[None]:
-    """Hold the machine's clock to UTC for the whole run, whatever zone the computer running it is in.
-
-    Every day and time Sift shows is the machine's local one (`kernel/when.py`), so a test that
-    expects a filing at 22:13 UTC to fall on the 14th would pass in New York and fail in Tokyo.
-    Held to UTC, every run reads the days a CI runner reads. A test about the zone names one
-    (`machine_zone`).
-    """
+    """Hold the machine's clock to UTC for the whole run, so every run reads the days CI reads."""
     before = os.environ.get("TZ")
     _hold_zone(SUITE_ZONE)
     try:
@@ -146,23 +121,14 @@ def the_machine_keeps_utc() -> Iterator[None]:
 
 @pytest.fixture
 def machine_zone() -> Iterator[Callable[[str], None]]:
-    """Put the machine's clock in a zone for one test: `machine_zone("EST5EDT")`, a POSIX rule
-    (the one spelling both C runtimes read). Back to the suite's UTC after, and read again
-    immediately, because the runtime keeps a zone it has read until it is asked again."""
+    """Put the machine's clock in a POSIX-rule zone for one test: `machine_zone("EST5EDT")`."""
     yield _hold_zone
     _hold_zone(SUITE_ZONE)
 
 
 @pytest.fixture
 def clean_registry() -> Iterator[None]:
-    """Restore the database kernel's registries around a test.
-
-    Both are process-global by design (features register at import time), so a test that adds a
-    component, or declares a statement a point read, would otherwise leak it into every test that
-    runs after it. The point-read one matters twice over: the gate that proves those statements
-    plans everything in the registry, so a leaked one from a test is a gate failure somewhere else
-    entirely.
-    """
+    """Restore the database kernel's registries around a test."""
     import sift.kernel.db as db
 
     saved = registered_components()
@@ -181,20 +147,13 @@ def clean_registry() -> Iterator[None]:
 
 @pytest.fixture
 def clean_settings_registry() -> Iterator[None]:
-    """Restore the preference registry around a test.
-
-    Like the schema registry, it is process-global: features declare their settings at import time.
-    A test that registers its own setting would otherwise leak it into every test after it, and a
-    second registration of the same key raises on purpose.
-    """
+    """Restore the preference registry around a test."""
     import sift.kernel.jobs.schedules as schedules
     import sift.kernel.settings_registry as registry
 
     saved = registry.registered_settings()
     registry._REGISTRY.clear()
-    # The schedule registry travels with it: a feature's `register()` declares its settings AND
-    # its scheduled task in one call; restoring one and not the other would refuse a test's second
-    # call for the wrong reason (the task, not the key, "registered twice").
+    # `register()` declares a setting and its task together, so both are restored.
     saved_tasks = dict(schedules._REGISTRY)
     schedules._REGISTRY.clear()
     # And the retirements, for the same reason: a `register()` that retires an old key beside the
@@ -219,11 +178,7 @@ def clean_settings_registry() -> Iterator[None]:
 
 @pytest.fixture
 async def temp_db(tmp_path: Path) -> AsyncIterator[Database]:
-    """A real SQLite database in WAL mode, on disk.
-
-    On disk and not in memory, deliberately: WAL, the busy timeout and the single-writer lock are
-    the things most worth testing here, and an in-memory database has none of them.
-    """
+    """A real SQLite database in WAL mode, on disk."""
     database = Database(tmp_path / "test.sqlite3")
     await database.connect()
     try:
@@ -232,12 +187,7 @@ async def temp_db(tmp_path: Path) -> AsyncIterator[Database]:
         await database.close()
 
 
-#: Every process-global registry a boot fills beside the job handlers: the names and families, the
-#: one-at-a-time and queue-to-itself types, the order of a file's work, the urgency each is held to,
-#: whether it waits for its family, the product carriers, the trailing types, the counted units, and
-#: what Activity leaves off its list or quiet on it. Each is read by the queue or the jobs page
-#: rather than by the handler, so one left behind changes what a later test's enqueue, claim or
-#: page does, in another file, with nothing naming the test that left it.
+#: One left behind changes a later test's enqueue, claim or page, in another file.
 JOB_REGISTRIES = (
     "_HANDLERS",
     "_NAMES",
@@ -270,50 +220,21 @@ def job_registries_kept() -> Iterator[None]:
 
 @pytest.fixture(scope="module", autouse=True)
 def module_keeps_the_job_registries() -> Iterator[None]:
-    """Hand the job registries back at the end of every test module, as `clean_handlers` does per test.
-
-    A fixture wider than one test that boots the application (a gate reading what the started app
-    registered, say) fills the registries before any test's own keeping of them begins, so the
-    per-test restore puts its handlers back every time. Left there, every later boot in the same
-    worker process refuses its first handler as already registered, in another module.
-    """
+    """Hand the job registries back after every module, for a wider fixture that booted the app."""
     with job_registries_kept():
         yield
 
 
 @pytest.fixture(autouse=True)
 def clean_handlers() -> Iterator[None]:
-    """Restore the job-handler registry around a test.
-
-    Process-global for the same reason the schema registry is (which handlers exist is a
-    property of the code, not of a database), and leaky for the same reason too.
-
-    Automatic, unlike the other two, because the thing that fills this registry is booting the
-    application rather than importing a module. A module is imported once per process and a schema
-    registers itself as it goes; handlers are claimed by the app's startup, which the tests run
-    over and over. Leaving it to each test to remember would mean every test that boots an app
-    anywhere in the suite has to know this, and the one that forgets fails in a different file,
-    with "a handler for job type 'probe' is already registered", which says nothing about the test
-    that actually leaked it.
-
-    Claiming a type twice within one boot still raises, which is the case the rule is for: two
-    features quietly fighting over one job type.
-    """
+    """Restore the job-handler registry around a test."""
     with job_registries_kept():
         yield
 
 
 @pytest.fixture(autouse=True)
 def nobody_at_the_keyboard(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Read the computer as left alone, so a booted pool runs its full count in every test.
-
-    The worker pool runs a share of its workers while somebody is using the computer
-    (`kernel.attention`), and the real reading is whoever is at the keyboard of the machine running
-    the suite. Left real, a test comparing the pool's worker count with its caps would pass at
-    night and fail while somebody typed. A test about the lever builds its own reading. The share
-    in force is put back after each test too, so a test that stepped back hands the next one the
-    whole device.
-    """
+    """Read the computer as left alone, so a booted pool runs its full count in every test."""
     monkeypatch.setattr(attention, "ATTENTION", attention.Attention(lambda: None))
     monkeypatch.setattr(media, "_share", None)
     monkeypatch.setattr(tools, "_background_rate", None)
@@ -321,24 +242,14 @@ def nobody_at_the_keyboard(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.fixture
 def first_folder_benchmarks() -> None:
-    """Asked for by a test about the benchmark a first library folder queues: keeps it real.
-
-    See `no_benchmark_on_a_first_folder`, which reads whether a test asked for this by name.
-    """
+    """Asked for by a test about the benchmark a first library folder queues: keeps it real."""
 
 
 @pytest.fixture(autouse=True)
 def no_benchmark_on_a_first_folder(
     request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A test that adds its first library folder has it read immediately, unless it is about the benchmark.
-
-    In use, the first folder on a device never measured queues the benchmark first and holds the
-    folder's scan behind it (`performance.benchmark.FirstFolder`). In a booted test application
-    every device is unmeasured, so every test adding a folder would wait minutes on a real encoder
-    measuring the machine running the suite, and a test counting the queue would count it too.
-    A test about it asks for `first_folder_benchmarks` and keeps the real reaction.
-    """
+    """A first library folder is read immediately, unless the test asks for the benchmark."""
     if "first_folder_benchmarks" in request.fixturenames:
         return
     from sift.slices.performance import benchmark
@@ -351,26 +262,7 @@ def no_benchmark_on_a_first_folder(
 
 @pytest.fixture(autouse=True)
 def quiet_search_refresh(request: pytest.FixtureRequest) -> Iterator[None]:
-    """Stop the search index refreshing itself, unless a test is about that.
-
-    Booting the application starts a refresh loop, which is exactly what it is for: without it
-    nothing would fill the index, and free text would find nothing in a running Sift. The
-    consequence is that every booted application puts jobs on the queue and rewrites the index
-    in the background, and neither is what most tests are looking at.
-
-    Two ways that bites, and the second is why this is here rather than in the search slice's own
-    conftest. A test that manages the index by hand races a worker rebuilding it underneath. And a
-    test that counts the QUEUE (in a different slice entirely, which has no reason to know search
-    exists) counts the refresh jobs too, and fails with "assert 4 == 1" in a file whose author
-    never went near this.
-
-    Automatic, for the same reason `clean_handlers` is: it is a property of booting the app, so
-    leaving each test to remember means the one that forgets fails somewhere else.
-
-    Marked `indexes_itself`, a test keeps the real thing. That is how the two tests asserting the
-    application fills its own index still assert it: if this suppression ever hid that behaviour
-    for real, those are what go red.
-    """
+    """Stop the search index refreshing itself, unless a test is about that."""
     if request.node.get_closest_marker("indexes_itself"):
         yield
         return
@@ -425,14 +317,7 @@ class LibraryRoot:
 async def library_root(
     temp_db: Database, content_store: ContentStore, tmp_path: Path
 ) -> LibraryRoot:
-    """A library root: a directory on disk, and the row that says Sift is watching it.
-
-    Written with a raw insert rather than through the store that owns roots, and deliberately: this
-    is the fixture the *content* tests use, and they are about what an asset is. Giving them a root
-    built by the real path would hand them a folder row they never asked for and a set of rules
-    (overlap, reserved directories) they are not testing. The tests that are about roots use
-    `library_store` and create them properly.
-    """
+    """A library root: a directory on disk, and the row that says Sift is watching it."""
     directory = tmp_path / "library"
     await asyncio.to_thread(directory.mkdir, exist_ok=True)
 
@@ -444,12 +329,7 @@ async def library_root(
     return LibraryRoot(id=root_id, path=directory)
 
 
-# --- access -------------------------------------------------------------------------------
-#
-# The rows below are written with raw inserts. Users, tags, people and collections are created
-# through the features that own those screens, and none of them exist at kernel level: a
-# fixture that reached for one would make the kernel's own tests depend on something built on
-# top of the kernel.
+# Raw inserts: the kernel's own tests must not depend on the features built on it.
 
 _EPOCH = 1_700_000_000
 
@@ -462,18 +342,7 @@ class Actors:
 
 @dataclass(frozen=True, slots=True)
 class World:
-    """A library with enough shape to ask every question the resolver can be asked.
-
-    root                     root_two
-      top                      other
-        mid
-          leaf
-
-    solo    one copy, in `leaf`. Tagged, has a person, in a collection and a photo set,
-            from a site.
-    twin    two copies: one in `leaf`, one in `other`. The multi-location case.
-    loose   one copy, sitting directly in `root` with no folder at all.
-    """
+    """A library with enough shape to ask every question the resolver can be asked."""
 
     root: str
     root_two: str
@@ -566,7 +435,11 @@ async def build_world(database: Database, world: World) -> None:
     await location(world.twin, world.root, world.leaf, "top/mid/leaf/twin.mp4")
     await location(world.twin, world.root_two, world.other, "other/twin.mp4")
     await location(world.loose, world.root, None, "loose.mp4")
+    await _build_groups(database, world)
 
+
+async def _build_groups(database: Database, world: World) -> None:
+    """The tag, person, collection, photo set, Site and Username that hold `solo`."""
     await database.execute(
         "INSERT INTO tags (id, name, name_sort, created_at) VALUES (?, ?, ?, ?)",
         (world.tag, "tag", sort_key("tag"), _EPOCH),
@@ -582,9 +455,7 @@ async def build_world(database: Database, world: World) -> None:
         "INSERT INTO asset_people (asset_id, person_id) VALUES (?, ?)",
         (world.solo, world.person),
     )
-    # The collection wears `solo` as its cover as well as holding it, so the truth table can put
-    # both the count and the cover to every way of concealing that one file. A cover is a picture
-    # of an item, and it leaks the item just as surely as counting it does.
+    # `solo` is the cover too: a cover leaks its item as surely as a count does.
     await database.execute(
         "INSERT INTO collections (id, name, name_sort, cover_asset_id, created_at)"
         " VALUES (?, ?, ?, ?, ?)",
@@ -594,10 +465,6 @@ async def build_world(database: Database, world: World) -> None:
         "INSERT INTO collection_items (collection_id, asset_id, added_at) VALUES (?, ?, ?)",
         (world.collection, world.solo, _EPOCH),
     )
-    # The photo set holds `solo` and wears it as its cover, exactly as the collection above
-    # does and for the same reason: the truth table can then put every way of concealing that one
-    # file to both the count and the cover. A cover is a picture of an item and leaks it as surely
-    # as counting it does.
     await database.execute(
         "INSERT INTO photo_sets (id, name, name_sort, cover_asset_id, origin, created_at)"
         " VALUES (?, ?, ?, ?, 'manual', ?)",
@@ -632,13 +499,7 @@ async def world(temp_db: Database, access: Repository) -> World:
 async def hide(
     database: Database, kind: str, object_id: str, user_id: str, *, hidden: bool = True
 ) -> None:
-    """Hide one thing from one user, straight into the table the resolver reads.
-
-    Deliberately not through a route or a service: what this exists to set up is the state, so that
-    a test of the resolver is a test of the resolver and not of whichever endpoint happened to write
-    the row. The statement comes from the seeding module beside this one, so the tests that reach a
-    database this way and the tests that reach one over HTTP write the same row.
-    """
+    """Hide one thing from one user, straight into the table the resolver reads."""
     statement, params = hidden_row(kind, object_id, user_id, hidden=hidden)
     await database.execute(statement, params)
 
@@ -657,12 +518,7 @@ def repo_root() -> Path:
 
 
 class FakeClock:
-    """Controllable time source.
-
-    Job retries, session expiry and lockout backoff are all time-dependent. Driving them with
-    real sleeps makes tests slow and flaky under load, and a flaky test around a security
-    boundary is one that ends up skipped.
-    """
+    """Controllable time source."""
 
     def __init__(self, start: float = 1_700_000_000.0) -> None:
         self._now = start
@@ -681,15 +537,7 @@ def fake_clock() -> Iterator[FakeClock]:
 
 
 def png_bytes(pixel: bytes = b"\x00\xff\x00\x00") -> bytes:
-    """A minimal but genuine 1x1 PNG: the signature the gate reads, and the IEND it checks for.
-
-    `pixel` is the raw scanline (a filter byte then one RGB triple); varying it makes a valid PNG
-    whose bytes (and so its content hash) differ, which is how a test produces a genuinely new
-    image versus a duplicate of one already ingested. The default is a single red pixel.
-
-    Here rather than in one slice's fixtures because the store is content-addressed, so "give me a
-    file that is genuinely not the last one" is a thing every slice's tests eventually need.
-    """
+    """A minimal but genuine 1x1 PNG: the signature the gate reads, and the IEND it checks for."""
 
     def chunk(kind: bytes, data: bytes) -> bytes:
         body = kind + data

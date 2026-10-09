@@ -2,17 +2,8 @@ import { type Page } from '@playwright/test';
 import { expect, test } from './test';
 import { signInAsAdmin } from './admin';
 
-/* A wheel over a strip that only scrolls sideways.
- *
- * There is nowhere else this can be checked. A wheel is a real input event carrying a distance on
- * two axes, whether the browser applies it is the browser's own decision, and a strip's overflow
- * is a measured layout: a unit environment reports every box as zero wide and would agree with
- * any implementation at all.
- *
- * A mouse has one wheel, it turns up and down, and a row wider than its box must still move under
- * it. The sideways strip on a file is "Who is in this" (`FacesInThis`, a `Scroller horizontal`),
- * so that is what is driven here.
- */
+/* A mouse wheel turns up and down, yet a sideways strip ("Who is in this", `FacesInThis`)
+ * must still move under it; only a browser measures overflow and applies a wheel. */
 
 const CLIP = {
 	id: 'm1',
@@ -26,7 +17,6 @@ const CLIP = {
 	original_filename: 'holiday.jpg'
 };
 
-/** Enough of them that the row is several times wider than the space it has. */
 const FACES = Array.from({ length: 40 }, (_, index) => ({
 	track_id: `t${index}`,
 	asset_id: 'm1',
@@ -44,7 +34,6 @@ const FACES = Array.from({ length: 40 }, (_, index) => ({
 	teachable: true
 }));
 
-/** What the sheet shows as looking like this file, so it is drawn with every section it has. */
 const LOOKALIKES = Array.from({ length: 40 }, (_, index) => ({
 	id: `like-${index}`,
 	media_type: 'photo',
@@ -98,19 +87,13 @@ async function openTheSheet(page: Page) {
 	await expect
 		.poll(() => strip.evaluate((el) => el.scrollWidth - el.clientWidth))
 		.toBeGreaterThan(0);
-	/* BROUGHT ON SCREEN, because a wheel is delivered to whatever is under the pointer, and a
-	   strip below the fold of the sheet is under nothing. `page.mouse.move` to a point off the
-	   window lands on nothing at all and the turn goes to no element, which reads exactly like
-	   the strip refusing the wheel. */
+	// On screen: a wheel goes to whatever is under the pointer.
 	await strip.scrollIntoViewIfNeeded();
 	await expect(strip).toBeVisible();
 	return strip;
 }
 
-/* The sheet's OWN scroller. There are two inside the dialog (the sheet and the strip under
-   test), and this one is the strip's ANCESTOR, so it is first in document order whatever else the
-   sheet grows. Anchored at `.sheet > .scroll-root` so it cannot resolve to a scroller that is not
-   the sheet's at all. */
+// The sheet's own scroller, the strip's ancestor.
 const sheet = (page: Page) =>
 	page.locator('.sheet > .scroll-root [data-scroll-area-viewport]').first();
 
@@ -122,7 +105,7 @@ test.beforeEach(async ({ page }) => {
 test('an ordinary wheel moves a sideways strip sideways', async ({ page }) => {
 	const strip = await openTheSheet(page);
 
-	// It answers the wheel at all, which is the whole claim. Turned again until the turn lands.
+	// Turned again until the turn lands.
 	await expect(async () => {
 		await strip.hover();
 		await page.mouse.wheel(0, 300);
@@ -133,27 +116,13 @@ test('an ordinary wheel moves a sideways strip sideways', async ({ page }) => {
 test('a strip already at its end hands the wheel back rather than swallowing it', async ({
 	page
 }) => {
-	/*
-	 * The half that keeps this from being a hijack. A strip inside a page that scrolls has to be
-	 * something you can scroll PAST. So once it has nowhere left to go, the wheel is the page's
-	 * again, and a strip with nothing to scroll never takes one in the first place.
-	 *
-	 * Pushed BACKWARDS from the start of the strip rather than forwards from its far end, and the
-	 * two are the same claim: a strip is spent when it is against the end the wheel is pushing it
-	 * towards, and its start is one of its two ends. Upwards is the direction that is certain to
-	 * have somewhere to go once the sheet is scrolled down to the strip, which is done below: the
-	 * sheet above it is all travel a handed-back turn can take.
-	 */
+	/* Once spent, the strip hands the wheel back to the page, so it can be scrolled past. Pushed
+	 * up from its start, where the sheet above has room to take the turn. */
 	const strip = await openTheSheet(page);
-	/* The sheet scrolled down to the strip, so there is sheet above it for a handed-back turn to
-	   move. On screen is not enough: the strip sits near the top of the sheet's side, and with the
-	   lookalikes a sideways strip of their own rather than a tall column, the sheet has no reason
-	   to have scrolled at all. */
 	await strip.evaluate((el) => el.scrollIntoView({ block: 'start' }));
 
 	await strip.hover();
 
-	// At the start, which is the end an upward turn pushes it towards.
 	expect(await strip.evaluate((el) => el.scrollLeft)).toBe(0);
 	const sheetBefore = await sheet(page).evaluate((el) => el.scrollTop);
 	expect(
@@ -164,9 +133,8 @@ test('a strip already at its end hands the wheel back rather than swallowing it'
 	await page.mouse.wheel(0, -400);
 	await page.waitForTimeout(120);
 
-	// The strip swallowed nothing: it is still at its end.
 	expect(await strip.evaluate((el) => el.scrollLeft)).toBe(0);
-	// And the wheel went somewhere: the sheet it sits in took it.
+	// The sheet took the turn instead.
 	const sheetAfter = await sheet(page).evaluate((el) => el.scrollTop);
 	expect(sheetAfter).toBeLessThan(sheetBefore);
 });

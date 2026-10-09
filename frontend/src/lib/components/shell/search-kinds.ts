@@ -1,28 +1,7 @@
 /*
- * WHAT EACH ROW OF THE SEARCH LIST IS: its glyph and the word for it, in one table.
- *
- * The list under the top search box draws a glyph at the head of every row, so a bare word
- * offering a person, a tag and the Tags filter at the same time shows which each would become when
- * picked. A glyph on its own is a shape, though, and the ones for an audio codec, a view status or
- * a remembered search are shapes nobody is born knowing. So each glyph carries its kind's name, on
- * hover through the shared tooltip and to a screen reader as the glyph's own name.
- *
- * ONE TABLE, keyed by what the row IS, never a word written per row. The glyph and the word are
- * two answers to one question ("what kind of thing is this row"), and kept in two places they come
- * apart: a glyph added for a new field with no word beside it is a glyph that says nothing.
- *
- * Keyed by the TOKEN the server sends as a row's `field` (`filters.py`'s `Field`), plus the four
- * kinds of row that are no field: a remembered search, a file, the words themselves and Show more.
- * `search-kinds.test.ts` reads the server's field list and refuses one this table does not name.
- *
- * A facet's glyph is declared once, in `facet-labels`, and read from there: one picture per
- * dimension on the panel, the chip and this list. Only the fields that are no facet carry a glyph
- * here. Where Sift already has a mark for the thing, the field wears THAT mark rather than a second
- * one (a Photo Set, Loops, a folder, a file, the enriching wand), so the list and the screen a row
- * leads to cannot come to disagree about what a thing looks like.
- *
- * The word is the SINGULAR for a field that names things (a row offering Ada is a Person, not
- * People) and the filter's own label for the rest, the same words the list's filter rows draw.
+ * Each search-list row's glyph and its word, in one table keyed by what the row is, so the two
+ * cannot come apart (`search-kinds.test.ts` holds it to the server's fields). Facet glyphs come
+ * from `facet-labels`; the word is singular for a field that names things.
  */
 import type { IconName } from '$lib/design/icons';
 import { QUERY_KIND, type Row } from '$lib/search/search.svelte';
@@ -42,11 +21,9 @@ export const MORE_KIND = 'more';
 export const ROW_KINDS: Readonly<Record<string, RowKind>> = {
 	/* A search typed and run: history, the clock. */
 	[QUERY_KIND]: { name: 'Recent search', icon: 'history' },
-	/* A file has no field (there is no `files:` filter), so without its own entry it would fall
-	   through to the tag glyph and read as a tag that opens something else. */
+	/* A file has no field, so without this it would wear the tag glyph. */
 	[FILE_KIND]: { name: 'File', icon: 'videocam' },
-	/* The words as words. Its whole job is to be the row that is NOT a person or a tag, so it wears
-	   the one glyph on the list that names no kind of thing. */
+	/* The one glyph on the list that names no kind of thing. */
 	[WORDS_KIND]: { name: 'Words', icon: 'match_case' },
 	/* Downwards, because that is where what it reveals appears. */
 	[MORE_KIND]: { name: 'More', icon: 'expand_more' },
@@ -56,7 +33,7 @@ export const ROW_KINDS: Readonly<Record<string, RowKind>> = {
 	tags: { name: 'Tag' },
 	collections: { name: 'Collection' },
 	photo_sets: { name: 'Photo Set' },
-	/* A song, as a row offering one: the Songs column's own glyph, read from the facet list. */
+	/* The glyph of the Songs column, read from the facet list. */
 	songs: { name: 'Song' },
 	in: { name: 'Folder' },
 	music: { name: 'Music' },
@@ -73,8 +50,7 @@ export const ROW_KINDS: Readonly<Record<string, RowKind>> = {
 	size: { name: 'File size', icon: 'hard_disk' },
 	vcodec: { name: 'Video codec' },
 	acodec: { name: 'Audio codec' },
-	/* The two names a file has. The title is what somebody gave it and the file name is what is on
-	   disk, so one wears the words glyph and the other the app's glyph for a file. */
+	/* A title is a given name; a file name is what is on disk. */
 	title: { name: 'Title', icon: 'titlecase' },
 	filename: { name: 'File name', icon: 'article' },
 	viewed: { name: 'View status' },
@@ -95,11 +71,9 @@ export const ROW_KINDS: Readonly<Record<string, RowKind>> = {
 	age: { name: 'Age' },
 	released: { name: 'Released' },
 	network: { name: 'Network' },
-	/* The files sharing a song with one file: the Music column's own note, because it is the same
-	   thing asked from one file rather than by the song's name. */
+	/* The note of the Music column: the same thing, asked from one file. */
 	same_music: { name: 'Same music', icon: 'music_note_2' },
-	/* The files similar to one file: the magnifier over a picture the file menu's Similar to this
-	   row wears, so the filter and the verb are one glyph. */
+	/* The glyph of the file menu's verb, so filter and verb are one. */
 	like: { name: 'Similar to this', icon: 'image_search' },
 	left_out: { name: 'Left out' },
 	unnamed_face: { name: 'Face still unnamed' }

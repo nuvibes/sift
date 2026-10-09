@@ -1,14 +1,6 @@
 <script lang="ts">
-	/*
-	 * A short list of named things with their figures, ranked: the people, Sites, tags,
-	 * Collections, Photo Sets and files viewed most, the walls, the tasks.
-	 *
-	 * Each row is the server's: the thing as a piece carrying its address (so the name is the way to
-	 * its page, or opens the file over the screen), its figure, and its picture's address: the one
-	 * its own wall draws it from. A picture that does not load is the letter `Avatar` draws for
-	 * anything without one; a row with no picture at all (a saved wall, a task) draws none. A thing
-	 * this reader may not see never reaches the list: the server leaves it out before ranking.
-	 */
+	/* A ranked list of named things and their figures, each row as the server sent it; a thing the
+	 * reader may not see is left out on the server, before ranking. */
 	import { SvelteSet } from 'svelte/reactivity';
 
 	import type { components } from '$lib/api/schema';
@@ -34,16 +26,8 @@
 	);
 	const pictured = $derived(list.rows.some((row) => row.cover !== null));
 
-	/*
-	 * The covers the browser could not draw. `Avatar` falls back to the letter when its own check of
-	 * the address fails, but the picture it then puts on screen can still fail to load, and that
-	 * one draws the browser's broken-picture glyph. An error from inside the cover is caught here
-	 * and the row is drawn with no address, which is the letter.
-	 *
-	 * Each cover is keyed by its address. The list keeps its rows by place, so a new period hands a
-	 * row's `Avatar` another thing's cover, and the picture library behind it never checks a second
-	 * address once the first one loaded: a missing cover would then draw neither picture nor letter.
-	 */
+	// Covers that failed to load, by address: the row then draws the letter. Keyed by address, as
+	// rows are kept by place and a reused `Avatar` never re-checks a loaded address.
 	const refused = new SvelteSet<string>();
 </script>
 

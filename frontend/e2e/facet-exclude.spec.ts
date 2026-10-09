@@ -2,25 +2,9 @@ import { expect, test } from './test';
 import { signInAsAdmin } from './admin';
 
 /*
- * A filter column that both INCLUDES and EXCLUDES, drawn as two chips and nothing else.
- *
- * The query language allows this: a named parameter may appear more than once and every occurrence
- * is ANDed, so `?media=image&media=-video` is "images, and not video".
- *
- * ## The fault
- *
- * The bar works out which filters are the SCREEN's own (a person's page is `people:"..."`, and
- * that chip is drawn with a padlock and cannot be taken off) by comparing what the screen carries
- * against what is in the address. Comparing against only the FIRST value of the parameter would
- * draw the second as a locked chip: the same filter twice on one bar, once removable and once
- * padlocked, the padlocked copy spelled the way the address writes it (`-video`).
- *
- * ## Why the address is set directly rather than by clicking
- *
- * Clicking is covered where clicking lives: the panel's own rows. What is under test here is what
- * the bar makes of an address, and an address is a thing somebody can arrive at from a link, a
- * saved search or the back button as easily as from a click. Driving it directly also means this
- * cannot flake on facet counts arriving.
+ * A column that both includes and excludes (`?media=image&media=-video`) draws two chips, both
+ * removable: comparing the screen's own filters against only the FIRST value would draw the second
+ * as a locked chip. The address is set directly, as a link or the back button would.
  */
 
 test.beforeEach(async ({ page }) => {
@@ -28,27 +12,17 @@ test.beforeEach(async ({ page }) => {
 	await page.setViewportSize({ width: 1500, height: 900 });
 });
 
-/*
- * The chips, named the way the bar draws them: by the shared chip component's own classes. A test
- * that names an element by a class does not go red when the class stops existing, it goes QUIET.
- * So naming the shared component's classes means the next rename breaks the component's tests too.
- */
-/* The chips that narrow. They sit in one box of their own inside the row (`.narrows`, laid out
-   as `display: contents`, so pointing at any chip lights what they narrow), which is why the chip
-   is its child rather than the row's. */
+/* By the shared chip's classes, so a rename breaks the component's tests too. `.narrows` is
+   `display: contents`, so the chip is its child. */
 const CHIP = '.filters .narrows > .chip';
 
-/** The chips on the bar, as a person reads them. */
 async function chips(page: import('@playwright/test').Page) {
 	return page.locator(CHIP).evaluateAll((drawn) =>
 		drawn.map((chip) => ({
 			text: (chip.textContent ?? '').replace(/\s+/g, ' ').trim(),
-			// `refused` is the shared chip's word for it; `selected` is the other half of the same pair.
+			// The shared chip's words: `refused` and `selected`.
 			excluded: chip.classList.contains('refused'),
-			// The three-state box the facet row carries, so the row and the chip it produced are
-			// recognisably one thing. It is the box's own element, not a button: the whole chip is
-			// what you press, so a button inside it would be a second control saying the same
-			// thing.
+			// The facet row's three-state box, an element rather than a second button.
 			box: (() => {
 				const held = chip.querySelector('.box .box');
 				if (held === null) return 'none';
@@ -69,13 +43,8 @@ test('one column, one value in and one out, is two chips and no padlock', async 
 	expect(drawn[0].text).toContain('Photos');
 	expect(drawn[1].text).toContain('Videos');
 
-	/* A locked chip here would be the bar deciding that half of what somebody asked for is a
-	   constraint the screen imposed, which also makes it unremovable.
-
-	   Asked as "two chips, and every one of them can be taken off" rather than as "no chip
-	   carries the locked class". The bar does not draw the screen's own constraint at all, so a
-	   count of locked chips is nought whichever way the fault comes back. What has to stay true
-	   is that both of these belong to the person who typed them. */
+	/* Two chips, both removable: the screen's own constraint is not drawn at all, so counting
+	   locked chips would be nought either way. */
 	expect(drawn).toHaveLength(2);
 	await expect(page.locator(`${CHIP} > button.remove`)).toHaveCount(2);
 });
@@ -84,9 +53,7 @@ test('the excluded value is struck through, and the included one is not', async 
 	await page.goto('/browse?media=image&media=-video');
 	await expect(page.locator(CHIP).first()).toBeVisible();
 
-	/* The mark, not the colour. A line through the value is what the facet row wears, and the two
-	   have to agree or the row and the chip it produced read as two different facts. Only a browser
-	   can answer this: it is a computed style on an element inside a component. */
+	/* A line through the value, as the facet row wears it: a computed style only a browser has. */
 	const lines = await page
 		.locator(`${CHIP} .value`)
 		.evaluateAll((values) => values.map((value) => getComputedStyle(value).textDecorationLine));
@@ -100,8 +67,7 @@ test('the refusal is in the accessible name, not only in the strike', async ({ p
 	const chip = page.locator(CHIP).first();
 	await expect(chip).toBeVisible();
 
-	/* A line through text is not announced. Without a word saying so, the chip reads as "media:
-	   video" to somebody who cannot see it, which is the opposite of what it does. */
+	/* A line through text is not announced, so a word says it. */
 	await expect(chip).toContainText('not');
 });
 
@@ -109,18 +75,13 @@ test('both chips can be taken off, and the screen keeps the other one', async ({
 	await page.goto('/browse?media=image&media=-video');
 	await expect(page.locator(CHIP)).toHaveCount(2);
 
-	/*
-	 * The chip first, then its cross. The cross is `opacity: 0`, sunk below its own line and taking
-	 * no pointer until something is over the CHIP. Aimed at from rest the point Playwright computes
-	 * is the sunk box, which is outside the chip, so the hover never reaches the chip and the cross
-	 * never rises.
-	 */
+	/* The chip first: its cross rises only while the chip is hovered. */
 	const first = page.locator(CHIP).first();
 	await first.hover();
 	await first.locator('button.remove').click();
 	await expect(page.locator(CHIP)).toHaveCount(1);
 
-	// The one left is the exclusion, still an exclusion.
+	// The one left is still an exclusion.
 	expect(new URL(page.url()).searchParams.getAll('media')).toEqual(['-video']);
 });
 

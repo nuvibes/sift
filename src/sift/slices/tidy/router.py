@@ -1,13 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Two endpoints: what could be tidied, and tidy one of them.
-
-Admin-only, like the rest of Maintenance, and for the same reason: neither route names an asset the
-caller chose, both describe the library as a whole, and the honest answer to a guest asking about
-the library as a whole is no. Hiding the section in the client is a courtesy, never the control.
-
-Reading is separate from running, and that separation is the feature. Everything here is
-irreversible; a survey that removed what it counted would make looking dangerous.
-"""
+"""Tidy's endpoints, admin-only; reading is separate from running, since all of it is permanent."""
 
 from __future__ import annotations
 
@@ -69,11 +61,7 @@ async def survey(
     queue: Annotated[JobQueue, Depends(wiring.queue)],
     _admin: Annotated[Viewer, Depends(require_admin)],
 ) -> TidyView:
-    """What has built up. Removes nothing, and must not.
-
-    Reads no directory either: the counts that read the disk are the last survey's, with when it
-    was taken, and `surveying` says whether a fresh one is on its way.
-    """
+    """What has built up, the disk counts from the last survey. Removes nothing, and must not."""
     found = await survey_all(_resources(request))
     return TidyView(leftovers=[_view(one) for one in found], surveying=await _surveying(queue))
 
@@ -83,13 +71,7 @@ async def start_survey(
     queue: Annotated[JobQueue, Depends(wiring.queue)],
     _admin: Annotated[Viewer, Depends(require_admin)],
 ) -> SurveyStarted:
-    """Count what the costly tidyings would remove, in the background. Removes nothing.
-
-    Its own route rather than a side of the survey read, because reading the cache directory of
-    a large library is seconds of the disk, and a screen that paid that on every open would take
-    that long to draw. One at a time: a second press while one is going is answered rather than
-    doubled.
-    """
+    """Count what the costly tidyings would remove, in the background, one survey at a time."""
     if await _surveying(queue):
         return SurveyStarted(queued=False)
     await queue.enqueue(TIDY_SURVEY, {}, dedupe=True)
@@ -104,14 +86,7 @@ async def run(
     _admin: Annotated[Viewer, Depends(require_admin)],
     _csrf: Annotated[None, Depends(csrf_protect)],
 ) -> TidyResult:
-    """Run one tidying, by name. Nothing else runs with it.
-
-    One at a time on purpose. Each of these is permanent and each has a different consequence, so
-    "tidy everything" would be a single press standing in for several different decisions.
-
-    A costly tidying is surveyed again after it runs and the answer kept, so the count the screen
-    reads back is what is left rather than what was counted before the run.
-    """
+    """Run one tidying by name: each is permanent, so one press is never several decisions."""
     resources = _resources(request)
     chosen = next((tidying for tidying in build_all(resources) if tidying.name == name), None)
     if chosen is None:
@@ -136,39 +111,12 @@ async def optimize_database(
     _admin: Annotated[Viewer, Depends(require_admin)],
     _csrf: Annotated[None, Depends(csrf_protect)],
 ) -> OptimizeResult:
-    """Settle the database down: fold the write-ahead log back in and re-plan the indexes.
-
-    Its own route rather than another tidying, because a tidying REMOVES something and this removes
-    nothing. Every row survives, every query answers the same, and the only thing that changes is
-    how much disk the file takes and how well SQLite chooses between its indexes. Offering it beside
-    things that delete data, under a heading about leftovers, would be inviting somebody to read it
-    as one of them.
-
-    Three steps, in this order and for three different reasons:
-
-    * The table statistics are refreshed, which is what makes the query planner pick the index it
-      should. That also happens at boot, at the end of every whole-library pass and daily
-      (`Database.refresh_statistics`), but this is the one somebody presses when a screen has gone
-      slow, so it runs whatever the timers have done.
-    * The full-text index is rebuilt into fewer, larger segments. Search reads every segment, so an
-      index written a row at a time over months is read many times over on every query. The new
-      segment is written before the old ones are let go, so the file can end a little larger, with
-      the old pages kept inside it for later writes.
-    * The write-ahead log is folded back into the database and cut to nothing. LAST, because the
-      rebuilt index arrives in the log as a copy of the whole index, and left there it reads as
-      the file having grown by that much. A reader that never closes is what stops SQLite doing
-      this on its own.
-
-    Deliberately NOT `VACUUM`. It rewrites the whole file, needs as much free disk again as the
-    database takes, and holds an exclusive lock for as long as it runs, which on a self-hosted box
-    with a large library is a Sift that appears to have frozen. What it buys over this is the space
-    inside the file being handed back to the filesystem, and that space is reused by the next writes
-    regardless. Backup already takes a `VACUUM INTO` copy for anybody who wants a compacted file.
-    """
+    """Refresh statistics, merge the search segments, then fold the log back in; never VACUUM."""
     database = part_of(request, DATABASE)
     was = await asyncio.to_thread(_file_size, database)
-    # Three writes one after another, never nested: `write()` is not reentrant. The checkpoint
-    # cannot share the fold's guard either, as it is refused inside an open transaction.
+    # Not VACUUM: it locks the file for its whole run, so Sift would appear frozen.
+    # Never nested: `write()` is not reentrant, and the checkpoint is refused in a transaction.
+    # The log goes LAST, since the rebuilt index lands in it as a whole copy.
     await database.refresh_statistics(reason="tidy", every_table=True, force=True)
     async with database.write() as connection:
         await _optimize_search(connection)
@@ -179,12 +127,7 @@ async def optimize_database(
 
 
 async def _optimize_search(connection: Connection) -> None:
-    """Fold the full-text index into fewer segments, if there is one to fold.
-
-    Guarded rather than assumed: the index is a component like any other and an install can boot
-    before it exists. A missing table here would fail the whole optimize, which removes nothing,
-    so the failure would be pure loss.
-    """
+    """Fold the full-text index into fewer segments; an install can boot before it exists."""
     try:
         await connection.execute("INSERT INTO assets_fts(assets_fts) VALUES ('optimize')")
     except Exception as exc:  # any refusal means there is no index to fold
@@ -192,16 +135,7 @@ async def _optimize_search(connection: Connection) -> None:
 
 
 def _file_size(database: Database) -> int:
-    """How much disk the database takes, log and all.
-
-    All three files, because the write-ahead log is usually the part that grew and quoting the main
-    file alone would report a run that reclaimed a gigabyte as having freed nothing.
-
-    Called off the loop. Three stats are microseconds and a thread hop costs more than they do, so
-    this is not an optimisation: it is that the whole run either side of it takes seconds, which
-    makes the hop free in proportion, and a rule with no exception in it is worth more here than
-    two hundred microseconds.
-    """
+    """How much disk the database takes, the write-ahead log included, since it is what grows."""
     total = 0
     for suffix in ("", "-wal", "-shm"):
         try:

@@ -3,25 +3,8 @@ import { expect, test } from './test';
 import { signInAsAdmin } from './admin';
 import { removeCollections, seedCollection, writeInterfaceState } from './seed';
 
-/*
- * The Add to flyout: the last five picks first, each wearing the recency mark, then A to Z.
- *
- * The rule is `$lib/search/frequent.svelte.ts` (`RECENT_SHOWN`, newest first) and `PickMenu` (the recent
- * rows, then the server's alphabetical page, each remembered row drawn once).
- *
- * Seeded as the account's own record (`frequent.collection` in the interface state, newest first,
- * the shape `noteUse` writes) rather than by pressing six picks, because a pick files the file,
- * and the file here is the mocked tile the right-click menu needs (`context-menu.spec.ts` draws the
- * same one). The collections are real, so the alphabetical page is the server's.
- *
- * SIX remembered, in an order that is neither alphabetical nor its reverse: the sixth-newest must
- * NOT be in the head, and must reappear in its alphabetical place.
- */
-
 const STEM = `e2e-pick-${Date.now()}`;
-/** Nine collections, lettered so their alphabetical order is plain. */
 const LETTERS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I'];
-/** Newest first. The first five are the head; `B` is the sixth and must fall back into place. */
 const RECENT = ['F', 'C', 'H', 'A', 'E', 'B'];
 
 const ids = new Map<string, string>();

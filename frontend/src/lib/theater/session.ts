@@ -1,37 +1,21 @@
 /*
- * One Theater session: a wall opened, and the wall closed.
- *
- * Every cell already writes a sitting for each file it shows. What those rows cannot say is the
- * WALL (nine cells running for an hour are nine hours of sittings and one hour of somebody's
- * evening), so the wall reports itself as well: once when it opens, with nothing on it but the
- * time, and once when it closes, with what it was. Both are the same report, and the server keys
- * them on the name minted here, so a lost opening costs nothing and a late one cannot reopen what
- * has closed. See the server's `theater/sessions.py`.
- *
- * Nothing polls. A session that never closes (a browser killed from outside) is left without an
- * end, and its cells' sittings, which carry its name, say when it was last in use. While it's open
- * and on screen it beats, which keeps Sift in eco mode as a clip playing does.
+ * One Theater session, a wall opened and closed: its cells' sittings cannot say how long the WALL
+ * ran. Both reports are keyed on the name minted here, so a lost opening costs nothing; while open
+ * and on screen it beats, keeping Sift in eco mode.
  */
 
 import { api } from '$lib/api/client';
 import type { components } from '$lib/api/schema';
 import { newSittingId } from '$lib/player/sitting.svelte';
 
-/**
- * The server's ceilings on a session report, so a wall left open past them is recorded at the
- * ceiling rather than refused: a refusal on a keepalive nobody reads loses the whole session.
- * A week, and a saved cell's own longest source (`MAX_SESSION_MS` and `MAX_SOURCE` there).
- */
+/** The server's ceilings, so a wall left open past them is recorded at the ceiling, not refused. */
 const LONGEST_MS = 7 * 24 * 60 * 60 * 1000;
 const LONGEST_SOURCE = 1000;
 
 /** How often an open wall beats: a third of eco mode's minute, so one lost beat never ends it. */
 export const BEAT_EVERY_MS = 20_000;
 
-/**
- * What a wall is, as the session's closing report records it: the layout, how many cells, the saved
- * wall it came from, and each drawn cell's source. The report's own fields, from generated types.
- */
+/** What a wall is, as the closing report records it, in the report's generated fields. */
 export type WallFacts = Required<
 	Pick<components['schemas']['SessionReport'], 'layout' | 'cells' | 'arrangement' | 'sources'>
 >;
@@ -66,12 +50,7 @@ export class TheaterSession {
 		if (document.visibilityState === 'visible') void api.post('/theater/watching').catch(() => {});
 	}
 
-	/**
-	 * Say the wall has closed, and what it was. Once: a second close is a no-op.
-	 *
-	 * `keepalive`, because the commonest way a wall ends is the window closing, and an ordinary
-	 * request is cancelled when the page goes.
-	 */
+	/** Say the wall has closed, once; `keepalive`, since a wall often ends with its window. */
 	close(facts: WallFacts): void {
 		clearInterval(this.#beating);
 		if (this.#ended) return;

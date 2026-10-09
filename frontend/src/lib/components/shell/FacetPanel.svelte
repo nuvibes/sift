@@ -1,13 +1,8 @@
 <script lang="ts">
 	import { untrack, type Snippet } from 'svelte';
 	import BarPanel from '$lib/components/common/BarPanel.svelte';
-	/*
-	 * What the files on screen are made of, in columns, with a count on every value.
-	 *
-	 * It drops down and pushes the grid rather than covering it, so each adjustment is seen; never a
-	 * dialog or a sheet. A click filters immediately, with no Apply. Every count is the server's, from
-	 * the statement that decides what the grid shows, so on a person's page the numbers are theirs.
-	 */
+	/* What the files on screen are made of, in columns with counts; it pushes the grid down, and a
+	 * click filters immediately. Every count is the server's. */
 	import { goto } from '$app/navigation';
 	import { writeStored } from '$lib/shell/remembered.svelte';
 	import { Button, DateRange, NarrowBox, Pressable, Select } from '$lib/components/common';
@@ -41,15 +36,9 @@
 	import { PRESENCE_COLUMNS } from './filter-bar.svelte';
 
 	interface Props {
-		/*
-		 * WHICH NOUN IS ON THE WALL, which decides the columns wherever that noun is listed. Files
-		 * unless a screen says otherwise.
-		 */
+		/** Which noun is on the wall, deciding the columns; files unless said otherwise. */
 		subject?: Subject;
-		/*
-		 * What this screen is asking for, so the counts describe the set on screen. A name may hold
-		 * SEVERAL values, in the noun's grammar (`picksAreRepeated`).
-		 */
+		/** What the screen asks for, so the counts describe its set. */
 		query: Record<string, string | string[]>;
 		/** Turn one value of one column on or off. The bar owns how that is written down. */
 		onpick: (facet: string, value: string, next?: CheckState) => void;
@@ -59,42 +48,19 @@
 		stance: (facet: string, value: string) => CheckState;
 		/** What each column is filtered by right now, so a column can be counted WITHOUT its own. */
 		chosen: (facet: string) => string[];
-		/*
-		 * What is drawn UNDER the columns: the kept filters, a snippet because applying one is an
-		 * address on the bar and a cell's source in Theater, which this panel knows nothing of.
-		 */
+		/** Drawn under the columns (the kept filters); applying one differs by host. */
 		foot?: Snippet;
-		/**
-		 * A control at the HEAD of the panel, above the columns (which source a wall is filtering),
-		 * inside the box, since anything outside the absolutely positioned panel lands on the page.
-		 */
+		/** A control above the columns, inside the box of the positioned panel. */
 		head?: Snippet;
-		/**
-		 * How many files the screen is showing, scoped and filtered: the same number the page
-		 * header carries. A span column has no values to count, so it says this instead.
-		 */
+		/** The count the page header carries; a span column says this instead. */
 		total?: number;
-		/*
-		 * Dimensions to bring to the FRONT of the columns, for editing a kept filter, so its own
-		 * dimensions show. FIXED while the edit is open (the caller's stored dimensions, so a column
-		 * never leaves under the pointer), and the remembered columns are not written meanwhile.
-		 */
+		/** Dimensions put first while a kept filter is edited; fixed while the edit is open. */
 		lead?: string[];
-		/**
-		 * What the columns spread, so pointing at anything that WILL filter says what it will filter:
-		 * Theater lights the cells it edits (`Narrowing.pointing`). Not the kept filters in the foot,
-		 * which also edit and delete. Absent where the target is the screen itself.
-		 */
+		/** Spread by the columns so pointing says what will be filtered (`Narrowing.pointing`). */
 		pointing?: Pointing;
-		/**
-		 * What the target filters by on its own control, applied to every column's count, its own
-		 * included, since the panel cannot take it back (`Narrowing.within`).
-		 */
+		/** What the target filters by on its own control, applied to every count. */
 		within?: Record<string, string | string[]>;
-		/**
-		 * The facets every row on this wall has one value of (`ScreenTools.fixed`), left out of the
-		 * columns: a column of one row says only what the wall already is.
-		 */
+		/** Facets every row here has one value of, left out of the columns. */
 		fixed?: readonly string[];
 	}
 
@@ -120,12 +86,7 @@
 		return filesSaid(count);
 	}
 
-	/* The dimensions are `facet-labels.ts`'s, since `SavedFilterButton` names them too. */
-
-	/**
-	 * Whether a dimension is a span the panel draws itself rather than a set the server counts: one
-	 * question for what to draw and what not to ask about.
-	 */
+	/** A span the panel draws itself rather than a set the server counts. */
 	function isASpan(key: string): boolean {
 		return spanOf(subject, key);
 	}
@@ -133,10 +94,7 @@
 	/** The dimensions this account may ask about, for the noun on this wall. */
 	const OFFERED = $derived(offeredFacets(subject, fixed));
 
-	/*
-	 * The order the columns come in: `OFFERED`'s, with any lead first, both keeping their own order,
-	 * so paging past the lead lands on the ordinary next five.
-	 */
+	/* Any lead first, so paging past it lands on the ordinary next five. */
 	const ORDER = $derived.by(() => {
 		if (lead.length === 0) return OFFERED;
 		const wanted = new Set(lead);
@@ -146,31 +104,20 @@
 		];
 	});
 
-	/*
-	 * Which dimension each column is showing, remembered between visits per noun, in the browser
-	 * (`facet-counts`), so the bar can ask for the same columns before the panel opens.
-	 */
+	/* Each column's dimension is remembered per noun (`facet-counts`). */
 
 	/** The five columns to open on: the lead's, when there is one, otherwise what was remembered. */
 	function seeded(led: string): string[] {
 		return led ? ORDER.slice(0, COLUMNS).map((one) => one.key) : rememberedColumns(subject, fixed);
 	}
 
-	/* Seeded at INIT, not by the effect below, which runs after mount and would undo a press made
-	   in between. `untrack`: this wants the value the panel was built with; the effect follows it. */
+	/* Seeded at init, so a press before the effect runs is not undone. */
 	let showing = $state<string[]>(seeded(untrack(() => lead.join(','))));
 
 	/** How far along the list of dimensions the columns have been paged, written by the re-seeding. */
 	let from = $state(0);
 
-	/*
-	 * A lead arriving or leaving re-seeds the columns, and so does the noun (the drawer keeps this
-	 * panel mounted between screens).
-	 *
-	 * Keyed on a derived string, since a defaulted prop (`lead = []`) is a fresh value on every read
-	 * and would reset the page on any prop change. `untrack` around the writes, which it would
-	 * otherwise depend on.
-	 */
+	/* A lead or a noun re-seeds the columns, keyed on a string as `lead = []` is new each read. */
 	const led = $derived(lead.join(','));
 	const seedOn = $derived(`${subject}|${led}`);
 	let seededFor: string = untrack(() => `${subject}|${lead.join(',')}`);
@@ -185,9 +132,7 @@
 		});
 	});
 
-	/* Written from what is TRUE rather than from each press, since three things change the columns.
-	   Not while a lead holds (those are the app's, for an edit), read FIRST so nothing else is a
-	   dependency then. */
+	/* Remembered from what is true; not while a lead holds. */
 	$effect(() => {
 		if (led.length > 0) return;
 		const noun = subject;
@@ -197,11 +142,7 @@
 		writeStored(columnsKey(noun), columns.join(','));
 	});
 
-	/*
-	 * `added:` as a calendar rather than as something to type: not a column (a date has unbounded
-	 * values), a range (`added:<from>..<to>`). Read from `query`, never the address, since a
-	 * Theater cell's search is the cell's.
-	 */
+	/* `added:` as a calendar range, read from `query`, since a Theater cell's search is its own. */
 	const span = $derived.by(() => {
 		// One span: a repeated parameter was hand-written, and the server reads the last.
 		const held = query.added;
@@ -231,10 +172,7 @@
 		);
 	}
 
-	/*
-	 * The counts are the store's (`facet-counts`), asked by the bar as the screen settles, so the
-	 * panel opens on them. A span is drawn from the query and never asked about.
-	 */
+	/* The store's counts, asked by the bar as the screen settles; a span is never asked about. */
 	const question = $derived({
 		noun: subject,
 		facets: showing.filter((facet) => !isASpan(facet)),
@@ -250,8 +188,7 @@
 		if (answer !== undefined) counts = answer;
 	});
 
-	/* Asked here too for a question the bar did not ask (a swapped column, an edit's draft), and on
-	   every bell, so a change elsewhere re-counts in place. */
+	/* Also asked for a question the bar did not ask, and on every bell. */
 	$effect(() => {
 		void libraryChanges.generation;
 		void arrivals.generation;
@@ -278,10 +215,7 @@
 		return [...rows].sort((one, other) => at(one) - at(other));
 	}
 
-	/**
-	 * What one column holds once the box has filtered it, in band order where there is one: matched
-	 * against the words on screen ("1 to 3 minutes") and the stored value (`60s..<3m`) alike.
-	 */
+	/** A column filtered by its box, matched on words and stored values alike. */
 	function narrowedFrom(facet: string): Value[] {
 		const top = new Set(heads(facet));
 		const all = (counts[facet] ?? []).filter((one) => !top.has(one));
@@ -314,10 +248,7 @@
 		return Math.max(0, narrowed(facet).length - FIRST);
 	}
 
-	/**
-	 * Whether a column offers a box to filter itself with: past the cut, the same number, so a column
-	 * offering "View N more" always has a box.
-	 */
+	/** A box past the cut, so a column offering "View N more" always has one. */
 	function needsABox(facet: string): boolean {
 		// A ladder too: it is cut like the rest, so it gets the same way through.
 		return (counts[facet] ?? []).length - heads(facet).length > FIRST;
@@ -337,24 +268,12 @@
 		return headsOf[facet] ?? headsFrom(facet);
 	}
 
-	/*
-	 * A column is counted with every filter in force EXCEPT its own, so it stays multi-select: each
-	 * alternative shows what it would give if picked, instead of the column emptying itself. Every
-	 * other column applies, and `within` applies to all, a repeat meaning "and".
-	 */
-	/**
-	 * What a value READS as: the server's `label` first, the only source of a name for an id value,
-	 * else derived from the value (`facet-labels`).
-	 */
+	/** What a value reads as: the server's `label` first, else derived (`facet-labels`). */
 	function nameOf(facet: string, row: Value): string {
 		return row.label ?? facetValueLabel(facet, row.value);
 	}
 
-	/*
-	 * The chooser's list, in alphabetical order, which is NOT the order the columns come in: those are
-	 * chosen by how often people filter by them, while a list being read needs an order guessable
-	 * without learning. `localeCompare`, so capitals do not sort first.
-	 */
+	/* Alphabetical, unlike the columns, so a list being read is guessable. */
 	const options = $derived(
 		OFFERED.map((one) => ({ value: one.key, label: one.label })).sort((a, b) =>
 			a.label.localeCompare(b.label)
@@ -376,8 +295,7 @@
 {#snippet valueRow(facet: string, row: Value)}
 	{@const state = picked(facet, row.value)}
 	<li>
-		<!-- The whole row is the target, the box inside not separately clickable: two
-					     nested controls a pixel apart would be two answers to one click. -->
+		<!-- The whole row is the target; two nested controls would be two answers to one click. -->
 		<Pressable
 			class="value {state}"
 			feedback="wash"
@@ -424,9 +342,7 @@
 		{#each showing as facet, at (at)}
 			{@const isSpan = isASpan(facet)}
 			<section class="column">
-				<!-- The header is a dropdown, so every filter is one click from any column. `portalTo`, so it
-				     opens while the screen is filled (`Select.portalTo`); searchable past the chooser's
-				     threshold (`Select.searchable`). -->
+				<!-- The header is a dropdown, so every filter is one click from any column. -->
 				<Select
 					value={facet}
 					{options}
@@ -434,8 +350,7 @@
 					portalTo={stage.whatFillsTheWindow}
 					onValueChange={(next) => swap(at, next)}
 				>
-					<!-- The dimension's own mark (`facetIcon`), in the chooser and on the heading through
-					     `preview`, taking no width; not on the bar's chip, whose token names it. -->
+					<!-- The dimension's mark, in the chooser and the heading, taking no width. -->
 					{#snippet preview(option)}
 						{@const mark = facetIcon(option.value, subject)}
 						<!-- Every heading's mark in the ordinary ink: a heading found nothing on its own. -->
@@ -480,8 +395,7 @@
 								{@render valueRow(facet, row)}
 							{/each}
 							{#if shown(facet).length === 0 && heads(facet).length === 0}
-								<!-- A span says how many files the screen shows; an empty value column stays and
-								     says so, so the panel never reshuffles between pages. -->
+								<!-- An empty column stays, so the panel never reshuffles. -->
 								<li class="none">
 									{asking
 										? 'Counting\u2026'
@@ -527,14 +441,9 @@
 </BarPanel>
 
 <style>
-	/* Every column is one track wide, the calendar included: it floats over the panel at whatever
-	   size it needs. */
+	/* Every column is one track; the calendar floats over the panel. */
 
-	/*
-	 * The foot and the head each take a line of their own (`flex-basis: 100%` in the wrapping row),
-	 * inset by what the paging arrows take (a small icon button, `--space-8`, plus the row gap), so
-	 * head, columns and foot start at one edge.
-	 */
+	/* The foot and head take their own lines, inset by the paging arrows' width. */
 	.head {
 		flex-basis: 100%;
 		padding-inline: calc(var(--space-8) + var(--space-2));
@@ -562,10 +471,7 @@
 		min-width: 0;
 	}
 
-	/*
-	 * On a narrow screen the columns become one, still in the flow of the page, pushing the grid down
-	 * rather than covering the results.
-	 */
+	/* On a narrow screen the columns become one, still pushing the grid down. */
 	@media (max-width: 900px) {
 		.columns {
 			grid-template-columns: 1fr;
@@ -594,10 +500,7 @@
 		list-style: none;
 	}
 
-	/*
-	 * The expanded column scrolls inside the panel: one `minmax(0, 1fr)` row gives the scroller a
-	 * definite height, which an auto row would not, as in the pick dialog and the select's menu.
-	 */
+	/* One `minmax(0, 1fr)` row gives the scroller a definite height. */
 	.column-box {
 		display: grid;
 		grid-template-rows: minmax(0, 1fr);
@@ -609,11 +512,7 @@
 		align-self: center;
 	}
 
-	/*
-	 * Box, then name, then count: the name takes the free space, so labels share one edge and counts
-	 * sit hard right. A whole pressed row (`Pressable`, `:global` for the handed class), in the bar
-	 * chip's three states (`off`, `on`, `out`).
-	 */
+	/* Box, name, count: the name takes the free space, so counts sit hard right. */
 	.column :global(.value) {
 		display: flex;
 		align-items: center;
@@ -651,10 +550,7 @@
 		color: var(--sift-accent-text);
 	}
 
-	/*
-	 * Refused, in the refusal colour at its quiet weight, since two tints of one hue cannot be told
-	 * apart at a glance; the struck-through name says it in shape too.
-	 */
+	/* Refused, in the refusal colour; two tints of one hue could not be told apart. */
 	.column :global(.value.out) {
 		background: var(--sift-bad-bg);
 		color: var(--sift-bad-text);
@@ -703,10 +599,7 @@
 		font: var(--text-label);
 	}
 
-	/*
-	 * The date field, at the top of the column like every column's box; no `flex-basis: 100%`, which
-	 * in a flex column would push it to the bottom. Its Clear is the field's own (`DateRange.beside`).
-	 */
+	/* At the top of the column; `flex-basis: 100%` would push it to the bottom. */
 	.when {
 		display: block;
 	}

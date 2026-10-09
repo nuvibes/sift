@@ -3,35 +3,12 @@ import { expect, test } from './test';
 import { signInAsAdmin } from './admin';
 
 /*
- * Corners, measured.
- *
- * A rounded box drawn inside another rounded box has to take the outer radius MINUS the gap between
- * them, or the two curves are merely both round and the eye reads the inner one as wrong without
- * being able to say why.
- *
- * Nothing static can check this. The gap between two boxes is a layout fact (it depends on
- * padding, on borders, on what the element's size turned out to be), so the only way to know is to
- * lay the page out and measure. A radius token changed in one place and not the other is invisible
- * in review and obvious on screen.
- *
- * The rule has two halves and this checks both:
- *
- *   1. the inner radius is the outer radius minus the gap, and
- *   2. the gap is the SAME on all four sides.
- *
- * The second is what a `scale: 0.94` on a selected tile would break: a percentage inset takes more
- * off the long axis than the short one, so a landscape thumbnail gets a frame with four different
- * margins that change with the tile-size slider.
- *
- * ## What is deliberately not measured
- *
- * A pill (`--radius-full`) is not part of the rule: its curve is its height, it is not trying to
- * echo anything, and a chip inside a card is not a concentric pair. Anything whose gap is at least
- * its parent's radius is out too: at that distance the curves are independent and any radius is as
- * right as another.
+ * Corners, measured: a rounded box inside another takes the outer radius MINUS the gap, and the
+ * gap is the same on all four sides. The gap is a layout fact, so the page is laid out and
+ * measured. Pills, and anything inset by its parent's radius or more, are out of the rule.
  */
 
-/** How far off a radius may be. One pixel, for sub-pixel layout and browser rounding. */
+/** One pixel, for sub-pixel layout and browser rounding. */
 const SLACK = 1;
 
 interface Offender {
@@ -44,18 +21,9 @@ interface Offender {
 }
 
 /**
- * Every nested rounded CORNER on the page that is not concentric with the one it sits inside.
- *
- * Corner by corner, and that is the part that matters. Comparing whole elements
- * flags every button that happens to sit a few pixels below the top of a rounded page container,
- * near one edge and eight hundred pixels from the other, which is not a corner and not a pair. A
- * child echoes an outer corner only when it is tucked INTO that corner: the same short distance
- * from both of its edges, and closer than the outer radius. Then, and only then, the two curves are
- * read together and the inner one has to be the outer minus that distance.
- *
- * Runs in the browser because that is where the layout is. It walks every element that draws a
- * radius and measures against the nearest ancestor that draws one too, so a control three levels
- * down inside a card is still compared with the card, which is what the eye compares it to.
+ * Every nested rounded CORNER that is not concentric with the one it sits in, corner by corner:
+ * only a child tucked into a corner (equally close to both edges, inside the outer radius) echoes
+ * it. Measured against the nearest rounded ancestor, however deep.
  */
 async function offenders(page: Page): Promise<Offender[]> {
 	return page.evaluate((slack) => {
@@ -107,7 +75,7 @@ async function offenders(page: Page): Promise<Offender[]> {
 
 			const inner = element.getBoundingClientRect();
 			const outer = parent.getBoundingClientRect();
-			// Per corner: how far this box's corner is from the same corner of the box it is in.
+			// Per corner: the distance from the same corner of the box it is in.
 			const distances = [
 				[inner.left - outer.left, inner.top - outer.top],
 				[outer.right - inner.right, inner.top - outer.top],
@@ -121,20 +89,16 @@ async function offenders(page: Page): Promise<Offender[]> {
 				if (parentRadius <= 0 || parentRadius >= PILL) continue;
 				if (childRadius >= PILL) continue;
 				const [across, down] = distances[index];
-				// Overflowing the parent, or hanging off one edge: not a nested corner.
+				// Overflowing the parent, or off one edge: not nested.
 				if (across < -slack || down < -slack) continue;
-				// Square into the corner, or the two curves have nothing to do with each other.
+				// Square into the corner, or the curves are unrelated.
 				if (Math.abs(across - down) > slack) continue;
 				const inset = Math.max(across, down);
-				// Far enough in that the outer curve has already finished.
+				// The outer curve has already finished.
 				if (inset >= parentRadius) continue;
 
 				const wanted = parentRadius - inset;
-				// A radius of half a box IS that box's shortest side rounded off: a pill, or a
-				// circle if it is square. Past that point the child has stopped echoing anybody's
-				// corner and the rule has nothing to say: a 20px chip four pixels inside a 14px
-				// corner would have to be a circle to satisfy it, which is not what "concentric"
-				// looks like to anybody.
+				// A radius of half the box is a pill or a circle, not an echo of a corner.
 				if (wanted >= Math.min(inner.width, inner.height) / 2) continue;
 				if (Math.abs(childRadius - wanted) > slack) {
 					found.push({
@@ -164,15 +128,8 @@ function report(found: Offender[]): string {
 
 const SCREENS = ['/browse', '/collections', '/people', '/tags', '/sites', '/settings'];
 
-/**
- * Rows on every wall, so there is something to measure.
- *
- * The walls are seeded rather than left to whatever the rest of the suite happened to create. An
- * empty wall has no cards on it, so the check walks over nothing and passes. And an order-
- * dependent gate is worse than none: it goes green on its own and red in a full run, which reads as
- * flakiness and gets muted. Everything a card can draw is turned on here, the sharing marks
- * included, because a badge is exactly the sort of small nested box this rule is about.
- */
+/** Rows on every wall, seeded: an empty wall passes, and an order-dependent gate gets muted. Every
+ * mark is on, since a badge is a small nested box. */
 async function fillTheWalls(page: Page): Promise<void> {
 	const json = (body: unknown) => ({
 		status: 200,
@@ -220,17 +177,15 @@ test('every rounded box inside another one is concentric with it', async ({ page
 	}
 });
 
-/** One transparent pixel, as PNG: enough for a browser to lay a real thumbnail out. */
+/** One transparent pixel: enough for a browser to lay a real thumbnail out. */
 const PIXEL = Buffer.from(
 	'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
 	'base64'
 );
 
 test('including a grid with tiles on it, one of them picked', async ({ page }) => {
-	/* The screens above are mostly chrome, and an empty one has almost no nested corners to measure,
-	 * which is a green that proves nothing. The tile is where the rule is easiest to break, so
-	 * the tile is drawn here: a real thumbnail inside a real
-	 * tile, and then the same tile selected, which is what pulls the picture in behind the ring. */
+	/* The tile is where the rule breaks most easily: a real thumbnail, then the tile picked, which
+	 * pulls the picture in behind the ring. */
 	await signInAsAdmin(page);
 
 	const items = [1, 2, 3, 4].map((n) => ({
@@ -276,16 +231,12 @@ test('including a grid with tiles on it, one of them picked', async ({ page }) =
 });
 
 test('and with the search box in use, which swaps what sits in its corner', async ({ page }) => {
-	/* The two controls at the end of the search field are never both drawn: the shortcut hint is
-	 * there until the box is used and the clear cross only once there is something to clear. So a
-	 * sweep that never types has seen one of them and not the other, and they sit in the same
-	 * place, at the same inset, inside the same corner. */
+	/* The shortcut hint and the clear cross are never both drawn, and share one corner. */
 	await signInAsAdmin(page);
 	await page.goto('/browse');
 	await expect(page.locator('h1').first()).toBeVisible();
 
-	// A COMBOBOX and not a searchbox: it owns a listbox of suggestions, and ARIA gives that role to
-	// the input that owns one. `searchbox` matches nothing here whatever the page contains.
+	// A combobox: it owns a listbox, so `searchbox` matches nothing.
 	const box = page.getByRole('combobox', { name: 'Search' }).first();
 	await box.fill('something');
 	await expect(page.getByRole('button', { name: 'Clear the search' })).toBeVisible();
@@ -295,9 +246,7 @@ test('and with the search box in use, which swaps what sits in its corner', asyn
 });
 
 test('and the check can tell when one is not', async ({ page }) => {
-	/* The gate above passes on an empty page, on a page whose boxes are all square, and on one it
-	 * failed to measure. So on its own it is three ways of proving nothing. This puts a box with
-	 * the wrong corner on a real screen and insists the check finds it. */
+	/* The gate passes on an empty page, so a wrong corner is planted and must be found. */
 	await signInAsAdmin(page);
 	await page.goto('/browse');
 	await expect(page.locator('h1').first()).toBeVisible();
@@ -310,7 +259,7 @@ test('and the check can tell when one is not', async ({ page }) => {
 			'border-radius:20px;padding:8px;background:#000;z-index:9999';
 		const inner = document.createElement('div');
 		inner.className = 'corner-probe-inner';
-		// Concentric would be 20 - 8 = 12. This is not that.
+		// Concentric would be 20 - 8 = 12.
 		inner.style.cssText = 'width:100%;height:100%;border-radius:20px;background:#fff';
 		outer.appendChild(inner);
 		document.body.appendChild(outer);

@@ -2,17 +2,8 @@ import { type Page } from '@playwright/test';
 import { expect, test } from './test';
 import { signInAsAdmin } from './admin';
 
-/* Picking things out of the grid, in a real browser.
- *
- * Every part of the selection MODEL is covered as arithmetic (what a ctrl-click adds, what a
- * shift-click spans), and all of it can pass while the gestures do nothing on screen. What the
- * unit environment cannot have is a pointer: no real press with a duration, no real modifier on a
- * real click, and no native drag to be interrupted by.
- *
- * A press that becomes a drag is the specific hazard. The tiles are draggable, and a browser
- * starts a drag from a press that moves a pixel or two, which cancels the pointer stream the
- * long press is counting on. That is one test below, and it is the reason the others exist.
- */
+/* Picking things out of the grid with a real pointer: the model is covered as arithmetic, the
+ * gestures only here. A press that wanders becomes a native drag, which cancels a long press. */
 
 const ASSETS = [
 	{ id: 'a1', media_type: 'video', width: 1920, height: 1080, duration_ms: 95_000 },
@@ -23,11 +14,7 @@ const ASSETS = [
 	{ id: 'a6', media_type: 'image', width: 800, height: 1200, duration_ms: null }
 ].map((asset) => ({ ...asset, favorite: false, rating: null, concealed: false }));
 
-/* A real picture, and it is load-bearing rather than tidy.
- *
- * A tile whose still 404s draws the missing-preview placeholder, so there is no <img> in it, and
- * an <img> is exactly what a browser starts a native drag from. Every gesture below would pass
- * against a grid of empty boxes and prove nothing about the grid people use. */
+/* A real picture: an <img> is what a browser starts a native drag from. */
 const PIXEL = Buffer.from(
 	'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
 	'base64'
@@ -50,7 +37,7 @@ async function serveLibrary(page: Page) {
 /** How many tiles are drawn as chosen. The ring is the only thing that says so on screen. */
 const picked = (page: Page) => page.locator('.tile-frame .ring');
 
-/** What the selection bar says, which is the other half of "the selection is real". */
+/** What the selection bar says: the other half of "the selection is real". */
 const bar = (page: Page) => page.getByRole('region', { name: 'Selection' });
 
 async function openGrid(page: Page) {
@@ -76,8 +63,7 @@ test('holding a tile picks it', async ({ page }) => {
 	const spot = await centreOf(page, 0);
 	await page.mouse.move(spot.x, spot.y);
 	await page.mouse.down();
-	// Longer than the press threshold, and held perfectly still: this is the gesture working at its
-	// easiest. If it fails here it fails everywhere.
+	// Past the threshold and perfectly still: the easiest case.
 	await page.waitForTimeout(700);
 	await page.mouse.up();
 
@@ -86,8 +72,7 @@ test('holding a tile picks it', async ({ page }) => {
 });
 
 test('and the press that picked it does not also open it', async ({ page }) => {
-	// A long press ends in a pointerup, and a pointerup on a button is a click. Without the guard
-	// the gesture selects and then immediately opens what it selected.
+	// A pointerup on a button is a click, so without the guard it selects and then opens.
 	await openGrid(page);
 
 	const spot = await centreOf(page, 0);
@@ -101,12 +86,7 @@ test('and the press that picked it does not also open it', async ({ page }) => {
 });
 
 test('a press that turns into a drag does not pick anything', async ({ page }) => {
-	/* The other half of the same gesture.
-	 *
-	 * A tile is draggable, so a press that wanders becomes a native drag, and a drag cancels
-	 * the pointer stream underneath it. Dragging must not leave a selection behind: somebody who
-	 * meant to drop a clip on a tag and let go somewhere harmless should not find it picked.
-	 */
+	/* A press that becomes a drag must leave nothing picked. */
 	await openGrid(page);
 
 	const from = await centreOf(page, 0);
@@ -135,7 +115,7 @@ test('ctrl-click picks one, and picks a second without losing the first', async 
 	await expect(picked(page)).toHaveCount(2);
 	await expect(bar(page)).toContainText('2 files selected');
 
-	// And it takes one back out again, which is the half that separates it from a plain click.
+	// And it takes one back out, unlike a plain click.
 	await page
 		.locator('.tile')
 		.nth(2)
@@ -158,7 +138,7 @@ test('shift-click picks the run between two tiles', async ({ page }) => {
 	await expect(picked(page)).toHaveCount(4);
 	await expect(bar(page)).toContainText('4 files selected');
 
-	// Dragging the run back in shrinks it rather than leaving what it already reached.
+	// Dragged back, the run shrinks.
 	await page
 		.locator('.tile')
 		.nth(1)
@@ -167,8 +147,7 @@ test('shift-click picks the run between two tiles', async ({ page }) => {
 });
 
 test('once something is picked a plain click adds instead of opening', async ({ page }) => {
-	// Something being selected IS the mode: there is no button to press to get into it, and no
-	// modifier to hold once you are.
+	// Something selected IS the mode: no button to enter it, no modifier to hold.
 	await openGrid(page);
 
 	await page
@@ -200,15 +179,8 @@ test('clearing the bar puts every ring away', async ({ page }) => {
 	await expect(bar(page)).toBeHidden();
 });
 
-/*
- * What a selection actually DOES, which is a different claim from what it looks like.
- *
- * Everything above proves the gestures pick things. These three prove the actions run over what was
- * picked: a selection of six must not act on only the one clicked first while the bar says six.
- *
- * Asserted by watching the requests, because that is the only place the answer is unambiguous. A
- * screen can look right after acting on one of six.
- */
+/* The actions run over everything picked, not just the first: asserted on the requests, since a
+ * screen can look right after acting on one of six. */
 
 /** Pick the first `count` tiles, and wait for the bar to agree. */
 async function pickFirst(page: Page, count: number) {
@@ -237,14 +209,13 @@ test('the sharing panel opens on every picked file, not on the first', async ({ 
 	});
 
 	await pickFirst(page, 3);
-	/* Behind the bar's three dots: the bar names "Add to", the rating and the one that deletes,
-	   and keeps everything else one press away. See `barShape`. */
+	/* Behind the bar's three dots (`barShape`). */
 	await bar(page).getByRole('button', { name: 'More for 3 files' }).click();
 	await page.getByRole('menuitem', { name: 'Share' }).click();
 
 	await expect(page.locator('.share-sheet')).toBeVisible();
 	expect(asked.sort()).toEqual(['a1', 'a2', 'a3']);
-	// ...and it counts them rather than naming one of them.
+	// It counts them rather than naming one.
 	await expect(page.locator('.share-sheet')).toContainText('3 files');
 });
 
@@ -268,13 +239,12 @@ test('and Apply writes a grant for each of them', async ({ page }) => {
 	});
 
 	await pickFirst(page, 3);
-	/* Behind the bar's three dots: the bar names "Add to", the rating and the one that deletes,
-	   and keeps everything else one press away. See `barShape`. */
+	/* Behind the bar's three dots. */
 	await bar(page).getByRole('button', { name: 'More for 3 files' }).click();
 	await page.getByRole('menuitem', { name: 'Share' }).click();
 	await expect(page.locator('.share-sheet')).toBeVisible();
 
-	// Nothing is written by the press itself. That is the other half of the claim.
+	// The press itself writes nothing.
 	await page
 		.locator('.share-sheet')
 		.getByRole('listitem')
@@ -292,11 +262,9 @@ test('and Apply writes a grant for each of them', async ({ page }) => {
 });
 
 test('the menu favourites every picked file, not the one under the pointer', async ({ page }) => {
-	/* Favorite acts on the whole selection, like every action in that menu: it is the cheapest of
-	 * the actions to prove and uses the same `targetIds` answer as the others.
-	 */
+	/* Favorite uses the same `targetIds` as every action in the menu. */
 	await openGrid(page);
-	/* ONE request naming all three, with the ids in the body rather than in the address. */
+	/* ONE request naming all three, the ids in the body. */
 	let hearted: string[] = [];
 	await page.route('**/api/assets/favorite', (route) => {
 		hearted = route.request().postDataJSON().asset_ids;
@@ -317,9 +285,7 @@ test('the menu favourites every picked file, not the one under the pointer', asy
 });
 
 test('a selection lets go once its action has run', async ({ page }) => {
-	/* The bar and the rings go once Favorite has run, so the job reads as done and the next click
-	 * somewhere else is not still acting on six things.
-	 */
+	/* The bar and rings go once Favorite has run, so the next click acts on nothing stale. */
 	await openGrid(page);
 	await page.route('**/api/assets/favorite', (route) =>
 		route.fulfill({
@@ -330,10 +296,7 @@ test('a selection lets go once its action has run', async ({ page }) => {
 	);
 
 	await pickFirst(page, 3);
-	/* The bar's "Add to" is ONE button opening onto the five places a file can go: five
-	   buttons side by side would be most of a strip that scrolls sideways. The row opens the
-	   SHEET rather than a flyout, because a bar addresses a set and a sheet can tick several at
-	   once; see `FileVerbs`. */
+	/* "Add to" opens a SHEET here, since a bar addresses a set (`FileVerbs`). */
 	await bar(page).getByRole('button', { name: 'Add to' }).click();
 	await page.getByRole('menuitem', { name: 'Favorites' }).click();
 
@@ -344,15 +307,8 @@ test('a selection lets go once its action has run', async ({ page }) => {
 test('the bar reads: what is picked, the rest of the question, then what can be done', async ({
 	page
 }) => {
-	/*
-	 * THE ORDER, read off the bar's own text: the count, the offer to take the whole query, and
-	 * then the verbs ("what is picked, then what can be done"), with select-all to the left of Add
-	 * to. Read off the text rather than off a class, so it is the reading order somebody's eye
-	 * takes and not an arrangement of boxes that happens to produce it.
-	 *
-	 * The bar carries no word "Rating"; the star still says what it is to a screen reader, which is
-	 * asserted where the rating is driven, below.
-	 */
+	/* The order, read off the bar's text: the count, take the whole query, then the verbs, with
+	 * select-all left of Add to. */
 	await openGrid(page);
 	await pickFirst(page, 3);
 
@@ -363,13 +319,7 @@ test('the bar reads: what is picked, the rest of the question, then what can be 
 	expect(text, 'the rating is the mark alone in the bar').not.toContain('Rating');
 });
 
-/*
- * The rest of the verbs, each driven from the bar and each asserted on the request it sends.
- *
- * Favorite above proves the bar addresses the whole selection. These prove the others do too, and
- * that they send what they say they send, which is a different claim. Every verb the bar offers
- * is driven except Share, which has its own two tests above.
- */
+/* Every other verb on the bar, each asserted on the request it sends. */
 
 test('the stars rate every picked file with the value chosen', async ({ page }) => {
 	await openGrid(page);
@@ -385,21 +335,17 @@ test('the stars rate every picked file with the value chosen', async ({ page }) 
 	});
 
 	await pickFirst(page, 3);
-	// The stars are behind a button rather than spread along the bar, and the flyout they open is
-	// portalled to the end of the document, so it is reached from the page, not from the bar.
+	// Behind a button, in a flyout portalled to the end of the document.
 	await bar(page).getByRole('button', { name: 'Rating' }).click();
 	await page
 		.getByRole('group', { name: 'Rating' })
 		.getByRole('button', { name: '3 stars' })
 		.click();
 
-	// ONE request for the three of them, naming all three.
+	// ONE request naming all three.
 	await expect.poll(() => rated.length).toBe(1);
 	expect([...rated[0].ids].sort()).toEqual(['a1', 'a2', 'a3']);
-	// One value for the set, not a nudge each.
-	/* A rating is STORED out of ten and DRAWN on the account's scale, which is five by default.
-	   So pressing the third star writes 6, not 3, and a fixture or a reply written in stars is
-	   a test measuring the conversion backwards. */
+	// One value for the set: the third of five stars is 6 of ten.
 	expect(new Set(rated.map((one) => one.rating))).toEqual(new Set([6]));
 });
 
@@ -417,12 +363,11 @@ test('Hide hides every picked file rather than the first', async ({ page }) => {
 	});
 
 	await pickFirst(page, 3);
-	/* Behind the bar's three dots: the bar names "Add to", the rating and the one that deletes,
-	   and keeps everything else one press away. See `barShape`. */
+	/* Behind the bar's three dots. */
 	await bar(page).getByRole('button', { name: 'More for 3 files' }).click();
 	await page.getByRole('menuitem', { name: 'Hide' }).click();
 
-	// ONE request for the three of them, naming all three.
+	// ONE request naming all three.
 	await expect.poll(() => hidden.length).toBe(1);
 	expect([...hidden[0].ids].sort()).toEqual(['a1', 'a2', 'a3']);
 	expect(hidden[0].vault).toBe(true);
@@ -435,7 +380,7 @@ test('Add to Collection puts every picked file in the one chosen', async ({ page
 		return route.fulfill({
 			status: 200,
 			contentType: 'application/json',
-			// A page, not a bare list: the collections route pages.
+			// A page, not a bare list.
 			body: JSON.stringify({
 				items: [{ id: 'c1', name: 'Summer', item_count: 0 }],
 				total: 1,
@@ -455,10 +400,7 @@ test('Add to Collection puts every picked file in the one chosen', async ({ page
 	});
 
 	await pickFirst(page, 3);
-	/* The bar's "Add to" is ONE button opening onto the places a file can go: five buttons side
-	   by side would be most of a strip that scrolls sideways. Each row opens a flyout over the
-	   whole set, and a press on one of its rows writes to every picked file together; see
-	   `FileVerbs`. */
+	/* "Add to", then the flyout over the whole set. */
 	await bar(page).getByRole('button', { name: 'Add to' }).click();
 	await page.getByRole('menuitem', { name: 'Collection' }).click();
 	const flyout = page.locator('.pick');
@@ -471,12 +413,9 @@ test('Add to Collection puts every picked file in the one chosen', async ({ page
 });
 
 test('Delete asks first, and then deletes every picked file', async ({ page }) => {
-	/* The one verb that destroys something, so the confirm is half of what is being asserted: no
-	 * request may go out on the press that opens the dialog. */
+	/* The one destructive verb: no request may go out on the press that opens the confirm. */
 	await openGrid(page);
-	/* ONE request for the whole selection, not one per file: a DELETE per id would be a round
-	   trip per file, each awaited before the next. The assertion is stronger than a count of
-	   requests: it is the ids that were sent. */
+	/* ONE request with the ids sent, not a DELETE per file. */
 	const asked: string[][] = [];
 	await page.route('**/api/assets/delete', (route) => {
 		asked.push((route.request().postDataJSON() as { asset_ids: string[] }).asset_ids);
@@ -490,7 +429,7 @@ test('Delete asks first, and then deletes every picked file', async ({ page }) =
 	await pickFirst(page, 3);
 	await bar(page).getByRole('button', { name: 'Remove' }).click();
 
-	// Nothing is destroyed by opening the question.
+	// Opening the question destroys nothing.
 	expect(asked).toEqual([]);
 
 	await page.getByRole('button', { name: 'Remove from Sift' }).click();
@@ -500,15 +439,8 @@ test('Delete asks first, and then deletes every picked file', async ({ page }) =
 });
 
 test('Save downloads every picked file, not just the first', async ({ page }) => {
-	/* Watched as downloads rather than as requests. Saving builds an anchor and clicks it, so what
-	 * comes out the other end is a browser download rather than a fetch, and counting requests would
-	 * count the wrong thing.
-	 *
-	 * The file is ASKED FOR before it is claimed, though, and that ask is an ordinary HEAD: a
-	 * selection with one file that has been moved off the disk since it was indexed is the ordinary
-	 * case on a shared library, and the toast says how many of them went. These three ids are
-	 * fixtures the real server has never heard of, so without an answer here every one of them is
-	 * reported as gone and nothing is downloaded at all. */
+	/* Watched as browser downloads, not requests. Each file is asked for first with a HEAD, so
+	 * these fixture ids are answered here or all of them read as gone. */
 	await openGrid(page);
 	await page.route('**/api/assets/*/save-to-device', (route) =>
 		route.fulfill({ status: 200, contentType: 'application/octet-stream', body: 'a file' })
@@ -519,7 +451,7 @@ test('Save downloads every picked file, not just the first', async ({ page }) =>
 	});
 
 	await pickFirst(page, 3);
-	/* Behind the bar's three dots. See `barShape`. */
+	/* Behind the bar's three dots. */
 	await bar(page).getByRole('button', { name: 'More for 3 files' }).click();
 	await page.getByRole('menuitem', { name: /^(Save|Download)/ }).click();
 
@@ -528,23 +460,16 @@ test('Save downloads every picked file, not just the first', async ({ page }) =>
 });
 
 test('Recently viewed offers the same verbs as the grid', async ({ page }) => {
-	/* Two surfaces, one declaration.
-	 *
-	 * Recently viewed is the shared grid narrowed to `viewed=yes`, so picking files there offers
-	 * the same verbs as picking them in the grid. Asserted as an equality rather than as a list,
-	 * so a verb added to one is added to both or this fails.
-	 */
+	/* Recently viewed is the grid narrowed to `viewed=yes`, so its bar must equal the grid's. */
 	await openGrid(page);
 
-	// The grid's bar first. Run task and a stash-box's row under Auto-enrich are drawn from lists
-	// the first bar asks the server for, so the bar is read once they have arrived.
+	// Read once the lists the bar asks the server for have landed.
 	await pickFirst(page, 2);
 	await expect(bar(page).getByRole('button').filter({ hasText: 'Run task' })).toBeVisible();
 	const fromGrid = await bar(page).getByRole('button').allTextContents();
 	await page.getByRole('button', { name: 'Clear selection' }).click();
 
-	// Then the other screen's, over its own tiles. Same endpoint, narrowed. There is no list of
-	// its own behind this screen, which is what lets it page.
+	// The same endpoint, narrowed.
 	await page.goto('/recent');
 	const watched = page.locator('.frame-body-inner');
 	await expect(watched.locator('.tile').first()).toBeVisible();
@@ -555,11 +480,11 @@ test('Recently viewed offers the same verbs as the grid', async ({ page }) => {
 			.click({ modifiers: ['ControlOrMeta'] });
 	}
 	await expect(bar(page)).toContainText('2 files selected');
-	// A page of its own, so the same lists are asked for again and the bar fills as they arrive.
+	// Its own page asks for the same lists again.
 	await expect.poll(() => bar(page).getByRole('button').allTextContents()).toEqual(fromGrid);
 	const fromWatched = await bar(page).getByRole('button').allTextContents();
 
 	expect(fromWatched).toEqual(fromGrid);
-	// And it is not the empty agreement of two bars that offer nothing.
+	// Not two bars agreeing on nothing.
 	expect(fromWatched.length).toBeGreaterThan(3);
 });

@@ -3,23 +3,12 @@ import { expect, test } from './test';
 import { signInAsAdmin } from './admin';
 
 /*
- * Recently viewed, in a real browser.
- *
- * It is the media grid with one filter on it, so it pages, wears the same tile controls, and puts
- * its pager where every other pager is.
- *
- * What these tests are about is why they are here rather than in a unit file: a row of things that
- * LOOK like grid tiles has to BEHAVE like grid tiles: selection, a plain click that opens, the
- * sharing marks and the switch that takes them off. All three need a layout engine and a pointer.
- *
- * The grid's own width and ring-room checks are asked once, in `browse.spec.ts`; asking them a
- * second time here would be a second implementation of one check.
- *
- * The library is intercepted rather than imported. What is under test is the screen, and building a
- * watch history through the import pipeline and the player would make this a test of those.
+ * Recently viewed is the grid with one filter, so its tiles must BEHAVE like grid tiles: selection,
+ * a plain click that opens, the sharing marks and their switch. The width checks live in
+ * `browse.spec.ts`. The library is intercepted.
  */
 
-/** One transparent pixel, as PNG. Small enough to write out, real enough for a browser to decode. */
+/** One transparent pixel, as PNG. */
 const PIXEL = Buffer.from(
 	'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
 	'base64'
@@ -67,13 +56,12 @@ const WATCHED = [
 	}
 ];
 
-/** Every request this screen makes, and what the page it asked for was narrowed by. */
+/** Every request this screen makes, by what it was narrowed by. */
 const asked: string[] = [];
 
 async function serve(page: Page, { marks = true } = {}) {
 	asked.length = 0;
-	/* The library, narrowed. This screen is the grid pointed at `viewed=yes`. There is no endpoint
-	   of its own behind it, which is what lets it page. */
+	/* The grid pointed at `viewed=yes`, with no endpoint of its own, which lets it page. */
 	await page.route('**/api/assets?*', (route) => {
 		asked.push(route.request().url());
 		return route.fulfill({
@@ -88,18 +76,13 @@ async function serve(page: Page, { marks = true } = {}) {
 			})
 		});
 	});
-	/* A real picture, and it has to be real.
-	 *
-	 * `thumb: true` above is what keeps the tile out of the importing shimmer, and it is not enough
-	 * on its own: a still that fails to LOAD puts the tile into its no-preview state, which draws
-	 * the missing-image glyph and nothing else: no clock, and no sharing mark. Serving one pixel
-	 * is what makes the tile a finished tile with things drawn on it. */
+	/* A still that fails to load draws only the missing-image glyph: no clock, no mark. */
 	await page.route('**/api/assets/*/thumb', (route) =>
 		route.fulfill({ status: 200, contentType: 'image/png', body: PIXEL })
 	);
 	await page.route('**/api/assets/*/preview', (route) => route.fulfill({ status: 404 }));
 
-	// The marks' setting, answered without touching the real account's settings.
+	// Without touching the real account's settings.
 	await page.route('**/api/settings', (route) => {
 		if (route.request().method() !== 'GET') return route.continue();
 		return route.fulfill({
@@ -128,9 +111,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 test('it asks the library for what this account has opened, and nothing else', async ({ page }) => {
-	/* The screen adds no language of its own: `viewed=yes` is what the Filters panel sends and what
-	   `viewed:` in the box parses to. Asked any other way this is a second definition of "recently
-	   viewed" that can drift from the one somebody can type. */
+	/* `viewed=yes` is what the Filters panel sends and `viewed:` parses to: one definition. */
 	await serve(page);
 	await page.goto('/recent');
 	await expect(tiles(page)).toHaveCount(WATCHED.length);
@@ -140,9 +121,7 @@ test('it asks the library for what this account has opened, and nothing else', a
 });
 
 test('it draws one tile per thing watched, starting where its title does', async ({ page }) => {
-	/* The row pays for its own inset and lines up with the screen's own title, rather than
-	 * sitting hard against the window edge; asserted rather than eyeballed.
-	 */
+	/* The row's inset lines up with the screen's title. */
 	await serve(page);
 	await page.goto('/recent');
 
@@ -159,9 +138,7 @@ test('it draws one tile per thing watched, starting where its title does', async
 });
 
 test('its tiles can be picked, one at a time and in a run', async ({ page }) => {
-	/* Selection is the other half of "these look like grid tiles": the gesture is shared with the
-	 * grid, so this also guards against the two drifting.
-	 */
+	/* The gesture is shared with the grid, so this guards against drift. */
 	await serve(page);
 	await page.goto('/recent');
 	await expect(tiles(page)).toHaveCount(WATCHED.length);
@@ -178,8 +155,7 @@ test('its tiles can be picked, one at a time and in a run', async ({ page }) => 
 });
 
 test('a plain click on one opens it rather than picking it', async ({ page }) => {
-	// The other side of the same gesture, and the one a wrong capture-phase handler breaks: with
-	// nothing selected, a click is still "open this".
+	// With nothing selected, a click is still "open this".
 	await serve(page);
 	await page.goto('/recent');
 	await expect(tiles(page)).toHaveCount(WATCHED.length);
@@ -193,13 +169,8 @@ test('what has been shared wears a mark, and the setting takes it off', async ({
 	await serve(page);
 	await page.goto('/recent');
 
-	/* One shared and one restricted, of three. The marks are their own controls (pressing one
-	   opens the sharing panel), so they are their own elements beside the picture rather than
-	   spans inside the tile's button.
-
-	   `.mark`, not `.chip`: a chip is pressed or removed, and a mark is a badge over a picture
-	   with a scrim behind it. This counts something it expects to find, so a rename goes red
-	   rather than quiet. */
+	/* One shared and one restricted, of three: `.mark`, a badge with its own press, counted so a
+	   rename goes red rather than quiet. */
 	await expect(wall(page).locator('.marks .mark')).toHaveCount(2);
 	await expect(wall(page).locator('.mark.restricted')).toHaveCount(1);
 

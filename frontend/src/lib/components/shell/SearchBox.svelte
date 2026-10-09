@@ -395,22 +395,7 @@
 		}
 
 		if (row.kind === 'recent') {
-			// It does again what it was: a search runs, a thing takes you back to it.
-			const back = pageFor(row.remembered);
-			if (back !== null) {
-				searchBox.dismiss();
-				// Emptied, exactly as picking a fresh match is.
-				forgetWhatIsTyped();
-				void goto(back);
-				return;
-			}
-			/* A whole query, run as it stands and parsed on the way back in: quoted whole, a
-			   remembered `tags:beach party` would become one tag. */
-			chips = [];
-			pending = null;
-			leading = '';
-			typed = row.remembered.subject;
-			run(row.remembered.subject);
+			chooseRecent(row);
 			return;
 		}
 
@@ -429,32 +414,12 @@
 		const nameFrom = nameSpan(offered) ?? offered.replace_from;
 
 		if (row.kind === 'filter') {
-			// The field is decided and the value is the next question, so it is a pending chip, and the
-			// word being typed became it. What came before the token becomes leading free text.
-			const before = dropToken(typed, into).trim();
-
-			/* An excluded field stays text, because a pending chip cannot hold "and not": finishing the
-			   value chips the whole thing, exclusion included. */
-			if (before.endsWith('-')) {
-				typed = `${before}${row.filter.field}:`;
-			} else {
-				if (before) leading = leading ? `${leading} ${before}` : before;
-				typed = '';
-				pending = row.filter.field;
-			}
+			pendField(row, into);
 		} else if (pending !== null) {
 			// The value for the field already chosen: the whole of what is typed.
 			const field = pending;
 			pending = null;
-			// The words waiting in front of the filter go back to being words.
-			const before = releaseLeading();
-			if (endsWithJoin(before)) {
-				// After a joining word, the filter goes where it was typed. See `writeAndReparse`.
-				writeAndReparse(`${before} `, field, row.match.value);
-			} else {
-				addChip({ field, value: row.match.value }, 0);
-				typed = before;
-			}
+			fillPending(field, row);
 		} else {
 			// The row's own field, or the list's single token: both the server's, never worked out here.
 			const field = row.match.field ?? offered.token;
@@ -477,6 +442,53 @@
 		searchBox.highlighted = -1;
 		searchBox.suggest(whole);
 		input?.focus();
+	}
+
+	// It does again what it was: a search runs, a thing takes you back to it.
+	function chooseRecent(row: Extract<Row, { kind: 'recent' }>) {
+		const back = pageFor(row.remembered);
+		if (back !== null) {
+			searchBox.dismiss();
+			// Emptied, exactly as picking a fresh match is.
+			forgetWhatIsTyped();
+			void goto(back);
+			return;
+		}
+		/* A whole query, run as it stands and parsed on the way back in: quoted whole, a
+		   remembered `tags:beach party` would become one tag. */
+		chips = [];
+		pending = null;
+		leading = '';
+		typed = row.remembered.subject;
+		run(row.remembered.subject);
+	}
+
+	// The field is decided and the value is the next question, so it is a pending chip, and the
+	// word being typed became it. What came before the token becomes leading free text.
+	function pendField(row: Extract<Row, { kind: 'filter' }>, into: number) {
+		const before = dropToken(typed, into).trim();
+
+		/* An excluded field stays text, because a pending chip cannot hold "and not": finishing the
+		   value chips the whole thing, exclusion included. */
+		if (before.endsWith('-')) {
+			typed = `${before}${row.filter.field}:`;
+		} else {
+			if (before) leading = leading ? `${leading} ${before}` : before;
+			typed = '';
+			pending = row.filter.field;
+		}
+	}
+
+	function fillPending(field: string, row: Extract<Row, { kind: 'match' }>) {
+		// The words waiting in front of the filter go back to being words.
+		const before = releaseLeading();
+		if (endsWithJoin(before)) {
+			// After a joining word, the filter goes where it was typed. See `writeAndReparse`.
+			writeAndReparse(`${before} `, field, row.match.value);
+		} else {
+			addChip({ field, value: row.match.value }, 0);
+			typed = before;
+		}
 	}
 
 	function onInput() {
@@ -532,6 +544,24 @@
 		requestAnimationFrame(() => input?.setSelectionRange(0, all.length));
 	}
 
+	function selectsMoreThanText(event: KeyboardEvent): boolean {
+		return (
+			(event.key === 'a' || event.key === 'A') &&
+			(event.ctrlKey || event.metaKey) &&
+			!event.altKey &&
+			(chips.length > 0 || pending !== null || leading !== '')
+		);
+	}
+
+	function backspacesAtStart(event: KeyboardEvent): boolean {
+		return (
+			event.key === 'Backspace' &&
+			(pending !== null || chips.length > 0) &&
+			input?.selectionStart === 0 &&
+			input?.selectionEnd === 0
+		);
+	}
+
 	function onKey(event: KeyboardEvent) {
 		/* Ctrl + Left and Right move the switch in front of the field, the way each arrow points,
 		 * where the switch is drawn; elsewhere they are the browser's word jumps. */
@@ -545,12 +575,7 @@
 		}
 
 		/* Ctrl/Cmd+A with anything held outside the text field; a plain text query keeps the browser's. */
-		if (
-			(event.key === 'a' || event.key === 'A') &&
-			(event.ctrlKey || event.metaKey) &&
-			!event.altKey &&
-			(chips.length > 0 || pending !== null || leading !== '')
-		) {
+		if (selectsMoreThanText(event)) {
 			event.preventDefault();
 			selectWholeQuery();
 			return;
@@ -558,12 +583,7 @@
 
 		/* Backspace at the very start takes the last decision off, only with the caret at the start
 		 * and nothing selected, so it never eats a chip while somebody edits the text. */
-		if (
-			event.key === 'Backspace' &&
-			(pending !== null || chips.length > 0) &&
-			input?.selectionStart === 0 &&
-			input?.selectionEnd === 0
-		) {
+		if (backspacesAtStart(event)) {
 			event.preventDefault();
 			// The pending field first, as the nearest and latest decision; a finished chip is taken apart.
 			if (pending !== null) dropPending();

@@ -1,16 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Helpers for signing a test client in.
-
-Some tests need a real session cookie against a running application: the authorization matrix, in
-particular, has to call protected routes as a real admin and a real guest. Creating one through the
-`/api/auth/users` endpoints needs a session to make the call with, which is the thing being
-set up, so these seed the user and the session directly, the way the service would, using the same
-hashing and the same tables.
-
-They open their own short-lived connection to the application's database file rather than reaching
-into the running app's connections, because those belong to the app's event loop and are not safe to
-touch from a synchronous test thread. WAL mode makes a second writer to the same file safe.
-"""
+"""Sign a test client in by seeding the user and session directly, as the service would."""
 
 from __future__ import annotations
 
@@ -51,8 +40,7 @@ VALUES (?, ?, ?, ?, ?, ?)
 
 
 def _hasher() -> Hasher:
-    # Floor parameters: the fastest a real hash is allowed to be, so seeding many test users does
-    # not dominate a run while still producing a hash that verifies.
+    # The floor parameters: the fastest hash that still verifies.
     return Hasher(resolve_argon2_params(None))
 
 
@@ -74,8 +62,7 @@ async def _ensure_user(database: Database, role: str, username: str, password: s
 
 
 async def _open_session(database: Database, user_id: str, token: str) -> None:
-    # Real wall-clock time: the service compares expires_at against time.time(), so a session dated
-    # from any other clock would read as either already expired or good for a century.
+    # The service compares expires_at with time.time().
     now = int(time.time())
     await database.execute(
         _INSERT_SESSION,
@@ -89,13 +76,7 @@ _SET_PIN = "UPDATE users SET pin_hash = ? WHERE id = ?"
 
 
 def give_pin(db_path: Path, user_id: str, pin: str = TEST_PIN) -> str:
-    """Give a seeded user a PIN, the way setting one would. Returns the PIN.
-
-    Anything that goes into the vault needs one first: the PIN is the only thing that opens the
-    vault again, so concealing something without one would be losing it, and the server refuses.
-    A test that is about what concealment *does* therefore has to get past that refusal, and this
-    is how, without spending a password round trip on a precondition it is not testing.
-    """
+    """Give a seeded user a PIN, which concealing anything needs first. Returns the PIN."""
 
     async def run() -> None:
         database = Database(db_path, readers=1)
@@ -112,11 +93,7 @@ def give_pin(db_path: Path, user_id: str, pin: str = TEST_PIN) -> str:
 def establish_session(
     db_path: Path, *, role: str, username: str, password: str
 ) -> tuple[str, str, str]:
-    """Seed a user (if absent) and a fresh session for it. Sync, for use inside a TestClient.
-
-    Returns (user_id, session_token, csrf_token). Set the token as the session cookie and send the
-    CSRF token in the header on state-changing requests.
-    """
+    """Seed a user (if absent) and a session: (user_id, session_token, csrf_token)."""
     token = new_token()
 
     async def run() -> str:
@@ -134,35 +111,18 @@ def establish_session(
 
 
 def signed_in_id(client: object) -> str:
-    """The id of whoever the client is currently signed in as.
-
-    Read back over HTTP rather than remembered from the sign-in, so it is the user the server
-    believes is calling. Every test that hides something needs it, because hiding is per user and
-    there is no such thing as hiding a row for nobody in particular.
-    """
+    """The id the server believes the client is signed in as."""
     return str(client.get("/api/auth/me").json()["id"])  # type: ignore[attr-defined]
 
 
 def hide_for_caller(client: object, kind: str, object_id: str, *, hidden: bool = True) -> None:
-    """Hide one thing from whoever the client is signed in as.
-
-    Straight into the row the resolver reads, rather than through the route: hiding through the
-    route needs a PIN, and most tests that need something hidden are not about the PIN. What is
-    being set up is the state.
-    """
+    """Hide one thing from the signed-in user, in the row itself: the route needs a PIN."""
     app: FastAPI = client.app  # type: ignore[attr-defined]
     database = part_of_app(app, DATABASE)
     hide_for(Path(database.path), kind, object_id, signed_in_id(client), hidden=hidden)
 
 
 async def user_of_session(service: object, token: str) -> str | None:
-    """The user behind a session token, or None. For tests that only want the id.
-
-    The service answers with the user AND whether the app is locked on that session, because
-    every request needs both and the second is useless without the first. A convenience wrapper
-    that dropped the lock state would, on the service, be a public method nothing in the
-    application calls, kept alive entirely by the tests below: the shape a reachability gate exists
-    to refuse. So the convenience lives here, with the tests that want it.
-    """
+    """The user behind a session token, or None; here, since only tests want it alone."""
     resolved = await service.resolve_session_state(token)  # type: ignore[attr-defined]
     return None if resolved is None else str(resolved.user_id)

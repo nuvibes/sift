@@ -2,16 +2,8 @@ import { type Page } from '@playwright/test';
 import { expect, test } from './test';
 import { ADMIN, PASSWORD, signInAsAdmin } from './admin';
 
-/* The Jobs dashboard, in a browser, against the real server.
- *
- * What no other kind of test can see is who is turned away. The dashboard reports what Sift is
- * doing with the files in somebody's library, which is a picture of that library. Not rendering
- * the nav item is not what keeps a guest out of it, and this asks the server directly, with no
- * interface involved.
- *
- * The connection that tells this screen when the queue has moved is one connection for the whole
- * application, so it is proved where it lives. See the live-connection spec.
- */
+/* The dashboard of jobs, against the real server: the nav item not drawing is not what keeps a
+ * guest out, so the server is asked directly. */
 
 test('the dashboard is a screen, not a placeholder', async ({ page }) => {
 	await signInAsAdmin(page);
@@ -22,14 +14,8 @@ test('the dashboard is a screen, not a placeholder', async ({ page }) => {
 });
 
 test('the queue is drawn from what the server answered with, not left blank', async ({ page }) => {
-	/* What is worth asserting is that the screen draws what the server answered with rather than
-	 * rendering nothing, on a row that is really there, after waiting for it. The empty message
-	 * is not a signal: the screen draws it while `queue.page` is still null.
-	 *
-	 * The row is arranged, not assumed: a fresh install queues nothing on its own, so the test runs
-	 * a task the way `Settings > Tasks and Activity > Tasks` does and looks for the row its answer says is on Activity,
-	 * under the name the server gives that row.
-	 */
+	/* A real row from the server's answer, after running a task as Settings does: a fresh install
+	 * queues nothing, and the empty message is drawn while loading. */
 	await signInAsAdmin(page);
 	const me = await page.request.get('/api/auth/me');
 	const started = await page.request.post('/api/tasks/duplicates/run', {
@@ -54,8 +40,7 @@ test('the queue is drawn from what the server answered with, not left blank', as
 
 test.describe('who is turned away', () => {
 	test('somebody signed out gets nothing from the API itself', async ({ request }) => {
-		// No page, no navigation, no nav item to not render. This is the request a stolen guess would
-		// make, and the server answering it is the only thing that has ever kept anyone out.
+		// The request a stolen guess would make; the server is what keeps anyone out.
 		const listed = await request.get('/api/jobs');
 
 		expect(listed.status()).toBe(401);

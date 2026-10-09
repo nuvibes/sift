@@ -1,24 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { drawnWhileFilled, stage } from './stage.svelte';
 
-/*
- * `document.fullscreenElement`, spelled out.
- *
- * This environment has no fullscreen at all, so the property is `undefined` rather than `null`,
- * and `undefined === null` is false, which quietly makes the fault below untestable. Putting the
- * real value in is what makes the mutation fail: with the guard removed and this stub in place,
- * every test here goes red, and without the stub none of them do.
- */
+// jsdom has no fullscreen; the real `null` here is what lets the guard's test fail.
 beforeEach(() => {
 	Object.defineProperty(document, 'fullscreenElement', { value: null, configurable: true });
 });
 
-/* The one question this store answers ("is the shell filling the window"), and the way it can
-   get that question wrong for every screen that is not.
-
-   `document.fullscreenElement` is null at rest, and the element is null until the layout registers
-   it, which is one effect later than the first time the watcher runs. Comparing the two directly
-   would make `null === null` mean "filled". */
+/* Both are null at rest and before registering, which must not read as "filled". */
 
 afterEach(() => stage.register(null));
 
@@ -41,17 +29,7 @@ describe('whether the shell is filling the window', () => {
 		unwatch();
 	});
 
-	/*
-	 * What a wrong answer to "is this filled" would cost, none of which looks like this store: the
-	 * Theater screen hides its own heading while filled, so the heading would vanish; the bar goes
-	 * on an idle clock while filled, so it would vanish in an ordinary window; and sending the wall
-	 * to the corner leaves fullscreen on the way, so a wrong flag would fill the window instead.
-	 *
-	 * `B` on a screen that drives its own chrome, which is Theater alone. The contract for `driven`
-	 * is that the screen writes `barHidden`; the wall re-asserts its answer only when its answer
-	 * changes, so `B` writing `barHidden` directly would leave the bar hidden with nothing bringing
-	 * it back.
-	 */
+	// `B` on a screen driving its own chrome (Theater) must tell it, or the bar stays hidden.
 	it('tells a driven screen rather than writing over it', () => {
 		stage.register(null);
 		Object.defineProperty(document, 'fullscreenElement', { value: null, configurable: true });
@@ -78,9 +56,7 @@ describe('whether the shell is filling the window', () => {
 	});
 
 	it('still writes the answer itself on a screen nothing is driving', () => {
-		/* The positive control. Every other filled screen has no chrome of its own, so the shell's
-		   own clock is the only thing that can answer, and a branch that always deferred would
-		   leave the key doing nothing at all there. */
+		// The positive control: elsewhere the shell's own clock is the only answer.
 		const element = document.createElement('div');
 		stage.register(element);
 		Object.defineProperty(document, 'fullscreenElement', { value: element, configurable: true });
@@ -108,13 +84,7 @@ describe('whether the shell is filling the window', () => {
 	});
 });
 
-/*
- * A LAYER THAT LIVES OUTSIDE THE FILLED BOX IS CARRIED INTO IT, and back out.
- *
- * The toaster is drawn after the shell, and a browser filling the screen paints the filled element's
- * subtree and nothing else, so left outside, every toast raised on a filled wall would be raised,
- * counted down and dismissed with nothing on screen.
- */
+// The toaster lives outside the filled box, so it is carried in while filled and back after.
 describe('a layer kept drawn while the screen is filled', () => {
 	function arrange() {
 		const box = document.createElement('div');

@@ -1,14 +1,5 @@
-/* Adding things: a dropped file, a pasted link, an upload, a link typed into the Add panel.
- *
- * The rule for what a captured item *is* (a link to fetch, or bytes to import) lives on the
- * server, in one place, so this does not decide it a second time and cannot drift from it. A drop
- * or a paste hands over whatever it has, a link and a file both, and the server routes it: a usable
- * link wins (it fetches the original, not the thumbnail the drag carried), and the file is the
- * fallback. The client's job is only to gather what the browser gives and to say what happened.
- *
- * All of it is admin-only on the server. This does not gate on that (hiding a control is not a
- * permission), but a refusal comes back as a plain toast rather than a mystery.
- */
+/* Adding things: a dropped file, a pasted link, an upload, a typed link. The server decides what a
+ * captured item is; this gathers what the browser gives and says what happened. */
 
 import { api, ApiError, request, type ApiPath } from '$lib/api/client';
 import { UNREACHABLE } from '$lib/shell/unreachable';
@@ -17,8 +8,7 @@ import { toasts } from '$lib/shell/toasts.svelte';
 import { imports } from '$lib/library/imports.svelte';
 import type { components } from '$lib/api/schema';
 
-/** A file that is being taken in, for as long as it takes to settle. A grid draws these as
- *  shimmer placeholders; it clears one when its thumbnail exists. */
+/** A file being taken in, drawn as a placeholder until its thumbnail exists. */
 export interface Importing {
 	id: string;
 	name: string;
@@ -34,21 +24,13 @@ class Capture {
 	/** Files taken in and not yet drawn. Published for the grid to render as placeholders. */
 	imports = $state<Importing[]>([]);
 
-	/**
-	 * Forget a placeholder once its tile exists. Called by whatever renders the grid.
-	 *
-	 * A file handed over that the library already has lands ONCE: nothing is copied, and the
-	 * import's note is the sentence that says where it already is ("Already here: Photos >
-	 * Summer"). Said here, when the import settles, because this is where the drop that asked is
-	 * still remembered; the note is read off the queue page the grid has just been told about.
-	 */
+	/** Forget a placeholder once its tile exists, saying "Already here" for a duplicate. */
 	settled(id: string): void {
 		const item = this.imports.find((one) => one.id === id);
 		if (!item) return;
 		const note = imports.page?.jobs.find((job) => job.id === id)?.note;
 		if (note) {
-			/* The answer replaces the question: "Importing..." left standing over "Already here" is
-			   two messages about one drop, and the first of them is no longer true. */
+			/* The answer replaces "Importing...", which is no longer true. */
 			if (item.toast !== undefined) toasts.dismiss(item.toast);
 			toasts.show(note);
 		}
@@ -96,14 +78,7 @@ class Capture {
 		await this._clipboard('paste', destFolderId, { url: url || undefined, file: files[0] });
 	}
 
-	/**
-	 * A Paste BUTTON, rather than a paste event. Same routing as everything else here.
-	 *
-	 * The two are not the same path and cannot be: an event hands over its own data, while this has
-	 * to ASK the clipboard, which only the desktop client and a secure context are allowed to do.
-	 * `canReadClipboard` is what decides whether the button is on screen at all; this is what it
-	 * does when it is.
-	 */
+	/** A Paste button asks the clipboard, which only the desktop or a secure context may. */
 	async pasteFromClipboard(destFolderId: string | null = null): Promise<void> {
 		const { text, file } = await readClipboard();
 		if (!text && file === null) {
@@ -145,10 +120,7 @@ class Capture {
 	}
 
 	private _failed(error: unknown): void {
-		// Adding media is one of the flows the server writes real guidance for: "Choose where this
-		// should go, or set a default download folder" tells someone exactly what to change, and the
-		// flat "That request was not valid" leaves them stuck. So this screen opts into the server's
-		// own words when it sent any, and only falls back to the one-liner when it did not.
+		// The server's own words for adding media say what to change; else the one-liner.
 		const message = error instanceof ApiError ? (error.detail ?? error.message) : UNREACHABLE;
 		toasts.show(message, { tone: 'error' });
 	}

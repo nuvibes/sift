@@ -1,8 +1,5 @@
 <script lang="ts">
-	/*
-	 * The row at the top of a screen: what this page is on the left, what it can do on the right.
-	 * One component, so the title and the controls sit the same on every screen.
-	 */
+	/* The row at the top of every screen: what it is on the left, what it can do on the right. */
 	import type { Snippet } from 'svelte';
 	import Icon from '$lib/components/Icon.svelte';
 	import { counted, withSize } from '$lib/entity/entity-counts';
@@ -17,14 +14,11 @@
 		level?: 1 | 2;
 		/** How many things are on the screen. Scoped by the server to what this viewer may see. */
 		count?: number;
-		/**
-		 * How big the files `count` counts are, in bytes, said beside it ("12,000 \u00b7 1.1 TB").
-		 * Only for a count of FILES, off the same answer as the count; null or absent says no size.
-		 */
+		/** The bytes behind a count of files, said beside the count. */
 		bytes?: number | null;
-		/** A control belonging to the TITLE, drawn right after the name (Browse's folder button). */
+		/** A control belonging to the title, drawn right after the name. */
 		beside?: Snippet;
-		/** Hide the title and the count where the row of tabs is the heading; clipped, not removed. */
+		/** Hide the title and count where a row of tabs is the heading; clipped, not removed. */
 		titleHidden?: boolean;
 		/** A word about what the screen is DOING, beside the title. Not what it contains. */
 		status?: Snippet;
@@ -32,11 +26,7 @@
 		controls?: Snippet;
 		/** A sentence under the title, for a screen whose whole idea needs one. */
 		lede?: Snippet;
-		/**
-		 * True on a screen that reaches the edges of the window and gets no padding from the layout
-		 * around it: a grid that scrolls itself. The row supplies that padding instead, so its title
-		 * lands where every other screen's does.
-		 */
+		/** For a screen that scrolls itself with no layout padding: the row supplies it. */
 		inset?: boolean;
 	}
 
@@ -68,17 +58,14 @@
 
 		{@render beside?.()}
 
-		<!-- Beside the title rather than in it, so the heading stays the name of the screen. Grouped
-		     by the one count formatter, so the header and a filter panel write a number the same
-		     way. -->
+		<!-- Beside the title, so the heading stays the screen's name; one count formatter. -->
 		{#if count !== undefined && count > 0 && !titleHidden}
 			<span class="count">{withSize(counted(count), count, bytes)}</span>
 		{/if}
 
 		{@render status?.()}
 
-		<!-- Always rendered, even empty. It is what pushes the title to the left and holds the row's
-		     height steady, so a screen with controls and a screen without do not sit at two heights. -->
+		<!-- Always rendered, so the row's height holds with or without controls. -->
 		<div class="controls">{@render controls?.()}</div>
 	</div>
 
@@ -88,10 +75,7 @@
 </header>
 
 <style>
-	/*
-	 * No gap of its own under the row: the frame puts `--page-gap` between the header and the body,
-	 * and the gap belongs to the thing that puts the two next to each other, not to each screen.
-	 */
+	/* No gap of its own: the frame puts `--page-gap` between header and body. */
 	.page-header {
 		padding-block-end: 0;
 	}
@@ -109,19 +93,12 @@
 		color: var(--sift-ink-3);
 	}
 
-	/* On a screen that owns its own scroll there is no padding from the layout, so the row stands in
-	   for it: the same inset on the top and sides. Everywhere else the layout has already done
-	   this and a second copy would double it. */
+	/* A screen owning its scroll gets no layout padding, so the row stands in for it. */
 	.page-header.inset {
 		padding: var(--space-6) var(--space-6) var(--page-gap);
 	}
 
-	/*
-	 * One size for every screen: the display size, 1.4375rem.
-	 *
-	 * A title left to each screen ranges from about 1rem to the browser's own 2em, which puts the
-	 * two extremes of the same thing about twice as far apart as they should ever be.
-	 */
+	/* One display size for every screen's title. */
 	h1 {
 		display: flex;
 		align-items: center;
@@ -136,8 +113,7 @@
 		color: var(--sift-ink);
 	}
 
-	/* Quieter when the row is a section of a page rather than the page. The controls beside it are
-	   the same either way: somebody looking at one person's files wants the tile size just as much. */
+	/* Quieter when the row is a section of a page; the controls are the same. */
 	h2 {
 		min-block-size: 36px;
 		display: flex;
@@ -149,8 +125,7 @@
 		color: var(--sift-ink);
 	}
 
-	/* The glyph is quieter than the word. It is a landmark, not the name: at the same weight as
-	   the text it competes with the thing it is pointing at. */
+	/* The glyph is a landmark, quieter than the name it points at. */
 	h1 :global(.icon) {
 		color: var(--sift-ink-3);
 	}
@@ -173,8 +148,7 @@
 		justify-content: flex-end;
 	}
 
-	/* Beside a row of tabs the controls take what the tabs leave, and a tab with no box keeps the
-	   box's room, so the strip wraps the same on every tab. */
+	/* Beside tabs, a tab with no box keeps its room, so the strip wraps alike on every tab. */
 	@media (min-width: 768px) {
 		.tabbed .controls {
 			flex: 1 1 0%;
@@ -183,9 +157,7 @@
 		}
 	}
 
-	/* Off the screen, still in the accessible tree. Clipped rather than hidden, because
-	   `display: none` and `visibility: hidden` both take it out of the tree and leave the section
-	   unnamed: the same rule `Field` uses for a label it does not draw. */
+	/* Clipped, not hidden, so the section stays named in the accessible tree. */
 	.clipped {
 		position: absolute;
 		width: 1px;
@@ -195,12 +167,7 @@
 		white-space: nowrap;
 	}
 
-	/*
-	 * At a phone's width the title keeps its line with the count beside it, and the controls take
-	 * the line under it, starting where the title starts, wrapping onto another line when they
-	 * must. Beside the title they would wrap into a stack of right-aligned lines with the
-	 * count floating between them; nothing on a page scrolls sideways.
-	 */
+	/* On a phone the controls take the line under the title; nothing scrolls sideways. */
 	@media (max-width: 767px) {
 		.row {
 			flex-wrap: wrap;
@@ -209,9 +176,7 @@
 		.controls {
 			flex: 1 0 100%;
 			margin-left: 0;
-			/* Packed to the end, the one right edge every control on a phone ends at: a form's
-			   Cancel and Save stand here and again at the foot of the form, and the two pairs read
-			   as one only when they pack the same way. */
+			/* Packed to the end, the one right edge every control on a phone ends at. */
 			justify-content: flex-end;
 		}
 

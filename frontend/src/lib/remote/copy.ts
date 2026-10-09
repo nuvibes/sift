@@ -1,13 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-/*
- * The Remote's words: one table, so the screen and its tests read the same sentences.
- *
- * ONE VOCABULARY. The controls wear the desk's own words and glyphs for the same verbs (the popout's
- * bar and drawer, the mini player, Theater's bar and a cell's drawer), so a press named on the
- * phone is the press of that name at the desk. The acts' words are `ACTS`, the one table every
- * player reads. A word here that the desk does not say is a second
- * name for one thing, and the one-word-per-thing gate reads this file.
- */
+/* The Remote's words, in the desk's own words for the same verbs (`ACTS` for the acts); the
+ * one-word-per-thing gate reads this file. */
 import type { ScreenOut } from './wire';
 import { SKIP_SECONDS } from '$lib/player/skip';
 import { ACTS } from '$lib/player/acts';
@@ -64,9 +57,7 @@ export const COPY = {
 	solo: 'Hear only this',
 	timer: 'Move on after',
 	noTimer: 'No timer',
-	/* Why a control is dimmed. The first three are presses the phone cannot make for the desk: a
-	   browser fills the screen only for a press made there, and a screenshot and the facts panel are
-	   drawn on the computer's own screen. */
+	/* Why a control is dimmed; the first three are presses only the desk can make. */
 	fillAtTheDesk: 'Full screen needs a press on your computer',
 	screenshotAtTheDesk: 'Screenshots are taken on your computer',
 	statsAtTheDesk: 'Stats for nerds opens on your computer',
@@ -79,7 +70,6 @@ export const LOOP_STEPS = ['Set the loop start', 'Set the loop end', 'Clear the 
 /** The timer's choices on the phone, in seconds: none, then the lengths a wall is usually left on. */
 export const TIMER_SECONDS = [0, 10, 30, 60, 300] as const;
 
-/** A timer's length as the chooser says it. */
 export function timerWords(seconds: number): string {
 	if (seconds === 0) return COPY.noTimer;
 	return `After ${sayLength(seconds)}`;
@@ -100,15 +90,7 @@ export function cellLabel(index: number): string {
 	return `Cell ${index + 1}`;
 }
 
-/**
- * What a screen is playing, in the words the phone may say, or null when it may name nothing.
- *
- * Its file's name where this phone's session may open it and the name has been read; Something
- * Hidden is playing where the phone's session keeps the file in Hidden (whatever the desk has
- * open). Null otherwise, and the page says only whether it plays: the list carries no file both for
- * a screen with nothing loaded and for a file this phone cannot reach, and telling those apart
- * here would be a guess.
- */
+/** What a screen plays in words the phone may say: its name, Something Hidden, or null. */
 export function whatPlays(
 	screen: Pick<ScreenOut, 'file' | 'hidden'>,
 	names: Readonly<Record<string, string>>

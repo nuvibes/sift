@@ -1,30 +1,8 @@
 /*
- * The phone's side of the remote: the signed-in user's screens, and a command sent to one.
- *
- * The list is read when a page that shows it asks, and again whenever the server says one of the
- * screens moved (`screenChanges`), whenever the page comes back from the background, and at least
- * every half of `listed_for_seconds`, so a screen that stopped speaking leaves the list when the
- * server lets it go rather than when somebody reloads.
- *
- * **Every age here is carried on by this page's own clock** from the moment the list was read,
- * never by the wall clock: the server has already carried the position to the moment it answered,
- * and a wall clock can step backwards (a machine correcting its time does). So a position, and how long ago a screen last spoke, both move on by `performance.now()` alone.
- *
- * ## Whether a command landed
- *
- * The server accepting a command says only that it was handed on. The screen says it DID it by
- * reporting the command's id back as `acted_on`, which rings the bell, which re-reads this list.
- * A command whose id has not come back by `ANSWER_MS` is one the screen never heard (asleep, gone,
- * or a tab frozen in the background), and the page says so in one line rather than leaving a
- * press that did nothing looking like a press that is still on its way.
- *
- * ## Saying which screen this phone is driving
- *
- * While a page watches the list and this phone is in front of somebody, the screen on the card is
- * told it is being driven, and by what (`PUT .../controllers/{this phone}`), so the desk can say
- * so; picking another screen, leaving the page or putting the phone away lets go of it immediately.
- * Said again every `REPORT_EVERY_MS` while it stays on the same screen, because the server lets a
- * phone go when it stops saying so, which is what happens to a phone that was simply switched off.
+ * The phone's side of the remote: the user's screens, re-read on every bell, on return from the
+ * background and every half of `listed_for_seconds`. Ages move by `performance.now()`, never the
+ * wall clock. A command landed when its id comes back as `acted_on`; the screen on the card is
+ * told this phone drives it, said again every `REPORT_EVERY_MS`.
  */
 
 import { ApiError, api } from '$lib/api/client';
@@ -39,22 +17,15 @@ const SCREENS = '/remote/screens';
 
 type AssetDetail = components['schemas']['AssetDetail'];
 
-/**
- * How long a press waits for its screen to say it acted before the page says it did not.
- *
- * The server drops a command nobody took within four seconds (`COMMAND_SECONDS`), so by five the
- * answer is no: a screen that had heard it would have acted and said so well inside that.
- */
+/** The server drops an untaken command after four seconds (`COMMAND_SECONDS`). */
 const ANSWER_MS = 5_000;
 
-/** How often the page's own clock is read while the list is watched: a position moves in whole
- *  seconds on screen, so twice a second keeps it from ever looking stuck. */
+/** Twice a second, so a position shown in whole seconds never looks stuck. */
 const TICK_MS = 500;
 
-/** What the page says when a screen took no notice of a press. */
 const NO_ANSWER = "The screen didn't answer. It may be asleep or closed.";
 
-/** This phone's name for the server while it drives a screen: random, and made on plain http. */
+/** This phone's name for the server while it drives a screen, made on plain http too. */
 function mintController(): string {
 	const bytes = new Uint8Array(16);
 	crypto.getRandomValues(bytes);
@@ -62,46 +33,28 @@ function mintController(): string {
 }
 
 export class RemoteList {
-	/** The user's screens as last read, the most recently heard first. */
 	screens = $state<ScreenOut[]>([]);
-	/** Whether the list has been read at least once, so a page can tell "none" from "not yet". */
+	/** Whether the list has been read, so a page can tell "none" from "not yet". */
 	read = $state(false);
-	/**
-	 * How many of the user's browser tabs hold a player or a wall they do not offer, because that
-	 * browser's own switch is off. The page says where the switch is while this is above nought.
-	 */
+	/** Tabs holding a player or wall back with their switch off; the page says where it is. */
 	notOffering = $state(0);
-	/**
-	 * The screen the page is driving, by its id.
-	 *
-	 * The one heard from last when the list is first read, and then kept while it is listed: the
-	 * server orders the list by who spoke last, and every screen speaks every few seconds, so a pick
-	 * made by position would hop between two desks on its own. Picked again, the same way, only
-	 * when the one picked has gone.
-	 */
+	/** The screen driven, kept while listed: the list reorders every few seconds. */
 	picked = $state<string | null>(null);
 	/** The files' names, by id, as the phone's own session reads them. See `learnNames`. */
 	names = $state<Record<string, string>>({});
-	/** One line saying what went wrong with the last press or read, or null. */
 	problem = $state<string | null>(null);
-	/** This page's clock, refreshed while the list is watched. What every age below is read from. */
+	/** This page's clock, refreshed while the list is watched. */
 	at = $state(0);
-	/** How long the server keeps listing a screen that stopped speaking, in seconds. */
 	#listedFor = $state(30);
-	/** When the list was read, on this page's own clock. */
 	#readAt = $state(0);
-	/** The press still waiting for its screen to say it acted. */
 	#waiting: { id: string; screen: string; sentAt: number } | null = null;
-	/* The press that went unanswered: which screen, and when this page gave up on it. The line saying
-	   so stands until that screen speaks again or another is picked; see `#heardSince`. */
+	/* The press that went unanswered; its line stands until that screen speaks (`#heardSince`). */
 	#unanswered: { screen: string; at: number } | null = null;
 	#asked = new Set<string>();
 	#watching = 0;
 	#timer: ReturnType<typeof setInterval> | null = null;
 	#tick: ReturnType<typeof setInterval> | null = null;
-	/** This phone, to the server, for as long as the tab is open. */
 	readonly controller = mintController();
-	/** The screen this phone last said it is driving, and when, on this page's own clock. */
 	#held: { screen: string; at: number } | null = null;
 	readonly #now: () => number;
 	readonly #label: () => string;
@@ -113,7 +66,7 @@ export class RemoteList {
 		this.#now = now;
 		this.#label = label;
 		this.at = now();
-		// A store that lives as long as the tab, so the plain subscription rather than the rune.
+		// Lives as long as the tab, so the plain subscription rather than the rune.
 		screenChanges.subscribe(() => {
 			if (this.#watching > 0) void this.load().catch(() => {});
 		});
@@ -143,12 +96,7 @@ export class RemoteList {
 		this.#settleHold();
 	}
 
-	/**
-	 * Tell the screens which one this phone is driving: the one on the card while a page watches
-	 * and the phone is in front of somebody, and none otherwise. Let go of the one it was driving
-	 * the moment that changes; said again only when due, so a list re-read on every bell does not
-	 * turn into a request per bell.
-	 */
+	/** Tell the screens which one this phone drives, letting go now; said again when due. */
 	#settleHold(): void {
 		const inFront = typeof document === 'undefined' || document.visibilityState !== 'hidden';
 		const target = this.#watching > 0 && inFront ? (this.current?.screen ?? null) : null;
@@ -168,7 +116,7 @@ export class RemoteList {
 		);
 	}
 
-	/** A request whose failure changes nothing: the server lets a phone go that stops saying so. */
+	/** A request whose failure changes nothing: the server lets a quiet phone go. */
 	async #quietly(request: () => Promise<unknown>): Promise<void> {
 		try {
 			await request();
@@ -182,7 +130,6 @@ export class RemoteList {
 		this.#timer = setInterval(() => void this.load().catch(() => {}), (listedFor * 1000) / 2);
 	}
 
-	/** Re-read the page's clock, and give up on a press whose screen has had long enough. */
 	tick(): void {
 		this.at = this.#now();
 		const waiting = this.#waiting;
@@ -193,11 +140,7 @@ export class RemoteList {
 		}
 	}
 
-	/*
-	 * The screen that did not answer has spoken since: it is not asleep or closed, so the line
-	 * saying it may be is taken away: otherwise the line stands under a card that has
-	 * just reported a new file and a new position, contradicting it, until the next press.
-	 */
+	/* The screen that did not answer has spoken since, so the line saying it may be asleep goes. */
 	#heardSince(): void {
 		const unanswered = this.#unanswered;
 		if (unanswered === null || this.problem !== NO_ANSWER) return;
@@ -208,7 +151,6 @@ export class RemoteList {
 		this.problem = null;
 	}
 
-	/** A press answered: its id came back on the screen it was sent to. */
 	#settleWaiting(): void {
 		const waiting = this.#waiting;
 		if (waiting === null) return;
@@ -218,13 +160,7 @@ export class RemoteList {
 		if (this.problem === NO_ANSWER) this.problem = null;
 	}
 
-	/**
-	 * A page showing the list starts watching it. Returns what stops.
-	 *
-	 * Watching reads the list now, on every bell, on every return from the background (a phone
-	 * that was put in a pocket may have missed any number of bells, and its timers were paused),
-	 * and at least every half of the time a quiet screen stays listed.
-	 */
+	/** Start watching the list; a phone back from a pocket may have missed any number of bells. */
 	watch(): () => void {
 		this.#watching += 1;
 		void this.load().catch(() => {});
@@ -246,14 +182,7 @@ export class RemoteList {
 		};
 	}
 
-	/**
-	 * Ask for the names of the files the screens are playing, once each.
-	 *
-	 * The list carries a file's id only, and only when this phone's own session may open it, so
-	 * the name is asked for through the same door the file's own page uses: a file this session
-	 * cannot open is never named here, whatever the desk has open. Remembered for as long as the
-	 * tab, since a name the phone has read once does not need reading again for the next report.
-	 */
+	/** Ask once each for the playing files' names, through the file's own page door. */
 	learnNames(): void {
 		for (const screen of this.screens) {
 			const id = screen.file;
@@ -262,60 +191,43 @@ export class RemoteList {
 			void api
 				.get<AssetDetail>(`/assets/${id}`)
 				.then((file) => {
-					/* The filename, as the docked corner player names what it holds. */
 					if (file.filename) this.names = { ...this.names, [id]: file.filename };
 				})
 				.catch(() => this.#asked.delete(id));
 		}
 	}
 
-	/** Seconds since a screen last spoke, carried on from when the list was read. */
 	heardAgo(screen: ScreenOut): number {
 		return screen.heard_seconds_ago + Math.max(0, (this.at - this.#readAt) / 1000);
 	}
 
-	/**
-	 * The screens still speaking, by this page's own clock.
-	 *
-	 * The server lets a quiet screen go when asked after `listed_for_seconds`; between two reads
-	 * this page lets it go at the same moment, so a desktop put to sleep leaves the phone's list
-	 * when it stops being controllable rather than up to one re-read later.
-	 */
+	/** The screens still speaking by this page's clock, let go when the server would. */
 	get live(): ScreenOut[] {
 		return this.screens.filter((screen) => this.heardAgo(screen) < this.#listedFor);
 	}
 
-	/** The screen being driven: the one picked while it is still speaking, else the first that is. */
 	get current(): ScreenOut | null {
 		const live = this.live;
 		return live.find((one) => one.screen === this.picked) ?? live[0] ?? null;
 	}
 
-	/** Drive another of the screens. */
 	pick(screen: string): void {
 		this.picked = screen;
 		this.#settleHold();
-		/* The line is about the screen that did not answer, and it is no longer the one on the card. */
+		/* The line is about a screen that is no longer the one on the card. */
 		if (this.problem === NO_ANSWER && this.#unanswered?.screen !== screen) {
 			this.#unanswered = null;
 			this.problem = null;
 		}
 	}
 
-	/** Where a screen has got to by now, carried on from when the list was read. */
 	positionOf(screen: ScreenOut): number {
 		if (!screen.playing) return screen.position;
 		const carried = screen.position + Math.max(0, (this.at - this.#readAt) / 1000);
 		return screen.length === null ? carried : Math.min(carried, screen.length);
 	}
 
-	/**
-	 * Send one command, and wait for the screen to say it acted (see the head of the file).
-	 *
-	 * A refusal says why in one line, in the server's own words where it wrote some for people
-	 * ("That screen can't do that."). A screen the server no longer has re-reads the list, so the
-	 * screen that went quiet leaves it immediately. Resolves to the command's id, or null when refused.
-	 */
+	/** Send one command and wait for it to land; resolves to its id, or null when refused. */
 	async send(
 		screen: string,
 		action: RemoteAction,
@@ -336,11 +248,9 @@ export class RemoteList {
 	}
 }
 
-/** One line for a failure: the server's own sentence where it wrote one, else the plain one. */
 function wordsFor(error: unknown): string {
 	if (error instanceof ApiError) return error.detail ?? error.message;
 	return error instanceof Error ? error.message : String(error);
 }
 
-/** The one list, for every page of this tab that shows it. */
 export const remoteList = new RemoteList();

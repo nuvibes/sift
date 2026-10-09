@@ -1,42 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Writing down the pages a User opened, and the sittings they were part of.
-
-## What a visit is
-
-A page about a thing or a place, opened: a person's, a tag's, a Site's, a Collection's, a Photo
-Set's, a song's, a folder, one of the walls, a section of Settings, Organize, Insights. Not a file:
-a file opened is a sitting, which the player keeps. The client keeps the visit while the page is in
-front, adds up the time it was in front (a hidden tab does not count) and hands visits over in
-batches (`record_visits`): at most one small write per visit, never on the read of a wall. A visit
-that goes on is reported again under the same id and brought up to date, so a tab left open all
-evening is one row, not one a minute.
-
-The client says how long ago a visit opened and was last in front, never a time of day: its clock
-is not this computer's, and a phone set five minutes fast would otherwise put its pages in the
-wrong order beside the sittings this computer stamps.
-
-## A sitting with Sift (`app_sessions`)
-
-From the first visit on a device to the last, and broken by `SESSION_GAP_MS` with nothing in front.
-Thirty minutes: long enough that answering the door, a phone call or making a drink between two
-pages is the same sitting, short enough that coming back after lunch is a new one; it is also the
-gap most measures of "a visit to a site" use, so a figure here reads the way people expect. Each
-device has its own: a phone in one hand and the desk in front of somebody are two sittings, which
-is what "where do I use Sift" wants to count.
-
-## What is never written
-
-A page about something the person asking may not be shown: the access layer is asked, as every
-read is, and a page it refuses leaves no row. A page about something in Hidden is written only for
-somebody who has unlocked it, with `hidden` set so a reader can leave it out for them once it is
-locked again. And nothing at all while the User has paused their history (`kernel/use_history.py`).
-
-## How many rows
-
-One per page opened. A busy day opens a few hundred pages, which is a few hundred narrow rows a
-day, under a megabyte a year: kept for ever, as sittings are, because a year's "time
-browsing" and "your longest sitting" are the questions they are kept for.
-"""
+"""Writing down the pages a User opened, and the sittings they were part of."""
 
 from __future__ import annotations
 
@@ -130,8 +93,7 @@ def _within(ms: int) -> int:
 
 
 async def _shown(access: Repository, viewer: Viewer, visit: Visit) -> bool | None:
-    """Whether the page's thing is in Hidden for this person (True), shown to them plainly (False),
-    or not theirs to be shown at all (None). A place, not a thing, is shown plainly."""
+    """True if the page's thing is in Hidden for this person, False if plain, None if not theirs."""
     ask = THINGS.get(visit.place)
     if ask is None:
         return False
@@ -171,11 +133,7 @@ async def record_visits(
     *,
     now_ms: int,
 ) -> int:
-    """Write down these visits for this person, from this client. Answers how many were written.
-
-    Nothing while their history is paused, nothing for a page they may not be shown. The visits
-    are taken oldest first, so the pages of one sitting join it in the order they were opened.
-    """
+    """Write down these visits for this person, from this client. Answers how many were written."""
     if not visits or not await keeps_history(preferences, viewer.id):
         return 0
     kept: list[tuple[Visit, bool]] = []
@@ -221,10 +179,7 @@ async def record_visits(
 
 # --- clearing ----------------------------------------------------------------------------------
 
-# The visits first and then their sittings, so the count says how many of each went (a sitting
-# would take its visits with it, uncounted). The figures added up from the history are
-# added up again from what is left: the progress goes, and the helper starts again from the first
-# day (see `schema`). The recaps go too: each is a summary of what is being cleared.
+# Visits before sittings, so each is counted; a sitting would take its visits with it.
 _CLEAR = (
     "DELETE FROM page_visits WHERE user_id = ?",
     "DELETE FROM app_sessions WHERE user_id = ?",

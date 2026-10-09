@@ -2,14 +2,10 @@
 	/* WHY NO HOVER: the one hover rule dresses the shared button, whose motion is its own. */
 	/*
 	 * NOT ON THE GALLERY: it is `display: none` unless the root carries `data-window="overlaid"`,
-	 * which only the packaged desktop shell ever stamps, so a gallery entry would be an empty box;
-	 * what it is MADE of, the brand lockup, is on the gallery already.
+	 * which only the packaged desktop shell ever stamps.
 	 */
 
-	/*
-	 * The window's own title bar, drawn by the page from Sift's tokens: the system's minimise,
-	 * maximise and close sit on it, and it is on every screen so the window can always be moved.
-	 */
+	/* The window's own title bar, on every screen so the window can always be moved. */
 	import Logo from '$lib/components/Logo.svelte';
 	import Button from '$lib/components/common/Button.svelte';
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
@@ -19,15 +15,12 @@
 	import { updates } from '$lib/shell/updates.svelte';
 	import { rail } from './rail-state.svelte';
 
-	/*
-	 * BACK AND FORWARD for the desktop application, which has no browser around it to carry them;
-	 * `arrows` is the layout saying the application's frame is on screen.
-	 */
+	/* Back and forward for the desktop app, which has no browser to carry them. */
 	let { arrows = false }: { arrows?: boolean } = $props();
 
 	const inTheApp = bridge.canDressTitleBar();
 
-	/* Dismissing the banner does not hide this: it is the standing reminder. The banner loads the state. */
+	/* The standing reminder, kept when the banner is dismissed; the banner loads the state. */
 	const waiting = $derived(arrows && inTheApp && session.isAdmin && updates.waiting);
 
 	/** The two facts read off the window's history, and the one event that moves them. */
@@ -116,28 +109,18 @@
 		position: fixed;
 		inset-block-start: 0;
 		inset-inline: 0;
-		/* Above everything, including a dialog's veil and the drop overlay. A window somebody cannot
-		   move while a sheet is open is a window that is stuck, and the sheet is exactly when
-		   somebody wants to put it somewhere else to read what is behind it. */
+		/* Above every veil, so the window can still be moved while a sheet is open. */
 		z-index: var(--z-window-chrome);
 		block-size: var(--window-chrome);
 		/* What the system's minimise, maximise and close take at the right end. */
 		--captions: calc(100vw - env(titlebar-area-width, 100vw));
-		/* No rule along its foot. It is the same ground as the rail below it, and the caption buttons
-		   the operating system draws beside it have none, so a line here would run across the top of
-		   the rail and stop short of them. */
+		/* No rule along its foot: it shares the rail's ground; the caption buttons have none. */
 		background: var(--sift-surface-1);
 		-webkit-app-region: drag;
 		app-region: drag;
 	}
 
-	/*
-	 * CENTRED ON THE WINDOW, not on what is left over beside the buttons.
-	 *
-	 * The lockup is the only thing in a flex row that is centred, so the reserved corner below is
-	 * absolutely positioned rather than being a sibling that would push it off-centre by half the
-	 * caption width: about 69px, which is plainly visible on a mark that small.
-	 */
+	/* Centred on the window: the reserved corner is absolute, so it cannot push the lockup off. */
 	.lockup {
 		display: flex;
 	}
@@ -147,21 +130,8 @@
 	}
 
 	/*
-	 * THE BACK ARROW'S OWN LEFT EDGE ON THE MARK'S LEFT EDGE, the one line the eye draws down the
-	 * corner. What lines up is the drawn arrow, not the button round it: the button's padding
-	 * ((32 - 18) / 2 = 7px) and the arrow's side bearing (the first 4px of its 18px box are
-	 * empty) stand between the group's edge and the ink, so the group starts 11px before the
-	 * mark.
-	 *
-	 * With the labels on the mark is the lockup, inset by the rail's body (`--space-3`) and the
-	 * brand's own padding (`--space-2`). With icons only the rail is too narrow for the pair to
-	 * start on the mark, and the pair is centred on the rail instead (below). `tight` is the rail's
-	 * own answer to which, read from its state, so the two move together whichever reason took the
-	 * labels away.
-	 *
-	 * Lower than the strip's centre by 15 percent of where the arrow was drawn: centred, its ink
-	 * starts 13px down ((36 - 18) / 2 and the glyph's own 4px), so 2px more. Out of the drag
-	 * region, or the strip would take the presses as the start of a move.
+	 * The back arrow's ink lines up on the mark's left edge: the button's 7px padding and the
+	 * glyph's 4px side bearing make 11px. Out of the drag region, or presses would start a move.
 	 */
 	:global(:root[data-window='overlaid']) .arrows {
 		--arrow-lead: 11px;
@@ -176,14 +146,7 @@
 		app-region: no-drag;
 	}
 
-	/*
-	 * WITH ICONS ONLY, BOTH ARROWS INSIDE THE RAIL'S WIDTH. Two small presses and the gap between
-	 * them are 68px, wider than the 64px rail, so lined up on the mark the Forward arrow would
-	 * hang past the rail over the corner of the page. So the pair is centred on the rail, as the
-	 * mark under it is, and each press is half the rail less a small gap at the rail's edge (28px
-	 * wide, at the small press's own height), so the two meet in the middle with the glyphs at
-	 * their own size.
-	 */
+	/* With icons only the pair is centred on the 64px rail, each press half its width. */
 	:global(:root[data-window='overlaid']) .arrows.tight {
 		inset-inline-start: 0;
 		inline-size: var(--rail-width-collapsed);

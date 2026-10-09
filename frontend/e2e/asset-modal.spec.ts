@@ -1,8 +1,4 @@
-/* The asset modal's own frame: how big it is, and what sits behind it.
- *
- * Both are geometry and a real compositing property, so neither is answerable without a layout
- * engine: the unit environment renders the markup happily whatever the stylesheet does with it.
- */
+/* The asset modal's size and what sits behind it: geometry and compositing need a layout engine. */
 import { type Locator, type Page } from '@playwright/test';
 import { expect, test } from './test';
 import { signInAsAdmin } from './admin';
@@ -17,8 +13,7 @@ const CLIP = {
 	favorite: false,
 	rating: null,
 	concealed: false,
-	// What wrote to it without a person doing it, which the marks beside the name are drawn from.
-	// Present and empty is what the server answers for a file nothing has enriched.
+	// Present and empty, as the server answers for a file nothing has enriched.
 	enriched_by: [],
 	original_filename: 'holiday.jpg'
 };
@@ -45,8 +40,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 test('the popup is a quarter bigger than the 900px base', async ({ page }) => {
-	// A quarter bigger than 900px is 1125, which is what should show up here given a viewport wide
-	// enough that the vw cap never binds.
+	// 900px plus a quarter, at a viewport wide enough that the vw cap never binds.
 	await serveLibrary(page);
 	await page.goto('/browse');
 	await page.locator('.tile').first().click();
@@ -62,9 +56,7 @@ test('the popup is a quarter bigger than the 900px base', async ({ page }) => {
 test('the popup lines up with the line under the search bar, not the card above it', async ({
 	page
 }) => {
-	// Level with the line under the top bar: not lower (a visible gap reads as the dialog floating
-	// below the page), and not level with the content card's outer edge, which is a whole top bar
-	// too high.
+	// Level with the line under the top bar, not a gap below it and not a top bar higher.
 	await serveLibrary(page);
 	await page.goto('/browse');
 
@@ -99,13 +91,7 @@ test('the grid behind the popup is softened, not just darkened', async ({ page }
 });
 
 test('a tile clicked and clicked away from is not left outlined', async ({ page }) => {
-	/*
-	 * The modal returns focus to the tile it was opened from on close, which is right for a
-	 * keyboard user who would otherwise be dropped at the top of the page. But a tile CLICKED with
-	 * a mouse shows no focus ring, and returning focus to it would light one that sits there like a
-	 * stuck selection. For a mouse-only session there is nothing to put back, so focus is left
-	 * where the close leaves it and the tile keeps no ring.
-	 */
+	// Closed with the mouse, the tile gets focus back but no ring, which would look stuck.
 	await serveLibrary(page);
 	await page.goto('/browse');
 
@@ -113,8 +99,7 @@ test('a tile clicked and clicked away from is not left outlined', async ({ page 
 	await tile.click(); // opened with the mouse
 	await expect(page.getByRole('dialog')).toBeVisible();
 
-	// Off to the side of the sheet, where the veil is actually exposed: a click in the middle lands
-	// on the dialog that sits over it.
+	// Beside the sheet, where the veil is exposed.
 	await page.locator('.veil').click({ position: { x: 8, y: 450 } }); // closed with the mouse
 	await expect(page.getByRole('dialog')).toHaveCount(0);
 
@@ -129,13 +114,7 @@ test('a tile clicked and clicked away from is not left outlined', async ({ page 
 });
 
 test('a keyboard user is put back on the tile they opened', async ({ page }) => {
-	/* The other half: somebody who arrived by keyboard must not be dropped at the top of the
-	 * page.
-	 *
-	 * What decides it is how the dialog was OPENED, not how it was closed. Opening a clip with
-	 * the mouse and pressing Escape must not light the tile as though it were being pointed at:
-	 * Escape is a fast way out for a mouse user too, and says nothing about how they are working.
-	 */
+	// Opened by keyboard, focus returns visibly; how it was opened decides, not how it was closed.
 	await serveLibrary(page);
 	await page.goto('/browse');
 
@@ -154,7 +133,6 @@ test('a keyboard user is put back on the tile they opened', async ({ page }) => 
 });
 
 test('and a mouse user pressing Escape is not given a focus ring', async ({ page }) => {
-	// Open a clip with the mouse, press Escape: the outline must not come back on the tile.
 	await serveLibrary(page);
 	await page.goto('/browse');
 
@@ -171,18 +149,10 @@ test('and a mouse user pressing Escape is not given a focus ring', async ({ page
 	).toBe(false);
 });
 
-/*
- * THE RECORD, AS THREE PANES.
- *
- * In a browser rather than in the unit suite because what is being asked is whether the panes are
- * really a tablist in the shipped page (one pane reachable at a time, each drawing its own half of
- * the registry), and the unit environment renders the markup happily whatever the library does with
- * it. The split itself is proved in `RecordGrid.svelte.test.ts`; this is that the strip is wired.
- */
+/* The record is a tablist of three panes in the shipped page; the split is `RecordGrid`'s test. */
 test('the record is three panes and each draws its own half', async ({ page }) => {
 	await serveLibrary(page);
-	// The history is this file's own address and this file is invented, so the server would answer
-	// 404 for it. Empty is the ordinary answer for a library that was scanned rather than organized.
+	// The invented file's history would 404; empty is the ordinary answer.
 	await page.route('**/api/assets/m1/history*', (route) =>
 		route.fulfill({ status: 200, contentType: 'application/json', body: '{"items":[],"total":0}' })
 	);
@@ -194,23 +164,18 @@ test('the record is three panes and each draws its own half', async ({ page }) =
 
 	const strip = sheet.getByRole('tablist', { name: "What this file's record says" });
 	await expect(strip.getByRole('tab')).toHaveCount(3);
-	/* Every opening starts on About (the pane is not remembered), so the first assertion below
-	   is a fact about the screen rather than about what a previous test in this shared account
-	   happened to press. */
+	// Every opening starts on About, so this does not depend on an earlier test.
 
-	// What somebody wrote. Nothing has been written about this file, so the rows invite a value.
 	await expect(sheet.getByRole('tabpanel')).toContainText('Title');
 	await expect(
 		sheet.getByRole('tabpanel').getByRole('button', { name: 'Add Title' })
 	).toBeVisible();
 
-	// What the file is. The other half, and the title is not in it.
 	await strip.getByRole('tab', { name: /^Media/ }).click();
 	await expect(sheet.getByRole('tabpanel')).toContainText('Dimensions');
 	await expect(sheet.getByRole('tabpanel')).not.toContainText('Title');
 
-	/* What has happened to it, read when the pane is opened rather than with the file. The tab is
-	   called History. */
+	// Read when the pane opens, not with the file.
 	await strip.getByRole('tab', { name: /^History/ }).click();
 	await expect(sheet.getByRole('tabpanel')).toContainText('Nothing has been recorded');
 });
