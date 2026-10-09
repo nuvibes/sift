@@ -9,7 +9,7 @@ from typing import Any
 
 from sift.kernel.db import Connection
 from sift.kernel.ids import new_id
-from sift.kernel.jobs.queue_core import QueueCore
+from sift.kernel.jobs.queue_core import Arrival, QueueCore
 from sift.kernel.jobs.queue_rows import UnknownJobType, _check_payload, _fetch
 from sift.kernel.jobs.quiet_hours import AT_NOW, ATS
 from sift.kernel.jobs.switchboard import JobSwitchedOff
@@ -34,6 +34,12 @@ _INSERT = (
     "VALUES (?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?, ?, COALESCE("
     "(SELECT COALESCE(parent.root_id, parent.id) FROM jobs parent WHERE parent.id = ?), ?))"
 )
+#: The insert, saying the family it chose, so the queue can tell whether a worker could take it now.
+_PLACE = _INSERT + " RETURNING root_id"
+
+#: How much earlier than a minute after the last file a settle may run, so a batch arriving moves
+#: its waiting row once in this long rather than once per file. See `enqueue_when_settled`.
+SETTLE_SLACK_SECONDS = 10
 
 
 #: The type of a press's head: a row that runs nothing, its files its steps.
@@ -108,6 +114,12 @@ _SET_WAITING_UNITS = (
 )
 
 
+async def _place(connection: Connection, row: tuple[Any, ...]) -> str:
+    """Insert one `_INSERT` row; the family the statement gave it."""
+    rows = await _fetch(connection, _PLACE, row)
+    return str(rows[0]["root_id"])
+
+
 class Enqueuing(QueueCore):
     """Putting work into the queue."""
 
@@ -167,7 +179,7 @@ class Enqueuing(QueueCore):
             # The look and the insert share one write transaction, so two callers noticing the same
             # folder in the same instant cannot both find nothing waiting and both queue.
             async with self._writing() as connection:
-                placed = await self._collapse_or_insert(
+                placed, family = await self._collapse_or_insert(
                     connection,
                     job_type,
                     serialized,
@@ -177,17 +189,64 @@ class Enqueuing(QueueCore):
                     timing=timing,
                     settle_at=run_after if settling else None,
                 )
-            if placed != job_id:
+            if family is None:
                 return placed
         else:
             # Told too: a job that has only just been queued is a row on the dashboard, and a
             # quiet insert would leave it off the screen until something else in the queue moved.
             async with self._writing() as connection:
-                await connection.execute(_INSERT, row)
+                family = await _place(connection, row)
 
         log.info("job.enqueued", job_id=job_id, job_type=job_type, parent_id=parent_id)
-        self._work_arrived()
+        self._work_arrived([Arrival(job_type, family, timing, run_after)])
         return job_id
+
+    async def enqueue_children(
+        self,
+        parent_id: str,
+        children: Sequence[tuple[str, Mapping[str, Any]]],
+        *,
+        priority: int = DEFAULT_PRIORITY,
+        at: str | None = None,
+    ) -> list[str]:
+        """Hand out several jobs under a running one in ONE write: the work a file's read starts.
+
+        Each type is admitted as `enqueue` admits it, before anything is written, so a switched-off
+        one raises `JobSwitchedOff` and nothing is queued. Returns the ids in the order given, which
+        is the order they are claimed in at one urgency.
+        """
+        placing = []
+        for job_type, payload in children:
+            urgency, timing = await self._admit(
+                job_type,
+                priority=priority,
+                max_attempts=DEFAULT_MAX_ATTEMPTS,
+                requested_by=None,
+                at=at,
+                parent_id=parent_id,
+                require_handler=True,
+            )
+            job_id, row, _ = self._row(
+                job_type,
+                payload,
+                priority=urgency,
+                max_attempts=DEFAULT_MAX_ATTEMPTS,
+                parent_id=parent_id,
+                run_after=None,
+                requested_by=None,
+                timing=timing,
+            )
+            placing.append((job_type, job_id, row, timing))
+        if not placing:
+            return []
+        arrivals = []
+        async with self._writing() as connection:
+            for job_type, _, row, timing in placing:
+                arrivals.append(Arrival(job_type, await _place(connection, row), timing, None))
+        for job_type, job_id, _, _ in placing:
+            log.info("job.enqueued", job_id=job_id, job_type=job_type, parent_id=parent_id)
+        self._work_arrived(arrivals)
+        return [job_id for _, job_id, _, _ in placing]
 
     async def enqueue_many(
         self,
@@ -230,32 +289,34 @@ class Enqueuing(QueueCore):
             for payload in payloads
         ]
         placed: list[str] = []
+        families: list[str] = []
         # `_writing` either way: a collapse moves the dashboard as an insert does.
         async with self._writing() as connection:
             head = None if requested_by is None else await self._press_head(connection, rows, title)
             for job_id, written, serialized in rows:
                 row = written if head is None else _under(written, head)
                 if dedupe:
-                    placed.append(
-                        await self._collapse_or_insert(
-                            connection,
-                            job_type,
-                            serialized,
-                            row,
-                            priority=priority,
-                            requested_by=requested_by,
-                            timing=timing,
-                        )
+                    one, family = await self._collapse_or_insert(
+                        connection,
+                        job_type,
+                        serialized,
+                        row,
+                        priority=priority,
+                        requested_by=requested_by,
+                        timing=timing,
                     )
+                    placed.append(one)
                 else:
-                    await connection.execute(_INSERT, row)
+                    family = await _place(connection, row)
                     placed.append(job_id)
+                if family is not None:
+                    families.append(family)
             new = sorted(set(placed) & {one[0] for one in rows})
             if head is not None and not new:
                 await connection.execute(_FORGET_HEAD, (head,))
         for job_id in new:
             log.info("job.enqueued", job_id=job_id, job_type=job_type, parent_id=head)
-        self._work_arrived()
+        self._work_arrived(Arrival(job_type, family, timing, None) for family in families)
         return placed
 
     async def _press_head(
@@ -372,9 +433,9 @@ class Enqueuing(QueueCore):
         requested_by: str | None,
         timing: str | None,
         settle_at: int | None = None,
-    ) -> str:
+    ) -> tuple[str, str | None]:
         """`dedupe`, inside a write the caller holds: the id of an identical job already waiting,
-        strengthened to this request, or this row inserted and its own id.
+        strengthened to this request, or this row inserted, its own id and the family it joined.
 
         `settle_at` is a settle's moment (`enqueue_when_settled`): collapsing onto a waiting settle
         puts it off to then, within `SETTLE_LONGEST_SECONDS` of when it was first asked for."""
@@ -409,9 +470,8 @@ class Enqueuing(QueueCore):
                 later = min(settle_at, latest)
                 await connection.execute(_PUT_OFF, (later, now, already, later))
             log.info("job.enqueue_deduped", job_type=job_type, job_id=already)
-            return already
-        await connection.execute(_INSERT, row)
-        return str(row[0])
+            return already, None
+        return str(row[0]), await _place(connection, row)
 
     async def enqueue_when_settled(
         self,
@@ -429,7 +489,14 @@ class Enqueuing(QueueCore):
         onto the one waiting; neither works alone. A row already RUNNING is not collapsed onto, as
         it has read what it will read. A pass that must never run twice at the same time says so
         where its handler is registered (`alone=True`). `priority` and `requested_by` pass through.
+
+        A row already waiting until about then is left as it is, after a read and no write: a
+        thousand files each asking move it once per `SETTLE_SLACK_SECONDS`, not once each.
         """
+        if requested_by is None:
+            waiting = await self._settle_still_waiting(job_type, payload, delay, priority)
+            if waiting is not None:
+                return waiting
         return await self.enqueue(
             job_type,
             payload,
@@ -439,6 +506,36 @@ class Enqueuing(QueueCore):
             requested_by=requested_by,
             settling=True,
         )
+
+    async def _settle_still_waiting(
+        self, job_type: str, payload: Mapping[str, Any] | None, delay: int, priority: int
+    ) -> str | None:
+        """The waiting row this settle would move by less than `SETTLE_SLACK_SECONDS`, or None.
+
+        Admitted first, so a switched-off pass still refuses. Read while the row is waiting, so a
+        claim of it can only come after this file's change was written.
+        """
+        urgency, _ = await self._admit(
+            job_type,
+            priority=priority,
+            max_attempts=DEFAULT_MAX_ATTEMPTS,
+            requested_by=None,
+            at=None,
+            parent_id=None,
+            require_handler=True,
+        )
+        body = dict(payload or {})
+        _check_payload(body)
+        row = await self._db.fetch_one(_PENDING_LIKE, (job_type, json.dumps(body)))
+        if row is None or int(row["priority"]) > urgency:
+            return None
+        # A row due now is never put off (`_PUT_OFF`), so collapsing onto it would change nothing.
+        if row["run_after"] is None:
+            return str(row["id"])
+        wanted = min(self._now() + delay, int(row["created_at"]) + SETTLE_LONGEST_SECONDS)
+        if int(row["run_after"]) < wanted - SETTLE_SLACK_SECONDS:
+            return None
+        return str(row["id"])
 
     async def settle_into(
         self, job_types: Sequence[str], *, priority: int = BACKGROUND_PRIORITY

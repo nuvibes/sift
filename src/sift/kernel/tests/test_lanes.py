@@ -655,3 +655,29 @@ async def test_the_shares_where_files_were_read_first_lately(
     assert lane.read_at is not None
     lane.read_at -= 61
     assert lanes.reading_first(60) == set()
+
+
+async def test_a_wait_for_a_place_is_filed_to_the_job_that_waited() -> None:
+    """On a share the wait for a place is most of a read's cost, and no stage can see it."""
+    from sift.kernel.log import JobCost, costing
+
+    lanes = StorageLanes(network_reads_at_once=1)
+    lanes_module.install(lanes)
+    first_in = asyncio.Event()
+
+    async def hold() -> None:
+        async with lanes.reading(Path("/nas/a/1")):
+            first_in.set()
+            await asyncio.sleep(0.2)
+
+    cost = JobCost()
+    holder = asyncio.create_task(hold())
+    await first_in.wait()
+    with costing(cost):
+        async with lanes.reading(Path("/nas/a/2")):
+            pass
+        async with lanes_module.whole_file(Path("/nas/a/3")):
+            pass
+    await holder
+
+    assert cost.summary()["storage_wait_ms"] >= 150

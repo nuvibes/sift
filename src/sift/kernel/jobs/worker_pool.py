@@ -14,6 +14,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
+import structlog
+
 from sift.kernel.content import ContentStore, LibraryStore
 from sift.kernel.ids import new_id
 from sift.kernel.jobs.families import Family
@@ -81,7 +83,7 @@ from sift.kernel.jobs.tuning import (
 from sift.kernel.jobs.waking import Listen, Waking, first_of
 from sift.kernel.jobs.watchdog import run_watchdog
 from sift.kernel.jobs.workspaces import Workspaces
-from sift.kernel.log import get_logger, timing_hook
+from sift.kernel.log import JobCost, costing, get_logger, timing_hook
 from sift.kernel.presses import Pressed, pressed_job
 
 log = get_logger(__name__)
@@ -354,6 +356,15 @@ class _Worker:
     stop: asyncio.Event
 
 
+def _settled_as(outcome: str, *, paused: bool, state: JobState | None) -> str:
+    """The summary line's word for how a settled job ended."""
+    if paused:
+        return "paused"
+    if state is not None:
+        return "failed" if state is JobState.FAILED else "retrying"
+    return outcome
+
+
 class WorkerPool:
     """Runs jobs until told to stop; the worker count and per-type caps change live."""
 
@@ -617,7 +628,10 @@ class WorkerPool:
             )
         began = time.monotonic()
         wake = self._wake[job.id] = asyncio.Event()
-        runner = asyncio.create_task(self._invoke(handler, context), name=f"job.{job.type}")
+        # The runner's tasks and threads file their time to this job; the heartbeat's do not.
+        cost = JobCost()
+        with costing(cost):
+            runner = asyncio.create_task(self._invoke(handler, context), name=f"job.{job.type}")
         beat = asyncio.create_task(self._beat(context, wake), name=f"job.beat.{job.id}")
 
         try:
@@ -634,19 +648,22 @@ class WorkerPool:
         if runner.cancelled():
             # The job was cancelled or taken back: write nothing.
             log.info("job.lost", job_id=job.id, job_type=job.type, worker_id=worker_id)
+            _summarize(job, cost, "lost")
             await self._sweep_workspace(context)
             return
 
-        await self._record(
-            job,
-            worker_id,
-            runner.exception(),
-            took_ms=(time.monotonic() - began) * 1000,
-            units=context.units_done,
-            arrived=context.files_arrived,
-            pressed=pressed_job(job.type, job.payload, context.pressed_by, job.started_at),
-            noted=context.noted,
-        )
+        with costing(cost):
+            outcome = await self._record(
+                job,
+                worker_id,
+                runner.exception(),
+                took_ms=(time.monotonic() - began) * 1000,
+                units=context.units_done,
+                arrived=context.files_arrived,
+                pressed=pressed_job(job.type, job.payload, context.pressed_by, job.started_at),
+                noted=context.noted,
+            )
+        _summarize(job, cost, outcome)
         await self._sweep_workspace(context)
 
     async def _pressed_by(self, job: Job) -> str | None:
@@ -681,14 +698,16 @@ class WorkerPool:
         arrived: int = 0,
         pressed: Pressed | None = None,
         noted: str | None = None,
-    ) -> None:
+    ) -> str:
+        """Settle the job's row; what became of it, in the summary line's word."""
         if isinstance(error, JobCanceled):
             log.info("job.lost", job_id=job.id, job_type=job.type, worker_id=worker_id)
-            return
+            return "lost"
 
         paused = False
         held = False
         state: JobState | None = None
+        outcome = "done"
         if isinstance(error, JobPaused):
             landed = await self._queue.pause_running(
                 job.id, worker_id, str(error) or _PAUSED_MID_JOB
@@ -699,9 +718,11 @@ class WorkerPool:
             landed = await self._queue.complete(job.id, worker_id, pressed=pressed)
         elif isinstance(error, JobBlocked):
             landed = await self._queue.block(job.id, worker_id, str(error) or _WAITING_FOR_LOGIN)
+            outcome = "blocked"
         elif (hold := held_for(error)) is not None:
             held = await self._queue.hold(job.id, worker_id, str(error), retry_in=hold)
             landed = held
+            outcome = "held"
         elif isinstance(error, JobFailedPermanently):
             state = await self._queue.fail(job.id, worker_id, str(error), permanent=True)
             landed = state is not None
@@ -712,11 +733,12 @@ class WorkerPool:
             state = await self._queue.fail(job.id, worker_id, failed, retry_in=wait)
             landed = state is not None
             paused = state is JobState.PAUSED
+        outcome = _settled_as(outcome, paused=paused, state=state)
 
         if not landed:
             # The fence refused it: the job stopped being this worker's while it finished.
             log.info("job.lost", job_id=job.id, job_type=job.type, worker_id=worker_id)
-            return
+            return "lost"
         # Paused, blocked and held attempts would drag every estimate of what work costs.
         if (
             self._ledger is not None
@@ -736,6 +758,7 @@ class WorkerPool:
                 else None,
                 noted=noted,
             )
+        return outcome
 
     async def _account(
         self,
@@ -778,7 +801,13 @@ class WorkerPool:
         # So the timing hook files each stage against its run, unknown to the handler.
         token = CURRENT_FAMILY.set(family_of(context.job.type))
         try:
-            with timing_hook("job", job_type=context.job.type, job_id=context.job.id):
+            # Every record the handler writes names its job, so a stage joins to it.
+            with (
+                structlog.contextvars.bound_contextvars(
+                    job_id=context.job.id, job_type=context.job.type
+                ),
+                timing_hook("job", job_type=context.job.type, job_id=context.job.id),
+            ):
                 await handler(context)
         finally:
             CURRENT_FAMILY.reset(token)
@@ -804,6 +833,29 @@ class WorkerPool:
                 context.told_to_stop(STOP_TO_CANCEL)
                 return
             context.told_to_stop(beat.stop)
+
+
+def _queued_s(job: Job) -> int | None:
+    """Seconds from when the job could first be claimed to its claim."""
+    if job.started_at is None:
+        return None
+    ready = max(job.created_at, job.run_after or 0)
+    return max(0, job.started_at - ready)
+
+
+def _summarize(job: Job, cost: JobCost, outcome: str) -> None:
+    """The job's one line: what became of it and where its time went."""
+    asset_id = job.payload.get("asset_id")
+    log.info(
+        "job.summary",
+        job_id=job.id,
+        job_type=job.type,
+        asset_id=asset_id if isinstance(asset_id, str) else None,
+        attempt=job.attempts,
+        outcome=outcome,
+        queued_s=_queued_s(job),
+        **cost.summary(),
+    )
 
 
 def _directories_under(root: Path) -> list[str]:

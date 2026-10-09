@@ -16,8 +16,8 @@ Fetch = Callable[[str, Mapping[str, Any]], Awaitable[Sequence[Row]]]
 _FILES_ADDED: Final = """
 SELECT '' AS key, COUNT(*) AS whole, SUM(x.concealed) AS hidden
   FROM (SELECT va.concealed AS concealed
-          FROM assets a
-          JOIN viewer_assets va ON va.user_id = :user AND va.asset_id = a.id
+          FROM assets a INDEXED BY ix_assets_added_id
+          CROSS JOIN viewer_assets va ON va.user_id = :user AND va.asset_id = a.id
          WHERE a.added_at >= :start AND a.added_at < :end
         UNION ALL
         SELECT COALESCE(v.concealed, 0)
@@ -37,8 +37,8 @@ SELECT x.site_id AS key, COUNT(*) AS whole,
                           WHERE h.user_id = :user AND h.site_id = x.site_id AND h.hidden = 1)
             THEN COUNT(*) ELSE SUM(x.concealed) END AS hidden
   FROM (SELECT DISTINCT a.id, u.site_id, va.concealed
-          FROM assets a
-          JOIN viewer_assets va ON va.user_id = :user AND va.asset_id = a.id
+          FROM assets a INDEXED BY ix_assets_added_id
+          CROSS JOIN viewer_assets va ON va.user_id = :user AND va.asset_id = a.id
           JOIN asset_usernames au ON au.asset_id = a.id
           JOIN usernames u ON u.id = au.username_id
          WHERE a.added_at >= :start AND a.added_at < :end

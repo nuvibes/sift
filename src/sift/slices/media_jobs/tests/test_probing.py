@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 import pytest
@@ -288,6 +289,34 @@ async def test_probe_starts_the_jobs_that_draw_the_file(
         "fingerprint_file",
     }
     assert all(child.payload == {"asset_id": ingested_video.asset.id} for child in children)
+
+
+async def test_a_probe_writes_the_reading_and_its_files_work_and_nothing_else(
+    ingested_video: Ingested,
+    context_for: Context,
+    temp_db: Database,
+    settings: Settings,
+    hardware: HardwareReport,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Every write waits its turn at the single writer behind every other, so a probe makes two:
+    the reading on the file's row, and the work it hands out in one. No progress of its own (it
+    is one file, done or not) and no heartbeat to hear a stop the pool's heartbeat already hears."""
+    context = await context_for("probe", {"asset_id": ingested_video.asset.id})
+    blocks = 0
+    write = temp_db.write
+
+    @asynccontextmanager
+    async def counted() -> AsyncIterator[object]:
+        nonlocal blocks
+        blocks += 1
+        async with write() as connection:
+            yield connection
+
+    monkeypatch.setattr(temp_db, "write", counted)
+    await jobs.probe(context, settings=settings, hardware=hardware)
+
+    assert blocks == 2
 
 
 async def test_a_row_whose_kind_its_bytes_refute_goes_back_to_the_classifier_unread(

@@ -41,7 +41,9 @@ FACETS: dict[str, tuple[str, str]] = {
     # No `fxh` join: a Site is concealed by anything above it as well, so `_CONCEALED_SITE` walks
     # the chain rather than reading one row.
     "sites": (
-        "\n  JOIN asset_usernames fxa ON fxa.asset_id = a.id"
+        # CROSS JOIN: the files drive the usernames, not the other way round (fresh planner
+        # statistics turned it round; round P's ledger gate).
+        "\n  CROSS JOIN asset_usernames fxa ON fxa.asset_id = a.id"
         "\n  JOIN usernames fxc ON fxc.id = fxa.username_id"
         "\n  JOIN sites fx ON fx.id = fxc.site_id",
         "fx.name",
@@ -97,7 +99,8 @@ FACETS: dict[str, tuple[str, str]] = {
     ),
     # Stars are per user: the asking viewer's own row and nobody else's.
     "rating": (
-        "\n  JOIN asset_user_state fx ON fx.asset_id = a.id AND fx.user_id = :viewer"
+        # CROSS JOIN: the files drive the opinions (fresh planner statistics turned it round).
+        "\n  CROSS JOIN asset_user_state fx ON fx.asset_id = a.id AND fx.user_id = :viewer"
         " AND fx.rating IS NOT NULL",
         "CAST(fx.rating AS TEXT)",
     ),

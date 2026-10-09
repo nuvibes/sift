@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import asyncio
 import struct
+import time
 from collections.abc import Sequence
 from dataclasses import dataclass
 
@@ -17,7 +18,7 @@ from sift.kernel.audience import EVERY_ADMIN
 from sift.kernel.changes import About, announce_now
 from sift.kernel.db import Connection, Database, in_clause
 from sift.kernel.forgetting import register_forgetting
-from sift.kernel.log import get_logger
+from sift.kernel.log import get_logger, timing_hook
 from sift.kernel.sql_splice import splice
 from sift.kernel.wiring import Part
 
@@ -52,7 +53,8 @@ CREATE VIRTUAL TABLE IF NOT EXISTS semantic_frames USING vec0(
 
 _INSERT = "INSERT INTO semantic_frames(revision, asset_id, at_ms, embedding) VALUES (?, ?, ?, ?)"
 
-_FORGET = "DELETE FROM semantic_frames WHERE asset_id = ?"
+# `asset_id` in the vector table is read row by row, so a file's frames are found by their keys.
+_FRAMES_KEYED = "SELECT frame FROM semantic_frame_keys WHERE asset_id = ?"
 
 # One pooled vector per file, ranked first for "like this file"; its rowid is the file's key.
 _CREATE_FILES = """
@@ -113,6 +115,8 @@ _CLEAR_KEYS = (
     "DELETE FROM semantic_frame_keys WHERE frame IN (SELECT frame FROM semantic_frame_keys LIMIT ?)",
 )
 CLEAR_BATCH = 500
+#: How long one write of a prune may run before it gives the writer back, every other write waiting.
+PRUNE_SECONDS = 0.1
 _NEAREST = (
     "SELECT asset_id, at_ms, distance FROM semantic_frames "
     "WHERE embedding MATCH ? AND k = ? AND revision = ? ORDER BY distance"
@@ -197,7 +201,9 @@ async def _forget_file(connection: Connection, asset_id: str) -> None:
 
 async def _forget_in(connection: Connection, asset_id: str) -> None:
     """Everything held about one file, inside the caller's write."""
-    await connection.execute(_FORGET, (asset_id,))
+    keyed = await connection.execute_fetchall(_FRAMES_KEYED, (asset_id,))
+    if keyed:
+        await connection.executemany(_CLEAR_FRAME, [(int(row[0]),) for row in keyed])
     await connection.execute(_FORGET_FRAME_KEYS, (asset_id,))
     await connection.execute(_FORGET_POOLED, (asset_id,))
     await _forget_file(connection, asset_id)
@@ -256,22 +262,26 @@ class VectorStore:
     ) -> None:
         """Replace everything held about one file with these frames, in one transaction."""
         await self.ensure_ready()
-        async with self._database.write() as connection:
-            await _forget_in(connection, asset_id)
-            for at_ms, vector in frames:
-                if len(vector) != DIMENSION:
-                    raise ValueError(
-                        f"a frame description has {len(vector)} numbers, and this index holds "
-                        f"{DIMENSION}"
+        with timing_hook("semantic.put", level="debug", frames=len(frames)) as timing:
+            async with self._database.write() as connection:
+                timing.acquired()
+                await _forget_in(connection, asset_id)
+                for at_ms, vector in frames:
+                    if len(vector) != DIMENSION:
+                        raise ValueError(
+                            f"a frame description has {len(vector)} numbers, and this index holds "
+                            f"{DIMENSION}"
+                        )
+                    cursor = await connection.execute(
+                        _INSERT, (revision, asset_id, at_ms, _pack(vector))
                     )
-                cursor = await connection.execute(
-                    _INSERT, (revision, asset_id, at_ms, _pack(vector))
-                )
-                await connection.execute(_KEEP_FRAME_KEY, (cursor.lastrowid, asset_id, revision))
-            # The whole-file description from the numbers in hand, sparing `describes` its scan.
-            pooled = _pooled([vector for _, vector in frames])
-            if pooled:
-                await _keep_file(connection, asset_id, revision, _pack(pooled))
+                    await connection.execute(
+                        _KEEP_FRAME_KEY, (cursor.lastrowid, asset_id, revision)
+                    )
+                # The whole-file description from the numbers in hand, sparing `describes` its scan.
+                pooled = _pooled([vector for _, vector in frames])
+                if pooled:
+                    await _keep_file(connection, asset_id, revision, _pack(pooled))
         # After the commit: a ranking taken while the write was open is kept under the old count.
         _moved()
 
@@ -395,10 +405,15 @@ class VectorStore:
         """Drop the vectors of these files, which the caller found gone; returns how many files."""
         if not gone or not self.available or not await self.built():
             return 0
-        async with self._database.write() as connection:
-            for asset_id in gone:
+        left = list(gone)
+        while left:
+            async with self._database.write() as connection:
+                began = time.monotonic()
                 # The frames, pooled reading and keys go together: no foreign key reaches any.
-                await _forget_in(connection, asset_id)
+                await _forget_in(connection, left.pop())
+                while left and time.monotonic() - began < PRUNE_SECONDS:
+                    await _forget_in(connection, left.pop())
+            await asyncio.sleep(0)
         _moved()
         log.info("semantic.index.pruned", files=len(gone))
         return len(gone)

@@ -569,6 +569,9 @@ SILENT: dict[str, str] = {
     "kernel.db.refresh_statistics": (
         "the query planner's statistics read again; every row answers the same"
     ),
+    "kernel.db.copy_the_log_back": (
+        "the write-ahead log copied back into the database; every row answers the same"
+    ),
     "kernel.db.fold_the_log_back": (
         "the write-ahead log folded back into the database; every row answers the same"
     ),

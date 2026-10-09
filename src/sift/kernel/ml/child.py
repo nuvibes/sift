@@ -39,13 +39,46 @@ import numpy as np
 from sift.kernel import device_load
 from sift.kernel.config import Settings
 from sift.kernel.hardware import HardwareReport
-from sift.kernel.log import get_logger, level_name, redacts_personal
+from sift.kernel.log import get_logger, level_name, redacts_personal, timing_hook
 from sift.kernel.ml.runtime import _ANONYMOUS, _DEVICES, DeviceLost, DeviceUnavailable, Loaded
 from sift.kernel.ml.weights import Weight, WeightError, WeightStore
 from sift.kernel.subprocess import Priority, creation_flags, launch_prefix, step_aside
 from sift.kernel.threads import waits_on_storage
 
 log = get_logger(__name__)
+#: The child's own records, relayed into this process's log under the worker's name.
+_CHILD_LOG = get_logger("sift.kernel.ml.worker")
+_LEVELS = frozenset({"debug", "info", "warning", "error", "critical"})
+
+
+def relay_line(line: str, pid: int | None) -> None:
+    """One line the child wrote to its errors, into this log: a record as it was written, and
+    anything else (a traceback, the runtime's own words) as `ml.child.said`."""
+    try:
+        record = json.loads(line)
+    except ValueError:
+        record = None
+    if not isinstance(record, dict) or not isinstance(record.get("event"), str):
+        _CHILD_LOG.warning("ml.child.said", child_pid=pid, line=line)
+        return
+    event = record.pop("event")
+    level = record.pop("level", "info")
+    # This process stamps its own time; the child's would be a second field of the same name.
+    record.pop("timestamp", None)
+    said = getattr(_CHILD_LOG, level if level in _LEVELS else "info")
+    said(event, child_pid=pid, **record)
+
+
+def relay(pipe: IO[bytes] | None, pid: int | None) -> None:
+    """Every line of the child's errors relayed until it closes, which is when the child ends."""
+    if pipe is None:
+        return
+    with contextlib.suppress(OSError, ValueError):
+        for raw in iter(pipe.readline, b""):
+            line = raw.decode("utf-8", "replace").strip()
+            if line:
+                relay_line(line, pid)
+
 
 #: The module the child runs. Named here and nowhere else, so the parent and the worker cannot
 #: come to disagree about which program is on the other end of the pipe.
@@ -245,7 +278,9 @@ class ChildRunner:
         in the order asked for. One input per ask: the pipe's cost is the bytes, so inputs worth
         batching are stacked into one array by the caller.
         """
-        with self._lock:
+        # Timed with the wait for the child, which one model process serves one ask at a time.
+        with timing_hook("ml.run", level="debug", feature=self._feature) as timing, self._lock:
+            timing.acquired()
             if loaded.weight.id not in self._loaded:
                 # The child that loaded it has gone (a lost device, a crash), and this handle
                 # is from before. Loaded again, in the child there is now.
@@ -326,13 +361,19 @@ class ChildRunner:
                 argv,
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
-                # The child's own log lines go where the backend's do.
-                stderr=None,
+                # Relayed into this process's log, which is the one the Logs page reads.
+                stderr=subprocess.PIPE,
                 env=os.environ.copy(),
                 creationflags=creation_flags(Priority.BACKGROUND),
             )
         except OSError as error:
             raise DeviceUnavailable(f"The model process could not be started ({error}).") from error
+        threading.Thread(
+            target=relay,
+            args=(getattr(child, "stderr", None), child.pid),
+            name="ml-child-log",
+            daemon=True,
+        ).start()
         _RUNNING.add(self)
         # Behind everything else on the disk and in memory too, like any tool's reads.
         step_aside(child)
@@ -470,8 +511,7 @@ def _one_shot(settings: Settings) -> tuple[str, ...]:
         done = subprocess.run(  # noqa: S603 (a list, never a shell; our own interpreter)
             argv,
             stdin=subprocess.DEVNULL,
-            stdout=subprocess.PIPE,
-            stderr=None,
+            capture_output=True,
             timeout=DEVICES_TIMEOUT_SECONDS,
             check=False,
             creationflags=creation_flags(Priority.BACKGROUND),
@@ -482,6 +522,7 @@ def _one_shot(settings: Settings) -> tuple[str, ...]:
         ) from None
     except OSError as error:
         raise DeviceUnavailable(str(error)) from error
+    relay(io.BytesIO(done.stderr or b""), None)
     try:
         answer = receive(io.BytesIO(done.stdout)) or {}
     except ValueError:

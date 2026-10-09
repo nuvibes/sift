@@ -923,6 +923,17 @@ def test_turning_the_redaction_off_says_so_at_every_boot(
     assert "log.unredacted" in capsys.readouterr().out
 
 
+def test_a_child_whose_parent_said_so_does_not_say_it_again(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    try:
+        configure_logging(redact_personal=False, warn_unredacted=False)
+    finally:
+        configure_logging()
+
+    assert "log.unredacted" not in capsys.readouterr().out
+
+
 # --- what is worth recording as a security event
 
 
@@ -1420,3 +1431,95 @@ def test_the_shells_word_goes_to_stdout_whole(capsys: pytest.CaptureFixture[str]
 
     tell_the_shell("sift.listening")
     assert capsys.readouterr().out == "sift.listening\n"
+
+
+# --- What one job cost ----------------------------------------------------------------------------
+
+
+def test_a_job_s_stages_reads_and_waits_are_filed_to_it_and_nothing_counts_twice() -> None:
+    """Spans nest (a write inside a stage), so what they account for is their union."""
+    cost = log_module.JobCost(began=0.0)
+    cost.staged("probe.verify", 0.0, 0.4)
+    cost.staged("probe.verify", 0.5, 0.6)
+    cost.staged("db.read", 0.6, 0.7)
+    cost.staged("db.sweep", 0.7, 0.75)
+    # A statement inside a write block, and the job's own record: neither is a part of its own.
+    cost.staged("db.write", 0.1, 0.2)
+    cost.staged("job", 0.0, 1.0)
+    cost.wrote(0.1, 0.3, 0.35)
+    cost.waited_for_storage(0.8, 0.85)
+    cost.launched(0.84, 0.9, 1234)
+
+    said = cost.summary(ended=1.0)
+
+    assert said["stages"] == {"probe.verify": 500}
+    assert (said["reads"], said["read_ms"]) == (2, 150)
+    assert (said["writes"], said["writer_wait_ms"], said["writer_held_ms"]) == (1, 200, 50)
+    assert said["storage_wait_ms"] == 50
+    assert (said["launches"], said["tool_ms"], said["tool_read_bytes"]) == (1, 60, 1234)
+    # 0 to 0.4, 0.5 to 0.75, 0.8 to 0.9: the write inside the first stage adds nothing.
+    assert (said["wall_ms"], said["covered_ms"], said["covered_pct"]) == (1000, 750, 75.0)
+
+
+def test_a_span_past_either_end_of_the_job_counts_only_inside_it() -> None:
+    cost = log_module.JobCost(began=1.0)
+    cost.staged("early", 0.5, 1.5)
+    cost.staged("late", 1.8, 3.0)
+    assert cost.summary(ended=2.0)["covered_ms"] == 700
+
+
+def test_a_job_that_took_no_time_is_wholly_accounted_for() -> None:
+    assert log_module.JobCost(began=5.0).summary(ended=5.0)["covered_pct"] == 100.0
+
+
+def test_a_long_job_s_spans_are_merged_as_they_come_so_its_record_stays_small(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(log_module, "_KEPT_SPANS", 4)
+    cost = log_module.JobCost(began=0.0)
+    for n in range(10):
+        cost.staged("step", n, n + 1)
+    assert len(cost._spans) <= 5
+    assert cost.summary(ended=10.0)["covered_ms"] == 10_000
+
+
+def test_a_timed_block_inside_a_job_is_filed_to_it_and_outside_one_to_nothing() -> None:
+    cost = log_module.JobCost()
+    with timing_hook("outside"):
+        pass
+    with log_module.costing(cost):
+        assert log_module.job_cost() is cost
+        with timing_hook("inside"):
+            pass
+    assert log_module.job_cost() is None
+    assert list(cost.stages) == ["inside"]
+
+
+def test_a_storage_wait_is_filed_to_the_job_it_was_for() -> None:
+    log_module.note_storage_wait(0.0, 1.0)  # outside a job: nobody to tell
+    cost = log_module.JobCost(began=0.0)
+    with log_module.costing(cost):
+        log_module.note_storage_wait(0.0, 0.25)
+    assert cost.summary(ended=1.0)["storage_wait_ms"] == 250
+
+
+def test_a_start_never_rolls_a_log_its_setting_would_keep(tmp_path: Path) -> None:
+    """The start's own size is far below the library's setting, which is read seconds later: a
+    long log rolled at the first line, and every older file trimmed to fit the start's size."""
+    from sift.kernel.log_settings import largest_file_bytes
+
+    log_file = tmp_path / "sift.log"
+    log_file.write_bytes(b"x" * 4096)
+    older = tmp_path / "sift.log.1"
+    older.write_bytes(b"y" * 8192)
+    try:
+        configure_logging(log_file=log_file, max_bytes=1024, backups=5)
+        get_logger(__name__).info("boot.imported")
+        handler = next(
+            h for h in logging.getLogger().handlers if isinstance(h, RotatingFileHandler)
+        )
+        assert handler.maxBytes == largest_file_bytes(5)
+    finally:
+        configure_logging()
+    assert log_file.stat().st_size > 4096
+    assert older.stat().st_size == 8192

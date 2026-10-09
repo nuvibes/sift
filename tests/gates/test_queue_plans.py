@@ -66,7 +66,7 @@ WHOLE_BY_DESIGN = {
     # The tally of every family by the state its row shows: every top is a family on the page.
     "_FAMILY_TALLY_HEAD": "counts every top by its folded state, the page's tabs",
     # The prune walks the settled and parked rows it deletes, a batch at a time.
-    "_PRUNE_SETTLED": "walks the settled and parked rows it deletes",
+    "_PRUNE_SETTLED": "reads one arm per state through its index; kept here because the gate would read `newer.type = old.type` as a question about one type",
 }
 
 

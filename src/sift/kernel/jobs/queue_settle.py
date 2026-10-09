@@ -16,15 +16,12 @@ from sift.kernel.log import get_logger
 from sift.kernel.presses import Pressed, record_pressed
 
 log = get_logger("sift.kernel.jobs.queue")
-# `progress` is left alone when the job has children: the number shown for it is theirs.
+# A job's progress is its own handler's; its children's are counted in `job_family_tallies`.
 _COMPLETE = """
 UPDATE jobs
    SET state = 'done',
        stop_wanted = NULL,
-       progress = CASE
-           WHEN EXISTS (SELECT 1 FROM jobs child WHERE child.parent_id = jobs.id) THEN progress
-           ELSE 1.0
-       END,
+       progress = 1.0,
        claimed_by = NULL,
        heartbeat_at = NULL,
        error = NULL,
@@ -251,7 +248,6 @@ class Settling(HandOffs):
             rows = await _fetch(connection, _COMPLETE, (now, job_id, worker_id))
             if not rows:
                 return False
-            await self._roll_up(connection, [rows[0]["parent_id"]])
             await self._record_runs(connection, rows, "done")
             if pressed is not None:
                 await record_pressed(connection, pressed, finished_at=int(now))
@@ -291,7 +287,6 @@ class Settling(HandOffs):
 
             state = JobState.FAILED if permanent else JobState(rows[0]["state"])
             if state is JobState.FAILED:
-                await self._roll_up(connection, [rows[0]["parent_id"]])
                 await self._record_runs(connection, rows, "failed")
 
         if state is JobState.FAILED:
@@ -408,7 +403,6 @@ class Settling(HandOffs):
                 # about to wind up should read the withdrawal first if it can.
                 self._stop_asked([job_id])
                 return True
-            await self._roll_up(connection, [rows[0]["parent_id"]])
 
         log.info("job.resumed", job_id=job_id)
         return True
@@ -419,7 +413,6 @@ class Settling(HandOffs):
         while True:
             async with self._writing() as connection:
                 rows = await _fetch(connection, _RESUME_AFTER_BENCHMARK, (self._now(), chunk))
-                await self._roll_up(connection, [row["parent_id"] for row in rows])
             resumed += [str(row["id"]) for row in rows]
             if len(rows) < chunk:
                 return resumed
@@ -503,6 +496,5 @@ class Settling(HandOffs):
                 (_for_the_record(error), now, stale_before, stale_before),
             )
             requeued = await _fetch(connection, _RECLAIM_REQUEUE, (now, stale_before, stale_before))
-            await self._roll_up(connection, [row["parent_id"] for row in exhausted])
 
         return [row["id"] for row in requeued], [row["id"] for row in exhausted]

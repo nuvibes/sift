@@ -89,6 +89,7 @@
     "ix_jobs_family_by_id": "create index ix_jobs_family_by_id on jobs ( root_id , id )",
     "ix_jobs_last_run": "create index ix_jobs_last_run on jobs ( type , updated_at , id ) where state in ( 'done' , 'canceled' ) and started_at is not null",
     "ix_jobs_parent": "create index ix_jobs_parent on jobs ( parent_id )",
+    "ix_jobs_queued_later": "create index ix_jobs_queued_later on jobs ( run_after ) where state = 'queued' and run_after is not null",
     "ix_jobs_settled_by_created": "create index ix_jobs_settled_by_created on jobs ( created_at , state , type ) where state in ( 'done' , 'failed' )",
     "ix_jobs_state_by_id": "create index ix_jobs_state_by_id on jobs ( state , id )",
     "ix_jobs_tops_by_id": "create index ix_jobs_tops_by_id on jobs ( id ) where root_id = id",
@@ -1269,6 +1270,19 @@
         "primary key ( user_id , key )"
       ],
       "options": ""
+    },
+    "job_family_tallies": {
+      "columns": {
+        "n": "integer not null",
+        "root_id": "text not null",
+        "state": "text not null",
+        "timing": "text not null",
+        "type": "text not null"
+      },
+      "constraints": [
+        "primary key ( root_id , state , type , timing )"
+      ],
+      "options": "without rowid"
     },
     "job_tallies": {
       "columns": {
@@ -3079,6 +3093,9 @@
     "insights_redo_song_files_out": "song_files",
     "insights_redo_walls_in": "theater_sessions",
     "insights_redo_walls_moved": "theater_sessions",
+    "jobs_family_added": "jobs",
+    "jobs_family_moved": "jobs",
+    "jobs_family_removed": "jobs",
     "jobs_tally_added": "jobs",
     "jobs_tally_moved": "jobs",
     "jobs_tally_removed": "jobs",
@@ -3298,7 +3315,7 @@
     "identity": 4,
     "importing": 1,
     "insights": 8,
-    "jobs": 16,
+    "jobs": 17,
     "ledger": 8,
     "library": 7,
     "music": 6,

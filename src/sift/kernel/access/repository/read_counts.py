@@ -29,8 +29,9 @@ def _o_count_over(members: str) -> str:
         "SELECT COALESCE(SUM(s.o_count), 0) AS total FROM ("  # noqa: S608
         + members
         + ") m"
-        " JOIN viewer_assets va ON va.asset_id = m.asset_id AND va.user_id = :viewer"
-        " JOIN asset_user_state s ON s.asset_id = m.asset_id AND s.user_id = :viewer"
+        # CROSS JOIN: the members drive, whatever the planner's statistics say.
+        " CROSS JOIN viewer_assets va ON va.asset_id = m.asset_id AND va.user_id = :viewer"
+        " CROSS JOIN asset_user_state s ON s.asset_id = m.asset_id AND s.user_id = :viewer"
         " WHERE (:reveal_named = 1 OR va.concealed = 0)"
     )
 

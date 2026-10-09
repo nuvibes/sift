@@ -86,6 +86,9 @@ rules:
         # The parts `kernel/db.py` is split into: the connection, the library files, the
         # readers, the judged statements.
         - src/sift/kernel/db_base.py
+        - src/sift/kernel/db_statistics.py
+        - src/sift/kernel/db_capabilities.py
+        - src/sift/kernel/db_hooks.py
         - src/sift/kernel/db_library.py
         - src/sift/kernel/db_readers.py
         - src/sift/kernel/db_judged.py

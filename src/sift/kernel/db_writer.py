@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from collections.abc import Callable
 from contextlib import suppress
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -19,6 +20,12 @@ log = get_logger(__name__)
 
 #: How often the write-ahead log is offered a fold: rarely, since a landed one is a burst of copying.
 CHECKPOINT_INTERVAL_SECONDS = 300.0
+
+#: How often the keeper looks at the log's size, and the size at which it copies the log back
+#: without the write lock: about the 1,000 pages SQLite's own copy waits for, which commits do not
+#: run here (`Database._open`).
+LOG_LOOK_SECONDS = 0.25
+COPY_BACK_AT_BYTES = 4 * 1024 * 1024
 
 
 #: Below this much reclaimed, folding the log is not worth a line in anybody's log.
@@ -40,6 +47,33 @@ WRITE_HELD_BUDGET_MS = 250
 WRITER_HELD_SECONDS = 5.0
 #: Under load many writes run over budget; one line this often carries the count of the rest.
 WRITE_HELD_SAY_SECONDS = 5.0
+
+
+class _WaitsSaid:
+    """Waits for the writer over the budget, said as one line per `WRITE_HELD_SAY_SECONDS` that
+    carries the count and the worst of the rest."""
+
+    def __init__(self, clock: Callable[[], float] = time.monotonic) -> None:
+        self._clock = clock
+        self._said = 0.0
+        self._quietly = 0
+        self._worst_ms = 0.0
+
+    def waited(self, waited_ms: float) -> None:
+        if waited_ms < WRITE_HELD_BUDGET_MS:
+            return
+        now = self._clock()
+        self._quietly += 1
+        self._worst_ms = max(self._worst_ms, waited_ms)
+        if now - self._said < WRITE_HELD_SAY_SECONDS:
+            return
+        log.info(
+            "db.write_waited",
+            waited_ms=round(waited_ms),
+            worst_ms=round(self._worst_ms),
+            blocks=self._quietly,
+        )
+        self._said, self._quietly, self._worst_ms = now, 0, 0.0
 
 
 def _writer_still_held(
@@ -65,18 +99,32 @@ async def keep_the_log_folded(
     stop: asyncio.Event,
     *,
     interval: float = CHECKPOINT_INTERVAL_SECONDS,
+    look: float = LOG_LOOK_SECONDS,
+    copy_at: int = COPY_BACK_AT_BYTES,
 ) -> None:
-    """Offer the write-ahead log a chance to fold back, on a timer, until told to stop. Offered,
-    never forced: a busy install skips one and takes the next, and without this the moment the log
-    needs never arrives under continuous background work."""
+    """Keep the write-ahead log small until told to stop: copied back without the write lock once
+    it reaches `copy_at`, and offered a fold on a timer. Offered, never forced: a fold is skipped
+    while the writer is held and taken at a later tick, and without this the moment the log needs
+    never arrives under continuous background work."""
+    step = min(look, interval)
+    # Counted in looks rather than read off a clock, so a fold falls on a look whatever the timer's
+    # resolution.
+    looks_per_fold = max(1, round(interval / step))
+    looks = 0
     while not stop.is_set():
         with suppress(TimeoutError):
-            await asyncio.wait_for(stop.wait(), timeout=interval)
+            await asyncio.wait_for(stop.wait(), timeout=step)
         if stop.is_set():
             return
+        looks += 1
         try:
             # Sized either side, because the pragma cannot say how much it reclaimed.
             before = await asyncio.to_thread(_log_bytes, database.path)
+            if looks < looks_per_fold or database.writer_is_held():
+                if before >= copy_at:
+                    await database.copy_the_log_back()
+                continue
+            looks = 0
             folded, remaining = await database.fold_the_log_back()
             after = await asyncio.to_thread(_log_bytes, database.path)
             if folded and before - after >= RECLAIM_WORTH_SAYING_BYTES:

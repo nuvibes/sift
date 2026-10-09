@@ -348,3 +348,81 @@ async def test_a_keeper_told_to_stop_before_it_starts_does_nothing(tmp_path: Pat
         keep_the_statistics_current(Database(tmp_path / "never.sqlite3"), stop, interval=0.01),
         timeout=1.0,
     )
+
+
+@pytest.mark.unit
+async def test_a_commit_never_copies_the_log_back(tmp_path: Path) -> None:
+    """The copy ran inside the write block that crossed the threshold, holding every other write
+    for it: the writer leaves it to the keeper."""
+    database = Database(tmp_path / "test.sqlite3")
+    await database.connect()
+    try:
+        async with database.write() as writer:
+            cursor = await writer.execute("PRAGMA wal_autocheckpoint")
+            row = await cursor.fetchone()
+            await cursor.close()
+        assert row is not None and row[0] == 0
+    finally:
+        await database.close()
+
+
+@pytest.mark.unit
+async def test_a_log_copied_back_is_written_over_rather_than_grown(tmp_path: Path) -> None:
+    """Copied in full, the next writes start the log over, so it stays the size of one burst."""
+    database = Database(tmp_path / "test.sqlite3")
+    await database.connect()
+    log_file = tmp_path / "test.sqlite3-wal"
+    try:
+        await database.execute("CREATE TABLE wide (id INTEGER PRIMARY KEY, blob TEXT)")
+        for _ in range(200):
+            await database.execute("INSERT INTO wide (blob) VALUES (?)", ("x" * 4000,))
+        one_burst = log_file.stat().st_size
+        pages, copied = await database.copy_the_log_back()
+        assert pages == copied > 0, "everything in the log was copied"
+        for _ in range(200):
+            await database.execute("INSERT INTO wide (blob) VALUES (?)", ("y" * 4000,))
+        assert log_file.stat().st_size < one_burst * 1.5, "a second burst did not double it"
+    finally:
+        await database.close()
+
+
+@pytest.mark.unit
+async def test_the_keeper_copies_a_grown_log_and_folds_only_while_the_writer_is_free(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A copy whenever the log passes its size; the fold, which takes the writer, waits for a
+    look when nobody holds it."""
+    database = Database(tmp_path / "test.sqlite3")
+    await database.connect()
+    copies = folds = 0
+    copied = asyncio.Event()
+    folded = asyncio.Event()
+
+    async def copy() -> tuple[int, int]:
+        nonlocal copies
+        copies += 1
+        copied.set()
+        return 0, 0
+
+    async def fold() -> tuple[bool, int]:
+        nonlocal folds
+        folds += 1
+        folded.set()
+        return True, 0
+
+    monkeypatch.setattr(database, "copy_the_log_back", copy)
+    monkeypatch.setattr(database, "fold_the_log_back", fold)
+    monkeypatch.setattr(db_writer, "_log_bytes", lambda _path: 10)
+    stop = asyncio.Event()
+    try:
+        async with database.write():
+            keeper = asyncio.create_task(
+                keep_the_log_folded(database, stop, interval=0.005, look=0.005, copy_at=5)
+            )
+            await asyncio.wait_for(copied.wait(), timeout=5.0)
+            assert folds == 0, "no fold while the writer is held"
+        await asyncio.wait_for(folded.wait(), timeout=5.0)
+        stop.set()
+        await asyncio.wait_for(keeper, timeout=1.0)
+    finally:
+        await database.close()

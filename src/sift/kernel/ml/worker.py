@@ -6,8 +6,8 @@ frame saying what it is for, then answers loads and runs until its input ends, w
 happens the moment the parent lets go of it, so a worker never outlives the backend.
 
 Its standard output is the pipe and carries frames alone (a stray print would be read as a
-frame's length), so `main` sends everything else to standard error, which the backend's log
-keeps, and logging is configured as the backend's is.
+frame's length), so `main` sends everything else to standard error, which the backend relays
+into its own log, and logging is configured as the backend's is.
 
 A device that dies underneath a session ends this process, deliberately: the parent is what
 restarts it, and a fresh process is the only thing that gets a fresh context.
@@ -42,6 +42,7 @@ def configure_from(hello: dict[str, Any]) -> None:
     configure_logging(
         str(hello.get("log_level", "INFO")),
         redact_personal=bool(hello.get("redact_personal", True)),
+        warn_unredacted=False,
     )
 
 

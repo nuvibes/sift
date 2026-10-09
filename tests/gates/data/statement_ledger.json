@@ -648,7 +648,7 @@
     "20000": 96,
     "80000": 96
    },
-   "count": 863
+   "count": 899
   },
   "insert:backlog_files#d9fa6ccb": {
    "stage": "db.write",
@@ -656,7 +656,7 @@
     "20000": 15504,
     "80000": 15504
    },
-   "count": 863
+   "count": 899
   },
   "insert:backlog_terms#d29c6586": {
    "stage": "db.write",
@@ -666,13 +666,15 @@
    },
    "count": 11
   },
-  "insert:jobs#8ea1fe4f": {
+  "insert:jobs#db441ddc": {
    "stage": "db.write",
    "steps": {
-    "20000": 192,
-    "80000": 192
+    "20000": 240,
+    "80000": 240
    },
-   "count": 1
+   "count": 1,
+   "why": "round P wave 1, recorded together because the ledger takes every new statement in one run: the Tasks and Smart Search status reads count family tallies kept by triggers (jobs 17); a probe's children land in one insert; the done-lately, in-run and arrivals reads name their indexes, and the person's O count, the username filter and the facets by site and by rating drive from the files by CROSS JOIN, since the boot's fresh planner statistics had turned each round; every one bounded by the library or its window as before",
+   "per": "library"
   },
   "insert:opinions#c8c8789c": {
    "stage": "db.write",
@@ -777,15 +779,6 @@
    },
    "count": 1
   },
-  "pragma:-#04e9c4a1": {
-   "stage": "db.write",
-   "steps": {
-    "20000": 11168,
-    "80000": 11168
-   },
-   "count": 1,
-   "why": "rounds O2 and O3: the rediscovered read counts its gap in local days; a recap keeps the usual figures its voice compares against; the sharing press sets and clears its may-defer flag around its writes and reads whether a widening is still being filed, one row each; a write marks what it left owed and sums it once before it commits (the hook reads the owed rows, sums each press thing and subject again, and clears them: flat per row at any size, its table check and pragma once per write), so a new act adds its share by key and a merge marks its moved subjects per row; a default cover is a picture only, so the hide trigger and the merge read the kind of the file"
-  },
   "pragma:-#19baeb3e": {
    "stage": "db.write",
    "steps": {
@@ -811,6 +804,14 @@
    "count": 1
   },
   "pragma:-#582b20a1": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 0,
+    "80000": 0
+   },
+   "count": 1
+  },
+  "pragma:-#5b948ad2": {
    "stage": "db.write",
    "steps": {
     "20000": 0,
@@ -967,7 +968,7 @@
     "20000": 33440,
     "80000": 33440
    },
-   "count": 134
+   "count": 141
   },
   "select:asset_locations#89742260": {
    "stage": "db.write",
@@ -991,7 +992,7 @@
     "20000": 8512,
     "80000": 8512
    },
-   "count": 129
+   "count": 140
   },
   "select:asset_locations#c4bbfcbb": {
    "stage": "db.write",
@@ -1007,7 +1008,7 @@
     "20000": 35840,
     "80000": 35856
    },
-   "count": 154
+   "count": 160
   },
   "select:asset_locations#da2aa158": {
    "stage": "db.read",
@@ -1032,7 +1033,7 @@
     "20000": 39168,
     "80000": 39184
    },
-   "count": 146
+   "count": 152
   },
   "select:asset_locations#fb05fab9": {
    "stage": "db.write",
@@ -1040,17 +1041,17 @@
     "20000": 29520,
     "80000": 29520
    },
-   "count": 301
+   "count": 307
   },
-  "select:asset_people#620fb24b": {
+  "select:asset_people#a8bae942": {
    "stage": "db.read",
    "steps": {
-    "20000": 29696,
-    "80000": 120272
+    "20000": 29712,
+    "80000": 120288
    },
    "count": 1,
-   "per": "library",
-   "why": "costs this before the ledger: a debt on the record, not a decision"
+   "why": "round P wave 1, recorded together because the ledger takes every new statement in one run: the Tasks and Smart Search status reads count family tallies kept by triggers (jobs 17); a probe's children land in one insert; the done-lately, in-run and arrivals reads name their indexes, and the person's O count, the username filter and the facets by site and by rating drive from the files by CROSS JOIN, since the boot's fresh planner statistics had turned each round; every one bounded by the library or its window as before",
+   "per": "library"
   },
   "select:asset_people#ae4b35ee": {
    "stage": "db.read",
@@ -1137,8 +1138,8 @@
   "select:asset_usernames#5605f804": {
    "stage": "db.read",
    "steps": {
-    "20000": 2096,
-    "80000": 2096
+    "20000": 80,
+    "80000": 80
    },
    "count": 1
   },
@@ -1264,6 +1265,16 @@
    },
    "count": 2
   },
+  "select:assets#710b9d90": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 32,
+    "80000": 32
+   },
+   "count": 1,
+   "why": "round P wave 1, recorded together because the ledger takes every new statement in one run: the Tasks and Smart Search status reads count family tallies kept by triggers (jobs 17); a probe's children land in one insert; the done-lately, in-run and arrivals reads name their indexes, and the person's O count, the username filter and the facets by site and by rating drive from the files by CROSS JOIN, since the boot's fresh planner statistics had turned each round; every one bounded by the library or its window as before",
+   "per": "library"
+  },
   "select:assets#755f1016": {
    "stage": "db.read",
    "steps": {
@@ -1309,14 +1320,6 @@
    ],
    "per": "library",
    "why": "costs this before the ledger: a debt on the record, not a decision"
-  },
-  "select:assets#eca8438b": {
-   "stage": "db.read",
-   "steps": {
-    "20000": 32,
-    "80000": 32
-   },
-   "count": 1
   },
   "select:assets#fb3ce0a9": {
    "stage": "db.read",
@@ -1370,7 +1373,7 @@
     "20000": 6528,
     "80000": 6528
    },
-   "count": 1669
+   "count": 1705
   },
   "select:backlog_terms#401e5329": {
    "stage": "db.write",
@@ -1710,6 +1713,22 @@
    },
    "count": 1
   },
+  "select:job_family_tallies#a8a74131": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 50656,
+    "80000": 202352
+   },
+   "count": 1
+  },
+  "select:job_tallies#0908f707": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 208,
+    "80000": 208
+   },
+   "count": 1
+  },
   "select:job_tallies#1989728c": {
    "stage": "db.read",
    "steps": {
@@ -1717,6 +1736,36 @@
     "80000": 224
    },
    "count": 4
+  },
+  "select:job_tallies#210cd391": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 176,
+    "80000": 176
+   },
+   "count": 1,
+   "why": "round P wave 1, recorded together because the ledger takes every new statement in one run: the Tasks and Smart Search status reads count family tallies kept by triggers (jobs 17); a probe's children land in one insert; the done-lately, in-run and arrivals reads name their indexes, and the person's O count, the username filter and the facets by site and by rating drive from the files by CROSS JOIN, since the boot's fresh planner statistics had turned each round; every one bounded by the library or its window as before",
+   "per": "library"
+  },
+  "select:job_tallies#89017114": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 48,
+    "80000": 48
+   },
+   "count": 1,
+   "why": "round P wave 1, recorded together because the ledger takes every new statement in one run: the Tasks and Smart Search status reads count family tallies kept by triggers (jobs 17); a probe's children land in one insert; the done-lately, in-run and arrivals reads name their indexes, and the person's O count, the username filter and the facets by site and by rating drive from the files by CROSS JOIN, since the boot's fresh planner statistics had turned each round; every one bounded by the library or its window as before",
+   "per": "library"
+  },
+  "select:job_tallies#a40522af": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 320,
+    "80000": 320
+   },
+   "count": 1,
+   "why": "round P wave 1, recorded together because the ledger takes every new statement in one run: the Tasks and Smart Search status reads count family tallies kept by triggers (jobs 17); a probe's children land in one insert; the done-lately, in-run and arrivals reads name their indexes, and the person's O count, the username filter and the facets by site and by rating drive from the files by CROSS JOIN, since the boot's fresh planner statistics had turned each round; every one bounded by the library or its window as before",
+   "per": "library"
   },
   "select:job_tallies#f71ab1e8": {
    "stage": "db.read",
@@ -1735,15 +1784,6 @@
    "count": 2,
    "per": "library",
    "why": "costs this before the ledger: a debt on the record, not a decision"
-  },
-  "select:jobs#088219c8": {
-   "stage": "db.read",
-   "steps": {
-    "20000": 48,
-    "80000": 48
-   },
-   "count": 1,
-   "why": "the Smart Search pane asks the queue whether describing is running"
   },
   "select:jobs#17ae2517": {
    "stage": "db.read",
@@ -1778,22 +1818,6 @@
    },
    "count": 1
   },
-  "select:jobs#3e910d7c": {
-   "stage": "db.read",
-   "steps": {
-    "20000": 192,
-    "80000": 192
-   },
-   "count": 1
-  },
-  "select:jobs#46d76970": {
-   "stage": "db.read",
-   "steps": {
-    "20000": 16,
-    "80000": 16
-   },
-   "count": 1
-  },
   "select:jobs#47ecedfc": {
    "stage": "db.read",
    "steps": {
@@ -1801,15 +1825,6 @@
     "80000": 1168
    },
    "count": 1
-  },
-  "select:jobs#4b4060a2": {
-   "stage": "db.read",
-   "steps": {
-    "20000": 592,
-    "80000": 592
-   },
-   "count": 1,
-   "why": "the Smart Search pane asks the queue for a Build's outstanding tasks"
   },
   "select:jobs#4e7a32a9": {
    "stage": "db.read",
@@ -1877,14 +1892,6 @@
    },
    "count": 2
   },
-  "select:jobs#87535d3e": {
-   "stage": "db.read",
-   "steps": {
-    "20000": 704,
-    "80000": 704
-   },
-   "count": 1
-  },
   "select:jobs#8da72ad2": {
    "stage": "db.read",
    "steps": {
@@ -1925,14 +1932,6 @@
    },
    "count": 1
   },
-  "select:jobs#a1fa04f7": {
-   "stage": "db.read",
-   "steps": {
-    "20000": 192,
-    "80000": 192
-   },
-   "count": 1
-  },
   "select:jobs#a91e01d6": {
    "stage": "db.read",
    "steps": {
@@ -1940,6 +1939,16 @@
     "80000": 48
    },
    "count": 1
+  },
+  "select:jobs#b89e8578": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 16,
+    "80000": 16
+   },
+   "count": 1,
+   "why": "round P wave 1, recorded together because the ledger takes every new statement in one run: the Tasks and Smart Search status reads count family tallies kept by triggers (jobs 17); a probe's children land in one insert; the done-lately, in-run and arrivals reads name their indexes, and the person's O count, the username filter and the facets by site and by rating drive from the files by CROSS JOIN, since the boot's fresh planner statistics had turned each round; every one bounded by the library or its window as before",
+   "per": "library"
   },
   "select:jobs#d886afa2": {
    "stage": "db.read",
@@ -1949,13 +1958,15 @@
    },
    "count": 1
   },
-  "select:jobs#ed866eb0": {
+  "select:jobs#f305db4a": {
    "stage": "db.read",
    "steps": {
     "20000": 16,
     "80000": 16
    },
-   "count": 1
+   "count": 1,
+   "why": "round P wave 1, recorded together because the ledger takes every new statement in one run: the Tasks and Smart Search status reads count family tallies kept by triggers (jobs 17); a probe's children land in one insert; the done-lately, in-run and arrivals reads name their indexes, and the person's O count, the username filter and the facets by site and by rating drive from the files by CROSS JOIN, since the boot's fresh planner statistics had turned each round; every one bounded by the library or its window as before",
+   "per": "library"
   },
   "select:json_each#9e206df0": {
    "stage": "db.read",
@@ -2729,7 +2740,7 @@
     "20000": 16,
     "80000": 16
    },
-   "count": 1686,
+   "count": 1722,
    "why": "an act marks itself and its two neighbours of the same press, three index seeks a row, flat with the library, so the History feed reads a page and not the record; a file's counts move once per write: a change records what the file held and one fold moves the counts before the write commits, so a file costs a read of its members where a thousand cost one fold; the hook asks once per connection whether the tables exist and once per write whether anything was touched"
   },
   "select:visibility_owed#c9f07d5a": {
@@ -2791,8 +2802,8 @@
   "select:workbench_decision_subjects#4341c5d9": {
    "stage": "db.read",
    "steps": {
-    "20000": 26528,
-    "80000": 105328
+    "20000": 288,
+    "80000": 288
    },
    "count": 1,
    "scans": [
@@ -2836,8 +2847,8 @@
   "select:workbench_decisions#6f2862c5": {
    "stage": "db.read",
    "steps": {
-    "20000": 26272,
-    "80000": 105072
+    "20000": 0,
+    "80000": 0
    },
    "count": 3,
    "per": "library",
@@ -2857,7 +2868,7 @@
     "20000": 16,
     "80000": 16
    },
-   "count": 1686,
+   "count": 1722,
    "why": "rounds O2 and O3: the rediscovered read counts its gap in local days; a recap keeps the usual figures its voice compares against; the sharing press sets and clears its may-defer flag around its writes and reads whether a widening is still being filed, one row each; a write marks what it left owed and sums it once before it commits (the hook reads the owed rows, sums each press thing and subject again, and clears them: flat per row at any size, its table check and pragma once per write), so a new act adds its share by key and a merge marks its moved subjects per row; a default cover is a picture only, so the hide trigger and the merge read the kind of the file"
   },
   "settings.app_value": {
@@ -3341,6 +3352,16 @@
    "per": "library",
    "why": "costs this before the ledger: a debt on the record, not a decision"
   },
+  "with:json_each#0be2793d": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 51312,
+    "80000": 201376
+   },
+   "count": 1,
+   "why": "round P wave 1, recorded together because the ledger takes every new statement in one run: the Tasks and Smart Search status reads count family tallies kept by triggers (jobs 17); a probe's children land in one insert; the done-lately, in-run and arrivals reads name their indexes, and the person's O count, the username filter and the facets by site and by rating drive from the files by CROSS JOIN, since the boot's fresh planner statistics had turned each round; every one bounded by the library or its window as before",
+   "per": "library"
+  },
   "with:json_each#0c2512c3": {
    "stage": "db.read",
    "steps": {
@@ -3388,16 +3409,6 @@
    "per": "library",
    "why": "costs this before the ledger: a debt on the record, not a decision"
   },
-  "with:json_each#190902a5": {
-   "stage": "db.read",
-   "steps": {
-    "20000": 128912,
-    "80000": 498016
-   },
-   "count": 1,
-   "per": "library",
-   "why": "costs this before the ledger: a debt on the record, not a decision"
-  },
   "with:json_each#1fc6ea99": {
    "stage": "db.read",
    "steps": {
@@ -3405,6 +3416,16 @@
     "80000": 688
    },
    "count": 1
+  },
+  "with:json_each#228508a7": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 125168,
+    "80000": 242848
+   },
+   "count": 1,
+   "why": "round P wave 1, recorded together because the ledger takes every new statement in one run: the Tasks and Smart Search status reads count family tallies kept by triggers (jobs 17); a probe's children land in one insert; the done-lately, in-run and arrivals reads name their indexes, and the person's O count, the username filter and the facets by site and by rating drive from the files by CROSS JOIN, since the boot's fresh planner statistics had turned each round; every one bounded by the library or its window as before",
+   "per": "library"
   },
   "with:json_each#2993778b": {
    "stage": "db.read",
@@ -3613,16 +3634,6 @@
    "per": "library",
    "why": "costs this before the ledger: a debt on the record, not a decision"
   },
-  "with:json_each#8a27fa00": {
-   "stage": "db.read",
-   "steps": {
-    "20000": 51232,
-    "80000": 201376
-   },
-   "count": 1,
-   "per": "library",
-   "why": "costs this before the ledger: a debt on the record, not a decision"
-  },
   "with:json_each#8e427dc9": {
    "stage": "db.read",
    "steps": {
@@ -3746,16 +3757,6 @@
    "per": "library",
    "why": "costs this before the ledger: a debt on the record, not a decision"
   },
-  "with:json_each#cc24830b": {
-   "stage": "db.read",
-   "steps": {
-    "20000": 125184,
-    "80000": 242848
-   },
-   "count": 1,
-   "per": "library",
-   "why": "costs this before the ledger: a debt on the record, not a decision"
-  },
   "with:json_each#cfeabf41": {
    "stage": "db.read",
    "steps": {
@@ -3784,6 +3785,26 @@
    "per": "library",
    "why": "costs this before the ledger: a debt on the record, not a decision"
   },
+  "with:json_each#fa5bdc42": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 1071776,
+    "80000": 4278688
+   },
+   "count": 1,
+   "why": "round P wave 1, recorded together because the ledger takes every new statement in one run: the Tasks and Smart Search status reads count family tallies kept by triggers (jobs 17); a probe's children land in one insert; the done-lately, in-run and arrivals reads name their indexes, and the person's O count, the username filter and the facets by site and by rating drive from the files by CROSS JOIN, since the boot's fresh planner statistics had turned each round; every one bounded by the library or its window as before",
+   "per": "library"
+  },
+  "with:json_each#fd40f20b": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 1042896,
+    "80000": 4170672
+   },
+   "count": 1,
+   "why": "round P wave 1, recorded together because the ledger takes every new statement in one run: the Tasks and Smart Search status reads count family tallies kept by triggers (jobs 17); a probe's children land in one insert; the done-lately, in-run and arrivals reads name their indexes, and the person's O count, the username filter and the facets by site and by rating drive from the files by CROSS JOIN, since the boot's fresh planner statistics had turned each round; every one bounded by the library or its window as before",
+   "per": "library"
+  },
   "with:json_each#fe74ca2c": {
    "stage": "db.read",
    "steps": {
@@ -3794,16 +3815,6 @@
    "scans": [
     "assets"
    ],
-   "why": "costs this before the ledger: a debt on the record, not a decision"
-  },
-  "with:json_each#feb6123b": {
-   "stage": "db.read",
-   "steps": {
-    "20000": 16208,
-    "80000": 63712
-   },
-   "count": 1,
-   "per": "library",
    "why": "costs this before the ledger: a debt on the record, not a decision"
   },
   "with:music_pairs#78d4552b": {

@@ -30,6 +30,8 @@ from sift.kernel.ingress import (
     verify_ingress,
 )
 from sift.kernel.jobs import (
+    STOP_TO_CANCEL,
+    JobCanceled,
     JobContext,
 )
 from sift.kernel.log import get_logger
@@ -55,6 +57,30 @@ NANOSECONDS_PER_SECOND = 1_000_000_000
 #: How long a file has to have sat at zero bytes before it is an empty file rather than one about to
 #: be written: an hour leaves any writer room to start, and a byte written later brings it back.
 EMPTY_SETTLED_SECONDS = 3_600
+
+
+#: How often a scan's loops write their heartbeat. A cancel is heard sooner: the worker pool's own
+#: beat wakes on it and leaves it in `stopping()`.
+BEAT_SECONDS = 2.0
+
+
+class Heartbeat:
+    """A scan's heartbeat by the clock, not by the file: each beat is a turn of the one writer."""
+
+    def __init__(self, context: JobContext) -> None:
+        self._context = context
+        self._written = float("-inf")
+
+    async def __call__(self) -> bool:
+        """Stop if the job was cancelled; whether this call wrote a beat."""
+        if self._context.stopping() == STOP_TO_CANCEL:
+            raise JobCanceled(f"job {self._context.job.id} is no longer this worker's")
+        now = time.monotonic()
+        if now - self._written < BEAT_SECONDS:
+            return False
+        self._written = now
+        await self._context.raise_if_canceled()
+        return True
 
 
 def _empty_and_settled(rejection: IngressRejected, item: Walked) -> bool:
@@ -124,6 +150,7 @@ async def _take_in(
     service: LibraryService,
     taken_in: list[str],
     archive_settled: ArchiveSettled | None = None,
+    beat: Heartbeat,
     decided: Verdict,
     to_probe: list[str],
     to_check: list[str],
@@ -149,6 +176,7 @@ async def _take_in(
                 service=service,
                 taken_in=taken_in,
                 archive_settled=archive_settled,
+                beat=beat,
             )
     if verdict is not Verdict.READ:
         await _left_as_recorded(context, verdict, root_id=root_id, rel_path=rel_path)
@@ -285,6 +313,7 @@ async def _take_in_archive(
     service: LibraryService,
     taken_in: list[str],
     archive_settled: ArchiveSettled | None,
+    beat: Heartbeat,
 ) -> set[str]:
     """A ZIP of pictures: every picture inside it, indexed where it lies.
 
@@ -316,7 +345,7 @@ async def _take_in_archive(
     # place that removal can hold: without it the next scan brings the picture back under a new id.
     removed = await service.removed_inside(root_id=root_id, archive_rel_path=rel_path)
     for member in members:
-        await context.raise_if_canceled()
+        await beat()
         member_rel = _member_rel_path(rel_path, member.path)
         claimed.add(member_rel)
         if removed.get(member_rel) == member.size_bytes:
@@ -337,7 +366,6 @@ async def _take_in_archive(
         )
         if asset_id is not None:
             inside.append(asset_id)
-
     await asyncio.to_thread(shutil.rmtree, scratch, True)
     log.info(
         "library.archive_indexed", root_id=root_id, pictures=len(inside), considered=len(members)
@@ -520,7 +548,9 @@ async def _probe_if_it_never_was(context: JobContext, *, root_id: str, rel_path:
     if location is None:
         return
     # Seen present and unchanged: whatever a moment kept a feature from doing is not true now.
-    await context.content.forget_transient_verdicts(location.asset_id)
+    # Read first: almost no file has one, and the delete is a turn of the writer.
+    if any(one.transient for one in await context.content.verdicts_of(location.asset_id)):
+        await context.content.forget_transient_verdicts(location.asset_id)
     asset = await context.content.get(location.asset_id)
     if asset is None or asset.probed_at is not None:
         return

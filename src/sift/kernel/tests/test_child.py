@@ -648,10 +648,11 @@ def test_a_runtime_that_kills_its_process_costs_one_child_and_leaves_a_record(
     settings: Settings,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    capfd: pytest.CaptureFixture[str],
 ) -> None:
     """The way an access violation ends a process: no handler runs, and only the crash recorder
-    says where it was."""
+    says where it was, into this process's log."""
+    heard = _Heard()
+    monkeypatch.setattr(ml_child, "_CHILD_LOG", heard)
     a_runtime(tmp_path, monkeypatch, CRASH)
 
     with pytest.raises(DeviceUnavailable) as refused:
@@ -663,7 +664,7 @@ def test_a_runtime_that_kills_its_process_costs_one_child_and_leaves_a_record(
         assert "(it stopped with code 0xC0000005)" in said
     else:
         assert "(it was ended by signal 11)" in said
-    record = capfd.readouterr().err
+    record = "\n".join(str(fields.get("line")) for _, _, fields in heard.lines)
     assert "most recent call first" in record
     assert str(Path("onnxruntime") / "__init__.py") in record
 
@@ -729,8 +730,89 @@ def test_the_worker_is_configured_the_way_the_parent_is(monkeypatch: pytest.Monk
     monkeypatch.setattr(
         worker,
         "configure_logging",
-        lambda level, *, redact_personal: seen.append((level, redact_personal)),
+        lambda level, *, redact_personal, warn_unredacted: seen.append(
+            (level, redact_personal, warn_unredacted)
+        ),
     )
     worker.configure_from({"log_level": "DEBUG", "redact_personal": False})
     worker.configure_from({})
-    assert seen == [("DEBUG", False), ("INFO", True)]
+    # Its lines land in the parent's log, which has already said whether names are hidden.
+    assert seen == [("DEBUG", False, False), ("INFO", True, False)]
+
+
+# --- the child's own lines, in this process's log ---------------------------------------------
+
+
+class _Heard:
+    def __init__(self) -> None:
+        self.lines: list[tuple[str, str, dict[str, Any]]] = []
+
+    def __getattr__(self, level: str) -> Any:
+        return lambda event, **fields: self.lines.append((level, event, fields))
+
+
+def test_a_child_s_record_is_relayed_as_it_was_written_and_anything_else_as_what_it_said(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import io
+
+    heard = _Heard()
+    monkeypatch.setattr(ml_child, "_CHILD_LOG", heard)
+    ml_child.relay_line(
+        '{"event": "ml.model.loaded", "level": "warning", "timestamp": "t", "device": "cpu"}', 7
+    )
+    ml_child.relay_line('{"event": "ml.odd", "level": "shouting"}', 7)
+    ml_child.relay_line("Traceback (most recent call last):", 7)
+    ml_child.relay_line('["not", "a", "record"]', None)
+    ml_child.relay(None, 7)
+    ml_child.relay(io.BytesIO(b'{"event": "ml.one", "level": "debug"}\n\n  \n'), 8)
+
+    class Broken(io.BytesIO):
+        def readline(self, *args: Any) -> bytes:
+            raise OSError("the pipe went")
+
+    ml_child.relay(Broken(), 9)
+
+    assert heard.lines == [
+        ("warning", "ml.model.loaded", {"child_pid": 7, "device": "cpu"}),
+        ("info", "ml.odd", {"child_pid": 7}),
+        (
+            "warning",
+            "ml.child.said",
+            {"child_pid": 7, "line": "Traceback (most recent call last):"},
+        ),
+        ("warning", "ml.child.said", {"child_pid": None, "line": '["not", "a", "record"]'}),
+        ("debug", "ml.one", {"child_pid": 8}),
+    ]
+
+
+async def test_a_running_child_s_lines_reach_this_process_s_log(
+    store: WeightStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The page of log lines reads this process's log, never the shell's copy of the child's
+    errors."""
+    import asyncio
+
+    from sift.kernel.log import JobCost, costing
+
+    heard = _Heard()
+    monkeypatch.setattr(ml_child, "_CHILD_LOG", heard)
+    # The child logs at this process's level, which a test run leaves at warnings.
+    monkeypatch.setattr(ml_child, "level_name", lambda: "INFO")
+    weight = await _example_model(store)
+    child = ChildRunner(store, machine(), device="cpu", feature="Probe")
+    cost = JobCost()
+    try:
+        loaded = child.load(weight)
+        # A model call is a stage of the job it is for, its wait for the child included.
+        with costing(cost):
+            child.run(loaded, np.arange(6, dtype=np.float32).reshape(3, 2))
+        deadline = time.monotonic() + 10
+        while not any(event.startswith("ml.") for _, event, _ in heard.lines):
+            assert time.monotonic() < deadline, heard.lines
+            await asyncio.sleep(0.05)
+    finally:
+        child.unload()
+    assert list(cost.stages) == ["ml.run"]
+    pid = {fields.get("child_pid") for _, event, fields in heard.lines if event.startswith("ml.")}
+    assert pid and None not in pid

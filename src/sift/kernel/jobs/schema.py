@@ -12,7 +12,7 @@ from sift.kernel.db import Connection, register_schema_initializer
 from sift.kernel.migrations import column_exists
 
 COMPONENT = "jobs"
-VERSION = 16
+VERSION = 17
 
 # The state list is repeated in `JobState`, since a CHECK takes no placeholder; a test holds the two
 # in step. `paused` is a state, not a flag, so nothing that asks of the state can claim it.
@@ -172,6 +172,71 @@ _SETTLED_INDEXES = (
 )
 
 
+# The same by family and timing: what a family's hold or quiet hours keeps back. NULL timing is '',
+# and a row reaching nought goes. No index past the key: a read scans a few thousand rows, while an
+# index would cost every state move. Version 17.
+_CREATE_FAMILY_TALLIES = """
+CREATE TABLE IF NOT EXISTS job_family_tallies (
+  root_id TEXT NOT NULL,
+  state   TEXT NOT NULL,
+  type    TEXT NOT NULL,
+  timing  TEXT NOT NULL,
+  n       INTEGER NOT NULL,
+  PRIMARY KEY (root_id, state, type, timing)
+) WITHOUT ROWID
+"""
+
+_ADD_TO_FAMILY = """
+  INSERT INTO job_family_tallies (root_id, state, type, timing, n)
+  VALUES (COALESCE(NEW.root_id, NEW.id), NEW.state, NEW.type, COALESCE(NEW.timing, ''), 1)
+  ON CONFLICT(root_id, state, type, timing) DO UPDATE SET n = n + 1;
+"""
+
+_TAKE_FROM_FAMILY = """
+  UPDATE job_family_tallies SET n = n - 1
+   WHERE root_id = COALESCE(OLD.root_id, OLD.id) AND state = OLD.state AND type = OLD.type
+     AND timing = COALESCE(OLD.timing, '');
+  DELETE FROM job_family_tallies
+   WHERE root_id = COALESCE(OLD.root_id, OLD.id) AND state = OLD.state AND type = OLD.type
+     AND timing = COALESCE(OLD.timing, '') AND n <= 0;
+"""
+
+_FAMILY_TALLY_TRIGGERS = (
+    "CREATE TRIGGER IF NOT EXISTS jobs_family_added AFTER INSERT ON jobs BEGIN"
+    + _ADD_TO_FAMILY
+    + "END",
+    "CREATE TRIGGER IF NOT EXISTS jobs_family_removed AFTER DELETE ON jobs BEGIN"
+    + _TAKE_FROM_FAMILY
+    + "END",
+    "CREATE TRIGGER IF NOT EXISTS jobs_family_moved AFTER UPDATE OF type, state, timing, root_id"
+    " ON jobs WHEN OLD.type IS NOT NEW.type OR OLD.state IS NOT NEW.state"
+    " OR OLD.timing IS NOT NEW.timing OR OLD.root_id IS NOT NEW.root_id BEGIN"
+    + _TAKE_FROM_FAMILY
+    + _ADD_TO_FAMILY
+    + "END",
+)
+
+_COUNT_INTO_FAMILY_TALLIES = """
+INSERT INTO job_family_tallies (root_id, state, type, timing, n)
+SELECT COALESCE(root_id, id), state, type, COALESCE(timing, ''), COUNT(*) FROM jobs GROUP BY 1, 2, 3, 4
+"""
+
+# The waiting rows put off to later, few however long the queue: what a tally cannot know, since
+# "later" moves with the clock. Its WHERE is its readers' terms word for word.
+_LATER_INDEX = (
+    "CREATE INDEX IF NOT EXISTS ix_jobs_queued_later ON jobs(run_after)"
+    " WHERE state = 'queued' AND run_after IS NOT NULL"
+)
+
+
+async def _keep_family_tallies(connection: Connection) -> None:
+    await connection.execute(_CREATE_FAMILY_TALLIES)
+    await connection.execute("DELETE FROM job_family_tallies")
+    await connection.execute(_COUNT_INTO_FAMILY_TALLIES)
+    for statement in (*_FAMILY_TALLY_TRIGGERS, _LATER_INDEX):
+        await connection.execute(statement)
+
+
 async def _keep_tallies(connection: Connection) -> None:
     await connection.execute(_CREATE_TALLIES)
     await connection.execute("DELETE FROM job_tallies")
@@ -195,6 +260,8 @@ async def initialize(connection: Connection, on_disk: int) -> None:
         await connection.execute("ALTER TABLE jobs ADD COLUMN to_read TEXT")
     if on_disk < 16:
         await _keep_tallies(connection)
+    if on_disk < 17:
+        await _keep_family_tallies(connection)
 
 
 register_schema_initializer(COMPONENT, VERSION, initialize, baseline=12)

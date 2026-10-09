@@ -178,7 +178,7 @@ _TOP_OF = (
 
 # Every family on a page, counted by state in one statement: each count a seek on `ix_jobs_family`
 # stopped at `:cap`, the states bound from `JobState`. A step is every row of the family but the
-# top. `_ROLL_UP` looks one level down and cannot answer this.
+# top.
 _STEP_COUNTS = """
 WITH tops(root) AS (SELECT value FROM json_each(:roots)),
      states(state) AS (SELECT value FROM json_each(:states))

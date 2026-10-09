@@ -29,6 +29,8 @@ def hide_personal_from(value: object) -> bool:
 
 #: About a fortnight at normal detail; less than a day of log is useless for a fault.
 DEFAULT_KEEP_MB = 1024
+#: The most the setting allows.
+MOST_KEEP_MB = 10_000
 
 
 def keep_bytes_from(value: object) -> int:
@@ -45,6 +47,12 @@ def keep_bytes_from(value: object) -> int:
 def per_file_bytes(total_bytes: int, backups: int) -> int:
     """How large one file may get: the setting is the total, and the handler adds backups."""
     return max(BYTES_PER_MB, total_bytes // max(1, backups + 1))
+
+
+def largest_file_bytes(backups: int) -> int:
+    """One file's size at the largest setting: what a start may let the file reach before the
+    library's own setting is known, so a start never rolls a log the setting would keep."""
+    return per_file_bytes(MOST_KEEP_MB * BYTES_PER_MB, backups)
 
 
 def fit_within(log_file: Path, backups: int, total_bytes: int) -> int:
@@ -113,7 +121,7 @@ register_setting(
     default=DEFAULT_KEEP_MB,
     # Below about a hundred the log covers less than a day of ordinary use.
     minimum=16,
-    maximum=10_000,
+    maximum=MOST_KEEP_MB,
     unit="MB",
     section="Logs",
     label="Maximum log size",

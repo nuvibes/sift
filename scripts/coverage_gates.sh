@@ -197,7 +197,7 @@ _cov_ingress() { _cov src/sift/kernel/tests/test_ingress.py --cov=sift.kernel.in
 # the main gate states below: they are measured by `--cov=sift.kernel.jobs`, and with their tests
 # not run the gate would report tested code as untested.
 _cov_jobs() {
-  _cov src/sift/kernel/tests/test_jobs.py src/sift/kernel/tests/test_jobs_settle.py \
+  _cov src/sift/kernel/tests/test_jobs.py src/sift/kernel/tests/test_jobs_settle.py src/sift/kernel/tests/test_job_tallies.py \
     src/sift/kernel/tests/test_jobs_workers.py src/sift/kernel/tests/test_jobs_reads.py \
     src/sift/kernel/tests/test_jobs_controls.py src/sift/kernel/tests/test_jobs_pool.py \
     src/sift/kernel/tests/test_ledger.py \
@@ -616,13 +616,13 @@ _cov_workbench() { _cov src/sift/slices/workbench/tests --cov=sift.slices.workbe
 # `copy_library_aside` are this module's, and with only `test_db.py` run the gate would read both
 # of them as dead code.
 _cov_db() {
-  _cov src/sift/kernel/tests/test_db.py src/sift/kernel/tests/test_db_upkeep.py src/sift/kernel/tests/test_db_lead_and_inline_reads.py \
+  _cov src/sift/kernel/tests/test_db.py src/sift/kernel/tests/test_db_upkeep.py src/sift/kernel/tests/test_db_statistics_stale.py src/sift/kernel/tests/test_db_lead_and_inline_reads.py \
     src/sift/kernel/tests/test_db_writer_held.py --cov=sift.kernel.db_writer \
     src/sift/kernel/tests/test_db_steps.py \
     src/sift/kernel/tests/test_library_preflight.py src/sift/kernel/tests/test_db_blocking.py \
     src/sift/kernel/tests/test_baseline_refusal.py src/sift/kernel/tests/test_db_inline_schema.py \
     --cov=sift.kernel.db --cov=sift.kernel.db_base --cov=sift.kernel.db_library \
-    --cov=sift.kernel.db_readers --cov=sift.kernel.db_schema --cov=sift.kernel.db_judged
+    --cov=sift.kernel.db_readers --cov=sift.kernel.db_schema --cov=sift.kernel.db_judged --cov=sift.kernel.db_statistics --cov=sift.kernel.db_capabilities --cov=sift.kernel.db_hooks
 }
 # What Sift writes down about itself, which is the only thing anybody has to go on when it is
 # misbehaving on a machine nobody can log in to. Two halves are load-bearing and neither shows when

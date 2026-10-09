@@ -4,13 +4,12 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Callable, Collection
+from collections.abc import Callable, Collection, Sequence
 
-from sift.kernel.db import in_clause
+from sift.kernel.db import Row, in_clause
 from sift.kernel.jobs.queue_handoffs import HandOffs
 from sift.kernel.jobs.queue_rows import _fetch, _for_the_record
 from sift.kernel.jobs.tuning import (
-    CLEAR_BATCH,
     PARKED_RETENTION_SECONDS,
     PRUNE_BATCH,
     SETTLED_RETENTION_SECONDS,
@@ -18,8 +17,13 @@ from sift.kernel.jobs.tuning import (
 from sift.kernel.log import get_logger
 
 log = get_logger("sift.kernel.jobs.queue")
+#: How many rows one write of a bulk control takes. A stop of a whole import is hundreds of thousands
+#: of rows, seconds of the writer in one statement, so they go a chunk at a time.
+_STOP_CHUNK = 500
+
 # Cancelling a parent cancels everything under it, however deep. A scan that spawns a probe per
-# file leaves the user one thing to cancel, and they expect it to mean all of it.
+# file leaves the user one thing to cancel, and they expect it to mean all of it. Read, then
+# cancelled by `_CANCEL_ROWS`.
 _CANCEL_TREE = """
 WITH RECURSIVE tree(id) AS (
     SELECT id FROM jobs WHERE id = ?
@@ -29,6 +33,14 @@ WITH RECURSIVE tree(id) AS (
     UNION
     SELECT job.id FROM jobs job JOIN tree ON job.parent_id = tree.id
 )
+SELECT id, state, priority FROM jobs
+ WHERE id IN (SELECT id FROM tree)
+   AND state IN ('queued', 'running', 'blocked', 'paused')
+"""
+
+# A stop's rows by id, one chunk. The state is asked again, so a row that settled since the read
+# stays settled; `why` lands on the named row only.
+_CANCEL_ROWS = """
 UPDATE jobs
    SET state = 'canceled',
        claimed_by = NULL,
@@ -36,9 +48,9 @@ UPDATE jobs
        stop_wanted = NULL,
        error = CASE WHEN id = ? AND ? IS NOT NULL THEN ? ELSE error END,
        updated_at = ?
- WHERE id IN (SELECT id FROM tree)
+ WHERE id IN (?*)
    AND state IN ('queued', 'running', 'blocked', 'paused')
-RETURNING id, parent_id, type, started_at, note, requested_by
+RETURNING id, parent_id, root_id, type, started_at, note, requested_by
 """
 
 # A head that had finished when its family was stopped is called off with it, so a pass stopped
@@ -52,20 +64,30 @@ _CALL_OFF_THE_HEAD = "UPDATE jobs SET state = 'canceled', updated_at = ? WHERE i
 #: own (`PARKED_RETENTION_SECONDS`). Age counts from the settling (`updated_at`). Each type's
 #: newest run, and its newest run nobody pressed, is never taken: the scheduler and Tasks read the
 #: last run off these rows. The ids are a subquery because `DELETE ... LIMIT` is a build option.
+#: One arm per state, each from an index: done rows, nearly all of them, through the index that
+#: holds them by when they settled, as the planner otherwise walks every done row of the week.
 _PRUNE_SETTLED = """
 DELETE FROM jobs WHERE id IN (
-  SELECT id FROM jobs
-   WHERE ((state IN ('done','canceled') AND updated_at < :cutoff)
-       OR (state = 'blocked' AND updated_at < :parked_cutoff))
-     AND NOT EXISTS (SELECT 1 FROM jobs child WHERE child.parent_id = jobs.id)
-     AND (state = 'blocked'
-          OR started_at IS NULL
+  SELECT id FROM (
+    SELECT id, type, state, updated_at, started_at, requested_by, timing
+      FROM jobs INDEXED BY ix_jobs_done_by_updated
+     WHERE state = 'done' AND updated_at < :cutoff
+    UNION ALL
+    SELECT id, type, state, updated_at, started_at, requested_by, timing FROM jobs
+     WHERE state = 'canceled' AND updated_at < :cutoff
+    UNION ALL
+    SELECT id, type, state, updated_at, started_at, requested_by, timing FROM jobs
+     WHERE state = 'blocked' AND updated_at < :parked_cutoff
+  ) AS old
+   WHERE NOT EXISTS (SELECT 1 FROM jobs child WHERE child.parent_id = old.id)
+     AND (old.state = 'blocked'
+          OR old.started_at IS NULL
           OR EXISTS (SELECT 1 FROM jobs newer
-                      WHERE newer.type = jobs.type
+                      WHERE newer.type = old.type
                         AND newer.state IN ('done', 'canceled') AND newer.started_at IS NOT NULL
-                        AND newer.updated_at >= jobs.updated_at
-                        AND (newer.updated_at > jobs.updated_at OR newer.id > jobs.id)
-                        AND (jobs.requested_by IS NOT NULL OR jobs.timing IS NOT NULL
+                        AND newer.updated_at >= old.updated_at
+                        AND (newer.updated_at > old.updated_at OR newer.id > old.id)
+                        AND (old.requested_by IS NOT NULL OR old.timing IS NOT NULL
                              OR (newer.requested_by IS NULL AND newer.timing IS NULL))))
    LIMIT :batch
 )
@@ -84,25 +106,17 @@ UPDATE jobs
 RETURNING id, parent_id
 """
 
-# The same statement without the id. `failed` only, deliberately: a cancelled job was stopped by
+# What a retry of every failure takes. `failed` only, deliberately: a cancelled job was stopped by
 # somebody on purpose, and sweeping those back into the queue would undo a decision rather than
 # recover from a fault.
-_RETRY_ALL_FAILED = """
-UPDATE jobs
-   SET state = 'queued',
-       attempts = 0,
-       progress = 0,
-       error = NULL,
-       claimed_by = NULL,
-       heartbeat_at = NULL,
-       updated_at = ?
- WHERE state = 'failed'
-RETURNING id, parent_id
-"""
+_RETRY_ALL_FAILED = "SELECT id FROM jobs WHERE state = 'failed'"
 
 # The same for work somebody STOPPED: a separate statement, so retrying failures can never sweep a
 # deliberate cancel back in.
-_RETRY_ALL_CANCELED = """
+_RETRY_ALL_CANCELED = "SELECT id FROM jobs WHERE state = 'canceled'"
+
+# Either retry's rows by id, one chunk, only while still in the state the retry was asked for.
+_RETRY_ROWS = """
 UPDATE jobs
    SET state = 'queued',
        attempts = 0,
@@ -111,17 +125,26 @@ UPDATE jobs
        claimed_by = NULL,
        heartbeat_at = NULL,
        updated_at = ?
- WHERE state = 'canceled'
-RETURNING id, parent_id
+ WHERE id IN (?*)
+   AND state = ?
+RETURNING id
 """
 
 # Throwing away failures that will never succeed. Childless rows only, for `_PRUNE_SETTLED`'s
-# reason: the cascade can then never take a running row. Nothing but `failed`.
+# reason: the cascade can then never take a running row. Nothing but `failed`. Read once, so a
+# parent whose failures go in an earlier chunk is not taken by a later one.
 _CLEAR_ALL_FAILED = """
-DELETE FROM jobs
+SELECT id FROM jobs
  WHERE state = 'failed'
    AND NOT EXISTS (SELECT 1 FROM jobs child WHERE child.parent_id = jobs.id)
-RETURNING id, parent_id
+"""
+
+_CLEAR_FAILED_ROWS = """
+DELETE FROM jobs
+ WHERE id IN (?*)
+   AND state = 'failed'
+   AND NOT EXISTS (SELECT 1 FROM jobs child WHERE child.parent_id = jobs.id)
+RETURNING id
 """
 
 # Throwing away stopped work, childless rows only (the cascade rule) and batched (one writer).
@@ -139,38 +162,33 @@ DELETE FROM jobs WHERE id IN (
 RETURNING id, parent_id
 """
 
-# Stopping the whole queue in one statement. Every cancellable state, `running` included: work is
-# produced by work, so stopping only the waiting rows would leave the producer refilling them. A
-# running job drops its work at its next heartbeat and its fenced writes cannot land; nothing is
-# deleted, and a file never read is picked up by the next scan of its folder.
+# Stopping the whole queue. Every cancellable state, `running` included: work is produced by work,
+# so stopping only the waiting rows would leave the producer refilling them. A running job drops its
+# work at its next heartbeat and its fenced writes cannot land; nothing is deleted, and a file
+# never read is picked up by the next scan of its folder.
 _CANCEL_EVERYTHING = """
-UPDATE jobs
-   SET state = 'canceled',
-       claimed_by = NULL,
-       heartbeat_at = NULL,
-       stop_wanted = NULL,
-       updated_at = ?
+SELECT id, state, priority FROM jobs
  WHERE state IN ('queued', 'running', 'blocked', 'paused')
-RETURNING id, root_id
+"""
+
+# A family's Cancel: its types, and apart from them every step making only its products. Two
+# reads, so each starts from an index rather than one walking the table for the OR.
+_CANCEL_TYPES = """
+SELECT id, state, priority FROM jobs
+ WHERE type IN (SELECT value FROM json_each(?))
+   AND unlikely(state IN ('queued', 'running', 'blocked', 'paused'))
+"""
+
+_CANCEL_PRODUCTS = """
+SELECT id, state, priority FROM jobs
+ WHERE unlikely(state IN ('queued', 'running', 'blocked', 'paused'))
+   AND EXISTS (SELECT 1 FROM json_each(jobs.payload, '$.products'))
+   AND NOT EXISTS (SELECT 1 FROM json_each(jobs.payload, '$.products') AS made
+                    WHERE made.value NOT IN (SELECT value FROM json_each(?)))
 """
 
 # The heads of the families that stop took work from, where the head itself had already finished:
 # called off with their families, for the reason `_CALL_OFF_THE_HEAD` gives.
-_CANCEL_TYPES = """
-UPDATE jobs
-   SET state = 'canceled',
-       claimed_by = NULL,
-       heartbeat_at = NULL,
-       stop_wanted = NULL,
-       updated_at = ?
- WHERE state IN ('queued', 'running', 'blocked', 'paused')
-   AND (type IN (SELECT value FROM json_each(?))
-        OR (EXISTS (SELECT 1 FROM json_each(jobs.payload, '$.products'))
-            AND NOT EXISTS (SELECT 1 FROM json_each(jobs.payload, '$.products') AS made
-                             WHERE made.value NOT IN (SELECT value FROM json_each(?)))))
-RETURNING id
-"""
-
 _CALL_OFF_THE_HEADS = (
     "UPDATE jobs SET state = 'canceled', updated_at = ? WHERE id IN (?*) AND state = 'done'"
 )
@@ -178,26 +196,73 @@ _CALL_OFF_THE_HEADS = (
 #: How many heads one statement names: under SQLite's limit on bound values, with room to spare.
 _HEADS_PER_ASK = 400
 
-# The roll-up after it, matched on the moment rather than on ids: every row this run cancelled
-# carries the same `updated_at`, and a list of ids would meet SQLite's parameter cap on a big queue.
-_ROLL_UP_CANCELED = """
-UPDATE jobs
-   SET progress = COALESCE((
-       SELECT CAST(COUNT(*) FILTER (WHERE child.state IN ('done', 'failed', 'canceled')) AS REAL)
-              / COUNT(*)
-         FROM jobs child
-        WHERE child.parent_id = jobs.id
-   ), progress),
-       updated_at = ?
- WHERE id IN (
-       SELECT parent_id FROM jobs
-        WHERE parent_id IS NOT NULL AND state = 'canceled' AND updated_at = ?
- )
-"""
+
+def _stop_order(rows: Sequence[Row]) -> list[str]:
+    """Running work first, since it queues more; then in the order a worker would claim it."""
+    ordered = sorted(rows, key=lambda row: (row["state"] != "running", row["priority"], row["id"]))
+    return list(dict.fromkeys(str(row["id"]) for row in ordered))
 
 
 class Controls(HandOffs):
     """What a person does to the queue as a whole, and the housekeeping that forgets old rows."""
+
+    async def _cancel_rows(
+        self,
+        ids: Sequence[str],
+        *,
+        named: str | None = None,
+        said: str | None = None,
+        on_canceled: Callable[[set[str]], None] | None = None,
+        settled: bool = False,
+    ) -> list[Row]:
+        """Cancel these rows `_STOP_CHUNK` at a time, the writer given back between chunks, each
+        chunk's running jobs told as soon as it lands. `on_canceled` hears each chunk's kinds before
+        its commit; `settled` writes the runs and tells the settle listeners, as a cancel does."""
+        canceled: list[Row] = []
+        for start in range(0, len(ids), _STOP_CHUNK):
+            sql, params = in_clause(_CANCEL_ROWS, ids[start : start + _STOP_CHUNK])
+            async with self._writing() as connection:
+                rows = await _fetch(connection, sql, (named, said, said, self._now(), *params))
+                if rows and on_canceled is not None:
+                    on_canceled({str(row["type"]) for row in rows})
+                if settled:
+                    await self._record_runs(connection, rows, "canceled")
+            if not rows:
+                continue
+            if settled:
+                await self._tell_settled(rows)
+            self._stop_asked([str(row["id"]) for row in rows])
+            canceled.extend(rows)
+        return canceled
+
+    async def _stop(
+        self,
+        reads: Sequence[tuple[str, tuple[object, ...]]],
+        *,
+        named: str | None = None,
+        said: str | None = None,
+        on_canceled: Callable[[set[str]], None] | None = None,
+        settled: bool = False,
+    ) -> list[Row]:
+        """Read the live rows a stop takes, off the writer, and cancel them in chunks, running
+        work first so what produces more is stopped before the rest."""
+        found: list[Row] = []
+        for sql, params in reads:
+            found.extend(await self._db.fetch_all(sql, params))
+        return await self._cancel_rows(
+            _stop_order(found), named=named, said=said, on_canceled=on_canceled, settled=settled
+        )
+
+    async def _retry_rows(self, read: str, state: str) -> int:
+        """Queue again every row the read finds, a chunk at a time, while it is still `state`."""
+        ids = [str(row["id"]) for row in await self._db.fetch_all(read)]
+        retried = 0
+        for start in range(0, len(ids), _STOP_CHUNK):
+            sql, params = in_clause(_RETRY_ROWS, ids[start : start + _STOP_CHUNK])
+            async with self._writing() as connection:
+                rows = await _fetch(connection, sql, (self._now(), *params, state))
+            retried += len(rows)
+        return retried
 
     async def cancel(
         self,
@@ -214,25 +279,23 @@ class Controls(HandOffs):
         is Sift's own reason, kept on the named row; a person's cancel gives none.
         """
         said = None if why is None else _for_the_record(why)
-        async with self._writing() as connection:
-            rows = await _fetch(connection, _CANCEL_TREE, (job_id, job_id, said, said, self._now()))
-            if not rows:
-                return []
-            if all(str(row["id"]) != job_id for row in rows):
+        rows = await self._stop(
+            [(_CANCEL_TREE, (job_id,))],
+            named=job_id,
+            said=said,
+            on_canceled=on_canceled,
+            settled=True,
+        )
+        if not rows:
+            return []
+        if all(str(row["id"]) != job_id for row in rows):
+            async with self._writing() as connection:
                 await _fetch(connection, _CALL_OFF_THE_HEAD, (self._now(), job_id))
-            if on_canceled is not None:
-                on_canceled({str(row["type"]) for row in rows})
-            await self._roll_up(connection, [row["parent_id"] for row in rows])
-            await self._record_runs(connection, rows, "canceled")
-
-        await self._tell_settled(rows)
         canceled = [row["id"] for row in rows]
         log.info("job.canceled", job_id=job_id, job_count=len(canceled))
-        # Any of them running is dropped immediately rather than at its worker's next heartbeat.
-        self._stop_asked(canceled)
         return canceled
 
-    async def clear_canceled(self, *, batch: int = CLEAR_BATCH) -> int:
+    async def clear_canceled(self, *, batch: int = _STOP_CHUNK) -> int:
         """Forget everything that was stopped. Returns how many rows went.
 
         Loops because a tree comes apart leaf by leaf: only rows nothing hangs off are removed, so
@@ -246,8 +309,6 @@ class Controls(HandOffs):
                 rows = await _fetch(connection, _CLEAR_ALL_CANCELED, (batch,))
                 if not rows:
                     break
-                # Their parents' progress is recomputed, as `clear_failed` does.
-                await self._roll_up(connection, [row["parent_id"] for row in rows])
             removed += len(rows)
 
         log.info("job.cleared_all_canceled", job_count=removed)
@@ -260,34 +321,30 @@ class Controls(HandOffs):
         producer refilling the queue (`_CANCEL_EVERYTHING`). Nothing is deleted; what it costs is
         the machine time already spent.
         """
-        now = self._now()
-        async with self._writing() as connection:
-            rows = await _fetch(connection, _CANCEL_EVERYTHING, (now,))
-            if not rows:
-                return 0
-            await connection.execute(_ROLL_UP_CANCELED, (now, now))
-            heads = sorted({str(row["root_id"]) for row in rows if row["root_id"] is not None})
-            for start in range(0, len(heads), _HEADS_PER_ASK):
-                sql, params = in_clause(_CALL_OFF_THE_HEADS, heads[start : start + _HEADS_PER_ASK])
-                await connection.execute(sql, (now, *params))
+        rows = await self._stop([(_CANCEL_EVERYTHING, ())])
+        if not rows:
+            return 0
+        heads = sorted({str(row["root_id"]) for row in rows if row["root_id"] is not None})
+        for start in range(0, len(heads), _HEADS_PER_ASK):
+            sql, params = in_clause(_CALL_OFF_THE_HEADS, heads[start : start + _HEADS_PER_ASK])
+            async with self._writing() as connection:
+                await connection.execute(sql, (self._now(), *params))
 
         log.info("job.canceled_everything", job_count=len(rows))
-        self._stop_asked([str(row["id"]) for row in rows])
         return len(rows)
 
     async def cancel_types(self, job_types: Collection[str], products: Collection[str] = ()) -> int:
         """Stop every unfinished job of these types, and every step making only these products:
         a family's or a sub-task's Cancel. How many."""
-        if not job_types and not products:
+        reads: list[tuple[str, tuple[object, ...]]] = []
+        if job_types:
+            reads.append((_CANCEL_TYPES, (json.dumps(sorted(job_types)),)))
+        if products:
+            reads.append((_CANCEL_PRODUCTS, (json.dumps(sorted(products)),)))
+        if not reads:
             return 0
-        now = self._now()
-        named = (now, json.dumps(sorted(job_types)), json.dumps(sorted(products)))
-        async with self._writing() as connection:
-            rows = await _fetch(connection, _CANCEL_TYPES, named)
-            if rows:
-                await connection.execute(_ROLL_UP_CANCELED, (now, now))
+        rows = await self._stop(reads)
         log.info("job.canceled_types", job_types=sorted(job_types), job_count=len(rows))
-        self._stop_asked([str(row["id"]) for row in rows])
         return len(rows)
 
     async def retry(self, job_id: str) -> bool:
@@ -296,7 +353,6 @@ class Controls(HandOffs):
             rows = await _fetch(connection, _RETRY, (self._now(), job_id))
             if not rows:
                 return False
-            await self._roll_up(connection, [rows[0]["parent_id"]])
 
         log.info("job.retried", job_id=job_id)
         return True
@@ -307,14 +363,10 @@ class Controls(HandOffs):
         Failures arrive in batches (a reader fixed, a drive back, a codec installed), so one button.
         Cancelled work is left alone (see the statement).
         """
-        async with self._writing() as connection:
-            rows = await _fetch(connection, _RETRY_ALL_FAILED, (self._now(),))
-            if not rows:
-                return 0
-            await self._roll_up(connection, [row["parent_id"] for row in rows])
-
-        log.info("job.retried_all", job_count=len(rows))
-        return len(rows)
+        retried = await self._retry_rows(_RETRY_ALL_FAILED, "failed")
+        if retried:
+            log.info("job.retried_all", job_count=retried)
+        return retried
 
     async def retry_canceled(self) -> int:
         """Put everything that was stopped back in the queue. Returns how many there were.
@@ -323,30 +375,26 @@ class Controls(HandOffs):
         it is offered again without re-reading the folders. Cancelled only: a decision taken back is
         not work that broke. `attempts` restart at nought, as with every retry here.
         """
-        async with self._writing() as connection:
-            rows = await _fetch(connection, _RETRY_ALL_CANCELED, (self._now(),))
-            if not rows:
-                return 0
-            await self._roll_up(connection, [row["parent_id"] for row in rows])
-
-        log.info("job.retried_all_canceled", job_count=len(rows))
-        return len(rows)
+        retried = await self._retry_rows(_RETRY_ALL_CANCELED, "canceled")
+        if retried:
+            log.info("job.retried_all_canceled", job_count=retried)
+        return retried
 
     async def clear_failed(self) -> int:
         """Forget everything that failed. Returns how many rows went.
 
         For failures that cannot succeed (a card that was not there, a share gone): `failed` is the
-        one terminal state nothing ages out. The rows go rather than being marked, and their
-        parents' progress is recomputed, so a parent can read as finished.
+        one terminal state nothing ages out. The rows go rather than being marked.
         """
-        async with self._writing() as connection:
-            rows = await _fetch(connection, _CLEAR_ALL_FAILED, ())
-            if not rows:
-                return 0
-            await self._roll_up(connection, [row["parent_id"] for row in rows])
-
-        log.info("job.cleared_all_failed", job_count=len(rows))
-        return len(rows)
+        ids = [str(row["id"]) for row in await self._db.fetch_all(_CLEAR_ALL_FAILED)]
+        cleared = 0
+        for start in range(0, len(ids), _STOP_CHUNK):
+            sql, params = in_clause(_CLEAR_FAILED_ROWS, ids[start : start + _STOP_CHUNK])
+            async with self._writing() as connection:
+                cleared += len(await _fetch(connection, sql, params))
+        if cleared:
+            log.info("job.cleared_all_failed", job_count=cleared)
+        return cleared
 
     async def prune_settled(
         self,

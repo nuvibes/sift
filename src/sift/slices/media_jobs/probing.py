@@ -24,6 +24,8 @@ from sift.kernel.ingress import (
 )
 from sift.kernel.jobs import (
     BACKGROUND_PRIORITY,
+    STOP_TO_CANCEL,
+    JobCanceled,
     JobContext,
     JobQueue,
     JobSwitchedOff,
@@ -105,13 +107,13 @@ async def _probe(
         checked = await _verified(source, settings=settings)
 
     if await _sent_back_to_the_classifier(context, asset_id, source, checked):
-        await context.set_progress(1.0)
         return
 
     probed, keep = await _read_and_keep(source, asset_id, settings=settings)
 
-    await context.set_progress(0.4)
-    await context.raise_if_canceled()
+    # Read off the pool's heartbeat, which a stop wakes immediately: no write of its own.
+    if context.stopping() == STOP_TO_CANCEL:
+        raise JobCanceled(f"job {context.job.id} was stopped while its file was read")
 
     #: A pass asked for the READING alone. See the return further down for what else it turns off.
     scan_only = bool(context.payload.get("scan_only"))
@@ -125,23 +127,21 @@ async def _probe(
         store, asset_id, source=source, checked=checked, probed=probed, gap=gap, keep=keep
     )
 
-    # THE THUMBNAIL GOES OUT THE MOMENT THE FILE IS READ, before anything else this pass does: it
-    # needs only what was just written. It asks no switch: it is how a file is drawn at all, so
-    # every arriving file gets one, a scan asked for the reading alone included.
-    await context.enqueue_child(THUMBNAIL, {"asset_id": asset_id}, priority=context.job.priority)
-    await context.set_progress(0.5)
+    # THE THUMBNAIL GOES OUT FIRST, ahead of everything else this read hands out: it needs only
+    # what was just written. It asks no switch: it is how a file is drawn at all, so every arriving
+    # file gets one, a scan asked for the reading alone included.
+    children: list[tuple[str, dict[str, Any]]] = [(THUMBNAIL, {"asset_id": asset_id})]
 
     # A scan asked for on its own hands out nothing more: probing is where every other stage is
     # started from, and each of those has a catch-up that a Build runs whenever it is asked for.
     if scan_only:
+        await _enqueue_children(context, children)
         await _ask_for_the_skipped_fingerprints(
             context, asset_id, already_hashed=already_hashed, should_generate=should_generate
         )
-        await context.set_progress(1.0)
         return
 
-    await _hand_out(
-        context,
+    children += await _hand_out(
         asset_id,
         updated,
         already_hashed=already_hashed,
@@ -149,8 +149,17 @@ async def _probe(
         follow_on=follow_on,
         follow_on_payloads=follow_on_payloads,
     )
+    await _enqueue_children(context, children)
     await _settle(context, settles_into=settles_into, should_generate=should_generate)
-    await context.set_progress(1.0)
+
+
+async def _enqueue_children(
+    context: JobContext, children: list[tuple[str, dict[str, Any]]]
+) -> None:
+    """The file's work in one write, at this read's own urgency: work a person started hands its
+    children the person's urgency, and work the machine started the machine's. None of it is the
+    read's own family, so none is work handed on."""
+    await context.queue.enqueue_children(context.job.id, children, priority=context.job.priority)
 
 
 async def _sent_back_to_the_classifier(
@@ -280,7 +289,6 @@ async def _ask_for_the_skipped_fingerprints(
 
 
 async def _hand_out(
-    context: JobContext,
     asset_id: str,
     updated: Asset,
     *,
@@ -288,8 +296,8 @@ async def _hand_out(
     should_generate: ShouldGenerate | None,
     follow_on: FollowOnJobs,
     follow_on_payloads: FollowOnPayloads | None,
-) -> None:
-    """Start the rest of a file's work as children of its read, each where its switch wants it."""
+) -> list[tuple[str, dict[str, Any]]]:
+    """The rest of a file's work, in claim order, each where its switch wants it."""
     # A file whose audio sits too far from its video gets a repaired copy: asked for here rather
     # than listed with the pictures, because it is a whole extra copy built for almost no file.
     needs_repair = (
@@ -302,6 +310,7 @@ async def _hand_out(
     wanted += [job for job in (*_DERIVATIVE_JOBS, *follow_on) if job != THUMBNAIL]
     wanted.append(FINGERPRINT_FILE)
 
+    children: list[tuple[str, dict[str, Any]]] = []
     # In the order each type declared where its handler is registered, not this list's: the list
     # joins this slice's products and other features', and neither half can order the whole.
     for job_type in in_claim_order(wanted):
@@ -319,17 +328,12 @@ async def _hand_out(
             if already_hashed:
                 log.info("probe.fingerprints_already_kept", asset_id=asset_id)
                 continue
-            await context.enqueue_child(
-                FINGERPRINT_FILE, {"asset_id": asset_id}, priority=context.job.priority
-            )
+            children.append((FINGERPRINT_FILE, {"asset_id": asset_id}))
             continue
-        # AT THIS PASS'S OWN URGENCY, read from the row: work a person started hands its children
-        # the person's urgency, and work the machine started the machine's.
-        await context.enqueue_child(
-            job_type,
-            {**(follow_on_payloads or {}).get(job_type, {}), "asset_id": asset_id},
-            priority=context.job.priority,
+        children.append(
+            (job_type, {**(follow_on_payloads or {}).get(job_type, {}), "asset_id": asset_id})
         )
+    return children
 
 
 async def _settle(

@@ -52,6 +52,7 @@ from sift.slices.library_roots.sweeping import (
 )
 from sift.slices.library_roots.taking_in import (
     PROBE,
+    Heartbeat,
     UnansweredFolder,
     Verdict,
     _decide,
@@ -277,6 +278,7 @@ class _ScanPass:
         self.unjudged = {subtree_prefix(self.prefix + one) for one in walk.unlisted}
         self.went_quiet: set[str] = set()
         self.holding = False
+        self.beat = Heartbeat(context)
 
     @property
     def ended(self) -> bool:
@@ -316,8 +318,11 @@ class _ScanPass:
         # will read.
         context = self.context
         self.refusals = await self.service.rejections_of_root(self.root_id)
+        reading = 0
         for item in self.found:
-            await context.raise_if_canceled()
+            # The count lands as it grows, a beat at a time, never below one counted ahead.
+            if await self.beat() and reading > context.units:
+                await context.set_units(reading)
             rel_path = self.prefix + item.rel_path
             verdict = await _decide(
                 item,
@@ -328,6 +333,7 @@ class _ScanPass:
                 refused=self.refusals,
             )
             self.decided.append((item, rel_path, verdict))
+            reading += verdict.reads
         self.unread = Counter(
             kind_by_name(item, verdict) for item, _rel, verdict in self.decided if verdict.reads
         )
@@ -396,7 +402,7 @@ class _ScanPass:
         self, gate: asyncio.Semaphore, item: Walked, rel_path: str, verdict: Verdict
     ) -> None:
         async with gate:
-            await self.context.raise_if_canceled()
+            await self.beat()
             claimed = {rel_path}
             try:
                 if not rel_path.startswith(tuple(self.unjudged)):
@@ -409,6 +415,7 @@ class _ScanPass:
                         service=self.service,
                         taken_in=self.taken_in,
                         archive_settled=self.archive_settled,
+                        beat=self.beat,
                         decided=verdict,
                         to_probe=self.to_probe,
                         to_check=self.to_check,

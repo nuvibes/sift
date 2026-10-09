@@ -7,11 +7,15 @@ held; a page of results is a page of files, not frames.
 
 from __future__ import annotations
 
+import asyncio
 import math
+from collections.abc import Iterator
+from pathlib import Path
+from typing import Any
 
 import pytest
 
-from sift.kernel.db import Database
+from sift.kernel.db import Database, StatementRun, statement_budget
 from sift.kernel.forgetting import forget_everywhere
 from sift.slices.semantic.store import (
     _CREATE,
@@ -217,6 +221,48 @@ async def test_forgetting_a_file_that_was_never_described_is_not_an_error(
     assert await store.count() == 0
 
 
+@pytest.fixture
+def hearing() -> Iterator[list[StatementRun]]:
+    """Every statement heard with SQLite's count of its steps, on connections opened now."""
+    heard: list[StatementRun] = []
+    statement_budget().heard = heard
+    try:
+        yield heard
+    finally:
+        statement_budget().heard = None
+
+
+async def test_replacing_or_forgetting_a_file_reads_only_its_own_frames(
+    tmp_path: Path, hearing: list[StatementRun]
+) -> None:
+    """The vector table's file column is read row by row, so a delete by it walks every frame
+    held, under the writer, once for each file described."""
+    others = 2000
+    database = Database(tmp_path / "steps.sqlite3")
+    await database.connect()
+    try:
+        await database.initialize_schema()
+        store = VectorStore(database)
+        await store.put("clip", [(0, unit(1.0)), (10, unit(1.0, 0.1))], revision=REVISION)
+        async with database.write() as connection:
+            await connection.executemany(
+                "INSERT INTO semantic_frames(revision, asset_id, at_ms, embedding)"
+                " VALUES (?, ?, ?, ?)",
+                [(REVISION, f"other{n}", 0, _pack(unit(0.0, 1.0))) for n in range(others)],
+            )
+        hearing.clear()
+        await store.put("clip", [(0, unit(0.0, 0.0, 1.0))], revision=REVISION)
+        await store.forget("clip")
+        frames_left = await store.nearest(unit(1.0), limit=5, revision=REVISION)
+    finally:
+        await database.close()
+
+    on_frames = [run for run in hearing if run.name.startswith("delete:semantic_frames#")]
+    assert len(on_frames) == 2
+    assert sum(run.steps for run in on_frames) < others
+    assert {one.asset_id for one in frames_left} <= {f"other{n}" for n in range(others)}
+
+
 async def test_the_whole_index_can_be_thrown_away(store: VectorStore) -> None:
     """A separate, deliberate act: switching the feature off does not do this, because turning
     something off to see what it does should not cost hours of re-reading every file."""
@@ -348,6 +394,31 @@ async def test_pruning_takes_every_frame_of_the_named_files_and_no_others(
     assert await store.held_ids() == ["kept"]
     assert await store.describes("gone", revision=REVISION) == []
     assert await store.describes("kept", revision=REVISION) != []
+
+
+async def test_a_long_prune_gives_the_writer_back_between_files(
+    temp_db: Database, store: VectorStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Every other write waits while one is open, so many files gone is many short writes."""
+    from sift.slices.semantic import store as module
+
+    for one in ("a", "b", "c"):
+        await store.put(one, [(0, unit(1.0))], revision=REVISION)
+    opened: list[int] = []
+    write = temp_db.write
+
+    def counted() -> Any:
+        opened.append(1)
+        return write()
+
+    monkeypatch.setattr(temp_db, "write", counted)
+    monkeypatch.setattr(module, "PRUNE_SECONDS", 0.0)
+
+    # Bounded, so a write that forgets nothing fails here rather than spinning.
+    assert await asyncio.wait_for(store.prune(["a", "b", "c"]), timeout=30) == 3
+
+    assert len(opened) == 3
+    assert await store.count() == 0
 
 
 async def test_pruning_counts_files_rather_than_rows(store: VectorStore) -> None:

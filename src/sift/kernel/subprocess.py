@@ -15,6 +15,7 @@ import shutil
 import subprocess
 import sys
 import threading
+import time
 import weakref
 from collections.abc import AsyncGenerator, Callable, Mapping
 from concurrent.futures import Executor, ThreadPoolExecutor
@@ -42,6 +43,25 @@ _MAX_OUTPUT_BYTES = 16 * 1024 * 1024
 
 class SubprocessError(Exception):
     """A tool could not be started, or did not finish within its time budget."""
+
+
+class ToolFailed(SubprocessError):
+    """A tool ended with a non-zero status; `said` is the tail of what it wrote to its errors."""
+
+    def __init__(self, message: str, *, returncode: int, said: str) -> None:
+        super().__init__(message)
+        self.returncode = returncode
+        self.said = said
+
+
+#: How much of a failed tool's error output its failure keeps, from the end. A decoder's cause comes
+#: first and its consequences after, so this holds the whole of an ordinary refusal.
+SAID_TAIL_CHARS = 2000
+
+
+def said_tail(stderr: bytes | None) -> str:
+    """The last `SAID_TAIL_CHARS` of what a tool wrote to its errors, as text."""
+    return (stderr or b"").decode("utf-8", "replace").strip()[-SAID_TAIL_CHARS:]
 
 
 #: The statuses Windows ends a program with when it could not be started at all: a file it needs
@@ -293,11 +313,12 @@ async def run(
 ) -> SubprocessResult:
     """Run `argv` to completion on threads, killed with all it started past `time_limit` or on
     cancel; `SubprocessError` if it will not run."""
+    started = time.perf_counter()
     process = await _spawn(
         argv, priority, stdin=stdin is not None, stdout=capture_stdout, extra_env=extra_env
     )
     stdout, stderr = await _collect_within(
-        process, argv, stdin=stdin, on_line=on_line, time_limit=time_limit
+        process, argv, stdin=stdin, on_line=on_line, time_limit=time_limit, started=started
     )
     if process in _OVER_MEMORY:
         raise SubprocessError(_over_memory(argv))
@@ -315,6 +336,7 @@ async def _collect_within(
     stdin: bytes | None,
     on_line: OnLine | None,
     time_limit: float,
+    started: float,
 ) -> tuple[bytes, bytes]:
     """The tool's output, read to the end within `time_limit`; the tool killed if it overruns."""
     try:
@@ -326,6 +348,7 @@ async def _collect_within(
         await _kill(process)
         raise
     finally:
+        _ran(process, started)
         # Closing the job ends whatever the tool started, after a kill or an ordinary exit.
         _release(process)
 
@@ -540,6 +563,63 @@ def tools_time() -> tuple[int, frozenset[int]]:
     return used, ids
 
 
+#: `JobObjectBasicAndIoAccountingInformation`: the job's processor time and its I/O counters.
+_IO_ACCOUNTING = 8
+
+
+@cache
+def _io_accounting() -> Any:
+    """`JOBOBJECT_BASIC_AND_IO_ACCOUNTING_INFORMATION`, flattened."""
+    import ctypes
+    from ctypes import wintypes
+
+    class Both(ctypes.Structure):
+        _fields_ = (
+            *((name, ctypes.c_int64) for name in ("User", "Kernel", "PeriodUser", "PeriodKernel")),
+            *((name, wintypes.DWORD) for name in ("Faults", "Total", "Active", "Terminated")),
+            *(
+                (name, ctypes.c_ulonglong)
+                for name in (
+                    "ReadOperationCount",
+                    "WriteOperationCount",
+                    "OtherOperationCount",
+                    "ReadTransferCount",
+                    "WriteTransferCount",
+                    "OtherTransferCount",
+                )
+            ),
+        )
+
+    return Both
+
+
+def _read_bytes(process: subprocess.Popen[bytes] | None) -> int:
+    """What the tool and all it started have read, from its job; 0 where there is no job."""
+    close = None if process is None else _JOBS.get(process)
+    held = None if close is None else close.peek()
+    if held is None:
+        return 0
+    import ctypes
+
+    api, job, _key = held[2]
+    info = _io_accounting()()
+    if not api.QueryInformationJobObject(
+        job, _IO_ACCOUNTING, ctypes.byref(info), ctypes.sizeof(info), None
+    ):
+        return 0
+    return int(info.ReadTransferCount)
+
+
+def _ran(process: subprocess.Popen[bytes] | None, started: float) -> None:
+    """File one run of a tool, and what it read, to the job it ran for. Before `_release`."""
+    # Here, not at the top: this module is loaded by bare interpreters with no logging installed.
+    from sift.kernel.log import job_cost
+
+    cost = job_cost()
+    if cost is not None:
+        cost.launched(started, time.perf_counter(), _read_bytes(process))
+
+
 def _release(process: subprocess.Popen[bytes]) -> None:
     """Close the tool's job handle, once, which ends anything still in it."""
     close = _JOBS.pop(process, None)
@@ -624,15 +704,17 @@ async def capture(
     time_limit: float,
     priority: Priority = Priority.NORMAL,
 ) -> bytes:
-    """Run `argv` in a thread and hand back all it wrote, uncapped; a non-zero exit raises."""
+    """Run `argv` in a thread and hand back all it wrote, uncapped; a non-zero exit raises
+    `ToolFailed` with the end of what the tool said."""
 
     def go() -> bytes:
+        started = time.perf_counter()
         try:
             process = subprocess.Popen(  # noqa: S603 (a list, never a shell; see the module header)
                 [*launch_prefix(priority), *argv],
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.PIPE,
-                stderr=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
                 creationflags=creation_flags(priority),
             )
         except OSError as exc:
@@ -643,17 +725,23 @@ async def capture(
                 process, memory_limit_for(priority), background=priority is Priority.BACKGROUND
             )
             try:
-                output, _ = process.communicate(timeout=time_limit)
+                output, errors = process.communicate(timeout=time_limit)
             except subprocess.TimeoutExpired as exc:
                 process.kill()
                 process.communicate()
                 raise SubprocessError(f"{argv[0]!r} took too long and was stopped") from exc
         finally:
+            _ran(process, started)
             _release(process)
         if process in _OVER_MEMORY:
             raise SubprocessError(_over_memory(argv))
         if process.returncode != 0:
-            raise SubprocessError(f"{argv[0]!r} failed with exit code {process.returncode}")
+            said = said_tail(errors) or unsaid(process.returncode)
+            raise ToolFailed(
+                f"{argv[0]!r} failed with exit code {process.returncode}: {said}",
+                returncode=process.returncode,
+                said=said,
+            )
         return output or b""
 
     return await asyncio.to_thread(go)
@@ -805,6 +893,7 @@ async def stream(
     stdin: bytes | None = None,
 ) -> AsyncGenerator[bytes]:
     """Run a tool and hand back its output in fixed-size pieces; closing the generator kills it."""
+    started = time.perf_counter()
     process, held = await _launch_streaming(argv, priority, stdin=stdin)
     feeding = asyncio.ensure_future(_pump(process, stdin))
     output = process.stdout
@@ -828,6 +917,7 @@ async def stream(
         # Never reaped twice: the loop would report a made-up status.
         if process.returncode is None:
             await _kill(process)
+        _ran(held, started)
         if held is not None:
             _release(held)
 
@@ -843,6 +933,7 @@ __all__ = [
     "Priority",
     "SubprocessError",
     "SubprocessResult",
+    "ToolFailed",
     "background_memory_limit",
     "background_rate",
     "creation_flags",
@@ -853,6 +944,7 @@ __all__ = [
     "planned_memory",
     "read_disk_and_memory",
     "run",
+    "said_tail",
     "set_machine_memory",
     "start_long_lived",
     "step_aside",

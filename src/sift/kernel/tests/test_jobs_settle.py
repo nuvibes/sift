@@ -976,7 +976,9 @@ async def run_one(queue: JobQueue, job_id: str, *, outcome: str = "done") -> Non
 
 
 @pytest.mark.integration
-async def test_a_parent_s_progress_is_its_children_s(job_queue: JobQueue) -> None:
+async def test_a_parent_s_progress_is_its_own_and_its_children_are_counted_apart(
+    job_queue: JobQueue,
+) -> None:
     noop_handler("scan")
     noop_handler("probe")
     parent = await job_queue.enqueue("scan", {"root_id": "01HQ"})
@@ -989,14 +991,16 @@ async def test_a_parent_s_progress_is_its_children_s(job_queue: JobQueue) -> Non
     parent_job = await job_queue.get(parent)
     assert parent_job is not None
     assert parent_job.state is JobState.DONE
-    assert parent_job.progress == 0.0  # it handed out the work; the work is not done
+    assert parent_job.progress == 1.0
 
     for child in children[:2]:
         await run_one(job_queue, child)
 
     parent_job = await job_queue.get(parent)
     assert parent_job is not None
-    assert parent_job.progress == 0.5
+    assert parent_job.progress == 1.0
+    counted = (await job_queue.step_counts([parent]))[parent]
+    assert counted.by_state == {"done": 2, "queued": 2}
 
 
 @pytest.mark.integration
@@ -1020,10 +1024,10 @@ async def test_a_child_that_fails_still_counts_towards_the_parent_s_progress(
 
 
 @pytest.mark.integration
-async def test_a_child_that_is_retried_takes_the_parent_s_progress_back_down(
+async def test_a_child_that_is_retried_is_counted_again_and_leaves_its_parent_alone(
     job_queue: JobQueue,
 ) -> None:
-    """Progress is recomputed, never accumulated. An accumulated count drifts on the first retry."""
+    """Counts are kept by state, never accumulated: a retry moves one step back to waiting."""
     noop_handler("scan")
     noop_handler("probe")
     parent = await job_queue.enqueue("scan")
@@ -1040,7 +1044,8 @@ async def test_a_child_that_is_retried_takes_the_parent_s_progress_back_down(
 
     parent_job = await job_queue.get(parent)
     assert parent_job is not None
-    assert parent_job.progress == 0.0
+    assert parent_job.progress == 1.0
+    assert (await job_queue.step_counts([parent]))[parent].by_state == {"queued": 1}
 
 
 @pytest.mark.integration
@@ -1108,7 +1113,8 @@ async def test_cancelling_a_child_leaves_its_parent_alone(job_queue: JobQueue) -
     parent_job = await job_queue.get(parent)
     assert parent_job is not None
     assert parent_job.state is JobState.QUEUED
-    assert parent_job.progress == 1.0  # its one child is finished with, one way or another
+    assert parent_job.progress == 0.0
+    assert (await job_queue.step_counts([parent]))[parent].by_state == {"canceled": 1}
 
 
 @pytest.mark.integration

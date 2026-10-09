@@ -35,6 +35,7 @@ from sift.kernel.jobs import (
     worker_pool,
 )
 from sift.kernel.tests.jobs_helpers import (
+    OTHER_WORKER,
     WORKER,
     Recorder,
     _a_job,
@@ -483,25 +484,24 @@ async def test_a_worker_survives_a_failure_to_write_down_what_happened(
 
 @pytest.mark.integration
 @pytest.mark.regression
-async def test_rolling_up_a_job_that_has_no_children_leaves_it_alone(job_queue: JobQueue) -> None:
-    """A landmine, defused: for a childless job the fraction is 0/0, which SQLite calls NULL.
+async def test_a_child_settling_leaves_its_running_parents_progress_alone(
+    job_queue: JobQueue,
+) -> None:
+    """A parent's progress is its own handler's: a walk says files read of files to read, and
+    the files it handed out settling must not write their own share over it."""
+    noop_handler("probe")
+    parent = await job_queue.enqueue(noop_handler("scan"), {"root_id": "01HQ"})
+    assert await job_queue.claim(WORKER) is not None
+    child = await job_queue.enqueue("probe", {"n": 1}, parent_id=parent)
+    await job_queue.set_progress(parent, WORKER, 0.25)
 
-    `progress` is NOT NULL, so that write would fail, and take the whole transaction with it,
-    including the `complete` that triggered it, leaving the job `running` because a progress bar
-    could not be moved. Today every id that reaches the roll-up is a `parent_id` read off a live
-    child, so it always has one. This asserts the statement is safe regardless, rather than the
-    callers being careful.
-    """
-    job_id = await job_queue.enqueue(noop_handler())
-    await job_queue.claim(WORKER)
-    await job_queue.set_progress(job_id, WORKER, 0.4)
+    claimed = await job_queue.claim(OTHER_WORKER)
+    assert claimed is not None and claimed.id == child
+    assert await job_queue.complete(child, OTHER_WORKER)
 
-    async with job_queue._db.write() as connection:
-        await job_queue._roll_up(connection, [job_id])  # a job with no children at all
-
-    job = await job_queue.get(job_id)
+    job = await job_queue.get(parent)
     assert job is not None
-    assert job.progress == 0.4  # unchanged, and no exception
+    assert job.progress == 0.25
 
 
 @pytest.mark.integration

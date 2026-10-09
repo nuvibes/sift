@@ -137,3 +137,66 @@ async def test_under_load_the_held_line_comes_once_a_while_and_counts_the_rest(
 
     said = [fields for event, fields in warnings if event == "db.write_held"]
     assert [one["blocks"] for one in said] == [1], "the first is said; the next three are counted"
+
+
+async def test_a_write_block_files_its_wait_for_the_writer_to_the_job_it_ran_for(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No statement's record can see the wait for the lock, which is most of a job's time when
+    another block holds the writer; the block itself files it, and says it when it runs long."""
+    from sift.kernel import db_writer
+    from sift.kernel.log import JobCost, costing
+
+    said: list[dict[str, Any]] = []
+    monkeypatch.setattr(db_writer.log, "info", lambda event, **fields: said.append(fields))
+    monkeypatch.setattr(db_writer, "WRITE_HELD_BUDGET_MS", 100)
+    database = Database(tmp_path / "waited.sqlite3")
+    await database.connect()
+    holding = asyncio.Event()
+
+    async def hold() -> None:
+        async with database.write() as connection:
+            await connection.execute("CREATE TABLE waited (n INTEGER)")
+            holding.set()
+            await asyncio.sleep(0.3)
+
+    cost = JobCost()
+    try:
+        holder = asyncio.create_task(hold())
+        await holding.wait()
+        with costing(cost):
+            async with database.write() as connection:
+                await connection.execute("INSERT INTO waited VALUES (1)")
+            # Behind nobody: under the budget, so not said again.
+            async with database.write() as connection:
+                await connection.execute("INSERT INTO waited VALUES (2)")
+        await holder
+    finally:
+        await database.close()
+
+    filed = cost.summary()
+    assert filed["writes"] == 2
+    assert filed["writer_wait_ms"] >= 200
+    assert len(said) == 1 and said[0]["waited_ms"] >= 200 and said[0]["blocks"] == 1
+
+
+def test_waits_over_budget_are_said_once_a_window_with_the_count_and_the_worst(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from sift.kernel import db_writer
+
+    said: list[dict[str, Any]] = []
+    monkeypatch.setattr(db_writer.log, "info", lambda event, **fields: said.append(fields))
+    clock = [1000.0]
+    waits = db_writer._WaitsSaid(lambda: clock[0])
+    waits.waited(900)
+    waits.waited(50)  # under the budget: not a wait worth a word
+    waits.waited(400)
+    waits.waited(1200)
+    clock[0] += db_writer.WRITE_HELD_SAY_SECONDS
+    waits.waited(300)
+
+    assert [(s["waited_ms"], s["worst_ms"], s["blocks"]) for s in said] == [
+        (900, 900, 1),
+        (300, 1200, 3),
+    ]

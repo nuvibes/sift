@@ -4,6 +4,7 @@ the faces' descriptions so a rescan puts it back."""
 
 from __future__ import annotations
 
+import time
 from collections.abc import Sequence
 
 from sift.kernel.audience import EVERY_ADMIN
@@ -20,6 +21,43 @@ from sift.slices.faces.store_pictures import (
 from sift.slices.faces.store_records import (
     _STAMP_PILE,
     now_ms,
+)
+
+#: How long one write of `drop_empty_piles` keeps the writer, how many faces one statement in it
+#: takes off a pile and how many the write takes at most. Each face taken off moves its file's
+#: counts, settled as the write commits, and a pile of thousands of named faces in one statement
+#: would hold every other write for its whole length.
+_DROP_BLOCK_SECONDS = 0.05
+_FACES_PER_STEP = 200
+_FACES_PER_WRITE = 400
+
+#: How many piles one write of the count correction reads.
+_SIZES_PER_WRITE = 2000
+
+#: Piles with no unclaimed face left, read off the writer and asked again pile by pile under it.
+_EMPTIED_PILES = (
+    "SELECT id FROM face_piles WHERE id NOT IN "
+    "(SELECT DISTINCT pile_id FROM face_tracks WHERE pile_id IS NOT NULL "
+    "AND person_id IS NULL)"
+)
+_UNCLAIMED_ON = "SELECT 1 FROM face_tracks WHERE pile_id = ? AND person_id IS NULL LIMIT 1"
+_TAKE_OFF = (
+    "UPDATE face_tracks SET pile_id = NULL "
+    "WHERE id IN (SELECT id FROM face_tracks WHERE pile_id = ? LIMIT ?)"
+)
+_DROP_PILE = "DELETE FROM face_piles WHERE id = ? RETURNING id"
+
+#: The last pile of the next window of `_SIZES_PER_WRITE`, by id.
+_SIZES_WINDOW_END = (
+    "SELECT MAX(id) AS last FROM (SELECT id FROM face_piles WHERE id > ? ORDER BY id LIMIT ?)"
+)
+_CORRECT_SIZES = (
+    "UPDATE face_piles SET size = "
+    "(SELECT COUNT(*) FROM face_tracks "
+    "  WHERE pile_id = face_piles.id AND person_id IS NULL) "
+    "WHERE id > ? AND id <= ? AND size <> "
+    "(SELECT COUNT(*) FROM face_tracks "
+    "  WHERE pile_id = face_piles.id AND person_id IS NULL)"
 )
 
 
@@ -485,23 +523,41 @@ class ByHandStore(PicturesStore):
         touched by naming or removing a face, so without this one face named of five leaves a row
         claiming five. The group screens recount per viewer and never read the column, so the drift
         would go unnoticed and be believed by the next thing to read it.
+
+        The named faces still on an emptied pile come off it a few at a time, as deleting the pile
+        would take them off anyway, each write ending after `_DROP_BLOCK_SECONDS`. A pile that gains
+        an unclaimed face meanwhile is kept.
         """
-        async with self._db.write() as connection:
-            rows = list(
-                await connection.execute_fetchall(
-                    "DELETE FROM face_piles WHERE id NOT IN "
-                    "(SELECT DISTINCT pile_id FROM face_tracks WHERE pile_id IS NOT NULL "
-                    "AND person_id IS NULL) RETURNING id",
-                    (),
+        emptied = await self._db.sweep_all(_EMPTIED_PILES, what="groups left empty")
+        waiting = [str(row["id"]) for row in emptied]
+        dropped = 0
+        while waiting:
+            async with self._db.write() as connection:
+                began, moved = time.monotonic(), 0
+                while (
+                    waiting
+                    and moved < _FACES_PER_WRITE
+                    and time.monotonic() - began < _DROP_BLOCK_SECONDS
+                ):
+                    pile_id = waiting[0]
+                    if await connection.execute_fetchall(_UNCLAIMED_ON, (pile_id,)):
+                        waiting.pop(0)
+                        continue
+                    taken = await connection.execute(_TAKE_OFF, (pile_id, _FACES_PER_STEP))
+                    if taken.rowcount > 0:
+                        moved += taken.rowcount
+                        continue
+                    dropped += len(list(await connection.execute_fetchall(_DROP_PILE, (pile_id,))))
+                    waiting.pop(0)
+        after = ""
+        while True:
+            async with self._db.write() as connection:
+                rows = list(
+                    await connection.execute_fetchall(_SIZES_WINDOW_END, (after, _SIZES_PER_WRITE))
                 )
-            )
-            await connection.execute(
-                "UPDATE face_piles SET size = "
-                "(SELECT COUNT(*) FROM face_tracks "
-                "  WHERE pile_id = face_piles.id AND person_id IS NULL) "
-                "WHERE size <> "
-                "(SELECT COUNT(*) FROM face_tracks "
-                "  WHERE pile_id = face_piles.id AND person_id IS NULL)",
-                (),
-            )
-        return len(rows)
+                last = rows[0]["last"] if rows else None
+                if last is None:
+                    break
+                await connection.execute(_CORRECT_SIZES, (after, last))
+            after = str(last)
+        return dropped

@@ -14,26 +14,36 @@ from sift.kernel.jobs.switchboard import QuietHold
 #: How long "can this family run here" stays true: the pool's own `RECONFIGURE_SECONDS`.
 READINESS_FRESH_FOR_SECONDS = 3
 
-# Unfinished work by type, less what quiet hours or a family's hold keep waiting.
+# Unfinished work by type, less what quiet hours or a family's hold keep waiting: the family
+# tallies, so a few rows however long the queue.
 _DEMAND_BY_TYPE = """
-SELECT type, COUNT(*) AS pending FROM jobs
- WHERE unlikely(state IN ('queued', 'running', 'blocked'))
+SELECT type, SUM(n) AS pending FROM job_family_tallies
+ WHERE state IN ('queued', 'running', 'blocked')
    AND NOT (state = 'queued' AND NOT ?
-            AND (COALESCE(timing, '') = 'quiet'
-                 OR (timing IS NULL AND type IN (SELECT value FROM json_each(?)))))
+            AND (timing = 'quiet' OR (timing = '' AND type IN (SELECT value FROM json_each(?)))))
    AND NOT (state = 'queued' AND NOT ?
-            AND root_id IN (SELECT value FROM json_each(?)) AND COALESCE(timing, '') <> 'now'
+            AND root_id IN (SELECT value FROM json_each(?)) AND timing <> 'now'
             AND type NOT IN (SELECT value FROM json_each(?)))
  GROUP BY type
+ HAVING SUM(n) > 0
 """
 
+# A held family's waiting rows by type from its tallies, less those put off to later, which the
+# tallies cannot tell from the rest (`ix_jobs_queued_later`).
 _HELD_FOR_A_FAMILY = """
-SELECT root_id, type, COUNT(*) AS held FROM jobs
- WHERE root_id IN (SELECT value FROM json_each(?)) AND state = 'queued'
-   AND (run_after IS NULL OR run_after <= ?)
-   AND COALESCE(timing, '') <> 'now'
-   AND type NOT IN (SELECT value FROM json_each(?))
+SELECT root_id, type, SUM(n) AS held FROM (
+  SELECT root_id, type, n FROM job_family_tallies
+   WHERE root_id IN (SELECT value FROM json_each(:families)) AND state = 'queued'
+     AND timing <> 'now' AND type NOT IN (SELECT value FROM json_each(:spared))
+  UNION ALL
+  SELECT COALESCE(root_id, id), type, -COUNT(*) FROM jobs
+   WHERE state = 'queued' AND run_after IS NOT NULL AND run_after > :now
+     AND COALESCE(root_id, id) IN (SELECT value FROM json_each(:families))
+     AND COALESCE(timing, '') <> 'now' AND type NOT IN (SELECT value FROM json_each(:spared))
+   GROUP BY 1, 2
+)
  GROUP BY root_id, type
+ HAVING SUM(n) > 0
 """
 
 _FAMILY_OF = "SELECT COALESCE(root_id, id) AS family FROM jobs WHERE id = ?"
@@ -108,7 +118,9 @@ class SwitchboardReads(QueueCore):
         if not self._holds:
             return []
         _, families, spared = self._family_holds()
-        rows = await self._db.fetch_all(_HELD_FOR_A_FAMILY, (families, int(self._now()), spared))
+        rows = await self._db.fetch_all(
+            _HELD_FOR_A_FAMILY, {"families": families, "now": int(self._now()), "spared": spared}
+        )
         return [(str(row["root_id"]), str(row["type"]), int(row["held"])) for row in rows]
 
     async def held_for_family_by_type(self) -> dict[str, int]:

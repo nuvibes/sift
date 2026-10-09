@@ -232,3 +232,10 @@ def test_lowering_the_log_size_trims_the_older_files_immediately(tmp_path: Path)
     total = sum(f.stat().st_size for f in tmp_path.glob("sift.log*"))
     assert total <= 5_000 * 4
     assert log_file.exists(), "the file being written is never the one trimmed"
+
+
+def test_a_start_may_let_one_file_reach_the_size_of_the_largest_setting() -> None:
+    from sift.kernel.log_settings import MOST_KEEP_MB, largest_file_bytes
+
+    assert largest_file_bytes(5) == per_file_bytes(MOST_KEEP_MB * BYTES_PER_MB, 5)
+    assert largest_file_bytes(5) > per_file_bytes(DEFAULT_KEEP_MB * BYTES_PER_MB, 5)

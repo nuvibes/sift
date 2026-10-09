@@ -32,7 +32,7 @@ from sift.kernel.db import Database
 from sift.kernel.ids import new_id
 from sift.kernel.ingress import Origin, verify_ingress
 from sift.kernel.ledger import Actor
-from sift.slices.faces import recognize, tracking
+from sift.slices.faces import recognize, store_grouping, tracking
 from sift.slices.faces.models import (
     Appearance,
     Attribution,
@@ -1065,6 +1065,37 @@ async def test_a_pile_with_nothing_unclaimed_left_in_it_is_dropped(
 
     assert await store.drop_empty_piles() == 1
     assert await store.pile_of(made[0]) is None
+
+
+async def test_an_emptied_pile_of_many_named_faces_goes_a_few_faces_a_write(
+    store: Store, temp_db: Database, clip: Ingested, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Every named face on the pile comes off it, each write taking only a few, so a pile of
+    thousands never holds the writer for all of them."""
+    monkeypatch.setattr(store_grouping, "_FACES_PER_STEP", 1)
+    monkeypatch.setattr(store_grouping, "_FACES_PER_WRITE", 1)
+    await record(store, clip.asset.id, count=5)
+    tracks = await store.tracks_of(clip.asset.id)
+    made = await store.replace_piles([(tuple(0.0 for _ in range(8)), [t.id for t in tracks])])
+    person_id = await make_person(temp_db, "Ada")
+    for track in tracks:
+        await store.attribute(track.id, person_id, confidence=1.0, attribution=None)
+    writes = 0
+    opened = temp_db.write
+
+    def counted() -> object:
+        nonlocal writes
+        writes += 1
+        return opened()
+
+    monkeypatch.setattr(temp_db, "write", counted)
+
+    assert await store.drop_empty_piles() == 1
+
+    assert await store.pile_of(made[0]) is None
+    assert all(t.pile_id is None for t in await store.tracks_of(clip.asset.id))
+    assert len(tracks) >= 3
+    assert writes >= len(tracks) + 1, "a face a write, and the counts' correction besides"
 
 
 async def test_how_many_reference_faces_somebody_has(store: Store, temp_db: Database) -> None:

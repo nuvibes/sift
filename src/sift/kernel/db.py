@@ -12,12 +12,10 @@ import asyncio
 import sqlite3
 import threading
 import time
-from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
-from contextlib import asynccontextmanager, suppress
-from contextvars import ContextVar
-from dataclasses import dataclass
+from collections.abc import AsyncIterator, Callable
+from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any, cast
+from typing import cast
 
 import aiosqlite
 
@@ -31,6 +29,54 @@ from sift.kernel.db_base import (
     IntegrityError,
     Params,
     Row,
+)
+from sift.kernel.db_capabilities import (
+    SqliteCapabilities as SqliteCapabilities,
+)
+from sift.kernel.db_capabilities import (
+    _extension_loading_available as _extension_loading_available,
+)
+from sift.kernel.db_capabilities import (
+    _fts5_present as _fts5_present,
+)
+from sift.kernel.db_capabilities import (
+    check_sqlite_capabilities as check_sqlite_capabilities,
+)
+from sift.kernel.db_capabilities import (
+    probe_sqlite as probe_sqlite,
+)
+from sift.kernel.db_hooks import (
+    _AFTER_COMMIT as _AFTER_COMMIT,
+)
+from sift.kernel.db_hooks import (
+    _BEFORE_COMMIT as _BEFORE_COMMIT,
+)
+from sift.kernel.db_hooks import (
+    _COPY_UNDER_GUARD_PAGES as _COPY_UNDER_GUARD_PAGES,
+)
+from sift.kernel.db_hooks import (
+    _IN_SWEEP as _IN_SWEEP,
+)
+from sift.kernel.db_hooks import (
+    _IN_WRITE as _IN_WRITE,
+)
+from sift.kernel.db_hooks import (
+    _LOG_CAP_PAGES as _LOG_CAP_PAGES,
+)
+from sift.kernel.db_hooks import (
+    _MOST_LOG_COPIES as _MOST_LOG_COPIES,
+)
+from sift.kernel.db_hooks import (
+    _copy_back as _copy_back,
+)
+from sift.kernel.db_hooks import (
+    after_commit as after_commit,
+)
+from sift.kernel.db_hooks import (
+    before_commit as before_commit,
+)
+from sift.kernel.db_hooks import (
+    in_clause as in_clause,
 )
 from sift.kernel.db_judged import (
     _BUDGET,
@@ -117,6 +163,57 @@ from sift.kernel.db_schema import (
     registered_invariants,
     too_old_to_bring_forward,
 )
+from sift.kernel.db_statistics import (
+    _ANALYSIS_LIMIT as _ANALYSIS_LIMIT,
+)
+from sift.kernel.db_statistics import (
+    _ANALYZE_ONE as _ANALYZE_ONE,
+)
+from sift.kernel.db_statistics import (
+    _ANALYZE_WHAT_MOVED as _ANALYZE_WHAT_MOVED,
+)
+from sift.kernel.db_statistics import (
+    _ANY_ROW as _ANY_ROW,
+)
+from sift.kernel.db_statistics import (
+    _HAS_STATISTICS as _HAS_STATISTICS,
+)
+from sift.kernel.db_statistics import (
+    _HOLDS_A_ROW as _HOLDS_A_ROW,
+)
+from sift.kernel.db_statistics import (
+    _PARTIAL as _PARTIAL,
+)
+from sift.kernel.db_statistics import (
+    _PLAIN_NAME as _PLAIN_NAME,
+)
+from sift.kernel.db_statistics import (
+    _ROWS_NOW as _ROWS_NOW,
+)
+from sift.kernel.db_statistics import (
+    _STATISTICS_KEPT as _STATISTICS_KEPT,
+)
+from sift.kernel.db_statistics import (
+    _TABLES as _TABLES,
+)
+from sift.kernel.db_statistics import (
+    STALE_FACTOR as STALE_FACTOR,
+)
+from sift.kernel.db_statistics import (
+    STATISTICS_INTERVAL_SECONDS as STATISTICS_INTERVAL_SECONDS,
+)
+from sift.kernel.db_statistics import (
+    STATISTICS_MIN_INTERVAL_SECONDS as STATISTICS_MIN_INTERVAL_SECONDS,
+)
+from sift.kernel.db_statistics import (
+    _statistics_kept as _statistics_kept,
+)
+from sift.kernel.db_statistics import (
+    keep_the_statistics_current as keep_the_statistics_current,
+)
+from sift.kernel.db_statistics import (
+    stale_tables as stale_tables,
+)
 from sift.kernel.db_writer import (
     CHECKPOINT_INTERVAL_SECONDS,
     RECLAIM_WORTH_SAYING_BYTES,
@@ -124,10 +221,11 @@ from sift.kernel.db_writer import (
     WRITE_HELD_SAY_SECONDS,
     WRITER_HELD_SECONDS,
     _log_bytes,
+    _WaitsSaid,
     _writer_still_held,
     keep_the_log_folded,
 )
-from sift.kernel.log import get_logger, timing_hook
+from sift.kernel.log import get_logger, job_cost, timing_hook
 
 log = get_logger(__name__)
 
@@ -159,7 +257,6 @@ __all__ = [
     "VERDICT_OLDER",
     "VERDICT_UNREADABLE",
     "_AFTER_COMMIT",
-    "_ANALYZE_EVERY_TABLE",
     "_ANALYZE_WHAT_MOVED",
     "_BARE_AGGREGATE",
     "_BUDGET",
@@ -251,184 +348,6 @@ def readers_for(workers: int) -> int:
     return max(DEFAULT_READERS, workers + READER_HEADROOM)
 
 
-#: How often a long-lived process refreshes the planner's statistics: daily, SQLite's own advice.
-STATISTICS_INTERVAL_SECONDS = 24 * 60 * 60.0
-
-#: The least time between two refreshes, whoever asked, so passes draining together pay once.
-STATISTICS_MIN_INTERVAL_SECONDS = 60.0
-
-#: Two forms: `PRAGMA optimize` re-analyzes what SQLite thinks would benefit and is nearly free once
-#: current, so it is the timer's; `0x10002` considers every table at a real cost each time, so it is
-#: run once, at boot. Full `ANALYZE` is not used.
-_ANALYZE_WHAT_MOVED = "PRAGMA optimize"
-_ANALYZE_EVERY_TABLE = "PRAGMA optimize(0x10002)"
-
-
-async def keep_the_statistics_current(
-    database: Database,
-    stop: asyncio.Event,
-    *,
-    interval: float = STATISTICS_INTERVAL_SECONDS,
-) -> None:
-    """Refresh what the query planner believes about the tables, on a timer, until told to stop:
-    the outer bound for a process left running for days."""
-    while not stop.is_set():
-        with suppress(TimeoutError):
-            await asyncio.wait_for(stop.wait(), timeout=interval)
-        if stop.is_set():
-            return
-        try:
-            await database.refresh_statistics(reason="daily")
-        except Exception:
-            # Housekeeping does not get to take the application down with it.
-            log.exception("db.statistics_refresh_failed")
-
-
-@dataclass(frozen=True)
-class SqliteCapabilities:
-    """What the SQLite this process linked can actually do."""
-
-    version: str
-    fts5: bool
-    load_extension: bool
-
-    def as_dict(self) -> dict[str, Any]:
-        return {
-            "version": self.version,
-            "fts5": self.fts5,
-            "load_extension": self.load_extension,
-        }
-
-
-def _fts5_present(connection: sqlite3.Connection) -> bool:
-    """Whether FTS5 is there, asked by building one: a compile option no version number tells."""
-    try:
-        connection.execute("CREATE VIRTUAL TABLE probe USING fts5(x)")
-    except sqlite3.Error:
-        return False
-    return True
-
-
-def _extension_loading_available(connection: sqlite3.Connection) -> bool:
-    """Whether extensions can be loaded at all (Python or SQLite may lack it); left off."""
-    try:
-        connection.enable_load_extension(True)
-    except (AttributeError, sqlite3.Error):
-        return False
-    connection.enable_load_extension(False)
-    return True
-
-
-def probe_sqlite() -> SqliteCapabilities:
-    """Ask the library what it can do, in memory, before the data directory is opened."""
-    connection = sqlite3.connect(":memory:")
-    connection.execute("PRAGMA trusted_schema=OFF")
-    try:
-        return SqliteCapabilities(
-            version=sqlite3.sqlite_version,
-            fts5=_fts5_present(connection),
-            load_extension=_extension_loading_available(connection),
-        )
-    finally:
-        connection.close()
-
-
-def check_sqlite_capabilities(
-    capabilities: SqliteCapabilities | None = None,
-    *,
-    announce: bool = True,
-) -> SqliteCapabilities:
-    """Refuse to run on a SQLite that cannot do what Sift needs, and record what it can.
-
-    A capability rather than a version: what matters is how the machine's SQLite was built. Only
-    FTS5 stops a boot, since search is made of it; extension loading is recorded. Once at boot.
-    `announce` is off for callers before logging is set up, or console tools.
-    """
-    found = capabilities if capabilities is not None else probe_sqlite()
-
-    if not found.fts5:
-        raise DatabaseError(
-            f"Sift needs a SQLite built with FTS5, and the one it found ({found.version}) does "
-            "not have it.\n"
-            "FTS5 is the full-text index every search runs against, so without it there is no "
-            "search at all.\n"
-            "It is a build option and not a version, so a newer SQLite is not necessarily a fix. "
-            "The container image ships one that has it."
-        )
-
-    if not announce:
-        return found
-
-    log.info(
-        "sqlite.capabilities",
-        version=found.version,
-        fts5=found.fts5,
-        load_extension=found.load_extension,
-    )
-    if not found.load_extension:
-        log.warning(
-            "sqlite.no_extension_loading",
-            detail=(
-                "This SQLite cannot load extensions. Everything Sift does today works without "
-                "them; features that are built on one will not."
-            ),
-        )
-    return found
-
-
-def in_clause(sql: str, values: Sequence[Any]) -> tuple[str, list[Any]]:
-    """Expand the one query shape SQLite cannot parameterize: `IN (?, ?, ?)`.
-
-        query, params = in_clause("SELECT * FROM tags WHERE id IN (?*)", tag_ids)
-
-    The only characters this can add are `?` and `,`, which is what exempts it from the
-    no-string-built-SQL rule. Interpolating a name here would be a different, dangerous function.
-    """
-    if sql.count(IN_MARKER) != 1:
-        raise ValueError(f"the query needs exactly one {IN_MARKER} marker: {sql!r}")
-    if not values:
-        # `IN ()` is a syntax error, and "match nothing" is the caller's decision to make.
-        raise ValueError("in_clause needs at least one value")
-
-    placeholders = "(" + ",".join("?" * len(values)) + ")"
-    return sql.replace(IN_MARKER, placeholders), list(values)
-
-
-# Whether this TASK is already inside one of the two exclusive guards, where a second would
-# deadlock: per task, since another task waiting its turn is right. Checked before the lock.
-_IN_WRITE: ContextVar[bool] = ContextVar("sift_db_in_write", default=False)
-_IN_SWEEP: ContextVar[bool] = ContextVar("sift_db_in_sweep", default=False)
-
-# What to do once the write this task is inside has landed: per task and transaction, here because
-# only this module knows a transaction committed, and dropped unrun when the write fails.
-_AFTER_COMMIT: ContextVar[list[Callable[[], None]] | None] = ContextVar(
-    "sift_db_after_commit", default=None
-)
-
-
-#: What every write does last, inside its transaction: a component whose stored answers move once
-#: per write instead of once per row (`visibility`) registers it here.
-_BEFORE_COMMIT: list[Callable[[aiosqlite.Connection], Awaitable[None]]] = []
-
-
-def before_commit(work: Callable[[aiosqlite.Connection], Awaitable[None]]) -> None:
-    """Run this at the end of every write, before it commits and in the same transaction."""
-    _BEFORE_COMMIT.append(work)
-
-
-def after_commit(work: Callable[[], None]) -> None:
-    """Do this once the write in progress has committed, and not at all if it does not: refused
-    outside a write, run with the writer lock released, a failure logged since the change is stored."""
-    pending = _AFTER_COMMIT.get()
-    if pending is None:
-        raise DatabaseError(
-            "after_commit() was called outside a write(): there is no transaction for this to "
-            "belong to, so it would run at a moment the caller did not choose. Open the write "
-            "first, or do the work directly."
-        )
-    pending.append(work)
-
-
 class Database:
     """The handle: one write connection behind a lock, plus a pool of readers. Kernel only: a
     direct read of assets walks past the access layer's permission checks."""
@@ -441,12 +360,16 @@ class Database:
         self._writer: aiosqlite.Connection | None = None
         self._held_said = 0.0
         self._held_quietly = 0
+        self._waits_said = _WaitsSaid()
         self._write_lock = asyncio.Lock()
         self._read_pool: asyncio.Queue[aiosqlite.Connection] = asyncio.Queue()
         # Read connections open; up to `_readers`, those past the first few opened on first need.
         self._opened = 0
         # The sweep lane: one connection of its own, never drawn from the pool above. See `sweep`.
         self._sweeper: aiosqlite.Connection | None = None
+        # The log's copy back, on a connection of its own, opened on first need (`copy_the_log_back`).
+        self._folder: aiosqlite.Connection | None = None
+        self._folder_lock = asyncio.Lock()
         self._sweep_lock = asyncio.Lock()
         self._sweeping: str | None = None
         self._open_connections: list[aiosqlite.Connection] = []
@@ -606,6 +529,9 @@ class Database:
             # (one row's update 5.35 ms against 1.27 in memory on a library of 100,000 files). A
             # reader's sort over a whole library stays on disk: see `PRAGMAS`.
             await connection.execute("PRAGMA temp_store=MEMORY")
+            # A commit never copies the log back: inside the write block that copy holds every
+            # other write for seconds. The keeper copies it from its own connection.
+            await connection.execute("PRAGMA wal_autocheckpoint=0")
         await connection.commit()
         await self._load_extensions(connection)
         self._open_connections.append(connection)
@@ -648,7 +574,7 @@ class Database:
         SQLite chooses indexes from counts it writes only when asked, and stale counts make a
         statement pick the wrong side of a join for ever, silently. Runs at boot after the
         migrations, at the end of every whole-library pass, and daily; on the writer, since it
-        writes. `every_table` is the boot form (`_ANALYZE_EVERY_TABLE`); `reason` says who asked.
+        writes. `every_table` is the boot form (each `stale_tables` table); `reason` says who asked.
         Debounced, except with `force`, which is a person pressing a button.
         """
         if self._writer is None:
@@ -658,27 +584,79 @@ class Database:
             return False
         # Set before the work, so a second caller waiting for the writer is turned away.
         self._statistics_at = now
-        statement = _ANALYZE_EVERY_TABLE if every_table else _ANALYZE_WHAT_MOVED
         started = time.perf_counter()
-        async with self.write() as connection:
-            cursor = await connection.execute(statement)
-            await cursor.close()
+        stale: list[str] = []
+        if not every_table:
+            async with self.write() as connection:
+                await connection.execute(_ANALYSIS_LIMIT)
+                cursor = await connection.execute(_ANALYZE_WHAT_MOVED)
+                await cursor.close()
+        else:
+            try:
+                # Counted on a reader, then each table analyzed in a write of its own.
+                async with self.read() as connection:
+                    stale = await stale_tables(connection)
+                for table in stale:
+                    async with self.write() as connection:
+                        await connection.execute(_ANALYSIS_LIMIT)
+                        # nosemgrep: sift-no-string-built-sql (a plain name off sqlite_stat1)
+                        await connection.execute(_ANALYZE_ONE.format(table=table))
+            except Exception:
+                # Housekeeping does not get to stop a boot.
+                log.exception("db.statistics_refresh_failed")
         log.info(
             "db.statistics_refreshed",
             reason=reason,
             every_table=every_table,
+            stale=len(stale),
             duration_ms=round((time.perf_counter() - started) * 1000, 1),
         )
         return True
+
+    def writer_is_held(self) -> bool:
+        """Whether a write block is open or waited for right now."""
+        return self._write_lock.locked()
+
+    async def copy_the_log_back(self) -> tuple[int, int]:
+        """Copy the write-ahead log into the database. Returns (pages in the log, pages copied).
+
+        A passive copy gives up at the oldest reader rather than wait. Most of it runs on a
+        connection of its own beside the writer, holding no write back; then what the writer added
+        meanwhile is copied under its guard, a short step, so that the next write starts the log
+        over rather than grow it: under a steady stream of commits the log is never otherwise all
+        copied at the moment a write begins.
+        """
+        async with self._folder_lock:
+            if self._folder is None:
+                self._folder = await self._open()
+            pages, copied = await _copy_back(self._folder)
+            # Again while the writer added much during the last copy, so the guarded step is short;
+            # skipped for a later look if it would not be, unless the log has grown past its cap.
+            added = pages
+            for _ in range(_MOST_LOG_COPIES):
+                more, copied = await _copy_back(self._folder)
+                added, pages = more - pages, more
+                if added <= _COPY_UNDER_GUARD_PAGES:
+                    break
+            if added > _COPY_UNDER_GUARD_PAGES and pages < _LOG_CAP_PAGES:
+                log.debug("db.log_copied", pages=pages, copied=copied, guarded=False)
+                return pages, copied
+            async with self.write() as writer:
+                pages, copied = await _copy_back(writer)
+            log.debug("db.log_copied", pages=pages, copied=copied, guarded=True, added=added)
+            return pages, copied
 
     async def fold_the_log_back(self) -> tuple[bool, int]:
         """Fold the write-ahead log back into the database. Returns (did it, pages still there).
 
         The reset needs a moment with no reader in it, which a busy pool never has on its own, so
         the log would only grow. `TRUNCATE` gives up rather than waits, which makes it safe on a
-        timer. Through the writer's guard, since run at the connection under another transaction
-        it answers "table is locked" and silently does nothing.
+        timer. The pages are copied first without the lock (`copy_the_log_back`), so the reset
+        under the writer's guard has little left to copy. Through the guard, since run at the
+        connection under another transaction it answers "table is locked" and silently does
+        nothing.
         """
+        await self.copy_the_log_back()
         async with self.write() as writer:
             cursor = await writer.execute("PRAGMA wal_checkpoint(TRUNCATE)")
             try:
@@ -707,6 +685,7 @@ class Database:
             self._point_cookie = None
         self._writer = None
         self._sweeper = None
+        self._folder = None
         self._read_pool = asyncio.Queue()
         self._opened = 0
         log.info("db.close", path=str(self.path))
@@ -732,7 +711,9 @@ class Database:
                 "whatever needs it, so the whole write is one transaction."
             )
         pending: list[Callable[[], None]] = []
+        asked = time.perf_counter()
         async with self._write_lock:
+            got = time.perf_counter()
             held = _IN_WRITE.set(True)
             carried = _AFTER_COMMIT.set(pending)
             counting = cast(_JudgedWriter, connection)
@@ -768,6 +749,11 @@ class Database:
                 held_ms = (time.monotonic() - began) * 1000
                 if held_ms >= WRITE_HELD_BUDGET_MS:
                     self._say_held(held_ms, counting)
+                # The wait behind other writers, which no statement's record can see.
+                cost = job_cost()
+                if cost is not None:
+                    cost.wrote(asked, got, time.perf_counter())
+                self._waits_said.waited((got - asked) * 1000)
         # Outside the lock, deliberately: the next writer is already free to start. Nothing here is
         # allowed to take the write back, so a failure is reported and the rest still run.
         for work in pending:

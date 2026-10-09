@@ -40,7 +40,9 @@ from sift.kernel.jobs import (
 )
 from sift.kernel.jobs import schema as jobs_schema
 from sift.kernel.jobs.queue import _check_payload, _for_the_record
+from sift.kernel.jobs.queue_enqueue import SETTLE_SLACK_SECONDS
 from sift.kernel.jobs.quiet_hours import AT_NOW
+from sift.kernel.jobs.switchboard import JobSwitchedOff, Switch
 from sift.kernel.jobs.tuning import (
     MAX_ATTEMPTS_CEILING,
     PRIORITY_MAX,
@@ -445,6 +447,106 @@ async def test_a_settle_runs_a_minute_after_the_last_file_not_the_first(
         await queue.enqueue_when_settled(sweep)
     job = await queue.get(first)
     assert job is not None and job.run_after == 1000 + SETTLE_LONGEST_SECONDS
+
+
+@pytest.mark.integration
+async def test_a_settle_asked_again_within_its_slack_writes_nothing(temp_db: Database) -> None:
+    """A batch of files each asking for the same pass moves the waiting row once in a while, not
+    once per file: every move is a turn of the single writer, and an import makes thousands."""
+    await temp_db.initialize_schema()
+    clock = FakeClock(1000)
+    queue = JobQueue(temp_db, clock=clock.now)
+    sweep = noop_handler()
+
+    first = await queue.enqueue_when_settled(sweep)
+    clock.advance(SETTLE_SLACK_SECONDS)
+    assert await queue.enqueue_when_settled(sweep) == first
+    job = await queue.get(first)
+    assert job is not None and job.run_after == 1060 and job.updated_at == 1000, "left alone"
+
+    clock.advance(1)
+    await queue.enqueue_when_settled(sweep)
+    job = await queue.get(first)
+    assert job is not None and job.run_after == 1061 + SETTLE_SLACK_SECONDS, "moved once due"
+
+
+@pytest.mark.integration
+async def test_a_settle_onto_a_pass_already_due_writes_nothing(temp_db: Database) -> None:
+    """A pass already due runs after this file's change whenever it is taken: nothing to move."""
+    await temp_db.initialize_schema()
+    clock = FakeClock(1000)
+    queue = JobQueue(temp_db, clock=clock.now)
+    sweep = noop_handler()
+    due = await queue.enqueue(sweep)
+
+    clock.advance(30)
+    assert await queue.enqueue_when_settled(sweep) == due
+    job = await queue.get(due)
+    assert job is not None and job.run_after is None and job.updated_at == 1000
+
+
+@pytest.mark.integration
+async def test_a_files_work_is_handed_out_in_one_write(
+    job_queue: JobQueue, temp_db: Database, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Each write is a turn of the single writer that every other write waits behind, so the
+    work one file starts goes in together, in the order given, under the job that started it."""
+    parent = await job_queue.enqueue(noop_handler("read"))
+    kinds = [noop_handler("picture"), noop_handler("faces"), noop_handler("meaning")]
+    blocks = 0
+    write = temp_db.write
+
+    @asynccontextmanager
+    async def counted() -> AsyncIterator[object]:
+        nonlocal blocks
+        blocks += 1
+        async with write() as connection:
+            yield connection
+
+    monkeypatch.setattr(temp_db, "write", counted)
+    ids = await job_queue.enqueue_children(parent, [(kind, {"n": 1}) for kind in kinds])
+
+    assert blocks == 1
+    children = await job_queue.children(parent)
+    assert [child.id for child in children] == ids
+    assert [child.type for child in children] == kinds
+
+
+@pytest.mark.integration
+async def test_a_switched_off_child_queues_none_of_the_files_work(job_queue: JobQueue) -> None:
+    """Refused before anything is written, as a single enqueue is."""
+
+    async def off() -> bool:
+        return False
+
+    parent = await job_queue.enqueue(noop_handler("read"))
+    job_queue.switchboard.declare(Switch(key="t.off", refusal="off", on=off), noop_handler("dup"))
+    with pytest.raises(JobSwitchedOff):
+        await job_queue.enqueue_children(parent, [(noop_handler("picture"), {}), ("dup", {})])
+    assert await job_queue.children(parent) == []
+
+
+@pytest.mark.integration
+async def test_only_work_a_worker_could_take_now_wakes_the_idle_workers(
+    job_queue: JobQueue,
+) -> None:
+    """An idle worker woken for a row it cannot take claims nothing inside the writer's lock:
+    a row put off, a settle and a family's held work wait for their moment or their lift."""
+    woken: list[int] = []
+    job_queue.listen_for_work(lambda: woken.append(1))
+    kind = noop_handler()
+
+    await job_queue.enqueue(kind, run_after=int(time.time()) + 600)
+    await job_queue.enqueue_when_settled(noop_handler("sweep"))
+    assert woken == []
+
+    scan = await job_queue.enqueue(noop_handler("scan"))
+    assert len(woken) == 1
+    await job_queue.hold_family(scan, spared=("read",))
+    await job_queue.enqueue_children(scan, [(noop_handler("picture"), {})])
+    assert len(woken) == 1, "held by its family"
+    await job_queue.enqueue_children(scan, [(noop_handler("read"), {})])
+    assert len(woken) == 2, "spared by the hold"
 
 
 @pytest.mark.integration

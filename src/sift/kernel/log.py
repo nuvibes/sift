@@ -9,9 +9,11 @@ import hashlib
 import logging
 import os
 import sys
+import threading
 import time
 from collections.abc import Callable, Iterator, MutableMapping
 from contextlib import contextmanager, suppress
+from contextvars import ContextVar
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any, TypeVar, cast
@@ -142,8 +144,10 @@ def configure_logging(
     log_file: Path | None = None,
     max_bytes: int = 0,
     backups: int = 0,
+    warn_unredacted: bool = True,
 ) -> None:
-    """Install the logging pipeline at boot; every record, a library's too, is scrubbed."""
+    """Install the logging pipeline at boot; every record, a library's too, is scrubbed.
+    `warn_unredacted` is False for a child, whose parent has already said it."""
     global _redact_personal
     _redact_personal = redact_personal
 
@@ -179,10 +183,17 @@ def configure_logging(
 
     if log_file is not None and max_bytes > 0:
         # A log file that cannot be opened is no reason to refuse to boot.
+        from sift.kernel.log_settings import largest_file_bytes
+
         try:
             log_file.parent.mkdir(parents=True, exist_ok=True)
+            # Not rolled at the start's own size: that would roll a long log at its first line and
+            # trim every older file to fit. The library's setting replaces this once it is read.
             rotating = _CappedRotatingFileHandler(
-                log_file, maxBytes=max_bytes, backupCount=backups, encoding="utf-8"
+                log_file,
+                maxBytes=max(max_bytes, largest_file_bytes(backups)),
+                backupCount=backups,
+                encoding="utf-8",
             )
             rotating.setFormatter(formatter)
             handlers.append(rotating)
@@ -196,8 +207,7 @@ def configure_logging(
     global _boot_level
     _boot_level = logging.getLevelNamesMapping().get(level_name, logging.INFO)
     _quiet_library_loggers()
-
-    if not redact_personal:
+    if not redact_personal and warn_unredacted:
         # Said at every boot: whoever pastes this log later may not know.
         get_logger(__name__).warning(
             "log.unredacted",
@@ -359,6 +369,145 @@ def _report_rows(stage: str, rows: int, sql: str | None) -> None:
 
 _TIMING_LOGGER = "sift.timing"
 
+
+# --- What one job cost ----------------------------------------------------------------------------
+
+#: Statement records inside a write block: the block's own wait and hold already count them.
+_WRITE_STAGE = "db.write"
+#: Statement records of reads, a reader's wait included, kept as one figure rather than stages.
+_READ_STAGES = frozenset({"db.read", "db.sweep"})
+#: The job's own record, which is the whole and not a part.
+_JOB_STAGE = "job"
+#: Spans kept before they are merged, so a long job's record stays small.
+_KEPT_SPANS = 2048
+
+
+def _union(spans: list[tuple[float, float]]) -> list[tuple[float, float]]:
+    """The same time with every overlap merged, in order."""
+    merged: list[tuple[float, float]] = []
+    for start, end in sorted(spans):
+        if merged and start <= merged[-1][1]:
+            if end > merged[-1][1]:
+                merged[-1] = (merged[-1][0], end)
+        else:
+            merged.append((start, end))
+    return merged
+
+
+class JobCost:
+    """Where one job's time went: its stages, its waits for the writer and for storage, its tools.
+
+    Times are `time.perf_counter` seconds. Spans nest (a write inside a stage), so the time they
+    account for is their union, never their sum. Fed from threads too, hence the lock.
+    """
+
+    def __init__(self, began: float | None = None) -> None:
+        self.began = time.perf_counter() if began is None else began
+        self.stages: dict[str, float] = {}
+        self.writer_wait_ms = 0.0
+        self.writer_held_ms = 0.0
+        self.writes = 0
+        self.read_ms = 0.0
+        self.reads = 0
+        self.storage_wait_ms = 0.0
+        self.launches = 0
+        self.tool_ms = 0.0
+        self.tool_read_bytes = 0
+        self._spans: list[tuple[float, float]] = []
+        self._lock = threading.Lock()
+
+    def _span(self, start: float, end: float) -> None:
+        self._spans.append((start, end))
+        if len(self._spans) > _KEPT_SPANS:
+            self._spans = _union(self._spans)
+
+    def staged(self, stage: str, start: float, end: float) -> None:
+        """A timed block ended inside the job."""
+        if stage in (_WRITE_STAGE, _JOB_STAGE):
+            return
+        spent = (end - start) * 1000
+        with self._lock:
+            if stage in _READ_STAGES:
+                self.reads += 1
+                self.read_ms += spent
+            else:
+                self.stages[stage] = self.stages.get(stage, 0.0) + spent
+            self._span(start, end)
+
+    def wrote(self, asked: float, got: float, ended: float) -> None:
+        """A write block: asked for the writer, got it, let it go."""
+        with self._lock:
+            self.writes += 1
+            self.writer_wait_ms += (got - asked) * 1000
+            self.writer_held_ms += (ended - got) * 1000
+            self._span(asked, ended)
+
+    def waited_for_storage(self, start: float, end: float) -> None:
+        """A wait for a place in a storage's lane."""
+        with self._lock:
+            self.storage_wait_ms += (end - start) * 1000
+            self._span(start, end)
+
+    def launched(self, start: float, end: float, read_bytes: int) -> None:
+        """A tool ran from `start` to `end` and read `read_bytes`."""
+        with self._lock:
+            self.launches += 1
+            self.tool_ms += (end - start) * 1000
+            self.tool_read_bytes += read_bytes
+            self._span(start, end)
+
+    def summary(self, ended: float | None = None) -> dict[str, Any]:
+        """The fields of the job's one summary line, up to `ended`."""
+        ended = time.perf_counter() if ended is None else ended
+        with self._lock:
+            spans = _union(self._spans)
+            stages = {name: round(spent) for name, spent in sorted(self.stages.items())}
+        wall_ms = (ended - self.began) * 1000
+        covered_ms = (
+            sum(max(0.0, min(end, ended) - max(start, self.began)) for start, end in spans) * 1000
+        )
+        return {
+            "wall_ms": round(wall_ms),
+            "covered_ms": round(covered_ms),
+            "covered_pct": round(100 * covered_ms / wall_ms, 1) if wall_ms > 0 else 100.0,
+            "writer_wait_ms": round(self.writer_wait_ms),
+            "writer_held_ms": round(self.writer_held_ms),
+            "writes": self.writes,
+            "read_ms": round(self.read_ms),
+            "reads": self.reads,
+            "storage_wait_ms": round(self.storage_wait_ms),
+            "launches": self.launches,
+            "tool_ms": round(self.tool_ms),
+            "tool_read_bytes": self.tool_read_bytes,
+            "stages": stages,
+        }
+
+
+_JOB_COST: ContextVar[JobCost | None] = ContextVar("sift_job_cost", default=None)
+
+
+def job_cost() -> JobCost | None:
+    """The cost of the job this code runs inside, or None outside a job."""
+    return _JOB_COST.get()
+
+
+@contextmanager
+def costing(cost: JobCost | None) -> Iterator[JobCost | None]:
+    """Run the block, and every task and thread it starts, as part of `cost` (None: of no job)."""
+    token = _JOB_COST.set(cost)
+    try:
+        yield cost
+    finally:
+        _JOB_COST.reset(token)
+
+
+def note_storage_wait(start: float, end: float) -> None:
+    """A wait for a place in a storage's lane, `time.perf_counter` seconds, filed to its job."""
+    cost = _JOB_COST.get()
+    if cost is not None:
+        cost.waited_for_storage(start, end)
+
+
 #: The level names `timing_hook` accepts, so a record's survival is asked before it is built.
 _LOG_LEVELS = {
     "debug": logging.DEBUG,
@@ -401,7 +550,11 @@ def timing_hook(
         failed = True
         raise
     finally:
-        elapsed_ms, split = timing._split(time.perf_counter())
+        ended = time.perf_counter()
+        cost = _JOB_COST.get()
+        if cost is not None:
+            cost.staged(stage, started, ended)
+        elapsed_ms, split = timing._split(ended)
         judged_ms = split.get("ran_ms", elapsed_ms)
         # The loop's backlog is a second wait hiding inside `ran_ms`.
         backlog_ms = _loop_backlog_ms()

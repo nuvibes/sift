@@ -19,6 +19,7 @@ from sift.kernel.jobs import (
     WorkerPool,
     Workspaces,
     folded_state,
+    queue_controls,
     recover,
     register_handler,
     sweep,
@@ -442,16 +443,11 @@ async def test_stopping_everything_leaves_what_is_already_over_alone(job_queue: 
 
 
 @pytest.mark.integration
-async def test_stopping_everything_moves_a_parent_off_its_stalled_fraction(
+async def test_a_finished_parent_reads_finished_whatever_its_children_do(
     job_queue: JobQueue,
 ) -> None:
-    """The roll-up has to actually run, and it is written as a set rather than as a list of ids.
-
-     A parent whose children were all called off should read as over rather than sit for ever at the
-     fraction the cancel left it on. This is the assertion that fails if the statement stops
-     matching:
-    the ids are never named, so nothing else would notice.
-    """
+    """A parent's progress is its own: done is 1.0 with its children still waiting, and stopping
+    them leaves it there."""
     handler = noop_handler()
     parent = await job_queue.enqueue(handler)
     await job_queue.claim(WORKER)
@@ -461,7 +457,7 @@ async def test_stopping_everything_moves_a_parent_off_its_stalled_fraction(
 
     before = await job_queue.get(parent)
     assert before is not None
-    assert before.progress < 1.0
+    assert before.progress == 1.0
 
     assert await job_queue.cancel_everything() == 4
 
@@ -1375,3 +1371,82 @@ async def test_a_cancel_of_a_pass_stops_its_types_and_nothing_else(job_queue: Jo
         assert (await job_queue.get(one)).state is JobState.CANCELED  # type: ignore[union-attr]
     assert (await job_queue.get(finished)).state is JobState.DONE  # type: ignore[union-attr]
     assert (await job_queue.get(kept)).state is JobState.QUEUED  # type: ignore[union-attr]
+
+
+@pytest.mark.integration
+async def test_a_big_stop_stops_running_work_first_and_writes_a_chunk_at_a_time(
+    job_queue: JobQueue, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A stop of a whole import holds the writer a chunk at a time, and the work that queues more
+    is stopped, and told, in the first one."""
+    monkeypatch.setattr(queue_controls, "_STOP_CHUNK", 2)
+    handler = noop_handler()
+    head = await job_queue.enqueue(handler)
+    children = [await job_queue.enqueue(handler, {"n": n}, parent_id=head) for n in range(4)]
+    await _state(job_queue, children[-1], "running")
+    told: list[list[str]] = []
+    job_queue.listen_for_stops(lambda ids: told.append(list(ids)))
+
+    assert sorted(await job_queue.cancel(head)) == sorted([head, *children])
+
+    assert [len(ids) for ids in told] == [2, 2, 1]
+    assert children[-1] in told[0], "the running one in the first chunk, though the newest"
+    for job_id in (head, *children):
+        job = await job_queue.get(job_id)
+        assert job is not None and job.state is JobState.CANCELED
+
+
+@pytest.mark.integration
+async def test_retrying_more_failures_than_a_chunk_retries_every_one(
+    job_queue: JobQueue, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(queue_controls, "_STOP_CHUNK", 2)
+    handler = noop_handler()
+    failed = []
+    for _ in range(5):
+        job_id = await job_queue.enqueue(handler, max_attempts=1)
+        await job_queue.claim(WORKER)
+        await job_queue.fail(job_id, WORKER, "it broke")
+        failed.append(job_id)
+
+    assert await job_queue.retry_failed() == 5
+    for job_id in failed:
+        job = await job_queue.get(job_id)
+        assert job is not None and job.state is JobState.QUEUED
+
+
+@pytest.mark.integration
+async def test_clearing_the_failures_takes_only_what_was_childless_when_pressed(
+    job_queue: JobQueue, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A chunk at a time, a failed parent whose failed child goes in one chunk is not then taken
+    by the next: the press takes what nothing hung off when it was made."""
+    monkeypatch.setattr(queue_controls, "_STOP_CHUNK", 1)
+    handler = noop_handler()
+    parent = await job_queue.enqueue(handler, max_attempts=1)
+    await job_queue.claim(WORKER)
+    child = await job_queue.enqueue(handler, {"n": 1}, parent_id=parent, max_attempts=1)
+    await job_queue.claim(WORKER)
+    await job_queue.fail(child, WORKER, "it broke")
+    await job_queue.fail(parent, WORKER, "it broke")
+
+    assert await job_queue.clear_failed() == 1
+
+    assert await job_queue.get(child) is None
+    assert await job_queue.get(parent) is not None
+
+
+@pytest.mark.integration
+async def test_the_prune_reads_finished_rows_by_when_they_settled(job_queue: JobQueue) -> None:
+    """Every thirty seconds: through the index of done rows by their settling, never a walk of
+    the week's done rows to find the few old enough."""
+    async with job_queue._db.read() as connection:
+        rows = await connection.execute_fetchall(
+            # The text is the queue's own module constant.
+            "EXPLAIN QUERY PLAN "  # nosemgrep: sift-no-string-built-sql
+            + queue_controls._PRUNE_SETTLED,
+            {"cutoff": 1, "parked_cutoff": 1, "batch": 1},
+        )
+    plan = [str(row[3]) for row in rows]
+    assert any("ix_jobs_done_by_updated" in line for line in plan), plan
+    assert not any(line.startswith("SCAN jobs") for line in plan), plan

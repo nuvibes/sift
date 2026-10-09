@@ -20,8 +20,6 @@ PARKED_RETENTION_SECONDS = 30 * 24 * 60 * 60
 #: Bounded because the writer is single: a whole-table delete stalls every job's progress.
 PRUNE_BATCH = 500
 
-CLEAR_BATCH = 2000
-
 #: The desktop's `STOP_TIMEOUT_MS` must allow longer; a test asserts it.
 SHUTDOWN_GRACE_SECONDS = 30.0
 

@@ -1721,3 +1721,125 @@ async def test_a_step_making_only_held_products_is_passed_over(job_queue: JobQue
     assert await job_queue.claim(WORKER, held_products={"music"}) is None
     taken = await job_queue.claim(WORKER)
     assert taken is not None and taken.id == music
+
+
+# --- the one line each job ends with ---------------------------------------------------------
+
+
+@pytest.fixture
+def summaries(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, object]]:
+    said: list[dict[str, object]] = []
+    real = worker_pool.log.info
+
+    def info(event: str, **fields: object) -> None:
+        if event == "job.summary":
+            said.append(fields)
+        else:
+            real(event, **fields)
+
+    monkeypatch.setattr(worker_pool.log, "info", info)
+    return said
+
+
+@pytest.mark.integration
+async def test_each_job_ends_with_one_line_saying_what_became_of_it_and_where_its_time_went(
+    job_queue: JobQueue, summaries: list[dict[str, object]]
+) -> None:
+    import structlog
+
+    from sift.kernel.jobs import JobBlocked, JobHeld
+    from sift.kernel.log import timing_hook
+
+    bound: list[dict[str, object]] = []
+
+    async def works(context: JobContext) -> None:
+        bound.append(dict(structlog.contextvars.get_contextvars()))
+        with timing_hook("test.stage"):
+            await asyncio.sleep(0.02)
+
+    async def needs_a_login(context: JobContext) -> None:
+        raise JobBlocked("waiting for a login")
+
+    async def busy(context: JobContext) -> None:
+        raise JobHeld("busy", retry_in=60)
+
+    async def broken(context: JobContext) -> None:
+        raise ConnectionError("the connection dropped")
+
+    for job_type, handler in (
+        ("sum_ok", works),
+        ("sum_blocked", needs_a_login),
+        ("sum_held", busy),
+        ("sum_broken", broken),
+    ):
+        register_handler(job_type, handler, name="Test job")
+    ok = await job_queue.enqueue("sum_ok", payload={"asset_id": "an-asset"})
+    for job_type in ("sum_blocked", "sum_held"):
+        await job_queue.enqueue(job_type)
+    await job_queue.enqueue("sum_broken", max_attempts=2)
+
+    pool = WorkerPool(job_queue, concurrency=1, poll_interval=0.01)
+    await pool.start()
+    try:
+        deadline = time.monotonic() + 10
+        while len(summaries) < 5:
+            assert time.monotonic() < deadline, f"only {summaries}"
+            await asyncio.sleep(0.01)
+    finally:
+        await pool.stop()
+
+    outcome = {(s["job_type"], s["outcome"]) for s in summaries}
+    assert outcome == {
+        ("sum_ok", "done"),
+        ("sum_blocked", "blocked"),
+        ("sum_held", "held"),
+        ("sum_broken", "retrying"),
+        ("sum_broken", "failed"),
+    }
+    done = next(s for s in summaries if s["job_type"] == "sum_ok")
+    assert done["job_id"] == ok and done["asset_id"] == "an-asset" and done["attempt"] == 1
+    assert isinstance(done["queued_s"], int)
+    stages = done["stages"]
+    assert isinstance(stages, dict) and stages["test.stage"] >= 15
+    # The settle is a write of the job's own, behind whoever held the writer.
+    assert isinstance(done["writes"], int) and done["writes"] >= 1
+    assert done["covered_ms"] <= done["wall_ms"]  # type: ignore[operator]
+    assert bound == [{"job_id": ok, "job_type": "sum_ok"}]
+    assert all(s["asset_id"] is None for s in summaries if s["job_type"] != "sum_ok")
+
+
+@pytest.mark.integration
+async def test_a_job_taken_away_mid_run_still_ends_with_its_line(
+    job_queue: JobQueue, summaries: list[dict[str, object]]
+) -> None:
+    started = asyncio.Event()
+
+    async def long(context: JobContext) -> None:
+        started.set()
+        await asyncio.sleep(30)
+
+    register_handler("sum_long", long, name="Test job")
+    job_id = await job_queue.enqueue("sum_long")
+    pool = WorkerPool(job_queue, concurrency=1, poll_interval=0.01, heartbeat_interval=0.02)
+    await pool.start()
+    try:
+        await asyncio.wait_for(started.wait(), 5)
+        await job_queue.cancel(job_id)
+        deadline = time.monotonic() + 10
+        while not summaries:
+            assert time.monotonic() < deadline
+            await asyncio.sleep(0.01)
+    finally:
+        await pool.stop()
+    assert summaries[0]["job_id"] == job_id and summaries[0]["outcome"] == "lost"
+
+
+@pytest.mark.unit
+def test_the_wait_in_the_queue_counts_from_when_the_job_could_first_be_claimed() -> None:
+    job = _a_job()
+    assert worker_pool._queued_s(job) is None
+    assert worker_pool._queued_s(dataclasses.replace(job, created_at=100, started_at=130)) == 30
+    later = dataclasses.replace(job, created_at=100, run_after=125, started_at=130)
+    assert worker_pool._queued_s(later) == 5
+    # A clock that stepped back is no wait at all.
+    assert worker_pool._queued_s(dataclasses.replace(job, created_at=100, started_at=90)) == 0

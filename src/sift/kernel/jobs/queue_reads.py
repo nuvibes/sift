@@ -68,13 +68,14 @@ SELECT type, state, SUM(created_at >= ?) AS in_run, SUM(units * (1 - progress)) 
 """
 
 _SETTLED_IN_RUN = """
-SELECT type, state, COUNT(*) AS in_run FROM jobs
+SELECT type, state, COUNT(*) AS in_run FROM jobs INDEXED BY ix_jobs_settled_by_created
  WHERE state IN ('done', 'failed') AND created_at >= ?
  GROUP BY +type, +state
 """
 
 _DONE_LATELY = """
-SELECT type, COUNT(*) AS lately FROM jobs WHERE state = 'done' AND updated_at >= ? GROUP BY +type
+SELECT type, COUNT(*) AS lately FROM jobs INDEXED BY ix_jobs_done_by_updated
+ WHERE state = 'done' AND updated_at >= ? GROUP BY +type
 """
 
 # Is this work happening AT ALL (waiting, under way, held or paused)? Statistics taken on an empty
@@ -174,23 +175,29 @@ _QUEUED_PAYLOADS = "SELECT payload FROM jobs WHERE type = ? AND state = 'queued'
 # Everything not finished, by type: whether a kind of work still WANTS the machine. `paused` is the
 # one state left out: it asks for none of the machine until somebody resumes it.
 _UNFINISHED_BY_TYPE = (
-    "SELECT type, COUNT(*) AS pending FROM jobs "
-    "WHERE unlikely(state IN ('queued', 'running', 'blocked')) GROUP BY type"
+    "SELECT type, SUM(n) AS pending FROM job_tallies"
+    " WHERE state IN ('queued', 'running', 'blocked') GROUP BY type HAVING SUM(n) > 0"
 )
 
 # What ends a pass (`Ledger.settle`): the same, less rows put off to later, which begin the next
-# run, and while a job has the queue to itself, all but what runs and its own kind.
-_DUE_BY_TYPE = (
-    "SELECT type, COUNT(*) AS pending FROM jobs"
-    " WHERE unlikely(state IN ('queued', 'running', 'blocked'))"
-    " AND NOT (state = 'queued' AND run_after IS NOT NULL AND run_after > ?)"
-    " AND (? OR state = 'running' OR type IN (SELECT value FROM json_each(?))) GROUP BY type"
+# run, and while a job has the queue to itself, all but what runs and its own kind. The tallies,
+# less the few put off (`ix_jobs_queued_later`), which no tally can tell from the rest.
+_DUE_BY_TYPE = """
+SELECT type, SUM(n) AS pending FROM (
+  SELECT type, state, n FROM job_tallies WHERE state IN ('queued', 'running', 'blocked')
+  UNION ALL
+  SELECT type, 'queued', -COUNT(*) FROM jobs
+   WHERE state = 'queued' AND run_after IS NOT NULL AND run_after > :now GROUP BY type
 )
+ WHERE :everything OR state = 'running' OR type IN (SELECT value FROM json_each(:alone))
+ GROUP BY type
+ HAVING SUM(n) > 0
+"""
 
 # Every live row by type AND state: what the Tasks rows say of each kind of work.
 _LIVE_BY_TYPE = (
-    "SELECT type, state, COUNT(*) AS n FROM jobs "
-    "WHERE unlikely(state IN ('queued', 'running', 'blocked', 'paused')) GROUP BY type, state"
+    "SELECT type, state, n FROM job_tallies"
+    " WHERE state IN ('queued', 'running', 'blocked', 'paused') AND n > 0"
 )
 
 # The parked rows whose reason is the password, by kind. `substr` rather than LIKE, because LIKE
@@ -231,9 +238,9 @@ _ASKED_ABOUT_PER_READ = 500
 #: How many jobs of the named types have not finished, `blocked` and `paused` included: a pass
 #: must not call itself finished while a piece of it is deliberately held.
 _OUTSTANDING = """
-SELECT COUNT(*) AS n FROM jobs
+SELECT COALESCE(SUM(n), 0) AS n FROM job_tallies
  WHERE type IN (SELECT value FROM json_each(?))
-   AND unlikely(state IN ('queued', 'running', 'blocked', 'paused'))
+   AND state IN ('queued', 'running', 'blocked', 'paused')
 """
 
 
@@ -414,7 +421,11 @@ class Reads(QueueCore):
         alone = await self.held_by_exclusive()
         rows = await self._db.fetch_all(
             _DUE_BY_TYPE,
-            (int(self._now()), not alone, json.dumps(sorted(exclusive_job_types()))),
+            {
+                "now": int(self._now()),
+                "everything": not alone,
+                "alone": json.dumps(sorted(exclusive_job_types())),
+            },
         )
         return {row["type"]: row["pending"] for row in rows}
 

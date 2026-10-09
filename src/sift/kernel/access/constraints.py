@@ -194,7 +194,12 @@ PREDICATES: dict[str, str] = {
     "tags": _seen("asset_tags t", "t.tag_id IN (" + TAGS_UNDER + ")"),
     "people": _seen("asset_people ap", "ap.person_id IN (SELECT value FROM json_each({}))"),
     # One username by id, for the Files wall's `?username=`; never a query word.
-    "usernames": _seen("asset_usernames aa", "aa.username_id IN (SELECT value FROM json_each({}))"),
+    # Named index: fresh planner statistics made this arm walk the table (round P's ledger gate).
+    "usernames": _seen(
+        "asset_usernames aa",
+        "aa.username_id IN (SELECT value FROM json_each({}))",
+        admin_from="asset_usernames aa INDEXED BY ix_asset_usernames_username",
+    ),
     # A network reaches its labels' files, by the visibility rules' fragment (`sites.py`).
     "sites": _seen(
         "asset_usernames aa",

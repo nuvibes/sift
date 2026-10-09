@@ -1459,3 +1459,77 @@ async def test_a_long_lived_launch_cancelled_while_it_starts_ends_what_it_made(
 
     (child,) = made
     assert child.poll() is not None, "the child of a cancelled launch was left running"  # type: ignore[attr-defined]
+
+
+# --- what a failed capture says, and what each tool cost the job it ran for ------------------------
+
+
+async def test_a_captured_tool_that_failed_keeps_the_end_of_what_it_said() -> None:
+    """A decoder's own words are what tell broken bytes from a passing fault, so the failure keeps
+    them; the exit code alone says neither."""
+    script = (
+        "import sys; sys.stderr.write('x' * 3000 + '\\ninvalid data found when processing input\\n');"
+        " raise SystemExit(69)"
+    )
+    with pytest.raises(sp.ToolFailed) as failed:
+        await sp.capture([sys.executable, "-c", script], time_limit=10)
+    assert failed.value.returncode == 69
+    assert failed.value.said.endswith("invalid data found when processing input")
+    assert len(failed.value.said) == sp.SAID_TAIL_CHARS
+    assert "exit code 69: " in str(failed.value)
+
+
+async def test_a_captured_tool_that_failed_without_a_word_says_so() -> None:
+    with pytest.raises(sp.ToolFailed, match="exit code 3: no detail"):
+        await sp.capture([sys.executable, "-c", "raise SystemExit(3)"], time_limit=10)
+
+
+def test_the_tail_of_nothing_is_nothing() -> None:
+    assert sp.said_tail(None) == "" and sp.said_tail(b"  \n") == ""
+
+
+@pytest.mark.parametrize("launcher", ["run", "capture", "stream"])
+async def test_each_tool_is_filed_to_the_job_it_ran_for_with_what_it_read(
+    launcher: str, tmp_path: Path
+) -> None:
+    from sift.kernel.log import JobCost, costing
+
+    payload = tmp_path / "payload.bin"
+    payload.write_bytes(b"z" * 300_000)
+    argv = [sys.executable, "-c", f"open({str(payload)!r}, 'rb').read(); print('x' * 8)"]
+    cost = JobCost()
+    with costing(cost):
+        if launcher == "run":
+            await sp.run(argv, time_limit=10)
+        elif launcher == "capture":
+            await sp.capture(argv, time_limit=10)
+        else:
+            async for _ in sp.stream(argv, frame_bytes=1, time_limit=10):
+                pass
+    # Outside a job, nobody is told.
+    await sp.run(argv, time_limit=10)
+
+    said = cost.summary()
+    assert said["launches"] == 1 and said["tool_ms"] > 0
+    if ON_WINDOWS:
+        assert said["tool_read_bytes"] >= 300_000
+    else:
+        assert said["tool_read_bytes"] == 0
+
+
+def test_a_tool_with_no_job_or_an_unreadable_one_read_nothing_we_can_say() -> None:
+    import subprocess
+
+    assert sp._read_bytes(None) == 0
+
+    class Refusing:
+        def QueryInformationJobObject(self, *args: object) -> int:
+            return 0
+
+    process = subprocess.Popen([sys.executable, "-c", "pass"])
+    try:
+        process.wait(10)
+        sp._JOBS[process] = weakref.finalize(process, lambda *args: None, Refusing(), 1, None)
+        assert sp._read_bytes(process) == 0
+    finally:
+        sp._JOBS.pop(process, None)

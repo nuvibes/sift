@@ -41,7 +41,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from sift.kernel.content.mounts import Storage, storage_of
-from sift.kernel.log import get_logger
+from sift.kernel.log import get_logger, note_storage_wait
 
 log = get_logger(__name__)
 
@@ -297,11 +297,13 @@ class StorageLanes:
             yield
             return
         rank = _RANK.get()
+        asked = time.perf_counter()
         waited = await lane.take(rank)
         if rank == READ:
             lane.read_at = time.monotonic()
         urgent = rank > ORDINARY
         if waited is not None:
+            note_storage_wait(asked, time.perf_counter())
             if urgent:
                 lane.urgent_wait += waited
             else:
@@ -410,7 +412,9 @@ async def whole_file(path: Path) -> AsyncIterator[None]:
         yield
         return
     lane = lanes.lane_for(path)
+    asked = time.perf_counter()
     await lane.take_whole()
+    note_storage_wait(asked, time.perf_counter())
     try:
         yield
     finally:
